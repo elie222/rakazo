@@ -74,5 +74,6 @@ are not sent.
 ## Export and API
 
 `GET /api/audit-events/export` returns the organization's events as JSON Lines, newest first, for
-a signed-in owner or admin; any other full member gets only the events they caused. It accepts
-`from` and `to` (ISO 8601), `spaceId`, `actorId` and `action` filters. The `audit.events` RPC returns the same events in pages with a `nextCursor`.
+a signed-in owner or admin; any other full member gets only the events they took themselves. It
+accepts `from` and `to` (ISO 8601), `spaceId`, `actorId` and `action` filters. The `audit.events`
+RPC returns the same events in pages with a `nextCursor`.

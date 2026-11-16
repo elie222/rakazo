@@ -16,6 +16,7 @@ import { GUEST_ROLE, ownedOrganizationId } from "./billing.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
 import { JsonObject, readJsonColumn, warnJsonColumnOnce } from "./json-column.js";
+import { organizationRole } from "./organization-members.js";
 import { runAsSystem } from "./row-security.js";
 import { IsolationError } from "./scope.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
@@ -239,7 +240,7 @@ export async function auditLogAccess(
     select: { organizationId: true, role: true },
   });
   if (!member) return null;
-  const everyone = ["owner", "admin"].includes(member.role);
+  const everyone = organizationRole(member.role) !== "member";
   return { organizationId: member.organizationId, actorId: everyone ? null : actor.userId };
 }
 

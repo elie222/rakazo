@@ -129,7 +129,13 @@ function OrganizationSettings({
   }
 
   if (page === "log")
-    return <AuditLog organizationId={organization.id} onBack={() => onPageChange("main")} />;
+    return (
+      <AuditLog
+        organizationId={organization.id}
+        spaceId={organization.defaultSpaceId}
+        onBack={() => onPageChange("main")}
+      />
+    );
 
   if (page === "members")
     return (

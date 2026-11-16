@@ -2,24 +2,41 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { queryClient } from "../lib/query";
 import { rpc, withSpaceHeaders } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { errorCode, errorText } from "../lib/user-error";
 import { SettingsPageHeader } from "./SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 
+/** Metadata that names what changed when the event has no target label of its own. */
+const IDENTIFYING_METADATA = [
+  "connectorId",
+  "connectionId",
+  "provider",
+  "serverId",
+  "id",
+  "botId",
+  "name",
+] as const;
+
 function detailLabels(event: AuditEvent): string[] {
-  return [event.targetLabel, event.metadata.connectorId, event.metadata.connectionId].filter(
+  const target = [event.targetLabel, event.targetId, event.targetType].find(Boolean);
+  const labels = [target, ...IDENTIFYING_METADATA.map((key) => event.metadata[key])].filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   );
+  return [...new Set(labels)];
 }
 
-/** A plain link cannot send the selected Space, so the export could come from another organization. */
-async function downloadExport(): Promise<void> {
+/**
+ * A plain link cannot send a Space, so the export is fetched with the header of the organization's
+ * own Space. The Space selected in the sidebar can belong to another organization.
+ */
+async function downloadExport(spaceId: string): Promise<void> {
   const response = await fetch("/api/audit-events/export", {
-    headers: withSpaceHeaders(),
+    headers: withSpaceHeaders(undefined, spaceId),
     credentials: "include",
   });
   if (!response.ok) throw new Error(`Export failed (${response.status})`);
@@ -31,41 +48,63 @@ async function downloadExport(): Promise<void> {
 
 /**
  * The organization's activity log, newest first, on its own page. The server decides whose events
- * it holds: everyone's for owners and admins, the reader's own for other members.
+ * it holds: everyone's for owners and admins, the reader's own for other members. `spaceId` is a
+ * Space of that organization, which is how the server finds it.
  */
 export function AuditLog({
   organizationId,
+  spaceId,
   onBack,
 }: {
   organizationId: string;
+  spaceId: string;
   onBack: () => void;
 }) {
   const { t } = useLingui();
   const log = useInfiniteQuery(
     {
-      queryKey: ["audit-log", organizationId],
+      queryKey: ["audit-log", organizationId, spaceId],
       queryFn: ({ pageParam }) =>
-        rpc.audit.events({ limit: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) }),
+        rpc.audit.events(
+          { limit: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) },
+          { context: { spaceId } },
+        ),
+      // Events are not kept once the page closes, and a window coming back to focus asks again,
+      // so a reader whose access was removed meanwhile stops seeing them.
+      gcTime: 0,
+      staleTime: 0,
+      refetchOnWindowFocus: true,
       initialPageParam: null as string | null,
       getNextPageParam: (page) => page.nextCursor,
     },
     queryClient,
   );
-  const download = useMutation({ mutationFn: downloadExport }, queryClient);
-  const events = log.data?.pages.flatMap((page) => page.events) ?? [];
-  const nextCursor = log.data?.pages.at(-1)?.nextCursor ?? null;
+  const download = useMutation({ mutationFn: () => downloadExport(spaceId) }, queryClient);
+  // Not allowed, or no longer a member of the Space the log is read through.
+  const code = errorCode(log.error);
+  const refused = code === "FORBIDDEN" || code === "UNAUTHORIZED";
+  // A reader the server no longer lets in, on the first read or on a later page, sees no log.
+  useEffect(() => {
+    if (refused) onBack();
+  }, [refused, onBack]);
+  const events = refused ? [] : (log.data?.pages.flatMap((page) => page.events) ?? []);
+  const nextCursor = refused ? null : (log.data?.pages.at(-1)?.nextCursor ?? null);
   return (
     <section data-testid="audit-log" className="space-y-4">
       <SettingsPageHeader
         title={t`Activity log`}
         onBack={onBack}
         trailing={
-          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>
+          <Button
+            variant="outline"
+            disabled={download.isPending || !log.data || refused}
+            onClick={() => download.mutate()}
+          >
             <Trans>Export</Trans>
           </Button>
         }
       />
-      {log.isError ? (
+      {log.isError && !refused ? (
         <p role="alert" className="text-body-sm text-destructive">
           {errorText(log.error, t`Could not load the log.`)}
         </p>

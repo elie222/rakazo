@@ -382,6 +382,11 @@ describe("who reads the audit log", () => {
       organizationId: "org-1",
       actorId: null,
     });
+    // Better Auth stores several roles comma-separated.
+    expect(await auditLogAccess(withRole("member,admin").db, actor)).toEqual({
+      organizationId: "org-1",
+      actorId: null,
+    });
     expect(await auditLogAccess(withRole("member").db, actor)).toEqual({
       organizationId: "org-1",
       actorId: "user-1",

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AuditEvent } from "@rakazo/contracts";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -25,7 +25,8 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../lib/rpc", () => ({
   rpc: { audit: { events: api.events }, organizations: {} },
   selectedSpaceId: () => "space-1",
-  withSpaceHeaders: () => new Headers({ "x-rakazo-space-id": "space-1" }),
+  withSpaceHeaders: (_init: unknown, spaceId: string | null = "space-1") =>
+    new Headers(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   clearSpaceSelection: vi.fn(),
   selectSpace: vi.fn(),
 }));
@@ -35,7 +36,7 @@ vi.mock("../lib/organizations", () => ({
 }));
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { QueryUserProvider, queryClient } from "../lib/query";
 import type { OrganizationPage } from "./OrganizationSettingsPanel";
 import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
@@ -174,7 +175,7 @@ it("lists the organization's audit log and loads older events on request", async
     ]),
   );
   expect(log.textContent).not.toContain("·");
-  expect(api.events).toHaveBeenCalledWith({ limit: 50 });
+  expect(api.events).toHaveBeenCalledWith({ limit: 50 }, { context: { spaceId: "space-1" } });
 
   const more = [...log.querySelectorAll("button")].find(
     (button) => button.textContent === "Load more",
@@ -183,7 +184,10 @@ it("lists the organization's audit log and loads older events on request", async
   await vi.waitFor(() =>
     expect(rowText()).toEqual(expect.arrayContaining(["credential.created", "Ada"])),
   );
-  expect(api.events).toHaveBeenLastCalledWith({ limit: 50, cursor: "e2" });
+  expect(api.events).toHaveBeenLastCalledWith(
+    { limit: 50, cursor: "e2" },
+    { context: { spaceId: "space-1" } },
+  );
   expect(log.textContent).not.toContain("Load more");
   // A normal outcome is not repeated on every row; only an unusual one is shown.
   expect(log.textContent).not.toContain("success");
@@ -241,7 +245,7 @@ it("shows a failed load on the log page", async () => {
   );
 });
 
-it("exports the log of the selected Space", async () => {
+it("exports the log with the Space header", async () => {
   api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
   const fetchMock = vi.fn(
     async () =>
@@ -288,4 +292,148 @@ it("says so when the export fails", async () => {
     ),
   );
   vi.unstubAllGlobals();
+});
+
+it("reads and exports through the organization's own Space, not the one selected in the sidebar", async () => {
+  // The selected Space is "space-1"; the organization shown lands in "space-own".
+  api.organizations = [organization({ defaultSpaceId: "space-own", spaceIds: ["space-own"] })];
+  api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
+  const fetchMock = vi.fn(async () => new Response("{}\n"));
+  vi.stubGlobal("fetch", fetchMock);
+  URL.createObjectURL = vi.fn(() => "blob:audit");
+  URL.revokeObjectURL = vi.fn();
+  const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await open();
+
+  expect(api.events).toHaveBeenCalledWith({ limit: 50 }, { context: { spaceId: "space-own" } });
+  const exportButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Export",
+  )!;
+  await act(async () => exportButton.click());
+  await vi.waitFor(() => expect(anchorClick).toHaveBeenCalled());
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(new Headers(init.headers).get("x-rakazo-space-id")).toBe("space-own");
+  vi.unstubAllGlobals();
+  anchorClick.mockRestore();
+});
+
+it("names what a credential change touched when the event has no target label", async () => {
+  api.events.mockResolvedValue({
+    events: [
+      event("e3", {
+        action: "credential.deleted",
+        actorType: "user",
+        actorLabel: "Ada",
+        targetType: "model",
+        targetId: null,
+        targetLabel: null,
+        metadata: { kind: "model", provider: "acme-llm" },
+      }),
+      event("e2", {
+        action: "credential.deleted",
+        actorType: "user",
+        actorLabel: "Ada",
+        targetType: "mcp",
+        targetId: null,
+        targetLabel: null,
+        metadata: { kind: "mcp", id: "server-7" },
+      }),
+      event("e1", {
+        action: "audit_log.exported",
+        actorType: "user",
+        actorLabel: "Ada",
+        targetType: null,
+        targetId: null,
+        targetLabel: null,
+        metadata: {},
+      }),
+    ],
+    nextCursor: null,
+  });
+  await open();
+
+  const rows = [...container.querySelectorAll('[data-testid="audit-log"] li')].map(
+    (row) => row.textContent,
+  );
+  expect(rows[0]).toContain("model");
+  expect(rows[0]).toContain("acme-llm");
+  expect(rows[1]).toContain("mcp");
+  expect(rows[1]).toContain("server-7");
+  // Nothing recorded: the row shows the action and the actor and no empty detail.
+  expect(rows[2]).toContain("audit_log.exported");
+});
+
+it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+  "sends a reader answered %s back to the organization page without an error",
+  async (code) => {
+    api.events.mockRejectedValue(Object.assign(new Error("Refused"), { code }));
+    await open();
+
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull(),
+    );
+    expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+    expect(container.textContent).not.toContain("Could not load the log.");
+  },
+);
+
+it("falls back to the target id when the label is empty, and keeps Export off until the log has loaded", async () => {
+  const first = deferred<unknown>();
+  api.events.mockReturnValue(first.promise);
+  await open();
+  const exportButton = () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Export")!;
+  expect(exportButton().disabled).toBe(true);
+  await act(async () =>
+    first.resolve({
+      events: [event("e1", { targetLabel: "", targetId: "send_email", targetType: "tool" })],
+      nextCursor: null,
+    }),
+  );
+  await vi.waitFor(() => expect(exportButton().disabled).toBe(false));
+  const row = container.querySelector('[data-testid="audit-log"] li')!;
+  expect(row.textContent).toContain("send_email");
+});
+
+it("reads the log again when the window regains focus, so a lost permission shows at once", async () => {
+  api.events.mockResolvedValueOnce({ events: [event("e1")], nextCursor: null });
+  await open();
+  expect(api.events).toHaveBeenCalledTimes(1);
+
+  api.events.mockRejectedValue(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
+  await act(async () => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+  });
+  await vi.waitFor(() => expect(api.events).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull(),
+  );
+  expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+});
+
+it("sends a reader refused while loading an older page back too, and keeps Export off after a failed load", async () => {
+  api.events
+    .mockResolvedValueOnce({ events: [event("e2")], nextCursor: "e2" })
+    .mockRejectedValueOnce(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
+  await open();
+  const more = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Load more",
+  )!;
+  await act(async () => more.click());
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull(),
+  );
+  expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  api.events.mockReset();
+  api.events.mockRejectedValue(new Error("Boom"));
+  await open();
+  const exportButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Export",
+  ) as HTMLButtonElement;
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Boom");
+  expect(exportButton.disabled).toBe(true);
 });
