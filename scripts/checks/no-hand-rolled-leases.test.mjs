@@ -19,8 +19,6 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "CloudAgent.leaseToken",
-  "CloudAgent.leaseExpiresAt",
   "Computer.controlLeaseId",
   "Computer.controlLeaseExpiresAt",
   "Computer.controlFence",
@@ -32,6 +30,9 @@ const EXISTING = new Set([
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
+  // Moved onto `withLease`; kept only while the previous release still claims them.
+  "CloudAgent.leaseToken",
+  "CloudAgent.leaseExpiresAt",
   // The primitive's own table.
   "Lease.fence",
 ]);
