@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
@@ -110,6 +110,9 @@ async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
       </MemoryRouter>,
     ),
   );
+}
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
 }
 async function enter(input: Element | null, value: string) {
   await act(async () => {
@@ -435,10 +438,19 @@ it.each(["in", "up"] as const)(
     const demoAccount = { email: "demo@example.com", password: "demo-password" };
     vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
     vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
-    await render(mode);
-    expect(host.querySelector<HTMLInputElement>('input[name="email"]')!.value).toBe("");
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={["/sign-up"]}>
+          <AuthPage mode={mode} />
+          <LocationProbe />
+        </MemoryRouter>,
+      ),
+    );
     await act(async () => button("Sign in with demo account").click());
     expect(authClient.signIn.email).toHaveBeenCalledWith(demoAccount);
+    expect(host.querySelector("[data-testid=location]")!.textContent).toBe(
+      mode === "up" ? "/sign-in" : "/sign-up",
+    );
   },
 );
 

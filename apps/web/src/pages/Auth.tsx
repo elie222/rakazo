@@ -236,6 +236,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         setError(authErrorText(result.error, t`Could not continue`));
         return;
       }
+      // Sign-up sends a signed-in user to new-account onboarding; the demo account already exists.
+      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
       enterApp();
     } catch {
       setError(t`Could not reach the server`);
