@@ -80,9 +80,10 @@ export function modelHasOwnSettings(
 export type ConnectionModel = { id: string; label: string; settings?: ModelSettings };
 
 /**
- * The models a connection runs: an OpenAI-compatible connection's enabled models, otherwise the
- * catalog's models for its provider that this connection can serve. Models with their own
- * settings come first, so they stay easy to find in a long list.
+ * The models on a connection whose settings someone may need to set: an OpenAI-compatible
+ * connection's enabled models, otherwise the models its provider lists that the catalog cannot
+ * describe, plus any already given settings of their own so they can be reset. Models with their
+ * own settings come first, then newest first.
  */
 export function connectionModels(
   credential: Pick<
@@ -91,7 +92,7 @@ export function connectionModels(
   >,
   catalog: readonly Pick<
     ModelCatalogEntry,
-    "provider" | "id" | "label" | "placeholder" | "credentialIds"
+    "provider" | "id" | "label" | "placeholder" | "credentialIds" | "live"
   >[],
 ): ConnectionModel[] {
   const withSettings = (id: string, label: string) => ({
@@ -110,13 +111,48 @@ export function connectionModels(
               canonicalPiProviderId(entry.provider) ===
                 canonicalPiProviderId(credential.provider) &&
               !entry.placeholder &&
-              (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
+              (!entry.credentialIds || entry.credentialIds.includes(credential.id)) &&
+              (entry.live === true || modelHasOwnSettings(credential, entry.id)),
           )
           .map((entry) => withSettings(entry.id, entry.label));
+  const ordered =
+    credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? models : newestModelsFirst(models);
   return [
-    ...models.filter((model) => model.settings),
-    ...models.filter((model) => !model.settings),
+    ...ordered.filter((model) => model.settings),
+    ...ordered.filter((model) => !model.settings),
   ];
+}
+
+/** Whether a model on this connection has a settings page: only where `connectionModels` lists it. */
+export function modelSettingsEditable(
+  credential: Pick<ModelCredential, "provider" | "modelSettings">,
+  entry: Pick<ModelCatalogEntry, "live"> | undefined,
+  modelId: string,
+): boolean {
+  return (
+    modelCapabilitiesConfigurable(credential.provider, entry) ||
+    modelHasOwnSettings(credential, modelId)
+  );
+}
+
+/** The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for `x-4-5`. */
+function modelVersion(id: string): number[] {
+  const match = /\d+(?:[.-]\d{1,2}(?!\d))*/.exec(id);
+  return match ? match[0].split(/[.-]/).map(Number) : [];
+}
+
+/** Models with a higher version in their id first; the catalog's order otherwise stays. */
+export function newestModelsFirst<T extends { id: string }>(models: readonly T[]): T[] {
+  const versions = new Map(models.map((model) => [model.id, modelVersion(model.id)]));
+  return [...models].sort((left, right) => {
+    const a = versions.get(left.id) ?? [];
+    const b = versions.get(right.id) ?? [];
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] ?? -1) - (a[index] ?? -1);
+      if (difference) return difference;
+    }
+    return 0;
+  });
 }
 
 /** The values a model runs with when its fields are left empty. */

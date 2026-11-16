@@ -1,5 +1,4 @@
 import { plural, t } from "@lingui/core/macro";
-import type { ModelCredential } from "@rakazo/contracts";
 import { sanitizeModelConnectionError } from "@rakazo/core";
 
 type ModelPreflightOutcome =
@@ -8,7 +7,6 @@ type ModelPreflightOutcome =
   | "unauthorized"
   | "unavailable_model"
   | "unreachable"
-  | "needs_sign_in"
   | "missing_fields"
   | "unknown";
 
@@ -17,8 +15,6 @@ export type ModelPreflightFailure = {
   message: string;
   nextAction: string;
 };
-
-type StoredModelAuthKind = NonNullable<ModelCredential["authKind"]>;
 
 type KnownSecrets = ReadonlyArray<string | null | undefined>;
 
@@ -123,83 +119,10 @@ export function unavailableSelectedModel(
   });
 }
 
-type ListedModelCredential = {
-  id?: string;
-  provider: string;
-  authKind?: StoredModelAuthKind;
-  modelId?: string;
-  isDefault?: boolean;
-  reconnectRequired?: boolean;
-};
-
-/**
- * Newest-first list. The row that owns `modelId` wins, then the space default,
- * then any saved model for the provider, then the newest row.
- */
-function credentialForSpaceModel<T extends ListedModelCredential>(
-  credentials: readonly T[],
-  provider: string,
-  modelId?: string,
-): T | undefined {
-  const rows = credentials.filter((entry) => entry.provider === provider);
-  const requested = modelId?.trim() ?? "";
-  if (requested) {
-    const owner = rows.find((entry) => entry.modelId?.trim() === requested);
-    if (owner) return owner;
-  }
-  return (
-    rows.find((entry) => entry.isDefault) ??
-    rows.find((entry) => Boolean(entry.modelId?.trim())) ??
-    rows[0]
-  );
-}
-
-/** Separate a failed credential lookup from an empty list or an unreadable secret. */
-export async function loadStoredModelAuth(
-  provider: string,
-  listCredentials: () => Promise<ReadonlyArray<ListedModelCredential>>,
-  modelId?: string,
-  credentialId?: string | null,
-): Promise<{
-  storedAuthKind: StoredModelAuthKind | null;
-  credentialLookupFailed: boolean;
-  credentialUnreadable: boolean;
-  reconnectRequired: boolean;
-}> {
-  try {
-    const credentials = await listCredentials();
-    const match =
-      credentialId === undefined
-        ? credentialForSpaceModel(credentials, provider, modelId)
-        : credentials.find((entry) => entry.id === credentialId && entry.provider === provider);
-    return {
-      storedAuthKind: match?.authKind ?? null,
-      credentialLookupFailed: false,
-      credentialUnreadable: Boolean(match && match.authKind === undefined),
-      reconnectRequired: match?.reconnectRequired === true,
-    };
-  } catch {
-    return {
-      storedAuthKind: null,
-      credentialLookupFailed: true,
-      credentialUnreadable: false,
-      reconnectRequired: false,
-    };
-  }
-}
-
 type ModelConnectionPreflightInput = {
-  authKind: "api-key" | "oauth";
   provider: string;
   apiKey?: string;
   modelId?: string;
-  /** Kind of the stored credential, when a lookup succeeded and the secret was readable. */
-  storedAuthKind?: StoredModelAuthKind | null;
-  credentialLookupFailed?: boolean;
-  /** A credential row exists but its kind could not be read. */
-  credentialUnreadable?: boolean;
-  /** The stored subscription sign-in was rejected and has to be signed in again. */
-  reconnectRequired?: boolean;
   /** Catalog entry says this provider has a pinned models-list URL. */
   catalogProbe?: boolean;
   probeCatalog?: (input: { provider: string; apiKey: string }) => Promise<{ models: string[] }>;
@@ -210,50 +133,6 @@ export async function runModelConnectionPreflight(
 ): Promise<
   { ok: true; discoveredModels: string[] } | { ok: false; failure: ModelPreflightFailure }
 > {
-  if (input.authKind === "oauth") {
-    if (input.credentialLookupFailed || input.credentialUnreadable) {
-      return {
-        ok: false,
-        failure: {
-          outcome: "unknown",
-          message: t`Could not check stored credentials.`,
-          nextAction: t`Try the test again.`,
-        },
-      };
-    }
-    if (input.reconnectRequired) {
-      return {
-        ok: false,
-        failure: {
-          outcome: "needs_sign_in",
-          message: t`This provider is not connected yet.`,
-          nextAction: t`Finish subscription sign-in, then test again.`,
-        },
-      };
-    }
-    if (input.storedAuthKind === "oauth") {
-      return { ok: true, discoveredModels: [] };
-    }
-    if (input.storedAuthKind === "api_key" || input.storedAuthKind === "openai_compatible") {
-      return {
-        ok: false,
-        failure: {
-          outcome: "needs_sign_in",
-          message: t`An API key is stored for this provider, not a subscription sign-in.`,
-          nextAction: t`Sign in with the subscription, or test the API key instead.`,
-        },
-      };
-    }
-    return {
-      ok: false,
-      failure: {
-        outcome: "needs_sign_in",
-        message: t`This provider is not connected yet.`,
-        nextAction: t`Finish subscription sign-in, then test again.`,
-      },
-    };
-  }
-
   const trimmedKey = input.apiKey?.trim() ?? "";
   const trimmedModel = input.modelId?.trim() ?? "";
 

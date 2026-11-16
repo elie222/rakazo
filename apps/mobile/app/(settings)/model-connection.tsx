@@ -631,7 +631,7 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : (
+          ) : !credential || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
               fill
@@ -646,7 +646,7 @@ export default function ModelConnection() {
               prominence="secondary"
               style={{ marginTop: 12 }}
             />
-          )
+          ) : null
         ) : null}
         {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
@@ -742,11 +742,8 @@ export default function ModelConnection() {
       </>
     ) : null;
 
-  const connectedStatusRow = credential ? (
+  const disconnectButton = credential ? (
     <View style={styles.statusRow}>
-      <View style={styles.providerCopy}>
-        <Text style={styles.secondary}>{t`Connected`}</Text>
-      </View>
       <NativeActionButton
         disabled={busy}
         fill={false}
@@ -808,16 +805,16 @@ export default function ModelConnection() {
               {compatConfig}
               {compatKeySection}
               {feedbackAnchor === "probe" ? null : feedback}
-              {connectedStatusRow}
               {modelList}
+              {disconnectButton}
             </>
           ) : credential ? (
             <>
               {provider === me?.hostCredentialProvider ? serverCredentialsNote : null}
-              {connectedStatusRow}
               {catalogConnectionControls}
               {feedbackAnchor === "connection" ? feedback : null}
               {modelList}
+              {disconnectButton}
             </>
           ) : provider === me?.hostCredentialProvider ? (
             <>

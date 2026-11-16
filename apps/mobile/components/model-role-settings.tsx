@@ -26,6 +26,7 @@ import {
   connectionForModelChoice,
   createModelRoleSettings,
   modelRoleListPatch,
+  modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
 import type { Href } from "expo-router";
@@ -384,16 +385,15 @@ export function ModelRoleSettings({
                 },
               ]
             : [];
+        const connection = connectionFor(choice);
         const actions: MenuAction[] = [
           ...thinkingMenu,
           ...(index > 0 ? [{ id: "moveUp", title: t`Move up` }] : []),
           ...(index < rows.length - 1 ? [{ id: "moveDown", title: t`Move down` }] : []),
-          ...(connectionFor(choice)
-            ? [
-                { id: "manageModel", title: t`Manage model` },
-                { id: "manage", title: t`Manage provider` },
-              ]
+          ...(connection && modelSettingsEditable(connection, entryFor(choice), choice.modelId)
+            ? [{ id: "manageModel", title: t`Manage model` }]
             : []),
+          ...(connection ? [{ id: "manage", title: t`Manage provider` }] : []),
           { id: "remove", title: t`Remove`, attributes: { destructive: true } },
         ];
         const accessibilityActions = actions.flatMap((action) =>

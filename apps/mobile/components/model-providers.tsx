@@ -1,5 +1,4 @@
 import type { MenuAction } from "@expo/ui/community/menu";
-import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
@@ -7,7 +6,6 @@ import {
   connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
 } from "@rakazo/contracts";
-import { connectionModels } from "@rakazo/core";
 import { Alert, Platform } from "react-native";
 import { RowMenu } from "./model-role-settings";
 import { SettingsGroup, SettingsRow } from "./settings-group";
@@ -29,7 +27,6 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
-  const modelCount = (count: number) => t`${plural(count, { one: "# model", other: "# models" })}`;
   const providerName = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
@@ -44,12 +41,9 @@ export function ModelProviders({
         name,
         detail: credential.reconnectRequired
           ? t`Sign in again`
-          : [
-              name.startsWith(provider) ? null : provider,
-              modelCount(connectionModels(credential, catalog).length),
-            ]
-              .filter(Boolean)
-              .join(" · "),
+          : name.startsWith(provider)
+            ? undefined
+            : provider,
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -86,10 +80,11 @@ export function ModelProviders({
       {rows.map(({ credential, name, detail }) => {
         const actions: MenuAction[] = [
           ...(Platform.OS === "ios" ? [{ id: "rename", title: t`Rename` }] : []),
-          {
-            id: "manage",
-            title: credential.authKind === "oauth" ? t`Sign in again` : t`Replace API key`,
-          },
+          ...(credential.authKind !== "oauth"
+            ? [{ id: "manage", title: t`Replace API key` }]
+            : credential.reconnectRequired
+              ? [{ id: "manage", title: t`Sign in again` }]
+              : []),
           { id: "disconnect", title: t`Disconnect`, attributes: { destructive: true } },
         ];
         return (
