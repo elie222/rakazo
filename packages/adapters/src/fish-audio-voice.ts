@@ -10,6 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   isSpeechModelId,
@@ -17,10 +18,10 @@ import {
   readVoiceJson,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
@@ -67,9 +68,9 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     options: { language?: string } = {},
   ): Promise<VoiceInfo[]> {
     const controller = new AbortController();
-    const signal = voiceDeadline(
-      AbortSignal.any([context.signal, controller.signal]),
+    const signal = deadlineSignal(
       LIST_VOICES_DEADLINE_MS,
+      AbortSignal.any([context.signal, controller.signal]),
     );
     const listContext = { ...context, signal };
     // Fish's catalog filter matches the lowercase primary subtag ("de-DE" → "de").
@@ -94,7 +95,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const model = resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
@@ -140,7 +141,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { ...fishAudioHeaders(request.apiKey), model },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readFishResponse(res);
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
@@ -287,7 +288,7 @@ async function readFishResponse(res: Response): Promise<unknown> {
 }
 
 function fishUnreadBody(error: unknown): { message: string } {
-  if (error instanceof Error && error.message === "Voice response is too large.") {
+  if (error instanceof ResponseTooLargeError) {
     return { message: error.message };
   }
   return { message: "response body could not be read" };
@@ -388,3 +389,14 @@ function languageLabel(value: unknown): string {
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .join(", ");
 }
+
+export const fishAudioVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Fish Audio",
+    description: "Voice models, cloning, and expressive speech with optional transcription.",
+    transcribe: true,
+    speechModel: true,
+    languages: true,
+  },
+  create: () => new FishAudioVoiceProvider(),
+};

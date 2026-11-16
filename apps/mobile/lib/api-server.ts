@@ -11,6 +11,7 @@ import {
   queueEndpointChange,
   rawSelectedSpaceId,
   removePendingSignOut,
+  resumeSelectedSpaceNotifications,
   SPACE_KEY,
   SPACE_ROLLBACK_KEY,
   savePendingSignOut,
@@ -28,7 +29,6 @@ import { loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-he
 import {
   clearSessionToken,
   currentSessionGeneration,
-  loadSessionToken,
   restoreSessionToken,
   sessionSaveInProgress,
   snapshotSessionToken,
@@ -124,18 +124,6 @@ export async function selectSpace(id: string) {
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
 }
-async function resumeSelectedSpaceNotifications(id: string, generation: number): Promise<void> {
-  const apiBase = currentApiBase();
-  const sessionGeneration = currentSessionGeneration();
-  const token = await loadSessionToken();
-  if (
-    generation !== currentSpaceSelectionGeneration() ||
-    sessionGeneration !== currentSessionGeneration() ||
-    apiBase !== currentApiBase()
-  )
-    return;
-  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
-}
 /** Keep requests usable after the server deleted the selected Space but native
  * storage could not replace it. Neutralize any same-endpoint rollback before
  * writing the replacement selection so a cleanup failure cannot leave the new
@@ -149,6 +137,8 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
     pendingFallbackSwitchFrom = previousSpaceId;
   }
   setSelectedSpace(id);
+  // Same ownership as selectSpace: a newer selection during the token read wins.
+  const claimGeneration = currentSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
   // selection first can leave it beside a stale record that recoverSpaceRollback
   // would prefer on restart if later cleanup fails.
@@ -164,18 +154,14 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
     await clearStoredValue(SPACE_ROLLBACK_KEY);
     if ((pendingFallbackSwitchFrom ?? previousSpaceId) !== id) noteConfirmedSpaceSwitch();
     pendingFallbackSwitchFrom = null;
-    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-      () => undefined,
-    );
+    await resumeSelectedSpaceNotifications(id, claimGeneration);
     return true;
   }
   // Clear before saving recovery: an empty selection lets startup resolve the
   // server default even when the recovery record cannot be written.
   const staleSelectionCleared = await clearStoredValue(SPACE_KEY);
   const recoverySaved = await saveSpaceRollback(id);
-  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-    () => undefined,
-  );
+  await resumeSelectedSpaceNotifications(id, claimGeneration);
   // Only treat a cleared selection as durable success when no same-endpoint
   // rollback remains to override it after restart.
   const durable =

@@ -216,4 +216,3 @@ export function createLogoAvatarActivityStore() {
     },
   };
 }
-export type LogoAvatarActivityStore = ReturnType<typeof createLogoAvatarActivityStore>;

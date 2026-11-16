@@ -89,8 +89,14 @@ SQL
 }
 
 shutdown() {
-  kill $(jobs -pr) 2> /dev/null || true
-  wait || true
+  local pids
+  pids=$(jobs -pr)
+  # Name the jobs: after a trapped signal interrupts `wait -n`, a bare `wait` can spin forever in
+  # bash 5.3.
+  if [[ -n $pids ]]; then
+    kill $pids 2> /dev/null || true
+    wait $pids 2> /dev/null || true
+  fi
   stop_database
 }
 trap shutdown EXIT

@@ -178,11 +178,13 @@ describe("contracts", () => {
     expect(modelRoutingForm(undefined, {})).toEqual({
       needsRouting: false,
       needsGateway: false,
+      needsProject: false,
       routingReady: true,
     });
     expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
       needsRouting: true,
       needsGateway: true,
+      needsProject: false,
       routingReady: false,
     });
     expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
@@ -202,6 +204,27 @@ describe("contracts", () => {
       ModelConnectInputSchema.safeParse({ provider: "anthropic", apiKey: "short" }).success,
     ).toBe(false);
   });
+
+  it.each(["accountId", "gatewayId", "projectId", "region"])(
+    "accepts a routing-only %s update only for a targeted connection",
+    (field) => {
+      const input = { provider: "example-provider", [field]: "example-route" };
+      expect(
+        ModelConnectInputSchema.safeParse({ ...input, credentialId: "credential-fixture" }).success,
+      ).toBe(true);
+      expect(ModelConnectInputSchema.safeParse(input).success).toBe(false);
+      expect(ModelConnectInputSchema.safeParse({ ...input, credentialId: null }).success).toBe(
+        false,
+      );
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          credentialId: "credential-fixture",
+          [field]: "../invalid",
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
@@ -253,6 +276,10 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
+    expect(parsed.computerMode).toBeUndefined();
+    expect(CreateBotInput.parse({ name: "Chief", computerMode: "dedicated" }).computerMode).toBe(
+      "dedicated",
+    );
   });
 
   it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {

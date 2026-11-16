@@ -32,7 +32,7 @@ test("needs-you computer card opens a group member bot computer", async ({ page 
   await expect(card.getByText("Needs you", { exact: true })).toBeVisible();
   const open = card.getByTestId("computer-card-open");
   await expect(open).toBeVisible();
-  await expect(open).toHaveText("Open");
+  await expect(open).toHaveText("Take control");
   await captureScreenshot(page, testInfo, "computer-needs-you-card-group");
 
   await open.click();

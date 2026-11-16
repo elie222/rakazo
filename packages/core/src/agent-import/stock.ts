@@ -108,13 +108,13 @@ export function isHermesDefault(content: string): boolean {
   return HERMES_SOUL_DEFAULTS.has(fingerprint(content));
 }
 
-function withoutFrontmatter(content: string): string {
+export function withoutFrontmatter(content: string): string {
   const text = content.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   return text.replace(/^---\n[\s\S]*?\n---\n/, "");
 }
 
 /** `<32-bit FNV-1a hex>:<UTF-8 length>` of the text with whitespace runs collapsed. */
-function fingerprint(content: string): string {
+export function fingerprint(content: string): string {
   const bytes = new TextEncoder().encode(
     content
       .replace(/^\uFEFF/, "")

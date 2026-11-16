@@ -1,4 +1,5 @@
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
@@ -12,13 +13,8 @@ import {
   SCRIPTED_VOICE_ID,
   ScriptedVoiceProvider,
 } from "./scripted-voice.js";
-import {
-  createVoiceProvider,
-  isVoiceProviderId,
-  listVoiceCatalog,
-  VOICE_CATALOG,
-} from "./voice-factory.js";
-import { MAX_SYNTHESIZED_AUDIO_BYTES, MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
+import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
 import { XaiVoiceProvider } from "./xai-voice.js";
 
 const ctx = {
@@ -30,10 +26,10 @@ const ctx = {
 };
 
 const macOs = vi.hoisted(() => ({ available: false }));
-vi.mock("./macos-voice.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof MacOsVoice>()),
-  macOsSayAvailable: () => macOs.available,
-}));
+vi.mock("./macos-voice.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof MacOsVoice>();
+  return { ...actual, macOsVoice: { ...actual.macOsVoice, available: () => macOs.available } };
+});
 
 const previousRuntime = process.env.AGENT_RUNTIME;
 
@@ -50,7 +46,7 @@ describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
-    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
+    expect(listVoiceCatalog({ allowPrivateEndpoint: true }).map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
@@ -261,7 +257,9 @@ describe("CartesiaVoiceProvider", () => {
   // An unbounded /voices request returns the whole catalog, overruns the voice JSON read cap
   // and fails connecting the provider outright.
   it("bounds the voices request so the catalog cannot overrun the read cap", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] })));
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => new Response(JSON.stringify({ data: [] })));
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CartesiaVoiceProvider();
 
@@ -839,7 +837,7 @@ describe("hosted voice response limits", () => {
         vi.fn().mockResolvedValue({
           ok: true,
           headers: new Headers({
-            "content-length": String(MAX_SYNTHESIZED_AUDIO_BYTES + 1),
+            "content-length": String(MAX_VOICE_AUDIO_BYTES + 1),
           }),
           body: { cancel },
         }),

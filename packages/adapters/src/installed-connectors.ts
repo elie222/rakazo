@@ -8,6 +8,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
@@ -22,6 +23,7 @@ import {
   isSensitiveHeader,
   isTransportHeader,
   PublicHeadersSchema,
+  parseConnectorSetting,
   readBoundedText,
   requireCredential,
 } from "./connector-http.js";
@@ -30,6 +32,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "./connector-safety.js";
+import { checkConnectorSource } from "./connector-source.js";
 import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
 import {
   CATALOG_EXECUTE,
@@ -106,6 +109,8 @@ const ApiOperationSchema = z.object({
   }),
   readOnly: z.boolean().default(false),
   queryParameters: z.array(z.string().min(1).max(120)).default([]),
+  formObjectQueryParameters: z.array(z.string().min(1).max(120)).optional(),
+  commaSeparatedQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   headerParameters: z.array(ModelHeaderName).default([]),
 });
 
@@ -428,16 +433,20 @@ export async function verifyMcpInstall(input: {
   allowPrivateEndpoint?: boolean;
 }): Promise<{ config: Record<string, unknown>; toolCount: number }> {
   assertNoSensitiveQuery(input.source);
-  const config = McpConfigSchema.parse(input.config);
+  const config = parseConnectorSetting(McpConfigSchema, input.config);
   requireCredential(config.auth, input.credential);
-  const tools = await listRemoteMcpTools({
-    ...input.remote,
-    endpoint: input.source,
-    headers: connectorHeaders(config, input.credential),
-    signal: input.signal,
-    allowPrivateEndpoint: input.allowPrivateEndpoint,
-  });
-  if (tools.length === 0) throw new Error("MCP server returned no tools");
+  const tools = await checkConnectorSource(
+    () =>
+      listRemoteMcpTools({
+        ...input.remote,
+        endpoint: input.source,
+        headers: connectorHeaders(config, input.credential),
+        signal: input.signal,
+        allowPrivateEndpoint: input.allowPrivateEndpoint,
+      }),
+    input,
+  );
+  if (tools.length === 0) throw new ConnectionSetupError("MCP server returned no tools");
   return { config, toolCount: tools.length };
 }
 
@@ -450,9 +459,9 @@ export async function prepareApiInstall(input: {
   /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
-  const auth = AuthSchema.parse(input.config.auth);
+  const auth = parseConnectorSetting(AuthSchema, input.config.auth);
   requireCredential(auth, input.credential);
-  const headers = PublicHeadersSchema.parse(input.config.headers);
+  const headers = parseConnectorSetting(PublicHeadersSchema, input.config.headers);
   assertNoSensitiveQuery(input.source);
   const remote = { ...input.remote, allowPrivateEndpoint: input.allowPrivateEndpoint };
   let source = input.source;
@@ -464,13 +473,25 @@ export async function prepareApiInstall(input: {
       ...headers,
     };
     applyCredential(documentUrl, documentHeaders, auth, input.credential);
-    const document = await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote);
-    const imported = importOpenApiDocument(document);
+    const imported = await checkConnectorSource(
+      async () =>
+        importOpenApiDocument(
+          await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote),
+        ),
+      input,
+    );
     source = imported.baseUrl;
     operationsValue = imported.operations;
   }
-  await assertSafeRemoteUrl(source, remote.resolveHostname, remote);
-  const config = ApiConfigSchema.parse({ auth, headers, operations: operationsValue });
+  await checkConnectorSource(
+    () => assertSafeRemoteUrl(source, remote.resolveHostname, remote),
+    input,
+  );
+  const config = parseConnectorSetting(ApiConfigSchema, {
+    auth,
+    headers,
+    operations: operationsValue,
+  });
   return {
     source,
     config,
@@ -492,15 +513,15 @@ async function loadOpenApiDocument(
     });
     if (!response.ok) {
       cancelResponseBody(response);
-      throw new Error(`OpenAPI document returned HTTP ${response.status}`);
+      throw new ConnectionSetupError(`OpenAPI document returned HTTP ${response.status}`);
     }
     const size = Number(response.headers.get("content-length") ?? 0);
     if (size > 2_000_000) {
       cancelResponseBody(response);
-      throw new Error("OpenAPI document is too large");
+      throw new ConnectionSetupError("OpenAPI document is too large");
     }
     const { text, truncated } = await readBoundedText(response, 2_000_000);
-    if (truncated) throw new Error("OpenAPI document is too large");
+    if (truncated) throw new ConnectionSetupError("OpenAPI document is too large");
     return parseOpenApiText(text);
   } finally {
     await safeFetch.close().catch(() => undefined);
@@ -524,7 +545,7 @@ function parseOpenApiText(text: string): Record<string, unknown> {
     }
   }
   if (!document || typeof document !== "object" || Array.isArray(document)) {
-    throw new Error("OpenAPI document is not valid JSON or YAML");
+    throw new ConnectionSetupError("OpenAPI document is not valid JSON or YAML");
   }
   return document as Record<string, unknown>;
 }
@@ -556,20 +577,43 @@ function isCircular(root: unknown): boolean {
   return false;
 }
 
+const OPENAPI_SERVER_VARIABLE = /\{([^{}]+)\}/g;
+const MAX_OPENAPI_BASE_URL_LENGTH = 2_048;
+
 export function importOpenApiDocument(document: Record<string, unknown>): {
   baseUrl: string;
   operations: ApiOperation[];
 } {
-  const server = Array.isArray(document.servers) ? document.servers[0] : undefined;
-  const baseUrl =
-    server && typeof server === "object" && typeof (server as { url?: unknown }).url === "string"
-      ? String((server as { url: string }).url)
-      : "";
-  if (!baseUrl) throw new Error("OpenAPI document must define servers[0].url");
+  const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
+  if (typeof server?.url !== "string" || !server.url) {
+    throw new ConnectionSetupError("OpenAPI document must define servers[0].url");
+  }
+  const variables = asRecord(server.variables);
+  const serverDefault = (name: string) => {
+    const variable = asRecord(variables?.[name]);
+    if (typeof variable?.default !== "string") {
+      throw new ConnectionSetupError("OpenAPI server variable must define a string default");
+    }
+    return variable.default;
+  };
+  // Repeating a long default can expand a small document into a huge URL,
+  // so measure the result before building it.
+  let length = server.url.length;
+  for (const [placeholder, name] of server.url.matchAll(OPENAPI_SERVER_VARIABLE)) {
+    length += serverDefault(name!).length - placeholder.length;
+  }
+  if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
+    throw new ConnectionSetupError(
+      `OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`,
+    );
+  }
+  const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
+    serverDefault(name),
+  );
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
-    throw new Error("OpenAPI document has no paths");
+    throw new ConnectionSetupError("OpenAPI document has no paths");
   }
   const refs: OpenApiRefs = { document, size: 0, literalSizes: new Map() };
   const operations: ApiOperation[] = [];
@@ -585,6 +629,8 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       const queryParameters: string[] = [];
+      const commaSeparatedQueryParameters: string[] = [];
+      const formObjectQueryParameters: string[] = [];
       const headerParameters: string[] = [];
       for (const parameter of openApiParameters(
         document,
@@ -598,10 +644,26 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
           typeof parameter.description === "string"
             ? { ...schema, description: parameter.description }
             : schema;
-        if (parameter.in === "query") queryParameters.push(parameter.name);
+        if (parameter.in === "query") {
+          queryParameters.push(parameter.name);
+          if (
+            (parameter.style === undefined || parameter.style === "form") &&
+            schema.type === "object"
+          ) {
+            formObjectQueryParameters.push(parameter.name);
+          }
+          if (
+            (parameter.style === undefined || parameter.style === "form") &&
+            parameter.explode === false
+          ) {
+            commaSeparatedQueryParameters.push(parameter.name);
+          }
+        }
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
-            throw new Error(`OpenAPI operation ${id} contains unsafe header ${parameter.name}`);
+            throw new ConnectionSetupError(
+              `OpenAPI operation ${id} contains unsafe header ${parameter.name}`,
+            );
           }
           headerParameters.push(parameter.name);
         }
@@ -633,6 +695,8 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         },
         readOnly: method === "get",
         queryParameters,
+        ...(formObjectQueryParameters.length > 0 ? { formObjectQueryParameters } : {}),
+        ...(commaSeparatedQueryParameters.length > 0 ? { commaSeparatedQueryParameters } : {}),
         headerParameters,
       });
       if (operations.length >= 100) break;
@@ -640,7 +704,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     if (operations.length >= 100) break;
   }
   if (operations.length === 0) {
-    throw new Error("OpenAPI document has no operations with operationId");
+    throw new ConnectionSetupError("OpenAPI document has no operations with operationId");
   }
   return { baseUrl, operations };
 }
@@ -933,7 +997,7 @@ function connectorHeaders(
   const headers = { ...config.headers };
   if (!credential || config.auth.type === "none") return headers;
   const name = config.auth.type === "header" ? config.auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
+  if (!name) throw new ConnectionSetupError("Authentication header name is required");
   headers[name] = config.auth.type === "bearer" ? `Bearer ${credential}` : credential;
   return headers;
 }
@@ -971,8 +1035,13 @@ async function executeApiOperation(
   if (operation.method === "GET" || (operation.method === "DELETE" && !declaredDeleteBody)) {
     for (const [key, value] of Object.entries(args)) {
       if (consumed.has(key) || value == null) continue;
+      if (appendFormQueryObject(url, operation, key, value)) continue;
       if (Array.isArray(value)) {
-        for (const item of value) url.searchParams.append(key, String(item));
+        if (operation.commaSeparatedQueryParameters?.includes(key)) {
+          url.searchParams.set(key, value.map(String).join(","));
+        } else {
+          for (const item of value) url.searchParams.append(key, String(item));
+        }
       } else if (typeof value !== "object") {
         url.searchParams.set(key, String(value));
       }
@@ -982,8 +1051,13 @@ async function executeApiOperation(
       const value = args[key];
       consumed.add(key);
       if (value == null) continue;
+      if (appendFormQueryObject(url, operation, key, value)) continue;
       if (Array.isArray(value)) {
-        for (const item of value) url.searchParams.append(key, String(item));
+        if (operation.commaSeparatedQueryParameters?.includes(key)) {
+          url.searchParams.set(key, value.map(String).join(","));
+        } else {
+          for (const item of value) url.searchParams.append(key, String(item));
+        }
       } else {
         url.searchParams.set(key, String(value));
       }
@@ -1024,6 +1098,31 @@ async function executeApiOperation(
   } finally {
     await safeFetch.close().catch(() => undefined);
   }
+}
+
+/** Only imported form objects opt in; older installs keep their historical encoding. */
+function appendFormQueryObject(
+  url: URL,
+  operation: ApiOperation,
+  key: string,
+  value: unknown,
+): boolean {
+  if (!operation.formObjectQueryParameters?.includes(key)) return false;
+  const object = asRecord(value);
+  if (!object) return false;
+  const entries = Object.entries(object);
+  if (entries.some(([, field]) => field !== null && typeof field === "object")) {
+    throw new Error(`Query parameter ${key} must be a flat object`);
+  }
+  if (operation.commaSeparatedQueryParameters?.includes(key)) {
+    url.searchParams.set(
+      key,
+      entries.flatMap(([name, field]) => [name, String(field ?? "")]).join(","),
+    );
+  } else {
+    for (const [name, field] of entries) url.searchParams.append(name, String(field ?? ""));
+  }
+  return true;
 }
 
 function joinApiUrl(baseUrl: string, path: string): URL {

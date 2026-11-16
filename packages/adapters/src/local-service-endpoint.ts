@@ -12,6 +12,7 @@ import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
 import { createPrivateNetworkFetch, isPrivateRemoteMcpHostname } from "./remote-mcp.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
+import { withAbort } from "./web-ssrf.js";
 
 /**
  * Self-hosted ("local") memory services: a loopback or private-network endpoint the
@@ -20,6 +21,7 @@ import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-pr
 
 const LOCAL_NETWORK_ERROR = "Local mode requires a loopback or private-network address.";
 const BLOCKED_TARGET_ERROR = "Local mode cannot target a blocked address.";
+const LOCAL_DNS_TIMEOUT_MS = 10_000;
 
 export interface LocalServiceConnection {
   baseUrl: string;
@@ -86,7 +88,7 @@ export function assertLocalServiceBaseUrlSync(baseUrl: string): void {
 
 /**
  * Local mode accepts loopback or a private-network host (Compose DNS, RFC1918, LAN suffixes).
- * Public hosts stay rejected. Private hosts require operator authorization.
+ * Public hosts stay rejected. Loopback and private hosts require operator authorization.
  * Returns the pinned addresses for a hostname, or undefined when the host needs no DNS pin.
  */
 export async function pinLocalServiceHost(
@@ -94,19 +96,23 @@ export async function pinLocalServiceHost(
   options: {
     allowPrivateEndpoint?: boolean;
     resolveHostname?: ResolveHostname;
+    signal?: AbortSignal;
   } = {},
 ): Promise<ResolvedAddress[] | undefined> {
   assertLocalServiceBaseUrlSync(baseUrl);
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
-  if (isLocalhostOrLoopbackIp(host)) return undefined;
   if (options.allowPrivateEndpoint !== true) {
     throw egressRefused(host, new MemoryProviderPrivateEndpointRequiredError());
   }
+  if (isLocalhostOrLoopbackIp(host)) return undefined;
   if (ipVersion(host) !== 0) return undefined;
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   let addresses: ResolvedAddress[];
   try {
-    addresses = await resolve(host);
+    addresses = await withAbort(
+      resolve(host),
+      options.signal ?? AbortSignal.timeout(LOCAL_DNS_TIMEOUT_MS),
+    );
   } catch {
     throw new Error(LOCAL_NETWORK_ERROR);
   }
@@ -229,17 +235,18 @@ export class LocalServiceHost {
   ) {}
 
   /** Returns why the host is unusable, or null once it has been checked. */
-  async block(): Promise<string | null> {
+  async block(signal?: AbortSignal): Promise<string | null> {
     // One successful check per provider. Repeating it would let a DNS blip block
     // a host this provider already reached, and multi-request recall would redo it.
     if (this.hostReady) return null;
     this.pinTask ??= this.resolvePin();
     try {
-      await this.pinTask;
+      await withAbort(this.pinTask, signal);
       this.hostReady = true;
       return null;
     } catch (error) {
-      this.pinTask = undefined;
+      // Caller cancellation must not discard a still-bounded pin shared by other requests.
+      if (!signal?.aborted) this.pinTask = undefined;
       return error instanceof Error ? error.message : BLOCKED_TARGET_ERROR;
     }
   }

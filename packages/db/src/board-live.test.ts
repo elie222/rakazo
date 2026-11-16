@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { createBoardEvents } from "./board-live.js";
 
@@ -24,7 +25,7 @@ describe("createBoardEvents", () => {
     const events = createBoardEvents(fanout as never);
     const iterator = events.follow("space-1")[Symbol.asyncIterator]();
     const pending = iterator.next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     await events.notify("space-2", { ticketId: "other" });
     await events.notify("space-1", { boardId: "board-1", ticketId: "ticket-1" });
 

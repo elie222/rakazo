@@ -10,16 +10,17 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import {
   readVoiceAudio,
   readVoiceJson,
   speechUploadName,
-  voiceDeadline,
   voiceErrorDetail,
   voiceLanguageHint,
   voiceRequestError,
   voiceUnreachable,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 export const XAI_VOICE_PROVIDER_ID = "xai";
 const API = "https://api.x.ai/v1";
@@ -43,7 +44,7 @@ export class XaiVoiceProvider implements VoiceProvider {
     try {
       const res = await fetch(`${API}/tts/voices`, {
         headers: { authorization: `Bearer ${apiKey}` },
-        signal: voiceDeadline(context.signal, 20_000),
+        signal: deadlineSignal(20_000, context.signal),
       });
       if (res.ok) return { ok: true };
       const error = xaiRequestError(res.status, "checking that key", await readVoiceJson(res));
@@ -60,7 +61,7 @@ export class XaiVoiceProvider implements VoiceProvider {
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
     const res = await fetch(`${API}/tts/voices`, {
       headers: { authorization: `Bearer ${apiKey}` },
-      signal: voiceDeadline(context.signal, 20_000),
+      signal: deadlineSignal(20_000, context.signal),
     });
     if (!res.ok) throw xaiRequestError(res.status, "listing voices", await readVoiceJson(res));
     const body = await readVoiceJson(res, { requireValid: true });
@@ -80,7 +81,7 @@ export class XaiVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const res = await fetch(`${API}/tts`, {
       method: "POST",
       headers: {
@@ -116,7 +117,7 @@ export class XaiVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { authorization: `Bearer ${request.apiKey}` },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw xaiRequestError(res.status, "transcribing", body);
@@ -136,3 +137,13 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
     status = 402;
   return voiceRequestError(status, PROVIDER, what, body);
 }
+
+export const xaiVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "xAI",
+    description: "Expressive Grok voices and transcription, with a key or a Grok sign-in.",
+    transcribe: true,
+    modelConnection: true,
+  },
+  create: () => new XaiVoiceProvider(),
+};

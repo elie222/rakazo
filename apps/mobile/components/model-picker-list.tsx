@@ -1,9 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
 import { useNavigation } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ListViewToken } from "react-native";
 import {
   AccessibilityInfo,
@@ -14,7 +23,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -46,7 +56,8 @@ export function ModelPickerList({
 }) {
   const { t } = useLingui();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const headerInset = useFloatingHeaderInset();
@@ -58,16 +69,24 @@ export function ModelPickerList({
     retried: false,
     target: null as { sectionIndex: number; itemIndex: number; key: string } | null,
   });
-  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [retryingScroll, setRetryingScroll] = useState(false);
   const cancelInitialScroll = useCallback(() => {
     initialScroll.current.cancelled = true;
-    if (retry.current !== null) clearTimeout(retry.current);
+    setRetryingScroll(false);
   }, []);
-  useEffect(
-    () => () => {
-      if (retry.current !== null) clearTimeout(retry.current);
+  useTimeout(
+    () => {
+      const state = initialScroll.current;
+      if (!state.cancelled && state.target) {
+        list.current?.scrollToLocation({
+          sectionIndex: state.target.sectionIndex,
+          itemIndex: state.target.itemIndex,
+          viewPosition: 0.5,
+          animated: false,
+        });
+      }
     },
-    [],
+    retryingScroll ? 100 : null,
   );
   const rows = [
     ...(choices ?? []).map((choice) => ({ choice, connect: false })),
@@ -177,16 +196,7 @@ export function ModelPickerList({
       list.current
         ?.getScrollResponder()
         ?.scrollTo({ y: averageItemLength * index, animated: false });
-      retry.current = setTimeout(() => {
-        if (!state.cancelled && state.target) {
-          list.current?.scrollToLocation({
-            sectionIndex: state.target.sectionIndex,
-            itemIndex: state.target.itemIndex,
-            viewPosition: 0.5,
-            animated: false,
-          });
-        }
-      }, 100);
+      setRetryingScroll(true);
     },
     [],
   );
@@ -209,10 +219,10 @@ export function ModelPickerList({
       style={[styles.screen, sideInsets]}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: headerInset + 16, paddingBottom: insets.bottom + 72 },
+        { paddingTop: headerInset + 16, paddingBottom: contentBottomInset + 72 },
       ]}
       // Reserve the transparent bar explicitly: native search can drop its automatic inset.
-      automaticallyAdjustKeyboardInsets
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       contentInsetAdjustmentBehavior={headerInset > 0 ? "never" : "automatic"}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"

@@ -1,4 +1,5 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startHourlySweep } from "./hourly-sweep.js";
 import { unsubscribeUrl } from "./marketing-email.js";
@@ -102,24 +103,22 @@ describe("day-one referral email", () => {
 
   it("runs at startup and hourly without overlapping sweeps, aborting the running one on stop", async () => {
     vi.useFakeTimers();
-    let finish: () => void = () => {};
-    const sweep = vi.fn(
-      (_signal: AbortSignal) =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let running = deferred();
+    const sweep = vi.fn((_signal: AbortSignal) => {
+      running = deferred();
+      return running.promise;
+    });
     const stop = startHourlySweep(sweep, vi.fn());
     expect(sweep).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(sweep).toHaveBeenCalledTimes(1);
-    finish();
+    running.resolve();
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(sweep).toHaveBeenCalledTimes(2);
     const signal = sweep.mock.calls[1]![0];
     const stopped = stop();
     expect(signal.aborted).toBe(true);
-    finish();
+    running.resolve();
     await stopped;
   });
 });

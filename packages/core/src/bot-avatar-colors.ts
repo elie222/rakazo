@@ -48,14 +48,14 @@ export function resolvePersonaColorDef(
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
 }
 
-/** WCAG AA contrast for body text. */
-const BUBBLE_TEXT_CONTRAST = 4.5;
+/** Enough for white text while keeping the bubble close to the avatar's color. */
+const BUBBLE_TEXT_CONTRAST = 3;
 const LIGHT_TEXT = "#FFFFFF";
 
 /**
- * Your messages in a bot's chat wear that bot's color under white text, deepened just enough for
- * AA contrast. The color darkens in OKLCH so it keeps its hue and saturation instead of turning
- * muddy. Photo and white avatars keep the neutral bubble.
+ * Your messages in a bot's chat wear that bot's color under white text, deepened only as far as
+ * 3:1 contrast so the bubble still matches the avatar. The color darkens in OKLCH so it keeps its
+ * hue and saturation instead of turning muddy. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,

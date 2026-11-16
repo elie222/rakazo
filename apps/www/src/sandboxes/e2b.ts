@@ -3,20 +3,20 @@ import {
   E2B_CREDIT,
   E2B_PRO_FEE,
   E2B_STOCK_SIZE,
+  homepage,
+  hourly,
   METHOD_NOTE,
   MONTH_HOURS,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
+  perSecondUsd,
   RATES,
   RUNTIME_DOC,
-  WORKDAY_HOURS,
-  hourly,
-  homepage,
-  monthly,
-  perSecondUsd,
   rateUsd,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -34,8 +34,7 @@ export const e2b: Sandbox = {
   keeps: "Its files, paused with the computer",
   bestFor: "Public or multi-user deployments",
   title: "E2B pricing, limits and alternatives in 2026: E2B vs Daytona, Modal and Vercel",
-  description:
-    `E2B sandbox pricing explained: the free tier, the $${E2B_PRO_FEE} Pro plan, per-second rates and what an AI agent's desktop really costs a month. Plus E2B vs Daytona, Modal and Vercel, and how Rakazo runs bots on E2B.`,
+  description: `E2B sandbox pricing explained: the free tier, the $${E2B_PRO_FEE} Pro plan, per-second rates and what an AI agent's desktop really costs a month. Plus E2B vs Daytona, Modal and Vercel, and how Rakazo runs bots on E2B.`,
   h1: "E2B for AI agents: pricing, limits and alternatives",
   intro: [
     "[E2B](https://e2b.dev) is an open source cloud for running AI agents in isolated sandboxes. Each sandbox is a small Linux virtual machine in E2B's cloud, so agent code and commands never run on your own server.",
@@ -93,7 +92,10 @@ export const e2b: Sandbox = {
               "100, or 600 and 1,100 with add-ons at $650 and $1,150 a month",
             ],
           },
-          { topic: "Enterprise", cells: ["Custom, $3,000 monthly minimum", "Custom", "Custom", "Custom"] },
+          {
+            topic: "Enterprise",
+            cells: ["Custom, $3,000 monthly minimum", "Custom", "Custom", "Custom"],
+          },
         ],
         note: `${PRICES_NOTE} Hobby includes 10 GiB of disk per sandbox and Pro 20 GiB. E2B has no GPU sandboxes. Source: [E2B pricing](https://e2b.dev/pricing).`,
       },
@@ -105,9 +107,7 @@ export const e2b: Sandbox = {
     },
     {
       heading: "What a Rakazo computer costs on E2B",
-      paragraphs: [
-        `${METHOD_NOTE} Rakazo's \`rakazo-computer\` template is exactly that size.`,
-      ],
+      paragraphs: [`${METHOD_NOTE} Rakazo's \`rakazo-computer\` template is exactly that size.`],
       table: {
         caption: "One 2 vCPU / 4 GB computer on E2B",
         columns: ["How long it runs", "On Hobby", "On Pro"],

@@ -1,5 +1,6 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
 
 /**
@@ -37,11 +38,7 @@ export function useSecretSheetClose(
     if (text === "") finishClosing();
   }
 
-  useEffect(() => {
-    if (!closing) return;
-    const timer = setTimeout(finishClosing, 500);
-    return () => clearTimeout(timer);
-  }, [closing]);
+  useTimeout(finishClosing, closing ? 500 : null);
 
   return { close, closing, endEditing };
 }

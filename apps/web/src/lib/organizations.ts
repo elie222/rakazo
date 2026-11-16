@@ -115,3 +115,11 @@ export function switchOrganization(
     openSpaceChat,
   );
 }
+
+/** An organization's members and, for its owner and admins, pending invitations. */
+export function organizationMembersQuery(userId: string | null, organizationId: string) {
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "organizations", organizationId, "members"],
+    queryFn: () => rpc.organizations.members.list({ organizationId }),
+  });
+}

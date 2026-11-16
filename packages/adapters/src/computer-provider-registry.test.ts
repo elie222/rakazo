@@ -5,6 +5,7 @@ import {
   computerProviderDescriptors,
   computerProviderRegistry,
 } from "./computer-provider-registry.js";
+import { computerProviders } from "./computer-providers.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
 // Every descriptor uses this same offline suite. No credentials or vendor connections are needed.
@@ -64,6 +65,14 @@ describe.each(computerProviderRegistry)("$id settings conformance", (descriptor)
     const provider = await createSandboxProvider(descriptor.id, descriptor.verify(validValues()));
     expect(provider.describe().id).toBe(descriptor.id);
   });
+});
+
+it("sets every Settings field through the same environment binding the deployment reads", () => {
+  for (const definition of Object.values(computerProviders)) {
+    for (const field of definition.settings?.fields ?? []) {
+      expect(definition.env).toHaveProperty(field.option);
+    }
+  }
 });
 
 it("only offers declared account providers", () => {

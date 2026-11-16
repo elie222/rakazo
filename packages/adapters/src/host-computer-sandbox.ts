@@ -8,6 +8,7 @@ import type {
   SandboxProvider,
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { describeDesktopSandbox } from "./desktop-sandbox.js";
 import type {
@@ -19,6 +20,7 @@ import {
   HOST_COMPUTER_MAX_BYTES,
   HOST_COMPUTER_MAX_FILE_BYTES,
   hostComputerDeadlineMs,
+  hostComputerFileTooLargeLimit,
 } from "./host-computer-protocol.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
@@ -77,7 +79,12 @@ export class HostComputerSandbox implements SandboxProvider {
             throw new Error("Local computer response is too large");
           const frame = JSON.parse(pending.slice(0, newline)) as HostComputerFrame<T>;
           pending = pending.slice(newline + 1);
-          if ("error" in frame) throw new Error(frame.error);
+          if ("error" in frame) {
+            const maxBytes = hostComputerFileTooLargeLimit(frame.error);
+            throw maxBytes === undefined
+              ? new Error(frame.error)
+              : new SandboxFileTooLargeError(maxBytes);
+          }
           if ("heartbeat" in frame) {
             newline = pending.indexOf("\n");
             continue;
@@ -98,6 +105,17 @@ export class HostComputerSandbox implements SandboxProvider {
       if (!signal.aborted) await cancellation;
       reader.releaseLock();
     }
+  }
+  /** One request outside a computer's lifecycle, such as screen control of this computer. */
+  stream<T>(input: HostComputerRequest, signal: AbortSignal): AsyncIterable<T> {
+    return this.request<T>(input, {
+      operationId: "host-computer",
+      traceId: "host-computer",
+      spaceId: "local",
+      userId: "local",
+      runId: input.runId,
+      signal,
+    });
   }
   private async one<T>(input: HostComputerRequest, context: AdapterContext): Promise<T> {
     let result: T | undefined;

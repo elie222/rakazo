@@ -197,7 +197,7 @@ function MarkdownPre({
     const fence = start === undefined ? "" : streamingSource.slice(start, end);
     const opening = fence.match(/^(`{3,}|~{3,})/);
     const lastLine = fence.slice(fence.lastIndexOf("\n") + 1);
-    const closing = lastLine.match(/^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})[ \t]*$/);
+    const closing = lastLine.match(/^(?:[ \t]*>)*[ \t]*(`{3,}|~{3,})[ \t]*$/);
     if (
       !fence.includes("\n") ||
       !opening?.[1] ||

@@ -1,5 +1,8 @@
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
+import { ContextMenu } from "@rakazo/ui-web";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import type { createSpaceRpc } from "../../lib/rpc";
 import type { ShellDialogsState } from "./shell-dialogs";
@@ -12,7 +15,57 @@ const BotContextMenu = lazyOverlay(() =>
 
 type ChatRead = ReturnType<typeof useChatRead>;
 
-/** The right-click menu for a bot or group in the roster. */
+export type ChatMenuTarget = { kind: "bot" | "group"; id: string };
+
+/** Which chat's right-click menu is open, shared by the roster and search results. */
+export type ChatMenuState = {
+  menu: ChatMenuTarget | null;
+  setMenu: Dispatch<SetStateAction<ChatMenuTarget | null>>;
+  content: ReactNode;
+  /** Whether the menu can act on this chat. */
+  has: (target: ChatMenuTarget) => boolean;
+};
+
+/** Opens the shared chat menu when its trigger child is right-clicked. */
+export function ChatMenu({
+  target,
+  state,
+  disabled,
+  children,
+}: {
+  target: ChatMenuTarget;
+  state: ChatMenuState;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const { menu, setMenu, content } = state;
+  const { kind, id } = target;
+  const open = menu?.kind === kind && menu.id === id;
+  // The menu doesn't report closing when it unmounts open, such as when new search results
+  // replace this row; release it so it can't reopen on its own later.
+  useEffect(() => {
+    if (!open) return;
+    return () =>
+      setMenu((current) => (current?.kind === kind && current.id === id ? null : current));
+  }, [open, kind, id, setMenu]);
+  return (
+    <ContextMenu
+      disabled={disabled}
+      open={open}
+      // A sibling row's menu may already own the state; only clear our own.
+      onOpenChange={(next) =>
+        setMenu((current) =>
+          next ? { kind, id } : current?.kind === kind && current.id === id ? null : current,
+        )
+      }
+    >
+      {children}
+      {open ? <Suspense fallback={null}>{content}</Suspense> : null}
+    </ContextMenu>
+  );
+}
+
+/** The right-click menu for a bot or group in the roster or search results. */
 export function ChatContextMenu({
   rpc,
   bot,

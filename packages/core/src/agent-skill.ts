@@ -1,10 +1,14 @@
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { formatForcedSkillPrompt } from "./agent-skill.prompt.js";
+import { ClientError } from "./client-error.js";
+
 /**
- * Claude Agent Skills: reusable SKILL.md recipes shared across assistants.
- * The Pi runtime already understands this format; we persist and inject them.
+ * Skills: reusable how-to recipes written as SKILL.md files.
  * Distinct from taught skills (demo/record playbooks on a single bot).
  */
 
 const FRONTMATTER_FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const MAX_FRONTMATTER_DEPTH = 32;
 
 export type SkillSource = "user" | "builtin" | "plugin";
 
@@ -14,7 +18,7 @@ export type ParsedSkillMd = {
   body: string;
   /**
    * All frontmatter keys as parsed scalars/structures. Unknown keys are preserved
-   * so Claude Agent Skills with extra fields round-trip safely.
+   * so skills with extra fields round-trip safely.
    */
   frontmatter: Record<string, unknown>;
 };
@@ -31,7 +35,7 @@ export type SkillRecord = SkillCatalogEntry & {
   content: string;
 };
 
-const FORCE_SKILL_PREFIX = /^(?:\/|use\s+skill:\s*)(.+?)(?:\n|$)/i;
+const FORCE_SKILL_PREFIX = /^(?:\/|use\s+skill:\s*)([^\n]*)/i;
 const ROUTINE_SKILL_STOP = new Set([
   "then",
   "and",
@@ -72,14 +76,18 @@ export function parseSkillMd(content: string): ParsedSkillMd | { error: string }
   const body = trimmed.slice(match[0].length).replace(/^\r?\n/, "");
   let frontmatter: Record<string, unknown>;
   try {
-    frontmatter = parseSimpleYamlObject(frontmatterText);
+    const parsed = parseSkillFrontmatter(`${frontmatterText}\n`);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("SKILL.md frontmatter must be a YAML object.");
+    }
+    frontmatter = parsed as Record<string, unknown>;
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Invalid SKILL.md frontmatter.",
     };
   }
-  const name = stringifyScalar(frontmatter.name).trim();
-  const description = stringifyScalar(frontmatter.description).trim();
+  const name = stringifySkillField(frontmatter.name);
+  const description = stringifySkillField(frontmatter.description);
   if (!name) return { error: "SKILL.md frontmatter requires name." };
   if (!description) return { error: "SKILL.md frontmatter requires description." };
   if (name.length > 80) return { error: "Skill name must be at most 80 characters." };
@@ -87,6 +95,134 @@ export function parseSkillMd(content: string): ParsedSkillMd | { error: string }
     return { error: "Skill description must be at most 2000 characters." };
   }
   return { name, description, body, frontmatter };
+}
+
+function parseSkillFrontmatter(text: string): unknown {
+  text = text.replace(/^(name|description):[ \t]+null[ \t]*$/gm, '$1: "null"');
+  const options = { maxAliasCount: 100, stringKeys: true, uniqueKeys: false } as const;
+  try {
+    const parsed = parseYaml(text, options);
+    assertSafeFrontmatter(parsed);
+    return parsed;
+  } catch (error) {
+    let blockIndent: number | undefined;
+    const repaired = text
+      .split("\n")
+      .map((line) => {
+        const indent = line.length - line.trimStart().length;
+        if (blockIndent !== undefined && (!line.trim() || indent > blockIndent)) return line;
+        blockIndent = undefined;
+        const colon = line.indexOf(":");
+        const header = colon < 0 ? "" : line.slice(colon + 1).trim();
+        const comment = header.indexOf("#");
+        const separatedComment =
+          comment > 0 && (header[comment - 1] === " " || header[comment - 1] === "\t");
+        const indicator = separatedComment ? header.slice(0, comment).trimEnd() : header;
+        if (/^[>|][1-9+-]*$/.test(indicator)) {
+          blockIndent = indent;
+          return line;
+        }
+        const normalized = line.replace(/^[ \t]+/, (prefix) => prefix.replaceAll("\t", "  "));
+        return repairUnknownStringEscapes(quoteLegacyColonScalars(repairLegacyFields(normalized)));
+      })
+      .join("\n");
+    if (repaired === text) throw error;
+    const parsed = parseYaml(repaired, options);
+    assertSafeFrontmatter(parsed);
+    return parsed;
+  }
+}
+
+function repairLegacyFields(text: string): string {
+  return text.replace(
+    /^(name|description):[ \t]+([^\r\n]+)$/gm,
+    (line, key: string, value: string) => {
+      if (/^["'>|]/.test(value)) return line;
+      try {
+        parseYaml(value);
+        return line;
+      } catch {
+        return `${key}: ${JSON.stringify(value)}`;
+      }
+    },
+  );
+}
+
+function quoteLegacyColonScalars(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const colon = line.indexOf(":");
+      if (colon < 0 || !/^[ \t]*(?:-[ \t]+)?[A-Za-z_][\w-]*$/.test(line.slice(0, colon)))
+        return line;
+      let start = colon + 1;
+      while (line[start] === " " || line[start] === "\t") start++;
+      if (start === colon + 1) return line;
+      const value = line.slice(start);
+      if (/^["'{[|>!&*?]/.test(value) || !/:[ \t]/.test(value)) return line;
+      return `${line.slice(0, start)}${JSON.stringify(value)}`;
+    })
+    .join("\n");
+}
+
+function repairUnknownStringEscapes(text: string): string {
+  try {
+    parseYaml(text);
+    return text;
+  } catch {
+    // Only invalid YAML needs compatibility repair; valid scalars keep literal backslashes.
+  }
+  const parts: string[] = [];
+  let start = 0;
+  let quote = -1;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === "\n" || char === "\r") quote = -1;
+    else if (quote >= 0 && char === "\\") index++;
+    else if (char === '"') {
+      if (quote < 0) quote = index;
+      else {
+        parts.push(text.slice(start, quote));
+        parts.push(
+          text
+            .slice(quote, index + 1)
+            .replace(
+              /\\(?:["\\/0abtnvfreN_LP]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})|\\/g,
+              (sequence) => (sequence.length === 1 ? `${sequence}${sequence}` : sequence),
+            ),
+        );
+        start = index + 1;
+        quote = -1;
+      }
+    }
+  }
+  parts.push(text.slice(start));
+  return parts.join("");
+}
+
+function assertSafeFrontmatter(value: unknown): void {
+  const ancestors = new Set<object>();
+  const checkedDepth = new Map<object, number>();
+  const visit = (current: unknown, depth: number) => {
+    if (depth > MAX_FRONTMATTER_DEPTH) {
+      throw new ClientError("BAD_REQUEST", "SKILL.md frontmatter is nested too deeply.");
+    }
+    if (current === null || typeof current !== "object") return;
+    if (ancestors.has(current)) {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "SKILL.md frontmatter cannot contain recursive YAML aliases.",
+      );
+    }
+    if ((checkedDepth.get(current) ?? -1) >= depth) return;
+    checkedDepth.set(current, depth);
+    ancestors.add(current);
+    for (const child of Array.isArray(current) ? current : Object.values(current)) {
+      visit(child, depth + 1);
+    }
+    ancestors.delete(current);
+  };
+  visit(value, 0);
 }
 
 /** Build SKILL.md, preserving unknown frontmatter keys from a prior parse. */
@@ -98,48 +234,28 @@ export function buildSkillMd(input: {
 }): string {
   const name = input.name.trim();
   const description = input.description.trim();
-  if (!name) throw new Error("Skill name is required.");
-  if (!description) throw new Error("Skill description is required.");
-  if (name.length > 80) throw new Error("Skill name must be at most 80 characters.");
+  if (!name) throw new ClientError("BAD_REQUEST", "Skill name is required.");
+  if (!description) throw new ClientError("BAD_REQUEST", "Skill description is required.");
+  if (name.length > 80) {
+    throw new ClientError("BAD_REQUEST", "Skill name must be at most 80 characters.");
+  }
   if (description.length > 2000) {
-    throw new Error("Skill description must be at most 2000 characters.");
+    throw new ClientError("BAD_REQUEST", "Skill description must be at most 2000 characters.");
   }
   const merged: Record<string, unknown> = { ...(input.frontmatter ?? {}) };
   merged.name = name;
   merged.description = description;
+  assertSafeFrontmatter(merged);
   // Stable order: name, description, then remaining keys alphabetically.
   const rank = (key: string) => (key === "name" ? 0 : key === "description" ? 1 : 2);
   const keys = Object.keys(merged).sort((a, b) => {
     const diff = rank(a) - rank(b);
     return diff !== 0 ? diff : a.localeCompare(b);
   });
-  const lines = keys.map((key) => formatYamlLine(key, merged[key]));
+  const ordered = Object.fromEntries(keys.map((key) => [key, merged[key]]));
+  const frontmatter = stringifyYaml(ordered, { indent: 2, lineWidth: 0 }).replace(/\n$/, "");
   const body = input.body.replace(/^\r?\n/, "");
-  return `---\n${lines.join("\n")}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
-}
-
-export function skillCatalogLine(entry: Pick<SkillCatalogEntry, "name" | "description">): string {
-  return `- ${entry.name}: ${entry.description}`;
-}
-
-export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): string | undefined {
-  if (entries.length === 0) return undefined;
-  const lines = entries.slice(0, 50).map(skillCatalogLine).join("\n");
-  return [
-    "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
-    lines,
-    "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
-    "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
-    "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
-    "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
-  ].join("\n");
-}
-
-export function formatForcedSkillPrompt(name: string, content: string, rest?: string): string {
-  const parts = [`Use skill: ${name}`, "", content.trim()];
-  const trailing = rest?.trim();
-  if (trailing) parts.push("", trailing);
-  return parts.join("\n");
+  return `---\n${frontmatter}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
 }
 
 /** Detect a composer-forced skill (`/Name` or `Use skill: Name`) at the start of a prompt. */
@@ -322,277 +438,6 @@ function stringifyScalar(value: unknown): string {
   return "";
 }
 
-type YamlBlockScalarHeader = {
-  style: "|" | ">";
-  chomp: "clip" | "strip" | "keep";
-  indent: number | null;
-};
-
-function parseYamlBlockScalarHeader(raw: string): YamlBlockScalarHeader | null {
-  const match = /^([>|])(?:([1-9]\d*)([+-]?)|([+-])([1-9]\d*)?)?(?:[ \t]+(?:#.*)?)?$/.exec(raw);
-  if (!match) return null;
-  const style = match[1] as "|" | ">";
-  const indentToken = match[2] ?? match[5] ?? "";
-  const chompToken = match[3] || match[4] || "";
-  const chomp = chompToken === "+" ? "keep" : chompToken === "-" ? "strip" : "clip";
-  const indent = indentToken ? Number(indentToken) : null;
-  return { style, chomp, indent };
-}
-
-function leadingSpaces(line: string): number {
-  const match = /^( *)/.exec(line);
-  return match?.[1]?.length ?? 0;
-}
-
-function decodeYamlBlockScalar(rawLines: string[], header: YamlBlockScalarHeader): string {
-  let indent = header.indent;
-  if (indent == null) {
-    indent = 0;
-    for (const line of rawLines) {
-      if (line.trim() === "") continue;
-      const spaces = leadingSpaces(line);
-      if (indent === 0 || spaces < indent) indent = spaces;
-    }
-  }
-
-  const contentLines = rawLines.map((line) => {
-    if (line.trim() === "") return "";
-    if (leadingSpaces(line) < indent!) return line.trimStart();
-    return line.slice(indent!);
-  });
-
-  // Count trailing blank lines before they are folded away for chomp=keep.
-  let trailingBlanks = 0;
-  for (let i = contentLines.length - 1; i >= 0; i -= 1) {
-    if (contentLines[i] !== "") break;
-    trailingBlanks += 1;
-  }
-
-  let text: string;
-  if (header.style === "|") {
-    text = contentLines.join("\n");
-  } else {
-    // Folded (YAML 1.2 §8.1.3): same-indent lines join with spaces; empty source
-    // lines become paragraph breaks; more-indented lines stay literal. Parts are
-    // always joined with "\n" so folded paragraphs and indented fragments keep
-    // line-break separation (never concatenated into one folded run).
-    const parts: string[] = [];
-    let paragraph: string[] = [];
-    const flush = () => {
-      if (paragraph.length === 0) return;
-      parts.push(paragraph.join(" "));
-      paragraph = [];
-    };
-    for (const line of contentLines) {
-      if (line === "") {
-        flush();
-        parts.push("");
-        continue;
-      }
-      if (/^ /.test(line)) {
-        flush();
-        parts.push(line);
-        continue;
-      }
-      paragraph.push(line);
-    }
-    flush();
-    text = parts.join("\n");
-  }
-
-  if (header.chomp === "strip") {
-    return text.replace(/\n+$/, "");
-  }
-  if (header.chomp === "keep") {
-    if (trailingBlanks === 0) return text.endsWith("\n") ? text : `${text}\n`;
-    const stripped = text.replace(/\n+$/, "");
-    return `${stripped}\n${"\n".repeat(trailingBlanks)}`;
-  }
-  // clip: exactly one trailing newline when the block had content.
-  const stripped = text.replace(/\n+$/, "");
-  return stripped === "" ? "" : `${stripped}\n`;
-}
-
-/**
- * Minimal YAML object parser for SKILL.md frontmatter.
- * Supports scalars, folded/literal block scalars (`>`, `|`, `>-`, `|+`, `|2`, …),
- * inline arrays, and nested maps one level deep.
- * Unrecognized lines are kept as string values under their key when possible.
- */
-function parseSimpleYamlObject(text: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = text.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i] ?? "";
-    if (!line.trim() || line.trimStart().startsWith("#")) {
-      i += 1;
-      continue;
-    }
-    if (/^\s/.test(line)) {
-      throw new Error("Unexpected indented frontmatter line without a key.");
-    }
-    const keyed = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (!keyed) {
-      throw new Error(`Invalid frontmatter line: ${line}`);
-    }
-    const key = keyed[1]!;
-    const raw = keyed[2] ?? "";
-    const blockHeader = parseYamlBlockScalarHeader(raw);
-    if (blockHeader) {
-      const blockLines: string[] = [];
-      i += 1;
-      while (i < lines.length && (/^\s+/.test(lines[i] ?? "") || (lines[i] ?? "").trim() === "")) {
-        blockLines.push(lines[i] ?? "");
-        i += 1;
-      }
-      result[key] = decodeYamlBlockScalar(blockLines, blockHeader);
-      continue;
-    }
-    if (raw === "") {
-      // Nested map or list on following indented lines.
-      const nested: Record<string, unknown> = {};
-      const list: unknown[] = [];
-      let mode: "empty" | "map" | "list" = "empty";
-      i += 1;
-      while (i < lines.length && /^\s+/.test(lines[i] ?? "")) {
-        const nestedLine = (lines[i] ?? "").replace(/^\s+/, "");
-        const listItem = /^-\s+(.*)$/.exec(nestedLine);
-        if (listItem) {
-          mode = "list";
-          list.push(parseYamlScalar(listItem[1] ?? ""));
-          i += 1;
-          continue;
-        }
-        const nestedKey = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(nestedLine);
-        if (nestedKey) {
-          mode = "map";
-          nested[nestedKey[1]!] = parseYamlScalar(nestedKey[2] ?? "");
-          i += 1;
-          continue;
-        }
-        break;
-      }
-      result[key] = mode === "list" ? list : mode === "map" ? nested : "";
-      continue;
-    }
-    if (raw.startsWith("[") && raw.endsWith("]")) {
-      result[key] = splitYamlInlineArray(raw.slice(1, -1))
-        .map((part) => parseYamlScalar(part.trim()))
-        .filter((part) => part !== "");
-      i += 1;
-      continue;
-    }
-    result[key] = parseYamlScalar(raw);
-    i += 1;
-  }
-  return result;
-}
-
-function splitYamlInlineArray(raw: string): string[] {
-  const parts: string[] = [];
-  let start = 0;
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < raw.length; i += 1) {
-    const char = raw[i];
-    if (quote === '"' && char === "\\") {
-      i += 1;
-    } else if (quote === "'" && char === "'" && raw[i + 1] === "'") {
-      i += 1;
-    } else if (quote && char === quote) {
-      quote = null;
-    } else if (!quote && (char === '"' || char === "'") && raw.slice(start, i).trim() === "") {
-      quote = char;
-    } else if (!quote && char === ",") {
-      parts.push(raw.slice(start, i));
-      start = i + 1;
-    }
-  }
-  // Keep the prior behavior for malformed, unclosed quoted entries.
-  if (quote) return raw.split(",");
-  parts.push(raw.slice(start));
-  return parts;
-}
-
-function parseYamlScalar(raw: string): string | number | boolean {
-  const value = raw.trim();
-  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-    // Saves write double-quoted values with JSON.stringify. Decode them so the next save
-    // does not add another escape layer. Non-JSON escapes such as "C:\path" keep the slice.
-    try {
-      const decoded: unknown = JSON.parse(value);
-      if (typeof decoded === "string") return decoded;
-    } catch {
-      // Fall through to the slice below.
-    }
-    return value.slice(1, -1);
-  }
-  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
-    return value.slice(1, -1).replaceAll("''", "'");
-  }
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-  return value;
-}
-
-function formatYamlBlockScalar(key: string, value: string): string {
-  // Choose chomp so decodeYamlBlockScalar round-trips trailing newlines:
-  // strip (0), clip (1), keep (2+). Folded (`>`) style is not preserved — only the string value.
-  const trailing = /\n*$/.exec(value)?.[0].length ?? 0;
-  let indicator = "|";
-  let lines: string[];
-  if (trailing === 0) {
-    indicator = "|-";
-    lines = value.split("\n");
-  } else if (trailing === 1) {
-    indicator = "|";
-    lines = value.slice(0, -1).split("\n");
-  } else {
-    indicator = "|+";
-    const core = value.slice(0, -trailing);
-    // keep decoder yields 1 + trailingBlanks newlines; emit trailingBlanks blank lines.
-    lines = [...core.split("\n"), ...Array.from({ length: trailing - 1 }, () => "")];
-  }
-  const indented = lines.map((line) => `  ${line}`).join("\n");
-  return `${key}: ${indicator}\n${indented}`;
-}
-
-function formatYamlLine(key: string, value: unknown): string {
-  if (value === null || value === undefined) return `${key}:`;
-  if (typeof value === "string") {
-    if (value.includes("\n") || value.includes(": ")) {
-      return formatYamlBlockScalar(key, value);
-    }
-    if (
-      value === "" ||
-      /[#{}[\],&*?|>!%@`]/.test(value) ||
-      value !== value.trim() ||
-      value.startsWith('"') ||
-      value.startsWith("'") ||
-      typeof parseYamlScalar(value) !== "string"
-    ) {
-      return `${key}: ${JSON.stringify(value)}`;
-    }
-    return `${key}: ${value}`;
-  }
-  if (typeof value === "number" || typeof value === "boolean") return `${key}: ${value}`;
-  if (Array.isArray(value)) {
-    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
-      return `${key}: [${value.map((item) => JSON.stringify(String(item))).join(", ")}]`;
-    }
-    const items = value
-      .map((item) => `  - ${typeof item === "string" ? item : JSON.stringify(item)}`)
-      .join("\n");
-    return `${key}:\n${items}`;
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return `${key}:`;
-    const nested = entries
-      .map(([nestedKey, nestedValue]) => `  ${formatYamlLine(nestedKey, nestedValue)}`)
-      .join("\n");
-    return `${key}:\n${nested}`;
-  }
-  return `${key}: ${JSON.stringify(String(value))}`;
+function stringifySkillField(value: unknown): string {
+  return stringifyScalar(value).trim();
 }

@@ -156,9 +156,9 @@ describe("LocalAgentHomeStore path containment", () => {
     const { store, home } = await fixture();
     await writeFile(path.join(home, "large.txt"), "12345");
 
-    await expect(store.readFile("bot-1", "large.txt", context, { maxBytes: 4 })).rejects.toThrow(
-      /exceeds 4 bytes/,
-    );
+    await expect(
+      store.readFile("bot-1", "large.txt", context, { maxBytes: 4 }),
+    ).rejects.toMatchObject({ name: "SandboxFileTooLargeError", maxBytes: 4 });
   });
 
   it("allows symlinks whose resolved target stays inside the bot home", async () => {

@@ -21,32 +21,6 @@ export function narrationStatusLine(text: string): string {
     : `${line.slice(0, NARRATION_STATUS_MAX_LENGTH).trimEnd()}…`;
 }
 
-/**
- * How a message the person sends while the bot works reaches the model: it knows the message
- * came mid-task. The answer goes through message_user, because a plain-text answer ends the
- * turn and the task with it; without that tool it is only asked to take the message into account.
- */
-export function midTaskMessagePrompt(text: string, canMessageUser: boolean): string {
-  const next = canMessageUser
-    ? "If it asks something or changes the plan, answer briefly with message_user, then continue the task."
-    : "Take it into account and continue the task.";
-  return `The person sent this while you were working:\n\n${text}\n\n${next}`;
-}
-
-const MID_TASK_SOURCES = {
-  member: "another member of this chat",
-  messaging: "a connected chat",
-  webhook: "a webhook",
-} as const;
-
-/** A message from anyone else arrives labelled with where it came from, with no call to reply. */
-export function midTaskMessageFromPrompt(
-  text: string,
-  origin: keyof typeof MID_TASK_SOURCES | undefined,
-): string {
-  return `A message arrived from ${MID_TASK_SOURCES[origin ?? "member"]} while you were working:\n\n${text}`;
-}
-
 /** A mid-task message from the run's person restarts the interim budget at most this often. */
 export const STEERING_RESETS_MAX_PER_RUN = 3;
 export const STEERING_RESET_MIN_GAP_MS = 60_000;

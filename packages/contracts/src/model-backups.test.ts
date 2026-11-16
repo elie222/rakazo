@@ -8,6 +8,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -101,6 +102,20 @@ describe("connected backup model choices", () => {
     expect(offered(true)).not.toContain("custom-model");
     expect(offered(true)).not.toContain("hosted-vision");
   });
+  it.each([undefined, []])(
+    "keeps models with undeclared image support out of computer use (%j)",
+    (visionModelIds) => {
+      const local = {
+        ...credentials[1]!,
+        enabledModelIds: ["custom-model"],
+        visionModelIds,
+      };
+      expect(
+        connectedBackupOptions(catalog, [local], false).map((option) => option.modelId),
+      ).toContain("custom-model");
+      expect(connectedBackupOptions(catalog, [local], true)).toEqual([]);
+    },
+  );
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([
       {
@@ -292,6 +307,46 @@ describe("connected backup model choices", () => {
     expect(connectionDisplayName({ ...base, label: "openai-codex" }, "ChatGPT")).toBe("ChatGPT");
   });
 
+  it.each([
+    "Hosted service",
+    "Hosted service Work",
+    "hosted SERVICE Work",
+    "  Hosted service Work  ",
+  ])("does not repeat the endpoint name in %s", (label) => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", endpointName: "Hosted service", label },
+        "OpenAI-compatible",
+      ),
+    ).toBe(label.trim());
+  });
+
+  it("adds the endpoint name to a label that omits it", () => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", endpointName: "Hosted service", label: "Work" },
+        "OpenAI-compatible",
+      ),
+    ).toBe("Hosted service (Work)");
+  });
+
+  it("keeps compatible provider prefixes when there is no endpoint name", () => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", label: "OpenAI-compatible Work" },
+        "OpenAI-compatible",
+      ),
+    ).toBe("OpenAI-compatible Work");
+  });
+
+  it("does not duplicate the endpoint name in compatible backup options", () => {
+    expect(
+      connectedBackupOptions(catalog, [
+        { ...credentials[1]!, endpointName: "Hosted service", label: "Hosted service Work" },
+      ]).map((option) => option.connectionName),
+    ).toEqual(["Hosted service Work"]);
+  });
+
   it("moves a backup one place without changing the source list", () => {
     expect(moveBackupChoice(choices, 1, -1)).toEqual([choices[1], choices[0]]);
     expect(choices).toEqual([
@@ -337,5 +392,12 @@ describe("withConnectionName", () => {
     expect(withConnectionName("Claude Sonnet", "OpenRouter (Work)")).toBe(
       "Claude Sonnet (OpenRouter, Work)",
     );
+    expect(withConnectionName("M", "A (B) (C)")).toBe("M (A (B), C)");
+    expect(withConnectionName("M", "A ()")).toBe("M (A ())");
+    expect(withConnectionName("M", " (B)")).toBe("M ( (B))");
+  });
+
+  it("stays fast on a long name full of brackets", () => {
+    expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
 });

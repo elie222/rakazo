@@ -185,7 +185,11 @@ export function instaboxCreditHours(size: ComputerShape = INSTABOX.size): number
 /** Vercel bills CPU only while busy, and provisioned memory the whole time. */
 export const VERCEL = { activeCpuHour: 0.128, gbHour: 0.0212 };
 
-export function vercelMonthly(hours: number, busyShare: number, size: ComputerShape = EXAMPLE_SIZE): number {
+export function vercelMonthly(
+  hours: number,
+  busyShare: number,
+  size: ComputerShape = EXAMPLE_SIZE,
+): number {
   return hours * (size.vcpus * busyShare * VERCEL.activeCpuHour + size.gb * VERCEL.gbHour);
 }
 
@@ -199,7 +203,8 @@ export const RAILWAY_ESTIMATE = {
   databaseAndVolumes: 4,
 } as const;
 
-export const railwayComputerMonthly = (hours: number) => monthly(RATES.railway, hours, RAILWAY_ESTIMATE.computer);
+export const railwayComputerMonthly = (hours: number) =>
+  monthly(RATES.railway, hours, RAILWAY_ESTIMATE.computer);
 export const railwayAppMonthly =
   RAILWAY_ESTIMATE.app.vcpus * RAILWAY_ESTIMATE.vcpuMonth +
   RAILWAY_ESTIMATE.app.gb * RAILWAY_ESTIMATE.gbMonth +
@@ -258,15 +263,24 @@ export const PRICING = {
   boat: { label: "Boat pricing", href: "https://boat.dev" },
   e2b: { label: "E2B pricing", href: "https://e2b.dev/pricing" },
   daytona: { label: "Daytona pricing", href: "https://www.daytona.io/pricing" },
-  novita: { label: "Novita sandbox pricing", href: "https://docs.novita.ai/guides/sandbox-pricing" },
+  novita: {
+    label: "Novita sandbox pricing",
+    href: "https://docs.novita.ai/guides/sandbox-pricing",
+  },
   instabox: { label: "InstaBox pricing", href: "https://instabox.sh/pricing" },
-  railway: { label: "Railway sandboxes, pricing and limits", href: "https://docs.railway.com/sandboxes" },
+  railway: {
+    label: "Railway sandboxes, pricing and limits",
+    href: "https://docs.railway.com/sandboxes",
+  },
   wuying: {
     label: "Alibaba Cloud, Elastic Desktop Service billing",
     href: "https://www.alibabacloud.com/help/en/wuying-workspace/product-overview/billing-overview",
   },
   modal: { label: "Modal pricing", href: "https://modal.com/pricing" },
-  vercel: { label: "Vercel Sandbox pricing", href: "https://vercel.com/docs/vercel-sandbox/pricing" },
+  vercel: {
+    label: "Vercel Sandbox pricing",
+    href: "https://vercel.com/docs/vercel-sandbox/pricing",
+  },
   northflank: { label: "Northflank pricing", href: "https://northflank.com/pricing" },
   blaxel: { label: "Blaxel pricing", href: "https://blaxel.ai/pricing" },
   createos: { label: "CreateOS sandbox pricing", href: "https://createos.sh/pricing/sandbox" },
@@ -274,7 +288,13 @@ export const PRICING = {
     label: "Docker, Cloud Sandboxes",
     href: "https://www.docker.com/blog/introducing-cloud-sandboxes-start-on-your-laptop-finish-in-the-cloud/",
   },
-  hetzner: { label: "Hetzner Cloud pricing", href: "https://www.hetzner.com/cloud/cost-optimized/" },
-  digitalocean: { label: "DigitalOcean Droplet pricing", href: "https://www.digitalocean.com/pricing/droplets" },
+  hetzner: {
+    label: "Hetzner Cloud pricing",
+    href: "https://www.hetzner.com/cloud/cost-optimized/",
+  },
+  digitalocean: {
+    label: "DigitalOcean Droplet pricing",
+    href: "https://www.digitalocean.com/pricing/droplets",
+  },
   rakazo: { label: "Rakazo pricing", href: `${SITE_URL}/pricing/` },
 } satisfies Record<string, SourceLink>;

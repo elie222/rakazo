@@ -13,6 +13,7 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
@@ -234,7 +235,7 @@ export class FakeSandboxProvider implements SandboxProvider {
     const file = this.requiredBox(computer).files.get(normalizeWorkspacePath(filePath));
     if (!file) throw new Error("computer file not found");
     if (options?.maxBytes !== undefined && file.content.byteLength > options.maxBytes) {
-      throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(options.maxBytes);
     }
     return new Uint8Array(file.content);
   }

@@ -1,4 +1,4 @@
-import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { SendblueAdapter } from "chat-adapter-sendblue";
@@ -7,17 +7,17 @@ import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
-  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatuses,
-  parseWhatsAppStatuses,
-  photonProjectsFromEnv,
   splitOutboundBody,
-  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
+import { photonProjectsFromEnv } from "./photon-messaging.js";
+import { parseSendblueStatuses } from "./sendblue-messaging.js";
+import { enrichSlackTeamRoom } from "./slack-messaging.js";
+import { telegramBotsFromEnv } from "./telegram-messaging.js";
+import { parseWhatsAppStatuses } from "./whatsapp-messaging.js";
 
 // Fake credentials: adapters are constructed offline, never called.
 const fullEnv: MessagingEnvironmentValues = {
@@ -562,12 +562,10 @@ describe("splitOutboundBody", () => {
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
   });
 
-  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
+  it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
-    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
-    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

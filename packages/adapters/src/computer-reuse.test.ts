@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
-import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
+import type { AdapterContext } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { HostAwareSandbox } from "./host-aware-sandbox.js";
+import { InMemoryJobQueue } from "./wakeup.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -73,13 +74,15 @@ async function fixture() {
     yield { type: "exit", code: 0 };
   });
   const sandbox = new HostAwareSandbox(docker, new FakeSandboxProvider(), async () => false);
+  const prisma = {
+    computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
   const deps = {
-    prisma: {
-      computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },
-    } as unknown as PrismaClient,
+    prisma: prisma as unknown as PrismaClient,
     sandbox,
     home: new LocalAgentHomeStore(directory),
-    jobs: {} as JobPublisher,
+    jobs: new InMemoryJobQueue(),
     events: {} as ThreadEvents,
     dataDir: directory,
   };

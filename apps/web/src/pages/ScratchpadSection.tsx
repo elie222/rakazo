@@ -1,18 +1,21 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
-import { useSpaceQueries } from "../lib/query";
-import { useSpaceRpc } from "../lib/space-rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 
 const NO_ITEMS: ScratchpadItem[] = [];
 
+type Change =
+  | { title: string }
+  | { item: ScratchpadItem; status: ScratchpadItem["status"] }
+  | { remove: true; item: ScratchpadItem };
+
 export function ScratchpadSection({ botId }: { botId: string }) {
   const { t } = useLingui();
-  const rpc = useSpaceRpc();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const list = queries.scratchpad.list.queryOptions({ input: { botId } });
@@ -21,81 +24,56 @@ export function ScratchpadSection({ botId }: { botId: string }) {
   const [showAll, setShowAll] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   function setItems(update: (current: ScratchpadItem[]) => ScratchpadItem[]) {
     return writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
   }
 
-  async function refresh() {
-    await fetchFresh(queryClient, list);
+  const change = useSave({
+    stale: [list.queryKey],
+    save: async (input: Change, rpc) => {
+      if ("title" in input) {
+        const created = await rpc.scratchpad.create({ botId, title: input.title });
+        setDraft("");
+        setAdding(false);
+        await setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      } else if ("status" in input) {
+        const updated = await rpc.scratchpad.update({
+          itemId: input.item.id,
+          status: input.status,
+        });
+        await setItems((current) => {
+          const next = current.map((entry) => (entry.id === updated.id ? updated : entry));
+          return input.status === "done" ? next.filter((entry) => entry.status !== "done") : next;
+        });
+      } else {
+        await rpc.scratchpad.remove({ itemId: input.item.id });
+        await setItems((current) => current.filter((entry) => entry.id !== input.item.id));
+      }
+    },
+  });
+  const busy = change.pending;
+  const input = change.input;
+  const error = change.error
+    ? input && "title" in input
+      ? t`Could not add`
+      : input && "status" in input
+        ? t`Could not update`
+        : t`Could not remove`
+    : null;
+
+  function run(next: Change) {
+    if (busy) return;
+    change.run(next);
   }
 
-  async function addItem() {
+  function addItem() {
     const title = draft.trim();
-    if (!title || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await rpc.scratchpad.create({ botId, title });
-      setDraft("");
-      setAdding(false);
-      await setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
-      try {
-        await refresh();
-      } catch {
-        setError(t`Saved, but list refresh failed`);
-      }
-    } catch {
-      setError(t`Could not add`);
-    } finally {
-      setBusy(false);
-    }
+    if (!title) return;
+    run({ title });
   }
 
-  async function setStatus(item: ScratchpadItem, status: ScratchpadItem["status"]) {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await rpc.scratchpad.update({ itemId: item.id, status });
-      await setItems((current) => {
-        const next = current.map((entry) => (entry.id === updated.id ? updated : entry));
-        return status === "done" ? next.filter((entry) => entry.status !== "done") : next;
-      });
-      try {
-        await refresh();
-      } catch {
-        setError(t`Saved, but list refresh failed`);
-      }
-    } catch {
-      setError(t`Could not update`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeItem(item: ScratchpadItem) {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await rpc.scratchpad.remove({ itemId: item.id });
-      await setItems((current) => current.filter((entry) => entry.id !== item.id));
-      try {
-        await refresh();
-      } catch {
-        setError(t`Removed, but list refresh failed`);
-      }
-    } catch {
-      setError(t`Could not remove`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!items.length && !error) return null;
+  if (!items.length && !error && !adding) return null;
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
@@ -121,7 +99,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
               checked={item.status === "done"}
               disabled={busy}
-              onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
+              onCheckedChange={(checked) => run({ item, status: checked ? "done" : "open" })}
               className="mt-[3px]"
             />
             <div className="min-w-0 flex-1">
@@ -142,7 +120,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               size="icon-xs"
               aria-label={t`Remove`}
               disabled={busy}
-              onClick={() => void removeItem(item)}
+              onClick={() => run({ remove: true, item })}
               className="-mt-0.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
             >
               <X />
@@ -164,7 +142,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             className={`flex items-center gap-2 ${items.length ? "mt-2" : ""}`}
             onSubmit={(event) => {
               event.preventDefault();
-              void addItem();
+              addItem();
             }}
           >
             <Input
@@ -176,11 +154,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               maxLength={200}
               className="min-w-0 flex-1"
             />
-            <Button
-              variant="secondary"
-              disabled={busy || !draft.trim()}
-              onClick={() => void addItem()}
-            >
+            <Button variant="secondary" disabled={busy || !draft.trim()} onClick={addItem}>
               <Trans>Add</Trans>
             </Button>
           </form>

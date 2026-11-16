@@ -51,8 +51,9 @@ routine.
 ### Email
 
 Runs when mail arrives at the bot's own address, such as `scout@bots.example.com`. The first
-time, pick the part before the @; it stays the bot's for good. Forward or CC mail to it and the
-routine runs with that email. Choose who can start it: **Only me**, or **Anyone at** your own
+time, pick the part before the @; it stays the bot's for good. Forward or CC mail to it, by hand
+or with a mailbox rule, and the routine runs with that email. A rule has to forward, not redirect:
+redirected mail keeps its original sender and recipients, so it never names the bot. Choose who can start it: **Only me**, or **Anyone at** your own
 email domain. Mail from anyone else, and mail sent BCC, starts nothing, but the bot keeps every
 email in its inbox either way. If mail from your own address can't be verified, the chat says so;
 your email provider then needs DKIM signing turned on for your domain. Appears only when your
@@ -63,8 +64,10 @@ server [receives email](./self-host-inbound-email.md).
 Runs when the bot receives a message in Slack. Needs [Slack connected](./messaging-apps.md).
 
 > [!NOTE]
-> Runs started by a webhook or an outside message follow stricter [approval](./approvals.md) rules,
-> since outside text could steer what the bot does.
+> A routine run started by a webhook, an email or a Slack message follows your
+> [approval](./approvals.md) mode and Always allow list. Since outside text could steer it, tools
+> that change something are checked even if they never ask in your own chats, and a purchase is
+> refused. Always allow on a tool such as shell or the browser lets outside text use it freely.
 
 ## Test, pause and review
 

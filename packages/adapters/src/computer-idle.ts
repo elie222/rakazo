@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerSleepJob,
+  isSandboxProviderOutage,
   runJobKey,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -14,20 +15,24 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
-import { COMPUTER_USING_RUNS, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
+import { computerUsingRuns, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
   isUniqueViolation,
   recordComputerRunEnd,
   recordComputerRunSeen,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
-import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
+import {
+  endTeachingWithLease,
+  expireComputerControl,
+  hasActiveComputerControl,
+} from "./computer-control.js";
 import { diskUpdate, measureComputerDisk } from "./computer-disk.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
@@ -35,6 +40,7 @@ import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
+import { sandboxKindCapabilities, sandboxKindsWhere } from "./sandbox-kind-capabilities.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -236,7 +242,7 @@ export async function cancelComputerRunWork(
       await sandbox.cancelRunWork(computer, computerId, runId, context);
       return;
     }
-    if (computer.kind === "desktop") return;
+    if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return;
 
     for await (const _event of sandbox.execute(
       computer,
@@ -256,6 +262,7 @@ export async function stopCancelledGroupRuns(
     prisma: PrismaClient;
     jobs: Pick<JobPublisher, "cancel">;
     sandbox: Pick<SandboxProvider, "execute" | "cancelRunWork" | "releaseScreen">;
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   actor: { spaceId: string; userId: string },
   cancelled: {
@@ -270,6 +277,8 @@ export async function stopCancelledGroupRuns(
     >;
   },
 ): Promise<void> {
+  if (cancelled.cancelledRunIds.length > 0)
+    await deps.events?.publishSpaceChange?.(actor.spaceId, "runs");
   await Promise.all(
     cancelled.cancelledRunIds.map((runId) =>
       deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
@@ -383,7 +392,7 @@ function activeLimitReached(
   runningSince: Date | null | undefined,
 ): boolean {
   // Electron owns a native computer's lifetime.
-  if (ref.kind === "desktop") return false;
+  if (sandboxKindCapabilities(ref.kind).runsOnUserMachine) return false;
   const limit =
     sandbox.billsWhileRunning?.(ref) === true
       ? computerMaxActiveMs()
@@ -404,15 +413,8 @@ export async function touchRunningComputer(
     controlLeaseExpiresAt?: Date | null;
   },
 ): Promise<void> {
-  const activeControl = hasActiveComputerControl({
-    controlHolder: computer.controlHolder ?? "none",
-    controlLeaseId: computer.controlLeaseId ?? null,
-    controlLeaseExpiresAt: computer.controlLeaseExpiresAt ?? null,
-  });
-  if (
-    activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince) &&
-    !activeControl
-  ) {
+  // A person's control keeps an idle computer up, but never past its lifetime limit.
+  if (activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince)) {
     scheduleComputerSleep(deps.jobs, computer.id, new Date(Date.now()));
     return;
   }
@@ -434,7 +436,7 @@ export async function sleepComputerIfIdle(
   let computer = await loadComputer(deps.prisma, computerId);
   if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   // Native computers have no provisioned runtime to suspend; Electron owns their lifetime.
-  if (computer.kind === "desktop") return;
+  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return;
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     try {
@@ -444,14 +446,6 @@ export async function sleepComputerIfIdle(
       if (deferSleep(error, computer)) return;
       throw error;
     }
-    computer = await loadComputer(deps.prisma, computerId);
-    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
-  }
-  if (computer.executionRunId) {
-    // A legacy binding a pre-lease release left behind. Both suspension claims below
-    // require it null, and a stranded one names a run nothing will clean up, so the
-    // computer could never sleep. Runs that may still execute are left to their owner.
-    await clearEndedExecutionRunBinding(deps.prisma, computer.id);
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
@@ -473,16 +467,14 @@ export async function sleepComputerIfIdle(
   }
   // Past the lifetime limit only a run executing right now, or a coding agent CLI still writing
   // its session, holds the computer up. Waiting runs and other background work start it again
-  // when they next need it. A user in control is left alone: control leases expire on their
-  // own, and that release resumes the waiting run.
-  // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
-  // Once its organization has spent this period's allowance, nothing but a user still in control,
-  // not even a working coding agent, holds the computer up.
+  // when they next need it. Otherwise a run waiting for takeover holds an unbilled computer for
+  // TAKEOVER_IDLE_GRACE_MS. Once its organization has spent this period's allowance, nothing holds
+  // the computer up. A person's control holds an idle computer up, but never past those limits;
+  // stopping the computer then ends the control and any recording under it.
   const activeControl = hasActiveComputerControl(computer);
-  const allowanceUsed = !activeControl && (await sandboxAllowanceUsedUp(deps, computer));
+  const allowanceUsed = await sandboxAllowanceUsedUp(deps, computer);
   const limitReached =
-    allowanceUsed ||
-    (activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl);
+    allowanceUsed || activeLimitReached(deps.sandbox, ref, computer.runningSince);
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl
@@ -508,18 +500,7 @@ export async function sleepComputerIfIdle(
   if (runHeld || takeoverHeldUntil || (await backgroundHolds())) {
     // Recheck when the takeover grace ends so the computer sleeps on time.
     scheduleComputerSleep(deps.jobs, computerId, takeoverHeldUntil ?? undefined);
-    try {
-      await deps.sandbox.keepAlive?.(ref);
-    } catch (error) {
-      // The holding run or the next idle check recovers a computer whose sandbox is gone, and
-      // the next check sends the heartbeat a rate-limited or unreachable provider missed.
-      if (
-        !isSandboxGoneError(error) &&
-        !(error instanceof SandboxRateLimitError) &&
-        !(error instanceof SandboxUnresponsiveError)
-      )
-        throw error;
-    }
+    await sendHeldHeartbeat(deps.sandbox, ref);
     return;
   }
 
@@ -531,7 +512,6 @@ export async function sleepComputerIfIdle(
       maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
-      executionRunId: null,
       executionLeases: await noBlockingExecutionLease(deps.prisma, computerId, checkpointedAt),
     },
     data: { state: "suspending", updatedAt: checkpointedAt },
@@ -596,10 +576,12 @@ export async function sleepComputerIfIdle(
           controlUserId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
-          controlRunId: null,
         },
       });
-      if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
+      if (cleared.count === 1) {
+        await recordComputerRunEnd(deps.prisma, computer, "gone");
+        await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
+      }
       return;
     }
     if (isSandboxDamagedError(error)) {
@@ -658,7 +640,7 @@ export async function sleepComputerIfIdle(
       computerId,
       activeAfterCheckpoint ? undefined : (takeoverAfterCheckpoint ?? undefined),
     );
-    if (backgroundAfterCheckpoint) await deps.sandbox.keepAlive?.(ref);
+    if (backgroundAfterCheckpoint) await sendHeldHeartbeat(deps.sandbox, ref);
     return;
   }
   if (
@@ -701,7 +683,6 @@ export async function sleepComputerIfIdle(
       controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
   if (suspended.count !== 1) {
@@ -712,6 +693,7 @@ export async function sleepComputerIfIdle(
   }
   const reason = allowanceUsed ? "allowance" : limitReached ? "active_limit" : "idle";
   await recordComputerRunEnd(deps.prisma, computer, reason);
+  await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,
@@ -735,7 +717,12 @@ export async function sleepComputerIfIdle(
  * provider's restore can fail. Returns whether it was marked suspended.
  */
 async function suspendStoppedComputer(
-  deps: { prisma: PrismaClient; sandbox: SandboxProvider; events: ThreadEvents },
+  deps: {
+    prisma: PrismaClient;
+    sandbox: SandboxProvider;
+    events: ThreadEvents;
+    jobs: JobPublisher;
+  },
   computer: NonNullable<Awaited<ReturnType<typeof loadComputer>>>,
   ref: ComputerRef,
   ctx: AdapterContext,
@@ -751,7 +738,6 @@ async function suspendStoppedComputer(
       maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
-      executionRunId: null,
       executionLeases: await noBlockingExecutionLease(deps.prisma, computer.id, new Date()),
     },
     data: {
@@ -762,11 +748,11 @@ async function suspendStoppedComputer(
       controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
   if (suspended.count !== 1) return false;
   await recordComputerRunEnd(deps.prisma, computer, "gone");
+  await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
   getLogger().info("computer.suspended", {
     "computer.id": computer.id,
     provider: computer.kind,
@@ -830,7 +816,7 @@ async function announceSuspended(
 }
 
 /** System notes reach users and the bot through the existing thread history. */
-async function announceUnsavedHome(
+export async function announceUnsavedHome(
   deps: { prisma: PrismaClient; events: ThreadEvents },
   computer: { id: string; spaceId: string; homeRevisionAt: Date | null; runningSince: Date | null },
   error: WorkspaceTooLargeError,
@@ -882,7 +868,7 @@ async function postComputerNote(
           payload: { messageId: message.id, role: "system", blocks },
         });
         return event.seq;
-      });
+      }, THREAD_LOCK_TRANSACTION_OPTIONS);
       if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
@@ -901,6 +887,18 @@ export function providerKeepsHome(
   return (
     sandbox.keepsHome?.(computer) ?? Promise.resolve(sandbox.describe().capabilities.persistentHome)
   );
+}
+
+/**
+ * Keeps a held computer up. The next idle check is already scheduled: it sends the heartbeat a
+ * provider outage missed, and it or the holding run recovers a gone sandbox.
+ */
+async function sendHeldHeartbeat(sandbox: SandboxProvider, ref: ComputerRef): Promise<void> {
+  try {
+    await sandbox.keepAlive?.(ref);
+  } catch (error) {
+    if (!isSandboxGoneError(error) && !isSandboxProviderOutage(error)) throw error;
+  }
 }
 
 /** A running computer, or one whose suspend claim was abandoned while it was still up. */
@@ -970,7 +968,7 @@ export function createIdleComputerSweeper(
     const computers = await deps.prisma.computer.findMany({
       where: {
         providerRef: { not: null },
-        kind: { not: "desktop" },
+        kind: { notIn: sandboxKindsWhere((capabilities) => capabilities.runsOnUserMachine) },
         OR: [{ state: "running" }, { state: "suspending", updatedAt: { lte: abandonedBefore } }],
       },
       select: { id: true },
@@ -1004,7 +1002,6 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseId: true,
       controlLeaseExpiresAt: true,
       controlBotId: true,
-      executionRunId: true,
       runningSince: true,
       homeRevisionAt: true,
       updatedAt: true,
@@ -1021,7 +1018,7 @@ function findActiveRun(
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       status: { in: statuses as (typeof QUEUE_HOLDING_RUN_STATUSES)[number][] },
       ...(liveLeaseOnly ? { leaseExpiresAt: { gt: new Date(Date.now()) } } : {}),
     },

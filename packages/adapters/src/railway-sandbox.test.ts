@@ -4,8 +4,9 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
   RailwayGraphQLError,
@@ -19,7 +20,12 @@ import WebSocket from "ws";
 import { LinuxDesktop } from "./linux-desktop.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  MachineRecords,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
 vi.spyOn(Sandbox, "connect");
@@ -618,7 +624,7 @@ describe("Railway computers", () => {
     try {
       const pending = transport("https://backboard.railway.com/graphql/v2");
       const assertion = expect(pending).rejects.toThrow("deadline");
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await flush();
       controller.abort(new Error("deadline"));
       await assertion;
       expect(deadline).toHaveBeenCalledWith(30_000);
@@ -631,17 +637,11 @@ describe("Railway computers", () => {
   it("captures and destroys a sandbox when canceled before the create response is read", async () => {
     const controller = new AbortController();
     const reason = new Error("provision canceled");
-    let acceptRequest!: () => void;
-    const accepted = new Promise<void>((resolve) => {
-      acceptRequest = resolve;
-    });
-    let sendResponse!: (response: Response) => void;
-    const response = new Promise<Response>((resolve) => {
-      sendResponse = resolve;
-    });
+    const accepted = deferred();
+    const response = deferred<Response>();
     const fetchMock = vi.fn((_input, _init) => {
-      acceptRequest();
-      return response;
+      accepted.resolve();
+      return response.promise;
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(Sandbox.create).mockImplementation(async (options) => {
@@ -654,9 +654,9 @@ describe("Railway computers", () => {
       { ...ctx, signal: controller.signal },
     );
     const assertion = expect(pending).rejects.toBe(reason);
-    await accepted;
+    await accepted.promise;
     controller.abort(reason);
-    sendResponse(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
+    response.resolve(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
     await assertion;
 
     expect(fetchMock.mock.calls[0]?.[1]?.signal.aborted).toBe(false);
@@ -823,6 +823,139 @@ describe("Railway computers", () => {
     expect(sandbox.destroy).toHaveBeenCalledOnce();
   });
 
+  describe("a sandbox created by a start that then fails", () => {
+    const start = (context: AdapterContext = ctx) =>
+      settleMachineCleanup(() =>
+        provider.provision({ botId: "bot", homePath: "/unused" }, context),
+      );
+    const withoutPrivateNetwork = () =>
+      vi.mocked(Sandbox.create).mockResolvedValue({
+        ...sandbox,
+        networkIsolation: "ISOLATED",
+      } as unknown as Sandbox);
+
+    it("is destroyed, trying a failed destroy again", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValueOnce(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be destroyed, and the start's own error stands", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start();
+
+      expect(error).toMatchObject({ message: expect.stringContaining("PRIVATE networking") });
+      expect(sandbox.destroy).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported when a start cancelled during creation cannot destroy it, and the cancellation stands", async () => {
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      vi.mocked(Sandbox.create).mockImplementation(async () => {
+        controller.abort(cancelled);
+        return sandbox as unknown as Sandbox;
+      });
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start({ ...ctx, signal: controller.signal });
+
+      expect(error).toBe(cancelled);
+      expect(left).toEqual([{ provider: "railway", machineId: "sandbox" }]);
+    });
+
+    it("is reported within the cleanup's 20 seconds when Railway stops answering, ending each request", async () => {
+      const api = backboard();
+      const answer = vi.mocked(fetch).getMockImplementation()!;
+      const controller = new AbortController();
+      const cancelled = new Error("run cancelled");
+      const unanswered: AbortSignal[] = [];
+      let stalledAt = 0;
+      let endedAt = 0;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (controller.signal.aborted) {
+          stalledAt ||= Date.now();
+          unanswered.push(init?.signal as AbortSignal);
+          return untilAborted(init?.signal as AbortSignal);
+        }
+        const response = await answer(input, init);
+        if (api.operations.at(-1) === "RailwaySandboxCreate") controller.abort(cancelled);
+        return response;
+      });
+
+      const { error, left } = await settleMachineCleanup(() =>
+        provider
+          .provision({ botId: "bot", homePath: "/unused" }, { ...ctx, signal: controller.signal })
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+
+      expect(error).toBe(cancelled);
+      expect(endedAt - stalledAt).toBe(20_000);
+      // A request used to wait 30 seconds of its own; each now ends with its 10 second try.
+      expect(unanswered).toHaveLength(2);
+      expect(unanswered.every((signal) => signal.aborted)).toBe(true);
+      expect(left).toEqual([{ provider: "railway", machineId: "created-1" }]);
+    });
+
+    it("is handed to the records when it cannot be destroyed", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+      const records = new MachineRecords();
+      const recording = new RailwaySandboxProvider({
+        token: "test",
+        environmentId: "environment",
+        unreferencedMachines: records,
+      });
+
+      await settleMachineCleanup(() =>
+        recording.provision({ botId: "bot", homePath: "/unused" }, ctx),
+      );
+
+      expect([...records.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "railway", machineId: "sandbox", homeKey: "bot" },
+      ]);
+    });
+  });
+
+  it("records a new sandbox for its computer when Railway's create reply names it", async () => {
+    backboard();
+    const records = new MachineRecords();
+    const recording = new RailwaySandboxProvider({
+      token: "test",
+      environmentId: "environment",
+      unreferencedMachines: records,
+    });
+
+    const computer = await recording.provision({ botId: "bot", homePath: "/unused" }, ctx);
+
+    expect(computer.providerRef).toBe("created-1");
+    expect(records.dueIn()).toMatchObject([
+      { provider: "railway", machineId: "created-1", homeKey: "bot" },
+    ]);
+    expect(records.dueIn()[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("destroys a sandbox from its id alone, and counts one already gone as destroyed", async () => {
+    const api = backboard({});
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine({ provider: "railway", machineId: "sandbox" }, signal);
+
+    expect(api.operations).toContain("RailwaySandboxDestroy");
+    await expect(
+      provider.deleteMachine({ provider: "railway", machineId: "never-made" }, signal),
+    ).resolves.toBeUndefined();
+  });
+
   it("preserves output and reports timeout as a nonzero exit", async () => {
     sandbox.exec.mockResolvedValue({
       stdout: "partial",
@@ -909,6 +1042,33 @@ describe("Railway computers", () => {
     );
     expect(url.searchParams.get("path")).toBe("websockify?token=screen-token");
     expect(url.searchParams.has("token")).toBe(false);
+  });
+
+  it("opens a terminal on the screen domain, behind its own token", async () => {
+    sandbox.exec.mockResolvedValue({
+      stdout: "RAKAZO_DESKTOP=0:screen-token",
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+    });
+    const terminal = await provider.connectTerminal(
+      computer,
+      { controlToken: "control-lease" },
+      ctx,
+    );
+    const url = new URL(terminal.url);
+
+    expect(url.origin).toBe("https://screen-test.up.railway.app");
+    const token = new URLSearchParams(url.searchParams.get("path")!.split("?")[1]).get("token");
+    expect(token).toMatch(/^[0-9a-f-]{36}$/);
+    // The shell server starts in the sandbox and joins the gateway on the port with the domain.
+    const started = sandbox.exec.mock.calls
+      .map(([command]) => String(command))
+      .findLast((command) => command.includes("rakazo-terminal.py"));
+    expect(started).toContain(String(token));
+    expect(started).toContain("/tmp/rakazo/sockets/terminal-");
+    expect(started).toContain("0.0.0.0:6080 8>&-");
+    expect(started).toContain("/home/rakazo");
   });
 
   it.each([

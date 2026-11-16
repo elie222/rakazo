@@ -99,6 +99,9 @@ describe("model credit checkout", () => {
         upsert: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
         update: vi.fn().mockResolvedValue({}),
       },
+      // The checkout lease's take, check and release, and the claim's lock.
+      $queryRaw: vi.fn().mockResolvedValue([{ fence: 1n }]),
+      $executeRaw: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => {
         openTransactions++;
         try {
@@ -121,7 +124,7 @@ describe("model credit checkout", () => {
       webOrigin: "https://app.example.com",
     });
     for (const monthly of [true, false]) {
-      await expect(billing.purchaseCredits(actor, { amountCents: 1000, monthly })).resolves.toEqual(
+      await expect(billing.purchaseCredits(actor, { amountCents: 2000, monthly })).resolves.toEqual(
         { url: "https://checkout.example.com" },
       );
     }

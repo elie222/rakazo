@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -7,13 +9,26 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import TeamConversationSettings from "../app/(settings)/team-conversation";
 import { rpc } from "./api";
+import { queryClient, rpcQuery } from "./query";
 
 const back = vi.fn();
+const alert = vi.hoisted(() => vi.fn());
 const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
+const route = vi.hoisted(() => ({ conversationId: "room-1" }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./api", () => ({
+  rpc: vi.fn(),
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: {},
@@ -28,13 +43,21 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({
     setOptions: (options: Record<string, unknown>) => Object.assign(navigation.options, options),
   }),
-  useLocalSearchParams: () => ({ conversationId: "room-1" }),
+  useLocalSearchParams: () => ({ conversationId: route.conversationId }),
   useRouter: () => ({ back }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
-    <button type="button" onClick={onPress}>
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+  }: {
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onPress}>
       {label}
     </button>
   ),
@@ -107,6 +130,7 @@ vi.mock("react-native", () => {
         onChange={(event) => onChangeText?.(event.target.value)}
       />
     ),
+    Alert: { alert },
     StyleSheet: { create: (styles: unknown) => styles },
   };
 });
@@ -116,6 +140,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   vi.mocked(rpc).mockImplementation((async (path: string) => {
     if (path === "bots/list") {
       return [
@@ -141,6 +166,16 @@ beforeEach(() => {
               automatedSenderPolicies: {},
               automatedSenders: [{ id: "B_GITHUB", name: "GitHub" }],
             },
+            {
+              id: "room-2",
+              botId: "bot-1",
+              provider: "slack",
+              displayName: "#support",
+              teamChatAmbientEnabled: null,
+              teamChatRules: null,
+              automatedSenderPolicies: {},
+              automatedSenders: [],
+            },
           ],
         },
       };
@@ -154,17 +189,55 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   navigation.options = {};
+  route.conversationId = "room-1";
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
-async function save() {
+async function settle() {
+  await act(flush);
+}
+async function render() {
+  await act(async () => root.render(<TeamConversationSettings />));
+  await settle();
+}
+/** The header's Save, tapped `times` in one tick; false when it is disabled. */
+async function save(times = 1) {
   const headerRight = navigation.options.headerRight as () => ReactNode;
   const header = container.appendChild(document.createElement("header"));
   const headerRoot = createRoot(header);
   await act(async () => headerRoot.render(headerRight()));
-  await click("Save");
+  const button = header.querySelector("button") as HTMLButtonElement;
+  const enabled = !button.disabled;
+  await act(async () => {
+    for (let tap = 0; tap < times; tap += 1) button.click();
+  });
   await act(async () => headerRoot.unmount());
+  return enabled;
+}
+/** Holds the room's save open, so a test decides when and how it ends. */
+/** What every write carries: the server, session and space its save was started in. */
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  },
+};
+function holdSave() {
+  const answers = vi.mocked(rpc).getMockImplementation()!;
+  let finish!: (outcome?: Error) => void;
+  vi.mocked(rpc).mockImplementation(((path: string, ...rest: unknown[]) =>
+    path === "externalConversations/updatePolicy"
+      ? new Promise((resolve, reject) => {
+          finish = (outcome) => (outcome ? reject(outcome) : resolve({ ok: true }));
+        })
+      : (answers as (...args: unknown[]) => unknown)(path, ...rest)) as never);
+  return {
+    finish: (outcome?: Error) => act(async () => finish(outcome)),
+    saves: () =>
+      vi.mocked(rpc).mock.calls.filter(([path]) => path === "externalConversations/updatePolicy"),
+  };
 }
 
 async function click(label: string) {
@@ -180,7 +253,7 @@ function rows() {
 }
 
 it("shows the bot's reply mode and rules until the room overrides them, then saves", async () => {
-  await act(async () => root.render(<TeamConversationSettings />));
+  await render();
   expect(rows()).toContain("Replies to: Mentions only");
   const rules = container.querySelector<HTMLInputElement>(
     'input[aria-label="Instructions for this room"]',
@@ -217,22 +290,26 @@ it("shows the bot's reply mode and rules until the room overrides them, then sav
   await click("GitHub: Group updates");
   await save();
 
-  expect(rpc).toHaveBeenCalledWith("externalConversations/updatePolicy", {
-    externalConversationId: "room-1",
-    teamChatAmbientEnabled: true,
-    teamChatRules: null,
-    automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 } },
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "externalConversations/updatePolicy",
+    {
+      externalConversationId: "room-1",
+      teamChatAmbientEnabled: true,
+      teamChatRules: null,
+      automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 } },
+    },
+    pinned,
+  );
   expect(back).toHaveBeenCalled();
 });
 
 it("offers the inherited choice by the bot's name", async () => {
-  await act(async () => root.render(<TeamConversationSettings />));
+  await render();
   expect(container.textContent).toContain("Replies to: Same as Chief");
 });
 
 it("saves typed hours while the field still has focus", async () => {
-  await act(async () => root.render(<TeamConversationSettings />));
+  await render();
   await click("GitHub: Group updates");
   const hours = container.querySelector<HTMLInputElement>(
     'input[aria-label="GitHub rollup hours"]',
@@ -248,6 +325,7 @@ it("saves typed hours while the field still has focus", async () => {
     expect.objectContaining({
       automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 12 } },
     }),
+    pinned,
   );
 });
 
@@ -256,12 +334,123 @@ it("offers a retry when the room fails to load, then shows its settings", async 
   vi.mocked(rpc).mockImplementationOnce((async () => {
     throw new Error("offline");
   }) as never);
-  await act(async () => root.render(<TeamConversationSettings />));
+  await render();
   expect(container.textContent).not.toContain("Replies to");
   expect(container.textContent).toContain("Something went wrong. Try again.");
 
   await click("Retry");
+  await settle();
   expect(vi.mocked(rpc).getMockImplementation()).toBe(load);
   expect(container.textContent).toContain("Replies to");
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("reads the room again on a later visit instead of showing the earlier copy", async () => {
+  await render();
+  expect(rows()).toContain("Replies to: Mentions only");
+  await act(async () => root.render(null));
+  await settle();
+
+  const answers = vi.mocked(rpc).getMockImplementation() as (path: string) => Promise<unknown>;
+  const rooms = (await answers("spaces/list")) as {
+    current: { externalConversations: object[] };
+  };
+  let answer!: Deferred<unknown>;
+  vi.mocked(rpc).mockImplementation(((path: string) => {
+    if (path !== "spaces/list") return answers(path);
+    answer = deferred<unknown>();
+    return answer.promise;
+  }) as never);
+  await render();
+  expect(container.textContent).not.toContain("Replies to");
+  const [room] = rooms.current.externalConversations;
+  await act(async () =>
+    answer.resolve({
+      current: { externalConversations: [{ ...room, teamChatAmbientEnabled: true }] },
+    }),
+  );
+  await settle();
+  expect(rows()).toContain("Replies to: Every message");
+});
+
+it("reads the bot again instead of showing the copy another screen just cached", async () => {
+  queryClient.setQueryData(rpcQuery("bots/list").queryKey, [
+    { id: "bot-1", name: "Chief", teamChatAmbientEnabled: true, teamChatRules: null },
+  ] as never);
+  await render();
+  expect(rows()).toContain("Replies to: Mentions only");
+});
+
+it("holds Save while the room saves, and saves once for two taps", async () => {
+  await render();
+  const held = holdSave();
+  expect(await save(2)).toBe(true);
+  expect(held.saves()).toHaveLength(1);
+  expect(await save()).toBe(false);
+  expect(held.saves()).toHaveLength(1);
+
+  await held.finish();
+  expect(back).toHaveBeenCalledTimes(1);
+  expect(alert).not.toHaveBeenCalled();
+  // Save stays held while the screen closes, so a tap then cannot save or go back again.
+  expect(await save()).toBe(false);
+});
+
+it("starts another room from what was read for it, not from the last room's edits", async () => {
+  await render();
+  await click("Replies to: Every message");
+  expect(rows()).toContain("Replies to: Every message");
+
+  // The second room waits for its own read: the copy read for the first room is not shown.
+  const answers = vi.mocked(rpc).getMockImplementation() as (...args: unknown[]) => unknown;
+  const landed = deferred();
+  vi.mocked(rpc).mockImplementation((async (...args: unknown[]) => {
+    await landed.promise;
+    return answers(...args);
+  }) as never);
+  route.conversationId = "room-2";
+  await render();
+  expect(rows()).toEqual([]);
+  expect(navigation.options.headerRight).toBeUndefined();
+
+  await act(async () => landed.resolve());
+  await settle();
+  expect(rows()).toContain("Replies to: Mentions only");
+  await save();
+  expect(rpc).toHaveBeenCalledWith(
+    "externalConversations/updatePolicy",
+    {
+      externalConversationId: "room-2",
+      teamChatAmbientEnabled: null,
+      teamChatRules: null,
+      automatedSenderPolicies: {},
+    },
+    pinned,
+  );
+});
+
+it("says so in an alert when the save fails, and lets Save be tapped again", async () => {
+  await render();
+  const held = holdSave();
+  await save();
+  await held.finish(new Error("offline"));
+  expect(alert.mock.calls).toEqual([["Could not save"]]);
+  expect(back).not.toHaveBeenCalled();
+  expect(rows()).toContain("Replies to: Mentions only");
+
+  expect(await save()).toBe(true);
+  expect(held.saves()).toHaveLength(2);
+});
+
+it.each([
+  ["succeeds", undefined],
+  ["fails", new Error("offline")],
+])("does nothing when the save %s after the screen has gone", async (_how, outcome) => {
+  await render();
+  const held = holdSave();
+  await save();
+  await act(async () => root.render(null));
+  await held.finish(outcome);
+  expect(back).not.toHaveBeenCalled();
+  expect(alert).not.toHaveBeenCalled();
 });

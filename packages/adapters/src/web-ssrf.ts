@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { MIMEType } from "node:util";
 import {
   ipVersion,
   isCloudMetadataHost,
@@ -6,7 +7,7 @@ import {
   isNonPublicAddress,
   normalizeHost,
 } from "@rakazo/contracts";
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { ResponseTooLargeError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Dispatcher } from "undici";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
@@ -106,7 +107,15 @@ export async function fetchSafeWebText(
   options: SafeWebFetchOptions = {},
 ): Promise<SafeWebResponse<string>> {
   const response = await fetchSafeWebBytes(url, options);
-  return { ...response, body: new TextDecoder().decode(response.body) };
+  let decoder = new TextDecoder();
+  try {
+    const charset =
+      response.contentType && new MIMEType(response.contentType).params.get("charset");
+    if (charset) decoder = new TextDecoder(charset);
+  } catch {
+    // Preserve UTF-8 decoding for malformed media types or unsupported charset labels.
+  }
+  return { ...response, body: decoder.decode(response.body) };
 }
 
 export async function fetchSafeWebBytes(
@@ -281,7 +290,7 @@ async function followRedirects(
   const contentLength = response.headers.get("content-length");
   if (!state.truncate && contentLength && Number(contentLength) > state.maxBytes) {
     await cancelResponseBody(response, state.signal);
-    throw new Error("Response is too large");
+    throw new ResponseTooLargeError();
   }
 
   const body = state.truncate

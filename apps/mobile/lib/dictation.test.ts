@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
 import {
+  END_OF_SPEECH_GRACE_MS,
   ENDPOINT_SILENCE_MS,
   finishListening,
   listen,
@@ -59,8 +60,13 @@ function fakeRecognizer() {
       emit("result", { isFinal, results: [{ transcript, confidence: 0.9 }] }),
     end: () => emit("end", null),
     fail: (error: string) => emit("error", { error, message: error }),
+    speechStart: () => emit("speechstart", null),
+    speechEnd: () => emit("speechend", null),
   };
 }
+
+/** Delay a recognizer took to finalise a phrase after reporting the end of speech. */
+const FINAL_AFTER_SPEECH_END_MS = 400;
 
 let fake: ReturnType<typeof fakeRecognizer>;
 
@@ -170,6 +176,130 @@ describe("mobile dictation", () => {
     expect(onFinal).toHaveBeenCalledTimes(1);
     expect(onFinal).toHaveBeenCalledWith("how is the deploy going");
     expect(interims).toEqual(["how is the", "how is the", "how is the deploy going"]);
+  });
+
+  it("ends the turn a short grace after the recognizer reports the end of speech and its final", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.hear("how is the");
+    fake.speechEnd();
+    // The recognizer is still catching up on the same phrase.
+    fake.hear("how is the deploy going");
+    vi.advanceTimersByTime(FINAL_AFTER_SPEECH_END_MS);
+    fake.hear("how is the deploy going", true);
+    vi.advanceTimersByTime(END_OF_SPEECH_GRACE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("how is the deploy going");
+    expect(fake.abort).toHaveBeenCalled();
+  });
+
+  it("ends the turn a short grace after an end of speech that follows the final", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.hear("status please", true);
+    vi.advanceTimersByTime(100);
+    fake.speechEnd();
+    vi.advanceTimersByTime(END_OF_SPEECH_GRACE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("status please");
+  });
+
+  it("waits the full silence window when the caller keeps talking after the final", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.hear("buy milk");
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(300);
+    fake.hear("and");
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk and");
+  });
+
+  it("waits the full silence window when a new phrase arrives straight as a final", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(300);
+    fake.hear("and eggs", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk and eggs");
+  });
+
+  it("waits the full silence window when the recognizer hears speech start again", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.hear("buy milk");
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(300);
+    fake.speechStart();
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS - 300 - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk");
+  });
+
+  it("shortens the gap again once the next phrase also ends", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(300);
+    fake.hear("and eggs");
+    // A final alone, the recognizer's breath boundary, is not enough.
+    fake.hear("and eggs", true);
+    vi.advanceTimersByTime(END_OF_SPEECH_GRACE_MS);
+    expect(onFinal).not.toHaveBeenCalled();
+    fake.speechEnd();
+    vi.advanceTimersByTime(END_OF_SPEECH_GRACE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("buy milk and eggs");
+  });
+
+  it.each([
+    ["only a final", () => fake.hear("status please", true)],
+    [
+      "only the end of speech",
+      () => {
+        fake.hear("status please");
+        fake.speechEnd();
+      },
+    ],
+    [
+      "both, then the recognizer ends",
+      () => {
+        fake.speechEnd();
+        fake.hear("status please", true);
+        fake.end();
+      },
+    ],
+  ])("keeps the full silence window when the recognizer reports %s", async (_case, report) => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, call: true });
+    report();
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS - 1);
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFinal).toHaveBeenCalledExactlyOnceWith("status please");
+  });
+
+  it("never shortens a pause limit the caller chose", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy");
+    fake.speechEnd();
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS * 5);
+    expect(onFinal).not.toHaveBeenCalled();
   });
 
   it("restarts a session that reports nothing for too long", async () => {
