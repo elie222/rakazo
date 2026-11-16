@@ -246,6 +246,35 @@ describe("deployment models", () => {
     expect(deploymentServes(models, "local", "fixture-local-c")).toBe(false);
   });
 
+  it("lets an admin's connection replace the environment's when the environment names an alias", () => {
+    const environment = {
+      default: {
+        provider: "azure-openai-responses",
+        model: "gpt-4o",
+        key: "fixture-env-key",
+        configured: true,
+        hostCredentials: false,
+      },
+      connections: [
+        {
+          provider: "azure-openai-responses",
+          source: "environment" as const,
+          key: "fixture-env-key",
+        },
+      ],
+      allowed: [],
+    };
+    const models = applyDeploymentModelSettings(environment, {
+      modelConnections: [{ provider: "azure", ciphertext: "fixture-admin-ciphertext" }],
+    });
+    // One connection for the provider, the admin's, and the default no longer takes the env key.
+    expect(models.connections).toEqual([
+      { provider: "azure", source: "settings", ciphertext: "fixture-admin-ciphertext" },
+    ]);
+    expect(models.default.key).toBeUndefined();
+    expect(deploymentConnection(models, "azure-openai-responses")?.source).toBe("settings");
+  });
+
   it("puts an admin's connections, default and list over the environment's, and clearing restores it", () => {
     const environment = environmentDeploymentModels({
       ...keys,

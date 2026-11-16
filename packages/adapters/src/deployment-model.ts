@@ -273,9 +273,14 @@ export function applyDeploymentModelSettings(
   options: { creditsOnly?: boolean } = {},
 ): DeploymentModels {
   const adminConnections = saved?.modelConnections ?? [];
-  const byProvider = new Map(environment.connections.map((entry) => [entry.provider, entry]));
+  // Keyed by canonical id: the environment may name a provider by an older alias, while an
+  // admin's connection is saved under its canonical id, and the two must still meet.
+  const canonical = canonicalPiProviderId;
+  const byProvider = new Map(
+    environment.connections.map((entry) => [canonical(entry.provider), entry]),
+  );
   for (const row of adminConnections)
-    byProvider.set(row.provider, {
+    byProvider.set(canonical(row.provider), {
       provider: row.provider,
       source: "settings",
       ciphertext: row.ciphertext,
@@ -285,8 +290,9 @@ export function applyDeploymentModelSettings(
   const creditsOnly = options.creditsOnly ?? saved?.modelCreditsEnabled === true;
   const env = environment.default;
   const keyFor = (provider: string) => {
-    const connection = byProvider.get(provider);
-    const environmentKey = provider === env.provider && connection?.source !== "settings";
+    const connection = byProvider.get(canonical(provider));
+    const environmentKey =
+      canonical(provider) === canonical(env.provider) && connection?.source !== "settings";
     return {
       key: environmentKey ? env.key : connection?.key,
       hostCredentials: environmentKey && env.hostCredentials,
@@ -294,7 +300,7 @@ export function applyDeploymentModelSettings(
   };
   // The environment's own default keeps exactly the rules it has always had. An admin's
   // connection that replaces its provider runs it too, unless it names models without it.
-  const replacement = byProvider.get(env.provider);
+  const replacement = byProvider.get(canonical(env.provider));
   const environmentDefault: DeploymentModel = {
     ...env,
     ...keyFor(env.provider),
@@ -305,13 +311,13 @@ export function applyDeploymentModelSettings(
   };
   const provider = saved?.defaultModelProvider?.trim();
   const model = usableModelId(saved?.defaultModelId) ?? env.model;
-  const connection = provider ? byProvider.get(provider) : undefined;
+  const connection = provider ? byProvider.get(canonical(provider)) : undefined;
   const dropped =
     connection?.source === "settings" &&
     Boolean(connection.models) &&
     !connection.models!.includes(model);
   const configured =
-    provider === env.provider && model === env.model
+    provider && canonical(provider) === canonical(env.provider) && model === env.model
       ? environmentDefault.configured
       : Boolean(connection && !dropped);
   return {

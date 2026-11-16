@@ -313,6 +313,10 @@ export async function gateToolCall(
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
   const memberChecker = reviewSettings?.primarySource === "member";
+  // The deployment default in effect, an admin's included: the checker that falls back to it and
+  // the check that it's configured read the same one.
+  const deploymentDefault =
+    reviewable && !reviewSettings ? (await runDeploymentModels(deps)).default : undefined;
   const checker = !reviewable
     ? undefined
     : reviewSettings
@@ -324,7 +328,7 @@ export async function gateToolCall(
             credentialId: reviewSettings.primary.credentialId,
           }
         : null
-      : resolveAutoReviewChecker();
+      : resolveAutoReviewChecker(process.env, deploymentDefault);
   const checkerConfigured =
     reviewable &&
     (Boolean(injectedReview) ||
@@ -332,7 +336,7 @@ export async function gateToolCall(
       Boolean(reviewSettings?.backups.length) ||
       (checker
         ? isAutoReviewCheckerConfigured({
-            deployment: (await runDeploymentModels(deps)).default,
+            deployment: deploymentDefault ?? (await runDeploymentModels(deps)).default,
           }) ||
           Boolean(
             await findConnectedModelCredential(
