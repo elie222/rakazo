@@ -35,12 +35,7 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import {
-  ACTIVE_RUN_STATUSES,
-  ClientError,
-  COMPUTER_USING_RUNS,
-  scrollDirection,
-} from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, scrollDirection } from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd } from "@rakazo/db";
 import {
@@ -169,7 +164,7 @@ export function computerRoutes(ctx: RouterContext) {
             botId: { not: bot.id },
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId: bot.computer.id },
-            ...COMPUTER_USING_RUNS,
+            ...computerUsingRuns(),
           },
           select: { id: true },
         });

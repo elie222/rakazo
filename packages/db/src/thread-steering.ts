@@ -1,6 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   blocksToAgentHistoryText,
+  HELPER_RESULT_TRIGGER,
   isConversationalRun,
   messagingChannelId,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -60,19 +62,55 @@ async function claimSteeringOnce(
         spaceId: true,
         userId: true,
         trigger: true,
+        delegatedFromRunId: true,
         sourceMessage: { select: { id: true, blocks: true } },
       },
     });
     if (!run || run.trigger === "created") return [];
+    const delegatedResult = run.trigger === HELPER_RESULT_TRIGGER;
+    // Result turns answer in the originating conversation. Their own source is the helper's
+    // card, which says nothing about whether pending steering came from a private app chat.
+    let conversation: { trigger: string; sourceMessage: { id: string; blocks: unknown } | null } =
+      run;
+    if (delegatedResult) {
+      let originId = run.delegatedFromRunId;
+      let found = false;
+      for (let depth = 0; originId && depth < 2; depth++) {
+        const origin = await tx.run.findFirst({
+          where: { id: originId, botId: input.botId, spaceId: run.spaceId, userId: run.userId },
+          select: {
+            trigger: true,
+            threadId: true,
+            delegatedFromRunId: true,
+            sourceMessage: { select: { id: true, blocks: true } },
+          },
+        });
+        if (!origin) return [];
+        if (
+          origin.trigger !== BACKGROUND_HELPER_TRIGGER &&
+          origin.trigger !== HELPER_RESULT_TRIGGER
+        ) {
+          if (origin.threadId !== input.threadId) return [];
+          conversation = origin;
+          found = true;
+          break;
+        }
+        originId = origin.delegatedFromRunId;
+      }
+      if (!found) return [];
+    }
+    const messaging = conversation.trigger === "messaging";
+    if (delegatedResult && messaging && !conversation.sourceMessage) return [];
     const source =
-      run.trigger === "messaging" && run.sourceMessage
-        ? readMessageBlocks(run.sourceMessage)
+      messaging && conversation.sourceMessage
+        ? readMessageBlocks(conversation.sourceMessage)
         : undefined;
+    if (delegatedResult && source?.intact === false) return [];
     const channelId = messagingChannelId(source?.blocks);
     // A source that lost entries may have lost its channel marker, so this run could be a group
     // one: it takes only steering already addressed to it, never the owner's pending private rows.
     const unknownChat = source?.intact === false && !channelId;
-    const directMessage = run.trigger === "messaging" && !channelId && !unknownChat;
+    const directMessage = messaging && !channelId && !unknownChat;
     // Pending rows from another chat stay for their own continuation.
     const pendingWhere = directMessage
       ? { runId: null, originTrigger: "messaging" }
@@ -84,6 +122,7 @@ async function claimSteeringOnce(
         botId: input.botId,
         // Only the run's own person's messages; anyone else's wait for a run of their own.
         userId: run.userId,
+        ...(delegatedResult ? { originTrigger: messaging ? "messaging" : null } : {}),
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         // A routine or webhook turn only takes steering addressed to it; pending user messages
         // wait for the conversational continuation that starts once it finishes.
@@ -121,7 +160,20 @@ async function claimSteeringOnce(
       botId: input.botId,
       runId: input.runId,
       type: "run.steering.claimed",
-      payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
+      payload: {
+        steeringIds: steering.map((item) => item.id),
+        nextMessageSeq,
+        ...(delegatedResult
+          ? {
+              externalSafe:
+                messaging &&
+                steering.every(
+                  (item) =>
+                    item.originTrigger === "messaging" && readMessageBlocks(item.message).intact,
+                ),
+            }
+          : {}),
+      },
     });
     // In a group chat the row's user is the bot's owner, not the sender, so the sender is
     // matched by the address it wrote from.

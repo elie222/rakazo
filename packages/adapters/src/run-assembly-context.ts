@@ -66,7 +66,6 @@ export async function createRunContext(
     workerId,
     fence,
     attempt,
-    computerLease,
     lease,
     computerUse,
     runningHelpers,
@@ -76,8 +75,18 @@ export async function createRunContext(
   } = hold;
   const { heldForTakeover, takeoverResume } = hold.takeover;
   const { storedTurnCheckpoint } = parts.saved;
-  const { bot, channelId, historySearchBeforeSeq, nonOwnerChatRun, peerMessage, task, thread } =
-    parts.records;
+  const {
+    bot,
+    channelId,
+    historySearchBeforeSeq,
+    nonOwnerChatRun,
+    peerMessage,
+    task,
+    thread,
+    conversationThread,
+    conversationRun,
+    origin,
+  } = parts.records;
   const { connectedPlugins, context, memoryScope, runAbortController, semanticMemory } =
     parts.connected;
   const { allowSilentEmptyRun, emptyResponseText, groupReplyOptional } = parts.turnContext;
@@ -155,8 +164,8 @@ export async function createRunContext(
     spaceId: run.spaceId,
     userId: run.userId,
     botId: bot.id,
-    groupId: thread.groupId ?? null,
-    threadId: thread.id,
+    groupId: conversationThread.groupId ?? null,
+    threadId: conversationThread.id,
     runId,
   };
 
@@ -181,13 +190,14 @@ export async function createRunContext(
       messagingChannelRun: nonOwnerChatRun,
       channelId,
       historySearchBeforeSeq,
+      conversationThreadId: conversationThread.id,
       myChatsAllowed: historyMyChatsAllowed(
-        run,
-        sourceMessage,
+        conversationRun,
+        origin?.sourceMessage ?? sourceMessage,
         nonOwnerChatRun ||
           Boolean(
             channelId ||
-              thread.externalConversationId ||
+              conversationThread.externalConversationId ||
               (sourceMessage && mayBeChannelMessage(sourceMessage)),
           ),
       ),
@@ -201,7 +211,9 @@ export async function createRunContext(
       stored: storedComputer,
       kind: computerKind,
       mode: computerMode,
-      lease: computerLease,
+      get lease() {
+        return hold.computerLease;
+      },
       lazy: runComputer,
       get: getRunComputer,
       copyEarlierFiles: earlierFiles.add,
@@ -258,7 +270,8 @@ export async function buildTurnPrompt(
   const { takeoverResume } = hold.takeover;
   const { checkpointModelResolver, savedComputerMode } = parts.saved;
   let { turnCheckpoint } = parts.saved;
-  const { agentSkills, bot, nonOwnerChatRun, savedSkills, task, thread } = parts.records;
+  const { agentSkills, bot, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
+    parts.records;
   const { connectedPlugins, context } = parts.connected;
   const { compactedHistory, people } = parts.thread;
   const {
@@ -405,7 +418,7 @@ export async function buildTurnPrompt(
   const runtimeHistory = [...historicalContext, ...historyWithImages];
   // Without a roster a bot only knows the bots it spawned itself.
   const [teammates, groupDirectory] = await Promise.all([
-    thread.groupId
+    conversationThread.groupId
       ? []
       : deps.prisma.bot.findMany({
           where: {
@@ -418,7 +431,7 @@ export async function buildTurnPrompt(
           orderBy: { createdAt: "asc" },
           take: BOT_DIRECTORY_LIMIT,
         }),
-    !thread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
+    !conversationThread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
   ]);
   const botDirectory =
     [renderBotDirectory(teammates), groupDirectory].filter(Boolean).join("\n\n") || undefined;

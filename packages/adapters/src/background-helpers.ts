@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
+  isApprovalAskBlock,
   isConversationalRun,
   STOPPED_HELPER_RESULT,
 } from "@rakazo/core";
@@ -16,10 +17,10 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
-  BACKGROUND_HELPER_CHAT_REQUIRED,
   backgroundHelperLimitNote,
   helperPrompt,
   resultPrompt,
+  SUBAGENT_DELEGATION_UNAVAILABLE,
   startedNote,
 } from "./background-helpers.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -37,26 +38,9 @@ type HelperDeps = Pick<ExecutorDeps, "prisma"> & {
 };
 type HelperBlock = Extract<MessageBlock, { kind: "subagent" }>;
 
-/**
- * Start run_subagent with background true: a helper run in a thread of its own, so this chat
- * stays free, and a running card here that its result settles later.
- */
-/**
- * A helper reads the bot's memory and its result comes back only to the app chat, so only a turn
- * in the bot's own app chat may start one, by whichever space member sent it; a result coming
- * back never starts the next.
- */
-export function backgroundHelpersAllowed(turn: {
-  threadBotId: string | null;
-  botId: string;
-  trigger: string;
-}): boolean {
-  return (
-    turn.threadBotId === turn.botId &&
-    turn.trigger !== "messaging" &&
-    turn.trigger !== HELPER_RESULT_TRIGGER &&
-    isConversationalRun(turn.trigger)
-  );
+/** Delegation has one behavior in every conversation, without recursive result chains. */
+export function backgroundHelpersAllowed(turn: { trigger: string }): boolean {
+  return turn.trigger !== HELPER_RESULT_TRIGGER && isConversationalRun(turn.trigger);
 }
 
 export async function startBackgroundHelper(
@@ -72,16 +56,16 @@ export async function startBackgroundHelper(
   },
 ) {
   const { deps, run, runId, bot, thread } = ctx;
-  if (
-    !backgroundHelpersAllowed({ threadBotId: thread.botId, botId: bot.id, trigger: run.trigger })
-  ) {
+  if (!backgroundHelpersAllowed(run)) {
     return {
-      error: BACKGROUND_HELPER_CHAT_REQUIRED,
+      error: SUBAGENT_DELEGATION_UNAVAILABLE,
     };
   }
   if (Boolean(input.modelProvider) !== Boolean(input.modelId)) {
     return { error: "model_provider and model_id must both be set" };
   }
+  const modelProvider = input.modelProvider || (run.modelPinned ? run.modelProvider : "");
+  const modelId = input.modelId || (run.modelPinned ? run.modelId : "");
   const clientNonce = `background-helper:${input.effectKey}`;
   const started = { ok: true as const, name: input.name, note: startedNote(input.name) };
   const card: HelperBlock = {
@@ -94,7 +78,11 @@ export async function startBackgroundHelper(
   const committed = await deps.prisma.$transaction(async (tx) => {
     // Every start goes through this chat, so its lock makes the replay check and the cap exact
     // even when one turn starts several helpers at once.
+    if (thread.groupId)
+      await tx.$queryRaw`SELECT id FROM chat_groups WHERE id = ${thread.groupId} FOR NO KEY UPDATE`;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    // The cap belongs to the bot, including starts in different conversations.
+    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
     if (
       await tx.run.findFirst({ where: { spaceId: run.spaceId, clientNonce }, select: { id: true } })
     )
@@ -150,13 +138,50 @@ export async function startBackgroundHelper(
         status: "queued",
         trigger: BACKGROUND_HELPER_TRIGGER,
         sourceMessageId: message.id,
+        delegatedFromRunId: runId,
         clientNonce,
-        ...(input.modelProvider
-          ? { modelProvider: input.modelProvider, modelId: input.modelId, modelPinned: true }
-          : {}),
+        ...(modelProvider && modelId ? { modelProvider, modelId, modelPinned: true } : {}),
       },
       select: { id: true },
     });
+    // The originating user's files remain available even when the parent never booted
+    // its computer. Keep the input on the helper's own history for restart and approval resume.
+    const sources = await tx.message.findMany({
+      where: {
+        threadId: thread.id,
+        role: "user",
+        OR: [
+          { id: run.sourceMessageId ?? "" },
+          { steeringMessages: { some: { runId, claimedAt: { not: null } } } },
+        ],
+      },
+      select: { id: true, blocks: true },
+      orderBy: { seq: "asc" },
+    });
+    const attachments = sources.flatMap((source) =>
+      storedMessageBlocks(source).filter(
+        (block) => block.kind === "file" || block.kind === "image",
+      ),
+    );
+    if (attachments.length) {
+      const input = await createThreadMessageInTransaction(tx, {
+        threadId: helperThread.id,
+        role: "user",
+        authorUserId: run.userId,
+        botId: bot.id,
+        runId: helperRun.id,
+        blocks: attachments,
+        markUnread: false,
+      });
+      await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId: helperThread.id,
+        botId: bot.id,
+        runId: helperRun.id,
+        type: "thread.message.created",
+        payload: { messageId: input.id, role: "user", blocks: attachments },
+      });
+    }
     return { eventSeq: event.seq, helperRunId: helperRun.id };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed === "full") {
@@ -209,12 +234,53 @@ export async function returnHelperOutcome(
     if (claimed.count !== 1 || !source || !run.sourceMessageId) return null;
     const card = await tx.message.findFirst({
       where: { id: run.sourceMessageId, threadId: source.threadId },
-      select: { id: true, threadId: true, blocks: true },
+      select: {
+        id: true,
+        threadId: true,
+        blocks: true,
+        thread: {
+          select: {
+            group: {
+              select: {
+                archivedAt: true,
+                members: { where: { botId: run.botId }, select: { botId: true } },
+              },
+            },
+          },
+        },
+      },
     });
     const blocks = card ? storedMessageBlocks(card) : [];
     const helper = blocks.find((block): block is HelperBlock => block.kind === "subagent");
     // The chat was cleared since: nothing is left to settle or answer.
     if (!card || !helper) return null;
+    if (outcome.status !== "completed") {
+      const requests = await tx.message.findMany({
+        where: { threadId: card.threadId, runId: run.id, role: "bot" },
+        select: { id: true, blocks: true },
+      });
+      for (const request of requests) {
+        const denied = changeMessageBlocks(request, (block) =>
+          block.kind === "ask" && isApprovalAskBlock(block) && block.status !== "answered"
+            ? { ...block, status: "answered" as const, answer: "deny" }
+            : block,
+        );
+        if (!denied) continue;
+        await tx.message.update({
+          where: { id: request.id },
+          data: { blocks: denied.stored },
+        });
+        await appendEventInTransaction(tx, {
+          spaceId: run.spaceId,
+          threadId: card.threadId,
+          botId: run.botId,
+          type: "thread.message.updated",
+          runId: run.id,
+          allowCancelledRun: true,
+          payload: { messageId: request.id, role: "bot", blocks: denied.blocks },
+        });
+      }
+    }
     const result =
       outcome.status === "stopped"
         ? STOPPED_HELPER_RESULT
@@ -236,7 +302,11 @@ export async function returnHelperOutcome(
       type: "thread.message.updated",
       payload: { messageId: card.id, role: "bot", blocks: nextBlocks },
     });
-    if (outcome.status === "stopped") return { threadId: card.threadId, eventSeq: event.seq };
+    if (
+      outcome.status === "stopped" ||
+      (card.thread?.group && (card.thread.group.archivedAt || !card.thread.group.members.length))
+    )
+      return { threadId: card.threadId, eventSeq: event.seq };
     // Like the cloud-agent wake: only for a person still in the space and a bot still active
     // there. In a shared space that bot may be another member's; the turn runs as this person.
     const [member, bot] = await Promise.all([
@@ -269,11 +339,40 @@ export async function returnHelperOutcome(
         userId: run.userId,
         status: "queued",
         trigger: HELPER_RESULT_TRIGGER,
+        delegatedFromRunId: run.id,
         clientNonce: `helper-result:${run.id}`,
       },
       select: { id: true },
     });
-    return { threadId: card.threadId, eventSeq: event.seq, wakeRunId: wake.id };
+    const replies = await tx.message.findMany({
+      where: { runId: run.id, role: "bot" },
+      orderBy: { seq: "asc" },
+      select: { id: true, blocks: true },
+    });
+    const attachments = replies.flatMap((reply) =>
+      storedMessageBlocks(reply).filter((block) => block.kind === "file" || block.kind === "image"),
+    );
+    let eventSeq = event.seq;
+    if (attachments.length) {
+      const attached = await createThreadMessageInTransaction(tx, {
+        threadId: card.threadId,
+        botId: run.botId,
+        role: "bot",
+        runId: wake.id,
+        blocks: attachments,
+      });
+      eventSeq = (
+        await appendEventInTransaction(tx, {
+          spaceId: run.spaceId,
+          threadId: card.threadId,
+          botId: run.botId,
+          runId: wake.id,
+          type: "thread.message.created",
+          payload: { messageId: attached.id, role: "bot", blocks: attachments },
+        })
+      ).seq;
+    }
+    return { threadId: card.threadId, eventSeq, wakeRunId: wake.id };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
