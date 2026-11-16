@@ -4,6 +4,7 @@ import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -489,7 +490,10 @@ const textOnlyModel = listPiCatalog().find(
 
 describe("role-based model settings API", () => {
   describe("approval deployment default availability", () => {
-    afterEach(() => vi.unstubAllEnvs());
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
 
     function clearApprovalEnvironment() {
       for (const key of [
@@ -647,6 +651,7 @@ describe("role-based model settings API", () => {
 
     it("keeps reads and committed saves successful during a secret-store outage", async () => {
       clearApprovalEnvironment();
+      const warn = vi.spyOn(getLogger(), "warn");
       const { call, deps, roles } = setup();
       const primary = { provider: availableModel.provider, modelId: availableModel.id };
       expect((await call("models/setRole", { role: "approval", primary })).response.status).toBe(
@@ -662,6 +667,10 @@ describe("role-based model settings API", () => {
         expect((await response.json()).json.deploymentPrimary).toBeNull();
       }
       expect(roles().filter((row) => row.role === "approval")).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith("best effort failed: read approval model default", {
+        error: expect.any(SecretStoreUnavailableError),
+      });
     });
   });
 

@@ -45,6 +45,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { createAgentImportServices } from "../agent-import-services.js";
 import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
@@ -237,6 +238,7 @@ export function createRouterContext(deps: RouterDeps) {
         if (!ready) deploymentPrimary = null;
       } catch (error) {
         if (!(error instanceof SecretStoreUnavailableError)) throw error;
+        await bestEffort("read approval model default", Promise.reject(error));
         // This view is advisory; a temporary outage must not fail an already committed save.
         deploymentPrimary = null;
       }
