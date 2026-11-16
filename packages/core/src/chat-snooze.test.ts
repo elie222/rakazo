@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { flush } from "./async.test-support.js";
 import {
   chatListed,
   chatSnoozed,
@@ -88,7 +89,6 @@ describe("chat choice queue", () => {
     };
     return { requests, shown, settled, queue, change };
   }
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   it("goes back to what the server has when a snooze and its quick undo both fail", async () => {
     const { requests, shown, settled, queue, change } = setup();

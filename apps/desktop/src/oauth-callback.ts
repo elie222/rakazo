@@ -7,7 +7,37 @@ export type OAuthCallbackFromOptions = {
   excludeOrigins?: readonly string[];
 };
 
+/** The web app route a provider sends an MCP sign-in back to (a registered redirect URI). */
+export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+
 export const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * An MCP sign-in popup has its own cookies, so the app's callback page would
+ * arrive without a session. The main process takes the code from the redirect
+ * instead and the app completes the sign-in itself.
+ */
+export function mcpOAuthCallbackFrom(
+  url: string,
+  appOrigin: string,
+): { code: string | null; state: string } | undefined {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (target.origin !== appOrigin || target.pathname !== MCP_OAUTH_CALLBACK_PATH) return undefined;
+  if (target.searchParams.getAll("state").length !== 1) return undefined;
+  const state = target.searchParams.get("state")?.trim();
+  if (!state) return undefined;
+  const codes = target.searchParams.getAll("code");
+  if (codes.length > 1) return undefined;
+  const code = codes[0]?.trim();
+  if (code) return { code, state };
+  // A refusal (the user declined, or the provider did) ends the sign-in too.
+  return target.searchParams.get("error")?.trim() ? { code: null, state } : undefined;
+}
 
 /**
  * Loopback-redirect providers (e.g. `http://localhost:53692/callback`) put the

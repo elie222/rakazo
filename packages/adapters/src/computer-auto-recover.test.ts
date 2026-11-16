@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type * as TimersPromises from "node:timers/promises";
-import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
+import type { AdapterContext } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { InMemoryJobQueue } from "./wakeup.js";
 
 // Boat's polling waits advance a virtual clock instead of sleeping.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -98,20 +99,22 @@ async function damagedComputer(damage: "resume_heals" | "persists" = "resume_hea
       return { count: 1 };
     }),
   };
+  const prisma = {
+    computer,
+    computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+    computerRun: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    run: { findFirst: vi.fn().mockResolvedValue(null) },
+    space: { findUnique: vi.fn().mockResolvedValue(null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
   const deps = {
-    prisma: {
-      computer,
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      computerRun: {
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        createMany: vi.fn().mockResolvedValue({ count: 1 }),
-      },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-      space: { findUnique: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient,
+    prisma: prisma as unknown as PrismaClient,
     sandbox,
     home,
-    jobs: {} as JobPublisher,
+    jobs: new InMemoryJobQueue(),
     events: {} as ThreadEvents,
     dataDir: root,
   };

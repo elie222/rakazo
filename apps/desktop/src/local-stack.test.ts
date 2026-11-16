@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
 import type { LocalStackDeps } from "./local-stack.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
+  defaultSleep,
   ensureStackEnv,
   ensureStackToken,
   initialStackState,
@@ -20,6 +23,7 @@ import {
   STACK_OUTPUT_LINES,
   STACK_PROJECT_NAME,
   STACK_TOKEN_FILE,
+  STACK_WEB_URL_FILE,
   stackDir,
   stackFailureMessage,
   stackResourceDir,
@@ -27,6 +31,42 @@ import {
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
+
+describe("defaultSleep", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("resolves immediately without scheduling a timer when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const done = vi.fn();
+    const sleeping = defaultSleep(2_000, controller.signal).then(done);
+    await Promise.resolve();
+    expect(done).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    await sleeping;
+  });
+
+  it("waits the requested duration without an abort", async () => {
+    const done = vi.fn();
+    const sleeping = defaultSleep(2_000, new AbortController().signal).then(done);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(done).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await sleeping;
+    expect(done).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the timer when aborted during the wait", async () => {
+    const controller = new AbortController();
+    const sleeping = defaultSleep(2_000, controller.signal);
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await sleeping;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe("stack locations", () => {
   it("keeps the compose project under user data", () => {
@@ -264,6 +304,16 @@ describe("reduceStackState", () => {
     expect(reduceStackState(state, { type: "check-start" }).layerBytes).toEqual({});
   });
 
+  it("counts direct downloads by name without adding output lines", () => {
+    let state = reduceStackState(start, { type: "check-start" });
+    state = reduceStackState(state, { type: "pull-start" });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 4e7 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 1e7 });
+    state = reduceStackState(state, { type: "download", name: "database", bytes: 2e7 });
+    expect(state.layerBytes).toEqual({ server: 4e7, database: 2e7 });
+    expect(state.output).toEqual([]);
+  });
+
   it("keeps only the last lines of output", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });
@@ -302,11 +352,11 @@ describe("reduceStackState", () => {
   it("records why Docker is unavailable", () => {
     const state = reduceStackState(reduceStackState(start, { type: "check-start" }), {
       type: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
   });
 });
@@ -589,6 +639,287 @@ describe("LocalStackController", () => {
     },
   );
 
+  it("counts a reused managed stack as running until it is stopped", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const stack = controller({
+      probe: async (_url, _signal, supplied) => (supplied === token ? "v1.2.3" : null),
+    });
+
+    expect(stack.managedStackRunning()).toBe(false);
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    // Reuse records a running stack without faking a start attempt.
+    expect(stack.state().phase).toBe("idle");
+    expect(stack.managedStackRunning()).toBe(true);
+
+    await stack.stop();
+    expect(stack.managedStackRunning()).toBe(false);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
+  });
+
+  it("does not count an early failure before any container started as a running stack", async () => {
+    const missing = controller({ exists: () => false });
+    expect((await missing.start()).phase).toBe("docker-missing");
+    expect(missing.managedStackRunning()).toBe(false);
+
+    const daemonDown = controller({}, (args) =>
+      args[0] === "info"
+        ? { code: 1, stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }
+        : ok(args),
+    );
+    expect((await daemonDown.start()).phase).toBe("docker-not-running");
+    expect(daemonDown.managedStackRunning()).toBe(false);
+  });
+
+  it("counts a stack this app started, and a failure after containers may have launched", async () => {
+    const running = controller();
+    await running.start();
+    expect(running.managedStackRunning()).toBe(true);
+    await running.stop();
+    expect(running.managedStackRunning()).toBe(false);
+
+    const failedUp = controller({}, (args) =>
+      args[7] === "up" ? { code: 1, stderr: "service exited" } : ok(args),
+    );
+    expect((await failedUp.start()).phase).toBe("failed");
+    expect(failedUp.managedStackRunning()).toBe(true);
+  });
+
+  it("rejects a reuse response while a later stop is still pending", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+    const probed = deferred<string>();
+    const probe = vi.fn(() => probed.promise);
+    const stopGate = deferred();
+    const stack = controller({ probe }, (args) =>
+      args[7] === "stop" ? { wait: stopGate.promise } : ok(args),
+    );
+    const reuse = stack.matchesDesiredStack();
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce());
+    const stopping = stack.stop();
+    probed.resolve("v1.2.3");
+    try {
+      await expect(reuse).resolves.toBe(false);
+    } finally {
+      stopGate.resolve();
+      await stopping;
+    }
+  });
+
+  it("does not resurrect a stopped stack from a probe that resolves after the stop", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const probeStarted = deferred();
+    let probed!: Deferred<string | null>;
+    const stack = controller({
+      probe: (_url, _signal, supplied) => {
+        if (supplied !== token) return Promise.resolve(null);
+        probeStarted.resolve();
+        probed = deferred<string | null>();
+        return probed.promise;
+      },
+    });
+
+    const reuse = stack.matchesDesiredStack();
+    await probeStarted.promise;
+    await stack.stop();
+    probed.resolve("v1.2.3");
+    await expect(reuse).resolves.toBe(false);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("does not record reuse from a probe that starts while a stop is pending", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const stopGate = deferred();
+    let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
+    const stack = controller(
+      {
+        // The first probe is the health wait of the start below; a later one must not
+        // answer before the pending stop has settled and cleared the running flag.
+        probe: (_url, _signal, supplied) => {
+          probes += 1;
+          if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
+          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+        },
+      },
+      (args) => (args[7] === "stop" ? { wait: stopGate.promise } : ok(args)),
+    );
+
+    await stack.start();
+    stopping = stack.stop();
+    let reuseSettled = false;
+    const reuse = stack.matchesDesiredStack();
+    void reuse.finally(() => {
+      reuseSettled = true;
+    });
+    // Hold the stop until the check has settled or reached its probe, however slow the runner.
+    await vi.waitFor(() => expect(reuseSettled || probes > 1).toBe(true));
+    stopGate.resolve();
+    await stopping;
+    await expect(reuse).resolves.toBe(false);
+    expect(probes).toBe(1);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("keeps the stop item across a retry that has not reached compose up again", async () => {
+    const pullGate = deferred();
+    let pulls = 0;
+    const stack = controller({}, (args) => {
+      if (args[7] !== "pull") return ok(args);
+      pulls += 1;
+      // The retry hangs in `compose pull`, with containers from the first start still up.
+      return pulls === 2 ? { code: 1, stderr: "no such host", wait: pullGate.promise } : ok(args);
+    });
+    await stack.start();
+    expect(stack.managedStackRunning()).toBe(true);
+
+    const retry = stack.start();
+    // The retry's checks before `compose pull` can outlast any fixed delay on a busy runner.
+    await vi.waitFor(() => expect(stack.state().phase).toBe("pulling"));
+    expect(stack.managedStackRunning()).toBe(true);
+    pullGate.resolve();
+    expect((await retry).phase).toBe("failed");
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
+  it("hides the stop item for a first start that fails before compose up", async () => {
+    const pullFailed = controller({}, (args) =>
+      args[7] === "pull" ? { code: 1, stderr: "no such host" } : ok(args),
+    );
+    expect((await pullFailed.start()).phase).toBe("failed");
+    expect(pullFailed.managedStackRunning()).toBe(false);
+
+    const emptyResourceDir = path.join(root, "empty");
+    await mkdir(emptyResourceDir);
+    const prepareFailed = controller({ resourceDir: emptyResourceDir });
+    expect((await prepareFailed.start()).phase).toBe("failed");
+    expect(prepareFailed.managedStackRunning()).toBe(false);
+  });
+
+  it("keeps the stop item when a stop fails", async () => {
+    const stack = controller({}, (args) =>
+      args[7] === "stop" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    await stack.start();
+    await stack.stop();
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
+  it("has the running flag set before the menu rebuild the up-start push triggers", async () => {
+    const seenDuringStarting: boolean[] = [];
+    const stack = controller({
+      onState: (state) => {
+        if (state.phase === "starting") seenDuringStarting.push(stack.managedStackRunning());
+      },
+    });
+    await stack.start();
+    expect(seenDuringStarting.length).toBeGreaterThan(0);
+    expect(seenDuringStarting.every((running) => running)).toBe(true);
+  });
+
+  it("leaves the stop item hidden when the web-url write fails before compose up", async () => {
+    // A directory where the URL file belongs makes the write's rename fail (e.g. ENOSPC).
+    await mkdir(path.join(root, "stack", STACK_WEB_URL_FILE), { recursive: true });
+    const stack = controller();
+    expect((await stack.start()).phase).toBe("failed");
+    expect(calls.filter((call) => call.args[7] === "up")).toHaveLength(0);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("does not restore the running flag when a stop begins during the token read", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
+    const stack = controller({
+      // The first probe is the health wait of the start below; a later one must not
+      // answer before the stop that began during the token read has settled.
+      probe: (_url, _signal, supplied) => {
+        probes += 1;
+        if (supplied !== token || probes === 1) return Promise.resolve("v1.2.3");
+        return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+      },
+    });
+
+    await stack.start();
+    const reuse = stack.matchesDesiredStack();
+    stopping = stack.stop();
+    // The stop settles in microtasks, before the token read's file I/O can finish.
+    await stopping;
+    expect(probes).toBe(1);
+    await expect(reuse).resolves.toBe(false);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
+  it("records reuse from a probe that outlives a failed stop", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const stopGate = deferred();
+    let stopping: Promise<unknown> = Promise.resolve();
+    let probes = 0;
+    const stack = controller(
+      {
+        // The probe answers only after the stop settles, and it still sees the stack up.
+        probe: (_url, _signal, supplied) => {
+          if (supplied !== token) return Promise.resolve(null);
+          probes += 1;
+          return Promise.resolve(stopping).then(() => "v1.2.3" as string | null);
+        },
+      },
+      (args) =>
+        args[7] === "stop"
+          ? { code: 1, stderr: "Cannot connect to the Docker daemon", wait: stopGate.promise }
+          : ok(args),
+    );
+
+    const reuse = stack.matchesDesiredStack();
+    stopping = stack.stop();
+    // Settle the stop only once the probe is pending; the token read can outlast a fixed delay.
+    await vi.waitFor(() => expect(probes).toBe(1));
+    stopGate.resolve();
+    await stopping;
+    expect(stack.state().phase).toBe("failed");
+    await expect(reuse).resolves.toBe(true);
+    expect(stack.managedStackRunning()).toBe(true);
+  });
+
+  it("tells dependent UI when a reuse probe first records a running stack", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const notifiedRunning: boolean[] = [];
+    const stack = controller({
+      onReuseConfirmed: () => notifiedRunning.push(stack.managedStackRunning()),
+      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.3" : null),
+    });
+
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(notifiedRunning).toEqual([true]);
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(notifiedRunning).toEqual([true]);
+  });
+
+  it("probes nothing on startup when no local stack files exist", async () => {
+    let probes = 0;
+    const stack = controller({
+      probe: () => {
+        probes += 1;
+        return Promise.resolve("v1.2.3");
+      },
+    });
+    await expect(stack.matchesDesiredStack()).resolves.toBe(false);
+    expect(probes).toBe(0);
+    expect(stack.managedStackRunning()).toBe(false);
+  });
+
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
@@ -634,20 +965,20 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(calls).toEqual([]);
     await expect(stat(path.join(root, "stack", STACK_ENV_FILE))).rejects.toThrow();
   });
 
-  it("reports a missing Compose plugin as docker-missing", async () => {
+  it("reports a missing Compose plugin as a failure, not a missing Docker", async () => {
     const stack = controller({}, (args) =>
       args[1] === "version"
         ? { code: 1, stderr: "docker: 'compose' is not a docker command" }
         : ok(args),
     );
     const state = await stack.start();
-    expect(state.phase).toBe("docker-missing");
+    expect(state.phase).toBe("failed");
     expect(state.message).toContain("Docker Compose is missing");
     expect(calls).toHaveLength(1);
   });
@@ -709,6 +1040,13 @@ describe("LocalStackController", () => {
     await expect(stat(path.join(root, "stack", STACK_COMPOSE_FILE))).rejects.toThrow();
   });
 
+  it("names Docker Desktop when it is missing on macOS and Windows", async () => {
+    const stack = controller({ platform: "darwin", exists: () => false });
+    expect((await stack.start()).message).toBe(
+      "Rakazo needs Docker Desktop to run on this computer.",
+    );
+  });
+
   it("waits for the daemon when docker info fails", async () => {
     const stack = controller({}, (args) =>
       args[0] === "info"
@@ -718,9 +1056,81 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-not-running",
-      message: "Docker is installed but not running. Start Docker, then check again.",
+      message: "Docker is installed but not running. Start the Docker service to continue.",
     });
     expect(calls).toHaveLength(2);
+  });
+
+  it("opens the Docker app once while it is not running, and again after it was up", async () => {
+    let daemonUp = false;
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" && !daemonUp
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect(await stack.start()).toMatchObject({
+      phase: "docker-not-running",
+      message: "Starting Docker Desktop…",
+    });
+    // A re-check while it boots must not bring the app back to the front.
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    expect(launched).toEqual(["/usr/bin/docker"]);
+
+    daemonUp = true;
+    expect((await stack.start()).phase).toBe("ready");
+    daemonUp = false;
+    await stack.start();
+    expect(launched).toHaveLength(2);
+  });
+
+  it("does not open a local Docker app for a daemon chosen by DOCKER_HOST", async () => {
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        platform: "darwin",
+        env: { PATH: "/usr/bin", HOME: "/Users/me", DOCKER_HOST: "ssh://build-box" },
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
+    expect(launched).toEqual([]);
+  });
+
+  it("asks the person to open Docker once the app setup opened has not come up", async () => {
+    let clock = 0;
+    const stack = controller(
+      { platform: "darwin", launchDockerApp: async () => "Docker Desktop", now: () => clock },
+      (args) =>
+        args[0] === "info"
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    clock = 90_000;
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
   });
 
   it("explains the docker group when the socket is not accessible", async () => {
@@ -949,20 +1359,22 @@ describe("LocalStackController", () => {
   });
 
   it("queues a start behind a stop so up and stop never overlap", async () => {
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    const stack = controller({}, (args) => {
-      if (args[7] === "stop") return { wait: stopGate };
+    const stopGate = deferred();
+    const pushed: string[] = [];
+    const stack = controller({ onState: (state) => pushed.push(state.phase) }, (args) => {
+      if (args[7] === "stop") return { wait: stopGate.promise };
       return ok(args);
     });
     await stack.start();
     const stopping = stack.stop();
+    await vi.waitFor(() => expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]));
+    pushed.length = 0;
     const restarted = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // A start that ran now would announce its check before any I/O, within these microtasks.
+    await new Promise(setImmediate);
+    expect(pushed).not.toContain("checking-docker");
     expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
-    releaseStop();
+    stopGate.resolve();
     await stopping;
     expect((await restarted).phase).toBe("ready");
     const order = calls.map((call) => call.args[7] ?? call.args[0]);
@@ -970,34 +1382,28 @@ describe("LocalStackController", () => {
   });
 
   it("queues a fresh start behind a stop instead of joining the aborted attempt", async () => {
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
+    const stopGate = deferred();
     let probes = 0;
-    let markProbeStarted: () => void = () => undefined;
-    const probeStarted = new Promise<void>((resolve) => {
-      markProbeStarted = resolve;
-    });
+    const probeStarted = deferred();
     const stack = controller(
       {
         probe: (_url, signal) => {
           probes += 1;
           if (probes > 1) return Promise.resolve("v1.2.3");
-          markProbeStarted();
+          probeStarted.resolve();
           if (signal.aborted) return Promise.resolve(null);
           return new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
         },
       },
-      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
+      (args) => (args[7] === "stop" ? { wait: stopGate.promise } : ok(args)),
     );
     const first = stack.start();
-    await probeStarted;
+    await probeStarted.promise;
     const stopping = stack.stop();
     const second = stack.start();
     expect(second).not.toBe(first);
     expect(stack.start()).toBe(second);
-    releaseStop();
+    stopGate.resolve();
     await stopping;
     expect((await first).message).toBe("The start was interrupted. Retry to continue.");
     expect((await second).phase).toBe("ready");
@@ -1006,22 +1412,19 @@ describe("LocalStackController", () => {
   });
 
   it("honours a second stop over a start queued behind a slow first stop", async () => {
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
+    const stopGate = deferred();
     let stops = 0;
     const stack = controller({}, (args) => {
       if (args[7] !== "stop") return ok(args);
       stops += 1;
-      return stops === 1 ? { wait: stopGate } : {};
+      return stops === 1 ? { wait: stopGate.promise } : {};
     });
     await stack.start();
     const firstStop = stack.stop();
     const queuedStart = stack.start();
     const secondStop = stack.stop();
     expect(secondStop).not.toBe(firstStop);
-    releaseStop();
+    stopGate.resolve();
     await Promise.all([firstStop, queuedStart, secondStop]);
     expect(stack.state()).toEqual(initialStackState("v1.2.3"));
     const order = calls.map((call) => call.args[7] ?? call.args[0]);
@@ -1029,14 +1432,17 @@ describe("LocalStackController", () => {
   });
 
   it("does not wait out a slow health probe when stopped", async () => {
+    const probeStarted = deferred();
     const stack = controller({
-      probe: (_url, signal) =>
-        signal.aborted
+      probe: (_url, signal) => {
+        probeStarted.resolve();
+        return signal.aborted
           ? Promise.resolve(null)
-          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))),
+          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
+      },
     });
     const started = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await probeStarted.promise;
     const stopped = await stack.stop();
     expect(stopped).toEqual(initialStackState("v1.2.3"));
     expect((await started).message).toBe("The start was interrupted. Retry to continue.");

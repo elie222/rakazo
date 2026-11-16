@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEvent,
@@ -54,11 +55,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
       await db.pool.end();
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address }),
     );
     ({ userId, spaceId, botId, threadId } = identity);
     actor = { spaceId, userId } as Actor;
@@ -83,25 +80,19 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
    * cannot shorten what the write actually waits.
    */
   function holdThreadShare(heldThreadId = threadId) {
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const done = system.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${heldThreadId} FOR SHARE`;
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
           SELECT pg_current_xact_id()::text AS "xactId"`;
-        locked(rows[0]?.xactId ?? "");
-        await opened;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
       },
       { timeout: 30_000 },
     );
-    return { lockTaken, open: () => open(), done };
+    return { lockTaken: lockTaken.promise, open: () => opened.resolve(), done };
   }
 
   async function connectProbe() {
@@ -409,11 +400,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
     "deletes a bot whose thread a long read held",
     async () => {
       const removed = await runAsSystem("test fixture", () =>
-        provisionMessagingIdentity(
-          prisma,
-          { provider: "test", address: `${address}-removed` },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma, { provider: "test", address: `${address}-removed` }),
       );
       try {
         const bot = await system.bot.findUniqueOrThrow({

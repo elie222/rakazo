@@ -20,7 +20,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
-import { messageBlocksText } from "./run-replies.js";
+import { messageBlocksText } from "./run-replies.prompt.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 const NOTIFY_RECIPIENTS_AT_ONCE = 5;
@@ -105,6 +105,7 @@ export async function notifyRun(
     threadId: string;
     trigger: string;
     routineId?: string | null;
+    sourceMessageId?: string | null;
   },
   message: NotificationMessage,
   options: { retryOnFailure?: boolean } = {},
@@ -115,6 +116,15 @@ export async function notifyRun(
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER && run.sourceMessageId) {
+    const card = await deps.prisma.message.findFirst({
+      where: { id: run.sourceMessageId, botId: run.botId, thread: { spaceId: run.spaceId } },
+      select: { threadId: true },
+    });
+    if (!card) return;
+    run = { ...run, threadId: card.threadId };
+    message = { ...message, threadId: card.threadId };
+  }
   const routineId = message.kind === "failure" ? run.routineId : null;
   const lookup =
     <T>(label: string, fallback: T) =>

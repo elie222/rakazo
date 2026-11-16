@@ -24,8 +24,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import { Suspense } from "react";
+import type { RefObject } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import {
@@ -33,12 +32,11 @@ import {
   rosterHasUndismissedRunError,
   rosterWorkStatusLabel,
 } from "../../lib/roster-status";
+import type { ChatMenuState } from "./chat-context-menu";
+import { ChatMenu } from "./chat-context-menu";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
 import { useRedrawAtMidnight } from "./use-redraw-at-midnight";
-
-/** The chat whose menu is open; `anchor` is its row's "⋯" button when opened from there. */
-export type RosterMenu = { kind: "bot" | "group"; id: string; anchor?: HTMLElement | null };
 
 export function SidebarRoster({
   sidebarGroups,
@@ -64,11 +62,9 @@ export function SidebarRoster({
   displayedRunError,
   draggedBotId,
   setDraggedBotId,
-  botMenu,
-  setBotMenu,
+  chatMenu,
   reorderRosterBot,
   activeSnapshot,
-  botMenuContent,
   mini = false,
 }: {
   sidebarGroups: ReturnType<
@@ -96,11 +92,9 @@ export function SidebarRoster({
   displayedRunError: string | null;
   draggedBotId: string | null;
   setDraggedBotId: (id: string | null) => void;
-  botMenu: RosterMenu | null;
-  setBotMenu: Dispatch<SetStateAction<RosterMenu | null>>;
+  chatMenu: ChatMenuState;
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
   activeSnapshot: ThreadSnapshot | null;
-  botMenuContent: ReactNode;
   mini?: boolean;
 }) {
   useRedrawAtMidnight();
@@ -315,7 +309,8 @@ export function SidebarRoster({
                 const rowSameList =
                   Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
-                const menuOpen = botMenu?.kind === item.kind && botMenu.id === item.chat.id;
+                const menuOpen =
+                  chatMenu.menu?.kind === item.kind && chatMenu.menu.id === item.chat.id;
                 // Only the open space's chats have a menu; the mini rail has no room for "⋯".
                 const hasMenu = item.chat.spaceId === bootstrapMe?.spaceId;
                 const actionsButton = hasMenu && !mini;
@@ -570,19 +565,10 @@ export function SidebarRoster({
                       opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                     }}
                   >
-                    <ContextMenu
+                    <ChatMenu
+                      target={{ kind: item.kind, id: item.chat.id }}
+                      state={chatMenu}
                       disabled={!hasMenu}
-                      open={menuOpen}
-                      // A sibling row's menu may already own the state; only clear our own.
-                      onOpenChange={(open) =>
-                        setBotMenu((current) =>
-                          open
-                            ? { kind: item.kind, id: item.chat.id }
-                            : current?.kind === item.kind && current.id === item.chat.id
-                              ? null
-                              : current,
-                        )
-                      }
                     >
                       {mini ? (
                         <IconTooltip
@@ -598,8 +584,7 @@ export function SidebarRoster({
                       ) : (
                         chatTrigger
                       )}
-                      {menuOpen ? <Suspense fallback={null}>{botMenuContent}</Suspense> : null}
-                    </ContextMenu>
+                    </ChatMenu>
                     {actionsButton ? (
                       // The same menu without a right-click, so it can be found and reached by
                       // keyboard. It shows on hover or focus, or while its menu is open; until
@@ -618,7 +603,7 @@ export function SidebarRoster({
                         }`}
                         onClick={(event) => {
                           const anchor = event.currentTarget;
-                          setBotMenu(
+                          chatMenu.setMenu(
                             menuOpen ? null : { kind: item.kind, id: item.chat.id, anchor },
                           );
                         }}

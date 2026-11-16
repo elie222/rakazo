@@ -26,7 +26,8 @@ instead of a password. Some actions, such as exporting data, ask you to confirm 
 
 ## Credentials
 
-**Settings → Vault** lists the API keys and website logins your bots can use. Values are never shown.
+**Settings → Vault** lists the API keys and website logins your bots can use. Protected values
+show only after you confirm it's you.
 You can add one, replace its value, or remove it. See [Reusable credentials](./bot-secrets.md).
 
 ## Organizations
@@ -55,8 +56,8 @@ In **Settings → General**:
 rakazo.com is free to try; the sidebar shows when your free period ends. To keep going, choose a
 plan:
 
-- **Use my subscription or API key**: works with your ChatGPT or Claude plan, or any
-  [model provider](./models.md) key. You pay the provider for model usage.
+- **Use my subscription or API key**: connect a supported [model subscription](./model-subscriptions.md)
+  or [model provider](./models.md) key. Your provider's allowance and billing apply.
 - **Use Rakazo credits**: model usage is paid from **Monthly credits** included in the plan. Choose
   **Add credits** for more. Monthly credits expire at renewal; credits you add don't.
 

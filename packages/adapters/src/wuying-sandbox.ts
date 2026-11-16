@@ -21,12 +21,17 @@ import type {
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxFileTooLargeError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { abortableDelay, boundedSandboxCommandTimeoutMs, isRetryableError } from "@rakazo/core";
-import { boundedComputerActions, computerObservation } from "./computer-support.js";
+import {
+  boundedComputerActions,
+  computerObservation,
+  WorkspacePathError,
+} from "./computer-support.js";
 import { normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import { McpSession } from "./mcp-transport.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -510,7 +515,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
     const entries: string[] = [];
     for (const parent of parents) {
       if (parent !== "bots" && parent !== ".browser-profiles")
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       const directory = await this.target(computer, parent, context.signal);
       if (!(await this.exists(directory, context.signal))) continue;
       if (request.action === "list") {
@@ -520,7 +525,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
       }
       const pattern = parent === "bots" ? /^[A-Za-z0-9_-]+$/ : /^chromium-bot-[0-9a-f]{32}$/;
       if (request.names.some((name) => !pattern.test(name)))
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       for (const name of request.names) {
         await this.tools.call(
           "fs_delete",
@@ -796,7 +801,12 @@ export class WuyingSandboxProvider implements SandboxProvider {
     url.searchParams.set("desktop_id", this.options.desktopId);
     url.searchParams.set("region_id", this.options.regionId);
     url.searchParams.set("auth_code", authCode);
-    return { url: url.toString(), mimeType: "text/html", close: async () => undefined };
+    return {
+      url: url.toString(),
+      singleUseSignIn: { screen: `${this.options.desktopId}:${this.options.regionId}` },
+      mimeType: "text/html",
+      close: async () => undefined,
+    };
   }
 
   async sendInput(
@@ -900,10 +910,11 @@ export class WuyingSandboxProvider implements SandboxProvider {
         size?: number;
         truncated?: boolean;
       };
-      if ((read.size ?? 0) > limit) throw new Error(`computer file exceeds ${limit} bytes`);
       const chunk = Buffer.from(read.data ?? "", "base64");
       chunks.push(chunk);
       offset += chunk.length;
+      // The size is checked against what arrived too: an answer can leave the file's size out.
+      if ((read.size ?? 0) > limit || offset > limit) throw new SandboxFileTooLargeError(limit);
       if (!read.truncated || chunk.length === 0) break;
     }
     return new Uint8Array(Buffer.concat(chunks));
@@ -911,7 +922,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
     if (file.content.byteLength > MAX_FILE_BYTES)
-      throw new Error(`computer file exceeds ${MAX_FILE_BYTES} bytes`);
+      throw new SandboxFileTooLargeError(MAX_FILE_BYTES);
     const target = await this.target(computer, file.path, context.signal);
     await this.mkdirs(target.slice(0, target.lastIndexOf("\\")), context.signal);
     await this.tools.call(
@@ -1107,7 +1118,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
     if (await this.exists(target, signal)) return;
     const profile = await this.userProfile(signal);
     if (!target.toLowerCase().startsWith(`${profile.toLowerCase()}\\`))
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     let current = profile;
     for (const segment of target.slice(profile.length + 1).split("\\")) {
       current = `${current}\\${segment}`;

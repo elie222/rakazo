@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -339,10 +341,11 @@ it("treats deleting a note already deleted elsewhere as done", async () => {
 });
 
 it("does not offer to discard an edit while its save is in flight", async () => {
-  let finishSave!: (doc: typeof note) => void;
+  let finishSave!: Deferred<typeof note>;
   mocks.rpc.mockImplementation((proc: string) => {
     if (proc === "memory/list") return Promise.resolve([note]);
-    return new Promise((resolve) => (finishSave = resolve));
+    finishSave = deferred<typeof note>();
+    return finishSave.promise;
   });
   await render();
   await type("Saving this\n");
@@ -351,7 +354,7 @@ it("does not offer to discard an edit while its save is in flight", async () => 
   act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } }, repeat }));
   expect(mocks.alert).not.toHaveBeenCalled();
   expect(repeat).not.toHaveBeenCalled();
-  await act(async () => finishSave({ ...note, content: "Saving this\n", revision: 4 }));
+  await act(async () => finishSave.resolve({ ...note, content: "Saving this\n", revision: 4 }));
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
 

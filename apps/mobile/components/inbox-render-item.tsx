@@ -175,6 +175,7 @@ function SectionHeading({
   count,
   collapsed,
   onPress,
+  onRename,
   onDelete,
   appearance,
 }: {
@@ -182,6 +183,8 @@ function SectionHeading({
   count?: number;
   collapsed: boolean;
   onPress: () => void;
+  /** The name prompt is iOS-only, so other platforms leave this out. */
+  onRename?: () => void;
   onDelete?: () => void;
   appearance: ResolvedAppearance;
 }) {
@@ -192,10 +195,13 @@ function SectionHeading({
         onDelete
           ? {
               actions: [
+                ...(onRename
+                  ? [{ id: "rename", title: t`Rename section`, image: "pencil" as const }]
+                  : []),
                 { id: "delete", title: t`Delete section`, image: "trash", destructive: true },
               ],
               label: t`Section actions for ${ph({ name: title })}`,
-              onAction: onDelete,
+              onAction: (id) => (id === "rename" ? onRename?.() : onDelete()),
             }
           : undefined
       }
@@ -226,6 +232,7 @@ export function useInboxRenderItem({
   deleteSection,
   editSectionFromMenu,
   groupAction,
+  promptRenameSection,
   spaceId,
   openBot,
   openGroup,
@@ -245,6 +252,7 @@ export function useInboxRenderItem({
   | "organizeFromMenu"
   | "editSectionFromMenu"
   | "deleteSection"
+  | "promptRenameSection"
   | "snoozeChat"
 > & {
   appearance: ResolvedAppearance;
@@ -343,6 +351,14 @@ export function useInboxRenderItem({
             count={item.collapsed ? (item.count ?? 0) : undefined}
             collapsed={item.collapsed === true}
             onPress={() => toggleCollapsed(item.key)}
+            onRename={
+              Platform.OS === "ios" && item.sectionId
+                ? () => {
+                    if (item.sectionId)
+                      promptRenameSection({ id: item.sectionId, name: item.title }, spaceId);
+                  }
+                : undefined
+            }
             onDelete={
               sharing || !item.sectionId
                 ? undefined
@@ -388,6 +404,7 @@ export function useInboxRenderItem({
       confirmDeleteSpace,
       createBotInSpace,
       deleteSection,
+      promptRenameSection,
       day,
       now,
       editSectionFromMenu,

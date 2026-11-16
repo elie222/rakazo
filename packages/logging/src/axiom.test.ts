@@ -22,6 +22,25 @@ class FakeAxiom implements AxiomIngestClient {
   }
 }
 
+// Sends what was written since the last flush as one request, the way the store's client batches,
+// and loses the whole request when one line cannot be serialized or holds a field the store refuses.
+class BatchingStore implements AxiomIngestClient {
+  readonly stored: Array<Record<string, unknown>> = [];
+  private pending: object[] = [];
+
+  ingest(_dataset: string, events: object[]): void {
+    this.pending.push(...events);
+  }
+
+  async flush(): Promise<void> {
+    const batch = this.pending;
+    this.pending = [];
+    const lines = batch.map((event) => JSON.stringify(event));
+    if (lines.some((line) => line.length > 1_000_000)) throw new Error("request refused");
+    this.stored.push(...lines.map((line) => JSON.parse(line)));
+  }
+}
+
 function sampleEvent(): LogEvent {
   return {
     timestamp: "2026-01-02T03:04:05.000Z",
@@ -113,5 +132,83 @@ describe("axiom sink", () => {
     );
     expect(withUser.sink).toBeUndefined();
     expect(withUser.warning).toMatch(/credentials/);
+  });
+
+  it("keeps the other lines of a batch when one line is too large for the store", async () => {
+    const store = new BatchingStore();
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    logger.info("run.execution_started", { "run.id": "run-a" });
+    logger.warn("run.setup_failed", {
+      "run.id": "run-a",
+      error: new Error(`token=hunter2secretvalue ${"x".repeat(2_000_000)}`),
+    });
+    logger.warn("run.failed", { "run.id": "run-b" });
+    await logger.flush();
+
+    expect(store.stored.map((event) => event.message)).toEqual([
+      "run.execution_started",
+      "run.setup_failed",
+      "run.failed",
+    ]);
+    const failed = store.stored[1]!;
+    expect(failed).toMatchObject({ "run.id": "run-a", "log.truncated": true });
+    expect(JSON.stringify(failed).length).toBeLessThan(100_000);
+    expect(JSON.stringify(failed)).not.toContain("hunter2secretvalue");
+  });
+
+  it("keeps redacted text out of a stand-in", async () => {
+    const store = new BatchingStore();
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    logger.warn("run.setup_failed", {
+      "run.id": "run-a",
+      note: "token=hunter2secretvalue",
+      attempts: Array.from({ length: 200 }, () => "y".repeat(10_000)),
+      error: new Error("token=hunter2secretvalue"),
+    });
+    await logger.flush();
+
+    expect(store.stored).toEqual([expect.objectContaining({ "log.oversized": true })]);
+    expect(JSON.stringify(store.stored)).not.toContain("hunter2secretvalue");
+  });
+
+  it("stands in for a line that cannot be serialized, and keeps the rest of its batch", async () => {
+    const store = new BatchingStore();
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    const unserializable = {
+      toJSON() {
+        throw new Error("cannot serialize");
+      },
+    };
+    logger.warn("run.setup_failed", { "run.id": "run-a", detail: unserializable });
+    logger.warn("run.failed", { "run.id": "run-b" });
+    await logger.flush();
+
+    expect(store.stored).toEqual([
+      expect.objectContaining({
+        message: "run.setup_failed",
+        "run.id": "run-a",
+        "log.unserializable": true,
+      }),
+      expect.objectContaining({ message: "run.failed", "run.id": "run-b" }),
+    ]);
+  });
+
+  it("stands in for a line too large overall, with its run named", async () => {
+    const store = new BatchingStore();
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    logger.warn("run.setup_failed", {
+      "run.id": "run-a",
+      attempts: Array.from({ length: 200 }, () => "y".repeat(10_000)),
+    });
+    await logger.flush();
+
+    expect(store.stored).toEqual([
+      expect.objectContaining({ "run.id": "run-a", "log.oversized": true }),
+    ]);
+    expect(store.stored[0]).not.toHaveProperty("attempts");
   });
 });

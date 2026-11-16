@@ -85,6 +85,6 @@ Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as
 
 - **Search** in the sidebar searches bots and conversations. Press Cmd+K (Ctrl+K on Windows and
   Linux) to jump to any bot.
-- **Activity** in the sidebar lists every run, with filters for status and date. Use it to find a
-  run that failed or is waiting on you.
+- **Activity** in the sidebar lists every run, with search by bot name and filters for status
+  and date. Use it to find a run that failed or is waiting on you.
 - **Artifacts** in the account menu lists every file bots have made, with search and a date filter.

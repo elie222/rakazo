@@ -1,4 +1,5 @@
-import { CommandExitError, InstaboxError } from "@insforge/instabox-sdk";
+import { CommandExitError, InstaboxError, InstaboxQuotaError } from "@insforge/instabox-sdk";
+import type { UnreferencedMachineRecords } from "@rakazo/adapter-kit";
 import { parse } from "shell-quote";
 import type {
   InstaboxApi,
@@ -6,12 +7,14 @@ import type {
   InstaboxJob,
   InstaboxMachine,
   InstaboxRunOptions,
+  InstaboxSpec,
 } from "./instabox-sandbox.js";
 import { InstaboxSandboxProvider, instaboxSdk } from "./instabox-sandbox.js";
 import { desktopCommandResponder, simpleCommand } from "./linux-desktop.test-support.js";
 
 interface EmulatedComputer {
   state: "running" | "suspended";
+  spec: InstaboxSpec;
   template: string;
   metadata: Record<string, string>;
   files: Map<string, { content: Uint8Array; mode: number }>;
@@ -23,7 +26,8 @@ interface EmulatedComputer {
  * In-memory instabox SDK: the sandbox lifecycle, commands (foreground and background jobs), files,
  * published ports, and the SDK's own error classes, so the real adapter's translation runs
  * offline. Its shell understands only what the adapter sends: desktop runtime scripts, the home
- * link, mkdir, find, stat, chmod, `env`, `echo`, and `printenv`.
+ * link, page requests, mkdir, find, stat, chmod, `env`, `echo`, and `printenv`. Like instabox, it
+ * refuses a command longer than 64 KiB.
  */
 export class InstaboxEmulator implements InstaboxApi {
   readonly computers = new Map<string, EmulatedComputer>();
@@ -39,15 +43,34 @@ export class InstaboxEmulator implements InstaboxApi {
   rateLimited = 0;
   /** Jobs whose kill was attempted after their wait gave up. */
   readonly killedJobs: string[] = [];
-  /** Each `job.kill`. An Error rejects; false means the signal was not confirmed. */
+  /** Each `job.kill`. An Error rejects; false means every process had already exited. */
   jobKill: () => boolean | Error = () => true;
+  /** The sizes the account's plan offers, as `vcpus/memMiB`; the first is the default. */
+  allowedSpecs = ["4/8192", "8/16384", "16/32768"];
+  /** A resize whose restart fails: the computer starts again at its old size. */
+  resizeFails = false;
+  /** Thrown by the next resize request before any change, as an API or transport failure is. */
+  resizeError: Error | undefined;
+  /** The page tools' helper, given the request it read on stdin; unset, it is not installed. */
+  pageBrowser: ((request: unknown) => { exitCode: number; stdout: string }) | undefined;
+  /** Thrown by the next file write, as a transfer failure is. */
+  writeError: Error | undefined;
+  onWrite: (path: string, data: Uint8Array, signal?: AbortSignal) => void | Promise<void> =
+    () => {};
   private sequence = 0;
 
-  async create(template: string, metadata: Record<string, string>): Promise<InstaboxMachine> {
-    this.request(`create ${template}`);
+  async create(
+    template: string,
+    metadata: Record<string, string>,
+    spec?: InstaboxSpec,
+  ): Promise<InstaboxMachine> {
+    this.request(`create ${template}${spec ? ` ${spec.vcpus}/${spec.memMiB}` : ""}`);
+    if (spec) this.offered(spec);
+    const [vcpus, memMiB] = this.allowedSpecs[0]!.split("/").map(Number);
     const id = `m_test${++this.sequence}`;
     this.computers.set(id, {
       state: "running",
+      spec: spec ?? { vcpus: vcpus!, memMiB: memMiB! },
       template,
       metadata,
       files: new Map(),
@@ -77,6 +100,14 @@ export class InstaboxEmulator implements InstaboxApi {
     }
   }
 
+  private offered(spec: InstaboxSpec) {
+    if (!this.allowedSpecs.includes(`${spec.vcpus}/${spec.memMiB}`))
+      throw new InstaboxQuotaError("this plan does not offer that size", {
+        status: 400,
+        code: "spec_not_allowed",
+      });
+  }
+
   private require(id: string): EmulatedComputer {
     const computer = this.computers.get(id);
     if (!computer) throw new InstaboxError("machine not found", { status: 404, code: "not_found" });
@@ -95,11 +126,27 @@ export class InstaboxEmulator implements InstaboxApi {
       sandboxId: id,
       getInfo: async () => {
         this.request(`info ${id}`);
-        return { state: this.require(id).state };
+        const { state, spec } = this.require(id);
+        return { state, machine: { spec: { ...spec } } };
       },
       pause: async () => {
         this.request(`pause ${id}`);
         this.require(id).state = "suspended";
+      },
+      // The server stops, resizes and starts the computer; a failed start goes back to the old size.
+      resize: async (spec) => {
+        this.request(`resize ${id} ${spec.vcpus}/${spec.memMiB}`);
+        const computer = this.require(id);
+        if (this.resizeError) throw this.resizeError;
+        this.offered(spec);
+        computer.state = "running";
+        // The SDK's error for a failed operation: no HTTP status, the operation named.
+        if (this.resizeFails)
+          throw new InstaboxError("no host has room for that size", {
+            code: "no_capacity",
+            operationId: "op_resize",
+          });
+        computer.spec = { ...spec };
       },
       commands: { run: async (command, options) => this.run(id, command, options) },
       files: {
@@ -110,9 +157,14 @@ export class InstaboxEmulator implements InstaboxApi {
             throw new InstaboxError(`${path} not found`, { status: 404, code: "not_found" });
           return new Uint8Array(file.content);
         },
-        write: async (path, data) => {
+        write: async (path, data, options) => {
           this.request(`write ${path}`);
-          this.awake(id).files.set(path, { content: new Uint8Array(data), mode: 0o644 });
+          const computer = this.awake(id);
+          const failure = this.writeError;
+          this.writeError = undefined;
+          computer.files.set(path, { content: new Uint8Array(data), mode: 0o644 });
+          await this.onWrite(path, data, options.signal);
+          if (failure) throw failure;
         },
       },
       ports: {
@@ -131,6 +183,11 @@ export class InstaboxEmulator implements InstaboxApi {
     options: InstaboxRunOptions,
   ): Promise<InstaboxCommandResult | InstaboxJob> {
     this.request(`run ${id}${options.background ? " background" : ""}`);
+    if (Buffer.byteLength(command) > 65_536)
+      throw new InstaboxError("cmd is longer than 65536 bytes", {
+        status: 400,
+        code: "bad_request",
+      });
     const computer = this.awake(id);
     this.commands.push(command);
     if (options.background) {
@@ -176,14 +233,38 @@ export class InstaboxEmulator implements InstaboxApi {
     return { ...result, timedOut: false };
   }
 
-  private shell(computer: EmulatedComputer, command: string, envs: Record<string, string>) {
+  private shell(
+    computer: EmulatedComputer,
+    command: string,
+    envs: Record<string, string>,
+  ): { exitCode: number; stdout: string; stderr: string } {
     const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "" });
     if (this.fails(command)) return { exitCode: 1, stdout: "", stderr: "permission denied\n" };
+    // A page request: stdin from a private file the command removes before the helper starts.
+    const input = command.match(/exec 0< \S*?(\/tmp\/rakazo-page-input-[^'"\s;]+)/)?.[1];
+    if (input) {
+      const file = computer.files.get(input);
+      computer.files.delete(input);
+      if (!file) return { exitCode: 1, stdout: "", stderr: "No such file or directory\n" };
+      if (!this.pageBrowser)
+        return { exitCode: 127, stdout: "", stderr: "rakazo-page-browser: not found\n" };
+      return {
+        ...this.pageBrowser(JSON.parse(new TextDecoder().decode(file.content))),
+        stderr: "",
+      };
+    }
+    const removal = command.match(/^rm -f -- '([^']+)'/);
+    if (removal) {
+      computer.files.delete(removal[1]!);
+      return ok();
+    }
     const desktop = computer.respond(command);
     if (desktop) return desktop;
     if (command.includes("ln -s")) return ok();
     const parsed = parse(command, (name) => envs[name] ?? "");
     const argv = parsed.filter((token): token is string => typeof token === "string");
+    if (argv[0] === "bash" && argv[1] === "-c" && argv[2]?.startsWith("rm -f -- "))
+      return this.shell(computer, argv[2], envs);
     if (argv[0] === "mkdir") return ok();
     if (argv[0] === "chmod") {
       for (const path of argv.slice(3)) {
@@ -240,7 +321,10 @@ async function settle(
 }
 
 /** The real instabox adapter, SDK translation included, over the in-memory emulator. */
-export function emulatedInstabox(emulator = new InstaboxEmulator()) {
+export function emulatedInstabox(
+  emulator = new InstaboxEmulator(),
+  machines?: UnreferencedMachineRecords,
+) {
   const provider = () =>
     new InstaboxSandboxProvider(
       { apiKey: "test-instabox-key" },
@@ -250,6 +334,7 @@ export function emulatedInstabox(emulator = new InstaboxEmulator()) {
           emulator.requests.push(`fence ${id}`);
         },
         async () => emulator,
+        machines,
       ),
     );
   return { emulator, provider };

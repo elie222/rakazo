@@ -58,7 +58,8 @@ export type MobileMe = Pick<
   | "needsSignupSurvey"
   | "billingEnabled"
   | "paymentWalletProvider"
-  | "ticketBoardEnabled"
+  | "labs"
+  | "labsAvailable"
   | "botAvatarSet"
 >;
 export type MobileModel = ModelCatalogEntry;

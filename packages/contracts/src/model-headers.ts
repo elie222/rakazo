@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConnectionSetupError } from "./connection-setup-error.js";
 
 const RESERVED_HEADERS = new Set([
   "authorization",
@@ -50,7 +51,7 @@ export const ModelHeadersSchema = z
 
 export function parseModelHeaders(input: unknown): Record<string, string> {
   const parsed = ModelHeadersSchema.safeParse(input);
-  if (!parsed.success) throw new Error("Invalid custom headers");
+  if (!parsed.success) throw new ConnectionSetupError("Invalid custom headers");
   return parsed.data;
 }
 

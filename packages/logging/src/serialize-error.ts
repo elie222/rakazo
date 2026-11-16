@@ -8,11 +8,11 @@ export function serializeError(error: unknown, seen = new Set<unknown>()): Seria
     return { name: "Error", message: stringifyUnknown(error) };
   }
   if (seen.has(error)) {
-    return { name: error.name, message: "[Circular]" };
+    return { name: redactSensitiveText(error.name), message: "[Circular]" };
   }
   seen.add(error);
   const serialized: SerializedError = {
-    name: error.name || "Error",
+    name: redactSensitiveText(error.name || "Error"),
     message: redactSensitiveText(error.message),
   };
   // Database drivers and Node put a stable machine code (P2002, ECONNRESET) beside the message.

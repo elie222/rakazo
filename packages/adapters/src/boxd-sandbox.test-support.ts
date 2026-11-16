@@ -9,6 +9,7 @@ import type {
   Snapshot,
 } from "@boxd-sh/sdk";
 import { ConflictError, FilesystemError, NotFoundError } from "@boxd-sh/sdk";
+import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
 import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
@@ -191,17 +192,12 @@ export class FakeBoxd {
     const command = String(params.command);
     this.commands.push({ id, command, ...(params.cwd ? { cwd: params.cwd } : {}) });
     const output = { stdout: [] as Uint8Array[], stderr: [] as Uint8Array[] };
-    let finish!: (code: number) => void;
-    let fail!: (error: unknown) => void;
-    const exited = new Promise<number>((resolve, reject) => {
-      finish = resolve;
-      fail = reject;
-    });
+    const exited = deferred<number>();
     const key = `${id}:${this.commands.length}`;
     // A command wakes a suspended or hibernated machine; a stopped one has to be started.
     if (machine.status === "stopped") {
-      fail(new ConflictError(`machine ${machine.name} is stopped`, 9));
-      return this.stream(exited, output, () => undefined);
+      exited.reject(new ConflictError(`machine ${machine.name} is stopped`, 9));
+      return this.stream(exited.promise, output, () => undefined);
     }
     machine.status = "running";
     const result = this.shell(machine, command);
@@ -210,11 +206,11 @@ export class FakeBoxd {
     } else {
       if (result.stdout) output.stdout.push(Buffer.from(result.stdout));
       if (result.stderr) output.stderr.push(Buffer.from(result.stderr));
-      finish(result.exitCode ?? 0);
+      exited.resolve(result.exitCode ?? 0);
     }
-    return this.stream(exited, output, () => {
+    return this.stream(exited.promise, output, () => {
       this.running.delete(key);
-      fail(new Error("cancelled"));
+      exited.reject(new Error("cancelled"));
     });
   }
 
