@@ -87,11 +87,13 @@ export default function PeerChat() {
   const state:
     | { kind: "loading" }
     | { kind: "failed" }
-    | { kind: "ready"; chat: PeerConversation | null } = history.isSuccess
-    ? { kind: "ready", chat: history.data }
-    : history.isError && !history.isFetching
-      ? { kind: "failed" }
-      : { kind: "loading" };
+    | { kind: "ready"; chat: PeerConversation | null } =
+    // A failed re-read keeps the chat already on screen.
+    history.data !== undefined
+      ? { kind: "ready", chat: history.data }
+      : history.isError && !history.isFetching
+        ? { kind: "failed" }
+        : { kind: "loading" };
   const scrollRef = useRef<ScrollViewInstance>(null);
   const userScrolled = useRef(false);
 

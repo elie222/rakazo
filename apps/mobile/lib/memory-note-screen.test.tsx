@@ -466,3 +466,18 @@ it("shows the delete's failure, not an earlier save's", async () => {
   expect(container.textContent).toContain("Delete failed");
   expect(container.textContent).not.toContain("Save failed");
 });
+
+it("keeps the controls disabled after a delete until the screen has closed", async () => {
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "memory/list") return [note];
+    if (proc === "memory/remove") return { ok: true };
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await render();
+  await type("Edit\n");
+  await act(async () => button("Delete")?.click());
+  await act(async () => lastAlert().press("Delete"));
+  expect(mocks.back).toHaveBeenCalledTimes(1);
+  expect(button("Delete")?.disabled).toBe(true);
+  expect((await headerSave()).disabled).toBe(true);
+});

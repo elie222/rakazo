@@ -286,3 +286,17 @@ it("cancels the page request once the history read is given up", async () => {
 
   expect(signals[0]?.aborted).toBe(true);
 });
+
+it("keeps the chat on screen when a later re-read fails", async () => {
+  const screen = await open();
+  expect(screen.textContent).toContain("note 39");
+
+  rpc.mockRejectedValue(new Error("offline"));
+  await act(async () => {
+    await queryClient.refetchQueries();
+  });
+  await act(flush);
+
+  expect(screen.textContent).toContain("note 39");
+  expect(screen.textContent).not.toContain("Could not load this chat");
+});

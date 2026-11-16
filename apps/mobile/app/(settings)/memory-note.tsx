@@ -101,6 +101,7 @@ export default function MemoryNoteScreen() {
       });
     },
     onSaved: () => setClosing(true),
+    closesScreen: true,
   });
   const busy = saving.pending || removal.pending;
   const loadFailed = Boolean(listQuery.error) && !listQuery.isFetching && !note && !gone;
