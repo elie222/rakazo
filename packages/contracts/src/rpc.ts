@@ -458,8 +458,13 @@ export const appContract = {
         .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
     },
     invites: {
-      /** Owner only. A new single-use link each call. */
-      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      /**
+       * Owner only. A new single-use link each call, emailed when an address is given. Whoever
+       * joins from outside the organization is a guest in this Space alone.
+       */
+      create: oc
+        .input(z.object({ spaceId: Id, email: z.email().max(254).optional() }))
+        .output(SpaceInviteLinkSchema),
       preview: oc
         .input(z.object({ token: z.string().min(1).max(200) }))
         .output(SpaceInvitePreviewSchema),

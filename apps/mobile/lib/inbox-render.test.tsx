@@ -1215,3 +1215,27 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
   act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });
+
+it("reads a Space with guests as shared with guests", () => {
+  const heading = (name: string, hasGuests: boolean) =>
+    ({
+      type: "heading",
+      key: name,
+      title: name,
+      space: {
+        id: name,
+        name,
+        isDefault: false,
+        canDelete: false,
+        hasGuests,
+        bots: [],
+        groups: [],
+        botSections: [],
+      },
+    }) as unknown as InboxItem;
+  render(<List items={[heading("Clients", true), heading("Work", false)]} spaceId="Work" />);
+  expect(
+    container.querySelector('button[aria-label="Clients, Shared with guests"]'),
+  ).not.toBeNull();
+  expect(container.querySelector('button[aria-label="Work"]')).not.toBeNull();
+});

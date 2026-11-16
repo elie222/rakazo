@@ -116,4 +116,16 @@ test("an owner invites someone to the organization, who joins with a private Spa
     data: { json: { spaceId: team.id } },
   });
   expect(JSON.stringify(await teamMembers.json())).toContain("Bob Invitee");
+
+  // Someone from outside is invited by email, told first that they will see this Space alone.
+  const outsiderEmail = `space-guest-${stamp}@rakazo.test`;
+  await spaceSettings.getByRole("button", { name: "Invite", exact: true }).click();
+  await ownerPage.getByRole("menuitem", { name: "Invite by email" }).click();
+  await spaceSettings.getByRole("textbox", { name: "Email" }).fill(outsiderEmail);
+  await expect(spaceSettings.getByText("Not in Acme. They'll only see this Space.")).toBeVisible();
+  await captureScreenshot(ownerPage, testInfo, "space-invite-outsider");
+  await spaceSettings.getByRole("button", { name: "Invite", exact: true }).last().click();
+  await expect(ownerPage.getByText("Invitation sent")).toBeVisible();
+  const spaceInvitation = await lastEmailTo(outsiderEmail, /invited you to Team/);
+  expect(spaceInvitation.text).toMatch(/\/invite\/\S+/);
 });
