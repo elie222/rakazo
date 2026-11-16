@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { BackgroundJob, TransactionalEmail } from "@rakazo/adapter-kit";
+import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -32,10 +32,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
-  const syncSeats = vi.fn(async (_organizationId: string): Promise<number | null> => null);
-  const recordJob = vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined);
-  const cancelJobIn = vi.fn(async (_tx: unknown, _key: string) => undefined);
-  const enqueueJob = vi.fn(async (_job: BackgroundJob) => undefined);
+  const syncSeats = vi.fn(async (_organizationId: string) => undefined);
   const publishRosterChange = vi.fn(async (_change: unknown) => undefined);
   /** The topics organization signals went to, as the fanout received them. */
   const organizationSignals: string[] = [];
@@ -138,16 +135,6 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     return spaceId;
   }
 
-  /** The backup went in with the change, and the recount that followed removed it. */
-  function expectSeatsRecounted(organizationId: string) {
-    expect(recordJob).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ name: "billing.seats", payload: { organizationId } }),
-    );
-    expect(syncSeats).toHaveBeenCalledWith(organizationId);
-    expect(cancelJobIn).toHaveBeenCalledWith(expect.anything(), `billing.seats:${organizationId}`);
-  }
-
   function role(organizationId: string, userId: string) {
     return system.member.findUnique({
       where: { organizationId_userId: { organizationId, userId } },
@@ -164,12 +151,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       prisma,
       billing: { syncSeats },
       email,
-      jobs: {
-        cancel: vi.fn(async () => undefined),
-        enqueue: enqueueJob,
-        enqueueIn: recordJob,
-        cancelIn: cancelJobIn,
-      },
+      jobs: { cancel: vi.fn(async () => undefined), enqueue: vi.fn(async () => undefined) },
       events: {
         ...createThreadEvents(prisma),
         notify: vi.fn(async () => undefined),
@@ -296,7 +278,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     expect(accepted.status).toBe(200);
     const ownSpaceId = accepted.json.spaceId as string;
-    expectSeatsRecounted(organizationId);
+    expect(syncSeats).toHaveBeenCalledWith(organizationId);
     await expect(role(organizationId, invitee.id)).resolves.toEqual({ role: "member" });
     // They see none of the owner's Spaces, only one of their own.
     const memberships = await system.spaceMember.findMany({
@@ -329,44 +311,6 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect(actions.map((event) => event.action)).toEqual(
       expect.arrayContaining(["organization.invitation.created", "organization.member.joined"]),
     );
-  });
-
-  it("runs the seat count's backup now when the recount fails or is overtaken", async () => {
-    const owner = await person("owner");
-    const failed = await person("failed");
-    const overtaken = await person("overtaken");
-    const organizationId = owner.organizationId;
-    const key = `billing.seats:${organizationId}`;
-
-    syncSeats.mockRejectedValueOnce(new Error("provider unavailable"));
-    const first = await invite(owner, organizationId, failed.email);
-    expect(
-      (await call(failed.actor, "organizations/invitations/accept", { invitationId: first }))
-        .status,
-    ).toBe(200);
-    // The backup is brought forward to run now, and stays.
-    expect(enqueueJob).toHaveBeenLastCalledWith({
-      name: "billing.seats",
-      payload: { organizationId },
-      replaceKey: key,
-    });
-    expect(cancelJobIn).not.toHaveBeenCalledWith(expect.anything(), key);
-
-    // A count taken before another change landed runs the backup now, in case a racing
-    // recount removed it.
-    recordJob.mockClear();
-    syncSeats.mockResolvedValueOnce(2);
-    const second = await invite(owner, organizationId, overtaken.email);
-    expect(
-      (await call(overtaken.actor, "organizations/invitations/accept", { invitationId: second }))
-        .status,
-    ).toBe(200);
-    expect(cancelJobIn).not.toHaveBeenCalledWith(expect.anything(), key);
-    expect(recordJob).toHaveBeenLastCalledWith(expect.anything(), {
-      name: "billing.seats",
-      payload: { organizationId },
-      replaceKey: key,
-    });
   });
 
   it("refuses expired, cancelled and unverified acceptances", async () => {
@@ -633,7 +577,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     await expect(
       system.bot.findUniqueOrThrow({ where: { id: bot.id }, select: { userId: true } }),
     ).resolves.toEqual({ userId: owner.id });
-    expectSeatsRecounted(organizationId);
+    expect(syncSeats).toHaveBeenCalledWith(organizationId);
     // Whoever took over one of their Spaces is told, like everyone left in each.
     for (const spaceId of [ownSpaceId, team])
       expect(publishRosterChange).toHaveBeenCalledWith({ spaceIds: [spaceId] });

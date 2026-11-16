@@ -5,7 +5,6 @@ import { RPCHandler } from "@orpc/server/fetch";
 import type {
   AgentContextStrategy,
   AgentRuntime,
-  BackgroundJobHandlers,
   BillingProvider,
   ConnectorProvider,
   JobPublisher,
@@ -53,7 +52,6 @@ import {
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
-  GraphileJobWorkerHost,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
   installedMessaging,
@@ -180,7 +178,6 @@ import {
 } from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
-import { recordSeatChangeAhead, syncSeatsAfterChange } from "./seat-sync.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
@@ -589,25 +586,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await workActivities
         ?.endUser(userId)
         .catch((error) => getLogger().error("live status card removal failed", error));
-      if (billing) {
-        const organizationIds = await joinedOrganizationIds(prisma, userId);
-        // The memberships go in the auth library's transaction, so the backups are recorded
-        // just before it: a crash before the recount below still recounts. The content is gone
-        // by now, so a backup that cannot be recorded leaves the deletion to finish.
-        for (const organizationId of organizationIds)
-          await bestEffort(
-            "record the seat count's backup",
-            recordSeatChangeAhead({ prisma, jobs, billing }, organizationId),
-          );
-        seatsAfterDeletion.set(userId, organizationIds);
-      }
+      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
     },
     // Its memberships went with it, so the organizations it joined stop paying for its seat.
     afterDeleteUser: async (userId) => {
       const organizationIds = seatsAfterDeletion.get(userId) ?? [];
       seatsAfterDeletion.delete(userId);
       for (const organizationId of organizationIds)
-        await syncSeatsAfterChange({ prisma, jobs, billing }, organizationId);
+        await bestEffort(
+          "seat count after an account deletion",
+          billing?.syncSeats(organizationId),
+        );
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
@@ -700,34 +689,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
   );
 
-  // Only this process holds billing's credentials, so it runs the seat recount's backups itself.
-  const handlers: BackgroundJobHandlers = billing
-    ? {
-        ...jobHandlers,
-        "billing.seats": async ({ organizationId }) => {
-          await billing.syncSeats(organizationId);
-        },
-      }
-    : jobHandlers;
   if (inMemoryJobs) {
-    await inMemoryJobs.start(handlers);
+    await inMemoryJobs.start(jobHandlers);
   }
-  runs?.attach(handlers);
-  // Its own small pool, since the runner keeps one connection listening and the API's pool is
-  // sized for requests. A backup is due minutes after it is recorded, and one brought forward is
-  // announced, so a slow poll finds the rest.
-  const apiJobPool =
-    billing && !inMemoryJobs
-      ? createPool(env.databaseUrl, { poolMax: 2, applicationName: "rakazo-api-billing-jobs" })
-      : undefined;
-  const apiJobHost = apiJobPool
-    ? new GraphileJobWorkerHost(apiJobPool, {
-        workload: "api",
-        concurrency: 1,
-        pollInterval: 30_000,
-      })
-    : undefined;
-  await apiJobHost?.start(handlers);
+  runs?.attach(jobHandlers);
   const reconciler = inMemoryJobs
     ? createRunReconciler(
         {
@@ -1262,7 +1227,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await stopHomeRetention?.();
         await stopOrganizationDeletions();
         await reconciler?.stop();
-        await bestEffort("stop the billing job host", apiJobHost?.stop());
         await oauthTokenUpgrade;
         await mcpArgsMove;
         await runsStopped;
@@ -1278,7 +1242,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await bestEffort("disconnect database client", prisma.$disconnect());
         await bestEffort("close database pool", created.pool?.end());
         await bestEffort("close job database pool", ownedJobPool?.end());
-        await bestEffort("close billing job database pool", apiJobPool?.end());
         await analytics?.flush();
         await logger.flush({ timeoutMs: 2_000 });
       })();

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { OrganizationRole } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION, organizationSeatCount } from "./billing.js";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
@@ -110,9 +110,6 @@ export function organizationRole(role: string): OrganizationRole {
   if (isOwnerRole(role)) return "owner";
   return role.split(",").some((value) => value.trim() === "admin") ? "admin" : "member";
 }
-
-/** Called inside a transaction that changes who holds a paid seat in the organization. */
-export type SeatChange = (tx: Prisma.TransactionClient, organizationId: string) => Promise<void>;
 
 /** Serializes one organization's membership changes, so each check holds until it commits. */
 async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizationId: string) {
@@ -428,8 +425,6 @@ export async function previewOrganizationInvitation(
 export async function acceptOrganizationInvitation(
   prisma: PrismaClient,
   input: InviteeInput,
-  /** Runs in the transaction, once the member is added, for whatever their seat changes. */
-  onSeatChange?: SeatChange,
 ): Promise<{ organizationId: string; spaceId: string }> {
   return withTransactionRetry(() =>
     prisma.$transaction(
@@ -501,7 +496,6 @@ export async function acceptOrganizationInvitation(
                 userId: input.userId,
                 name: OWN_SPACE_NAME,
               });
-        await onSeatChange?.(tx, organizationId);
         return { organizationId, spaceId };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -556,7 +550,6 @@ async function cancelInvitationsBy(
 export async function revokeOrganizationMember(
   prisma: PrismaClient,
   input: { organizationId: string; userId: string; memberUserId: string },
-  onSeatChange?: SeatChange,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await lockOrganizationMembers(tx, input.organizationId);
@@ -580,8 +573,6 @@ export async function revokeOrganizationMember(
         },
         data: { role: GUEST_ROLE },
       });
-    // Also when they were a guest already: removing again is how a stopped removal finishes.
-    await onSeatChange?.(tx, input.organizationId);
     await cancelInvitationsBy(tx, input);
     // Nor can an invitation sent to them before bring them back.
     const removed = await tx.user.findUnique({
@@ -597,23 +588,6 @@ export async function revokeOrganizationMember(
         },
         data: { status: "canceled" },
       });
-  });
-}
-
-/**
- * Runs `settle` under the lock every join and removal takes, saying whether the organization
- * still has the `seats` billable members a recount billed. `null` means the organization has no
- * seat billing, which no change alters.
- */
-export async function settleSeatCount(
-  prisma: PrismaClient,
-  organizationId: string,
-  seats: number | null,
-  settle: (tx: Prisma.TransactionClient, current: boolean) => Promise<void>,
-): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await lockOrganizationMembers(tx, organizationId);
-    await settle(tx, seats === null || (await organizationSeatCount(tx, organizationId)) === seats);
   });
 }
 

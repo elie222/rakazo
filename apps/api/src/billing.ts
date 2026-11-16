@@ -132,11 +132,8 @@ export interface BillingService {
   reportPartnerSales(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
-  /**
-   * Pushes the organization's member count to the provider. Call when members change. Resolves
-   * to the count it billed, or null for an organization not billed by seat.
-   */
-  syncSeats(organizationId: string): Promise<number | null>;
+  /** Pushes the organization's member count to the provider. Call when members change. */
+  syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
   cancelForDeletedOrganization(organizationId: string): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
@@ -261,7 +258,25 @@ export function createBillingService(deps: {
     return deleting !== null;
   }
 
+  /** Every billing event and checkout return syncs, so a missed seat recount heals at the next. */
   async function sync(customerId: string): Promise<void> {
+    await pull(customerId);
+    await bestEffort("seat count on a billing sync", reconcileSeats(customerId));
+  }
+
+  /** Bills the member count when a seat-billed plan stores another; pulls, never syncs, after. */
+  async function reconcileSeats(customerId: string): Promise<void> {
+    const account = await prisma.billingAccount.findUnique({ where: { customerId } });
+    if (!account || !hasBillingAccess(account.status)) return;
+    if (account.creditAmountCents || account.byokPriceCents) return;
+    const seats = await organizationSeatCount(prisma, account.organizationId);
+    if (account.seats === seats) return;
+    await provider.updateSeats(customerId, seats);
+    await pull(customerId);
+  }
+
+  /** Reads the provider's subscription and credit purchases into the account. */
+  async function pull(customerId: string): Promise<void> {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
       if (account) {
@@ -957,12 +972,7 @@ export function createBillingService(deps: {
 
     async syncSeats(organizationId) {
       const account = await billingAccountForOrganization(prisma, organizationId);
-      if (!account || account.creditAmountCents) return null;
-      const seats = await organizationSeatCount(prisma, organizationId);
-      if (account.seats === seats) return seats;
-      await provider.updateSeats(account.customerId, seats);
-      await sync(account.customerId);
-      return seats;
+      if (account) await reconcileSeats(account.customerId);
     },
 
     async claimReferral(actor, code) {

@@ -282,9 +282,6 @@ export function createBackgroundJobHandlers(deps: {
     "push.receipt": async (payload) => {
       await runAsSystem("check a push receipt", () => deps.notifications?.checkReceipt(payload));
     },
-    // Billing credentials stay with the API, which runs this job in its place; the worker's
-    // hosts never take it. Without billing there are no seats to recount.
-    "billing.seats": async () => undefined,
     "history.compact": asOwner(thread, async (payload) => {
       // Retrieval policies use stored context without paid message-count compaction.
       // Skip legacy backlog work after a policy change.

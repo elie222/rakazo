@@ -101,7 +101,6 @@ const payloadSchemas = {
     ticketId: z.string().min(1),
     tokenDigest: z.string().min(1),
   }),
-  "billing.seats": z.object({ organizationId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -416,20 +415,6 @@ export function pushReceiptJob(
   availableAt: Date,
 ): BackgroundJob {
   return { name: "push.receipt", payload, availableAt, maxAttempts: 8 };
-}
-
-export function billingSeatsJobKey(organizationId: string): string {
-  return `billing.seats:${organizationId}`;
-}
-
-/** One per organization, so changes close together share a recount; without `availableAt` it runs now. */
-export function billingSeatsJob(organizationId: string, availableAt?: Date): BackgroundJob {
-  return {
-    name: "billing.seats",
-    payload: { organizationId },
-    replaceKey: billingSeatsJobKey(organizationId),
-    ...(availableAt ? { availableAt } : {}),
-  };
 }
 
 export function cloudAgentPollJobKey(agentId: string): string {
