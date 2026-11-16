@@ -250,6 +250,32 @@ describe("window state to save", () => {
     expect(read(win)).toEqual({ ...normal, maximized: true, fullScreen: false });
   });
 
+  it("keeps the normal bounds of a maximized window restored from minimized", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const win = fakeWindow();
+    read(win);
+    win.maximized = true;
+    read(win);
+    win.minimized = true;
+    win.normal = { x: 0, y: 0, width: 1440, height: 875 };
+    read(win);
+    // macOS keeps reporting the maximized frame as the normal bounds after the restore.
+    win.minimized = false;
+    expect(read(win)).toEqual({ ...normal, maximized: true, fullScreen: false });
+    win.maximized = false;
+    win.normal = { x: 30, y: 40, width: 800, height: 600 };
+    expect(read(win)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
+  });
+
+  it("keeps the normal bounds from before full screen", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const win = fakeWindow();
+    read(win);
+    win.fullScreen = true;
+    win.normal = { x: 0, y: 0, width: 1440, height: 900 };
+    expect(read(win)).toEqual({ ...normal, maximized: false, fullScreen: true });
+  });
+
   it("reads the current state once the window is restored", () => {
     const read = windowStateReader<ReturnType<typeof fakeWindow>>();
     const win = fakeWindow();

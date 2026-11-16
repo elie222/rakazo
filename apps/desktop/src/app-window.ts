@@ -193,6 +193,8 @@ export async function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
+  // Read once while the window still has its normal bounds, before it is maximized.
+  windowState(win);
   // Saved soon after each change too, so a crash or force quit keeps the last layout.
   let saveTimer: NodeJS.Timeout | undefined;
   const saveSoon = () => {
@@ -210,7 +212,6 @@ export async function createWindow(url: string, partition: string | null) {
     win.maximize();
     win.show();
   }
-  windowState(win);
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
   );

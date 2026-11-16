@@ -98,19 +98,26 @@ type StatefulWindow = {
 };
 
 /**
- * Reads a window's state to save, keeping each window's state from before it was minimized:
- * minimizing changes what Electron reports (macOS overwrites a maximized window's normal bounds,
- * and Windows reports it as not maximized). Read it on every change so that state stays current.
+ * Reads a window's state to save. Electron's normal bounds are only trusted while the window is
+ * normal: macOS overwrites a maximized window's normal bounds when it is minimized, and keeps the
+ * wrong value after a restore. So each window's normal bounds are kept from the last time it was
+ * normal, and its whole state from before it was minimized (Windows reports a minimized window as
+ * not maximized). Read it on every change so both stay current.
  */
 export function windowStateReader<W extends StatefulWindow>() {
+  const lastNormalBounds = new WeakMap<W, Bounds>();
   const beforeMinimize = new WeakMap<W, SavedWindow>();
   return (win: W): SavedWindow => {
     const kept = beforeMinimize.get(win);
     if (win.isMinimized() && kept) return kept;
+    const maximized = win.isMaximized();
+    const fullScreen = win.isFullScreen();
+    if (!win.isMinimized() && !maximized && !fullScreen)
+      lastNormalBounds.set(win, win.getNormalBounds());
     const state = {
-      ...win.getNormalBounds(),
-      maximized: win.isMaximized(),
-      fullScreen: win.isFullScreen(),
+      ...(lastNormalBounds.get(win) ?? win.getNormalBounds()),
+      maximized,
+      fullScreen,
     };
     if (!win.isMinimized()) beforeMinimize.set(win, state);
     return state;
