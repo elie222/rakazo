@@ -1898,7 +1898,8 @@ model Computer {
 }
 
 /// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
-/// ended or it went unused. `claimId` leases the row to one process while it emails.
+/// ended or it went unused. `claimId` is kept only for the previous release, which claims the row
+/// while it emails instead of taking the organization's lease.
 model HomeDeletionNotice {
   computerId     String    @id
   computer       Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
