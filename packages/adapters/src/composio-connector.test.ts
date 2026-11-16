@@ -18,6 +18,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  withSharedAccessHint,
 } from "./composio-connector.js";
 import { collectPages, filterCatalog } from "./connector-catalog.js";
 import { ConnectorRegistry } from "./connector-registry.js";
@@ -980,6 +981,63 @@ describe("composio tool mapping", () => {
           '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
       },
     ]);
+  });
+
+  it("says which shared-access permission a refused mailbox call lacks", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {},
+      error:
+        "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared",
+      resultType: "failed",
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-shared-scope",
+      traceId: "composio-shared-scope",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-mail",
+          connectorId: "composio",
+          externalId: "outlook",
+          displayName: "Mail",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "OUTLOOK_LIST_MESSAGES",
+          args: { user_id: "shared@example.test" },
+          executionId: "composio-shared-scope",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message:
+          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This connection was not granted Mail.Read.Shared. Its sign-in setup must request that permission, and the account must then be reconnected.",
+      },
+    ]);
+  });
+
+  it("leaves other refusals as the provider worded them", () => {
+    expect(withSharedAccessHint("Access denied")).toBe("Access denied");
+    expect(withSharedAccessHint("Shared folder not found")).toBe("Shared folder not found");
   });
 
   it("reports a call the provider marked failed even when its error text is empty", async () => {

@@ -640,8 +640,10 @@ export class ComposioConnector implements ComposioProvider {
           const logIds = collectLogIds(executed);
           yield {
             type: "error",
-            message: sanitizeIntegrationError(
-              composioResultError(result.error || `${item.tool} failed`, result.data),
+            message: withSharedAccessHint(
+              sanitizeIntegrationError(
+                composioResultError(result.error || `${item.tool} failed`, result.data),
+              ),
             ),
             ...(logIds.length > 0 ? { logIds } : {}),
           };
@@ -974,6 +976,18 @@ export function composioResultError(summary: string, data: unknown): string {
   const shown = details.slice(0, 5);
   const more = details.length - shown.length;
   return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
+}
+
+const SHARED_ACCESS_SCOPE = /\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)*\.Shared\b/;
+
+/**
+ * A connection made without a delegated "shared" scope is refused for any mailbox or
+ * calendar but the user's own, and only a new connection carries the scope.
+ */
+export function withSharedAccessHint(message: string): string {
+  const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
+  if (!scope) return message;
+  return `${message.replace(/[.\s]+$/, "")}. This connection was not granted ${scope}. Its sign-in setup must request that permission, and the account must then be reconnected.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {
