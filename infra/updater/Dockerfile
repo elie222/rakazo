@@ -2,7 +2,7 @@
 # separately from the application image rather than adding root-equivalent tooling to api, worker,
 # and web. It is also the only service the update never recreates, so its own image moves on the
 # operator's schedule: `docker compose pull updater && docker compose up -d updater`.
-FROM docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS dockercli
+FROM docker:29-cli@sha256:5a7af0dcb0e46c803efe9b45371dd21cb500e5b4453250394ac6f06d49b6e6f1 AS dockercli
 
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
