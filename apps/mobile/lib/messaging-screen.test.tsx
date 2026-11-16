@@ -24,9 +24,19 @@ vi.mock("./native", () => ({
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
+const session = vi.hoisted(() => ({ generation: 0 }));
+vi.mock("./session", () => ({
+  currentSessionGeneration: () => session.generation,
+  subscribeSessionGeneration: () => () => {},
+}));
 const push = vi.fn();
+let blur: (() => void) | undefined;
 vi.mock("expo-router", () => ({
-  useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => undefined | (() => void)) =>
+    useEffect(() => {
+      blur = effect() ?? undefined;
+      return () => blur?.();
+    }, [effect]),
   useRouter: () => ({ push }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
@@ -419,4 +429,218 @@ it("keeps a failed action's error when a refresh that was pending then succeeds"
 
   await act(async () => finishRefresh.resolve());
   expect(container.textContent).toContain("Something went wrong. Try again.");
+});
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late code %s after switching bots",
+  async (outcome) => {
+    responses["bots/list"] = [
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ];
+
+    const pending = deferred<unknown>();
+    responses["messaging/link/start"] = pending.promise;
+    await act(async () => root.render(<MessagingSettings />));
+    const click = (text: string) =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === text)!
+        .click();
+    await act(async () => {
+      click("iMessage");
+    });
+    expect(
+      vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+    ).toHaveLength(1);
+    await act(async () => click("Team"));
+    await act(async () => {
+      if (outcome === "resolve")
+        pending.resolve({
+          code: "OLD-CODE",
+          expiresAt: new Date(Date.now() + 20_000).toISOString(),
+        });
+      else pending.reject(new Error("old request failed"));
+    });
+    expect(container.textContent).not.toContain("OLD-CODE");
+    expect(container.textContent).not.toContain("Something went wrong");
+    responses["messaging/link/start"] = {
+      code: "NEW-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    };
+    await act(async () => click("iMessage"));
+    expect(rpc).toHaveBeenLastCalledWith("messaging/link/start", { botId: "bot-2" });
+    expect(container.textContent).toContain("NEW-CODE");
+    expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  },
+);
+
+it("does not issue another code while one request is in flight", async () => {
+  const pending = deferred<unknown>();
+  responses["messaging/link/start"] = pending.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  const reads = listCalls();
+  const button = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "iMessage",
+  )!;
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(1);
+  await act(async () =>
+    pending.resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).toContain("ONE-CODE");
+  expect(listCalls()).toBe(reads);
+});
+
+it("ignores a code that arrives after leaving settings", async () => {
+  const pending = deferred<unknown>();
+  responses["messaging/link/start"] = pending.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click(),
+  );
+  const reads = listCalls();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(listCalls()).toBe(reads);
+  expect(container.textContent).toBe("");
+});
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late %s after blur without unmount",
+  async (outcome) => {
+    const pending = deferred<unknown>();
+    responses["messaging/link/start"] = pending.promise;
+    await act(async () => root.render(<MessagingSettings />));
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "iMessage")!
+        .click(),
+    );
+    const reads = listCalls();
+    await act(async () => blur?.());
+    await act(async () => {
+      if (outcome === "resolve")
+        pending.resolve({
+          code: "BLURRED-CODE",
+          expiresAt: new Date(Date.now() + 20_000).toISOString(),
+        });
+      else pending.reject(new Error("offline"));
+    });
+    expect(container.textContent).not.toContain("BLURRED-CODE");
+    expect(container.textContent).not.toContain("Something went wrong");
+    expect(listCalls()).toBe(reads);
+  },
+);
+
+it("keeps workspace codes through picker changes and clears them on blur", async () => {
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["slack", "sendblue"],
+    identities: [],
+  };
+  responses["bots/list"] = [
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ];
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [
+      { id: "install-1", provider: "slack", workspaceName: "Workspace", botId: "workspace-bot" },
+    ],
+  };
+
+  const pending = deferred<unknown>();
+  responses["messaging/link/start"] = pending.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  await press("Slack", "Link DMs");
+  const pick = (label: string) =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === label)!
+      .click();
+  await act(async () => pick("Team"));
+  await act(async () =>
+    pending.resolve({
+      code: "WORKSPACE-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(container.textContent).toContain("WORKSPACE-CODE");
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "workspace-bot" });
+  await act(async () => pick("Chief"));
+  expect(container.textContent).toContain("WORKSPACE-CODE");
+  await act(async () => blur?.());
+  expect(container.textContent).not.toContain("WORKSPACE-CODE");
+});
+
+it("blocks issuance across remounts until the previous request settles", async () => {
+  const pending = deferred<unknown>();
+  responses["messaging/link/start"] = pending.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  const connect = () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click();
+  await act(async () => connect());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () => connect());
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(1);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(container.textContent).not.toContain("CLOSED-CODE");
+  responses["messaging/link/start"] = {
+    code: "NEW-CODE",
+    expiresAt: new Date(Date.now() + 20_000).toISOString(),
+  };
+  await act(async () => connect());
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(2);
+  expect(container.textContent).toContain("NEW-CODE");
+});
+
+it("does not block a new session on the previous session's request", async () => {
+  const old = deferred<unknown>();
+  responses["messaging/link/start"] = old.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  const connect = () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click();
+  await act(async () => connect());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  session.generation += 1;
+  responses["messaging/link/start"] = {
+    code: "NEW-SESSION",
+    expiresAt: new Date(Date.now() + 20_000).toISOString(),
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () => connect());
+  expect(container.textContent).toContain("NEW-SESSION");
+  await act(async () =>
+    old.resolve({ code: "OLD-SESSION", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).not.toContain("OLD-SESSION");
+  expect(container.textContent).toContain("NEW-SESSION");
 });

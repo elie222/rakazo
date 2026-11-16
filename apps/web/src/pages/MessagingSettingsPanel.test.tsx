@@ -126,6 +126,7 @@ afterEach(() => {
   container.remove();
   vi.useRealTimers();
   vi.clearAllMocks();
+  api.bots.list.mockResolvedValue([{ id: "bot-1", name: "Chief" }]);
   messaging.status.mockReset();
   messaging.channels.list.mockReset();
   messaging.channels.list.mockResolvedValue([]);
@@ -540,4 +541,164 @@ it("keeps a teammate's DM link next to the user's own workspace elsewhere", asyn
   expect(links).toHaveLength(2);
   await act(async () => links[1]!.click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+});
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late code %s after switching bots",
+  async (outcome) => {
+    messaging.status.mockResolvedValue(statusWith([]));
+    api.bots.list.mockResolvedValue([
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ]);
+
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    messaging.link.start.mockReturnValueOnce(pending.promise);
+    await renderOverlay();
+    await act(async () => {
+      telegramItem()?.click();
+    });
+    expect(messaging.link.start).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      const select = container.querySelector("select")!;
+      select.value = "bot-2";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      if (outcome === "resolve")
+        pending.resolve({
+          code: "OLD-CODE",
+          expiresAt: new Date(Date.now() + 20_000).toISOString(),
+        });
+      else pending.reject(new Error("old request failed"));
+    });
+    expect(container.textContent).not.toContain("OLD-CODE");
+    expect(container.textContent).not.toContain("Couldn't update messaging settings");
+    await act(async () => telegramItem()?.click());
+    expect(messaging.link.start).toHaveBeenLastCalledWith({ botId: "bot-2" });
+    expect(container.textContent).toContain("ABCD-2345");
+  },
+);
+
+it("does not issue another code while one request is in flight", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
+  await renderOverlay();
+  const reads = messaging.status.mock.calls.length;
+  await act(async () => {
+    telegramItem()?.click();
+    telegramItem()?.click();
+  });
+  expect(messaging.link.start).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    pending.resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).toContain("ONE-CODE");
+  expect(messaging.status).toHaveBeenCalledTimes(reads);
+});
+
+it("ignores a code that arrives after the panel closes", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
+  await renderOverlay();
+  await act(async () => telegramItem()?.click());
+  const reads = messaging.status.mock.calls.length;
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(messaging.status).toHaveBeenCalledTimes(reads);
+  expect(container.textContent).toBe("");
+});
+
+it.each([false, true])(
+  "keeps workspace codes when picker changes (initial load: %s)",
+  async (initialLoad) => {
+    messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
+    messaging.installations.list.mockResolvedValue({
+      available: true,
+      installations: [
+        { id: "install-1", provider: "slack", workspaceName: "Workspace", botId: "workspace-bot" },
+      ],
+    } as never);
+    const bots = [
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ];
+    api.bots.list.mockResolvedValue(bots);
+    const loadingBots = deferred<typeof bots>();
+    if (initialLoad) api.bots.list.mockReturnValueOnce(loadingBots.promise);
+
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    messaging.link.start.mockReturnValueOnce(pending.promise);
+    await renderOverlay();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Link DMs")!
+        .click(),
+    );
+    const pick = (id: string) => {
+      const select = container.querySelector("select")!;
+      select.value = id;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    if (initialLoad) {
+      await act(async () => loadingBots.resolve(bots));
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll("select option")).toHaveLength(2);
+      });
+    }
+    await act(async () => pick("bot-2"));
+    await act(async () =>
+      pending.resolve({
+        code: "WORKSPACE-CODE",
+        expiresAt: new Date(Date.now() + 20_000).toISOString(),
+      }),
+    );
+    expect(container.textContent).toContain("WORKSPACE-CODE");
+    expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
+    await act(async () => pick("bot-1"));
+    expect(container.textContent).toContain("WORKSPACE-CODE");
+  },
+);
+
+it("blocks issuance across remounts until the previous request settles", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
+  await renderOverlay();
+  await act(async () => telegramItem()?.click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await renderOverlay();
+  expect(
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect a chat app",
+    )!.disabled,
+  ).toBe(true);
+  await act(async () => telegramItem()?.click());
+  expect(messaging.link.start).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(container.textContent).not.toContain("CLOSED-CODE");
+  expect(
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect a chat app",
+    )!.disabled,
+  ).toBe(false);
+  await act(async () => telegramItem()?.click());
+  expect(messaging.link.start).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("ABCD-2345");
 });
