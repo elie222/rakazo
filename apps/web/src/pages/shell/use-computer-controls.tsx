@@ -16,7 +16,6 @@ import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
   computerBusyWithRun,
-  computerPanelNeedsScreen,
   screenMissing,
   userHoldsComputerControl,
 } from "../../lib/thread-events";
@@ -110,7 +109,8 @@ export function useComputerControls({
     }, 4000);
   }, []);
   useEffect(() => {
-    if (panel !== "computer") releaseComputerRecovery();
+    // The recovery hint shows in the bot panel; leaving it lets the hint go.
+    if (panel !== "settings") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
   useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const computerBot =
@@ -120,7 +120,6 @@ export function useComputerControls({
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
   const controlRequests = useRef(new Set<string>());
-  const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
     botId: targetBotId,
@@ -211,38 +210,6 @@ export function useComputerControls({
   }
 
   useEffect(() => {
-    if (panel !== "computer") {
-      autoBooted.current = null;
-      return;
-    }
-    if (!active) return;
-    const botId = active.id;
-    // Opening the panel is a fresh try at a screen that failed.
-    screenAwaitsRetry.current = false;
-    let cancelled = false;
-    void (async () => {
-      // Refresh from the server first: a stale SSE "booting" snapshot would
-      // otherwise hide an RPC takeover.
-      const snap = await refreshThread(botId).catch(() => null);
-      if (cancelled || activeBotId.current !== botId) return;
-      const state = snap?.computer?.state;
-      const screen = state === "running" ? await refreshComputerScreen(botId) : null;
-      if (cancelled || activeBotId.current !== botId) return;
-      if (!computerPanelNeedsScreen(state, screen) || autoBooted.current === botId) return;
-      autoBooted.current = botId;
-      await bootComputer({
-        botId,
-        takeControl: false,
-        showProgress: false,
-        force: true,
-      }).catch(() => undefined);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [panel, active?.id]);
-
-  useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
     setComputerErrorFromScreen(false);
@@ -286,8 +253,7 @@ export function useComputerControls({
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
-    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
-      return;
+    if (!computerOpen || !heartbeatBotId || computer?.state !== "running") return;
     // Only a visible page checks in: a forgotten tab neither keeps the computer awake nor holds
     // control, which lapses about a minute and a half after it was hidden.
     const ping = () => {
@@ -307,7 +273,7 @@ export function useComputerControls({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", ping);
     };
-  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
+  }, [computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
   // The server tells the holder their lease, from Take control or teaching alike; the hand back
@@ -509,7 +475,6 @@ export function useComputerControls({
       ((screenFailure && computer?.state === "running") ||
         (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
-          visibleRecover
           botId={computerBot.id}
           computer={computer}
           onChanged={async () => {

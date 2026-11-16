@@ -30,6 +30,12 @@ vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ label, children }: { label: string; children?: ReactNode }) =>
+    createElement("section", null, label, children),
+  SettingsRow: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement("button", { type: "button", "aria-label": title, onClick: onPress }, title),
+}));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   const Pressable = ({
@@ -90,44 +96,38 @@ afterEach(() => {
 const work = [{ id: "work-a", title: "Review draft", notes: "", status: "open" }];
 const memory = [{ id: "memory-a", path: "notes.md", content: "Saved context" }];
 
-async function render(botId = "bot-a") {
-  await act(async () => root.render(createElement(BotContextCards, { botId })));
+async function render(botId = "bot-a", section: "work" | "memory" = "work") {
+  await act(async () => root.render(createElement(BotContextCards, { botId, section })));
 }
 
 describe("bot context cards", () => {
   it.each([
-    ["scratchpad/list", "Memory", "notes.md", "Open work"],
-    ["memory/list", "Open work", "Review draft", "Memory"],
-  ])("renders the other section when %s fails", async (failed, heading, item, hidden) => {
-    rpc.mockImplementation(async (method: string) => {
-      if (method === failed) throw new Error("Request failed");
-      return method === "scratchpad/list" ? work : memory;
-    });
-    await render();
+    ["work", "scratchpad/list", "Open work", "Review draft", "Memory"],
+    ["memory", "memory/list", "Memory", "notes.md", "Open work"],
+  ] as const)("loads only the %s list", async (section, method, heading, item, other) => {
+    rpc.mockImplementation(async (called: string) =>
+      called === "scratchpad/list" ? work : memory,
+    );
+    await render("bot-a", section);
+    expect(rpc.mock.calls.map(([called]) => called)).toEqual([method]);
     expect(container.textContent).toContain(heading);
     expect(container.textContent).toContain(item);
-    expect(container.textContent).not.toContain(hidden);
-    expect(container.textContent).toContain("Request failed");
+    expect(container.textContent).not.toContain(other);
   });
 
-  it.each([
-    ["scratchpad/list", "Memory", "notes.md"],
-    ["memory/list", "Open work", "Review draft"],
-  ])("renders the other section while %s is still pending", async (pending, heading, item) => {
-    rpc.mockImplementation((method: string) => {
-      if (method === pending) return new Promise(() => {});
-      return Promise.resolve(method === "scratchpad/list" ? work : memory);
-    });
-    await render();
-    expect(container.textContent).toContain(heading);
-    expect(container.textContent).toContain(item);
+  it.each(["work", "memory"] as const)("shows a failed %s load", async (section) => {
+    rpc.mockRejectedValue(new Error("Request failed"));
+    await render("bot-a", section);
+    expect(container.textContent).toBe("Request failed");
   });
 
   it("hides empty work and placeholder-only memory", async () => {
     rpc.mockImplementation(async (method: string) =>
       method === "scratchpad/list" ? [] : [{ id: "memory-a", path: "MEMORY.md", content: "" }],
     );
-    await render();
+    await render("bot-a", "work");
+    expect(container.textContent).toBe("");
+    await render("bot-a", "memory");
     expect(container.textContent).toBe("");
   });
 
@@ -149,7 +149,7 @@ describe("bot context cards", () => {
 
   it("opens a remembered note in its editor", async () => {
     rpc.mockImplementation(async (method: string) => (method === "scratchpad/list" ? [] : memory));
-    await render();
+    await render("bot-a", "memory");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="notes.md"]')?.click(),
     );

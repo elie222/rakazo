@@ -13,7 +13,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Globe, MoreHorizontal, Search } from "lucide-react";
+import { ChevronRight, Globe, MoreHorizontal, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { pageMutationOptions } from "../../lib/page-actions";
 import { useOpenPage } from "../../lib/pages";
@@ -30,11 +30,34 @@ const SEARCH_FROM = 8;
  * The pages a bot or group built, pinned ones in their own group on top, then the newest. Each
  * bot or group gets its own list, so one's pages never stand in while another's load.
  */
-export function PagesList({ botId, groupId }: { botId?: string; groupId?: string }) {
-  return <OwnerPages key={botId ?? groupId} botId={botId} groupId={groupId} />;
+export function PagesList({
+  botId,
+  groupId,
+  preview,
+}: {
+  botId?: string;
+  groupId?: string;
+  /**
+   * The latest few pages under a heading, and nothing at all while there are none. `onOpenAll`
+   * opens the whole list, offered once there are more pages than the preview shows.
+   */
+  preview?: { onOpenAll: () => void };
+}) {
+  return <OwnerPages key={botId ?? groupId} botId={botId} groupId={groupId} preview={preview} />;
 }
 
-function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
+/** How many pages a preview shows before it leaves the rest to the whole list. */
+const PREVIEW_COUNT = 3;
+
+function OwnerPages({
+  botId,
+  groupId,
+  preview,
+}: {
+  botId?: string;
+  groupId?: string;
+  preview?: { onOpenAll: () => void };
+}) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -61,6 +84,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   const rename = useMutation(actions.rename);
   const [deleting, setDeleting] = useState<PageSummary | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null);
+  if (preview && !pages.data?.pages.some((read) => read.items.length > 0)) return null;
   if (pages.isPending) {
     return (
       <div className="grid place-items-center py-6 text-muted-foreground">
@@ -201,6 +225,46 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
       </DropdownMenu>
     </li>
   );
+  const deleteDialog = deleting ? (
+    <DeleteItemDialog
+      item={{ name: deleting.title }}
+      noun="page"
+      description={
+        <Trans>
+          Its shared link stops working and its cards in chat show it as deleted. This can't be
+          undone.
+        </Trans>
+      }
+      onCancel={() => setDeleting(null)}
+      onConfirm={async () => {
+        await remove.mutateAsync({ pageId: deleting.id });
+        setDeleting(null);
+      }}
+    />
+  ) : null;
+  if (preview) {
+    const more = items.length > PREVIEW_COUNT || pages.hasNextPage;
+    return (
+      <section data-testid="bot-pages">
+        <SectionHeading variant="label" className="mb-2 flex min-h-6 items-center">
+          {more ? (
+            <button
+              type="button"
+              onClick={preview.onOpenAll}
+              className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Trans>Pages</Trans>
+              <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
+            </button>
+          ) : (
+            <Trans>Pages</Trans>
+          )}
+        </SectionHeading>
+        <ul className="flex flex-col">{[...pinned, ...rest].slice(0, PREVIEW_COUNT).map(row)}</ul>
+        {deleteDialog}
+      </section>
+    );
+  }
   return (
     <div data-testid="bot-pages" className="flex flex-col gap-3">
       {searchable ? (
@@ -265,23 +329,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
           <Trans>Show more</Trans>
         </Button>
       ) : null}
-      {deleting ? (
-        <DeleteItemDialog
-          item={{ name: deleting.title }}
-          noun="page"
-          description={
-            <Trans>
-              Its shared link stops working and its cards in chat show it as deleted. This can't be
-              undone.
-            </Trans>
-          }
-          onCancel={() => setDeleting(null)}
-          onConfirm={async () => {
-            await remove.mutateAsync({ pageId: deleting.id });
-            setDeleting(null);
-          }}
-        />
-      ) : null}
+      {deleteDialog}
     </div>
   );
 }

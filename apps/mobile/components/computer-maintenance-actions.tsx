@@ -9,7 +9,7 @@ import { computerUpdates } from "../lib/computer-updates";
 import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
-/** Update and Reset rows for a bot's Computer settings group. */
+/** Update and Reset rows for a bot's computer, offered only while that computer is broken. */
 export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -33,8 +33,8 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   // A queued update or recovery reports progress here; its status changes with it.
   useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
 
-  if (!botId || !computer || computer.botId !== botId) return [];
-  const busy = Boolean(computer.busyBotName) || computer.state === "booting" || pending !== null;
+  if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
+  const busy = Boolean(computer.busyBotName) || pending !== null;
 
   async function run(action: "reset" | "update") {
     if (!botId || busy) return;

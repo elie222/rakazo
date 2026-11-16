@@ -23,7 +23,6 @@ import {
   otherAuthor,
   workingRoutineName,
 } from "@rakazo/core";
-import { writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
@@ -58,8 +57,8 @@ import { PagesProvider, usePagesForChat } from "../lib/pages";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
-import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
+import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
@@ -67,7 +66,6 @@ import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineList";
 import { ArchivedChats } from "./shell/archived-chats";
 import type { ChatMenuState, ChatMenuTarget } from "./shell/chat-context-menu";
 import { ChatContextMenu } from "./shell/chat-context-menu";
@@ -201,20 +199,12 @@ function SpaceShell() {
   const enterToSend = composerEnterToSendPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
-  const lastBotTab = useRef<Panel>("routines");
-  if (panel === "routines" || panel === "computer" || panel === "pages" || panel === "settings")
-    lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
   } | null>("peerConversation", null);
   const agentSkillsQuery = useQuery(queries.agentSkills.list.queryOptions());
   const agentSkills = agentSkillsQuery.data ?? NO_AGENT_SKILLS;
-  const setAgentSkills = useCallback(
-    (skills: AgentSkillCatalogEntry[]) =>
-      void writeSaved(queryClient, queries.agentSkills.list.queryKey(), () => skills),
-    [queries],
-  );
   const refreshAgentSkills = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queries.agentSkills.list.queryKey() });
   }, [queries]);
@@ -275,11 +265,7 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
-    : panel === "computer" ||
-      panel === "routines" ||
-      panel === "pages" ||
-      panel === "settings" ||
-      panel === "routine";
+    : panel === "routines" || panel === "pages" || panel === "settings" || panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -423,7 +409,7 @@ function SpaceShell() {
     if (chatPanelOpen) setPanel(null);
     else if (inGroup) setPanel("group-settings");
     else if (active) {
-      setPanel(lastBotTab.current);
+      setPanel("settings");
       // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
       void refreshThread(active.id).catch(() => undefined);
     } else return false;
@@ -1249,10 +1235,8 @@ function SpaceShell() {
         setGroups={setGroups}
         navigate={navigate}
         refreshBots={refreshBots}
-        refreshThread={refreshThread}
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
-        computer={computer}
         computerOpen={computerOpen}
         computerPanel={
           active ? (
@@ -1260,10 +1244,6 @@ function SpaceShell() {
               bot={active}
               computer={computer}
               computerOpen={computerOpen}
-              embeddedScreenUrl={computerControls.embeddedScreenUrl}
-              screenFrameKey={computerState.screenFrameKey}
-              heldScreen={computerState.heldScreen}
-              screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
               booting={booting}
@@ -1303,27 +1283,35 @@ function SpaceShell() {
             />
           ) : null
         }
-        routinesPanel={
-          <RoutineList
-            routines={activeRoutines}
-            loaded={routinesLoaded}
-            runningRoutineId={
-              snapshot?.run && isActive(snapshot.run.status)
-                ? (snapshot.run.routineId ?? undefined)
-                : undefined
+        routineList={{
+          routines: activeRoutines,
+          loaded: routinesLoaded,
+          runningRoutineId:
+            snapshot?.run && isActive(snapshot.run.status)
+              ? (snapshot.run.routineId ?? undefined)
+              : undefined,
+          onCreate: () => startRoutine(),
+          onEdit: startRoutine,
+          onStop: () => void stopRun(),
+          onToggle: (routine, on) => {
+            // A one-shot that never ran needs a run time, which only its editor can take.
+            if (on && routineNeedsOneShotArm(routine, routine.crons)) {
+              startRoutine(routine);
+              return;
             }
-            onCreate={() => startRoutine()}
-            onEdit={startRoutine}
-            onStop={() => void stopRun()}
-          />
-        }
+            thread.setRoutines((current) =>
+              current.map((item) => (item.id === routine.id ? { ...item, active: on } : item)),
+            );
+            void rpc.routines
+              .update({ routineId: routine.id, active: on })
+              .catch((error: unknown) => composer.setSendError(errorText(error)))
+              .finally(() => void refreshThread(routine.botId).catch(() => undefined));
+          },
+        }}
         routineEditorProps={routineEditorProps}
         openBot={openBot}
         openCreatedBot={openCreatedBot}
         modelFocusRequest={modelFocusRequest}
-        openSettings={openSettings}
-        memoryProviderConfigured={memoryProviderConfig != null}
-        setAgentSkills={setAgentSkills}
         onClearBot={(bot) => dialogs.setClearTarget({ kind: "bot", chat: bot })}
       />
 

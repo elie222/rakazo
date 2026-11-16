@@ -60,33 +60,24 @@ vi.mock("@rakazo/ui-web", () => ({
       {...props}
     />
   ),
-  Toggle: ({
-    pressed: _pressed,
-    onPressedChange: _onPressedChange,
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    variant: _variant,
     ...props
-  }: ComponentProps<"button"> & {
-    pressed?: boolean;
-    onPressedChange?: (pressed: boolean) => void;
-    variant?: string;
-  }) => <button type="button" {...props} />,
-  Tabs: ({
-    value: _value,
-    onValueChange: _onValueChange,
-    ...props
-  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
-    <div {...props} />
-  ),
-  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
-  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
-    <button type="button" role="tab" {...props} />
-  ),
-  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
-    <div {...props} />
-  ),
+  }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
+  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverTrigger: (props: ComponentProps<"button">) => <button type="button" {...props} />,
+  PopoverContent: () => null,
+  ListSearchInput: () => null,
 }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
+vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
 
 import { BotSettings } from "./bot-panel";
 
@@ -109,6 +100,7 @@ const bot = {
   preview: "",
   status: "idle",
   computerMode: "dedicated",
+  fleetManagement: true,
   updatedAt: "2026-09-01T00:00:00.000Z",
   createdAt: "2026-09-01T00:00:00.000Z",
   voiceId: null,
@@ -176,7 +168,6 @@ async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, curre
         <BotSettings
           focusModel={1}
           bot={currentBot}
-          memoryProviderConfigured={false}
           onSave={onSave}
           onExport={async () => undefined}
           onClear={() => undefined}
@@ -187,25 +178,46 @@ async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, curre
   await flush();
 }
 
-describe("BotSettings help", () => {
-  it("shows the management subtitle without changing the management switch", async () => {
-    const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-    await renderSettings(onSave, { ...bot, fleetManagement: false });
-    const label = [...container.querySelectorAll("label")].find(
-      (entry) => entry.textContent === "Manage other bots",
+describe("BotSettings rarely changed settings", () => {
+  const rows = ["-auto-speak", "-daily-check-ins", "-cross-space", "-fleet-management"];
+
+  it("hides them while the bot keeps the defaults", async () => {
+    await renderSettings(
+      vi.fn(async () => undefined),
+      { ...bot, disabledBuiltinTools: [] },
     );
-    const toggle = document.getElementById(label?.htmlFor ?? "");
+    for (const row of rows) expect(container.querySelector(`[id$="${row}"]`)).toBeNull();
+    expect(container.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
+  });
+
+  it("shows each one the bot has changed, and keeps it after it is put back", async () => {
+    const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+    await renderSettings(onSave, {
+      ...bot,
+      autoSpeak: true,
+      dailyCheckIns: false,
+      crossSpaceCommunication: false,
+      fleetManagement: false,
+    });
     const speechToggle = container.querySelector<HTMLButtonElement>('[id$="-auto-speak"]');
     const speechRow = speechToggle?.closest("label");
     expect(speechRow?.htmlFor).toBe(speechToggle?.id);
-    expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
-    expect(speechRow?.lastElementChild).toBe(speechToggle);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.querySelector('[aria-label="About Manage other bots"]')).toBeNull();
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(onSave).not.toHaveBeenCalled();
-    await act(async () => toggle?.click());
-    expect(onSave).toHaveBeenCalledWith({ fleetManagement: true });
+    expect(speechRow?.textContent).toBe("Read replies aloud");
+    expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
+      "Daily check-ins on unfinished work",
+    );
+    for (const [row, patch] of [
+      ["-fleet-management", { fleetManagement: true }],
+      ["-cross-space", { crossSpaceCommunication: true }],
+      ["-daily-check-ins", { dailyCheckIns: true }],
+    ] as const) {
+      const toggle = container.querySelector<HTMLButtonElement>(`[id$="${row}"]`)!;
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      await act(async () => toggle.click());
+      await flush();
+      expect(onSave).toHaveBeenLastCalledWith(patch);
+      expect(container.querySelector(`[id$="${row}"]`)?.getAttribute("aria-checked")).toBe("true");
+    }
   });
 });
 
@@ -473,40 +485,4 @@ it("omits projected identity values on unrelated saves but commits explicit inli
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
   expect(onSave.mock.calls[1]?.[0]).toMatchObject({ name: "SupportBot2026" });
-});
-
-it("uses section headings without repeating notification or model row labels", async () => {
-  await renderSettings(vi.fn(async () => undefined));
-  const heading = [...container.querySelectorAll("h3")].find(
-    (node) => node.textContent === "Notifications",
-  );
-  expect(heading).toBeDefined();
-  expect(heading?.dataset.variant).toBe("label");
-  const notification = container.querySelector('label[id$="-notify-finish-label"]');
-  expect(notification?.textContent?.trim()).toBe("When it finishes or needs input");
-  const model = container.querySelector('label[for$="-model"]');
-  expect(model?.className).toBe("sr-only");
-});
-
-it("treats cross-space communication as on unless turned off", async () => {
-  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave);
-  const toggle = container.querySelector<HTMLButtonElement>('[id$="-cross-space"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  await act(async () => toggle?.click());
-  await flush();
-  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
-});
-
-it("defaults daily check-ins on and saves the opt-out", async () => {
-  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave);
-  const toggle = container.querySelector<HTMLButtonElement>('[id$="-daily-check-ins"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
-    "Daily check-ins on unfinished work",
-  );
-  await act(async () => toggle?.click());
-  await flush();
-  expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
 });

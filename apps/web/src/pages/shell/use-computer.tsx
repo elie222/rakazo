@@ -375,7 +375,7 @@ export function useComputerState({
   }, [computerOpen]);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "computer" || computerOpen;
+  computerVisible.current = computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 

@@ -62,8 +62,6 @@ async function render(
         bot={bot}
         computer={status}
         computerOpen={false}
-        embeddedScreenUrl="https://screen.example.test/"
-        screenFrameRef={() => undefined}
         computerScreenError={null}
         computerBooting={null}
         booting={false}
@@ -107,10 +105,14 @@ it.each([null, computer("stopped"), computer("suspended")])(
   },
 );
 
-it("previews a running computer's screen", async () => {
-  await render(computer("running"));
-  expect(container.querySelector('[data-state="idle"]')).toBeNull();
-  expect(container.querySelector("iframe")).not.toBeNull();
+it("shows a running computer awake with an Open button and no live screen", async () => {
+  const onOpen = await render(computer("running"));
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
+  );
+  expect(onOpen).toHaveBeenCalledOnce();
 });
 
 it.each([computer("running"), computer("suspended")])(
@@ -135,17 +137,6 @@ it("holds Clean up while a clean up is being sent", async () => {
     container.querySelector('[data-testid="computer-disk-warning"]')?.querySelectorAll("button") ??
     [];
   expect(cleanUp?.hasAttribute("disabled")).toBe(true);
-});
-
-it("keeps the live screen mounted while the disk warning comes and goes", async () => {
-  const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
-  await render(computer("running"), vi.fn(), disk);
-  const frame = container.querySelector("iframe");
-  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
-  expect(container.querySelector('[data-testid="computer-disk-warning"]')).not.toBeNull();
-  expect(container.querySelector("iframe")).toBe(frame);
-  await render(computer("running"), vi.fn(), disk);
-  expect(container.querySelector("iframe")).toBe(frame);
 });
 
 it("shows no disk warning while the disk has room", async () => {

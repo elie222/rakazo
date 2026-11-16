@@ -41,7 +41,7 @@ describe("computer maintenance rows", () => {
   let root: Root;
   let container: HTMLDivElement;
   const status = (patch: Partial<ComputerStatus>) =>
-    ({ botId: "bot-fixture", state: "running", canUpdate: true, ...patch }) as ComputerStatus;
+    ({ botId: "bot-fixture", state: "error", canUpdate: true, ...patch }) as ComputerStatus;
   const button = (name: string) =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === name);
 
@@ -110,6 +110,12 @@ describe("computer maintenance rows", () => {
     await act(async () => reads[1]!(status({ busyBotName: null })));
     await act(async () => reads[0]!(status({ busyBotName: "Other" })));
     expect(button("Reset computer")!.disabled).toBe(false);
+  });
+
+  it("shows nothing while the computer is not broken", async () => {
+    rpc.mockResolvedValue(status({ state: "running" }));
+    await act(async () => root.render(createElement(Rows)));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
   it("shows nothing without a computer", async () => {
