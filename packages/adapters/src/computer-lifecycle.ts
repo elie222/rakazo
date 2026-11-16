@@ -1014,7 +1014,7 @@ export async function waitForRunComputerLease(
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
 ): Promise<ComputerExecutionLease | null> {
-  return pollUntil(
+  const outcome = await pollUntil(
     async () => {
       signal.throwIfAborted();
       try {
@@ -1023,7 +1023,7 @@ export async function waitForRunComputerLease(
           select: { computerId: true, computerSwitching: true, archivedAt: true },
         });
         if (!bot || bot.archivedAt || bot.computerId !== input.computerId)
-          throw new Error("The bot's computer changed; start the task again.");
+          return { changed: true as const };
         if (bot.computerSwitching) return undefined;
         const lease = await acquireComputerExecutionLease(prisma, input);
         return lease ?? (await acquireDedicatedScreenLeaseFence(prisma, input));
@@ -1039,6 +1039,9 @@ export async function waitForRunComputerLease(
       waitingFor: "the bot's computer",
     },
   );
+  if (outcome && "changed" in outcome)
+    throw new Error("The bot's computer changed; start the task again.");
+  return outcome;
 }
 
 export async function renewComputerExecutionLease(

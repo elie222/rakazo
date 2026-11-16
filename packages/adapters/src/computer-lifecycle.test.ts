@@ -33,6 +33,7 @@ import {
   renewComputerExecutionLease,
   replaceComputer,
   screenLeaseIdForRun,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
@@ -4330,3 +4331,19 @@ function replaceDeps(
 function closedRuns(harness: { prisma: PrismaClient }) {
   return vi.mocked(harness.prisma.$executeRaw).mock.calls.map(([, ...values]) => values);
 }
+
+it("fails a changed computer once instead of retrying it as a transient error", async () => {
+  const findUnique = vi.fn(async () => ({
+    computerId: "replacement",
+    archivedAt: null,
+    computerSwitching: false,
+  }));
+  await expect(
+    waitForRunComputerLease(
+      { bot: { findUnique } } as unknown as PrismaClient,
+      { computerId: "original", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("computer changed");
+  expect(findUnique).toHaveBeenCalledOnce();
+});
