@@ -493,9 +493,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.
 import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
