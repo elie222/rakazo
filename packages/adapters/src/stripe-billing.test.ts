@@ -385,6 +385,8 @@ describe("Stripe billing HTTP boundary", () => {
       customer: customerId,
       "flow_data[type]": "subscription_cancel",
       "flow_data[subscription_cancel][subscription]": "sub_fake_9",
+      "flow_data[after_completion][type]": "redirect",
+      "flow_data[after_completion][redirect][return_url]": urls.successUrl,
     });
   });
 

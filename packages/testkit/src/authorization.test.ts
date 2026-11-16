@@ -513,6 +513,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/purchaseCredits"],
       ["billing/setMonthlyCredits"],
       ["billing/checkout"],
+      ["billing/portal"],
       ["billing/portal", { intent: "cancel" }],
       ["billing/endTrial"],
       ["billing/switchToYearly"],

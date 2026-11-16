@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { ORPCError } from "@orpc/client";
 import type { BillingStatus } from "@rakazo/contracts";
+import { NO_PLAN_TO_CANCEL } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -81,9 +83,13 @@ afterEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-async function render(status: BillingStatus) {
+async function render(status: BillingStatus, failure?: unknown) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const portal = vi.fn(async (_input?: unknown) => ({ url: "https://portal.example/flow" }));
+  const portal = vi.fn(async (_input?: unknown) => {
+    if (failure) throw failure;
+    return { url: "https://portal.example/flow" };
+  });
+  const refresh = vi.fn(async () => {});
   const assign = vi.fn();
   vi.stubGlobal("location", { ...window.location, assign });
   const container = document.createElement("div");
@@ -92,7 +98,7 @@ async function render(status: BillingStatus) {
     createRoot(container).render(
       <ModelCreditsSettings
         status={status}
-        refresh={async () => {}}
+        refresh={refresh}
         client={{ billing: { portal } } as unknown as RpcClient}
       />,
     );
@@ -108,7 +114,7 @@ async function render(status: BillingStatus) {
   };
   const has = (label: string) =>
     [...container.querySelectorAll("button")].some((b) => b.textContent === label);
-  return { container, portal, assign, press, has };
+  return { container, portal, assign, press, has, refresh };
 }
 
 it("lets the owner cancel a trial in the portal's cancel flow", async () => {
@@ -153,4 +159,31 @@ it("says neither to an owner with a plan", async () => {
   const { container } = await render(ownKeyTrial);
   expect(container.textContent).not.toContain("Only the organization owner");
   expect(container.textContent).not.toContain("Nothing will be charged");
+});
+
+it("re-reads the status when the server finds no plan to cancel", async () => {
+  const { assign, press, refresh, container } = await render(
+    ownKeyTrial,
+    new ORPCError(NO_PLAN_TO_CANCEL, { status: 409, message: "No plan to cancel" }),
+  );
+  await press("Cancel trial");
+  expect(refresh).toHaveBeenCalledTimes(1);
+  expect(assign).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("Could not update billing");
+});
+
+it("does not re-read the status when opening the portal fails otherwise", async () => {
+  const { press, refresh } = await render(ownKeyTrial, new Error("network"));
+  await press("Cancel trial");
+  expect(refresh).not.toHaveBeenCalled();
+});
+
+it("does not re-read the status when billing is busy, which is also a conflict", async () => {
+  const { press, refresh, container } = await render(
+    ownKeyTrial,
+    new ORPCError("CONFLICT", { status: 409, message: "Billing is busy; try again shortly" }),
+  );
+  await press("Cancel trial");
+  expect(refresh).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Could not update billing");
 });

@@ -16,21 +16,8 @@ import {
   BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import { holdsBillingSubscription, sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
-import type {
-  Actor,
-  AnalyticsEvent,
-  BillingStatus,
-  ByokInterval,
-  ByokTier,
-} from "@rakazo/contracts";
-import {
-  BYOK_TIERS,
-  ByokTierSchema,
-  byokTierPriceCents,
-  INVITED_TRIAL_WEEKS,
-  sandboxAllowanceHours,
-  TRIAL_DAYS,
-} from "@rakazo/contracts";
+import type { Actor, BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
+import { BYOK_TIERS, byokTierPriceCents, INVITED_TRIAL_WEEKS, TRIAL_DAYS } from "@rakazo/contracts";
 import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import {
@@ -67,6 +54,13 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
+import {
+  byokTierOffers,
+  byokTrialAvailable,
+  NoPlanToCancelError,
+  planTerms,
+  subscribedByokPrice,
+} from "./billing-plan.js";
 import { createExperiments } from "./experiments.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
@@ -139,64 +133,6 @@ export interface BillingService {
   cancelForDeletedUser(userId: string): Promise<void>;
   cancelForDeletedOrganization(organizationId: string): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
-}
-
-/**
- * Only the own-key plan has a trial: credits are resold at cost. An organization that has
- * subscribed before, or was given a free own-key period, has had its trial, and so has its owner
- * when any organization of theirs has.
- */
-function byokTrialAvailable(
-  account: { subscribedAt: Date | null } | null,
-  credits: { byokFreeUntil: Date | null },
-  ownerHadOne: boolean,
-) {
-  return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
-}
-
-type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
-
-/** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */
-function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
-  if (live.creditAmountCents)
-    return { plan: "credits", interval: "month", amountCents: live.creditAmountCents };
-  if (live.byokPlan && live.byokPriceCents)
-    return {
-      plan: "own_key",
-      tier: live.byokTier ?? "standard",
-      interval: live.byokInterval ?? "month",
-      amountCents: live.byokPriceCents,
-    };
-  return null;
-}
-
-/** A subscriber keeps the own-key price they signed up at until the subscription ends. */
-function subscribedByokPrice(account: BillingAccount | null) {
-  const status = account?.status ?? null;
-  if (!account?.byokPriceCents || !(hasBillingAccess(status) || needsBillingPortal(status)))
-    return null;
-  const interval: ByokInterval = account.byokInterval === "year" ? "year" : "month";
-  const tier = ByokTierSchema.catch("standard").parse(account.byokTier ?? "standard");
-  return { cents: account.byokPriceCents, interval, tier };
-}
-
-/** The tiers on offer, in order; empty when the own-key plan is free. */
-function byokTierOffers() {
-  return ByokTierSchema.options.flatMap((tier) => {
-    const monthlyPriceCents = byokTierPriceCents(tier, "month");
-    if (monthlyPriceCents === null) return [];
-    const terms = BYOK_TIERS[tier];
-    return [
-      {
-        tier,
-        name: terms.name,
-        monthlyPriceCents,
-        annualPriceCents: byokTierPriceCents(tier, "year"),
-        computerSize: terms.computerSize,
-        computerHours: sandboxAllowanceHours(terms.computerAllowanceCents),
-      },
-    ];
-  });
 }
 
 export function createBillingService(deps: {
@@ -914,11 +850,27 @@ export function createBillingService(deps: {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-      return withLiveCustomer(actor, account, async (customerId) => {
-        let cancelSubscriptionId: string | undefined;
-        if (intent === "cancel") {
-          // Decide from the provider, not a snapshot a missed webhook may have left stale. Inside
-          // the wrapper, so a customer the provider deleted is replaced and then has no plan.
+      if (intent !== "cancel")
+        return withLiveCustomer(actor, account, (customerId) =>
+          provider.createPortal({
+            customerId,
+            returnUrl: client === "mobile" ? mobileReturnUrl : appUrl,
+          }),
+        );
+      // Checkout, plan changes and deletion wait for this; ending a trial, monthly credits and
+      // seat updates do not, so the subscription can still change before the session opens. The
+      // web returns through the API, which syncs what the portal changed.
+      return withCheckoutLease(organizationId, async () => {
+        // Checked again: a deletion holds this lease while it cancels billing, so a wait for it
+        // can end on an organization that is gone. Read again too: the customer may have been
+        // replaced meanwhile.
+        if (await organizationBeingDeleted(organizationId))
+          throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+        const held = await billingAccountForOrganization(prisma, organizationId);
+        if (!held) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
+        return withLiveCustomer(actor, held, async (customerId) => {
+          // Decide from the provider, not a snapshot a missed webhook may have left stale.
+          // Inside the wrapper, so a customer the provider deleted is replaced and then has no plan.
           await sync(customerId);
           const current = await billingAccountForOrganization(prisma, organizationId);
           const status = current?.status ?? null;
@@ -927,13 +879,12 @@ export function createBillingService(deps: {
             !(hasBillingAccess(status) || needsBillingPortal(status)) ||
             current.cancelAtPeriodEnd
           )
-            throw new ORPCError("CONFLICT", { message: "No plan to cancel" });
-          cancelSubscriptionId = current.subscriptionId;
-        }
-        return provider.createPortal({
-          customerId,
-          returnUrl: client === "mobile" ? mobileReturnUrl : appUrl,
-          ...(cancelSubscriptionId ? { cancelSubscriptionId } : {}),
+            throw new NoPlanToCancelError();
+          return provider.createPortal({
+            customerId,
+            returnUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
+            cancelSubscriptionId: current.subscriptionId,
+          });
         });
       });
     },

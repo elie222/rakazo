@@ -100,14 +100,17 @@ describe("opening the portal on cancelling", () => {
       count: vi.fn().mockResolvedValue(1),
     });
     Object.assign(prisma, {
-      $queryRaw: vi.fn().mockResolvedValue([{ startedAt: new Date() }]),
+      // The checkout lease's take and check, and the sync's start.
+      $queryRaw: vi.fn().mockResolvedValue([{ fence: 1n, startedAt: new Date() }]),
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     });
     Object.assign(prisma.user, { updateMany: vi.fn().mockResolvedValue({ count: 0 }) });
     Object.assign(provider, {
       getCustomerSubscription: vi.fn(async () => live),
       createPortal: vi.fn(async () => ({ url: "https://portal.example.com" })),
     });
-    return { billing, provider };
+    return { billing, provider, prisma };
   }
 
   const liveSubscription = {
@@ -135,6 +138,64 @@ describe("opening the portal on cancelling", () => {
     });
   });
 
+  it("returns a web cancel through the API, which syncs what the portal changed", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    await billing.portal(actor, undefined, "cancel");
+    expect(provider.createPortal).toHaveBeenCalledWith({
+      customerId: "cus-1",
+      returnUrl: "https://app.example.com/api/v1/billing/return",
+      cancelSubscriptionId: "sub-live",
+    });
+  });
+
+  it("holds the checkout lease while it opens the session, and gives it back", async () => {
+    const { billing, provider, prisma } = portalService(stored, liveSubscription);
+    const claims = () =>
+      vi
+        .mocked(prisma.billingAccount.updateMany)
+        .mock.calls.filter(([args]) => "checkoutLeaseId" in (args.data as Stored));
+    vi.mocked(provider.createPortal).mockImplementation(async () => {
+      // Taken (a lease id written) and not yet released (cleared).
+      expect(claims().map(([args]) => (args.data as Stored).checkoutLeaseId)).toEqual([
+        expect.any(String),
+      ]);
+      return { url: "https://portal.example.com" };
+    });
+    await billing.portal(actor, undefined, "cancel");
+    expect(claims().map(([args]) => (args.data as Stored).checkoutLeaseId)).toEqual([
+      expect.any(String),
+      null,
+    ]);
+  });
+
+  it("reads the customer again once it holds the lease", async () => {
+    const { billing, provider, prisma } = portalService(stored, liveSubscription);
+    const replaced = { ...stored, customerId: "cus-2" };
+    // The first read is the entry check; the lease wait is when another request replaces the customer.
+    vi.mocked(prisma.billingAccount.findUnique)
+      .mockResolvedValueOnce(stored as never)
+      .mockResolvedValue(replaced as never);
+    await billing.portal(actor, undefined, "cancel");
+    expect(provider.getCustomerSubscription).not.toHaveBeenCalledWith("cus-1");
+    expect(provider.createPortal).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "cus-2" }),
+    );
+  });
+
+  it("refuses when the organization starts being deleted while it waits for the lease", async () => {
+    const { billing, provider, prisma } = portalService(stored, liveSubscription);
+    // The entry check finds nothing; the check under the lease finds the deletion.
+    vi.mocked(prisma.space.findFirst)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ id: "space-1" } as never);
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Organization is being deleted",
+    });
+    expect(provider.getCustomerSubscription).not.toHaveBeenCalled();
+    expect(provider.createPortal).not.toHaveBeenCalled();
+  });
+
   it("opens the plain portal without the intent", async () => {
     const { billing, provider } = portalService(stored, liveSubscription);
     await billing.portal(actor);
@@ -152,7 +213,8 @@ describe("opening the portal on cancelling", () => {
     ]) {
       const { billing, provider } = portalService(stored, live);
       await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
-        code: "CONFLICT",
+        kind: "CONFLICT",
+        code: "NO_PLAN_TO_CANCEL",
       });
       expect(provider.createPortal).not.toHaveBeenCalled();
     }
@@ -168,7 +230,7 @@ describe("opening the portal on cancelling", () => {
       createCustomer: vi.fn(async () => ({ customerId: "cus-2" })),
     });
     await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
-      code: "CONFLICT",
+      code: "NO_PLAN_TO_CANCEL",
     });
     expect(provider.createCustomer).toHaveBeenCalledTimes(1);
     expect(provider.createPortal).not.toHaveBeenCalled();

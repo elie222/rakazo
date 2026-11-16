@@ -16,6 +16,7 @@ import {
   isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
+  NO_PLAN_TO_CANCEL,
 } from "@rakazo/contracts";
 import {
   AlertDialog,
@@ -706,8 +707,15 @@ export function ModelCreditsSettings({
       disabled={pending}
       onClick={() =>
         void action(async () => {
-          const { url } = await client.billing.portal({ intent: "cancel" });
-          window.location.assign(url);
+          try {
+            const { url } = await client.billing.portal({ intent: "cancel" });
+            window.location.assign(url);
+          } catch (err) {
+            // The server found no plan to cancel: show the status it just read, so the button
+            // goes instead of failing again. Any other refusal, busy billing included, is not it.
+            if (!(err instanceof ORPCError && err.code === NO_PLAN_TO_CANCEL)) throw err;
+            await refresh();
+          }
         })
       }
     >

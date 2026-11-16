@@ -199,6 +199,9 @@ export function modelCreditsUsd(status: BillingStatus | null | undefined): numbe
   return status.funding === "credits" || balance > 0 ? balance : null;
 }
 
+/** The code of the conflict that answers cancelling a plan that is gone or already set to end. */
+export const NO_PLAN_TO_CANCEL = "NO_PLAN_TO_CANCEL";
+
 /** What an owner may cancel: a subscription that still bills or can resume and is not set to end. */
 export function cancelPlanOffered(status: BillingStatus): "trial" | "plan" | null {
   if (

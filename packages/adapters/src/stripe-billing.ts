@@ -731,6 +731,8 @@ export class StripeBillingProvider implements BillingProvider {
           ? {
               type: "subscription_cancel",
               subscription_cancel: { subscription: input.cancelSubscriptionId },
+              // Without this the customer lands on a confirmation page and returns only by clicking.
+              after_completion: { type: "redirect", redirect: { return_url: input.returnUrl } },
             }
           : undefined,
       }),

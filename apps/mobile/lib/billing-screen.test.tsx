@@ -168,3 +168,39 @@ it("does not alert over another page when the status read fails after leaving", 
   await act(async () => queryClient.cancelQueries());
   expect(mocks.alert).not.toHaveBeenCalled();
 });
+
+it("re-reads the status when the server finds no plan to cancel", async () => {
+  let refused = false;
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status")
+      return { ...status, state: "trialing", cancelAtPeriodEnd: false };
+    if (method === "billing/portal") {
+      refused = true;
+      throw Object.assign(new Error("No plan to cancel"), { code: "NO_PLAN_TO_CANCEL" });
+    }
+    if (method === "billing/refresh")
+      return { ...status, state: "trialing", cancelAtPeriodEnd: true };
+    throw new Error(`Unexpected ${method}`);
+  });
+  await render();
+  await act(async () => button("Cancel trial").click());
+  await vi.waitFor(() => expect(sent("billing/refresh")).toHaveLength(1));
+  expect(refused).toBe(true);
+  expect(mocks.openAuthSessionAsync).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(container.textContent).not.toContain("Cancel trial"));
+  expect(mocks.alert).not.toHaveBeenCalled();
+});
+
+it("alerts instead of re-reading when billing is busy, which is also a conflict", async () => {
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status")
+      return { ...status, state: "trialing", cancelAtPeriodEnd: false };
+    if (method === "billing/portal")
+      throw Object.assign(new Error("Billing is busy"), { code: "CONFLICT" });
+    throw new Error(`Unexpected ${method}`);
+  });
+  await render();
+  await act(async () => button("Cancel trial").click());
+  await vi.waitFor(() => expect(mocks.alert).toHaveBeenCalledWith("Could not update billing"));
+  expect(sent("billing/refresh")).toHaveLength(0);
+});

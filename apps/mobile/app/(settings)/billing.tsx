@@ -15,6 +15,7 @@ import {
   isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
+  NO_PLAN_TO_CANCEL,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused, useRouter } from "expo-router";
@@ -94,11 +95,19 @@ export default function BillingScreen() {
   const action = change.run;
   const openPortal = (intent?: "cancel") =>
     action(async (send) => {
-      const result = await send("billing/portal", {
-        client: "mobile",
-        ...(intent ? { intent } : {}),
-      });
-      return openBillingPage(result.url, send);
+      try {
+        const result = await send("billing/portal", {
+          client: "mobile",
+          ...(intent ? { intent } : {}),
+        });
+        return await openBillingPage(result.url, send);
+      } catch (error) {
+        // The server found no plan to cancel: show the status it just read, so the row goes
+        // instead of failing again. Any other refusal, busy billing included, is not it.
+        if ((error as { code?: unknown } | null)?.code === NO_PLAN_TO_CANCEL)
+          return send("billing/refresh", undefined);
+        throw error;
+      }
     });
   if (!status) return null;
 
@@ -240,6 +249,13 @@ export default function BillingScreen() {
                 ],
               )
             }
+          />
+        ) : null}
+        {cancelOffered ? (
+          <SettingsRow
+            title={cancelOffered === "trial" ? t`Cancel trial` : t`Cancel plan`}
+            disabled={pending}
+            onPress={() => openPortal("cancel")}
           />
         ) : null}
         {status.canManage ? (
@@ -403,13 +419,6 @@ export default function BillingScreen() {
             disabled={pending}
             onPress={() => openPortal()}
           />
-          {cancelOffered ? (
-            <SettingsRow
-              title={cancelOffered === "trial" ? t`Cancel trial` : t`Cancel plan`}
-              disabled={pending}
-              onPress={() => openPortal("cancel")}
-            />
-          ) : null}
         </SettingsGroup>
       ) : null}
       {note ? (

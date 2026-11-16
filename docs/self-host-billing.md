@@ -28,7 +28,8 @@ Both are offered only to a paid-up plan that is not cancelling and has no monthl
 yearly switch also only when it saves money. Billing reads a plan's period and tier from its price
 on every sync, so a switch made in the Stripe billing portal also shows correctly. Portal plan
 switching skips those checks and allows both directions, including yearly back to monthly with its
-own proration, so enable it only if that is acceptable; the yearly price exists after the first yearly checkout or switch. Runs check
+own proration, so enable it only if that is acceptable; the yearly price exists after the first yearly checkout or switch.
+Billing's Cancel trial and Cancel plan open the portal's cancel screen for the live subscription, so cancellation must be enabled in the portal configuration (`features.subscription_cancel`), whose mode decides whether it ends at once or at period end. Runs check
 access on the server, so a lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits
