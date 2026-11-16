@@ -440,6 +440,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     attemptId: ctx.attempt.id,
     leaseOwner: workerId,
     leaseFence: fence,
+    onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
     blocks: [
       {
         kind: "ask",
@@ -457,7 +458,6 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   if (!paused) return;
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await reportBotMessageWait(deps, run, bot, safeText, ctx.attempt.id);
-  await scheduleRunSecretsExpiry(deps.jobs, runId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,

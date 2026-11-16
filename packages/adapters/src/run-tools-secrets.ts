@@ -392,6 +392,7 @@ export const secretTools: ToolHandlers = {
       attemptId: ctx.attempt.id,
       leaseOwner: ctx.workerId,
       leaseFence: ctx.fence,
+      onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
       blocks: [
         {
           kind: "ask",
@@ -418,7 +419,6 @@ export const secretTools: ToolHandlers = {
     }
     await enqueueSteeringContinuation(deps, paused.continuationRunId);
     await reportBotMessageWait(deps, run, bot, redactSecrets(askText, ctx.secrets), ctx.attempt.id);
-    await scheduleRunSecretsExpiry(deps.jobs, runId);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),

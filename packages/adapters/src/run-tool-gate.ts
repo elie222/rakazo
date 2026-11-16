@@ -778,6 +778,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     attemptId: ctx.attempt.id,
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
+    onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
     blocks: [
       buildApprovalAskBlock(
         applied!.effect.id,
@@ -796,7 +797,6 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   }
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await reportBotMessageWait(deps, run, bot, `approve ${name}`, ctx.attempt.id);
-  await scheduleRunSecretsExpiry(deps.jobs, runId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

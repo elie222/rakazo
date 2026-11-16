@@ -9,6 +9,7 @@ import {
   clampBotMessage,
   nextBotMessageHop,
   resolveBotAddress,
+  retry,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -420,7 +421,14 @@ export async function reportBotMessageWait(
   waitId: string,
 ) {
   if (run.trigger !== "bot_message") return;
-  await bestEffort("bot message wait notice", sendWaitNotice(deps, run, sender, ask, waitId));
+  // The delivery key makes a repeat a replay, so any failure is worth another try.
+  await bestEffort(
+    "bot message wait notice",
+    retry(() => sendWaitNotice(deps, run, sender, ask, waitId), {
+      attempts: 3,
+      retryable: () => true,
+    }),
+  );
 }
 
 async function sendWaitNotice(

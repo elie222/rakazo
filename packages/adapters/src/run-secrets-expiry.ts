@@ -1,15 +1,15 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { JobPublisher, JobTransaction } from "@rakazo/adapter-kit";
 import { runForgetSecretsJob } from "@rakazo/adapter-kit";
 import { idleRunSecretsAfterMs } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging";
 import { expireWaitHoldingSecrets } from "./stuck-work.js";
 
-/** A paused run may keep its run-only logins and codes only until the expiry. */
-export async function scheduleRunSecretsExpiry(jobs: JobPublisher, runId: string): Promise<void> {
-  await bestEffort(
-    "run secrets expiry schedule",
-    jobs.enqueue(runForgetSecretsJob(runId, new Date(Date.now() + idleRunSecretsAfterMs()))),
-  );
+/** A paused run may keep its run-only logins and codes only until the expiry. Commits with the pause. */
+export function scheduleRunSecretsExpiry(
+  jobs: JobPublisher,
+  runId: string,
+): (tx: JobTransaction) => Promise<void> {
+  return (tx) =>
+    jobs.enqueueIn(tx, runForgetSecretsJob(runId, new Date(Date.now() + idleRunSecretsAfterMs())));
 }
 
 export async function expireRunSecrets(
