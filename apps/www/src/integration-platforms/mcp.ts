@@ -2,15 +2,15 @@ import { GITHUB_URL } from "../site";
 import {
   COMPOSIO,
   COMPOSIO_PRICING,
+  count,
+  homepage,
   INTEGRATIONS_DOC,
   PIPEDREAM,
   PIPEDREAM_PRICING,
   PRICES_CHECKED,
+  usd,
   ZAPIER,
   ZAPIER_PRICING,
-  count,
-  homepage,
-  usd,
 } from "./shared";
 import type { IntegrationPlatform } from "./types";
 
@@ -66,18 +66,30 @@ export const mcp: IntegrationPlatform = {
         caption: "MCP compared with a REST or GraphQL API",
         columns: ["Compared", "MCP server", "REST or GraphQL API"],
         rows: [
-          { topic: "Written for", cells: ["A model choosing what to do", "A developer writing code"] },
+          {
+            topic: "Written for",
+            cells: ["A model choosing what to do", "A developer writing code"],
+          },
           {
             topic: "Discovery",
-            cells: ["The client asks the server for its tools at run time", "You read the docs or an OpenAPI description ahead of time"],
+            cells: [
+              "The client asks the server for its tools at run time",
+              "You read the docs or an OpenAPI description ahead of time",
+            ],
           },
           {
             topic: "Shape",
-            cells: ["A few task-sized tools with plain-language descriptions", "Many endpoints, one per resource and method"],
+            cells: [
+              "A few task-sized tools with plain-language descriptions",
+              "Many endpoints, one per resource and method",
+            ],
           },
           {
             topic: "Sign-in",
-            cells: ["OAuth for remote servers, defined by the spec", "Whatever the API chose: keys, OAuth, signed requests"],
+            cells: [
+              "OAuth for remote servers, defined by the spec",
+              "Whatever the API chose: keys, OAuth, signed requests",
+            ],
           },
           {
             topic: "Connection",
@@ -85,7 +97,10 @@ export const mcp: IntegrationPlatform = {
           },
           {
             topic: "Works with",
-            cells: ["Any MCP client, without code", "Code written for that API, or a connector that reads its description"],
+            cells: [
+              "Any MCP client, without code",
+              "Code written for that API, or a connector that reads its description",
+            ],
           },
           {
             topic: "Rate limits and cost",
@@ -93,7 +108,10 @@ export const mcp: IntegrationPlatform = {
           },
           {
             topic: "Best when",
-            cells: ["The app publishes a server, or an agent needs a curated set of tools", "There is no MCP server, or you need an operation the server leaves out"],
+            cells: [
+              "The app publishes a server, or an agent needs a curated set of tools",
+              "There is no MCP server, or you need an operation the server leaves out",
+            ],
           },
         ],
       },
@@ -130,7 +148,10 @@ export const mcp: IntegrationPlatform = {
           },
           {
             topic: "A paid data service",
-            cells: ["Search, enrichment and market data servers", "The service's own per-request price."],
+            cells: [
+              "Search, enrichment and market data servers",
+              "The service's own per-request price.",
+            ],
           },
           {
             topic: "The model's context",
@@ -225,8 +246,7 @@ export const mcp: IntegrationPlatform = {
     },
     {
       question: "Is an MCP server free or paid?",
-      answer:
-        `The protocol is free and open source. Most apps' own MCP servers cost nothing beyond the app's plan. Hosted gateways that cover many apps charge by use: Zapier MCP spends ${ZAPIER.tasksPerCall} tasks per call, and Composio and Pipedream bill per call or credit. Every tool also uses model tokens.`,
+      answer: `The protocol is free and open source. Most apps' own MCP servers cost nothing beyond the app's plan. Hosted gateways that cover many apps charge by use: Zapier MCP spends ${ZAPIER.tasksPerCall} tasks per call, and Composio and Pipedream bill per call or credit. Every tool also uses model tokens.`,
     },
     {
       question: "Where does an MCP server run?",
@@ -240,8 +260,7 @@ export const mcp: IntegrationPlatform = {
     },
     {
       question: "Can I use Zapier MCP with Rakazo?",
-      answer:
-        `Yes, as a remote MCP server: add its URL under **Integrations** and sign in with OAuth. It acts as the Zapier account that signed in, and each call spends ${ZAPIER.tasksPerCall} Zapier tasks. Rakazo has no Zapier-specific integration.`,
+      answer: `Yes, as a remote MCP server: add its URL under **Integrations** and sign in with OAuth. It acts as the Zapier account that signed in, and each call spends ${ZAPIER.tasksPerCall} Zapier tasks. Rakazo has no Zapier-specific integration.`,
     },
     {
       question: "How do I connect a remote MCP server that uses OAuth?",

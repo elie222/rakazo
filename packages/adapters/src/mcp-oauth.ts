@@ -109,7 +109,7 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
 function addSecret(values: string[], value: string | undefined): void {
   if (!value) return;
   values.push(value);
-  const bearer = value.match(/^(?:Bearer|Basic)\s+(.+)$/i);
+  const bearer = value.match(/^(?:Bearer|Basic)\s+(\S.*)$/i);
   if (bearer?.[1]) values.push(bearer[1]);
 }
 
