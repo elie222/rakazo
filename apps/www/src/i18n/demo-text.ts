@@ -264,7 +264,11 @@ export function fillDemoText(
 }
 
 /** Translates copy that only exists at runtime (seed data, a schedule a visitor picked), keeping it as is when no translation exists. */
-export function lookupDemoText(messages: DemoMessages, source: string, values: DemoValues = {}): string {
+export function lookupDemoText(
+  messages: DemoMessages,
+  source: string,
+  values: DemoValues = {},
+): string {
   const template = messages[source] ?? source;
   return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
     Object.hasOwn(values, key) ? String(values[key]) : match,

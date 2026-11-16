@@ -1,14 +1,14 @@
 import { GITHUB_URL } from "../site";
 import {
+  aboutUsd,
   MONTH_HOURS,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RUNTIME_DOC,
+  usd,
   WORKDAY_HOURS,
   WUYING,
-  aboutUsd,
-  usd,
   wuyingPayAsYouGo,
   wuyingPlan120,
   wuyingUnlimited,
@@ -28,7 +28,8 @@ export const wuying: Sandbox = {
   runsOn: "Your Alibaba Cloud Windows desktop",
   keeps: "The desktop's own disk",
   bestFor: "Windows apps, Alibaba Cloud and mainland China",
-  title: "Wuying cloud computer for AI agents: pricing and letting Rakazo bots use a Windows desktop on Alibaba Cloud",
+  title:
+    "Wuying cloud computer for AI agents: pricing and letting Rakazo bots use a Windows desktop on Alibaba Cloud",
   description:
     "Let AI agents work on a Wuying (Elastic Desktop Service) Windows cloud computer on Alibaba Cloud. Wuying pricing by the hour or month, a worked monthly cost, and how Rakazo bots run PowerShell and Windows apps you can watch and take over.",
   h1: "Let your AI agents use a Wuying cloud computer",
@@ -41,7 +42,8 @@ export const wuying: Sandbox = {
     color: "#F2622A",
     where: "Computer on Wuying",
     ask: "reconcile october's card export against the receipts folder",
-    reply: "on it. opening the export in excel on the windows desktop. anything that doesn't line up, i ask.",
+    reply:
+      "on it. opening the export in excel on the windows desktop. anything that doesn't line up, i ask.",
     computer: {
       task: "Matching charges in Excel.",
       screen: {
@@ -70,9 +72,18 @@ export const wuying: Sandbox = {
         caption: `Wuying example prices for a ${SIZE} computer, November 2026`,
         columns: ["Billing", "International (USD)", "Mainland China (CNY)"],
         rows: [
-          { topic: "Pay-as-you-go", cells: [`$${WUYING.hour} an hour`, `¥${WUYING.cny.hour} an hour`] },
-          { topic: "120 hours a month", cells: [`${usd(WUYING.plan120)} a month`, `¥${WUYING.cny.plan120} a month`] },
-          { topic: "Unlimited", cells: [`${usd(WUYING.unlimited)} a month`, `¥${WUYING.cny.unlimited} a month`] },
+          {
+            topic: "Pay-as-you-go",
+            cells: [`$${WUYING.hour} an hour`, `¥${WUYING.cny.hour} an hour`],
+          },
+          {
+            topic: "120 hours a month",
+            cells: [`${usd(WUYING.plan120)} a month`, `¥${WUYING.cny.plan120} a month`],
+          },
+          {
+            topic: "Unlimited",
+            cells: [`${usd(WUYING.unlimited)} a month`, `¥${WUYING.cny.unlimited} a month`],
+          },
           {
             topic: "Disk",
             cells: [
@@ -80,7 +91,13 @@ export const wuying: Sandbox = {
               `¥${WUYING.cny.diskGbHour} per GiB-hour, or ¥${WUYING.cny.diskGbMonth} per GiB-month`,
             ],
           },
-          { topic: "Bandwidth", cells: ["Basic 5 Mbps shared bandwidth free; faster options extra", "Traffic ¥0.80 per GB"] },
+          {
+            topic: "Bandwidth",
+            cells: [
+              "Basic 5 Mbps shared bandwidth free; faster options extra",
+              "Traffic ¥0.80 per GB",
+            ],
+          },
         ],
         note: `${PRICES_NOTE} Alibaba Cloud marks these as examples; your order shows the final price. Sources: [Elastic Desktop Service billing](https://www.alibabacloud.com/help/en/wuying-workspace/product-overview/billing-overview) and [无影 billing](https://help.aliyun.com/zh/wuying-workspace/product-overview/billing-overview).`,
       },
@@ -207,7 +224,10 @@ export const wuying: Sandbox = {
     },
     { label: "无影云电脑", href: "https://www.aliyun.com/product/ecs/gws" },
     PRICING.wuying,
-    { label: "无影, billing overview", href: "https://help.aliyun.com/zh/wuying-workspace/product-overview/billing-overview" },
+    {
+      label: "无影, billing overview",
+      href: "https://help.aliyun.com/zh/wuying-workspace/product-overview/billing-overview",
+    },
     {
       label: "Alibaba Cloud, AgentBay billing",
       href: "https://www.alibabacloud.com/help/en/agentbay/product-overview/agentbay-billing-instructions",

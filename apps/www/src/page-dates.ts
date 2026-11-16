@@ -1,4 +1,4 @@
-import { ALTERNATIVES, ROUNDUP_UPDATED, alternativePath } from "./alternatives";
+import { ALTERNATIVES, alternativePath, ROUNDUP_UPDATED } from "./alternatives";
 import { blogUpdatedDates } from "./blog/indexability";
 import { GROK_ALTERNATIVE_PATH, GROK_UPDATED } from "./grok-alternative";
 import { OPENCLAW_UPDATED } from "./guide";
@@ -61,7 +61,11 @@ export function pageDates(): ReadonlyMap<string, string> {
       ...ALTERNATIVES.map((page): [string, string] => [alternativePath(page), page.comparedOn]),
       [GROK_ALTERNATIVE_PATH, GROK_UPDATED] as [string, string],
       [OPENCLAW_ALTERNATIVE_PATH, OPENCLAW_UPDATED] as [string, string],
-      ...hub(SANDBOXES_PATH, SANDBOXES_UPDATED, SANDBOXES.map((item) => sandboxPath(item.slug))),
+      ...hub(
+        SANDBOXES_PATH,
+        SANDBOXES_UPDATED,
+        SANDBOXES.map((item) => sandboxPath(item.slug)),
+      ),
       ...hub(
         INTEGRATION_PLATFORMS_PATH,
         INTEGRATION_PLATFORMS_UPDATED,

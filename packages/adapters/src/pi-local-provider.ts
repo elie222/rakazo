@@ -10,6 +10,13 @@ import { splitLeadingThinkBlock } from "./pi-think-tags.js";
 import { pacerTokensPerMinute } from "./token-pacer.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
+/** Reasoning effort names for an OpenAI-style chat completions server that accepts them. */
+export const REASONING_THINKING_LEVELS: Model<"openai-completions">["thinkingLevelMap"] = {
+  off: "none",
+  xhigh: "xhigh",
+  max: "max",
+};
+
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
  * Without RAKAZO_LOCAL_MODELS_API_KEY the server is keyless, but `resolve` returns
@@ -69,8 +76,7 @@ function localModel(id: string): Model<"openai-completions"> {
     compat: reasoning
       ? { supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: "openai" }
       : { supportsDeveloperRole: false, supportsReasoningEffort: false },
-    // Mirrors openAiCompatibleModel's reasoning levels.
-    ...(reasoning ? { thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" } } : {}),
+    ...(reasoning ? { thinkingLevelMap: { ...REASONING_THINKING_LEVELS } } : {}),
     input: inputModalities(localVisionModelIds().has(id)),
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
