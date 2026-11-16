@@ -32,8 +32,7 @@ vi.mock("@rakazo/ui-web", () => {
     GroupAvatar: () => <i data-avatar="group" />,
     Input: () => null,
     Label: Container,
-    NativeSelect: () => null,
-    NativeSelectOption: () => null,
+    OptionSelect: () => null,
     SectionHeading: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
   };

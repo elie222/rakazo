@@ -12,7 +12,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { databaseOutage, retryWhileDatabaseUnavailable, spaceTakesWork } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
@@ -585,7 +585,10 @@ export async function finishRunAttempt(
         .releaseScreen?.(computerUse.screenRelease.computer, releaseContext)
         .catch(() => undefined);
     }
-    await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+    await bestEffort(
+      "release computer execution lease",
+      releaseComputerExecutionLease(deps.prisma, computerLease),
+    );
     // A stopping process requeues this run instead, and a run handed back after a database
     // outage resumes here; either must keep its turn.
     if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
