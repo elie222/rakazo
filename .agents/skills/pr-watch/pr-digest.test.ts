@@ -485,12 +485,12 @@ describe("pr-digest", () => {
         workflow_id: 1,
         status: "completed",
         conclusion: "startup_failure",
-        created_at: "2026-01-01T00:00:00Z",
+        id: 1,
       };
       const newer = {
         ...older,
         conclusion: "success",
-        created_at: "2026-01-02T00:00:00Z",
+        id: 2,
         html_url: `${workflow.html_url}0`,
       };
       const result = runDigest({ check: passed, workflows: [[newer, older]] });

@@ -59,8 +59,8 @@ check_runs() {
 workflow_runs() {
   api --paginate "repos/$1/actions/runs?head_sha=$2&per_page=100" \
     --jq '.workflow_runs[] | select(.event | test("^(pull_request|pull_request_target|push)$"))
-      | {workflow_id, event, created_at, name, status, conclusion, html_url}' |
-    jq -s 'group_by([.workflow_id, .event]) | map(max_by(.created_at))'
+      | {id, workflow_id, event, name, status, conclusion, html_url}' |
+    jq -s 'group_by([.workflow_id, .event]) | map(max_by(.id))'
 }
 
 # Workflow runs that ended unsuccessfully without a failed job of their own,
