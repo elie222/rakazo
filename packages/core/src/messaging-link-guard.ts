@@ -1,18 +1,20 @@
+const pendingByScope = new WeakMap<object, object>();
+
 /** Shared issuance rules; screens own their RPC, rendering, and navigation lifecycle. */
-export function createMessagingLinkGuard() {
-  let pending: object | null = null;
+export function createMessagingLinkGuard(scope: object = {}) {
   let current: object | null = null;
   let fromPicker = true;
   return {
     begin(pickerBound = true) {
-      if (pending) return null;
+      if (pendingByScope.has(scope)) return null;
       const request = {};
-      pending = current = request;
+      current = request;
+      pendingByScope.set(scope, request);
       fromPicker = pickerBound;
       return {
         isCurrent: () => current === request,
         finish() {
-          if (pending === request) pending = null;
+          if (pendingByScope.get(scope) === request) pendingByScope.delete(scope);
         },
       };
     },

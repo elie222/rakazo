@@ -577,3 +577,37 @@ it("keeps workspace codes through picker changes and clears them on blur", async
   await act(async () => blur?.());
   expect(container.textContent).not.toContain("WORKSPACE-CODE");
 });
+
+it("blocks issuance across remounts until the previous request settles", async () => {
+  const pending = deferred<unknown>();
+  responses["messaging/link/start"] = pending.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  const connect = () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click();
+  await act(async () => connect());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () => connect());
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(1);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(container.textContent).not.toContain("CLOSED-CODE");
+  responses["messaging/link/start"] = {
+    code: "NEW-CODE",
+    expiresAt: new Date(Date.now() + 20_000).toISOString(),
+  };
+  await act(async () => connect());
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(2);
+  expect(container.textContent).toContain("NEW-CODE");
+});

@@ -43,7 +43,8 @@ export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
-  const [linkGuard] = useState(createMessagingLinkGuard);
+  const queryClient = useQueryClient();
+  const [linkGuard] = useState(() => createMessagingLinkGuard(queryClient));
   const [issuingLink, setIssuingLink] = useState(false);
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
@@ -55,7 +56,6 @@ export function MessagingSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const statusOptions = queries.messaging.status.queryOptions();
   const channelsOptions = queries.messaging.channels.list.queryOptions();
   const connectionsOptions = queries.messaging.connections.list.queryOptions();
@@ -231,6 +231,7 @@ export function MessagingSettingsPanel() {
     setLinkRequest(null);
     try {
       const issued = await rpc.messaging.link.start({ botId });
+      request.finish();
       if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
       await refresh();

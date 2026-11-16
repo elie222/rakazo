@@ -650,7 +650,9 @@ it.each([false, true])(
     };
     if (initialLoad) {
       await act(async () => loadingBots.resolve(bots));
-      await act(async () => vi.advanceTimersByTimeAsync(0));
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll("select option")).toHaveLength(2);
+      });
     }
     await act(async () => pick("bot-2"));
     await act(async () =>
@@ -665,3 +667,26 @@ it.each([false, true])(
     expect(container.textContent).toContain("WORKSPACE-CODE");
   },
 );
+
+it("blocks issuance across remounts until the previous request settles", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  const pending = deferred<{ code: string; expiresAt: string }>();
+  messaging.link.start.mockReturnValueOnce(pending.promise);
+  await renderOverlay();
+  await act(async () => telegramItem()?.click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await renderOverlay();
+  await act(async () => telegramItem()?.click());
+  expect(messaging.link.start).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    pending.resolve({
+      code: "CLOSED-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    }),
+  );
+  expect(container.textContent).not.toContain("CLOSED-CODE");
+  await act(async () => telegramItem()?.click());
+  expect(messaging.link.start).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("ABCD-2345");
+});

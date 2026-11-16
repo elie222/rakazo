@@ -32,7 +32,7 @@ export default function MessagingSettings() {
   const styles = useThemedStyles(createStyles);
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState("");
-  const [linkGuard] = useState(createMessagingLinkGuard);
+  const [linkGuard] = useState(() => createMessagingLinkGuard(rpc));
   const [issuingLink, setIssuingLink] = useState(false);
   const [status, setStatus] = useState<MessagingStatus | null>(null);
   const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
@@ -189,6 +189,7 @@ export default function MessagingSettings() {
     setLink(null);
     try {
       const issued = await rpc("messaging/link/start", { botId: linkBotId });
+      request.finish();
       if (!request.isCurrent()) return;
       setLink({
         ...issued,

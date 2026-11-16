@@ -51,3 +51,21 @@ it.each([true, false])(
     expect(guard.begin()).not.toBeNull();
   },
 );
+
+it("shares only pending issuance across guards in the same scope", () => {
+  const scope = {};
+  const closed = createMessagingLinkGuard(scope);
+  const reopened = createMessagingLinkGuard(scope);
+  const otherSession = createMessagingLinkGuard({});
+  const old = closed.begin()!;
+  closed.invalidate();
+  expect(reopened.begin()).toBeNull();
+  expect(otherSession.begin()).not.toBeNull();
+  old.finish();
+  const fresh = reopened.begin()!;
+  expect(old.isCurrent()).toBe(false);
+  expect(fresh.isCurrent()).toBe(true);
+  old.finish();
+  expect(reopened.begin()).toBeNull();
+  fresh.finish();
+});
