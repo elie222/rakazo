@@ -1,0 +1,18 @@
+name: Setup image scanner
+description: Install a checksum-pinned scanner without third-party setup actions.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        archive=$(mktemp -d)
+        trap 'rm -rf "$archive"' EXIT
+        curl --fail --silent --show-error --location --proto '=https' \
+          https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz \
+          -o "$archive/trivy.tar.gz"
+        echo "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf  $archive/trivy.tar.gz" | sha256sum --check
+        tar -xzf "$archive/trivy.tar.gz" -C "$archive" trivy
+        mkdir -p "$RUNNER_TEMP/security-scanner"
+        install -m 755 "$archive/trivy" "$RUNNER_TEMP/security-scanner/trivy"
+        echo "$RUNNER_TEMP/security-scanner" >> "$GITHUB_PATH"

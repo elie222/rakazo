@@ -1,5 +1,6 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
-import { automated } from "./automated-messages.js";
+import { automated } from "./automated-messages.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import {
   deliverFinishedShells,
@@ -143,14 +144,11 @@ describe("observeShellCommand", () => {
   );
 
   it("returns other output once it stays quiet for the longer wait", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stdout" as const, data: "To authenticate, visit https://example.com/a/1\n" };
-        await exitGate;
+        await exitGate.promise;
         yield { type: "exit" as const, code: 0 };
       })(),
       { secrets: [], idleMs: 20, quietMs: 50 },
@@ -162,15 +160,12 @@ describe("observeShellCommand", () => {
       code: null,
       running: true,
     });
-    releaseExit();
+    exitGate.resolve();
     await expect(observed.completion).resolves.toMatchObject({ code: 0 });
   });
 
   it("returns output and redacts secrets before the command exits", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     let sawOutputBeforeExit = false;
     const observedPromise = observeShellCommand(
       (async function* () {
@@ -179,7 +174,7 @@ describe("observeShellCommand", () => {
           data: "code: ABCD-1234\nhttps://github.com/login/device\n",
         };
         yield { type: "stderr" as const, data: "token super-secret-token\n" };
-        await exitGate;
+        await exitGate.promise;
         sawOutputBeforeExit = true;
         yield { type: "stdout" as const, data: "logged in\n" };
         yield { type: "exit" as const, code: 0 };
@@ -199,7 +194,7 @@ describe("observeShellCommand", () => {
     expect(observed.result.stderr).toContain("[redacted]");
     expect(observed.completion).toBeDefined();
 
-    releaseExit();
+    exitGate.resolve();
     const final = await observed.completion;
     expect(final).toMatchObject({ code: 0 });
     expect(final?.stdout).toContain("logged in");
@@ -208,17 +203,14 @@ describe("observeShellCommand", () => {
   });
 
   it("redacts a secret split across chunks before returning it", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const seen: string[] = [];
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stderr" as const, data: SIGN_IN };
         yield { type: "stdout" as const, data: "prefix super-" };
         yield { type: "stdout" as const, data: "secret-token suffix\n" };
-        await exitGate;
+        await exitGate.promise;
         yield { type: "exit" as const, code: 0 };
       })(),
       {
@@ -234,21 +226,18 @@ describe("observeShellCommand", () => {
     expect(seen.at(-1)).toBe("prefix [redacted] suffix\n");
     expect(observed.result.stdout).toBe("prefix [redacted] suffix\n");
     expect(observed.result.stdout).not.toContain("super-secret-token");
-    releaseExit();
+    exitGate.resolve();
     await observed.completion;
   });
 
   it("withholds a stdout secret prefix when stderr has unrelated text", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const seen: Array<{ stdout: string; stderr: string }> = [];
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stdout" as const, data: "prefix super-" };
         yield { type: "stderr" as const, data: `${SIGN_IN}unrelated noise` };
-        await exitGate;
+        await exitGate.promise;
         yield { type: "exit" as const, code: 0 };
       })(),
       {
@@ -266,20 +255,17 @@ describe("observeShellCommand", () => {
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((snapshot) => !snapshot.stdout.includes("super-"))).toBe(true);
     expect(seen.some((snapshot) => snapshot.stderr === `${SIGN_IN}unrelated noise`)).toBe(true);
-    releaseExit();
+    exitGate.resolve();
     await observed.completion;
   });
 
   it("withholds a secret prefix from the still-running result", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stderr" as const, data: SIGN_IN };
         yield { type: "stdout" as const, data: "prefix super-" };
-        await exitGate;
+        await exitGate.promise;
         yield { type: "stdout" as const, data: "secret-token suffix\n" };
         yield { type: "exit" as const, code: 0 };
       })(),
@@ -289,23 +275,20 @@ describe("observeShellCommand", () => {
     expect(isRunningShellCommand(observed.result)).toBe(true);
     expect(observed.result.stdout).toBe("prefix ");
     expect(observed.result.stdout).not.toContain("super-");
-    releaseExit();
+    exitGate.resolve();
     const final = await observed.completion;
     expect(final?.stdout).toBe("prefix [redacted] suffix\n");
     expect(final?.stdout).not.toContain("super-secret-token");
   });
 
   it("withholds an incomplete secret split across stdout and stderr while running", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const seen: string[] = [];
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stdout" as const, data: `${SIGN_IN}ABCDE` };
         yield { type: "stderr" as const, data: "FGH" };
-        await exitGate;
+        await exitGate.promise;
         yield { type: "exit" as const, code: 0 };
       })(),
       {
@@ -321,7 +304,7 @@ describe("observeShellCommand", () => {
     expect(`${observed.result.stdout}${observed.result.stderr}`).toBe(SIGN_IN);
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((line) => !line.includes("ABCDE") && !line.includes("FGH"))).toBe(true);
-    releaseExit();
+    exitGate.resolve();
     const final = await observed.completion;
     expect(`${final?.stdout}${final?.stderr}`).toBe(`${SIGN_IN}ABCDEFGH`);
   });
@@ -352,11 +335,11 @@ describe("observeShellCommand", () => {
 
 describe("deliverFinishedShells", () => {
   it("waits until the command exits, then hands the bot the final output", async () => {
-    let release: (result: { stdout: string; stderr: string; code: number }) => void = () =>
-      undefined;
-    const completion = new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
-      release = resolve;
-    });
+    const { promise: completion, resolve: release } = deferred<{
+      stdout: string;
+      stderr: string;
+      code: number;
+    }>();
     const pending = [completion];
     const followUps: string[] = [];
     const delivering = deliverFinishedShells((text) => followUps.push(text), pending, {
@@ -389,11 +372,11 @@ describe("deliverFinishedShells", () => {
   });
 
   it("takes only the commands that exited from a turn that called tools", async () => {
-    let release: (result: { stdout: string; stderr: string; code: number }) => void = () =>
-      undefined;
-    const running = new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
-      release = resolve;
-    });
+    const { promise: running, resolve: release } = deferred<{
+      stdout: string;
+      stderr: string;
+      code: number;
+    }>();
     const failed = Promise.reject(new Error("sandbox gone"));
     failed.catch(() => undefined);
     const pending = [running, Promise.resolve({ stdout: "built\n", stderr: "", code: 0 }), failed];
@@ -430,11 +413,11 @@ describe("deliverFinishedShells", () => {
   });
 
   it("does not wait on the turn that first received the live output", async () => {
-    let release: (result: { stdout: string; stderr: string; code: number }) => void = () =>
-      undefined;
-    const completion = new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
-      release = resolve;
-    });
+    const { promise: completion, resolve: release } = deferred<{
+      stdout: string;
+      stderr: string;
+      code: number;
+    }>();
     const pending = [completion];
     const followUps: string[] = [];
     await deliverFinishedShells((text) => followUps.push(text), pending, {

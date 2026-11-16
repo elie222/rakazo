@@ -33,7 +33,7 @@ import {
   STATIC_SHELL_EXPANSIONS,
   unresolvedVariableReason,
 } from "./desktop-guard-words.js";
-import { usesNativeShell } from "./native-shell.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type ShellSeparator = "pipe" | "and" | "or" | "seq" | "background";
 
@@ -624,7 +624,7 @@ export function desktopGuardApplies(computer: {
   const kinds = computer.lazy?.ready
     ? [computer.lazy.ready.kind]
     : [computer.stored.kind, computer.kind ?? computer.stored.kind];
-  return kinds.some((kind) => !usesNativeShell(kind));
+  return kinds.some((kind) => !sandboxKindCapabilities(kind).nativeShell);
 }
 
 export function isProtectedComputerLifecycleCommand(command: string): boolean {

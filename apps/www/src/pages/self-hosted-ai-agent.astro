@@ -5,14 +5,21 @@ import CaptionedImage from "../components/CaptionedImage.astro";
 import FaqSection from "../components/FaqSection.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
+import InlineCode from "../components/InlineCode.astro";
 import {
+  BEST_OPEN_SOURCE_AGENTS_PATH,
   CADDY_SNIPPET,
-  faqPageStructuredData,
   PUBLISHED_IMAGES_INSTALL,
   PUBLISHED_IMAGES_SERVER,
   RUN_ON_YOUR_MAC,
+  SELF_HOST_DEFINITION,
   SELF_HOST_DESCRIPTION,
   SELF_HOST_FAQS,
+  SELF_HOST_HARDWARE,
+  SELF_HOST_MODEL_PARAGRAPHS,
+  SELF_HOST_OPTIONS,
+  SELF_HOST_OPTIONS_CHECKED,
+  SELF_HOST_RELATED,
   SELF_HOST_TITLE,
   SOURCE_CHECKOUT,
   SOURCE_DEV,
@@ -27,24 +34,32 @@ import {
   OPENCLAW_ALTERNATIVE_PATH,
   SELF_HOST_RESTRICTED_URL,
   SELF_HOST_SECRETS_URL,
+  SELF_HOST_GUIDE_PATH,
   SETUP_PROMPT_URL,
 } from "../site";
+import { pageArticleStructuredData } from "../structured-data";
 
 const starsLabel = await githubStarsLabel();
-const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
+const structuredData = pageArticleStructuredData({
+  path: SELF_HOST_GUIDE_PATH,
+  headline: "Self-hosted AI agent",
+  description: SELF_HOST_DESCRIPTION,
+  image: ogPublicPath("self-hosted-ai-agent"),
+  faq: SELF_HOST_FAQS,
+});
 ---
 
 <BaseLayout
   title={SELF_HOST_TITLE}
   description={SELF_HOST_DESCRIPTION}
   {structuredData}
-  localeAlternates={false}
   ogImage={ogPublicPath("self-hosted-ai-agent")}
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy guide">
       <h1>Self-hosted AI agent</h1>
+      <p>{SELF_HOST_DEFINITION}</p>
       <p>
         Rakazo is an open source AI agent for persistent teammates. Each bot can use a browser and a
         shell, keep routines as Markdown, and pause for approval when work crosses a boundary you set.
@@ -78,6 +93,9 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         machine does not need an E2B, Daytona, CreateOS, or Boat account.
       </p>
 
+      <h2 id="local-model">Local or hosted model</h2>
+      {SELF_HOST_MODEL_PARAGRAPHS.map((paragraph) => <p>{paragraph}</p>)}
+
       <h2 id="self-host-only">Self-host only, for now</h2>
       <p>These work on your own deployment and are not yet on Rakazo Cloud. Each turns on from <code>.env</code>.</p>
       <ul>
@@ -85,10 +103,40 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         <li><strong>Image and video generation.</strong> <code>MEDIA_GENERATION_PROVIDER=fal</code>, <code>MEDIA_GENERATION_API_KEY</code>, and an image or video model (<code>MEDIA_GENERATION_IMAGE_MODEL</code>, <code>MEDIA_GENERATION_VIDEO_MODEL</code>).</li>
         <li><strong>Purchases with Stripe Link.</strong> <code>PAYMENT_WALLET_PROVIDER=link</code>. Each purchase waits for your approval in Link.</li>
         <li><strong>Cursor cloud agents.</strong> <code>CLOUD_AGENT_PROVIDER=cursor</code>, <code>CURSOR_API_KEY</code>, and <code>CLOUD_AGENT_SPACE_ID</code>.</li>
-        <li><strong>Ticket board.</strong> <code>TICKET_BOARD_ENABLED=true</code>.</li>
         <li><strong>Local models and local MCP servers.</strong> <code>RAKAZO_LOCAL_MODELS</code>, and <code>MCP_STDIO_ENABLED</code> with <code>MCP_STDIO_ALLOWED_COMMANDS</code>.</li>
       </ul>
       <p>The <a href={DOCS_URL}>full guide</a> lists every setting for each one.</p>
+
+      <h2 id="other-agents">Other self-hosted AI agents</h2>
+      <div class="guide-table-wrap">
+        <table>
+          <caption>Licenses from each project's repository on {SELF_HOST_OPTIONS_CHECKED}. Not a ranking.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Project</th>
+              <th scope="col">License</th>
+              <th scope="col">What you run</th>
+              <th scope="col">Built for</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              SELF_HOST_OPTIONS.map((option) => (
+                <tr>
+                  <th scope="row"><a href={option.href}>{option.name}</a></th>
+                  <td>{option.license}</td>
+                  <td>{option.run}</td>
+                  <td>{option.fit}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p>
+        More detail is in <a href={BEST_OPEN_SOURCE_AGENTS_PATH}>Best open source AI agents in 2026</a>.
+        The <a href={OPENCLAW_ALTERNATIVE_PATH}>OpenClaw comparison</a> goes deeper on the closest one.
+      </p>
 
       <h2>Requirements</h2>
       <ul>
@@ -99,6 +147,9 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         <li>
           <strong>Source checkout.</strong> Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or
           newer, plus pnpm 12 and Docker. Node.js 25.x is not supported.
+        </li>
+        <li>
+          <strong>Hardware.</strong> <InlineCode text={SELF_HOST_HARDWARE} />
         </li>
       </ul>
 
@@ -211,6 +262,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
       <ul>
         <li><a href="/">Rakazo home</a></li>
         <li><a href={OPENCLAW_ALTERNATIVE_PATH}>OpenClaw comparison</a></li>
+        {SELF_HOST_RELATED.map((item) => <li><a href={item.href}>{item.label}</a></li>)}
       </ul>
 
       <h2>Get started</h2>

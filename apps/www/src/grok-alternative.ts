@@ -87,7 +87,7 @@ export const GROK_MODELS_FIGURE: GrokFigure = {
   width: 1280,
   height: 900,
   alt: "Rakazo model settings with Anthropic selected, Claude Sonnet 5.5 in the model menu, and a button to sign in with Claude Pro/Max. The provider list also shows OpenAI Codex and xAI.",
-  caption: "Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok. An API key works too.",
+  caption: "Use ChatGPT sign-in or an API key. For Claude models, connect an Anthropic API key.",
 };
 
 export type GrokCardImage = {
@@ -213,48 +213,33 @@ export const GROK_ALTERNATIVE_FAQ = [
   },
 ] as const;
 
-export function grokAlternativeStructuredData(pageUrl: string) {
-  return {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebPage",
-        "@id": `${pageUrl}#webpage`,
-        url: pageUrl,
-        name: GROK_ALTERNATIVE_TITLE,
-        description: GROK_ALTERNATIVE_DESCRIPTION,
-        mainEntity: { "@id": `${pageUrl}#list` },
-      },
-      {
-        "@type": "ItemList",
-        "@id": `${pageUrl}#list`,
-        name: GROK_ALTERNATIVE_H1,
-        description: GROK_ALTERNATIVE_DESCRIPTION,
-        url: pageUrl,
-        itemListOrder: "https://schema.org/ItemListOrderAscending",
-        numberOfItems: GROK_ALTERNATIVES.length,
-        itemListElement: GROK_ALTERNATIVES.map((item, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: item.label,
-          url: absoluteHref(item.href),
-        })),
-      },
-      {
-        "@type": "FAQPage",
-        "@id": `${pageUrl}#faq`,
-        url: pageUrl,
-        mainEntity: GROK_ALTERNATIVE_FAQ.map((item) => ({
-          "@type": "Question",
-          name: item.question,
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: item.answer,
-          },
-        })),
-      },
-    ],
-  };
+/** The page and its list of alternatives, for the page's article graph. */
+export function grokAlternativeNodes(pageUrl: string) {
+  return [
+    {
+      "@type": "WebPage",
+      "@id": `${pageUrl}#webpage`,
+      url: pageUrl,
+      name: GROK_ALTERNATIVE_TITLE,
+      description: GROK_ALTERNATIVE_DESCRIPTION,
+      mainEntity: { "@id": `${pageUrl}#list` },
+    },
+    {
+      "@type": "ItemList",
+      "@id": `${pageUrl}#list`,
+      name: GROK_ALTERNATIVE_H1,
+      description: GROK_ALTERNATIVE_DESCRIPTION,
+      url: pageUrl,
+      itemListOrder: "https://schema.org/ItemListOrderAscending",
+      numberOfItems: GROK_ALTERNATIVES.length,
+      itemListElement: GROK_ALTERNATIVES.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: item.label,
+        url: absoluteHref(item.href),
+      })),
+    },
+  ];
 }
 
 function absoluteHref(href: string): string {

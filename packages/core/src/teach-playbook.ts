@@ -1,3 +1,12 @@
+import {
+  DEFAULT_APPROVAL,
+  DEFAULT_FAILURE,
+  DEFAULT_STEP,
+  DEFAULT_WHAT_TO_RETURN,
+  DEFAULT_WHEN_TO_USE,
+  playbookHowToCheck,
+} from "./teach-playbook.prompt.js";
+
 export type TeachRecordingEvent = {
   at: string;
   kind: "pointer" | "key" | "clipboard" | "snapshot" | "scroll";
@@ -34,11 +43,6 @@ export type SkillPlaybook = {
   approvalBoundaries: string;
   failureHandling: string;
 };
-
-const DEFAULT_APPROVAL =
-  "Do not send messages, spend money, publish content, or delete data without explicit user approval.";
-const DEFAULT_FAILURE =
-  "If a step fails or the expected screen is not visible, stop and ask the user before retrying.";
 
 function describePointer(event: TeachRecordingEvent): string {
   const action = event.type ?? "click";
@@ -188,17 +192,15 @@ export function buildPlaybookFromRecording(
   flushDrag();
 
   if (steps.length === 0) {
-    steps.push("Repeat the demonstrated workflow using the same navigation pattern.");
+    steps.push(DEFAULT_STEP);
   }
 
   return {
-    whenToUse: goal.trim() || "When the user asks to repeat the demonstrated task.",
+    whenToUse: goal.trim() || DEFAULT_WHEN_TO_USE,
     inputs: goal.trim() ? [goal.trim()] : [],
     steps,
-    howToCheck: snapshots.at(-1)?.summary
-      ? `The final screen should match: ${snapshots.at(-1)?.summary}.`
-      : "Confirm the outcome matches the user's goal before reporting success.",
-    whatToReturn: "A short summary of what was completed and where outputs were saved.",
+    howToCheck: playbookHowToCheck(snapshots.at(-1)?.summary),
+    whatToReturn: DEFAULT_WHAT_TO_RETURN,
     approvalBoundaries: DEFAULT_APPROVAL,
     failureHandling: DEFAULT_FAILURE,
   };

@@ -47,9 +47,11 @@ describe("desktop preload bridge", () => {
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
       "badge",
+      "clipboard",
       "computer",
       "device",
       "locale",
+      "mcpBrowser",
       "menu",
       "monitoring",
       "nativeWindowFrame",
@@ -73,6 +75,10 @@ describe("desktop preload bridge", () => {
     await bridge.badge!.set(7);
     expect(invoke).toHaveBeenCalledWith("desktop.badge.set", 7);
 
+    expect(Object.keys(bridge.clipboard!)).toEqual(["writeText"]);
+    await bridge.clipboard!.writeText("example");
+    expect(invoke).toHaveBeenCalledWith("desktop.clipboard.write", "example");
+
     await bridge.device?.state();
     await bridge.device?.setAllowed(true);
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
@@ -93,6 +99,7 @@ describe("desktop preload bridge", () => {
     await bridge.server!.change();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.badge.set",
+      "desktop.clipboard.write",
       "desktop.device.state",
       "desktop.device.setAllowed",
       "desktop.locale.set",
@@ -110,6 +117,29 @@ describe("desktop preload bridge", () => {
       "desktop.update.install",
       "desktop.server.change",
     ]);
+  });
+
+  it("forwards captured MCP codes without leaking the IPC event to the renderer", async () => {
+    const listeners: Array<(event: unknown, callback: unknown) => void> = [];
+    const on = vi.fn((_channel: string, handler: (event: unknown, callback: unknown) => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { invoke, exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    const browser = bridge.mcpBrowser!;
+
+    await browser.clear("clx123abc");
+    expect(invoke).toHaveBeenCalledWith("desktop.mcpBrowser.clear", "clx123abc");
+
+    const received: unknown[] = [];
+    const unsubscribe = browser.onOAuthCallback((callback) => received.push(callback));
+    expect(on).toHaveBeenCalledWith("desktop.mcpBrowser.callback", expect.any(Function));
+    listeners[0]?.({ sender: "ipc-event" }, { serverId: "clx123abc", code: "mcp_123", state: "s" });
+    expect(received).toEqual([{ serverId: "clx123abc", code: "mcp_123", state: "s" }]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.mcpBrowser.callback", expect.any(Function));
   });
 
   it("forwards captured codes without leaking the IPC event to the renderer", () => {
@@ -231,7 +261,7 @@ describe("setup preload bridge", () => {
     await bridge.test("http://127.0.0.1:5173");
     await bridge.save({ mode: "new", serverUrl: "http://127.0.0.1:5173" });
     await bridge.quit();
-    await bridge.openLink("orbstack");
+    await bridge.openLink("docker-download");
     await bridge.stack.state();
     await bridge.stack.start();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
@@ -243,7 +273,7 @@ describe("setup preload bridge", () => {
       "desktop.setup.stack.state",
       "desktop.setup.stack.start",
     ]);
-    expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "orbstack");
+    expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "docker-download");
 
     const listener = vi.fn();
     bridge.stack.onChange(listener);

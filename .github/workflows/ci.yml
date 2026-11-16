@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      web: ${{ steps.areas.outputs.web }}
       server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
@@ -46,42 +45,52 @@ jobs:
       - id: areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
 
+  # Checks its own changed areas instead of needing `changes`, so it starts with the first jobs
+  # rather than queueing again behind every shard once `changes` finishes.
   build:
     name: Production builds
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+          # The merge commit's first parent is the base, so this diff is exactly what the PR adds.
+          fetch-depth: 2
+      - id: areas
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup-workspace
+        if: steps.areas.outputs.web == 'true'
         with:
           electron: "true"
           turbo: build
       - run: pnpm db:generate
+        if: steps.areas.outputs.web == 'true'
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm build
+      # The size budgets read the bundles this step just built, in a fraction of a second.
+      - run: pnpm build && node scripts/checks/bundle-size.mjs
+        if: steps.areas.outputs.web == 'true'
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
           electron_config_cache: ${{ runner.temp }}/electron-cache
       - name: Save turbo build cache
-        if: success()
+        if: success() && steps.areas.outputs.web == 'true'
         continue-on-error: true
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: .turbo/cache
           key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
+        if: steps.areas.outputs.web == 'true'
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
-        if: always()
+        if: always() && steps.areas.outputs.web == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-e2e-screenshots
@@ -156,8 +165,8 @@ jobs:
       - name: App Store review submission tests
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
-      - name: Optional vendor SDKs load lazily
-        run: node --test scripts/lazy-vendors.test.mjs
+      - name: Script tests
+        run: node --test scripts/lazy-vendors.test.mjs scripts/checks/*.test.mjs scripts/release/*.test.mjs
 
   # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:
@@ -291,44 +300,14 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - name: Postgres cache week
-        if: steps.areas.outputs.server != 'false'
-        id: postgres-cache-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - name: Restore Postgres image cache
-        if: steps.areas.outputs.server != 'false'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
-      - name: Load or pull Postgres image
-        if: steps.areas.outputs.server != 'false'
-        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.server != 'false'
-        run: |
-          docker run -d --name ci-postgres \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=rakazo \
-            -p 5432:5432 \
-            mirror.gcr.io/library/postgres:18-alpine \
-            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
-          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+        uses: ./.github/actions/start-postgres
       - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.server != 'false'
       - name: Wait for Postgres
         if: steps.areas.outputs.server != 'false'
-        run: |
-          for i in $(seq 1 30); do
-            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Postgres did not become ready" >&2
-          docker logs ci-postgres >&2 || true
-          exit 1
+        run: bash .github/actions/start-postgres/wait.sh
       - run: pnpm test:integration --shard=${{ matrix.shard }}/6
         if: steps.areas.outputs.server != 'false'
 
@@ -456,69 +435,7 @@ jobs:
             files+=("pnpm-lock.yaml (mobile dependency tree)")
           fi
 
-          publish=false
-          blocked=()
-          for file in "${files[@]}"; do
-            # Tests, types, docs and device test flows never ship in the app.
-            case "$file" in
-              *.test.ts|*.test.tsx|*.test.js|*.d.ts|*.md|apps/mobile/.maestro/*|apps/mobile/e2e/*)
-                continue
-                ;;
-            esac
-
-            eligible=false
-            case "$file" in
-              # index.ts is the bundle entry the manifest's "main" names; the other
-              # top-level scripts (app config, metro) shape the native build.
-              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*|apps/mobile/index.ts)
-                case "$file" in
-                  *.ts|*.tsx) eligible=true ;;
-                esac
-                ;;
-              packages/chat-ui/src/*|packages/ui-tokens/src/*)
-                case "$file" in
-                  *.ts|*.tsx|*.css) eligible=true ;;
-                esac
-                ;;
-              packages/contracts/src/*|packages/core/src/*|packages/logging/src/*)
-                case "$file" in
-                  *.ts|*.tsx) eligible=true ;;
-                esac
-                ;;
-            esac
-
-            if [[ "$eligible" == true ]]; then
-              publish=true
-            else
-              blocked+=("$file")
-            fi
-          done
-
-          if (( ${#blocked[@]} > 0 )); then
-            publish=false
-            {
-              echo "### Mobile OTA skipped"
-              echo
-              echo "Since \`${base:0:9}\`, the last update installed builds run, these native-sensitive files changed:"
-              echo
-              printf -- '- `%s`\n' "${blocked[@]}"
-              echo
-              echo "Ship new iOS and Android builds, or publish by hand once the JavaScript is confirmed safe on the current builds."
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$publish" == true ]]; then
-            {
-              echo "### Mobile OTA eligible"
-              echo
-              echo "Since \`${base:0:9}\`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "### No mobile OTA needed"
-              echo
-              echo "Nothing in the shipped mobile bundle changed since \`${base:0:9}\`."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${files[@]}" | node scripts/release/mobile-ota.mjs "$base" "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT"
 
       - name: Require Expo automation token
         if: steps.ota.outputs.publish == 'true'

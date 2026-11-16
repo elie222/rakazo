@@ -1,20 +1,13 @@
 import type { DataTag, QueryKey } from "@tanstack/query-core";
 import { QueryClient } from "@tanstack/query-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "./async.test-support.js";
 import { fetchFresh, writeSaved } from "./query.js";
 
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function key(name: string) {
   return [name] as unknown as DataTag<QueryKey, string, Error>;
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 beforeEach(() => {

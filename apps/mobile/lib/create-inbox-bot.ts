@@ -93,11 +93,7 @@ export async function createInboxBot({
     askToAddModel(modelSpaceId);
     return "needsModel";
   }
-  const bot = await rpc(
-    "bots/create",
-    { ...input, notifyOnFinish: true, computerMode: "team" },
-    options,
-  );
+  const bot = await rpc("bots/create", { ...input, notifyOnFinish: true }, options);
   if (!isSearchInboxSession(askedIn)) return "stale";
   hapticSuccess();
   notifyInboxChanged();

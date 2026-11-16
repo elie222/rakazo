@@ -37,6 +37,11 @@ msgstr "{0, plural, one {已获得 # 个月免费} other {已获得 # 个月免�
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, other {# 个月免费使用期}}"
 
+#. placeholder {0}: models.length
+#: apps/web/src/pages/model-settings/provider-page.tsx
+msgid "{0, plural, one {# model} other {# models}}"
+msgstr "{0, plural, other {# 个模型}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -121,6 +126,11 @@ msgstr "{0} 正在运行"
 msgid "{0} KB"
 msgstr "{0} KB"
 
+#. placeholder {0}: usd(creditsUsd)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0} left"
+msgstr "剩余 {0}"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
@@ -141,6 +151,11 @@ msgstr "{0} TB"
 msgid "{0}, paused until you turn it on"
 msgstr "{0}，开启前保持暂停"
 
+#. placeholder {0}: Math.round(used)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0}% used"
+msgstr "已用 {0}%"
+
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -160,6 +175,10 @@ msgstr "每周 {amount}"
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
 msgstr "总计 {amount}"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{amount} left"
+msgstr "剩余 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -217,6 +236,10 @@ msgstr "{connectedCount, plural, one {# 个已连接} other {# 个已连接}}"
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
 msgstr "{count, plural, other {与 {peer} 的 # 条消息}}"
+
+#: apps/mobile/components/model-providers.tsx
+msgid "{count, plural, one {# model} other {# models}}"
+msgstr "{count, plural, other {# 个模型}}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -368,6 +391,11 @@ msgstr "{label}，下方"
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}，空"
+
+#. placeholder {0}: base.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "{memoryGb} GB of RAM and {usage}× the computer time of {0}. Time counts only while your bot uses its computer."
+msgstr "{memoryGb} GB 内存，电脑时长是 {0} 的 {usage} 倍。只在你的 Bot 使用电脑时计时。"
 
 #: apps/web/src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -673,6 +701,10 @@ msgstr "{title}，保存为 {savedAs}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{used}% used"
+msgstr "已用 {used}%"
+
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable} 已被保留。请选择其他名称。"
@@ -836,6 +868,10 @@ msgstr "1 条未读"
 msgid "3 hours"
 msgstr "3 小时"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "A {times}× more powerful computer for your bot"
+msgstr "为你的 Bot 提供性能强 {times} 倍的电脑"
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "什么都做一点"
@@ -843,6 +879,11 @@ msgstr "什么都做一点"
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "命令的输出"
+
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "A kanban board of tickets your bots can work on"
+msgstr "以看板形式管理 Bot 可处理的工单"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -952,7 +993,9 @@ msgid "Active: {name}"
 msgstr "启用：{name}"
 
 #: apps/mobile/components/inbox-header.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/mobile/lib/use-home-header.ts
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "动态"
@@ -1030,6 +1073,11 @@ msgstr "请在语音设置中添加语音提供商密钥并选择声音。"
 msgid "Add an AI model to keep chatting"
 msgstr "添加一个 AI 模型以继续聊天"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add an authenticator key"
+msgstr "添加验证器密钥"
+
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "请填写 HTTPS 服务器 URL。"
@@ -1093,7 +1141,12 @@ msgstr "添加模型"
 msgid "Add open work"
 msgstr "添加待办事项"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Add other sites"
+msgstr "添加其他网站"
+
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -1143,6 +1196,11 @@ msgstr "添加触发器"
 msgid "Add workspace"
 msgstr "添加工作区"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Added"
+msgstr "已添加"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/skills.tsx
@@ -1177,18 +1235,15 @@ msgstr "地址第 2 行"
 msgid "Adds"
 msgstr "将添加"
 
-#: apps/mobile/app/(settings)/account.tsx
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
-#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "高级"
 
@@ -1204,13 +1259,13 @@ msgstr "智能体"
 msgid "Agent from another app"
 msgstr "其他应用中的智能体"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Agent messages"
 msgstr "智能体消息"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "AI data sharing"
 msgstr "AI 数据共享"
 
@@ -1234,6 +1289,7 @@ msgid "All {price} goes to model usage."
 msgstr "{price} 全部用于模型使用。"
 
 #: apps/mobile/app/artifacts.tsx
+#: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/shell/agent-import-plan.tsx
@@ -1258,6 +1314,11 @@ msgstr "全部状态"
 msgid "All time"
 msgstr "全部时间"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Allow"
+msgstr "允许"
+
 #: apps/mobile/lib/ai-consent.ts
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
@@ -1268,7 +1329,7 @@ msgid "Allow {name} on mobile"
 msgstr "在手机上允许 {name}"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "允许跨空间 Bot 通信"
 
@@ -1300,7 +1361,7 @@ msgstr "请在系统设置中允许 Rakazo 使用语音识别和麦克风。"
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "请在设置中允许语音识别，或连接支持转写的语音服务。"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Allow writing"
 msgstr "允许写入"
 
@@ -1322,6 +1383,18 @@ msgstr "已连接"
 #: apps/web/src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "已有账户？"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Already saved"
+msgstr "已保存过"
+
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Also on"
+msgstr "其他网站"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -1367,6 +1440,14 @@ msgstr "金额"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此提供商存储的是 API 密钥，不是订阅登录。"
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "外部记忆服务，用于在各个聊天之间存储和读取上下文。"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "HTTPS 端点"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "无法检查导入的 API 密钥。请重试。"
@@ -1379,7 +1460,12 @@ msgstr "无法使用导入的 API 密钥。取消勾选后重试。"
 msgid "An integration tool"
 msgstr "集成工具"
 
-#: apps/mobile/app/(settings)/account.tsx
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "And {more} more"
+msgstr "还有 {more} 个"
+
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
 msgstr "Android 已阻止通知。"
@@ -1395,7 +1481,6 @@ msgstr "其他助手"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "回答"
 
@@ -1447,10 +1532,10 @@ msgstr "任何拥有链接的人"
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/lib/vault.ts
 #: apps/web/src/components/ComputerProviderSettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1483,7 +1568,7 @@ msgstr "API 令牌"
 msgid "API URL"
 msgstr "API URL"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "外观"
@@ -1557,8 +1642,9 @@ msgid "archived"
 msgstr "已归档"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/inbox-rows.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
 msgstr "已归档"
@@ -1583,6 +1669,11 @@ msgstr "产物"
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Ask"
 msgstr "询问"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Ask first"
+msgstr "先询问"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -1617,6 +1708,10 @@ msgstr "{time}"
 msgid "at {timeSelect}"
 msgstr "{timeSelect}"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Attach as file"
+msgstr "作为文件附加"
+
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -1638,6 +1733,14 @@ msgstr "认证"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Authentication failed."
 msgstr "身份验证失败。"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Authenticator key"
+msgstr "验证器密钥"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1698,15 +1801,20 @@ msgstr "Shell 命令可通过 {commandVariable} 使用"
 msgid "Avatar Studio"
 msgstr "头像工作室"
 
+#: apps/web/src/pages/shell/computer-panel.tsx
+msgid "Awake"
+msgstr "运行中"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/integration-detail.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
-#: apps/web/src/components/vault/VaultPageHeader.tsx
+#: apps/web/src/components/SettingsPageHeader.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/AdminPluginsPage.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -1719,6 +1827,7 @@ msgstr "头像工作室"
 #: apps/web/src/pages/RoutineEditor.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
 #: apps/web/src/pages/shell/agent-import.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Back"
 msgstr "返回"
 
@@ -1735,7 +1844,7 @@ msgstr "返回聊天"
 msgid "Back to sign in"
 msgstr "返回登录"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "Base URL"
 
@@ -1756,9 +1865,9 @@ msgstr "Bearer"
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
@@ -1781,6 +1890,11 @@ msgstr "账单地址"
 msgid "Billing period"
 msgstr "账单周期"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Block"
+msgstr "阻止"
+
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "阻止"
@@ -1794,14 +1908,16 @@ msgstr "已阻塞"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/Board.tsx
+#: apps/web/src/pages/LabsSettingsPanel.tsx
 msgid "Board"
 msgstr "看板"
 
 #: apps/mobile/lib/computer.ts
 #: apps/web/src/pages/shell/computer-view.tsx
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Booting live desktop…"
 msgstr "正在启动实时桌面…"
 
@@ -1859,11 +1975,7 @@ msgstr "Bot 模型"
 msgid "Bot screen"
 msgstr "Bot 屏幕"
 
-#: apps/web/src/pages/shell/computer-panel.tsx
-msgid "Bot screen preview"
-msgstr "Bot 屏幕预览"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "Bot 风格"
@@ -1883,6 +1995,13 @@ msgstr "Bot 的模型"
 msgid "Both"
 msgstr "两者"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemAccess.tsx
+#: apps/web/src/components/vault/VaultItemDetail.tsx
+msgid "Bots"
+msgstr "Bot"
+
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Bot 和浏览器自动化"
@@ -1890,6 +2009,11 @@ msgstr "Bot 和浏览器自动化"
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
 msgstr "Bot 和它们自己的聊天会保留。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Bots can use each imported login until you change its Bots setting."
+msgstr "在你更改每条导入登录信息的 Bot 设置之前，Bot 都可以使用它。"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -1907,7 +2031,7 @@ msgstr "每个 Bot 都有自己的电脑和浏览器"
 msgid "Bots with their own model"
 msgstr "使用自己模型的 Bot"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Brain label"
 msgstr "Brain 标签"
 
@@ -1992,13 +2116,15 @@ msgid "Can't read images"
 msgstr "无法读取图像"
 
 #: apps/mobile/app/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -2050,6 +2176,7 @@ msgstr "无法读取图像"
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/KnowledgeSection.tsx
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
@@ -2141,8 +2268,8 @@ msgid "Change model"
 msgstr "更换模型"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/change-password.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "修改密码"
@@ -2163,9 +2290,7 @@ msgstr "正在修改…"
 msgid "Chart failed to render: {error}"
 msgstr "图表渲染失败：{error}"
 
-#: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr "聊天"
 
@@ -2310,6 +2435,15 @@ msgstr "选择文件夹"
 msgid "Choose how to use Rakazo"
 msgstr "选择如何使用 Rakazo"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Chosen bots"
+msgstr "指定的 Bot"
+
+#: apps/mobile/components/vault-item-editor.tsx
+msgid "Chosen bots"
+msgstr "指定的 Bot"
+
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -2348,7 +2482,7 @@ msgstr "清空与 {0} 的对话？"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/web/src/pages/BotContextMenu.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Clear conversation"
 msgstr "清空对话"
 
@@ -2440,6 +2574,7 @@ msgid "Close page"
 msgstr "关闭页面"
 
 #: apps/web/src/pages/GroupPanel.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "关闭面板"
@@ -2465,7 +2600,7 @@ msgstr "关闭用户设置"
 msgid "Close voice settings"
 msgstr "关闭语音设置"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Cloud"
 msgstr "云端"
 
@@ -2522,6 +2657,7 @@ msgid "Command"
 msgstr "命令"
 
 #: apps/web/src/pages/shell/command-palette.tsx
+#: apps/web/src/pages/shell/composer-parts.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "命令菜单"
@@ -2556,19 +2692,17 @@ msgstr "已完成"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
-#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "电脑"
 
 #: apps/mobile/lib/computer.ts
 #: apps/web/src/pages/shell/computer-view.tsx
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Computer failed to boot"
 msgstr "电脑启动失败"
 
@@ -2613,6 +2747,8 @@ msgstr "电脑操作模型"
 msgid "Computer-use model…"
 msgstr "电脑操作模型…"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -2662,9 +2798,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
@@ -2713,6 +2847,10 @@ msgstr "连接 API 密钥"
 msgid "Connect apps"
 msgstr "连接应用"
 
+#: apps/web/src/pages/shell/agent-import-plan.tsx
+msgid "Connect it again"
+msgstr "重新连接"
+
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "连接 MCP 服务器“{name}”"
@@ -2747,6 +2885,7 @@ msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "请在“模型”中连接你自己的 API 密钥，或在“账单”中选择 Rakazo 额度。"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2774,18 +2913,21 @@ msgstr "已连接。"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
 #: apps/web/src/pages/shell/message-cards.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
 msgstr "正在连接…"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Connection"
 msgstr "连接"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+msgid "Connection not found"
+msgstr "找不到连接"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2822,9 +2964,8 @@ msgstr "联系人"
 msgid "Contains code to run"
 msgstr "包含可运行的代码"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Context limit"
 msgstr "上下文限制"
 
@@ -2855,27 +2996,37 @@ msgstr "在后台继续"
 msgid "Continue to checkout"
 msgstr "继续结账"
 
-#. placeholder {0}: reset.sso.name
-#: apps/web/src/pages/Auth.tsx
+#. placeholder {0}: provider.name
+#: apps/web/src/components/SocialSignInButtons.tsx
 msgid "Continue with {0}"
 msgstr "通过 {0} 继续"
 
-#: apps/mobile/app/sign-in.tsx
+#: apps/mobile/components/social-sign-in-buttons.tsx
 msgid "Continue with {name}"
 msgstr "通过 {name} 继续"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with email"
+msgstr "通过邮箱继续"
+
+#: apps/mobile/components/social-sign-in-buttons.tsx
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Continue with passkey"
+msgstr "通过通行密钥继续"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
 msgstr "Ctrl"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "对话摘要、记忆、搜索请求及 Bot 和空间 ID 会被发送，用于存储和检索上下文。"
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "对话"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "对话、名称、记忆、搜索内容以及 Bot 和空间 ID 会被发送，用于存储和读取上下文。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3053,6 +3204,7 @@ msgid "Could not complete action"
 msgstr "无法完成操作"
 
 #: apps/web/src/pages/McpOAuthCallback.tsx
+#: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not complete OAuth"
 msgstr "无法完成 OAuth"
 
@@ -3069,7 +3221,7 @@ msgstr "无法完成更新。请重试。"
 msgid "Could not connect"
 msgstr "无法连接"
 
-#. placeholder {0}: registration.name
+#. placeholder {0}: nameOf(failed.provider)
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not connect {0}"
 msgstr "无法连接 {0}"
@@ -3084,15 +3236,17 @@ msgid "Could not connect this voice provider"
 msgstr "无法连接此语音提供商"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 #: apps/web/src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
 msgstr "无法连接电脑屏幕"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/app/thread.tsx
 #: apps/mobile/components/account-deletion.tsx
+#: apps/mobile/components/ComputerCard.tsx
 #: apps/mobile/components/confirm-identity.tsx
 #: apps/mobile/lib/api-auth.ts
 #: apps/mobile/lib/identity-confirmation.ts
@@ -3101,6 +3255,7 @@ msgstr "无法连接电脑屏幕"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3109,7 +3264,7 @@ msgstr "无法连接电脑屏幕"
 #: apps/web/src/lib/sso-flow.ts
 #: apps/web/src/lib/user-error.ts
 #: apps/web/src/pages/Auth.tsx
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Could not continue"
 msgstr "无法继续"
 
@@ -3279,6 +3434,11 @@ msgstr "无法授予访问权限"
 msgid "Could not hear that."
 msgstr "没有听清。"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Could not import"
+msgstr "无法导入"
+
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "无法安装连接器"
@@ -3293,6 +3453,8 @@ msgstr "无法安装插件"
 msgid "Could not leave space"
 msgstr "无法退出空间"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/lib/user-devices.ts
 #: apps/web/src/components/ErrorBoundary.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/lib/user-devices.ts
@@ -3301,6 +3463,7 @@ msgid "Could not load"
 msgstr "无法加载"
 
 #: apps/mobile/components/inbox-activity.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "无法加载动态"
@@ -3330,6 +3493,11 @@ msgstr "无法加载 Bot"
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not load bots"
 msgstr "无法加载 Bot 列表"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Could not load bots. Reload to try again."
+msgstr "无法加载 Bot。请重新加载后重试。"
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -3385,9 +3553,11 @@ msgstr "无法加载记忆"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/bot-model.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
@@ -3575,6 +3745,8 @@ msgstr "无法读取这些文件"
 msgid "Could not reject plugin"
 msgstr "无法拒绝插件"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/lib/user-devices.ts
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 #: apps/web/src/lib/user-devices.ts
 #: apps/web/src/pages/KnowledgeSection.tsx
@@ -3667,7 +3839,8 @@ msgstr "无法撤销授权"
 msgid "Could not run routine"
 msgstr "无法运行例行任务"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/labs.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3680,6 +3853,11 @@ msgstr "无法运行例行任务"
 #: apps/web/src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "无法保存"
+
+#. placeholder {0}: nameOf(config?.provider)
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "Could not save {0}"
+msgstr "无法保存 {0}"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -3701,6 +3879,11 @@ msgstr "无法保存群组"
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "无法保存模型"
+
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Could not save model settings"
+msgstr "无法保存模型设置"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -3851,11 +4034,6 @@ msgstr "无法开始登录"
 msgid "Could not start teaching"
 msgstr "无法开始教学"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "无法停止电脑"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "无法提交回答"
@@ -3884,7 +4062,7 @@ msgstr "无法切换电脑"
 msgid "Could not switch spaces"
 msgstr "无法切换空间"
 
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Could not take control"
 msgstr "无法接管"
 
@@ -3933,7 +4111,7 @@ msgstr "无法更新电脑"
 msgid "Could not update name"
 msgstr "无法更新姓名"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
 msgstr "无法更新通知"
@@ -3996,10 +4174,14 @@ msgstr "无法刷新——显示最近加载的消息。"
 msgid "Couldn't start the computer"
 msgstr "无法启动电脑"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
 msgstr "无法更新 Bot 风格"
+
+#: apps/web/src/pages/LabsSettingsPanel.tsx
+msgid "Couldn't update Labs"
+msgstr "无法更新实验室"
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -4061,6 +4243,7 @@ msgid "Create organization"
 msgstr "创建组织"
 
 #: apps/web/src/pages/RoutineList.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Create routine"
 msgstr "创建例行任务"
 
@@ -4075,9 +4258,10 @@ msgstr "创建分组"
 msgid "Create space"
 msgstr "创建空间"
 
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "创建你的 Rakazo"
+msgid "Create your account"
+msgstr "创建你的账户"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/AskCard.tsx
@@ -4112,9 +4296,11 @@ msgstr "凭据：{names}"
 msgid "Credit amount"
 msgstr "额度金额"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 msgid "Credits"
 msgstr "额度"
 
@@ -4193,11 +4379,11 @@ msgid "Daily"
 msgstr "每天"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "每天跟进未完成的工作"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Dark"
@@ -4239,13 +4425,10 @@ msgstr "拒绝"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bot-look-picker.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "默认"
@@ -4268,9 +4451,9 @@ msgstr "OpenClaw 默认内容"
 msgid "Default scope"
 msgstr "默认范围"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/artifact.tsx
@@ -4342,8 +4525,8 @@ msgstr "要删除 {name} 及其 {count} 个 Bot 吗？"
 msgid "Delete {name} and its bot?"
 msgstr "要删除 {name} 及其 Bot 吗？"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -4352,7 +4535,7 @@ msgstr "要删除 {name} 及其 Bot 吗？"
 msgid "Delete {name}?"
 msgstr "要删除 {name} 吗？"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountMenu.tsx
@@ -4370,6 +4553,8 @@ msgid "Delete memories too"
 msgstr "同时删除记忆"
 
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/AccountMenu.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Delete organization"
 msgstr "删除组织"
@@ -4389,6 +4574,11 @@ msgstr "删除分组"
 #: apps/web/src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "删除空间"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+msgid "Delete the exported file now. It holds your passwords unencrypted."
+msgstr "请立即删除导出的文件。其中的密码未加密。"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -4417,6 +4607,10 @@ msgstr "已删除"
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
 msgstr "已删除"
+
+#: apps/web/src/pages/shell/transcript-member-name.ts
+msgid "Deleted bot"
+msgstr "已删除的 Bot"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4645,12 +4839,13 @@ msgstr "还没有账户？"
 #: apps/mobile/lib/activity.ts
 #: apps/mobile/lib/board.ts
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "完成"
 
@@ -4714,6 +4909,7 @@ msgstr "每个名称只能使用一次。"
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Edit"
 msgstr "编辑"
 
@@ -4721,11 +4917,7 @@ msgstr "编辑"
 msgid "Edit avatar"
 msgstr "编辑头像"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "先编辑"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
 #: apps/mobile/components/name-dialog.tsx
@@ -4818,27 +5010,24 @@ msgstr "请输入服务器地址"
 msgid "Enter a valid email"
 msgstr "请输入有效的电子邮件地址"
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "请输入 1 到 {MAX_MODEL_CONTEXT_WINDOW} 之间的整数作为上下文限制。"
 
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "请输入 1 到 {MAX_MODEL_MAX_TOKENS} 之间的整数作为最大输出 token 数。"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for maximum output tokens."
 msgstr "请输入 1 到 {max} 之间的整数作为最大输出 token 数。"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Enter a whole number from 1 to {max} for the context limit."
 msgstr "请输入 1 到 {max} 之间的整数作为上下文限制。"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/web/src/pages/model-settings/use-model-settings.ts
-#: apps/web/src/pages/onboarding/use-onboarding-model.ts
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "请输入 1 到 1000 之间的整数作为图像限制。"
 
@@ -4849,6 +5038,15 @@ msgstr "请输入金额"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "测试前请输入 API 密钥。"
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "请输入 HTTPS URL"
+
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Enter each site as an HTTPS address a login can be saved for."
+msgstr "请将每个网站填写为可保存登录信息的 HTTPS 地址。"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -4942,18 +5140,11 @@ msgstr "每小时{minute}分"
 msgid "Every message"
 msgstr "所有消息"
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
 msgid "Every Monday"
 msgstr "每周一"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every month"
-msgstr "每月"
-
-#: apps/mobile/components/routine-schedule-editor.tsx
-msgid "Every week"
-msgstr "每周"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -4966,6 +5157,11 @@ msgstr "此 Bot 空间中的每个人都能阅读它从 {app} 收到的聊天。
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "此 Bot 所在空间的所有人都能读取它从 {linkApp} 收到的对话。"
+
+#. placeholder {0}: first.name
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Everything in {0}"
+msgstr "包含 {0} 的全部内容"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5018,7 +5214,7 @@ msgstr "有效期"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "导出"
 
@@ -5038,8 +5234,6 @@ msgid "External conversation"
 msgstr "外部对话"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Extra high"
 msgstr "极高"
 
@@ -5080,12 +5274,8 @@ msgid "Failure handling"
 msgstr "失败处理"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "标记变化的字段"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "要比较的字段，例如 id, modifiedTime（可选）"
+msgid "Fields to compare (optional)"
+msgstr "要比较的字段（可选）"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5288,6 +5478,8 @@ msgstr "网关令牌"
 msgid "Gateway URL"
 msgstr "网关 URL"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "General"
@@ -5347,6 +5539,10 @@ msgstr "正在授予…"
 msgid "GraphQL endpoint"
 msgstr "GraphQL 端点"
 
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Grok Bot"
+msgstr "Grok Bot"
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/archived-bot-list.ios.tsx
@@ -5386,6 +5582,15 @@ msgstr "群组设置"
 msgid "Group updates"
 msgstr "合并更新"
 
+#: packages/i18n/src/bot-removal.ts
+msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
+msgstr "Bot 少于两个的群组也会被删除，包括其中的消息、文件和页面。"
+
+#: apps/mobile/app/computer.tsx
+#: apps/web/src/pages/shell/computer-release-actions.tsx
+msgid "Hand back control"
+msgstr "交还控制权"
+
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Hang up"
@@ -5400,7 +5605,7 @@ msgstr "请先挂断，然后输入屏幕上的代码。"
 msgid "Hang up, then enter the code on screen."
 msgstr "请挂断，然后输入屏幕上的代码。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Haptics"
 msgstr "触感反馈"
 
@@ -5498,9 +5703,8 @@ msgid "Hide transcript"
 msgstr "隐藏文字记录"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/ticket-priority.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
 msgstr "高"
 
@@ -5568,6 +5772,10 @@ msgstr "你会如何使用 Rakazo？"
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS URL"
+
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
 msgstr "https://example.com/graphql"
@@ -5581,6 +5789,8 @@ msgid "https://example.com/openapi.json"
 msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "我做完了"
@@ -5617,7 +5827,9 @@ msgstr "此模型尚未配置图片输入。"
 msgid "Image upload area"
 msgstr "图片上传区域"
 
+#: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
 msgid "Import"
 msgstr "导入"
 
@@ -5625,6 +5837,12 @@ msgstr "导入"
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "导入智能体"
+
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/vault/VaultImport.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Import CSV"
+msgstr "导入 CSV"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -5666,10 +5884,6 @@ msgstr "包含 API 密钥"
 msgid "Incoming call"
 msgstr "来电"
 
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Inherit default"
-msgstr "沿用默认"
-
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Input"
 msgstr "输入"
@@ -5686,7 +5900,7 @@ msgstr "安装更新"
 msgid "Installing…"
 msgstr "正在安装…"
 
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Instance API key"
 msgstr "实例 API 密钥"
 
@@ -5782,7 +5996,6 @@ msgid "Invite link copied"
 msgstr "邀请链接已复制"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "隔离"
 
@@ -5845,6 +6058,10 @@ msgstr "跳转到回复的消息：{excerpt}"
 msgid "just now"
 msgstr "刚刚"
 
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Keep inline"
+msgstr "保留在正文中"
+
 #: apps/mobile/lib/bot-lifecycle.ts
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -5881,10 +6098,25 @@ msgstr "标签"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/labs.tsx
+#: apps/web/src/pages/settings-nav.ts
+msgid "Labs"
+msgstr "实验室"
+
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "语言"
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large paste"
+msgstr "大段粘贴"
+
+#: apps/web/src/pages/shell/composer.tsx
+msgid "Large text pasted inline"
+msgstr "已在正文中粘贴大段文本"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -5896,9 +6128,17 @@ msgstr "上次检查 {0}：有变化"
 msgid "Last check {0}: no changes"
 msgstr "上次检查 {0}：无变化"
 
+#: apps/web/src/components/SocialSignInButtons.tsx
+msgid "Last used"
+msgstr "上次使用"
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "稍后"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "从对话中学习"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -5929,11 +6169,7 @@ msgstr "向左"
 msgid "Let bots use this computer"
 msgstr "允许 Bot 使用这台电脑"
 
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "让 Bot 在 MEMORY.md 之外，按语义保存和回忆事实。"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Light"
@@ -5948,6 +6184,16 @@ msgstr "限额"
 msgid "Link"
 msgstr "链接"
 
+#. placeholder {0}: provider.name
+#. placeholder {0}: security.sso.name === "SSO" ? t`SSO` : security.sso.name
+#: apps/mobile/app/(settings)/profile.tsx
+msgid "Link {0}"
+msgstr "关联 {0}"
+
+#: apps/web/src/components/AccountAccess.tsx
+msgid "Link {providerName}"
+msgstr "关联 {providerName}"
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Link copied"
@@ -5957,11 +6203,6 @@ msgstr "链接已复制"
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "关联私信"
-
-#: apps/mobile/app/(settings)/account.tsx
-#: apps/web/src/components/AccountAccess.tsx
-msgid "Link SSO"
-msgstr "关联 SSO"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "List view"
@@ -5975,11 +6216,11 @@ msgstr "聆听"
 msgid "Listening…"
 msgstr "正在聆听…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live update settings"
 msgstr "实时更新设置"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live working status"
 msgstr "实时工作状态"
 
@@ -5997,7 +6238,7 @@ msgstr "加载更多"
 msgid "Load older runs"
 msgstr "加载更早的运行记录"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "自动加载网络图片"
@@ -6042,6 +6283,7 @@ msgstr "正在加载语音提供商…"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -6112,9 +6354,8 @@ msgid "Looks like it contains a key"
 msgstr "似乎包含密钥"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/ticket-priority.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
 msgstr "低"
 
@@ -6139,15 +6380,9 @@ msgid "Manage"
 msgstr "管理"
 
 #. placeholder {0}: option.name
-#. placeholder {0}: providerName(choice)
-#: apps/web/src/pages/ModelRoleSettings.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "管理 {0}"
-
-#: apps/mobile/components/model-role-settings.tsx
-msgid "Manage {provider}"
-msgstr "管理 {provider}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -6160,10 +6395,20 @@ msgstr "管理账单"
 msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
 
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage model"
+msgstr "管理模型"
+
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "管理其他 Bot"
+
+#: apps/mobile/components/model-role-settings.tsx
+#: apps/web/src/pages/ModelRoleSettings.tsx
+msgid "Manage provider"
+msgstr "管理提供商"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6198,8 +6443,6 @@ msgid "Marketing"
 msgstr "营销"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Max"
 msgstr "最大"
 
@@ -6212,21 +6455,22 @@ msgstr "最高"
 msgid "Maximize"
 msgstr "最大化"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum images per request"
 msgstr "每次请求的最大图像数"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/ModelSettingsOverlay.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Maximum output tokens"
 msgstr "最大输出 token 数"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Maximum output tokens must be below the context limit."
+msgstr "最大输出 token 数必须小于上下文限制。"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "MCP 端点"
 
@@ -6242,8 +6486,7 @@ msgid "MCP servers"
 msgstr "MCP 服务器"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Medium"
 msgstr "中"
 
@@ -6292,10 +6535,6 @@ msgstr "记忆 {position}"
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "{title} 的记忆"
-
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Memory scope"
-msgstr "记忆范围"
 
 #: apps/web/src/pages/shell/composer-parts.tsx
 msgid "Mentions"
@@ -6365,11 +6604,6 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Messages"
-msgstr "消息"
-
 #: apps/mobile/lib/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
 msgstr "消息、聊天记录、Bot 指令、记忆、附件、截图及已连接应用的内容会被发送，以运行你的 Bot，包括例行任务。"
@@ -6386,8 +6620,6 @@ msgid "Microphone failed"
 msgstr "麦克风失败"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Minimal"
 msgstr "最低"
 
@@ -6438,17 +6670,13 @@ msgstr "模式"
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/agent-import-plan.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model"
 msgstr "模型"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Model \"{modelId}\" was not listed."
 msgstr "模型“{modelId}”未列出。"
-
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Model connections"
-msgstr "模型连接"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6468,6 +6696,8 @@ msgstr "模型提供商"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/components/connection-model-list.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
@@ -6496,10 +6726,12 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly"
@@ -6515,6 +6747,7 @@ msgstr "每月额度"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "每月额度在续订时到期。充值额度不会过期。"
 
+#: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly on the 1st"
 msgstr "每月 1 日"
@@ -6530,14 +6763,13 @@ msgstr "每月 1 日"
 msgid "More"
 msgstr "更多"
 
+#: apps/web/src/pages/shell/bot-panel.tsx
+msgid "More actions"
+msgstr "更多操作"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "更多应用"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "更多电脑操作"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -6649,7 +6881,7 @@ msgstr "等你回答"
 msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 客户端 ID"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/components/unread-jump-overlay.tsx
@@ -6673,9 +6905,8 @@ msgid "Needs takeover"
 msgstr "需要接管"
 
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "需要接管"
 
@@ -6771,6 +7002,7 @@ msgstr "新建私人空间"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
+#: apps/web/src/pages/RoutineList.tsx
 msgid "New routine"
 msgstr "新建例行任务"
 
@@ -6855,6 +7087,11 @@ msgstr "无需身份验证"
 msgid "No authentication"
 msgstr "无认证"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No bots"
+msgstr "没有 Bot"
+
 #: apps/web/src/components/integrations/agent-access.tsx
 msgid "No bots"
 msgstr "没有 Bot"
@@ -6889,8 +7126,10 @@ msgstr "这一页没有匹配的产物。"
 msgid "No matching bots"
 msgstr "没有匹配的 Bot"
 
+#: apps/mobile/components/connection-model-list.tsx
 #: apps/mobile/components/model-picker-list.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -6927,6 +7166,19 @@ msgstr "未找到 OpenClaw、Hermes 或智能体文档。"
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
 msgstr "没有与“{query}”匹配的页面。"
+
+#: apps/mobile/app/(settings)/computers.tsx
+msgid "No paired computers"
+msgstr "没有已配对的电脑"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No password"
+msgstr "没有密码"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "No plan or key? Use credits"
+msgstr "没有套餐或密钥？使用额度"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
@@ -7001,6 +7253,11 @@ msgstr "暂无可用工具。"
 msgid "No trigger"
 msgstr "无触发器"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "No website and password columns found."
+msgstr "未找到网站列和密码列。"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/spending-limit-row.tsx
@@ -7063,6 +7320,16 @@ msgstr "暂不"
 msgid "Not Now"
 msgstr "暂不"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not on an HTTPS site"
+msgstr "不是 HTTPS 网站"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Not saved"
+msgstr "未保存"
+
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
 msgstr "未发送"
@@ -7103,14 +7370,14 @@ msgstr "暂无记忆"
 msgid "Nothing saved yet."
 msgstr "尚未保存任何内容。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Notification settings"
 msgstr "通知设置"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "通知"
 
@@ -7127,6 +7394,7 @@ msgid "Number"
 msgstr "号码"
 
 #: apps/mobile/components/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
 msgid "OAuth"
 msgstr "OAuth"
 
@@ -7146,6 +7414,7 @@ msgstr "OAuth 客户端密钥（可选）"
 msgid "OAuth connection failed"
 msgstr "OAuth 连接失败"
 
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
 msgstr "离线"
@@ -7227,12 +7496,12 @@ msgstr "仅自己"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "打开"
 
@@ -7358,6 +7627,10 @@ msgstr "可选"
 msgid "Optional header value"
 msgstr "可选请求头值"
 
+#: apps/mobile/components/social-sign-in-buttons.tsx
+msgid "or"
+msgstr "或"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
 msgstr "或连接 API 密钥"
@@ -7374,11 +7647,11 @@ msgstr "或粘贴 API 密钥"
 msgid "Organization"
 msgstr "组织"
 
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "组织 API 密钥"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7407,6 +7680,11 @@ msgstr "其他模型…"
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Output"
 msgstr "输出"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
+msgid "Own computer"
+msgstr "专属电脑"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7464,6 +7742,7 @@ msgstr "页面标题"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/group-settings.tsx
+#: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/command-palette.tsx
@@ -7486,12 +7765,12 @@ msgstr "此群组为你创建的页面会显示在这里。"
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 msgstr "此群组为你创建的页面会显示在这里。请它做一个仪表板、跟踪表或计划即可创建。"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "通行密钥"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkeys"
 msgstr "通行密钥"
@@ -7589,9 +7868,12 @@ msgid "Pending"
 msgstr "待处理"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "权限"
+
+#: apps/mobile/app/sign-in.tsx
+msgid "Persistent AI teammates that do real work"
+msgstr "长期在线、真正干活的 AI 队友"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
@@ -7666,6 +7948,10 @@ msgstr "置顶"
 msgid "Pinned"
 msgstr "置顶"
 
+#: apps/web/src/components/ComputerDeviceSettings.tsx
+msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
+msgstr "普通 HTTP 无法配对此电脑。请使用 HTTPS 或本地回环服务器。"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Plan"
@@ -7711,8 +7997,8 @@ msgid "Plugins"
 msgstr "插件"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "在聊天中发布“无变化”"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "检查未发现变化时发送一条聊天消息。例行任务不会运行。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7791,6 +8077,12 @@ msgstr "资料"
 msgid "Program: {name}"
 msgstr "程序：{name}"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
+msgid "Project ID"
+msgstr "项目 ID"
+
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "受保护输入"
@@ -7800,6 +8092,7 @@ msgstr "受保护输入"
 msgid "Protocol"
 msgstr "协议"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -7828,7 +8121,7 @@ msgstr "拉取请求"
 msgid "Put your bots to work"
 msgstr "让你的 Bot 开始工作"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Questions, approvals, takeover"
 msgstr "提问、审批和接管"
 
@@ -7842,8 +8135,12 @@ msgstr "排队中"
 msgid "Quote"
 msgstr "引用"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Quote selection"
+msgstr "引用所选内容"
+
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7855,7 +8152,7 @@ msgstr "Rakazo"
 msgid "Rakazo credits"
 msgstr "Rakazo 额度"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
 msgstr "rakazo-shared 和以 bot- 开头的 ID 保留给 Rakazo 使用。"
 
@@ -7874,7 +8171,7 @@ msgid "Read from the page, not checked"
 msgstr "读取自页面，未核实"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "朗读回复"
 
@@ -7886,21 +8183,27 @@ msgstr "就绪"
 msgid "Reason"
 msgstr "原因"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Reasoning effort"
-msgstr "推理强度"
-
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall and write"
 msgstr "读取并写入"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "自动读取"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Recall depth"
+msgstr "读取深度"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "从记忆库读取"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "从此 peer 读取；保存到 Rakazo 自己的 peer。"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "只读取"
 
@@ -7979,6 +8282,7 @@ msgstr "正在恢复 {name} 的电脑"
 msgid "Recovering Team Computer"
 msgstr "正在恢复团队电脑"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recovering…"
 msgstr "正在恢复…"
@@ -7999,11 +8303,6 @@ msgstr "上一项操作还没停，现在不能恢复。"
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "恢复操作会还原上次保存的工作区。未保存的工作可能会丢失。"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "重建无法正常工作的电脑。"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8037,7 +8336,10 @@ msgstr "刷新画面"
 msgid "Refreshing…"
 msgstr "正在刷新…"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Region"
 msgstr "区域"
 
@@ -8063,14 +8365,6 @@ msgstr "已拒绝"
 msgid "Rejecting…"
 msgstr "正在拒绝…"
 
-#: apps/mobile/app/computer.tsx
-msgid "Release"
-msgstr "释放控制"
-
-#: apps/web/src/pages/shell/computer-release-actions.tsx
-msgid "Release control"
-msgstr "交还控制权"
-
 #: apps/web/src/components/InstructionSettings.tsx
 #: apps/web/src/lib/client-update.ts
 msgid "Reload"
@@ -8080,10 +8374,11 @@ msgstr "重新加载"
 msgid "Remote MCP server"
 msgstr "远程 MCP 服务器"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8116,6 +8411,16 @@ msgstr "移除 {0}"
 #: apps/web/src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "把 {0} 移出群组"
+
+#. placeholder {0}: device.name
+#: apps/mobile/app/(settings)/computers.tsx
+msgid "Remove {0}, {status}"
+msgstr "移除 {0}，{status}"
+
+#. placeholder {0}: device.name
+#: apps/mobile/app/(settings)/computers.tsx
+msgid "Remove {0}?"
+msgstr "移除 {0}？"
 
 #: apps/web/src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
@@ -8215,7 +8520,7 @@ msgstr "已移除，但列表刷新失败"
 msgid "Removing…"
 msgstr "正在移除…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/components/pages/PagesList.tsx
@@ -8252,6 +8557,11 @@ msgstr "将于 {day} 续订"
 msgid "Reopen"
 msgstr "重新打开"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Repeated in the file"
+msgstr "文件中重复"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -8277,12 +8587,7 @@ msgstr "替换 {0} 已保存的登录信息"
 msgid "Replaces the login saved for {site}"
 msgstr "替换为 {site} 保存的登录信息"
 
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Replies"
-msgstr "回复"
-
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
 msgstr "回复和已完成的工作"
 
@@ -8305,6 +8610,10 @@ msgstr "已取消回复"
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {0}"
 msgstr "正在回复 {0}"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "报告无变化的检查"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -8350,21 +8659,38 @@ msgstr "重置电脑？"
 msgid "Reset password"
 msgstr "重置密码"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
+msgid "Reset to defaults"
+msgstr "恢复默认设置"
+
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "重置你的密码"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/run-error-sheet.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Resets"
 msgstr "重置"
 
+#. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Resets {0}"
+msgstr "{0} 重置"
+
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
 msgstr "将于 {date} 重置。"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Resets in {reset}"
+msgstr "{reset}后重置"
+
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "正在重置…"
@@ -8402,11 +8728,6 @@ msgstr "恢复 {name}"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "恢复上次保存的工作区。"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。"
 
@@ -8425,14 +8746,16 @@ msgstr "正在恢复工作区"
 msgid "Resume notifications"
 msgstr "恢复通知"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -8445,9 +8768,11 @@ msgstr "恢复通知"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/components/PasskeySettings.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/Auth.tsx
 #: apps/web/src/pages/Invite.tsx
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -8463,7 +8788,7 @@ msgid "Retry now"
 msgstr "立即重试"
 
 #: apps/mobile/app/computer.tsx
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Retry screen"
 msgstr "重新连接屏幕"
 
@@ -8542,6 +8867,11 @@ msgstr "你不在时也会运行的例行任务"
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "行"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Row {line}"
+msgstr "第 {line} 行"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
@@ -8624,9 +8954,10 @@ msgstr "与主模型相同"
 msgid "Saturday"
 msgstr "周六"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -8646,6 +8977,7 @@ msgstr "周六"
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 #: apps/web/src/components/ComputerProviderSettings.tsx
 #: apps/web/src/components/PasskeySettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
@@ -8657,13 +8989,17 @@ msgstr "周六"
 #: apps/web/src/pages/KnowledgeSection.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
-#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Save"
 msgstr "保存"
+
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Save and sign in"
+msgstr "保存并登录"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
@@ -8673,11 +9009,6 @@ msgstr "保存我的版本"
 msgid "Save section name"
 msgstr "保存分组名称"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "保存工作区并安装最新软件。"
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8685,6 +9016,7 @@ msgstr "保存到保管库"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -8699,8 +9031,35 @@ msgstr "已将 {name} 保存在本地"
 msgid "Saved, but list refresh failed"
 msgstr "已保存，但列表刷新失败"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't ask you first."
+msgstr "已保存，但此服务器无法先询问你。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't block bots yet."
+msgstr "已保存，但此服务器暂不能阻止 Bot。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't keep authenticator keys yet."
+msgstr "已保存，但此服务器暂不能保存验证器密钥。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server can't limit an item to chosen bots."
+msgstr "已保存，但此服务器无法将项目限定给指定的 Bot。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Saved, but this server fills logins only on their own site."
+msgstr "已保存，但此服务器只会在登录信息所属的网站上自动填充。"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/lib/use-subscription-sign-in.ts
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "已保存。"
@@ -8715,14 +9074,17 @@ msgid "Saving..."
 msgstr "正在保存…"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
@@ -8744,7 +9106,7 @@ msgstr "计划执行延迟"
 msgid "Scheduled routines"
 msgstr "定时例行任务"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Scheduled tasks"
 msgstr "计划任务"
 
@@ -8752,7 +9114,7 @@ msgstr "计划任务"
 msgid "Scopes (optional)"
 msgstr "范围（可选）"
 
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Screen not connected"
 msgstr "屏幕未连接"
 
@@ -8766,6 +9128,7 @@ msgstr "屏幕未连接"
 #: apps/web/src/components/VaultSettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
@@ -8816,6 +9179,7 @@ msgstr "在 MCP 服务器中搜索“{query}”"
 
 #: apps/web/src/components/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/provider-page.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -8886,7 +9250,7 @@ msgstr "选择 Bot"
 msgid "Select text"
 msgstr "选择文本"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Self-hosted"
 msgstr "自托管"
 
@@ -8912,7 +9276,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "请在 10 分钟内从 {linkApp} 将 <0>{linkCode}</0> 发送到 <1>{linkAddress}</1>。"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "发送回答"
 
@@ -8925,10 +9288,6 @@ msgstr "作为文件发送"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "发送删除验证码"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "发送"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -8955,10 +9314,6 @@ msgstr "正在发送…"
 #: apps/web/src/components/SecretAskCard.tsx
 msgid "Sent"
 msgstr "已发送"
-
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-msgid "Serenity endpoint is required."
-msgstr "请填写 Serenity 端点。"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/server.tsx
@@ -8987,16 +9342,23 @@ msgstr "服务器名称"
 msgid "Server URL"
 msgstr "服务器 URL"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Session"
+msgstr "会话"
+
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "设置"
 
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/CallCard.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
@@ -9085,7 +9447,6 @@ msgstr "共享，任何拥有链接的人都可查看"
 #: apps/mobile/app/pages.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "共享"
 
@@ -9192,11 +9553,19 @@ msgstr "登录"
 msgid "Sign in again"
 msgstr "重新登录"
 
+#: apps/mobile/lib/unsent-send-warning.ts
+msgid "Sign in anyway"
+msgstr "仍然登录"
+
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "在 <0>{0}</0> 登录，然后将代码粘贴到这里。"
+
+#: apps/mobile/app/sign-in.tsx
+msgid "Sign in to continue to Rakazo"
+msgstr "登录以继续使用 Rakazo"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9205,8 +9574,8 @@ msgstr "登录 Rakazo"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
-msgid "Sign in to your existing account to link SSO"
-msgstr "请登录现有账户以关联 SSO"
+msgid "Sign in to your account, then link this provider in settings"
+msgstr "请先登录你的账户，然后在设置中关联此提供商"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9235,6 +9604,10 @@ msgstr "注册"
 msgid "Sign up for Rakazo"
 msgstr "注册 Rakazo"
 
+#: apps/web/src/pages/PluginsOverlay.tsx
+msgid "Sign-in cancelled. Retry in Manage MCP servers."
+msgstr "登录已取消。请在“管理 MCP 服务器”中重试。"
+
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
 msgstr "登录已取消。请重试。"
@@ -9248,6 +9621,10 @@ msgstr "登录未返回会话"
 #: apps/mobile/lib/api-auth.ts
 msgid "Sign-up did not return a session"
 msgstr "注册未返回会话"
+
+#: apps/mobile/lib/unsent-send-warning.ts
+msgid "Signing in deletes unsent messages."
+msgstr "登录将删除未发送的消息。"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
@@ -9309,6 +9686,8 @@ msgstr "技能会加入所有 Bot 共享的技能库。"
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "跳过"
@@ -9317,8 +9696,12 @@ msgstr "跳过"
 msgid "Skip or deploy key"
 msgstr "跳过或使用部署密钥"
 
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "跳过无关记忆"
+
 #: apps/mobile/components/ComputerCard.tsx
-#: apps/web/src/pages/shell/message-view.tsx
+#: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
 msgstr "已跳过"
 
@@ -9357,6 +9740,11 @@ msgstr "延后"
 msgid "Snoozed"
 msgstr "已延后"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Some logins may have been saved. Importing the file again skips them."
+msgstr "部分登录信息可能已保存。再次导入该文件时会跳过它们。"
+
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integration-plugins.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
@@ -9371,6 +9759,11 @@ msgstr "部分设置不会导入"
 #: apps/mobile/app/computer.tsx
 msgid "Something went wrong while it was starting. Try again in a moment."
 msgstr "启动时出了点问题。请稍后重试。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "Something went wrong. Try again."
+msgstr "出了点问题。请重试。"
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9472,6 +9865,7 @@ msgstr "语音模型"
 msgid "Spending limit"
 msgstr "支出上限"
 
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "SSO"
 msgstr "单点登录"
@@ -9488,6 +9882,10 @@ msgstr "在 GitHub 上点星"
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Start"
 msgstr "启动"
+
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Start {name} trial"
+msgstr "开始 {name} 试用"
 
 #: apps/web/src/components/ModelCredits.tsx
 #: apps/web/src/pages/Paywall.tsx
@@ -9576,11 +9974,6 @@ msgstr "步骤"
 msgid "Stop"
 msgstr "停止"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "停止电脑"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "停止听写"
@@ -9603,15 +9996,11 @@ msgstr "已停止"
 msgid "Stopped."
 msgstr "已停止。"
 
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "正在停止…"
-
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
 msgstr "已加密存储"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "流式回复"
@@ -9648,6 +10037,10 @@ msgid "Subscribe for {price} / month"
 msgstr "以每月 {price} 订阅"
 
 #: apps/web/src/components/ModelCredits.tsx
+msgid "Subscribe to {name}"
+msgstr "订阅 {name}"
+
+#: apps/web/src/components/ModelCredits.tsx
 msgid "Subscribe to credits"
 msgstr "订阅额度"
 
@@ -9659,20 +10052,26 @@ msgstr "使用自己的 AI 订阅"
 msgid "Subscription required"
 msgstr "需要订阅"
 
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Summaries"
+msgstr "摘要"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "摘要和事实"
+
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
 msgid "Sunday"
 msgstr "周日"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports images"
 msgstr "支持图片"
 
-#: apps/mobile/components/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports thinking"
 msgstr "支持思考"
 
@@ -9721,7 +10120,7 @@ msgstr "切换服务器将删除未发送的消息。"
 msgid "Switching…"
 msgstr "正在切换…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "System"
@@ -9736,6 +10135,7 @@ msgid "Table"
 msgstr "表格"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "接管控制权"
@@ -9826,6 +10226,10 @@ msgstr "该地址不可用"
 msgid "That doesn’t look like a URL"
 msgstr "这看起来不像 URL"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "That isn't a Grok Bot export. Paste the Bot's whole reply."
+msgstr "这不是 Grok Bot 的导出内容。请粘贴该 Bot 的完整回复。"
+
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
 msgstr "该地址看起来不是 Rakazo 服务器"
@@ -9833,6 +10237,10 @@ msgstr "该地址看起来不是 Rakazo 服务器"
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL is missing a host"
 msgstr "该地址缺少主机名"
+
+#: apps/web/src/pages/VoiceSettingsOverlay.tsx
+msgid "That voice isn't offered by this server, so it used {served} instead."
+msgstr "此服务器不提供该语音，因此改用了 {served}。"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -9876,6 +10284,14 @@ msgstr "你的 Bot 工作所用的电脑。"
 msgid "The connection timed out."
 msgstr "连接超时。"
 
+#: packages/i18n/src/bot-removal.ts
+msgid "The group {names} will be deleted too, including its messages, files, and pages."
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
+
+#: packages/i18n/src/bot-removal.ts
+msgid "The groups {names} will be deleted too, including their messages, files, and pages."
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
 msgid "The model hit its output limit before finishing its reply."
@@ -9910,6 +10326,10 @@ msgstr "提供商收到的请求过多，无法为此 Bot 提供回复。"
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
 msgstr "提供商拒绝了此 Bot 用于回复的密钥。"
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "The reply looks cut off. Ask the Bot for the rest, then paste both."
+msgstr "回复似乎被截断了。请让该 Bot 发送剩余部分，然后把两段都粘贴进来。"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -10004,6 +10424,11 @@ msgstr "此账户已停用"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "此应用需要单独设置登录后才能连接。"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "This authenticator key can't be read."
+msgstr "无法读取此验证器密钥。"
+
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "无法读取此备份。"
@@ -10011,6 +10436,11 @@ msgstr "无法读取此备份。"
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "此 Bot"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This bot can't use this item. Change it in the Vault, or dismiss the request."
+msgstr "此 Bot 无法使用此项目。请在保管库中更改，或忽略此请求。"
 
 #: apps/web/src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -10064,6 +10494,10 @@ msgstr "此操作无法撤销。"
 msgid "this computer"
 msgstr "这台电脑"
 
+#: apps/mobile/app/(settings)/computers.tsx
+msgid "This computer will stop running bots for your account"
+msgstr "此电脑将停止为你的账号运行 Bot"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
 msgid "This connection's request limit is too small. Choose another model."
@@ -10088,9 +10522,27 @@ msgstr "这将删除此制品的全部 {count} 个版本，且无法撤销。"
 msgid "This device"
 msgstr "本设备"
 
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
+msgstr "此导出内容的版本比 Rakazo 能读取的更新。请更新 Rakazo 后重试。"
+
+#: apps/web/src/lib/agent-import-errors.ts
+msgid "This export is too large to import."
+msgstr "此导出内容太大，无法导入。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file can't be read as CSV."
+msgstr "无法将此文件读取为 CSV。"
+
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr "这个文件不是有效的 UTF-8 文本。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This file is too large to import."
+msgstr "此文件太大，无法导入。"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
@@ -10099,6 +10551,16 @@ msgstr "此导入已使用过。请重新选择文件。"
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
 msgstr "此邀请链接已失效。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This item is blocked for bots. Allow it in the Vault, or dismiss the request."
+msgstr "此项目已对 Bot 阻止。请在保管库中允许，或忽略此请求。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This limits only this Space's bots. Your other Spaces choose for their own."
+msgstr "此设置只限制此空间的 Bot。你的其他空间各自决定。"
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -10208,6 +10670,7 @@ msgid "This server cannot be assigned without a bot."
 msgstr "没有 Bot 就无法分配此服务器。"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/PluginsOverlay.tsx
 msgid "This server did not request browser authorization."
 msgstr "此服务器未请求浏览器授权。"
 
@@ -10215,10 +10678,19 @@ msgstr "此服务器未请求浏览器授权。"
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "此服务器已连接。请先断开再重新授权。"
 
+#: apps/web/src/pages/PluginsOverlay.tsx
+msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
+msgstr "此服务器需要 OAuth 客户端 ID。请在“管理 MCP 服务器”中添加。"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
 msgid "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model."
 msgstr "此服务器的工具结果超出模型容量。请关闭该服务器的“保留完整工具结果”，或选择其他模型。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "This Space keeps its own vault, so its bots can't use account items."
+msgstr "此空间使用自己的保管库，因此其 Bot 无法使用账户项目。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10271,6 +10743,11 @@ msgstr "到"
 #: apps/web/src/pages/ActivityList.tsx
 msgid "To {0}"
 msgstr "到 {0}"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "To add"
+msgstr "待添加"
 
 #: apps/mobile/lib/board.ts
 #: apps/web/src/lib/ticket-status.ts
@@ -10354,6 +10831,11 @@ msgstr "文字记录"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "转写 API 密钥"
+
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "转写模型"
 
@@ -10364,6 +10846,11 @@ msgstr "转写请求超时。"
 #: apps/web/src/lib/dictation.ts
 msgid "Transcription response is too large."
 msgstr "转写响应过大。"
+
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "转写服务器 URL"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -10387,7 +10874,7 @@ msgstr "为防止滥用，试用期的时长较少。"
 msgid "Troubleshoot"
 msgstr "故障排除"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "受信任的网站"
@@ -10412,9 +10899,9 @@ msgstr "受信任的网站"
 msgid "Try again"
 msgstr "重试"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/board.tsx
@@ -10451,6 +10938,11 @@ msgstr "请重试测试。"
 msgid "Tuesday"
 msgstr "周二"
 
+#. placeholder {0}: routine.name
+#: apps/web/src/pages/RoutineList.tsx
+msgid "Turn {0} on or off"
+msgstr "开启或关闭 {0}"
+
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"
 msgstr "关闭"
@@ -10476,7 +10968,6 @@ msgid "Type without recording"
 msgstr "直接输入，不录制"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "输入你的回答"
 
@@ -10554,6 +11045,11 @@ msgstr "不支持的文件类型：{0}"
 msgid "Up"
 msgstr "向上"
 
+#: apps/mobile/components/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Up to {limit} sites."
+msgstr "最多 {limit} 个网站。"
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "已是最新"
@@ -10563,11 +11059,6 @@ msgstr "已是最新"
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Update"
 msgstr "更新"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Update computer"
-msgstr "更新电脑"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -10598,6 +11089,12 @@ msgstr "更新进度"
 msgid "Update required"
 msgstr "需要更新"
 
+#: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/lib/api.ts
+#: apps/web/src/components/VaultSettings.tsx
+msgid "Update your server to import logins."
+msgstr "请更新你的服务器以导入登录信息。"
+
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
 msgstr "请更新服务器，以便在此移动版本中使用 AI 数据共享功能。"
@@ -10624,15 +11121,11 @@ msgstr "正在更新 {name} 的电脑"
 msgid "Updating Team Computer"
 msgstr "正在更新团队电脑"
 
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Updating…"
-msgstr "正在更新…"
-
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/lib/run-error-presentation.ts
 #: apps/web/src/pages/shell/composer-error.tsx
 #: apps/web/src/pages/shell/shell-sidebar.tsx
-#: apps/web/src/pages/shell/use-computer.tsx
+#: apps/web/src/pages/shell/use-computer-controls.tsx
 msgid "Upgrade"
 msgstr "升级"
 
@@ -10654,6 +11147,7 @@ msgid "URL"
 msgstr "URL"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
@@ -10690,6 +11184,11 @@ msgstr "使用自定义服务器"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Use a found model"
 msgstr "使用找到的模型"
+
+#: apps/mobile/lib/user-error.ts
+#: apps/web/src/lib/user-error.ts
+msgid "Use an account with the same email address"
+msgstr "请使用相同邮箱地址的账户"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
@@ -10750,7 +11249,7 @@ msgstr "使用 Rakazo 额度"
 msgid "Use space default"
 msgstr "使用空间默认"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
 msgstr "最多 512 个字母、数字、_ 或 -。"
 
@@ -10758,7 +11257,12 @@ msgstr "最多 512 个字母、数字、_ 或 -。"
 msgid "Use your own key"
 msgstr "使用自己的密钥"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/vault/VaultItemActivity.tsx
+msgid "Used {when} by {bot}"
+msgstr "{bot} {when}使用过"
+
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "User peer"
 msgstr "用户 peer"
 
@@ -10831,6 +11335,11 @@ msgstr "变量"
 msgid "Vault"
 msgstr "保管库"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Vault full"
+msgstr "保管库已满"
+
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Verify and add"
@@ -10862,6 +11371,7 @@ msgstr "查看源代码"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -10951,10 +11461,17 @@ msgstr "工作日"
 msgid "Weekends"
 msgstr "周末"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "每周"
+
+#: apps/mobile/app/sign-in.tsx
+#: apps/web/src/pages/Auth.tsx
+msgid "Welcome back"
+msgstr "欢迎回来"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/components/SignupSurvey.tsx
@@ -10991,6 +11508,10 @@ msgstr "每次运行时，这个例行任务应做什么？"
 msgid "What this bot is for"
 msgstr "这个 Bot 是做什么的"
 
+#: apps/web/src/components/ProviderSettingsForm.tsx
+msgid "What to recall"
+msgstr "读取内容"
+
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "返回什么"
@@ -11019,7 +11540,6 @@ msgid "When bots check with you before acting."
 msgstr "Bot 何时在行动前先征求你的确认。"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "完成任务或需要输入时"
 
@@ -11050,6 +11570,10 @@ msgstr "Bot 应在哪里运行？"
 #: apps/web/src/pages/settings-nav.ts
 msgid "Where your bots pay from."
 msgstr "你的 Bot 用什么付款。"
+
+#: apps/web/src/pages/shell/agent-import.tsx
+msgid "Which Bot?"
+msgstr "哪个 Bot？"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
@@ -11122,12 +11646,16 @@ msgstr "处理中…"
 msgid "Works with"
 msgstr "配合使用的应用"
 
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Works with your ChatGPT or Claude plan, or an API key."
+msgstr "可使用你的 ChatGPT 或 Claude 套餐，或 API 密钥。"
+
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "可使用你的 ChatGPT 或 Claude 套餐。"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Workspace"
 msgstr "工作区"
 
@@ -11188,17 +11716,12 @@ msgstr "你已拒接"
 msgid "You get a free month when they start their trial with a new card."
 msgstr "对方用新卡开始试用后，你将获得一个月免费。"
 
-#: apps/mobile/app/computer.tsx
-#: apps/mobile/lib/computer.ts
-#: apps/web/src/pages/shell/computer-overlay.tsx
-msgid "You have control"
-msgstr "你已接管"
-
 #: apps/mobile/app/paywall.tsx
 msgid "You're all set"
 msgstr "一切就绪"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 msgid "Your account"
 msgstr "你的账户"
 
@@ -11223,6 +11746,11 @@ msgstr "今天将从你的卡中扣款 {price}，并抵扣本月未使用的部�
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "今天将从你的卡中扣除按比例计算的差额。"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "你的银行卡未被扣款"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

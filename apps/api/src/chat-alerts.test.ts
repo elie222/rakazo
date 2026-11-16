@@ -44,6 +44,80 @@ describe("notifications.subscribe", () => {
     }
   });
 
+  it("interleaves roster signals with alerts on the same stream", async () => {
+    const controller = new AbortController();
+    let signalRoster!: () => void;
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await new Promise<void>((resolve) => {
+        signalRoster = resolve;
+      });
+      yield alert;
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    const followRosterChanges = vi.fn(async function* () {
+      yield;
+      signalRoster();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      yield;
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect((await iterator.next()).value).toEqual({ type: "alert", alert });
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect(followRosterChanges).toHaveBeenCalledWith(actor.userId, expect.any(AbortSignal));
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it("keeps streaming alerts for half a minute after roster signals fail, then ends", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* () {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      yield alert;
+    });
+    const followRosterChanges = vi.fn(async function* (): AsyncGenerator<void> {
+      await Promise.reject(new Error("roster lookup failed"));
+      yield;
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      const first = iterator.next();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await first).value).toEqual({ type: "alert", alert });
+      let ended = false;
+      const drained = (async () => {
+        try {
+          while (!(await iterator.next()).done);
+        } finally {
+          ended = true;
+        }
+      })();
+      drained.catch(() => {});
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(drained).rejects.toThrow("roster lookup failed");
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
   it("requires a signed-in user", async () => {
     const client = createRouterClient(createRouter({} as unknown as RouterDeps), {
       context: { actor: null },

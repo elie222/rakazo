@@ -1,3 +1,5 @@
+import { ResponseTooLargeError } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { fetchLocalService, parseServiceBaseUrl } from "./local-service-endpoint.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -55,7 +57,7 @@ async function fetchSupermemory(
 }
 
 async function releaseUnreadBody(response: Response): Promise<void> {
-  await response.body?.cancel().catch(() => undefined);
+  await bestEffort("cancel unread response body", response.body?.cancel());
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -131,7 +133,7 @@ export async function searchSupermemory(
       results: parseSearchResults(await readSupermemoryJson(response, requestAbort)),
     };
   } catch (error) {
-    if (error instanceof Error && error.message === "Supermemory response is too large.") {
+    if (error instanceof ResponseTooLargeError) {
       return { ok: false, error: error.message };
     }
     return { ok: false, error: unreachableError(error) };
@@ -141,15 +143,15 @@ export async function searchSupermemory(
 async function readSupermemoryJson(response: Response, signal?: AbortSignal): Promise<unknown> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_SUPERMEMORY_RESPONSE_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error("Supermemory response is too large.");
+    await bestEffort("cancel unread response body", response.body?.cancel());
+    throw new ResponseTooLargeError("Supermemory response is too large.");
   }
   let bytes: Uint8Array;
   try {
     bytes = await readBodyCapped(response, MAX_SUPERMEMORY_RESPONSE_BYTES, signal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error("Supermemory response is too large.");
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError("Supermemory response is too large.", { cause: error });
     }
     throw error;
   }

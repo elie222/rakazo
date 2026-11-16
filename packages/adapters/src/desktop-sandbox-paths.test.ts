@@ -1,5 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { WorkspacePathError } from "./computer-support.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 
 describe("desktop sandbox path rules", () => {
@@ -44,4 +45,13 @@ describe("desktop sandbox path rules", () => {
     expect(normalizeDesktopWorkspacePath("/notes/result.txt", "win32")).toBe("notes/result.txt");
     expect(normalizeDesktopWorkspacePath("notes/result.txt", "linux")).toBe("notes/result.txt");
   });
+});
+
+describe("desktop path refusals", () => {
+  it.each(["//server/share/file.txt", "notes/CON.txt", "../outside.txt"])(
+    "refuses %s as a path leaving the workspace",
+    (value) => {
+      expect(() => normalizeDesktopWorkspacePath(value, "win32")).toThrow(WorkspacePathError);
+    },
+  );
 });

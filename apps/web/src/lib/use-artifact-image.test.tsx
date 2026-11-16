@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -36,12 +37,8 @@ afterEach(() => {
 });
 
 it("shares pending and completed downloads until the last consumer leaves", async () => {
-  let finish!: (value: never) => void;
-  vi.mocked(rpc.artifacts.get).mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred<never>();
+  vi.mocked(rpc.artifacts.get).mockReturnValue(finish.promise);
   act(() =>
     root.render(
       <>
@@ -51,7 +48,7 @@ it("shares pending and completed downloads until the last consumer leaves", asyn
     ),
   );
   expect(rpc.artifacts.get).toHaveBeenCalledOnce();
-  await act(async () => finish(artifact as never));
+  await act(async () => finish.resolve(artifact as never));
   expect(createObjectURL).toHaveBeenCalledOnce();
   expect(container.querySelectorAll("img")).toHaveLength(2);
   await act(async () =>
@@ -86,15 +83,11 @@ it("separates bot and group scopes and skips disabled consumers", async () => {
 });
 
 it("releases a download that finishes after all consumers unmount", async () => {
-  let finish!: (value: never) => void;
-  vi.mocked(rpc.artifacts.get).mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred<never>();
+  vi.mocked(rpc.artifacts.get).mockReturnValue(finish.promise);
   act(() => root.render(<Image target={{ botId: "bot" }} />));
   act(() => root.render(null));
-  await act(async () => finish(artifact as never));
+  await act(async () => finish.resolve(artifact as never));
   expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:photo");
   vi.mocked(rpc.artifacts.get).mockResolvedValue(artifact as never);
   await act(async () => root.render(<Image target={{ botId: "bot" }} />));

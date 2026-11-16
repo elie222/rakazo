@@ -1,17 +1,20 @@
 import type {
   Bot,
   BotAvatarSet,
+  LabFeature,
   Me,
   Space,
   SpaceMemoryConfig,
   UsageSummary,
 } from "@rakazo/contracts";
+import { parseLabs } from "@rakazo/contracts";
 import { quietHoursSave } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
+import { setLabs } from "../../lib/bootstrap";
 import type { connectedAppMarks } from "../../lib/connected-apps";
 import { localTimezone } from "../../lib/local-timezone";
 import type { SpaceQueries } from "../../lib/query";
@@ -222,8 +225,24 @@ export function SettingsOverlays({
               prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
             );
             // Unpinned bots were restyled with it. The save already succeeded, so a failed
-            // refresh only waits for the roster's next poll.
+            // refresh only waits for the roster's next re-read.
             void refreshSpaces().catch(() => undefined);
+          }}
+          labs={parseLabs(bootstrapMe?.labs)}
+          labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
+          onLabsChange={async (labs) => {
+            const previous = parseLabs(bootstrapMe?.labs);
+            const apply = (next: LabFeature[]) => {
+              setLabs(next);
+              setBootstrapMe((prev) => (prev ? { ...prev, labs: next } : prev));
+            };
+            apply(labs);
+            try {
+              apply((await rpc.preferences.update({ labs })).labs);
+            } catch (error) {
+              apply(previous);
+              throw error;
+            }
           }}
           onAccountImported={refreshSpaces}
           onImportAgent={() => {

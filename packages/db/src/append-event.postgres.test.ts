@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { deferred } from "@rakazo/core/test-async";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import type { AppendEventInput } from "./events.js";
@@ -38,37 +39,33 @@ describePostgres("appending a thread event (PostgreSQL)", () => {
 
   /** Holds the thread lock as a cancel, finalize or snapshot would, until `release`. */
   async function holdThreadLock(work: (tx: PrismaClient) => Promise<void>) {
-    let locked!: () => void;
-    let release!: () => void;
-    const lockTaken = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const lockTaken = deferred();
+    const released = deferred();
     const holder = system.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
-        locked();
-        await released;
+        lockTaken.resolve();
+        await released.promise;
         await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
         await work(tx as unknown as PrismaClient);
       },
       { timeout: 20_000 },
     );
-    await lockTaken;
-    return { release, holder };
+    await lockTaken.promise;
+    return { release: released.resolve, holder };
   }
 
   async function waitForBlockedAppend() {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      const [row] = await system.$queryRaw<Array<{ waiting: bigint }>>`
-        SELECT count(*) AS waiting FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND query LIKE '%"nextEventSeq" + 1%'`;
-      if (row && row.waiting > 0n) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error("The append never waited for the thread lock");
+    await vi.waitFor(
+      async () => {
+        const [row] = await system.$queryRaw<Array<{ waiting: bigint }>>`
+          SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%"nextEventSeq" + 1%'`;
+        if (!(row && row.waiting > 0n))
+          throw new Error("The append never waited for the thread lock");
+      },
+      { timeout: 2_000, interval: 10 },
+    );
   }
 
   beforeAll(async () => {
@@ -83,11 +80,7 @@ describePostgres("appending a thread event (PostgreSQL)", () => {
       }
     };
     ({ userId, spaceId, botId, threadId } = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     ));
     provisioned = true;
   });
