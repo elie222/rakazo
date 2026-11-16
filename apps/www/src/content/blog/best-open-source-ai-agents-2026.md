@@ -196,4 +196,6 @@ If you are building the agent into your own service, use LangGraph or CrewAI and
 
 Two checks belong on every option. First, the license file, not a badge in a blog post, including this one. Second, where prompts go. Self-hosting the agent does not self-host the model. Unless you select a local model server, the provider still sees the prompt.
 
+For license, community, and maturity side by side across seven open source agents, including smaller codebases such as nanobot and Agent Zero, see this [independent comparison of open source AI agents](https://openbotlist.com/best/open-source-ai-agent/).
+
 Nothing above says one project will do better work. It says they are different pieces of software, and the useful choice is the one whose shape matches the work.

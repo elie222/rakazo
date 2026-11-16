@@ -183,6 +183,6 @@ The desktop app's **This computer** option is the same published images, started
 
 ## How this sits next to other agents
 
-OpenClaw and Hermes Agent are also open source and can run on hardware you control. Their install docs describe a gateway or a desktop app and a CLI, plus config files under a home directory. Rakazo's published-image path is the script above, then chat. The [comparison of those three](/blog/openclaw-vs-hermes-vs-rakazo/) is about that difference in shape, not a race.
+OpenClaw and Hermes Agent are also open source and can run on hardware you control. Their install docs describe a gateway or a desktop app and a CLI, plus config files under a home directory. Rakazo's published-image path is the script above, then chat. The [comparison of those three](/blog/openclaw-vs-hermes-vs-rakazo/) is about that difference in shape, not a race. For sandboxing, telemetry, local models, and setup effort across seven agents you can run yourself, see this [independent ranking of self-hosted AI agents](https://openbotlist.com/best/self-hosted-ai-agent/).
 
 If the first chat on loopback is the goal, stay on the published images, create the owner account, and connect one model. If the goal is a public URL, budget time for TLS and the secrets checklist after the installer finishes.

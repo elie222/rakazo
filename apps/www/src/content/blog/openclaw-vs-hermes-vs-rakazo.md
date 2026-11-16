@@ -157,6 +157,6 @@ A few cases are easy to get wrong. If you need a library that compiles into your
 
 ## What this page does not measure
 
-It does not measure tokens per dollar, browser reliability, or how often a scheduled job succeeds. It does not say one project is safer in every configuration. OpenClaw with sandboxing on is a different risk from OpenClaw with sandboxing off. Rakazo's Docker computer is a different risk from pointing a bot at a remote VM. Hermes with a local model is a different risk from Hermes with a hosted provider.
+It does not measure tokens per dollar, browser reliability, or how often a scheduled job succeeds. It does not say one project is safer in every configuration. OpenClaw with sandboxing on is a different risk from OpenClaw with sandboxing off. Rakazo's Docker computer is a different risk from pointing a bot at a remote VM. Hermes with a local model is a different risk from Hermes with a hosted provider. For the sandboxing and telemetry defaults of OpenClaw, Hermes Agent, and eight other agents, and the settings to change first, see this [independent review of OpenClaw and Hermes Agent security](https://openbotlist.com/blog/is-openclaw-safe/).
 
 It also does not say the projects stay still. Node versions, installer flags, and desktop onboarding change. The source list is the set of pages this comparison was checked against on October 7, 2026. If a command here disagrees with the upstream page, the upstream page wins.

@@ -126,8 +126,8 @@ The computer is yours too. Local Docker is the default. E2B, Daytona, CreateOS, 
 
 Choose Claude Duet when you pay for Claude Pro or Max, live in the US, and want one agent that watches your inbox and calendar without any setup. Accept that Anthropic runs the computer, picks the model, and that this is a preview.
 
-Choose Grok Bot when you already pay for Cursor or SuperGrok and want several named bots on a computer xAI hosts.
+Choose Grok Bot when you already pay for Cursor or SuperGrok and want several named bots on a computer xAI hosts. If its usage limits or fixed model rule it out, this [independent list of Grok Bot alternatives](https://aiassistantlist.com/grok-bot-alternatives/) compares open source and hosted options.
 
 Choose Rakazo when the agents should run on hardware you control, with the model you pick, and you want more than one bot. The cost is the install: Docker or the desktop app, then an account and a model. [How to self-host an AI agent](/blog/self-host-an-ai-agent/) walks through it.
 
-This page compares public descriptions. It does not measure how often any of them gets a task right. Duet especially will change during the preview, so check the linked sources before you rely on a detail.
+This page compares public descriptions. It does not measure how often any of them gets a task right. For a wider field of hosted and open source agents that keep working on their own computer, see this [independent comparison of AI agents](https://aiassistantlist.com/best/ai-agent/). Duet especially will change during the preview, so check the linked sources before you rely on a detail.
