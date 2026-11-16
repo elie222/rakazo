@@ -247,6 +247,27 @@ const UNSUPPORTED_REASONING_EFFORT =
 const REASONING_EFFORT_CHOICES =
   /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
+/** Responses-style errors put the parameter after the message containing its choices. */
+function reasoningEffortChoices(message: string): string | undefined {
+  const named = message.match(REASONING_EFFORT_CHOICES)?.[1];
+  if (named) return named;
+  const start = message.indexOf("{");
+  if (start < 0) return undefined;
+  let body: unknown;
+  try {
+    body = JSON.parse(message.slice(start));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return undefined;
+  }
+  if (!body || typeof body !== "object") return undefined;
+  const detail = "error" in body ? body.error : body;
+  if (!detail || typeof detail !== "object" || !("param" in detail)) return undefined;
+  if (detail.param !== "reasoning.effort" && detail.param !== "reasoning_effort") return undefined;
+  if (!("message" in detail) || typeof detail.message !== "string") return undefined;
+  return detail.message.match(/\bsupported values\b\s*(?:are|:)?\s*([^.}"]*)/i)?.[1];
+}
+
 /**
  * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values
  * it accepts, with the rest mapped out so the request clamps to an accepted one. Off sends no
@@ -257,7 +278,9 @@ export function acceptedReasoningEfforts(
   model: Model<Api>,
   errorMessage: string | undefined,
 ): ThinkingLevelMap | undefined {
-  const listed = errorMessage?.match(REASONING_EFFORT_CHOICES)?.[1]?.toLowerCase().match(/\w+/g);
+  const listed = reasoningEffortChoices(errorMessage ?? "")
+    ?.toLowerCase()
+    .match(/\w+/g);
   const current = model.thinkingLevelMap ?? {};
   if (!listed) {
     // Some gateways refuse an effort without naming the accepted ones ("Unsupported reasoning
