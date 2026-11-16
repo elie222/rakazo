@@ -151,7 +151,7 @@ import { cspReportRoutes } from "./csp-report.js";
 import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
-import { loadEnv } from "./env.js";
+import { loadEnv, withEnvOverrides } from "./env.js";
 import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
@@ -281,7 +281,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     now,
     ...envOverrides
   } = overrides;
-  const env = { ...loadEnv(process.env), ...envOverrides };
+  const env = withEnvOverrides(loadEnv(process.env), envOverrides);
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
