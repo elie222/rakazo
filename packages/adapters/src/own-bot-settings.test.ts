@@ -330,7 +330,10 @@ it("update_bot persists a daily check-in opt-out and returns the saved value", a
   const update = vi.fn(async ({ data }) => ({ id: "bot-1", ...bot, ...data }));
   const append = vi.fn();
   const result = await updateOwnBotFromTool(
-    { prisma: { bot: { update } }, events: { append } } as never,
+    {
+      prisma: { bot: { update }, threadRead: { findFirst: vi.fn(async () => null) } },
+      events: { append },
+    } as never,
     { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },
     "thread-1",
     { id: "bot-1", name: "Scout" },
@@ -340,4 +343,69 @@ it("update_bot persists a daily check-in opt-out and returns the saved value", a
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns: false } }));
   expect(result).toMatchObject({ ok: true, dailyCheckIns: false });
   expect((await readSettings({ ...bot, dailyCheckIns: false })).dailyCheckIns).toBe(false);
+});
+
+it("update_bot turns notifications off for the person who asked, not the whole space", async () => {
+  const update = vi.fn(async ({ data }) => ({ id: "bot-1", ...bot, ...data }));
+  const findUniqueOrThrow = vi.fn(async () => ({ id: "bot-1", ...bot }));
+  let muted: boolean | null = null;
+  const upsert = vi.fn(async ({ update: state }: { update: { muted: boolean } }) => {
+    muted = state.muted;
+  });
+  const prisma = {
+    bot: { update, findUniqueOrThrow },
+    thread: {
+      findUnique: vi.fn(async () => ({
+        id: "thread-own",
+        bot: { notifyOnFinish: true },
+        reads: muted === null ? [] : [{ muted }],
+      })),
+    },
+    threadRead: { findFirst: vi.fn(async () => (muted === null ? null : { muted })), upsert },
+    $queryRaw: vi.fn(async () => [{ nextMessageSeq: 4 }]),
+    $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(prisma)),
+  };
+  const result = await updateOwnBotFromTool(
+    { prisma, events: { append: vi.fn() } } as never,
+    { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },
+    "thread-1",
+    { id: "bot-1", name: "Scout" },
+    { notifyOnFinish: false },
+    {} as never,
+  );
+  expect(upsert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { threadId_userId: { threadId: "thread-own", userId: "user-1" } },
+      update: { muted: true },
+    }),
+  );
+  // A mute alone leaves the shared bot and its updatedAt alone.
+  expect(update).not.toHaveBeenCalled();
+  expect(result).toMatchObject({ ok: true, notifyOnFinish: false });
+
+  // A refused profile write leaves notifications alone.
+  upsert.mockClear();
+  update.mockRejectedValueOnce(new Error("refused"));
+  await expect(
+    updateOwnBotFromTool(
+      { prisma, events: { append: vi.fn() } } as never,
+      { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },
+      "thread-1",
+      { id: "bot-1", name: "Scout" },
+      { name: "Finder", notifyOnFinish: true },
+      {} as never,
+    ),
+  ).rejects.toThrow("refused");
+  expect(upsert).not.toHaveBeenCalled();
+
+  // Asking for what is already so records nothing.
+  await updateOwnBotFromTool(
+    { prisma, events: { append: vi.fn() } } as never,
+    { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },
+    "thread-1",
+    { id: "bot-1", name: "Scout" },
+    { notifyOnFinish: false },
+    {} as never,
+  );
+  expect(upsert).not.toHaveBeenCalled();
 });

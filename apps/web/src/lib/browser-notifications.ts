@@ -1,7 +1,8 @@
-import type { ProductEvent } from "@rakazo/contracts";
+import type { Bot, Group, ProductEvent } from "@rakazo/contracts";
 import {
   displayName,
   memberMessageAlerts,
+  messageForAnotherBot,
   messageUnreadFor,
   payloadAuthor,
   plainTextFromMarkdown,
@@ -79,6 +80,7 @@ export function shouldNotifyBrowser(
   const notifiable =
     (event.type === "thread.message.created" &&
       messageUnreadFor(event.payload, context.meId) &&
+      !messageForAnotherBot(event.payload) &&
       (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
@@ -176,4 +178,10 @@ export function deliverBrowserNotification(
   } catch {
     return "pending";
   }
+}
+
+/** Muted for this member; a server without per-member mutes reports a bot's own switch. */
+export function chatMuted(chat: Bot | Group): boolean {
+  if (chat.muted !== undefined && chat.muted !== null) return chat.muted;
+  return "notifyOnFinish" in chat ? !chat.notifyOnFinish : false;
 }

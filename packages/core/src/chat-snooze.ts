@@ -17,6 +17,14 @@ export function chatSnoozed(chat: SnoozableChat, now: number): boolean {
   return wake !== null && wake > now;
 }
 
+/**
+ * In the viewer's chat list: neither snoozed nor hidden. A hidden chat keeps working, and the
+ * server brings it back when it needs the viewer, so no wake time is needed here.
+ */
+export function chatListed(chat: SnoozableChat & { hidden?: boolean }, now: number): boolean {
+  return chat.hidden !== true && !chatSnoozed(chat, now);
+}
+
 /** Back in the list after its snooze ended, until the viewer opens it. */
 export function chatWoke(chat: SnoozableChat, now: number): boolean {
   const wake = wakeTime(chat);
@@ -65,35 +73,36 @@ export function snoozeWakeDay(wake: Date, now: Date): Intl.DateTimeFormatOptions
   return days < 7 ? { weekday: "short" } : { month: "short", day: "numeric" };
 }
 
-type SnoozeChange = {
+type ChatChoice<T> = {
   /** Saves the choice; a rejection rolls it back if no newer choice followed. */
-  send: (until: string | null) => Promise<unknown>;
-  /** Shows a wake time in the list at once. */
-  apply: (until: string | null) => void;
+  send: (value: T) => Promise<unknown>;
+  /** Shows the choice in the list at once. */
+  apply: (value: T) => void;
   /** After this chat's newest choice settles: reload the list, and say so if it failed. */
   settled: (failed: { error: unknown } | null) => void;
 };
 
 /**
- * Snooze changes for each chat, sent one at a time in the order chosen, each waiting for the one
- * before to finish. Only the newest choice rolls back or reloads, and a rollback restores what the
- * server last saved, so a quick undo can't be covered by an earlier answer.
+ * Changes to one of each chat's own settings (its snooze, mute or hide), sent one at a time in
+ * the order chosen, each waiting for the one before to finish. Only the newest choice rolls back
+ * or reloads, and a rollback restores what the server last saved, so a quick undo can't be
+ * covered by an earlier answer.
  */
-export function createSnoozeQueue() {
+export function createChatChoiceQueue<T>() {
   const tail = new Map<string, Promise<unknown>>();
   const newest = new Map<string, number>();
-  const saved = new Map<string, string | null>();
+  const saved = new Map<string, T>();
   let choices = 0;
-  return (key: string, until: string | null, current: string | null, change: SnoozeChange) => {
+  return (key: string, value: T, current: T, change: ChatChoice<T>) => {
     const choice = ++choices;
     // Nothing in flight: what the list shows is what the server has.
     if (!tail.has(key)) saved.set(key, current);
     newest.set(key, choice);
-    change.apply(until);
+    change.apply(value);
     const sent = (tail.get(key) ?? Promise.resolve()).then(() =>
-      change.send(until).then(
+      change.send(value).then(
         () => {
-          saved.set(key, until);
+          saved.set(key, value);
           return null;
         },
         (error: unknown) => ({ error }),
@@ -103,7 +112,7 @@ export function createSnoozeQueue() {
     void sent.then((failed) => {
       if (tail.get(key) === sent) tail.delete(key);
       if (newest.get(key) !== choice) return;
-      if (failed) change.apply(saved.get(key) ?? null);
+      if (failed) change.apply(saved.has(key) ? (saved.get(key) as T) : current);
       change.settled(failed);
     });
   };

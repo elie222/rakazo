@@ -1260,18 +1260,70 @@ describe("updateChildBot", () => {
       prisma.$transaction.mockImplementation(async (write) => write(tx));
       // Stop after the write to inspect the normalized patch without needing the event fixture.
       tx.bot.update.mockRejectedValueOnce(new Error("write reached"));
+      const real = field === "description" ? { name: "Helper" } : { description: "Helps." };
       await expect(
-        updateChildBot(writeDeps(prisma), run, {
-          bot_id: "bot-child",
-          [field]: "  ",
-          notify_on_finish: false,
-        }),
+        updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", [field]: "  ", ...real }),
       ).rejects.toThrow("write reached");
-      expect(tx.bot.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { notifyOnFinish: false } }),
-      );
+      expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: real }));
     },
   );
+
+  function childMute(profileWrite: () => Promise<unknown>) {
+    const { prisma } = fakeFleet({ bots });
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ nextMessageSeq: 3 }]),
+      threadRead: { upsert: vi.fn(async () => ({})) },
+      bot: { update: vi.fn(profileWrite) },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: { create: vi.fn(async () => ({ id: "event-1", seq: 1, createdAt: new Date() })) },
+    };
+    prisma.$transaction.mockImplementation(async (write) => write(tx));
+    // The bot notifies everyone who never chose, the asker included.
+    Object.assign(prisma, {
+      thread: {
+        findUnique: vi.fn(async () => ({
+          id: "thread-bot-child",
+          bot: { notifyOnFinish: true },
+          reads: [],
+        })),
+      },
+    });
+    return { prisma, tx };
+  }
+
+  it("mutes the child's chat for the person whose run asked, not for everyone", async () => {
+    const { prisma, tx } = childMute(async () => ({
+      id: "bot-child",
+      name: "Child",
+      description: "",
+    }));
+    await expect(
+      updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", notify_on_finish: false }),
+    ).resolves.toEqual({ ok: true });
+    // A mute alone leaves the shared bot, its updatedAt and everyone's clients alone.
+    expect(tx.bot.update).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
+    expect(tx.threadRead.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { threadId_userId: { threadId: "thread-bot-child", userId: run.userId } },
+        update: { muted: true },
+      }),
+    );
+  });
+
+  it("leaves the mute alone when the child's profile write is refused", async () => {
+    const { prisma, tx } = childMute(async () => {
+      throw new Error("refused");
+    });
+    await expect(
+      updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        name: "Helper",
+        notify_on_finish: false,
+      }),
+    ).rejects.toThrow("refused");
+    expect(tx.threadRead.upsert).not.toHaveBeenCalled();
+  });
 
   it.each([true, false])("writes boolean dailyCheckIns: %j", async (dailyCheckIns) => {
     const { prisma } = fakeFleet({ bots });

@@ -7,6 +7,7 @@ const { native } = vi.hoisted(() => ({
     setOpenThread: vi.fn(async (): Promise<void> => undefined),
     resume: vi.fn(async (): Promise<void> => undefined),
     resumeAfterMute: vi.fn(async (): Promise<void> => undefined),
+    resumeAfterGroupMute: vi.fn(async (): Promise<void> => undefined),
     stop: vi.fn(async (): Promise<void> => undefined),
   },
 }));
@@ -37,6 +38,7 @@ describe("Android live notification resume", () => {
   beforeEach(() => {
     native.resume.mockReset();
     native.resumeAfterMute.mockClear();
+    native.resumeAfterGroupMute.mockClear();
   });
 
   it("resumes the native poller with the normalized server and the active UI locale", async () => {
@@ -93,6 +95,23 @@ describe("Android live notification resume", () => {
       "",
       "bot-1",
     );
+    expect(native.resume).not.toHaveBeenCalled();
+  });
+
+  it("passes a muted group to the native restart", async () => {
+    await afterChatNotifyChange("https://app.example.test", "token-1", "space-1", {
+      groupId: "group-1",
+      notify: false,
+    });
+    expect(native.resumeAfterGroupMute).toHaveBeenCalledExactlyOnceWith(
+      "https://app.example.test",
+      "token-1",
+      "space-1",
+      "de",
+      "",
+      "group-1",
+    );
+    expect(native.resumeAfterMute).not.toHaveBeenCalled();
     expect(native.resume).not.toHaveBeenCalled();
   });
 

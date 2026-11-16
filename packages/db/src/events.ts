@@ -176,12 +176,16 @@ export type FinalizeRunInput = FinalizeRunBase &
         /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** The reply answers another bot, not the people in the chat, so it alerts nobody. */
+        forBot?: boolean;
       }
     | {
         outcome: "failed";
         error: string;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
+        /** The run answered another bot, so its partial reply alerts nobody; the failure does. */
+        forBot?: boolean;
       }
   );
 
@@ -897,7 +901,12 @@ async function finalizeRunOnce(
         botId: input.botId,
         type: "thread.message.created",
         runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
+        payload: {
+          messageId: message.id,
+          role: "bot",
+          blocks: replyBlocks,
+          ...(input.forBot ? { forBot: true } : {}),
+        },
       });
       firstResponse = response.firstResponse;
     }

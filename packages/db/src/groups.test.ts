@@ -15,7 +15,14 @@ describe("listSpaceGroupsForSpaces", () => {
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
           id: "thread-1",
-          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
+          reads: [
+            {
+              unread: true,
+              snoozedUntil: new Date("2026-08-21T09:00:00.000Z"),
+              muted: true,
+              hidden: false,
+            },
+          ],
         },
         members: [
           { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
@@ -69,6 +76,8 @@ describe("listSpaceGroupsForSpaces", () => {
         preview: "Escalation pending",
         unread: true,
         snoozedUntil: "2026-08-21T09:00:00.000Z",
+        muted: true,
+        hidden: false,
         updatedAt: "2026-08-20T00:00:00.000Z",
       },
     ]);

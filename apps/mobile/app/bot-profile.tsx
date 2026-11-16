@@ -75,8 +75,8 @@ export default function BotProfile() {
     }, [botId]),
   );
 
-  // The chat list's Silence notifications saves the same setting. The switch moves
-  // first and moves back if the save fails.
+  // The chat list's Mute saves the same setting. The switch moves first and moves back if the
+  // save fails.
   const setNotifyOnFinish = (notifyOnFinish: boolean) => {
     if (!bot) return;
     notifyQueue.current ??= createQueuedSave(bot.notifyOnFinish, {

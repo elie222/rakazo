@@ -20,7 +20,7 @@ import {
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { requestBrowserNotificationPermission } from "../../lib/browser-notifications";
+import { chatMuted, requestBrowserNotificationPermission } from "../../lib/browser-notifications";
 import { setComposerUnsavedWork } from "../../lib/composer-draft";
 import { scheduleFocusPrompt } from "../../lib/focus-prompt";
 import type { PageSession } from "../../lib/pages";
@@ -358,10 +358,8 @@ export function useComposerActions({
       );
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
-      if (
-        plan.shouldSend &&
-        (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
-      ) {
+      const targetBot = botsRef.current.find((bot) => bot.id === botTarget);
+      if (plan.shouldSend && (groupTarget || (targetBot && !chatMuted(targetBot)))) {
         const permissionRequest = requestBrowserNotificationPermission();
         if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);
       }

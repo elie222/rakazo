@@ -224,3 +224,25 @@ describe("snoozed chats", () => {
     expect(roster("later")).toEqual([{ id: "later", woke: false }]);
   });
 });
+
+describe("hidden chats", () => {
+  const input = [
+    {
+      ...space("s", "Home"),
+      bots: [
+        { ...chat("away", "Away"), hidden: true, unread: true },
+        { ...chat("plain", "Plain"), unread: false },
+      ],
+    },
+  ];
+
+  it("leaves a hidden chat out of the list and the badge, but not out of search", () => {
+    const ids = (query: string) =>
+      sidebarGroupsForSpaces(input, query).flatMap((section) =>
+        section.bots.map((item) => item.id),
+      );
+    expect(ids("")).toEqual(["plain"]);
+    expect(ids("away")).toEqual(["away"]);
+    expect(countUnreadChats(sidebarGroupsForSpaces(input, ""))).toBe(0);
+  });
+});

@@ -7,10 +7,11 @@ import {
   botMessageContext,
   displayName,
   HELPER_RESULT_TRIGGER,
+  isRunWaitingOnUser,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { chatMutedByDefault, hiddenFor, mutedFor, ownerHearsChat, Prisma } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -58,11 +59,23 @@ export function activityPreview(
   };
 }
 
+/** A run of the viewer's own that needs them: it waits on them or failed. */
+export function runNeedsOwner(run: { userId: string; status: string }, viewerId: string): boolean {
+  return run.userId === viewerId && (isRunWaitingOnUser(run.status) || run.status === "failed");
+}
+
+/**
+ * Whether the viewer hears from the run's chat: not when they muted or hid it. Their own run that
+ * waits on them or failed still reaches them there, as its push does.
+ */
 export function activityNotificationsEnabled(
-  groupId: string | null,
-  notifyOnFinish: boolean,
+  thread: { groupId: string | null; reads: Array<{ muted: boolean | null; hidden: boolean }> },
+  bot: { notifyOnFinish: boolean },
+  ownerNeeded = false,
 ): boolean {
-  return groupId !== null || notifyOnFinish;
+  const chatBot = thread.groupId === null ? bot : null;
+  if (ownerNeeded) return ownerHearsChat(thread.reads[0]?.muted, chatMutedByDefault(chatBot));
+  return !hiddenFor(thread) && !mutedFor(thread, chatBot);
 }
 
 export async function listSpaceRuns(
@@ -88,6 +101,7 @@ export async function listSpaceRuns(
         select: {
           groupId: true,
           group: { select: { name: true } },
+          reads: { where: { userId: actor.userId }, select: { muted: true, hidden: true } },
         },
       },
     },
@@ -106,7 +120,11 @@ export async function listSpaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
-    notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
+    notificationsEnabled: activityNotificationsEnabled(
+      row.thread,
+      row.bot,
+      runNeedsOwner(row, actor.userId),
+    ),
     ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,

@@ -37,7 +37,8 @@ import {
   threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
-import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
+import type { ThreadReadState } from "./thread-reads.js";
+import { hiddenFor, mutedFor, readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 function isBotCreateConflict(error: unknown, clientId?: string): boolean {
@@ -90,7 +91,7 @@ function mapBot(
     memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
-    thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
+    thread: { id: string; reads: ThreadReadState[] } | null;
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
@@ -126,12 +127,14 @@ function mapBot(
     instructionHistory: InstructionVersionSchema.array().parse(bot.instructionHistory ?? []),
     color: bot.color,
     avatarSet: resolveBotAvatarSet(bot.avatarSet),
-    notifyOnFinish: bot.notifyOnFinish,
+    notifyOnFinish: !mutedFor(bot.thread, bot),
     pinned: bot.pinned,
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: unreadFor(bot.thread),
     snoozedUntil: snoozedUntilFor(bot.thread),
+    muted: mutedFor(bot.thread, bot),
+    hidden: hiddenFor(bot.thread),
     parentBotId: bot.parentBotId,
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
@@ -216,11 +219,13 @@ export function createRepos(
         title: "",
         color: bot.color,
         avatarSet: resolveBotAvatarSet(bot.avatarSet),
-        notifyOnFinish: bot.notifyOnFinish,
+        notifyOnFinish: !mutedFor(bot.thread, bot),
         pinned: bot.pinned,
         sectionId: bot.sectionId,
         unread: unreadFor(bot.thread),
         snoozedUntil: snoozedUntilFor(bot.thread),
+        muted: mutedFor(bot.thread, bot),
+        hidden: hiddenFor(bot.thread),
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",

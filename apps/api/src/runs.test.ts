@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityNotificationsEnabled, activityPreview } from "./runs.js";
+import { activityNotificationsEnabled, activityPreview, runNeedsOwner } from "./runs.js";
 
 describe("run activity copy", () => {
   it.each([
@@ -116,9 +116,49 @@ describe("run activity copy", () => {
 });
 
 describe("run activity notification preference", () => {
-  it("silences only direct messages", () => {
-    expect(activityNotificationsEnabled(null, false)).toBe(false);
-    expect(activityNotificationsEnabled("group-1", false)).toBe(true);
+  const off = { notifyOnFinish: false };
+  const on = { notifyOnFinish: true };
+  it("follows a bot's own switch until the viewer mutes or unmutes it", () => {
+    expect(activityNotificationsEnabled({ groupId: null, reads: [] }, off)).toBe(false);
+    expect(activityNotificationsEnabled({ groupId: "group-1", reads: [] }, off)).toBe(true);
+    expect(
+      activityNotificationsEnabled(
+        { groupId: null, reads: [{ muted: false, hidden: false }] },
+        off,
+      ),
+    ).toBe(true);
+    expect(
+      activityNotificationsEnabled(
+        { groupId: "group-1", reads: [{ muted: true, hidden: false }] },
+        on,
+      ),
+    ).toBe(false);
+  });
+
+  it("silences a chat the viewer hid", () => {
+    expect(
+      activityNotificationsEnabled({ groupId: null, reads: [{ muted: null, hidden: true }] }, on),
+    ).toBe(false);
+  });
+
+  it("lets the viewer's own run that waits on them through a chat they muted or hid", () => {
+    const own = (
+      reads: Array<{ muted: boolean | null; hidden: boolean }>,
+      groupId: string | null = null,
+    ) => activityNotificationsEnabled({ groupId, reads }, off, true);
+    expect(own([{ muted: true, hidden: false }])).toBe(true);
+    expect(own([{ muted: false, hidden: true }])).toBe(true);
+    // A bot silent by its own switch stays silent until the viewer chooses, as its push does.
+    expect(own([])).toBe(false);
+    expect(own([{ muted: null, hidden: true }])).toBe(false);
+    expect(own([], "group-1")).toBe(true);
+  });
+
+  it("counts the viewer's own failed or waiting run as needing them, so Android alerts for it", () => {
+    for (const status of ["failed", "waiting_input", "waiting_takeover"])
+      expect(runNeedsOwner({ userId: "user-1", status }, "user-1")).toBe(true);
+    expect(runNeedsOwner({ userId: "user-1", status: "completed" }, "user-1")).toBe(false);
+    expect(runNeedsOwner({ userId: "user-2", status: "failed" }, "user-1")).toBe(false);
   });
 });
 

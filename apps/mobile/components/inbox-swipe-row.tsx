@@ -8,8 +8,10 @@ export type InboxSwipeRowProps = {
   rowKey: string;
   unread?: boolean;
   pinned?: boolean;
-  /** Bots only; groups have no finish notifications. */
-  notifyOnFinish?: boolean;
+  /** Unknown when the server can't mute this chat; the menu then leaves it out. */
+  muted?: boolean;
+  /** Unknown when the server can't hide chats; the menu then leaves it out. */
+  hidden?: boolean;
   sectionId?: string | null;
   sections: readonly MobileBotSection[];
   preview: InboxChatPreviewProps;

@@ -443,6 +443,8 @@ async function memberSpaceNavigation(
           sectionId: bot.sectionId,
           unread: bot.unread,
           snoozedUntil: bot.snoozedUntil,
+          muted: bot.muted,
+          hidden: bot.hidden,
           preview: bot.preview,
           status: bot.status,
           threadStatus: bot.threadStatus,
@@ -459,6 +461,8 @@ async function memberSpaceNavigation(
           preview: group.preview,
           unread: group.unread,
           snoozedUntil: group.snoozedUntil,
+          muted: group.muted,
+          hidden: group.hidden,
           updatedAt: group.updatedAt,
         })),
         externalConversations: externalConversations.filter(
