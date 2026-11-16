@@ -1,5 +1,6 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { SearchHit } from "@rakazo/contracts";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ActivityListFilters } from "../../lib/activity-list-filters";
 import { emptyActivityFilters } from "../../lib/activity-list-filters";
 import { activityModePreference } from "../../lib/activity-mode";
@@ -38,6 +39,8 @@ export function useSidebarSearch({
   const spaceQuery = query.trim();
   const showSpaceSearch = !activityMode && spaceQuery.length > 0;
 
+  // Each query and retry gets its own signal, aborted once a newer one replaces it.
+  const searchAbort = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!showSpaceSearch) {
       setSearchHits([]);
@@ -46,7 +49,13 @@ export function useSidebarSearch({
       return;
     }
     const abort = new AbortController();
-    const timer = window.setTimeout(() => {
+    searchAbort.current = abort;
+    return () => abort.abort();
+  }, [showSpaceSearch, spaceQuery, searchAttempt]);
+  useTimeout(
+    () => {
+      const abort = searchAbort.current;
+      if (!abort) return;
       setSearchLoading(true);
       setSearchError(null);
       void rpc.search
@@ -60,12 +69,10 @@ export function useSidebarSearch({
         .finally(() => {
           if (!abort.signal.aborted) setSearchLoading(false);
         });
-    }, 200);
-    return () => {
-      abort.abort();
-      window.clearTimeout(timer);
-    };
-  }, [showSpaceSearch, spaceQuery, searchAttempt]);
+    },
+    showSpaceSearch ? 200 : null,
+    `${spaceQuery}\n${searchAttempt}`,
+  );
 
   function jumpToSearchHit(hit: SearchHit) {
     setQuery("");

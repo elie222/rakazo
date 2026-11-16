@@ -25,6 +25,7 @@ import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 import { errorText } from "../../lib/user-error";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
@@ -459,23 +460,20 @@ export function useSpaceBootstrap({
         if (!cancelled) rosterSignals.firstLoadSettled();
       });
     let refreshTimer: number | undefined;
-    const refreshVisibleBots = () => {
+    refreshRosterRef.current = () => {
       if (document.visibilityState !== "visible" && !callsEnabledRef.current) return;
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => void refreshBots().catch(() => undefined), 50);
     };
-    refreshRosterRef.current = refreshVisibleBots;
-    // Held back like the server's signals, so neither re-reads before the first load has answered.
-    window.addEventListener("focus", rosterSignals.changed);
-    document.addEventListener("visibilitychange", rosterSignals.changed);
     return () => {
       cancelled = true;
       refreshRosterRef.current = () => {};
       window.clearTimeout(refreshTimer);
-      window.removeEventListener("focus", rosterSignals.changed);
-      document.removeEventListener("visibilitychange", rosterSignals.changed);
     };
   }, []);
+  // Held back like the server's signals, so neither re-reads before the first load has answered.
+  useEventListener(window, "focus", rosterSignals.changed);
+  useEventListener(document, "visibilitychange", rosterSignals.changed);
   return rosterSignals;
 }
 
