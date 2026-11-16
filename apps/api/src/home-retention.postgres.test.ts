@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { EmailEmulator, ObjectAgentHomeStore, PrismaAgentHomeRecords } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { asSystem, ContentKeyRing, createDb, LocalKeyProvider } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -402,26 +403,20 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await sweep();
     expect(sent()).toHaveLength(1);
     travel(9);
-    let commit!: () => void;
-    const held = new Promise<void>((resolve) => {
-      commit = resolve;
-    });
-    let updated!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      updated = resolve;
-    });
+    const held = deferred();
+    const pending = deferred();
     const payment = system.$transaction(
       async (tx) => {
         await tx.billingAccount.update({
           where: { organizationId: id },
           data: { status: "active", endedAt: null },
         });
-        updated();
-        await held;
+        pending.resolve();
+        await held.promise;
       },
       { timeout: 20_000 },
     );
-    await pending;
+    await pending.promise;
     const swept = sweep();
     for (;;) {
       const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
@@ -430,7 +425,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       if (waiting) break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    commit();
+    held.resolve();
     await payment;
     await swept;
     expect(errors).toEqual([]);

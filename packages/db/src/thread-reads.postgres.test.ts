@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -209,14 +210,8 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
 
   it("waits for a Mark as Unread from another tab instead of overwriting it", async () => {
     await as(ada, () => markThreadReadFor(prisma, reader(ada)));
-    let hold!: () => void;
-    const held = new Promise<void>((resolve) => {
-      hold = resolve;
-    });
-    let marked!: () => void;
-    const markedUnread = new Promise<void>((resolve) => {
-      marked = resolve;
-    });
+    const held = deferred();
+    const markedUnread = deferred();
     // One tab marks the chat unread from its first message and has not committed yet.
     const otherTab = as(ada, () =>
       prisma.$transaction(async (tx) => {
@@ -224,15 +219,15 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
           where: { threadId_userId: { threadId, userId: ada } },
           data: { unread: true, lastReadSeq: -1 },
         });
-        marked();
-        await held;
+        markedUnread.resolve();
+        await held.promise;
       }),
     );
-    await markedUnread;
+    await markedUnread.promise;
     // Another reads it meanwhile: the read waits for that row, then sees the mark.
     const read = as(ada, () => markThreadReadFor(prisma, reader(ada)));
     await new Promise((resolve) => setTimeout(resolve, 100));
-    hold();
+    held.resolve();
     await otherTab;
     await expect(read).resolves.toBe(-1);
   });
