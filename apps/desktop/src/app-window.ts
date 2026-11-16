@@ -24,13 +24,22 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
+import { readPrivateFile, writePrivateFileSync } from "./setup-store.js";
 import {
   mcpOAuthPartition,
   mcpOAuthPopupServerId,
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
+import type { SavedWindow } from "./window-options.js";
+import {
+  browserWindowOptions,
+  developmentIconFile,
+  parseSavedWindow,
+  restorableWindow,
+  warmWindowTtlMs,
+  windowStateReader,
+} from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
 /** The server or the network refused the page; the setup window says so and the server logs its side. */
@@ -48,6 +57,25 @@ export function developmentIcon() {
   if (app.isPackaged) return undefined;
   const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
   return existsSync(icon) ? icon : undefined;
+}
+function savedWindowFile() {
+  return path.join(app.getPath("userData"), "window-bounds.json");
+}
+async function readSavedWindow(): Promise<SavedWindow | null> {
+  const raw = await readPrivateFile(savedWindowFile(), 1024);
+  return raw === null ? null : parseSavedWindow(raw);
+}
+const windowState = windowStateReader<BrowserWindow>(process.platform);
+/** How long after a move or resize the window is saved, so a drag writes the file once. */
+const WINDOW_SAVE_DELAY_MS = 1_000;
+function saveWindow(win: BrowserWindow) {
+  // While a server switch is pending, the new window may still be dropped for the old one.
+  if (win.isDestroyed() || desktop.replacedAppWindow !== null) return;
+  try {
+    writePrivateFileSync(savedWindowFile(), JSON.stringify(windowState(win, true)));
+  } catch {
+    // Losing the size only means the next launch opens at the default.
+  }
 }
 function sessionPartitionKey(targetUrl: string) {
   return sessionPartitionForServerUrl(targetUrl);
@@ -143,11 +171,19 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
-export function createWindow(url: string, partition: string | null) {
+export async function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
+  // A server switch destroys the window it replaces without a close, so save it first.
+  if (desktop.mainWindow !== null) saveWindow(desktop.mainWindow);
+  const saved = restorableWindow(await readSavedWindow(), screen.getAllDisplays());
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
+    ...(saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height } : {}),
+    // Only ever true: an explicit false hides the full screen button on macOS.
+    ...(saved?.fullScreen ? { fullscreen: true } : {}),
+    // A window that reopens maximized is shown once maximized, so its normal size never flashes.
+    ...(saved?.maximized && !saved.fullScreen ? { show: false } : {}),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -157,6 +193,25 @@ export function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
+  // Read once while the window still has its normal bounds, before it is maximized.
+  windowState(win, true);
+  // Saved soon after each change too, so a crash or force quit keeps the last layout.
+  let saveTimer: NodeJS.Timeout | undefined;
+  const saveSoon = () => {
+    windowState(win, false);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveWindow(win), WINDOW_SAVE_DELAY_MS);
+  };
+  win.on("move", saveSoon);
+  win.on("resize", saveSoon);
+  win.on("maximize", saveSoon);
+  win.on("unmaximize", saveSoon);
+  win.on("enter-full-screen", saveSoon);
+  win.on("leave-full-screen", saveSoon);
+  if (saved?.maximized && !saved.fullScreen) {
+    win.maximize();
+    win.show();
+  }
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
   );
@@ -240,6 +295,8 @@ export function createWindow(url: string, partition: string | null) {
     popup.webContents.on("will-navigate", (details) => capture(details));
   });
   win.on("close", (event) => {
+    clearTimeout(saveTimer);
+    saveWindow(win);
     if (
       process.platform === "darwin" &&
       !desktop.quitting &&
@@ -254,6 +311,7 @@ export function createWindow(url: string, partition: string | null) {
     }
   });
   win.once("closed", () => {
+    clearTimeout(saveTimer);
     clearTimeout(desktop.warmWindowTimer);
     if (desktop.mainWindow === win) desktop.mainWindow = null;
   });

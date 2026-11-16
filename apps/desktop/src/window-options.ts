@@ -35,6 +35,97 @@ export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkAr
   };
 }
 
+type Bounds = { x: number; y: number; width: number; height: number };
+/** The app window as it was last closed: its normal bounds, and whether it filled the screen. */
+export type SavedWindow = Bounds & { maximized: boolean; fullScreen: boolean };
+
+// Smaller saved sizes are treated as damaged: the window would be too small to use.
+const MIN_SAVED_WIDTH = 400;
+const MIN_SAVED_HEIGHT = 300;
+
+export function parseSavedWindow(raw: string): SavedWindow | null {
+  try {
+    const value = JSON.parse(raw) as Partial<Record<keyof SavedWindow, unknown>> | null;
+    const { x, y, width, height, maximized, fullScreen } = value ?? {};
+    if (![x, y, width, height].every(Number.isFinite)) return null;
+    if ((width as number) < MIN_SAVED_WIDTH || (height as number) < MIN_SAVED_HEIGHT) return null;
+    return {
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      width: Math.round(width as number),
+      height: Math.round(height as number),
+      maximized: maximized === true,
+      fullScreen: fullScreen === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The saved window, moved and shrunk to fit fully inside the work area of the display that holds
+ * its center; null when no connected display does, so the window opens at its default. The center
+ * is looked for in the whole display: a taskbar or dock over it does not mean the display is gone.
+ */
+export function restorableWindow(
+  saved: SavedWindow | null,
+  displays: readonly { bounds: Bounds; workArea: Bounds }[],
+): SavedWindow | null {
+  if (saved === null) return null;
+  const centerX = saved.x + saved.width / 2;
+  const centerY = saved.y + saved.height / 2;
+  const area = displays.find(
+    ({ bounds: b }) =>
+      centerX >= b.x && centerX < b.x + b.width && centerY >= b.y && centerY < b.y + b.height,
+  )?.workArea;
+  if (!area) return null;
+  const width = Math.min(saved.width, area.width);
+  const height = Math.min(saved.height, area.height);
+  return {
+    ...saved,
+    x: Math.min(Math.max(saved.x, area.x), area.x + area.width - width),
+    y: Math.min(Math.max(saved.y, area.y), area.y + area.height - height),
+    width,
+    height,
+  };
+}
+
+type StatefulWindow = {
+  isMinimized(): boolean;
+  isMaximized(): boolean;
+  isFullScreen(): boolean;
+  getNormalBounds(): Bounds;
+};
+
+/**
+ * Reads a window's state to save, keeping its whole state from before it was minimized (Windows
+ * reports a minimized window as not maximized). On macOS, Electron's normal bounds are wrong for a
+ * window that is not normal (after a minimize, even once restored, or after the user drags it), and
+ * a move or resize can come in the middle of a maximize animation. So there the normal bounds are
+ * taken only from a `settled` read of a normal window; elsewhere they stay current, for example
+ * when Windows moves a maximized window to another display. Read it on every change too.
+ */
+export function windowStateReader<W extends StatefulWindow>(platform: NodeJS.Platform) {
+  const lastNormalBounds = new WeakMap<W, Bounds>();
+  const beforeMinimize = new WeakMap<W, SavedWindow>();
+  return (win: W, settled: boolean): SavedWindow => {
+    const kept = beforeMinimize.get(win);
+    if (win.isMinimized() && kept) return kept;
+    const maximized = win.isMaximized();
+    const fullScreen = win.isFullScreen();
+    if (platform !== "darwin" || (settled && !win.isMinimized() && !maximized && !fullScreen))
+      lastNormalBounds.set(win, win.getNormalBounds());
+    const state = {
+      // A window never seen normal, such as one opened full screen, has only Electron's value.
+      ...(lastNormalBounds.get(win) ?? win.getNormalBounds()),
+      maximized,
+      fullScreen,
+    };
+    if (!win.isMinimized()) beforeMinimize.set(win, state);
+    return state;
+  };
+}
+
 /**
  * Unpackaged (dev) launches set the dock/taskbar icon by hand. macOS draws the file as-is,
  * so it needs the squircle-with-margins asset; packaged builds already use icon.icns.

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -171,4 +171,39 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     sandbox: true,
     state: renderer.state,
   });
+});
+
+test("reopens at the size and position it had when it closed", async () => {
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("fixture has no port");
+  const launch = () =>
+    electron.launch({
+      args: ["."],
+      cwd: path.resolve(import.meta.dirname, ".."),
+      env: {
+        ...process.env,
+        RAKAZO_PERFORMANCE_USER_DATA: userData,
+        RAKAZO_WEB_URL: `http://127.0.0.1:${address.port}`,
+      },
+    });
+  // Small enough for xvfb-run's default screen.
+  const bounds = { x: 20, y: 30, width: 500, height: 400 };
+  app = await launch();
+  const page = await shownWindow(app);
+  const window = await app.browserWindow(page);
+  await window.evaluate((win, next) => win.setBounds(next), bounds);
+  // A window manager can apply the new bounds a moment later.
+  await expect.poll(() => window.evaluate((win) => win.getNormalBounds())).toEqual(bounds);
+  // Saved soon after the resize, before any close, so a crash would keep it too.
+  const savedFile = path.join(userData, "window-bounds.json");
+  await expect
+    .poll(async () => JSON.parse((await readFile(savedFile, "utf8").catch(() => null)) ?? "null"))
+    .toMatchObject(bounds);
+  await app.close();
+
+  app = await launch();
+  const relaunched = await shownWindow(app);
+  expect(
+    await (await app.browserWindow(relaunched)).evaluate((win) => win.getNormalBounds()),
+  ).toEqual(bounds);
 });

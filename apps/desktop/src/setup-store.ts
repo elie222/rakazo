@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fsyncSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopSetup } from "@rakazo/contracts";
@@ -68,6 +76,27 @@ export async function writePrivateFile(destination: string, contents: string): P
   } finally {
     await file?.close().catch(() => undefined);
     await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+/** `writePrivateFile` for a window's close handler, which cannot wait: the app may quit first. */
+export function writePrivateFileSync(destination: string, contents: string): void {
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+  let file: number | undefined;
+  try {
+    file = openSync(temporary, "wx", 0o600);
+    writeFileSync(file, contents, "utf8");
+    fsyncSync(file);
+    closeSync(file);
+    file = undefined;
+    renameSync(temporary, destination);
+  } finally {
+    try {
+      if (file !== undefined) closeSync(file);
+      rmSync(temporary, { force: true });
+    } catch {
+      // A temporary file left behind is never read.
+    }
   }
 }
 

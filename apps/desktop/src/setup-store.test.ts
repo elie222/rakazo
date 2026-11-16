@@ -1,8 +1,14 @@
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearSetup, readSetup, setupFilePath, writeSetup } from "./setup-store.js";
+import {
+  clearSetup,
+  readSetup,
+  setupFilePath,
+  writePrivateFileSync,
+  writeSetup,
+} from "./setup-store.js";
 
 let userData: string;
 
@@ -88,5 +94,40 @@ describe("setup store", () => {
   it("does not buffer an oversized saved setup", async () => {
     await writeFile(setupFilePath(userData), " ".repeat(64 * 1024 + 1), "utf8");
     await expect(readSetup(userData)).resolves.toBeNull();
+  });
+});
+
+describe("synchronous private write", () => {
+  it("replaces the whole file and leaves no temporary file", async () => {
+    const file = path.join(userData, "window-bounds.json");
+    await writeFile(file, "old contents that are longer", "utf8");
+    writePrivateFileSync(file, "new");
+    await expect(readFile(file, "utf8")).resolves.toBe("new");
+    await expect(readdir(userData)).resolves.toEqual(["window-bounds.json"]);
+  });
+
+  it.runIf(process.platform !== "win32")("keeps the file private", async () => {
+    const file = path.join(userData, "window-bounds.json");
+    writePrivateFileSync(file, "{}");
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "replaces a final symlink instead of overwriting its target",
+    async () => {
+      const victim = path.join(userData, "victim.txt");
+      const file = path.join(userData, "window-bounds.json");
+      await writeFile(victim, "untouched", "utf8");
+      await symlink(victim, file);
+      writePrivateFileSync(file, "{}");
+      await expect(readFile(file, "utf8")).resolves.toBe("{}");
+      await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
+    },
+  );
+
+  it("leaves no temporary file when the write fails", async () => {
+    const missing = path.join(userData, "missing", "window-bounds.json");
+    expect(() => writePrivateFileSync(missing, "{}")).toThrow();
+    await expect(readdir(userData)).resolves.toEqual([]);
   });
 });
