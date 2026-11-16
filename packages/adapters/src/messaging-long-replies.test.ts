@@ -3,6 +3,8 @@ import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import type { MarkdownParser } from "./markdown-split.js";
+import { splitMarkdown } from "./markdown-split.js";
 import { messagingPlatformsFromEnv, splitOutboundBody } from "./messaging-platforms.js";
 
 const LIMIT = 4096;
@@ -272,12 +274,6 @@ describe.each<Provider>(["telegram", "whatsapp"])("a long %s reply's parts", (pr
 
     expect(sends).toHaveLength(1);
     expect(sends[0]?.replace(/\\/g, "")).toBe(body);
-    expect(logs.events).toHaveLength(1);
-    expect(logs.events[0]).toMatchObject({
-      level: "warn",
-      message: "sending a whole reply as literal text: splitting its Markdown failed",
-      error: { name: "RangeError", stack: expect.stringContaining("RangeError") },
-    });
   });
 
   it("writes reference-style links and images inline, so each part has their addresses", async () => {
@@ -357,5 +353,25 @@ describe.each<Provider>(["telegram", "whatsapp"])("a long %s reply's parts", (pr
       expect(/[\uD800-\uDFFF]/u.test(sent)).toBe(false);
     }
     expect(sends.map((sent) => visibleText(provider, sent)).join("")).toBe(written);
+  });
+});
+
+describe("a reply whose Markdown cannot be parsed", () => {
+  it("goes out as the text it was written as, split, and the failure is logged", () => {
+    const body = `${"- ".repeat(747)}a`;
+    const parse: MarkdownParser = () => {
+      throw new RangeError("Maximum call stack size exceeded");
+    };
+
+    const parts = splitMarkdown(body, { limit: 100, sent: (markdown) => [markdown] }, parse);
+
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("").replace(/[\\\s]+/g, "")).toBe(body.replace(/\s+/g, ""));
+    expect(logs.events).toHaveLength(1);
+    expect(logs.events[0]).toMatchObject({
+      level: "warn",
+      message: "sending a whole reply as literal text: splitting its Markdown failed",
+      error: { name: "RangeError", stack: expect.stringContaining("RangeError") },
+    });
   });
 });

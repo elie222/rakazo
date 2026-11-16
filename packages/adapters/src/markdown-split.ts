@@ -35,17 +35,24 @@ interface Cut {
 
 const characters = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
+/** The parse step of splitting. Its own function so the fallback a stack overflow causes is testable. */
+export type MarkdownParser = (markdown: string) => Node;
+
 /**
  * Splits a Markdown reply into Markdown parts that each fit one message as the platform sends it,
  * so every part goes through the rendering a short reply gets. Parts end between blocks where they
  * can. A block too big for one message is split inside, and each piece keeps its code fence, list,
  * quote or emphasis, so every part reads on its own.
  */
-export function splitMarkdown(body: string, platform: MessageLimit): string[] {
+export function splitMarkdown(
+  body: string,
+  platform: MessageLimit,
+  parse: MarkdownParser = (markdown) => parseMarkdown(markdown) as Node,
+): string[] {
   if (!body.trim()) return [];
   try {
     if (fitsMessage(body, platform)) return [body];
-    return splitTree(body, inlineReferences(parseMarkdown(body) as Node), platform);
+    return splitTree(body, inlineReferences(parse(body)), platform);
   } catch (error) {
     // The parser and renderers recurse once per nesting level, so hundreds of nested markers
     // overflow the stack. The reply goes out as the text it was written as instead of failing.
