@@ -222,8 +222,9 @@ async function remindStuckRun(
   // sweep can still remind during this same wait. The question itself already brought a hidden
   // chat back, so only the reminder that is sent does it again: a sweep that sends nothing
   // leaves a chat the person hid again as they left it.
+  if (!deps.notifications) return;
   const owner = await readStuckOwner(deps, run);
-  if (!deps.notifications || !owner.hears) return;
+  if (!owner.hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
