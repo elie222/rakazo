@@ -269,6 +269,19 @@ describe("deployment model settings", () => {
     expect(state.settings.allowedModels).toBeNull();
   });
 
+  it("refuses an endpoint that names no model, blanks included", async () => {
+    const { deps, state } = makeDeps();
+    await expect(
+      connectDeploymentModel(deps, actor, {
+        provider: "openai-compatible",
+        apiKey: "fixture-endpoint-key",
+        baseUrl: ENDPOINT,
+        enabledModelIds: [" ", ""],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Enter a model name." });
+    expect(state.connections.size).toBe(0);
+  });
+
   it("connects a public HTTPS compatible endpoint with the member connection's limits", async () => {
     const { deps, state } = makeDeps();
     const view = await connectDeploymentModel(deps, actor, {

@@ -235,7 +235,11 @@ async function checkedConnection(
 ): Promise<{ plaintext: string; models: string[] }> {
   try {
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-      const enabledModelIds = [...new Set(input.enabledModelIds ?? [])];
+      const enabledModelIds = [
+        ...new Set((input.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean)),
+      ];
+      // An endpoint offers members only the models it names, so it needs at least one.
+      if (!enabledModelIds.length) throw new ClientError("BAD_REQUEST", "Enter a model name.");
       const plaintext = buildModelConnectPlaintext(
         {
           provider: OPENAI_COMPATIBLE_PROVIDER_ID,
