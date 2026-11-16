@@ -150,9 +150,11 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "daytona",
-      daytonaApiKey: "test-daytona-key",
-      daytonaApiUrl: "https://daytona.test/api",
-      daytonaTarget: "test-target",
+      sandboxOptions: {
+        daytonaApiKey: "test-daytona-key",
+        daytonaApiUrl: "https://daytona.test/api",
+        daytonaTarget: "test-target",
+      },
     });
   });
 
@@ -166,8 +168,7 @@ describe("loadEnv", () => {
       }),
     ).toMatchObject({
       sandboxProvider: "novita",
-      novitaApiKey: "test-novita-key",
-      sandboxTemplate: "custom-desktop",
+      sandboxOptions: { novitaApiKey: "test-novita-key", sandboxTemplate: "custom-desktop" },
     });
     expect(
       loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
@@ -183,8 +184,7 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "boat",
-      boatApiKey: "test-boat-key",
-      boatApiUrl: "https://boat.test/api/v1",
+      sandboxOptions: { boatApiKey: "test-boat-key", boatApiUrl: "https://boat.test/api/v1" },
     });
   });
 

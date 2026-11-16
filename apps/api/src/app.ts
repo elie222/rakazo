@@ -71,7 +71,6 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
-  sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   UserDeviceHub,
   UserDevices,
@@ -378,21 +377,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     deploymentLabs: env.deploymentLabs,
   });
-  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...hostComputer,
+      ...env.sandboxOptions,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
-      e2bApiKey: env.e2bApiKey,
-      novitaApiKey: env.novitaApiKey,
-      sandboxTemplate: env.sandboxTemplate,
-      daytonaApiKey: env.daytonaApiKey,
-      daytonaApiUrl: env.daytonaApiUrl,
-      daytonaTarget: env.daytonaTarget,
-      boatApiKey: env.boatApiKey,
-      boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
       secrets,
@@ -671,8 +661,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         withHostComputerScreen(userDevices, {
           prisma,
           sandboxKind: env.sandboxProvider,
-          url: hostComputer.hostComputerUrl,
-          token: hostComputer.hostComputerToken,
+          url: env.sandboxOptions.hostComputerUrl,
+          token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
       stoppingSignal: shutdown.signal,

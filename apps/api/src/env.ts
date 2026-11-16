@@ -2,18 +2,18 @@ import { readFileSync } from "node:fs";
 import type {
   ApnsVoipConfig,
   PhotonProjectCredentials,
+  SandboxProviderOptions,
   TelegramBotCredentials,
 } from "@rakazo/adapters";
 import {
   apnsVoipConfig,
-  boatApiKeyFromEnv,
-  boatApiUrlFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
@@ -108,14 +108,8 @@ export interface AppEnv {
   deploymentModelConfigured: boolean;
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
-  e2bApiKey: string | undefined;
-  novitaApiKey: string | undefined;
-  sandboxTemplate: string | undefined;
-  daytonaApiKey: string | undefined;
-  daytonaApiUrl: string | undefined;
-  daytonaTarget: string | undefined;
-  boatApiKey: string | undefined;
-  boatApiUrl: string | undefined;
+  /** Every computer provider's options, read through the provider's own environment bindings. */
+  sandboxOptions: SandboxProviderOptions;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -315,14 +309,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
-    e2bApiKey: source.E2B_API_KEY,
-    novitaApiKey: source.NOVITA_API_KEY,
-    sandboxTemplate: source.SANDBOX_TEMPLATE,
-    daytonaApiKey: source.DAYTONA_API_KEY,
-    daytonaApiUrl: source.DAYTONA_API_URL,
-    daytonaTarget: source.DAYTONA_TARGET,
-    boatApiKey: boatApiKeyFromEnv(source),
-    boatApiUrl: boatApiUrlFromEnv(source),
+    sandboxOptions: sandboxProviderOptionsFromEnv(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),

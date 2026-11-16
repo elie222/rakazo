@@ -343,13 +343,13 @@ export function fakeNovita() {
               for (const [path, file] of files)
                 if (command.includes(`'${path}'`)) file.mode = 0o700;
             }
-            return (
-              respond(command) ?? {
-                exitCode: 0,
-                stdout: command.includes("'echo' 'graphical-ok'") ? "graphical-ok\n" : "",
-                stderr: "",
-              }
-            );
+            const desktopAnswer = respond(command);
+            if (desktopAnswer) return desktopAnswer;
+            const parsed = parse(command);
+            const argv = parsed.filter((token): token is string => typeof token === "string");
+            if (argv.length !== parsed.length) return { exitCode: 0, stdout: "", stderr: "" };
+            const { exitCode = 0, stdout = "" } = simpleCommand(argv, {});
+            return { exitCode, stdout, stderr: "" };
           }),
         },
         files: {
