@@ -12,12 +12,6 @@ export function isNovncExtensionError(filename: string) {
   return NOVNC_EXTENSION_ERROR.test(filename);
 }
 
-/** Rakazo's own computer page, which carries its own keyboard bridge. */
-export function isRakazoEmbedPage(path: string) {
-  const { pathname } = new URL(path, "http://upstream.invalid");
-  return pathname.endsWith("/embed.html");
-}
-
 /** Whether an upstream path is a noVNC page, whichever provider serves it. */
 export function isNovncPage(path: string) {
   const { pathname } = new URL(path, "http://upstream.invalid");
@@ -83,7 +77,7 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
  */
 export function injectNovncStorageShim(
   html: string,
-  { viewOnly = false, keyBridge = true }: { viewOnly?: boolean; keyBridge?: boolean } = {},
+  { viewOnly = false }: { viewOnly?: boolean } = {},
 ) {
   // The app shows the screen's state itself, and noVNC's status bar names the provider's host.
   // Its side panel only has controls to offer while the user has control.
@@ -131,19 +125,25 @@ export function injectNovncStorageShim(
       data.rakazoScreenFocus !== true
     )
       return;
-    const canvas = document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
+    const canvas = canvasOf();
     try {
       canvas?.focus();
     } catch {}
   });
-  // The mobile app types through window.rakazoComputerKeyboard. Rakazo's own embed page installs
-  // that bridge itself; a stock noVNC page has none, so the app's keys would wait for it forever.
-  // This one hands keys to noVNC's canvas, where its keyboard handler sends them.
+  // The mobile app types through window.rakazoComputerKeyboard and treats its presence as "ready".
+  // Rakazo's own embed page installs that bridge itself, in the same run that builds the canvas; a
+  // stock noVNC page has none, so the app's keys would wait for it forever. This one hands keys to
+  // noVNC's canvas, where its keyboard handler sends them. noVNC builds the canvas before it
+  // connects and ignores keys until then, so on a page that sets noVNC's connection classes the
+  // bridge waits for "connected"; on one that never does it waits for the canvas. It never
+  // replaces a bridge the page defined.
+  const canvasOf = () => document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
   const KEYS = { Escape: "Escape", Tab: "Tab", Return: "Enter", Backspace: "Backspace", ArrowLeft: "ArrowLeft", ArrowUp: "ArrowUp", ArrowRight: "ArrowRight", ArrowDown: "ArrowDown" };
-  const installKeys = () => {
-    if (${!keyBridge || viewOnly} || window.__rakazoNativeKeys !== true || window.rakazoComputerKeyboard) return;
+  const installKeys = (connected, classed) => {
+    if (!connected && classed) return;
+    if (${viewOnly} || window.__rakazoNativeKeys !== true || window.rakazoComputerKeyboard || !canvasOf()) return;
     const tap = (key, code, control) => {
-      const canvas = document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
+      const canvas = canvasOf();
       if (!canvas) return;
       const send = (type, name, id) =>
         canvas.dispatchEvent(new window.KeyboardEvent(type, { key: name, code: id, bubbles: true, cancelable: true }));
@@ -189,6 +189,7 @@ export function injectNovncStorageShim(
       root.classList.contains("noVNC_connecting") || root.classList.contains("noVNC_reconnecting");
     const connected = root.classList.contains("noVNC_connected");
     if (connecting || connected) classed = true;
+    installKeys(connected, classed);
     const state = connected
       ? "connected"
       : failure !== null || statusError
@@ -215,7 +216,6 @@ export function injectNovncStorageShim(
       subtree: true,
     });
   };
-  installKeys();
   report("loading");
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observe);
   else observe();

@@ -5,7 +5,6 @@ import {
   injectNovncStorageShim,
   isNovncExtensionError,
   isNovncPage,
-  isRakazoEmbedPage,
   MAX_NOVNC_HTML_BYTES,
   NOVNC_EXTENSION_ERROR,
   novncPageRequestHeaders,
@@ -155,6 +154,15 @@ describe("noVNC key bridge", () => {
   function page(options: { nativeKeys?: boolean; canvas?: boolean; existing?: Bridge } = {}) {
     const events: KeyEvent[] = [];
     const canvas = { dispatchEvent: (event: KeyEvent) => events.push(event) };
+    let drawn = options.canvas !== false;
+    const classes = new Set<string>();
+    let observed: (() => void) | undefined;
+    class FakeObserver {
+      constructor(callback: () => void) {
+        observed = callback;
+      }
+      observe() {}
+    }
     const window: Record<string, unknown> = {
       addEventListener() {},
       parent: { postMessage() {} },
@@ -170,18 +178,39 @@ describe("noVNC key bridge", () => {
       ...(options.existing ? { rakazoComputerKeyboard: options.existing } : {}),
     };
     const document = {
-      documentElement: { classList: { contains: () => false }, getAttribute: () => null },
-      readyState: "loading",
+      documentElement: {
+        classList: { contains: (name: string) => classes.has(name) },
+        getAttribute: () => null,
+      },
+      readyState: "complete",
       getElementById: () => null,
-      querySelector: () => (options.canvas === false ? null : canvas),
+      querySelector: () => (drawn ? canvas : null),
       addEventListener() {},
     };
     const install = (html: string) => {
       const start = html.indexOf("<script>") + "<script>".length;
       const script = html.slice(start, html.lastIndexOf("</script>"));
-      new Function("window", "document", script)(window, document);
+      new Function("window", "document", "MutationObserver", script)(
+        window,
+        document,
+        FakeObserver,
+      );
     };
-    return { window, events, install, bridge: () => window.rakazoComputerKeyboard as Bridge };
+    return {
+      window,
+      events,
+      install,
+      bridge: () => window.rakazoComputerKeyboard as Bridge | undefined,
+      draw() {
+        drawn = true;
+        observed?.();
+      },
+      setClasses(...names: string[]) {
+        classes.clear();
+        for (const name of names) classes.add(name);
+        observed?.();
+      },
+    };
   }
 
   const sequence = (events: KeyEvent[]) => events.map((e) => `${e.type}:${e.key}`);
@@ -189,10 +218,10 @@ describe("noVNC key bridge", () => {
   it("lets the app's keys reach a stock noVNC page", () => {
     const p = page();
     p.install(injectNovncStorageShim("<head>"));
-    p.bridge().run({ type: "text", text: "a1" });
-    p.bridge().run({ type: "key", name: "Return" });
-    p.bridge().run({ type: "key", name: "Tab" });
-    p.bridge().run({ type: "backspace", count: 2 });
+    p.bridge()?.run({ type: "text", text: "a1" });
+    p.bridge()?.run({ type: "key", name: "Return" });
+    p.bridge()?.run({ type: "key", name: "Tab" });
+    p.bridge()?.run({ type: "backspace", count: 2 });
     expect(sequence(p.events)).toEqual([
       "keydown:a",
       "keyup:a",
@@ -212,9 +241,9 @@ describe("noVNC key bridge", () => {
   it("holds Control around only the first key of a chord", () => {
     const p = page();
     p.install(injectNovncStorageShim("<head>"));
-    p.bridge().run({ type: "char", text: "c", control: true });
-    p.bridge().run({ type: "text", text: "cd", control: true });
-    p.bridge().run({ type: "key", name: "ArrowLeft", control: true });
+    p.bridge()?.run({ type: "char", text: "c", control: true });
+    p.bridge()?.run({ type: "text", text: "cd", control: true });
+    p.bridge()?.run({ type: "key", name: "ArrowLeft", control: true });
     expect(sequence(p.events)).toEqual([
       "keydown:Control",
       "keydown:c",
@@ -233,29 +262,50 @@ describe("noVNC key bridge", () => {
     ]);
   });
 
-  it("types each character of an emoji once and ignores unknown commands", () => {
+  it("sends an emoji as one key event and ignores unknown commands", () => {
     const p = page();
     p.install(injectNovncStorageShim("<head>"));
-    p.bridge().run({ type: "text", text: "😀" });
-    p.bridge().run({ type: "key", name: "F13" });
-    p.bridge().run({ type: "backspace", count: "x" });
-    p.bridge().run({ type: "backspace", count: 0 });
-    p.bridge().run(null);
+    p.bridge()?.run({ type: "text", text: "😀" });
+    p.bridge()?.run({ type: "key", name: "F13" });
+    p.bridge()?.run({ type: "backspace", count: "x" });
+    p.bridge()?.run({ type: "backspace", count: 0 });
+    p.bridge()?.run(null);
     expect(sequence(p.events)).toEqual(["keydown:😀", "keyup:😀"]);
   });
 
-  it("caps a run of Backspace", () => {
+  it("caps a run of Backspace at 500 presses", () => {
     const p = page();
     p.install(injectNovncStorageShim("<head>"));
-    p.bridge().run({ type: "backspace", count: 100_000 });
+    p.bridge()?.run({ type: "backspace", count: 100_000 });
     expect(p.events).toHaveLength(1000);
   });
 
-  it("sends nothing before noVNC has drawn its canvas", () => {
+  it("offers the bridge only once noVNC has drawn its canvas", () => {
     const p = page({ canvas: false });
     p.install(injectNovncStorageShim("<head>"));
-    p.bridge().run({ type: "text", text: "a" });
-    expect(p.events).toEqual([]);
+    expect(p.bridge()).toBeUndefined();
+    p.draw();
+    p.bridge()?.run({ type: "text", text: "a" });
+    expect(sequence(p.events)).toEqual(["keydown:a", "keyup:a"]);
+  });
+
+  it("waits for noVNC's connection before offering the bridge on a page that reports it", () => {
+    const p = page();
+    p.setClasses("noVNC_connecting");
+    p.install(injectNovncStorageShim("<head>"));
+    expect(p.bridge()).toBeUndefined();
+    p.setClasses("noVNC_connected");
+    p.bridge()?.run({ type: "text", text: "a" });
+    expect(sequence(p.events)).toEqual(["keydown:a", "keyup:a"]);
+  });
+
+  it("keeps a bridge the page defines after the canvas appears", () => {
+    const own = { run() {} };
+    const p = page({ canvas: false });
+    p.install(injectNovncStorageShim("<head>"));
+    p.window.rakazoComputerKeyboard = own;
+    p.draw();
+    expect(p.bridge()).toBe(own);
   });
 
   it("stays out of the way of a page's own bridge, a plain browser and a view-only screen", () => {
@@ -269,16 +319,6 @@ describe("noVNC key bridge", () => {
     const viewing = page();
     viewing.install(injectNovncStorageShim("<head>", { viewOnly: true }));
     expect(viewing.bridge()).toBeUndefined();
-    const embed = page();
-    embed.install(injectNovncStorageShim("<head>", { keyBridge: false }));
-    expect(embed.bridge()).toBeUndefined();
-  });
-
-  it("leaves Rakazo's embed page to its own bridge", () => {
-    expect(isRakazoEmbedPage("/embed.html?path=websockify")).toBe(true);
-    expect(isRakazoEmbedPage("/proxy/6080/embed.html")).toBe(true);
-    expect(isRakazoEmbedPage("/vnc.html")).toBe(false);
-    expect(isRakazoEmbedPage("/vnc_lite.html")).toBe(false);
   });
 });
 
