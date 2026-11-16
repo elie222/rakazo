@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 // Fail on module evaluation, rather than merely checking which provider was returned.
-vi.mock("./wuying-sandbox.js", () => {
+vi.mock("./providers/computer/wuying/wuying-sandbox.js", () => {
   throw new Error("Wuying loaded on default path");
 });
 vi.mock("@alicloud/ecd20200930", () => {

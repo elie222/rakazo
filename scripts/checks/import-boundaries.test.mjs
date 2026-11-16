@@ -51,6 +51,8 @@ const SERVER_SUBPATH = /^@rakazo\/core\/node(?:\/|$)/;
 // The desktop build bundles workspace code into its output, and the packager copies every
 // package under "dependencies" into the app, so bundled packages belong in devDependencies.
 const BUNDLED = ["apps/desktop"];
+// Each provider implementation lives in providers/<family>/<provider id>/ and stands alone.
+const PROVIDER_FOLDER = /^packages\/adapters\/src\/providers\/[^/]+\/[^/]+\//;
 
 const under = (dirs, file) => dirs.some((dir) => file.startsWith(`${dir}/`));
 
@@ -96,6 +98,10 @@ const RULES = {
   server: {
     title: "UI packages and client apps never import server packages",
     fix: "Client code reaches this through the API: add it in apps/api and call it over RPC, with shared types in @rakazo/contracts.",
+  },
+  vendor: {
+    title: "a provider's folder never imports another provider's folder",
+    fix: "Move what both providers need into shared adapter code outside packages/adapters/src/providers/, and import it from there.",
   },
   undeclared: {
     title: "imported workspace packages are declared dependencies",
@@ -264,6 +270,9 @@ function findViolations(sources, workspaces) {
         const resolved = path.posix.join(path.posix.dirname(file), specifier);
         target = resolved.startsWith("..") ? undefined : ownerOf(`${resolved}/`);
         if (target !== owner) flag("relative");
+        const provider = PROVIDER_FOLDER.exec(file)?.[0];
+        const targetProvider = PROVIDER_FOLDER.exec(`${resolved}/`)?.[0];
+        if (provider && targetProvider && provider !== targetProvider) flag("vendor");
         if (browser && under(SERVER_DIRS, resolved)) flag("runtime");
       } else {
         if (browser && SERVER_SUBPATH.test(specifier)) flag("runtime");
@@ -475,6 +484,10 @@ test("resolves specifiers to packages and reports each rule", () => {
     },
     { file: `${TESTKIT}/src/browser.ts`, specifiers: [scoped("web")] },
     { file: "scripts/build.mjs", specifiers: ["../packages/core/src/index.ts", "./pnpm.mjs"] },
+    {
+      file: "packages/adapters/src/providers/computer/one/one-sandbox.ts",
+      specifiers: ["./one-errors.js", "../../../sandbox-errors.js", "../two/two-sandbox.js"],
+    },
   ];
   assert.deepEqual(
     findViolations(sources, workspaces)
@@ -497,6 +510,7 @@ test("resolves specifiers to packages and reports each rule", () => {
       "testkit: apps/api/src/index.ts -> @rakazo/testkit",
       "undeclared: apps/web/package.json -> @rakazo/core",
       "unused: packages/ui-web/package.json -> @rakazo/contracts",
+      "vendor: packages/adapters/src/providers/computer/one/one-sandbox.ts -> ../two/two-sandbox.js",
     ],
   );
 });
