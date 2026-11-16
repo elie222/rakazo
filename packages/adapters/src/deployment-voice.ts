@@ -7,7 +7,7 @@ import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.j
 import {
   createVoiceProvider,
   isSpeechModelId,
-  VOICE_CATALOG,
+  listVoiceCatalog,
   voiceCatalogEntry,
 } from "./voice-factory.js";
 
@@ -30,7 +30,11 @@ export interface DeploymentVoice {
 
 /** Hosted providers one key can serve for a whole deployment. */
 export function deploymentVoiceProviders(): VoiceCatalogEntry[] {
-  return VOICE_CATALOG.filter((entry) => entry.id !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID);
+  // Hosted providers a key unlocks: not a device's own voice, the test fixture, or an endpoint.
+  return listVoiceCatalog().filter(
+    (entry) =>
+      !entry.keyless && entry.id !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && entry.id !== "scripted",
+  );
 }
 
 export function isDeploymentVoiceProvider(id: string): boolean {
