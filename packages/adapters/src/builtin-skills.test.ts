@@ -32,7 +32,7 @@ describe("built-in skills", () => {
       },
       {
         name: "Rakazo",
-        description: "How to use or set up Rakazo: chat apps, your computer, billing, hosting",
+        description: "What Rakazo is, how to use, set up or self-host it, its source code",
       },
     ]);
   });
