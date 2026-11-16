@@ -4,7 +4,6 @@
   "apps/api/src/messaging-inbound.test.ts": 1,
   "apps/api/src/messaging-inbound.ts": 1,
   "apps/api/src/router.test.ts": 1,
-  "apps/api/src/routes/bots.ts": 1,
   "apps/api/src/space-members.postgres.test.ts": 1,
   "apps/api/src/thread-target.test.ts": 1,
   "apps/api/src/thread-target.ts": 1,
