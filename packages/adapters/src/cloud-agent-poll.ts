@@ -2,18 +2,22 @@ import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   BackgroundJobPayloads,
+  CloudAgentProvider,
   CloudAgentSnapshot,
 } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
-import { cloudAgentHttpsUrl } from "@rakazo/core";
-import type { CloudAgent } from "@rakazo/db";
+import { cloudAgentHttpsUrl, deadlineSignal } from "@rakazo/core";
+import type { CloudAgent, HeldLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  assertLeaseHeld,
   changeMessageBlocks,
+  LeaseHeldError,
   Prisma,
   THREAD_LOCK_TRANSACTION_OPTIONS,
+  withLease,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
 import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
@@ -21,8 +25,11 @@ import { wakeRun } from "./wake-run.js";
 import { cloudAgentWakePrompt } from "./wakes.prompt.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
+const LEASE_MS = 90_000;
 
-/** Reconcile one persisted intent. A fenced lease serializes remote mutations. */
+type Polled = CloudAgent & { lease: HeldLease };
+
+/** Reconcile one persisted intent. A lease serializes remote mutations across workers. */
 export async function pollCloudAgent(
   deps: CloudAgentDeps,
   payload: BackgroundJobPayloads["cloud_agent.poll"],
@@ -31,26 +38,68 @@ export async function pollCloudAgent(
   if (!stored?.nextPollAt) return;
   const connection = await cloudAgentFor(deps, stored);
   if (!connection) return;
+  // The previous release claims the row's lease columns instead of taking the lease, so the
+  // claim is kept with it while a deploy overlaps.
   const token = randomUUID();
-  const claimed = await deps.prisma.cloudAgent.updateMany({
-    where: {
-      id: stored.id,
-      version: stored.version,
-      OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
+  const claimUntil = () => new Date(Date.now() + LEASE_MS);
+  // Only while this worker holds the claim; one taken over by the previous release is a lost lease.
+  let holdsClaim = false;
+  const renewClaim = async () => {
+    if (!holdsClaim) return true;
+    const renewed = await deps.prisma.cloudAgent.updateMany({
+      where: { id: stored.id, leaseToken: token },
+      data: { leaseExpiresAt: claimUntil() },
+    });
+    // A renewal racing the release below finds the claim already given back: not a loss.
+    return renewed.count > 0 || !holdsClaim;
+  };
+  await withLease(
+    deps.prisma,
+    `cloud-agent:${stored.id}`,
+    { ttlMs: LEASE_MS, onRenew: renewClaim },
+    async (lease) => {
+      const claimed = await deps.prisma.cloudAgent.updateMany({
+        where: {
+          id: stored.id,
+          version: stored.version,
+          OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
+        },
+        data: { leaseToken: token, leaseExpiresAt: claimUntil() },
+      });
+      if (!claimed.count) return;
+      holdsClaim = true;
+      try {
+        // Cut off while the claim was being taken: give it back rather than leave it to lapse.
+        lease.signal.throwIfAborted();
+        await reconcile(deps, { ...stored, leaseToken: token, lease }, connection.provider);
+      } finally {
+        holdsClaim = false;
+        // A concurrent user action can change version while remote I/O is in flight.
+        // Release only our claim, preserving that action's pending intent and due date.
+        await bestEffort(
+          "release cloud agent claim",
+          deps.prisma.cloudAgent.updateMany({
+            where: { id: stored.id, leaseToken: token },
+            data: { leaseToken: null, leaseExpiresAt: null },
+          }),
+        );
+      }
     },
-    data: { leaseToken: token, leaseExpiresAt: new Date(Date.now() + 90_000) },
+  ).catch((error: unknown) => {
+    // Another worker is reconciling it and schedules the next poll itself.
+    if (!(error instanceof LeaseHeldError)) throw error;
   });
-  if (!claimed.count) return;
-  const agent = { ...stored, leaseToken: token };
+}
+
+async function reconcile(deps: CloudAgentDeps, agent: Polled, provider: CloudAgentProvider) {
   const context: AdapterContext = {
     operationId: agent.id,
     traceId: agent.id,
     spaceId: agent.spaceId,
     userId: agent.userId,
     botId: agent.botId,
-    signal: AbortSignal.timeout(60_000),
+    signal: deadlineSignal(60_000, agent.lease.signal),
   };
-  const provider = connection.provider;
   try {
     const [card, member, bot] = await Promise.all([
       deps.prisma.message.findFirst({
@@ -82,10 +131,7 @@ export async function pollCloudAgent(
         return;
       }
       // Write dispatch intent before I/O; a crash replays the same idempotent create.
-      const marked = await deps.prisma.cloudAgent.updateMany({
-        where: fence(agent),
-        data: { launchDispatched: true },
-      });
+      const marked = await fenced(deps, agent, { launchDispatched: true });
       if (!marked.count) return;
       const request = cloudAgentLaunchSchema.parse(agent.launchRequest);
       try {
@@ -166,10 +212,7 @@ export async function pollCloudAgent(
           followupDispatchedAt: null,
         });
       } else {
-        const marked = await deps.prisma.cloudAgent.updateMany({
-          where: fence(agent),
-          data: { followupDispatchedAt: new Date() },
-        });
+        const marked = await fenced(deps, agent, { followupDispatchedAt: new Date() });
         if (!marked.count) return;
         try {
           const snapshot = await provider.reply(
@@ -204,6 +247,7 @@ export async function pollCloudAgent(
     const snapshot = await provider.get(agent.remoteId, context, agent.latestRunId ?? undefined);
     await finishPoll(deps, agent, snapshotData(snapshot));
   } catch (error) {
+    if (agent.lease.signal.aborted) throw error;
     if (error instanceof CloudAgentRequestRejected && error.reason !== "invalid") {
       // The remote agent or run is gone. Polling it again can never succeed.
       await finishPoll(deps, agent, {
@@ -225,18 +269,23 @@ export async function pollCloudAgent(
       agent,
       error instanceof CloudAgentRetryLater ? error.retryAfterMs : undefined,
     );
-  } finally {
-    // A concurrent user action can change version while remote I/O is in flight.
-    // Release only our lease, preserving that action's pending intent and due date.
-    await deps.prisma.cloudAgent.updateMany({
-      where: { id: agent.id, leaseToken: token },
-      data: { leaseToken: null, leaseExpiresAt: null },
-    });
   }
 }
 
 function fence(agent: CloudAgent) {
   return { id: agent.id, version: agent.version, leaseToken: agent.leaseToken };
+}
+
+/** Writes only while this worker still holds the agent's lease. */
+function fenced(
+  deps: CloudAgentDeps,
+  agent: Polled,
+  data: Prisma.CloudAgentUpdateManyMutationInput,
+) {
+  return deps.prisma.$transaction(async (tx) => {
+    await assertLeaseHeld(tx, agent.lease);
+    return tx.cloudAgent.updateMany({ where: fence(agent), data });
+  });
 }
 
 function snapshotData(snapshot: CloudAgentSnapshot): Prisma.CloudAgentUpdateManyMutationInput {
@@ -256,7 +305,7 @@ function rejectedStatus(error: CloudAgentRequestRejected) {
 
 async function retryPoll(
   deps: CloudAgentDeps,
-  agent: CloudAgent,
+  agent: Polled,
   retryAfterMs?: number,
   data: Prisma.CloudAgentUpdateManyMutationInput = {},
 ) {
@@ -265,22 +314,19 @@ async function retryPoll(
   const delay =
     retryAfterMs === undefined ? backoff : Math.min(15 * 60_000, Math.max(backoff, retryAfterMs));
   const nextPollAt = new Date(Date.now() + delay);
-  const saved = await deps.prisma.cloudAgent.updateMany({
-    where: fence(agent),
-    data: {
-      ...data,
-      nextPollAt,
-      errorCount: { increment: 1 },
-      leaseToken: null,
-      leaseExpiresAt: null,
-    },
+  const saved = await fenced(deps, agent, {
+    ...data,
+    nextPollAt,
+    errorCount: { increment: 1 },
+    leaseToken: null,
+    leaseExpiresAt: null,
   });
   if (saved.count) await enqueueCloudAgent(deps, agent.id, nextPollAt);
 }
 
 async function finishPoll(
   deps: CloudAgentDeps,
-  agent: CloudAgent,
+  agent: Polled,
   data: Prisma.CloudAgentUpdateManyMutationInput,
   abandoned = false,
 ) {
@@ -317,6 +363,7 @@ async function finishPoll(
     const cancelRequested =
       !terminal && (detached || data.cancelRequested === true || agent.cancelRequested);
     const nextPollAt = terminal ? null : new Date(Date.now() + 5_000);
+    await assertLeaseHeld(tx, agent.lease);
     const updated = await tx.cloudAgent.updateMany({
       where: fence(agent),
       data: {

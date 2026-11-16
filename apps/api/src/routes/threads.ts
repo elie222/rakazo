@@ -56,7 +56,6 @@ import {
   sendThreadMessage,
   threadHead,
 } from "../thread-target.js";
-import { mapBotSecretInputError } from "./bots.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -608,8 +607,7 @@ export function threadsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             if (error instanceof AnswerTooLongError)
               throw new ClientError("BAD_REQUEST", error.message);
-            // A typed credential its destination cannot carry (e.g. a header with a line break).
-            throw mapBotSecretInputError(error);
+            throw error;
           });
         if (!answered) {
           throw new ORPCError("CONFLICT", {

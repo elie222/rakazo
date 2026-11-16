@@ -396,7 +396,7 @@ class RakazoNotificationService : Service() {
     private const val LIVE_NOTIFICATION_ID = 1101
     private const val ACTION_THREAD_CHANGED = "com.rakazo.notifications.THREAD_CHANGED"
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
-    private const val RECENT_LIMIT = 20 // Keep in sync with apps/api/src/runs.ts.
+    private const val RECENT_LIMIT = 20 // The API's page size (kept-in-step check).
     private const val EXTRA_RESET_TOKEN = "com.rakazo.notifications.RESET_TOKEN"
     private const val EXTRA_MUTED_BOT_ID = "com.rakazo.notifications.MUTED_BOT_ID"
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
