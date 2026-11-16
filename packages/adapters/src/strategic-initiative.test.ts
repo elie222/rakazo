@@ -434,17 +434,13 @@ it("escapes scratchpad data and keeps instructions outside its wrapper", async (
   expect(tasks[0]?.prompt?.match(/<\/scratchpad_items>/g)).toHaveLength(1);
 });
 
-it("offers one question or a final-reply reminder, and silence otherwise", async () => {
+it("names only the tool a check-in has and keeps the exact silence sentinel", async () => {
   const { prisma, tasks } = strategicPrisma({ bots: [candidate] });
   const { jobs } = publisher();
   await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 });
   const prompt = tasks[0]?.prompt ?? "";
-  expect(prompt).toContain("the entire final reply must be exactly NO_RESPONSE.");
-  expect(prompt).toContain("ask that one question with ask_user");
-  expect(prompt).toContain(
-    "write one short reminder with a concrete next step as your final reply",
-  );
-  expect(prompt).toContain("cannot do or start the work itself");
+  expect(prompt).toContain("exactly NO_RESPONSE");
+  expect(prompt).toContain("ask_user");
   expect(prompt).not.toContain("message_user");
 });
 
