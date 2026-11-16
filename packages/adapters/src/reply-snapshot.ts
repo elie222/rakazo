@@ -1,5 +1,5 @@
 import { MessageBlock, storedImageMimeType, ToolStepCallSchema } from "@rakazo/contracts";
-import { getLogger } from "@rakazo/logging";
+import { reportJsonColumnOnce } from "@rakazo/db";
 import { z } from "zod";
 import type { ReplyState } from "./run-context.js";
 
@@ -82,13 +82,18 @@ export function snapshotReply(reply: ReplyState): ReplySnapshot {
 
 /**
  * Continues the reply a handed-back attempt saved. A checkpoint without one (a pause, or an
- * older release) or with one this release cannot read starts the reply empty, as before.
+ * older release) starts the reply empty, as before. One this release cannot read is reported as
+ * an error and also starts empty: its steps are lost, and nothing better is left to restore.
  */
-export function restoreReply(reply: ReplyState, saved: unknown): void {
+export function restoreReply(reply: ReplyState, saved: unknown, runId: string): void {
   if (saved === undefined) return;
   const parsed = ReplySnapshotSchema.safeParse(saved);
   if (!parsed.success) {
-    getLogger().warn("turn checkpoint reply unreadable", { issues: parsed.error.issues.length });
+    reportJsonColumnOnce(
+      "saved reply of a handed-back turn is unreadable; resuming with an empty reply",
+      { table: "runs", column: "checkpoint.reply", id: runId },
+      describeMismatch(saved, parsed.error.issues),
+    );
     return;
   }
   const { latestScreenshot, toolOutcomes, toolStepCalls, version: _, ...rest } = parsed.data;
@@ -102,4 +107,17 @@ export function restoreReply(reply: ReplyState, saved: unknown): void {
       mimeType,
       data: new Uint8Array(Buffer.from(latestScreenshot.data, "base64")),
     };
+}
+
+function describeMismatch(
+  saved: unknown,
+  issues: readonly { path: readonly PropertyKey[] }[],
+): Record<string, string> {
+  const shape = Array.isArray(saved) ? "array" : saved === null ? "null" : typeof saved;
+  const version = (saved as { version?: unknown } | null)?.version;
+  return {
+    shape,
+    ...(typeof version === "number" && { version: String(version) }),
+    issuePaths: issues.map((issue) => issue.path.map(String).join(".") || "(root)").join(", "),
+  };
 }

@@ -612,7 +612,7 @@ export function restoreTurnCheckpointEffects(
     // baseline must match it, not the current row. Checkpoints without one (older saves)
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
-    restoreReply(ctx.state.reply, saved.reply);
+    restoreReply(ctx.state.reply, saved.reply, ctx.runId);
     return turnCheckpoint;
   } catch (error) {
     if (error instanceof PausedTurnToolsUnavailableError) throw error;

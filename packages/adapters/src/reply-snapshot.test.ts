@@ -1,5 +1,6 @@
 import type { Run } from "@rakazo/db";
-import { describe, expect, it } from "vitest";
+import * as Logging from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import { createReplyState } from "./run-progress.js";
@@ -11,7 +12,15 @@ const freshReply = () =>
     [],
   );
 
+function captureLogs() {
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  vi.spyOn(Logging, "getLogger").mockReturnValue(logger as never);
+  return logger;
+}
+
 describe("a reply saved with a handed-back turn", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("continues in the next attempt with its steps, kept calls and held notes", async () => {
     const before = await freshReply();
     before.messageSegments = [{ kind: "steps", steps: [{ label: "List files", count: 1 }] }];
@@ -29,7 +38,7 @@ describe("a reply saved with a handed-back turn", () => {
     };
 
     const after = await freshReply();
-    restoreReply(after, JSON.parse(JSON.stringify(snapshotReply(before))));
+    restoreReply(after, JSON.parse(JSON.stringify(snapshotReply(before))), "run-1");
 
     expect(after.messageSegments).toEqual(before.messageSegments);
     expect(after.toolCalls).toEqual(before.toolCalls);
@@ -50,7 +59,7 @@ describe("a reply saved with a handed-back turn", () => {
     before.turnStartedAtMs = 1_700_000_000_000;
 
     const after = await freshReply();
-    restoreReply(after, JSON.parse(JSON.stringify(snapshotReply(before))));
+    restoreReply(after, JSON.parse(JSON.stringify(snapshotReply(before))), "run-1");
 
     expect(after.steeringReplyPending).toBe(true);
     expect(after.steeringResets).toBe(2);
@@ -68,7 +77,11 @@ describe("a reply saved with a handed-back turn", () => {
       ...older
     } = snapshotReply(before);
     const after = await freshReply();
-    restoreReply(after, JSON.parse(JSON.stringify(older)));
+    const logs = captureLogs();
+    restoreReply(after, JSON.parse(JSON.stringify(older)), "run-older");
+
+    expect(logs.error).not.toHaveBeenCalled();
+    expect(logs.warn).not.toHaveBeenCalled();
 
     expect(after.steeringReplyPending).toBe(false);
     expect(after.steeringResets).toBe(0);
@@ -76,12 +89,48 @@ describe("a reply saved with a handed-back turn", () => {
     expect(after.turnStartedAtMs).toBe(Date.parse("2026-01-01T00:00:00Z"));
   });
 
-  it("starts the reply empty when the saved turn has none or one it cannot read", async () => {
+  it("starts the reply empty when the saved turn has none", async () => {
     const empty = await freshReply();
-    for (const saved of [undefined, { version: 2 }, "steps"]) {
+    const reply = await freshReply();
+    const logs = captureLogs();
+    restoreReply(reply, undefined, "run-none");
+
+    expect(snapshotReply(reply)).toEqual(snapshotReply(empty));
+    expect(logs.error).not.toHaveBeenCalled();
+  });
+
+  it("reports a saved reply it cannot read as an error, without its content, and starts empty", async () => {
+    const empty = await freshReply();
+    const unreadable = {
+      ...JSON.parse(JSON.stringify(snapshotReply(empty))),
+      version: 2,
+      assembled: 42,
+      narrationSoFar: undefined,
+      workingNotes: ["private note"],
+    };
+    for (const [runId, saved, expected] of [
+      [
+        "run-unreadable",
+        unreadable,
+        { shape: "object", version: "2", issuePaths: "version, assembled, narrationSoFar" },
+      ],
+      ["run-text", "private text", { shape: "string", issuePaths: "(root)" }],
+    ] as const) {
       const reply = await freshReply();
-      restoreReply(reply, saved);
+      const logs = captureLogs();
+      restoreReply(reply, saved, runId);
+
       expect(snapshotReply(reply)).toEqual(snapshotReply(empty));
+      expect(logs.error).toHaveBeenCalledOnce();
+      const [, detail] = logs.error.mock.calls[0] ?? [];
+      expect(detail).toEqual({
+        table: "runs",
+        column: "checkpoint.reply",
+        id: runId,
+        ...expected,
+      });
+      expect(JSON.stringify(detail)).not.toContain("private");
+      vi.restoreAllMocks();
     }
   });
 });
