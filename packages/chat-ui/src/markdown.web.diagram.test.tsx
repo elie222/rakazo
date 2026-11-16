@@ -110,6 +110,7 @@ describe("web markdown diagrams", () => {
   it.each([
     ["blockquote", "> ", "> "],
     ["nested blockquote", "> > ", "> > "],
+    ["tight nested blockquote", ">> ", ">> "],
     ["list", "- ", "  "],
     ["quoted list", "> - ", ">   "],
   ])("waits for a streaming fence inside a %s to close", async (_name, first, rest) => {
@@ -125,6 +126,13 @@ describe("web markdown diagrams", () => {
     await render(`${open}\n${rest}\`\`\`\n\nMore`, true);
     expect(container.querySelector('[data-testid="chat-diagram"] img')).not.toBeNull();
     expect(mermaid.render).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks a long quoted last line of a streaming fence quickly", async () => {
+    const started = performance.now();
+    await render(`\`\`\`mermaid\n${freshDiagram()}\n${"\t>".repeat(5_000)}x`, true);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(mermaid.parse).not.toHaveBeenCalled();
   });
 
   it("leaves other fences and empty mermaid fences as code", async () => {

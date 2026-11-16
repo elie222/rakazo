@@ -71,6 +71,17 @@ describe("plainTextLinkParts", () => {
     expect(visible(text)).toBe(text);
   });
 
+  it("reads escaped page titles and stays fast on unclosed brackets", () => {
+    expect(plainTextLinkParts(String.raw`[A \[draft\]](page:p1) after`)).toEqual([
+      { type: "page", value: "A [draft]", pageId: "p1" },
+      { type: "text", value: " after" },
+    ]);
+    const text = `[${String.raw`\[`.repeat(30_000)}`;
+    const started = performance.now();
+    expect(visible(text)).toBe(text);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("leaves file names, bare domains, and unopenable schemes as text", () => {
     const text =
       "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)";
