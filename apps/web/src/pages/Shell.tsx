@@ -1319,7 +1319,9 @@ function SpaceShell() {
                 composer.setSendError(errorText(error));
               } finally {
                 routineToggles.current.delete(routine.id);
-                void refreshThread(routine.botId).catch(() => undefined);
+                // Another bot opened since must not have its own refresh superseded.
+                if (activeBotId.current === routine.botId)
+                  void refreshThread(routine.botId).catch(() => undefined);
               }
             })();
           },

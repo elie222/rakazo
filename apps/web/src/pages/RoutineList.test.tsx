@@ -94,7 +94,32 @@ it("previews a New routine row once a bot has none", async () => {
   expect(onCreate).toHaveBeenCalledOnce();
 });
 
-it("previews nothing while a bot's routines are still loading", async () => {
+it("still offers New routine when a bot's routines have not loaded", async () => {
   await render({ preview: true, loaded: false });
-  expect(container.childElementCount).toBe(0);
+  expect(container.querySelector('[data-testid="routine-create-button"]')).not.toBeNull();
+});
+
+it("previews the soonest scheduled routines first", async () => {
+  const later = { ...routine(1), nextRunAt: "2026-11-20T09:00:00.000Z" };
+  const paused = { ...routine(2), active: false };
+  const soon = { ...routine(3), nextRunAt: "2026-11-17T09:00:00.000Z" };
+  const soonest = { ...routine(4), nextRunAt: "2026-11-16T09:00:00.000Z" };
+  await render({ routines: [later, paused, soon, soonest], preview: true });
+  expect(
+    [...container.querySelectorAll('[role="switch"]')].map((node) =>
+      node.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Turn Routine 4 on or off", "Turn Routine 3 on or off", "Turn Routine 1 on or off"]);
+});
+
+it("offers no switch to restart a one-shot that already ran", async () => {
+  const done = {
+    ...routine(1),
+    active: false,
+    crons: ["@once"],
+    lastRunAt: "2026-11-16T09:00:00.000Z",
+  };
+  await render({ routines: [done] });
+  const toggle = container.querySelector('[aria-label="Turn Routine 1 on or off"]');
+  expect(toggle?.hasAttribute("data-disabled")).toBe(true);
 });

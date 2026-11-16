@@ -459,6 +459,9 @@ export function useComputerControls({
             if (computer?.state === "running") {
               setComputerError(null);
               setComputerErrorFromScreen(false);
+              // The screen is read only while its window is open, so a retry from the panel opens it.
+              setComputerOpen(true);
+              computerVisible.current = true;
               void refreshComputerScreen(computerBot.id);
             } else
               void bootComputer({

@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import type { CronLabels } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, formatCron } from "@rakazo/core";
+import { ENGLISH_CRON_LABELS, formatCron, isOneShotRoutineCrons } from "@rakazo/core";
 import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle, Switch } from "@rakazo/ui-web";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus, Repeat } from "lucide-react";
@@ -39,6 +39,23 @@ function routineTriggerIcon(routine: Routine): LucideIcon {
 /** How many routines a preview shows before it leaves the rest to the whole list. */
 export const ROUTINE_PREVIEW_COUNT = 3;
 
+/** On routines first, soonest next run first; the rest keep their order. */
+function upcomingRoutines(routines: Routine[]): Routine[] {
+  const next = (routine: Routine) =>
+    routine.active && routine.nextRunAt ? Date.parse(routine.nextRunAt) : Number.POSITIVE_INFINITY;
+  return [...routines].sort((a, b) => next(a) - next(b));
+}
+
+/** A one-shot that already ran cannot run again, so it has no switch to turn back on. */
+function finishedOneShot(routine: Routine): boolean {
+  return (
+    !routine.active &&
+    isOneShotRoutineCrons(routine.crons) &&
+    !routine.nextRunAt &&
+    Boolean(routine.lastRunAt)
+  );
+}
+
 export function RoutineList({
   routines,
   loaded,
@@ -65,7 +82,8 @@ export function RoutineList({
   // when that read fails, the plain list still offers Create routine.
   if (preview) {
     if (routines.length === 0) {
-      return loaded ? (
+      // Offered even when the list could not load, so a routine can still be made.
+      return (
         <button
           type="button"
           data-testid="routine-create-button"
@@ -75,20 +93,22 @@ export function RoutineList({
           <Trans>New routine</Trans>
           <Plus size={16} strokeWidth={1.6} aria-hidden className="text-muted-foreground" />
         </button>
-      ) : null;
+      );
     }
     return (
       <div>
-        {routines.slice(0, ROUTINE_PREVIEW_COUNT).map((routine) => (
-          <RoutineListRow
-            key={routine.id}
-            routine={routine}
-            running={runningRoutineId === routine.id}
-            onOpen={() => onEdit(routine)}
-            onStop={onStop}
-            onToggle={(active) => onToggle(routine, active)}
-          />
-        ))}
+        {upcomingRoutines(routines)
+          .slice(0, ROUTINE_PREVIEW_COUNT)
+          .map((routine) => (
+            <RoutineListRow
+              key={routine.id}
+              routine={routine}
+              running={runningRoutineId === routine.id}
+              onOpen={() => onEdit(routine)}
+              onStop={onStop}
+              onToggle={(active) => onToggle(routine, active)}
+            />
+          ))}
       </div>
     );
   }
@@ -191,6 +211,7 @@ function RoutineListRow({
       ) : null}
       <Switch
         checked={routine.active}
+        disabled={finishedOneShot(routine)}
         aria-label={t`Turn ${routine.name} on or off`}
         onCheckedChange={onToggle}
       />
