@@ -215,7 +215,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Tab");
   await expect(bar).toBeFocused();
-  await expect(page.getByRole("tooltip")).toContainText("Nov 12: 330,000 tokens, $1.40");
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("Nov 12: 330,000 tokens, $1.40");
   await page.keyboard.press("Escape");
   await captureScreenshot(page, testInfo, "usage-limits-chart");
 
