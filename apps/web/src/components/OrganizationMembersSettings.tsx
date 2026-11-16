@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
   Input,
   toast,
-  useCopyText,
+  writeClipboard,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
@@ -51,10 +51,12 @@ export function OrganizationMembersSettings({
   const stale = [organizationsQuery(userId).queryKey];
   const [email, setEmail] = useState("");
   const [removing, setRemoving] = useState<OrganizationMember | null>(null);
-  const [, copy, copyFailed, resetCopy, failedLink] = useCopyText();
+  /** A link the browser would not copy, offered to copy by hand. */
+  const [manualLink, setManualLink] = useState<string | null>(null);
 
   async function copyLink(url: string) {
-    if (await copy(url)) toast(t`Invite link copied`);
+    if (await writeClipboard(url)) toast(t`Invite link copied`);
+    else setManualLink(url);
   }
 
   const invite = useSave({
@@ -226,11 +228,11 @@ export function OrganizationMembersSettings({
         />
       ) : null}
       <CopyTextFallback
-        open={copyFailed}
+        open={manualLink !== null}
         onOpenChange={(open) => {
-          if (!open) resetCopy();
+          if (!open) setManualLink(null);
         }}
-        text={failedLink}
+        text={manualLink ?? ""}
         label={t`Invite link`}
       />
     </div>

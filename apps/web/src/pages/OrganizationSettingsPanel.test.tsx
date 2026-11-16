@@ -79,7 +79,7 @@ vi.mock("@rakazo/ui-web", () => {
     DropdownMenuSeparator: () => null,
     DropdownMenuTrigger: () => null,
     toast,
-    useCopyText: () => [false, copy, false, () => undefined, ""],
+    writeClipboard: copy,
   };
 });
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
