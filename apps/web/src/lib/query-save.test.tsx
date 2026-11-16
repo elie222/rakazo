@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -29,16 +30,6 @@ vi.mock("./rpc", () => {
 import { QueryUserProvider, useSave } from "./query";
 import type { RpcClient } from "./rpc";
 import { SpaceRpcProvider } from "./space-rpc";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 const READ = ["space-name"];
 const read = vi.fn<() => Promise<string>>();
@@ -96,7 +87,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 const cached = () => client.getQueryState(READ);
 const writes = (name: string, rpc: RpcClient) =>

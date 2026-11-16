@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+
 import type { IncomingBotCall } from "@rakazo/contracts";
 import type * as CoreModule from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -115,7 +118,7 @@ function button(name: string): HTMLButtonElement | null {
 async function settle() {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   }
 }
@@ -124,20 +127,20 @@ async function settle() {
 let pushCalls: (calls: IncomingBotCall[]) => void = () => {};
 function callStream(signal: AbortSignal) {
   const frames: IncomingBotCall[][] = [];
-  let wake: (() => void) | undefined;
+  let wake: Deferred | undefined;
   pushCalls = (calls) => {
     frames.push(calls);
-    wake?.();
+    wake?.resolve();
   };
-  signal.addEventListener("abort", () => wake?.());
+  signal.addEventListener("abort", () => wake?.resolve());
   return (async function* () {
     while (!signal.aborted) {
       const calls = frames.shift();
       if (calls) yield { type: "incoming.calls" as const, payload: { calls } };
-      else
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+      else {
+        wake = deferred();
+        await wake.promise;
+      }
     }
   })();
 }

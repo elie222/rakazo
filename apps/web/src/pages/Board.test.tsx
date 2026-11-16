@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { deferred } from "@rakazo/core/test-async";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -60,7 +61,7 @@ import { BoardPage } from "./Board";
 async function settle() {
   await act(async () => {
     if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
-    else await new Promise((resolve) => setTimeout(resolve, 0));
+    else await flush();
   });
 }
 
@@ -229,21 +230,19 @@ it("creates a ticket without a status picker", async () => {
 });
 
 function liveStream() {
-  let deliver: ((result: IteratorResult<{ ticketId?: string }>) => void) | undefined;
-  let fail: ((cause: Error) => void) | undefined;
+  let pending: Deferred<IteratorResult<{ ticketId?: string }>> | undefined;
   return {
     stream: {
       [Symbol.asyncIterator]: () => ({
-        next: () =>
-          new Promise<IteratorResult<{ ticketId?: string }>>((resolve, reject) => {
-            deliver = resolve;
-            fail = reject;
-          }),
+        next: () => {
+          pending = deferred();
+          return pending.promise;
+        },
       }),
     },
-    event: (ticketId: string) => deliver?.({ done: false, value: { ticketId } }),
-    end: () => deliver?.({ done: true, value: undefined }),
-    error: () => fail?.(new Error("Disconnected")),
+    event: (ticketId: string) => pending?.resolve({ done: false, value: { ticketId } }),
+    end: () => pending?.resolve({ done: true, value: undefined }),
+    error: () => pending?.reject(new Error("Disconnected")),
   };
 }
 
@@ -407,13 +406,16 @@ it("reopens with cached tickets and refreshes them in the background", async () 
   await first.cleanup();
   await client.invalidateQueries();
 
-  let finish: (value: { tickets: ReturnType<typeof ticket>[] }) => void = () => undefined;
-  api.tickets.list.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+  let finish: Deferred<{ tickets: ReturnType<typeof ticket>[] }> | undefined;
+  api.tickets.list.mockImplementation(() => {
+    finish = deferred();
+    return finish.promise;
+  });
   const page = await renderBoard();
   try {
     // Painted from the cache while the refresh is still out.
     expect(page.container.textContent).toContain("Cached");
-    await act(async () => finish({ tickets: [ticket("Fresh", "ticket-1")] }));
+    await act(async () => finish?.resolve({ tickets: [ticket("Fresh", "ticket-1")] }));
     await act(async () => {
       await vi.waitFor(() => expect(page.container.textContent).toContain("Fresh"));
     });
@@ -481,10 +483,11 @@ it("does not repeat a posted comment a refresh already brought", async () => {
   const earlier = { id: "comment-1", body: "Ready", createdAt: "2026-10-10T10:00:00Z" };
   const posted = { id: "comment-2", body: "New note", createdAt: "2026-10-10T10:01:00Z" };
   api.tickets.comments.mockReset().mockResolvedValue([earlier]);
-  let answerPost!: (row: typeof posted) => void;
-  api.tickets.comment
-    .mockReset()
-    .mockImplementation(() => new Promise((resolve) => (answerPost = resolve)));
+  let answerPost!: Deferred<typeof posted>;
+  api.tickets.comment.mockReset().mockImplementation(() => {
+    answerPost = deferred();
+    return answerPost.promise;
+  });
   const live = liveStream();
   const page = await renderBoard(live.stream);
   try {
@@ -496,7 +499,7 @@ it("does not repeat a posted comment a refresh already brought", async () => {
     expect(commentsText(page)).toContain("New note");
     // Every later read hangs, so only the post's own write can change the list now.
     api.tickets.comments.mockImplementation(() => new Promise(() => undefined));
-    await act(async () => answerPost(posted));
+    await act(async () => answerPost.resolve(posted));
     await settle();
     expect(commentsText(page).split("New note")).toHaveLength(2);
   } finally {
