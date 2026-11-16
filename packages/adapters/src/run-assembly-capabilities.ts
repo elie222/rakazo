@@ -269,8 +269,10 @@ export async function prepareRunComputer(
       computerUse.screenRelease = { computer, context, keepWarm: false };
       recordComputerDisk(deps, storedComputer.id, computer, context);
       scheduleComputerSleep(deps.jobs, storedComputer.id);
-      // The browsers' tailnet proxy, in the background: tools never wait for it.
-      void deps.tailnet
+      // The browsers' tailnet proxy, in the background: tools never wait for it. A native shell
+      // has no launcher to run it, so tailnet access stays off there.
+      const tailnetComputer = !sandboxKindCapabilities(computer.kind).nativeShell;
+      void (tailnetComputer ? deps.tailnet : undefined)
         ?.prepareComputer({
           sandbox: deps.sandbox,
           computerId: storedComputer.id,
@@ -435,7 +437,7 @@ export async function resolveRunCapabilities(
   const { people } = parts.thread;
   const { credential, resolved, runModelId, runModelProvider, scripted, thinkingLevel } =
     parts.model;
-  const { graphical, modelSeesImages } = parts.computer;
+  const { graphical, modelSeesImages, computerKind } = parts.computer;
   const groupContext = conversationThread.groupId
     ? await loadGroupContext(
         deps.prisma,
@@ -622,6 +624,8 @@ export async function resolveRunCapabilities(
     userComputer,
     userComputerShell,
     userComputerScreen,
+    // rakazo-net runs through the launcher every computer but a native shell uses.
+    tailnetCommands: !sandboxKindCapabilities(computerKind).nativeShell,
     cloudAgent,
     cloudAgentCleanupEnabled,
   };
@@ -669,10 +673,12 @@ export async function selectRunTools(
     userComputerScreen,
     userComputerShell,
     voiceCall,
+    tailnetCommands,
   } = parts.capabilities;
   // Only the run's own member's connection counts, and only for bots they allowed.
   const tailnetOffered = Boolean(
     deps.tailnet &&
+      tailnetCommands &&
       !disabledBuiltinTools.has(TAILNET_CONNECT_TOOL) &&
       (await bestEffort(
         "check whether a run may reach its member's tailnet",

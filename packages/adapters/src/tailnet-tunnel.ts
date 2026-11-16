@@ -385,13 +385,11 @@ export class TailnetTunnelGateway {
       });
       upstream.on("data", (chunk: Buffer) => {
         bytesReceived += chunk.length;
-        ws.send(chunk, { binary: true });
-        if (ws.bufferedAmount > SEND_HIGH_WATER) {
-          upstream.pause();
-          const resume = () =>
-            ws.bufferedAmount > SEND_HIGH_WATER ? setTimeout(resume, 10) : upstream.resume();
-          setTimeout(resume, 10);
-        }
+        // Each send reports once it has gone out; the one that drains the backlog resumes.
+        ws.send(chunk, { binary: true }, () => {
+          if (upstream.isPaused() && ws.bufferedAmount <= SEND_HIGH_WATER) upstream.resume();
+        });
+        if (ws.bufferedAmount > SEND_HIGH_WATER) upstream.pause();
       });
       // The far side ending closes the tunnel once what it sent has gone out.
       upstream.on("end", () => ws.close(1000));

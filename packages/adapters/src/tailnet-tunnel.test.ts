@@ -130,6 +130,24 @@ describe("TailnetTunnelGateway", () => {
     });
   });
 
+  it("relays everything a far side sends faster than the computer reads", async () => {
+    const size = 4 << 20;
+    const { connect } = await gateway({
+      dial: async () => {
+        const [client, service] = duplexPair();
+        service.end(Buffer.alloc(size, 7));
+        return client;
+      },
+    });
+    const socket = connect();
+    let received = 0;
+    socket.on("message", (data: Buffer) => {
+      received += data.length;
+    });
+    await once(socket, "close");
+    expect(received).toBe(size);
+  });
+
   it("relays a server that speaks first over a connection handed over paused", async () => {
     const { connect } = await gateway({
       // As a real node dials: paused, with SSH's banner already waiting.

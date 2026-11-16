@@ -549,7 +549,7 @@ export const computerTools: ToolHandlers = {
         return undefined;
       });
     if (tailnetEnvironment) addRunSecrets(ctx, [tailnetEnvironment.RAKAZO_NET_TOKEN]);
-    const env = { ...commandEnvironment.env, ...tailnetEnvironment };
+    const withTailnet = { ...commandEnvironment.env, ...tailnetEnvironment };
     ctx.computer.checkpoint.markDirty();
     const commandEvent = {
       executionId,
@@ -602,6 +602,8 @@ export const computerTools: ToolHandlers = {
         (sandboxKindCapabilities(computer.kind).nativeShell
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
+      // rakazo-net is installed by the launcher a native shell skips, so its settings stay out.
+      const env = shellEnvironment ? commandEnvironment.env : withTailnet;
       // The computer is sent the command with its variables here, so each is a use from then on,
       // recorded once the command answers, fails or runs on. One stopped before this got none.
       const observed = await observeShellCommand(
