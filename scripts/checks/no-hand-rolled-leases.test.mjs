@@ -5,6 +5,7 @@ import { test } from "node:test";
 const SCHEMA = new URL("../../packages/db/prisma/schema.prisma", import.meta.url);
 
 // Hand-written leases and claims from before `withLease`. Move one onto it, then drop it here.
+// The groups commented below as not for `withLease` stay: they are not long work in one process.
 const EXISTING = new Set([
   "ScimConnectionBinding.decommissionLeaseId",
   "ScimConnectionBinding.decommissionLeaseExpiresAt",
@@ -19,13 +20,12 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "CloudAgent.leaseToken",
-  "CloudAgent.leaseExpiresAt",
-  "ComputerExecutionLease.fence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
   // Moved onto `withLease`; kept only while the previous release still claims them.
+  "CloudAgent.leaseToken",
+  "CloudAgent.leaseExpiresAt",
   "HomeDeletionNotice.claimId",
   "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
@@ -36,6 +36,10 @@ const EXISTING = new Set([
   "Computer.controlLeaseId",
   "Computer.controlLeaseExpiresAt",
   "Computer.controlFence",
+  // Not long work in one process, so not for `withLease`: a computer's execution lease outlives the
+  // process that took it (a takeover keeps it for hours and a later worker takes it back by run id),
+  // it is taken inside other transactions, and those transactions end it by run id.
+  "ComputerExecutionLease.fence",
 ]);
 
 const LEASE_LIKE = /(?<!re)lease|claim|attempt|fence|lockedAt/i;

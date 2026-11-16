@@ -59,7 +59,6 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await openHomepage(page);
   await captureScreenshot(page, testInfo, "01-marketing-homepage");
 
-
   await openHomepage(page, "/zh/");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-zh");
 
