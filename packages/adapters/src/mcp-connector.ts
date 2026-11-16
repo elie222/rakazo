@@ -915,6 +915,22 @@ export class McpConnector implements ConnectorProvider {
       let session: McpSession;
       try {
         session = await this.sessionFor(server, context);
+        if (retriedRotation) {
+          // A further rotation may have happened before this connection registered its ref.
+          // Verify the adopted record once; a mismatch exhausts the existing retry budget.
+          const current = await this.prisma.mcpServer.findFirst({
+            where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+            select: { secretId: true },
+          });
+          if (
+            !current ||
+            (current.secretId ?? undefined) !== this.sessions.get(sessionKey)?.recordId
+          ) {
+            await this.evict(sessionKey);
+            throw new McpSecretChangedError();
+          }
+          server.secretId = current.secretId;
+        }
       } catch (error) {
         // No tool has run yet: reconnect once with the current credentials.
         context.signal.throwIfAborted();
