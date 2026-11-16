@@ -435,10 +435,12 @@ it.each(["resolve", "reject"] as const)(
     ];
     let resolve!: (value: unknown) => void;
     let reject!: (error: Error) => void;
-    const pending = new Promise((yes, no) => {
-      resolve = yes;
-      reject = no;
-    });
+    const pending = (() => {
+      const pending = deferred<unknown>();
+      resolve = pending.resolve;
+      reject = pending.reject;
+      return pending.promise;
+    })();
     responses["messaging/link/start"] = pending;
     await act(async () => root.render(<MessagingSettings />));
     const click = (text: string) =>
@@ -472,9 +474,11 @@ it.each(["resolve", "reject"] as const)(
 
 it("does not issue another code while one request is in flight", async () => {
   let resolve!: (value: unknown) => void;
-  responses["messaging/link/start"] = new Promise((yes) => {
-    resolve = yes;
-  });
+  responses["messaging/link/start"] = (() => {
+    const pending = deferred<unknown>();
+    resolve = pending.resolve;
+    return pending.promise;
+  })();
   await act(async () => root.render(<MessagingSettings />));
   const button = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "iMessage",
@@ -494,9 +498,11 @@ it("does not issue another code while one request is in flight", async () => {
 
 it("ignores a code that arrives after leaving settings", async () => {
   let resolve!: (value: unknown) => void;
-  responses["messaging/link/start"] = new Promise((yes) => {
-    resolve = yes;
-  });
+  responses["messaging/link/start"] = (() => {
+    const pending = deferred<unknown>();
+    resolve = pending.resolve;
+    return pending.promise;
+  })();
   await act(async () => root.render(<MessagingSettings />));
   await act(async () =>
     [...container.querySelectorAll("button")]
@@ -518,10 +524,12 @@ it.each(["resolve", "reject"] as const)(
   async (outcome) => {
     let resolve!: (value: unknown) => void;
     let reject!: (error: Error) => void;
-    responses["messaging/link/start"] = new Promise((yes, no) => {
-      resolve = yes;
-      reject = no;
-    });
+    responses["messaging/link/start"] = (() => {
+      const pending = deferred<unknown>();
+      resolve = pending.resolve;
+      reject = pending.reject;
+      return pending.promise;
+    })();
     await act(async () => root.render(<MessagingSettings />));
     await act(async () =>
       [...container.querySelectorAll("button")]
@@ -558,9 +566,11 @@ it("keeps workspace codes through picker changes and clears them on blur", async
     ],
   };
   let resolve!: (value: unknown) => void;
-  responses["messaging/link/start"] = new Promise((yes) => {
-    resolve = yes;
-  });
+  responses["messaging/link/start"] = (() => {
+    const pending = deferred<unknown>();
+    resolve = pending.resolve;
+    return pending.promise;
+  })();
   await act(async () => root.render(<MessagingSettings />));
   await press("Slack", "Link DMs");
   const pick = (label: string) =>

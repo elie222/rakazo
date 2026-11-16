@@ -553,13 +553,12 @@ it.each(["resolve", "reject"] as const)(
     ]);
     let resolve!: (value: { code: string; expiresAt: string }) => void;
     let reject!: (error: Error) => void;
-    messaging.link.start.mockImplementationOnce(
-      () =>
-        new Promise((yes, no) => {
-          resolve = yes;
-          reject = no;
-        }),
-    );
+    messaging.link.start.mockImplementationOnce(() => {
+      const pending = deferred<{ code: string; expiresAt: string }>();
+      resolve = pending.resolve;
+      reject = pending.reject;
+      return pending.promise;
+    });
     await renderOverlay();
     await act(async () => {
       telegramItem()?.click();
@@ -586,12 +585,11 @@ it.each(["resolve", "reject"] as const)(
 it("does not issue another code while one request is in flight", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   let resolve!: (value: { code: string; expiresAt: string }) => void;
-  messaging.link.start.mockImplementationOnce(
-    () =>
-      new Promise((yes) => {
-        resolve = yes;
-      }),
-  );
+  messaging.link.start.mockImplementationOnce(() => {
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    resolve = pending.resolve;
+    return pending.promise;
+  });
   await renderOverlay();
   await act(async () => {
     telegramItem()?.click();
@@ -607,12 +605,11 @@ it("does not issue another code while one request is in flight", async () => {
 it("ignores a code that arrives after the panel closes", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   let resolve!: (value: { code: string; expiresAt: string }) => void;
-  messaging.link.start.mockImplementationOnce(
-    () =>
-      new Promise((yes) => {
-        resolve = yes;
-      }),
-  );
+  messaging.link.start.mockImplementationOnce(() => {
+    const pending = deferred<{ code: string; expiresAt: string }>();
+    resolve = pending.resolve;
+    return pending.promise;
+  });
   await renderOverlay();
   await act(async () => telegramItem()?.click());
   const reads = messaging.status.mock.calls.length;
@@ -642,19 +639,17 @@ it.each([false, true])(
     api.bots.list.mockResolvedValue(bots);
     let loadBots!: (value: typeof bots) => void;
     if (initialLoad)
-      api.bots.list.mockImplementationOnce(
-        () =>
-          new Promise((yes) => {
-            loadBots = yes;
-          }),
-      );
+      api.bots.list.mockImplementationOnce(() => {
+        const pending = deferred<typeof bots>();
+        loadBots = pending.resolve;
+        return pending.promise;
+      });
     let resolve!: (value: { code: string; expiresAt: string }) => void;
-    messaging.link.start.mockImplementationOnce(
-      () =>
-        new Promise((yes) => {
-          resolve = yes;
-        }),
-    );
+    messaging.link.start.mockImplementationOnce(() => {
+      const pending = deferred<{ code: string; expiresAt: string }>();
+      resolve = pending.resolve;
+      return pending.promise;
+    });
     await renderOverlay();
     await act(async () =>
       [...container.querySelectorAll("button")]
