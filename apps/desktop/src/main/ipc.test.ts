@@ -54,21 +54,24 @@ function strangers(page: ReturnType<typeof fakeWindow>): [string, IpcCaller][] {
 /** The app page's bridge, as its preload builds it, for a page whose calls arrive as `caller`. */
 function appBridge(caller: IpcCaller): RakazoDesktop {
   let bridge: RakazoDesktop | undefined;
-  vm.runInNewContext(readFileSync(path.join(import.meta.dirname, "preload.cjs"), "utf8"), {
-    process: { platform: "darwin" },
-    require: () => ({
-      contextBridge: {
-        exposeInMainWorld: (_name: string, value: RakazoDesktop) => (bridge = value),
-      },
-      // Electron rejects the page's promise when the handler throws.
-      ipcRenderer: {
-        invoke: async (channel: string, ...args: unknown[]) =>
-          mocks.invoke.get(channel)?.(caller, ...args),
-        on: () => undefined,
-        off: () => undefined,
-      },
-    }),
-  });
+  vm.runInNewContext(
+    readFileSync(path.join(import.meta.dirname, "../preload/preload.cjs"), "utf8"),
+    {
+      process: { platform: "darwin" },
+      require: () => ({
+        contextBridge: {
+          exposeInMainWorld: (_name: string, value: RakazoDesktop) => (bridge = value),
+        },
+        // Electron rejects the page's promise when the handler throws.
+        ipcRenderer: {
+          invoke: async (channel: string, ...args: unknown[]) =>
+            mocks.invoke.get(channel)?.(caller, ...args),
+          on: () => undefined,
+          off: () => undefined,
+        },
+      }),
+    },
+  );
   return bridge!;
 }
 

@@ -29,7 +29,7 @@ import {
   stackResourceDir,
 } from "./local-stack.js";
 
-const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
+const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
 
 describe("defaultSleep", () => {

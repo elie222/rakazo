@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const packageJson = JSON.parse(
-  readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
+  readFileSync(path.resolve(import.meta.dirname, "../../package.json"), "utf8"),
 ) as {
   productName?: string;
   build?: {
@@ -30,7 +30,7 @@ describe("desktop package metadata", () => {
 
   it.each(["es", "pl"])("ships a %s version of every macOS permission prompt", (locale) => {
     const strings = readFileSync(
-      path.resolve(import.meta.dirname, `../assets/${locale}.lproj/InfoPlist.strings`),
+      path.resolve(import.meta.dirname, `../../assets/${locale}.lproj/InfoPlist.strings`),
       "utf8",
     );
     const prompts = Object.keys(packageJson.build?.mac?.extendInfo ?? {}).filter((key) =>

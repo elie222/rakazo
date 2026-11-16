@@ -36,8 +36,10 @@ const TESTKIT = "packages/testkit";
 const TESTKIT_MAY_IMPORT = ["apps/api", "infra/sandboxes/supervisor"];
 // Code that runs on a server or in a desktop main process, beside the browser code of the same app.
 // Server code may import server packages; browser code may import neither.
-const SERVER_DIRS = ["apps/web/server"];
+const SERVER_DIRS = ["apps/desktop/src/main", "apps/web/server"];
 const BROWSER_CODE = [
+  "apps/desktop/src/preload",
+  "apps/desktop/src/setup-renderer",
   "apps/mobile",
   "apps/web/src",
   "packages/chat-ui",
@@ -441,7 +443,7 @@ test("resolves specifiers to packages and reports each rule", () => {
   const sources = [
     { file: "apps/api/src/index.ts", specifiers: [scoped("core"), scoped("testkit")] },
     { file: "apps/api/src/index.test.ts", specifiers: [scoped("testkit"), "./index.js"] },
-    { file: "apps/desktop/src/main.ts", specifiers: [scoped("core")] },
+    { file: "apps/desktop/src/main/main.ts", specifiers: [scoped("core")] },
     {
       file: "apps/web/src/app.tsx",
       specifiers: [
@@ -459,6 +461,7 @@ test("resolves specifiers to packages and reports each rule", () => {
       specifiers: ["../server/proxy.js", scoped("core/node/screen"), scoped("core")],
     },
     { file: "apps/web/src/page.test.tsx", specifiers: ["../server/proxy.js"] },
+    { file: "apps/desktop/src/preload/preload.cjs", specifiers: ["../main/ipc.js"] },
     {
       file: "apps/web/server/proxy.ts",
       specifiers: [scoped("db"), scoped("core/node/screen"), "../src/shared.js"],
@@ -487,6 +490,7 @@ test("resolves specifiers to packages and reports each rule", () => {
       "relative: apps/web/src/app.tsx -> ../../../packages/contracts/src/index.ts",
       "relative: packages/testkit/src/index.ts -> ../../../apps/api/src/app.ts",
       "relative: scripts/build.mjs -> ../packages/core/src/index.ts",
+      "runtime: apps/desktop/src/preload/preload.cjs -> ../main/ipc.js",
       "runtime: apps/web/src/page.tsx -> ../server/proxy.js",
       "runtime: apps/web/src/page.tsx -> @rakazo/core/node/screen",
       "server: apps/web/src/app.tsx -> @rakazo/db",

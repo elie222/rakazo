@@ -13,9 +13,9 @@ import type {
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ES_MESSAGES } from "./locales/es.js";
-import { HE_MESSAGES } from "./locales/he.js";
-import { PL_MESSAGES } from "./locales/pl.js";
+import { ES_MESSAGES } from "../main/locales/es.js";
+import { HE_MESSAGES } from "../main/locales/he.js";
+import { PL_MESSAGES } from "../main/locales/pl.js";
 
 type DesktopSetupResult = Awaited<ReturnType<RakazoSetup["save"]>>;
 

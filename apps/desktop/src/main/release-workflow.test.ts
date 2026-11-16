@@ -3,11 +3,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const workflow = readFileSync(
-  path.resolve(import.meta.dirname, "../../../.github/workflows/release-desktop.yml"),
+  path.resolve(import.meta.dirname, "../../../../.github/workflows/release-desktop.yml"),
   "utf8",
 );
 const releaseScript = readFileSync(
-  path.resolve(import.meta.dirname, "../../../scripts/release/desktop-release.mjs"),
+  path.resolve(import.meta.dirname, "../../../../scripts/release/desktop-release.mjs"),
   "utf8",
 );
 
