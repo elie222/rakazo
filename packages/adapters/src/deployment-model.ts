@@ -35,31 +35,14 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import {
-  CLAUDE_CODE_CREDENTIAL_SOURCE,
-  CLAUDE_CODE_PROVIDER_ID,
-} from "./cli-models/claude-code/provider-id.js";
+import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
 import { listPiCatalog, offeredCatalog } from "./pi-models.js";
 
-export const DEFAULT_OPENROUTER_MODEL_ID = "anthropic/claude-haiku-5.5";
-
-/** Providers a deployment runs on its own key, with the environment variable that holds it. */
-const DEPLOYMENT_KEY_ENV: Record<string, string> = {
-  openrouter: "OPENROUTER_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  deepseek: "DEEPSEEK_API_KEY",
-};
-
-/** Each keyed provider's model when none is named. */
-const DEPLOYMENT_DEFAULT_MODELS: Record<string, string> = {
-  openrouter: DEFAULT_OPENROUTER_MODEL_ID,
-  anthropic: "claude-sonnet-5",
-  deepseek: "deepseek-flash",
-};
+export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;
 
 /** Record id binding an admin's encrypted key to its connection row. */
 export function deploymentConnectionRecord(provider: string): string {
@@ -72,16 +55,9 @@ export function deploymentConnectionRecord(provider: string): string {
  */
 const HOST_CREDENTIALS = "<authenticated>";
 
-/** What a provider's host credentials are, for telling a user what a deployment runs on. */
-const HOST_CREDENTIAL_SOURCES: Record<string, string> = {
-  "amazon-bedrock": "AWS IAM",
-  "google-vertex": "Google Cloud",
-  [CLAUDE_CODE_PROVIDER_ID]: CLAUDE_CODE_CREDENTIAL_SOURCE,
-};
-
 /** The kind of host credentials a provider authenticates with, e.g. "AWS IAM". */
 export function hostCredentialSource(provider: string): string {
-  return HOST_CREDENTIAL_SOURCES[provider] ?? "host";
+  return modelProviderDefinition(provider)?.hostCredentials?.source ?? "host";
 }
 
 /**
@@ -94,30 +70,25 @@ export function hostCredentialSource(provider: string): string {
  * other providers must report host credentials in the process environment. Host credentials
  * never become `key`.
  *
- * Vendor env names and model ids live here, in the adapter layer, not in core.
+ * Vendor env names and model ids live in the model provider registry, not in core.
  */
 export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-  const explicitModel = env.PI_DEFAULT_MODEL?.trim();
   // An unknown provider gets no key rather than another vendor's.
-  const keyEnv = Object.hasOwn(DEPLOYMENT_KEY_ENV, provider)
-    ? DEPLOYMENT_KEY_ENV[provider]
-    : undefined;
-  const key = keyEnv ? env[keyEnv] : undefined;
+  const deployment = modelProviderDefinition(provider)?.deployment;
+  const explicitModel = env.PI_DEFAULT_MODEL?.trim();
+  const key = deployment ? env[deployment.keyEnv] : undefined;
   const hostCredentials =
     !key &&
     Boolean(explicitModel) &&
     env.PI_DEFAULT_CREDENTIALS?.trim() === "host" &&
-    // Bedrock also resolves EC2 instance roles through IMDS at request time.
     (provider === LOCAL_PROVIDER_ID
       ? localModelIds(env).includes(explicitModel!)
-      : provider === CLAUDE_CODE_PROVIDER_ID ||
-        provider === "amazon-bedrock" ||
+      : modelProviderDefinition(provider)?.hostCredentials?.resolvedAtRequest ||
         getEnvApiKey(provider) === HOST_CREDENTIALS);
   return {
     provider,
-    model:
-      explicitModel || DEPLOYMENT_DEFAULT_MODELS[provider] || DEPLOYMENT_DEFAULT_MODELS.openrouter!,
+    model: explicitModel || deployment?.defaultModel || DEFAULT_OPENROUTER_MODEL_ID,
     key,
     configured: Boolean(key) || hostCredentials,
     hostCredentials,
@@ -221,9 +192,12 @@ export function environmentDeploymentModels(
   env: NodeJS.ProcessEnv = process.env,
   fallback: DeploymentModel = resolveDeploymentModel(env),
 ): DeploymentModels {
-  const connections: DeploymentConnection[] = Object.entries(DEPLOYMENT_KEY_ENV).flatMap(
-    ([provider, name]) =>
-      env[name] ? [{ provider, source: "environment" as const, key: env[name] }] : [],
+  const connections: DeploymentConnection[] = Object.entries(modelProviders).flatMap(
+    ([provider, definition]) => {
+      const keyEnv = "deployment" in definition ? definition.deployment?.keyEnv : undefined;
+      const key = keyEnv ? env[keyEnv] : undefined;
+      return key ? [{ provider, source: "environment" as const, key }] : [];
+    },
   );
   const local = localModelIds(env);
   if (local.length)
