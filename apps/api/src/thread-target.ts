@@ -381,11 +381,13 @@ export function sendTargetBotIds(
 /**
  * The further excerpts of a send that are real text of a message in this thread, in the order
  * picked. One that does not match is left out, as a first excerpt that does not match is, so
- * checking a quote never loses the message. The caller asks only once the first excerpt matched.
+ * checking a quote never loses the message. The caller asks only once the first excerpt matched,
+ * and one that repeats that first excerpt is left out too, so the bot reads each passage once.
  */
 async function verifiedExtraQuotes(
   tx: Prisma.TransactionClient,
   threadId: string,
+  first: { messageId: string; text: string },
   requested: ReadonlyArray<{ messageId: string; text: string }>,
 ): Promise<ExtraReplyQuote[]> {
   const parents = new Map(
@@ -413,6 +415,7 @@ async function verifiedExtraQuotes(
       getLogger().error("thread send quote derivation", error);
     }
     if (!text) continue;
+    if (parent.id === first.messageId && text === first.text) continue;
     if (verified.some((kept) => kept.messageId === parent.id && kept.text === text)) continue;
     verified.push({
       messageId: parent.id,
@@ -657,8 +660,20 @@ export async function sendThreadMessage(
               replyQuote = undefined;
             }
           }
-          if (replyQuote && !input.fromPage && input.extraReplyQuotes?.length) {
-            const verified = await verifiedExtraQuotes(tx, target.threadId, input.extraReplyQuotes);
+          // The first excerpt must be one the person picked: a whole-message reply's quote is only
+          // its preview, and the routines send path does not run the contract's refusal.
+          if (
+            requestedReplyQuote &&
+            replyQuote &&
+            !input.fromPage &&
+            input.extraReplyQuotes?.length
+          ) {
+            const verified = await verifiedExtraQuotes(
+              tx,
+              target.threadId,
+              { messageId: reply.id, text: replyQuote },
+              input.extraReplyQuotes,
+            );
             if (verified.length) extraReplyQuotes = verified;
           }
         }

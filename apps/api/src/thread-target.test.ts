@@ -4351,6 +4351,7 @@ describe("sendThreadMessage", () => {
       fromPage?: true;
       replyQuote?: string;
       parentBlocks?: unknown;
+      noFirstQuote?: true;
       others: Array<{ id: string; role: string; botId?: string; blocks: unknown }>;
     }) {
       let messageSeq = 0;
@@ -4412,7 +4413,7 @@ describe("sendThreadMessage", () => {
         {
           text: "why these?",
           replyToMessageId: "parent",
-          replyQuote: input.replyQuote ?? "42% growth",
+          ...(input.noFirstQuote ? {} : { replyQuote: input.replyQuote ?? "42% growth" }),
           extraReplyQuotes: input.extraReplyQuotes,
           ...(input.fromPage ? { fromPage: true as const } : {}),
           clientNonce: "nonce-1",
@@ -4457,6 +4458,58 @@ describe("sendThreadMessage", () => {
           payload: expect.objectContaining({ extraReplyQuotes: saved.extraReplyQuotes }),
         }),
       });
+    });
+
+    it("drops a further excerpt that repeats the first quote, and keeps the same text from another message", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [
+          { messageId: "parent", text: "42% growth" },
+          { messageId: "second", text: "42% growth" },
+        ],
+        others: [
+          {
+            id: "parent",
+            role: "bot",
+            blocks: [{ kind: "text", text: "we saw 42% growth last week" }],
+          },
+          { id: "second", role: "bot", blocks: [{ kind: "text", text: "also 42% growth here" }] },
+        ],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved.extraReplyQuotes).toEqual([
+        { messageId: "second", role: "bot", text: "42% growth" },
+      ]);
+    });
+
+    it("keeps no further excerpts on a whole-message reply, whose quote is only its preview", async () => {
+      const tx = await sendStacked({
+        noFirstQuote: true,
+        extraReplyQuotes: [{ messageId: "second", text: "ship on friday" }],
+        others: [{ id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] }],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("we saw 42% growth last week");
+      expect(tx.message.findMany).not.toHaveBeenCalled();
+      expect(saved).not.toHaveProperty("extraReplyQuotes");
+    });
+
+    it("keeps no further excerpts when the only one repeats the first quote", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "parent", text: "42% growth" }],
+        others: [
+          {
+            id: "parent",
+            role: "bot",
+            blocks: [{ kind: "text", text: "we saw 42% growth last week" }],
+          },
+        ],
+      });
+
+      expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
+      expect(tx.event.create.mock.calls[0]![0].data.payload.extraReplyQuotes).toBeUndefined();
     });
 
     it("sends the message plainly when no further excerpt checks out", async () => {
