@@ -11,6 +11,7 @@ import {
   rememberOrganizationSpace,
   selectSpace,
 } from "./api-server";
+import { navigatorMounted } from "./navigator-mounted";
 import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 
 export type Organization = OrganizationList["organizations"][number];
@@ -100,6 +101,7 @@ export function organizationForAction(
 }
 
 function returnHome(): void {
+  if (!navigatorMounted()) return;
   if (router.canDismiss()) router.dismissAll();
   router.replace("/");
 }

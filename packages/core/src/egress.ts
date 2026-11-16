@@ -1,4 +1,4 @@
-import { parseNetworkDestination, tailnetDestinationKey } from "@rakazo/contracts";
+import { parseNetworkDestination, tailnetDestinationKey, trimEndChars } from "@rakazo/contracts";
 import { parse } from "tldts";
 import { SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL } from "./action-approval.js";
 
@@ -61,7 +61,7 @@ const DOMAIN_IN_TEXT =
 export function sitesInText(text: string): Set<string> {
   const sites = new Set<string>();
   for (const [match] of text.matchAll(URL_IN_TEXT)) {
-    const site = urlSite(match.replace(/[.,;:!?)\]}*~]+$/, ""));
+    const site = urlSite(trimEndChars(match, ".,;:!?)]}*~"));
     if (site) sites.add(site);
   }
   // A link grants only its own host: a domain in its path or query is not one the person named.

@@ -43,6 +43,7 @@ import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
+import { expireRunSecrets } from "./run-secrets-expiry.js";
 import { retrySecretCleanup } from "./secret-cleanup.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 import type { TeamChat } from "./team-chat.js";
@@ -244,6 +245,9 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "skill.teaching-expire": asOwner(skill, async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
+    }),
+    "run.forget-secrets": asOwner(run, async ({ runId }) => {
+      await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
