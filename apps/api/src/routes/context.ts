@@ -12,6 +12,7 @@ import {
   deploymentModelRole,
   findConnectedModelCredential,
   hiddenCatalogModel,
+  isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
@@ -206,6 +207,7 @@ export function createRouterContext(deps: RouterDeps) {
 
   // Shown where a member chose no model, so the list names what actually runs.
   const withDeploymentDefault = async (
+    actor: Actor,
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
@@ -219,7 +221,15 @@ export function createRouterContext(deps: RouterDeps) {
               : null,
           }
         : { env: process.env };
-    return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
+    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+      const credential = await deps.prisma.userModelCredential.findFirst({
+        where: { userId: actor.userId, provider: deploymentPrimary.provider },
+        select: { id: true },
+      });
+      if (!credential) deploymentPrimary = null;
+    }
+    return { ...settings, deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings

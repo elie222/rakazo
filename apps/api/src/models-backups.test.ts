@@ -3,7 +3,7 @@ import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
@@ -479,6 +479,79 @@ const textOnlyModel = listPiCatalog().find(
 )!;
 
 describe("role-based model settings API", () => {
+  describe("approval deployment default availability", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    function clearApprovalEnvironment() {
+      for (const key of [
+        "RAKAZO_AUTO_REVIEW_PROVIDER",
+        "RAKAZO_AUTO_REVIEW_MODEL",
+        "RAKAZO_LOCAL_MODELS",
+        "PI_DEFAULT_PROVIDER",
+        "PI_DEFAULT_MODEL",
+        "PI_DEFAULT_CREDENTIALS",
+        "OPENROUTER_API_KEY",
+      ])
+        vi.stubEnv(key, undefined);
+    }
+
+    it.each(["account", "space"])(
+      "omits an unconnected approval default in %s reads and saves",
+      async (scope) => {
+        clearApprovalEnvironment();
+        const { call, prisma } = setup();
+        vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+        for (const procedure of ["models/role", "models/setRole"]) {
+          const { response } = await call(procedure, { role: "approval", scope });
+          expect(response.status).toBe(200);
+          expect((await response.json()).json).toMatchObject({
+            primary: null,
+            deploymentPrimary: null,
+          });
+        }
+        expect(prisma.userModelCredential.findFirst).toHaveBeenCalledWith({
+          where: { userId: owner.userId, provider: "openrouter" },
+          select: { id: true },
+        });
+      },
+    );
+
+    it.each(["deployment", "connection", "local"])(
+      "keeps an approval default runnable through %s configuration",
+      async (configuration) => {
+        clearApprovalEnvironment();
+        const { call, prisma } = setup();
+        vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+        if (configuration === "deployment") vi.stubEnv("OPENROUTER_API_KEY", "fake-key");
+        if (configuration === "connection") {
+          const [credential] = await prisma.userModelCredential.findMany({
+            where: { userId: owner.userId, provider: "openrouter" },
+          });
+          vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(credential!);
+        }
+        if (configuration === "local") vi.stubEnv("RAKAZO_LOCAL_MODELS", "local-judge");
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toMatchObject({
+          provider: configuration === "local" ? "local" : "openrouter",
+          ...(configuration === "local" ? { modelId: "local-judge" } : {}),
+        });
+      },
+    );
+
+    it("preserves a saved approval model when its connection is unavailable", async () => {
+      clearApprovalEnvironment();
+      const { call, prisma } = setup();
+      const primary = { provider: availableModel.provider, modelId: availableModel.id };
+      const saved = await call("models/setRole", { role: "approval", primary });
+      expect(saved.response.status).toBe(200);
+      vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+      const { response } = await call("models/role", { role: "approval" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).json).toMatchObject({ primary, deploymentPrimary: null });
+    });
+  });
+
   it("saves a computer-use model only when it can see images", async () => {
     const { call } = setup();
     const accepted = await call("models/setRole", {
