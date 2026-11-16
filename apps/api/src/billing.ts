@@ -5,6 +5,7 @@ import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  PartnerProgram,
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -63,6 +64,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
 import { createExperiments } from "./experiments.js";
+import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
 
 export { TRIAL_DAYS };
@@ -113,6 +115,14 @@ export interface BillingService {
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
   /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
   sync(customerId: string): Promise<void>;
+  /**
+   * Reports the customer's plan payments to the partner program and withdraws reversed ones, also
+   * for a customer whose organization was deleted. Rejects when a withdrawal failed or the
+   * payments could not be read; a failed sale report is left for the next event.
+   */
+  reportPartnerSales(customerId: string): Promise<void>;
+  /** Whether a partner program is configured to report to. */
+  partnerProgramEnabled: boolean;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
   /** Pushes the organization's member count to the provider. Call when members change. */
@@ -190,6 +200,7 @@ export function createBillingService(deps: {
   webOrigin: string;
   analytics?: ProductAnalytics;
   experiments?: ReturnType<typeof createExperiments>;
+  partnerProgram?: PartnerProgram;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -199,6 +210,7 @@ export function createBillingService(deps: {
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
+  const partnerSales = createPartnerSales({ ...deps, program: deps.partnerProgram });
   let cachedPrice: { value: BillingPrice; expiresAt: number } | undefined;
 
   async function price(): Promise<BillingPrice | null> {
@@ -879,6 +891,14 @@ export function createBillingService(deps: {
     },
 
     sync,
+    partnerProgramEnabled: Boolean(deps.partnerProgram),
+    async reportPartnerSales(customerId) {
+      const account = await prisma.billingAccount.findUnique({
+        where: { customerId },
+        select: { organizationId: true },
+      });
+      await partnerSales.report(customerId, account?.organizationId ?? null);
+    },
 
     async syncForActor(actor) {
       const { organizationId } = await organization(actor);

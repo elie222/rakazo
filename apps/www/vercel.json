@@ -57,6 +57,33 @@
           "value": "application/ai-catalog+json"
         }
       ]
+    },
+    {
+      "source": "/:path(.+)\\.md",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/markdown; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/index.md",
+      "headers": [
+        {
+          "key": "Link",
+          "value": "<https://rakazo.com/>; rel=\"canonical\", </llms.txt>; rel=\"describedby\"; type=\"text/plain\", </.well-known/ai-catalog.json>; rel=\"ai-catalog\"; type=\"application/ai-catalog+json\""
+        }
+      ]
+    },
+    {
+      "source": "/:path((?!index\\.md$|404\\.md$).+)\\.md",
+      "headers": [
+        {
+          "key": "Link",
+          "value": "<https://rakazo.com/:path/>; rel=\"canonical\", </llms.txt>; rel=\"describedby\"; type=\"text/plain\", </.well-known/ai-catalog.json>; rel=\"ai-catalog\"; type=\"application/ai-catalog+json\""
+        }
+      ]
     }
   ]
 }

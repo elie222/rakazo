@@ -1003,6 +1003,7 @@ export interface BackgroundJobPayloads {
 /** What held a secret-store reference before it was replaced or dropped. */
 export type SecretCleanupKind =
   | "secret_row"
+  | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
   | "purchase_request"
@@ -1637,6 +1638,17 @@ export interface BillingCreditPurchase {
   amountCents: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
+}
+
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
 }
 
 export interface BillingCreditCheckoutRequest {

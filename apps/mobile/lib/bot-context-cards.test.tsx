@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -132,18 +134,17 @@ describe("bot context cards", () => {
   });
 
   it("ignores results from the previous bot", async () => {
-    let resolveWork!: (items: typeof work) => void;
+    let resolveWork!: Deferred<typeof work>;
     rpc.mockImplementation((method: string, { botId }: { botId: string }) => {
       if (botId === "bot-a" && method === "scratchpad/list") {
-        return new Promise((resolve) => {
-          resolveWork = resolve;
-        });
+        resolveWork = deferred<typeof work>();
+        return resolveWork.promise;
       }
       return Promise.resolve([]);
     });
     await render();
     await render("bot-b");
-    await act(async () => resolveWork(work));
+    await act(async () => resolveWork.resolve(work));
     expect(container.textContent).toBe("");
   });
 

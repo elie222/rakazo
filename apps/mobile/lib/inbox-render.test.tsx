@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { act, cloneElement, useEffect, useMemo, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -970,11 +972,11 @@ it("asks for a model instead of making the first bot when the account has none",
       },
     ];
     for (const leave of leaves) {
-      let land!: () => void;
-      me = new Promise<void>((resolve) => (land = resolve)).then(answer);
+      const land = deferred();
+      me = land.promise.then(answer);
       const moved = create();
       leave();
-      land();
+      land.resolve();
       await moved;
       ui.sameSession = true;
       select("space-a");
@@ -1150,20 +1152,18 @@ it.each([
 ])("does not confirm an inbox bot created in an obsolete session: %j", async (current) => {
   const askedIn = { generation: 7, apiBase: "http://api.test" };
   ui.searchInboxSession.mockReset().mockReturnValue(askedIn);
-  let finish!: (bot: { id: string; name: string }) => void;
-  ui.rpc.mockReset().mockImplementation(async (method: string) =>
-    method === "bots/create"
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : [],
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method !== "bots/create") return [];
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   const creating = createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() =>
     expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
   );
   ui.searchInboxSession.mockReturnValue(current);
-  finish({ id: "bot-new", name: "New Bot" });
+  finish.resolve({ id: "bot-new", name: "New Bot" });
   await creating;
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });

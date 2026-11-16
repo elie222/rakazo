@@ -37,6 +37,7 @@ import {
   createArtifactStore,
   createCloudAgentConnection,
   createConnectorRuntime,
+  createDubPartnerProgram,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -316,7 +317,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  // The queue is built from this client below; a secret dropped before then gets no retry.
+  let secretCleanupJobs: JobPublisher | undefined;
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -325,6 +328,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
+  const partnerProgram = env.dubApiKey ? createDubPartnerProgram(env.dubApiKey) : undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
@@ -374,6 +378,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
+  secretCleanupJobs = jobs;
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
@@ -465,6 +470,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
         experiments: createExperiments(env.experiments),
+        partnerProgram,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -478,7 +484,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,
-    { prisma, secrets, events },
+    { prisma, secrets, events, jobs },
     {
       network: remoteConnectors,
       composio: composioOverride,
@@ -532,6 +538,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
+    partnerProgram,
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
     oidc: env.oidc,

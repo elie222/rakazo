@@ -115,6 +115,29 @@ it("shows a running computer awake with an Open button and no live screen", asyn
   expect(onOpen).toHaveBeenCalledOnce();
 });
 
+it("shows the person's own machine from what the server says", async () => {
+  await render({ ...computer("running"), kind: "desktop", runsOnUserMachine: false });
+  expect(container.querySelector('[data-state="running"]')).not.toBeNull();
+  await render({ ...computer("running"), kind: "any-kind", runsOnUserMachine: true });
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
+  expect(container.textContent).toContain("This bot runs on this computer");
+  await render({ ...computer("stopped"), kind: "any-kind", runsOnUserMachine: true });
+  expect(container.querySelector('[data-state="idle"]')).toBeNull();
+});
+
+it("still shows the person's own machine when an older server names it only by kind", async () => {
+  await render({ ...computer("running"), kind: "desktop" });
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
+  expect(container.textContent).toContain("This bot runs on this computer");
+});
+
+it("shows a computer of a kind this build does not know like any other", async () => {
+  await render({ ...computer("stopped"), kind: "a-provider-since-removed" });
+  expect(container.querySelector('[data-state="idle"]')?.textContent).toContain("Asleep");
+  await render({ ...computer("running"), kind: "a-provider-since-removed" });
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+});
+
 it.each([computer("running"), computer("suspended")])(
   "warns that the disk is nearly full and offers a clean up",
   async (status) => {

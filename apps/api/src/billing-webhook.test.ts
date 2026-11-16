@@ -19,18 +19,33 @@ const actor: Actor = {
 
 function mount(
   parseWebhook: BillingProvider["parseWebhook"],
-  options: { sync?: () => Promise<void>; actor?: Actor | null } = {},
+  options: {
+    sync?: () => Promise<void>;
+    reportPartnerSales?: () => Promise<void>;
+    actor?: Actor | null;
+    customerForPayment?: (paymentId: string) => Promise<string | null>;
+    partnerProgramEnabled?: boolean;
+  } = {},
 ) {
   const sync = vi.fn(options.sync ?? (async () => undefined));
+  const reportPartnerSales = vi.fn(options.reportPartnerSales ?? (async () => undefined));
   const syncForActor = vi.fn(async () => undefined);
   const app = new Hono();
   mountBillingRoutes(app, {
-    billing: { sync, syncForActor } as unknown as BillingService,
-    provider: { parseWebhook },
+    billing: {
+      sync,
+      syncForActor,
+      reportPartnerSales,
+      partnerProgramEnabled: options.partnerProgramEnabled ?? true,
+    } as unknown as BillingService,
+    provider: {
+      parseWebhook,
+      ...(options.customerForPayment ? { customerForPayment: options.customerForPayment } : {}),
+    },
     webOrigin: "https://app.example.com",
     authenticate: async () => (options.actor === undefined ? actor : options.actor),
   });
-  return { app, sync, syncForActor };
+  return { app, sync, syncForActor, reportPartnerSales };
 }
 
 function post(body: string) {
@@ -76,6 +91,38 @@ describe("billing webhook", () => {
     const { app } = mount(() => ({ customerId: "cus_1" }), {
       sync: async () => {
         throw new Error("provider unavailable");
+      },
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(500);
+  });
+
+  it("reconciles partner earnings for a disputed payment's customer, leaving credits alone", async () => {
+    const { app, sync, reportPartnerSales } = mount(() => ({ paymentId: "ch_1" }), {
+      customerForPayment: async (paymentId) => (paymentId === "ch_1" ? "cus_1" : null),
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(200);
+    expect(sync).not.toHaveBeenCalled();
+    expect(reportPartnerSales).toHaveBeenCalledWith("cus_1");
+  });
+
+  it("ignores payment events when no partner program is configured", async () => {
+    const customerForPayment = vi.fn(async () => "cus_1");
+    const { app, reportPartnerSales } = mount(() => ({ paymentId: "ch_1" }), {
+      customerForPayment,
+      partnerProgramEnabled: false,
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(200);
+    expect(customerForPayment).not.toHaveBeenCalled();
+    expect(reportPartnerSales).not.toHaveBeenCalled();
+  });
+
+  it("fails the delivery so the provider retries when a partner withdrawal fails", async () => {
+    const { app } = mount(() => ({ customerId: "cus_1" }), {
+      reportPartnerSales: async () => {
+        throw new Error("partner program unavailable");
       },
     });
     const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));

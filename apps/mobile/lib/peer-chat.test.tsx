@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ReactNode, Ref } from "react";
 import { act, createElement, useImperativeHandle } from "react";
 import type { Root } from "react-dom/client";
@@ -161,7 +162,7 @@ async function open(messages?: unknown[]) {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root?.render(createElement(PeerChat)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   return container;
 }
 

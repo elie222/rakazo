@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -112,19 +114,18 @@ it("ends an active call on the server before changing the password", async () =>
   const button = container.querySelector<HTMLButtonElement>("button")!;
   expect(button.disabled).toBe(false);
   // The hang-up is still in flight: the password must not change before it settles.
-  let hangUp!: () => void;
+  let hangUp!: Deferred;
   session.endCallBeforeSessionEnd.mockImplementationOnce(async () => {
     session.order.push("threads/endCall");
-    await new Promise<void>((resolve) => {
-      hangUp = resolve;
-    });
+    hangUp = deferred();
+    await hangUp.promise;
   });
   await act(async () => {
     button.click();
   });
   expect(session.changePassword).not.toHaveBeenCalled();
   await act(async () => {
-    hangUp();
+    hangUp.resolve();
   });
   expect(session.order).toEqual(["threads/endCall", "change-password"]);
   expect(session.endCallBeforeSessionEnd).toHaveBeenCalledOnce();

@@ -30,6 +30,9 @@ import {
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
+import { ArtifactListCursorError } from "./artifacts.js";
+import { NameTakenError } from "./availability.js";
+import { PageListCursorError, PageShareConflictError } from "./pages.js";
 import { handleRpcError } from "./rpc-errors.js";
 
 /** Each domain refusal with the answer its routes wrote by hand before the central mapping. */
@@ -91,6 +94,26 @@ const REFUSALS: Array<[error: Error, code: string, status: number, message: stri
   [new BotSectionNameConflictError(), "CONFLICT", 409, "Section name already used"],
   [new ComputerBusyError(), "CONFLICT", 409, "Computer is busy"],
   [new ComputerSpaceDeletingError(), "CONFLICT", 409, "Computer is busy"],
+  [new PageListCursorError(), "BAD_REQUEST", 400, "Invalid page list cursor"],
+  [
+    new PageShareConflictError(),
+    "CONFLICT",
+    409,
+    "The page's sharing changed at the same time; try again",
+  ],
+  [new ArtifactListCursorError(), "BAD_REQUEST", 400, "Invalid artifact cursor"],
+  [
+    new NameTakenError("skill"),
+    "CONFLICT",
+    409,
+    "A skill with that name already exists in one of these spaces.",
+  ],
+  [
+    new NameTakenError("mcpServer"),
+    "CONFLICT",
+    409,
+    "An MCP server with that name already exists in one of these spaces.",
+  ],
 ];
 
 /** What a client receives when a procedure throws `error`, through the app's error path. */
@@ -140,6 +163,44 @@ describe("domain refusals answered by the central mapping", () => {
       status: 400,
       body: { json: { code: "NAME_TAKEN", status: 400, message: "Pick another name" } },
     });
+  });
+
+  it("answers an ended session exactly as a bare unauthorized answer", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    const mapped = await answer(new ClientError("UNAUTHORIZED", "Unauthorized"));
+
+    expect(mapped).toEqual(await answer(new ORPCError("UNAUTHORIZED")));
+    expect(mapped).toMatchObject({
+      status: 401,
+      body: { json: { code: "UNAUTHORIZED", status: 401, message: "Unauthorized" } },
+    });
+    expect(sink.events).toEqual([]);
+  });
+
+  it("answers a known outage as unavailable and still reports it with its cause", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const outage = new ClientError("SERVICE_UNAVAILABLE", "Service Unavailable", undefined, {
+      cause: new Error("key service unreachable"),
+    });
+
+    const mapped = await answer(outage);
+
+    expect(mapped).toMatchObject({
+      status: 503,
+      body: { json: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service Unavailable" } },
+    });
+    expect(sink.events).toMatchObject([
+      {
+        level: "error",
+        message: "rpc fail failed",
+        error: { cause: { cause: { message: "key service unreachable" } } },
+      },
+    ]);
+    sink.events.length = 0;
+    expect(mapped).toEqual(await answer(new ORPCError("SERVICE_UNAVAILABLE")));
   });
 
   it("reports a path that leaves the workspace as a server failure unless a route answers it", async () => {

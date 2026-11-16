@@ -14,8 +14,8 @@ import {
   modelSettingsRequest,
 } from "@rakazo/core";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -32,6 +32,7 @@ import { NativeSwitch } from "../../components/native-switch";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { native, useThemedStyles } from "../../lib/native";
 import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useScreenQuery } from "../../lib/screen-query";
 import type { SettingsTarget } from "../../lib/settings-target";
 import { settingsTarget } from "../../lib/settings-target";
@@ -96,7 +97,6 @@ export default function ModelSettingsScreen() {
 function ModelSettingsForm(route: ModelRoute) {
   const { credentialId, modelId, spaceId } = route;
   const styles = useThemedStyles(createModelsStyles);
-  const navigation = useNavigation();
   const router = useRouter();
   const { t } = useLingui();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
@@ -152,9 +152,7 @@ function ModelSettingsForm(route: ModelRoute) {
 
   const entry = loaded?.entry;
   const title = entry?.label ?? modelId;
-  useLayoutEffect(() => {
-    if (title) navigation.setOptions({ title });
-  }, [navigation, title]);
+  useScreenHeader({ title: title || undefined });
 
   if (!loaded) {
     return (

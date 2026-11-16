@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -796,13 +797,11 @@ describe("a model's own settings", () => {
     [...container.querySelectorAll("button")].find((node) => node.textContent === label);
   const show = () => act(async () => root.render(createElement(ModelSettingsScreen)));
   function hold() {
-    let release!: () => void;
-    saved.held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const release = deferred();
+    saved.held = release.promise;
     return async () => {
       saved.held = null;
-      await act(async () => release());
+      await act(async () => release.resolve());
     };
   }
 
@@ -968,10 +967,8 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     await act(async () => root.render(createElement(Models)));
   });
   expect(container.textContent).toContain("Fixture");
-  let release!: () => void;
-  saved.held = new Promise((resolve) => {
-    release = resolve;
-  });
+  const release = deferred();
+  saved.held = release.promise;
   saved.label = "Renamed fixture";
   try {
     rpcCalls.length = 0;
@@ -982,7 +979,7 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     expect(container.textContent).not.toContain("Renamed fixture");
     expect(rpcCalls.map(([procedure]) => procedure)).toContain("models/credentials");
 
-    await act(async () => release());
+    await act(async () => release.resolve());
     expect(container.textContent).toContain("Renamed fixture");
   } finally {
     saved.held = null;

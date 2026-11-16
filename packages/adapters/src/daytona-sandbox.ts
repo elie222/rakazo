@@ -21,6 +21,7 @@ import type {
   UnreferencedMachine,
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
@@ -403,7 +404,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (options?.maxBytes !== undefined) {
       const info = await sandbox.fs.getFileDetails(target);
       if (info.size > options.maxBytes) {
-        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(options.maxBytes);
       }
     }
     const content = await sandbox.fs.downloadFile(target);

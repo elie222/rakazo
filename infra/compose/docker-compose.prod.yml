@@ -526,6 +526,7 @@ services:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
+      DUB_API_KEY:
       CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
@@ -598,6 +599,9 @@ services:
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
+      # A stopping worker ends the turns it is running before it hands them back, which fits
+      # inside stop_grace_period. The deploy starts its replacement first, so nothing waits.
+      RUN_DRAIN_ENABLED: ${RUN_DRAIN_ENABLED:-true}
     volumes:
       - appdata:/data
     networks:

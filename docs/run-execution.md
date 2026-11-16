@@ -20,7 +20,10 @@ tools run independently after durable ownership and heartbeats are established.
 A process that is shutting down or lacks memory headroom hands the run over: it
 publishes the run id on the realtime connection and a worker takes it. Shutdown
 requeues in-flight runs the same way, so the replacement process resumes them
-within moments of a deploy.
+within moments of a deploy. A stopping API requeues its runs at once. With
+`RUN_DRAIN_ENABLED`, a stopping worker first lets each run it is executing end its
+turn, for up to `RUN_DRAIN_MS`, because a requeued turn repeats its model call; it
+keeps renewing those leases and claims nothing new meanwhile.
 
 Recovery is never on the path a new run takes. Each worker scans for runnable rows
 at startup and every five seconds and starts any it finds: a run whose process died,

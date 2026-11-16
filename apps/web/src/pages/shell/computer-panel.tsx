@@ -5,6 +5,7 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
@@ -86,7 +87,7 @@ function ComputerPreview({
     !computerBooting &&
     !computerScreenError &&
     !showComputerRecoveryHint &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   const rowClass = "flex min-h-14 items-center gap-3 rounded-xl bg-muted/50 px-4 text-body";
   // The bot stands in for its screen: a live screen here would hold the computer awake.
@@ -121,7 +122,7 @@ function ComputerPreview({
   }
   // A running computer is a row too; its screen is one click away.
   if (
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     computer?.state === "running" &&
     !booting &&
     !computerBooting &&
@@ -166,7 +167,7 @@ function ComputerPreview({
           >
             <Trans>Open in full window</Trans>
           </div>
-        ) : computer?.kind === "desktop" ? (
+        ) : runsOnUserMachine(computer) ? (
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />

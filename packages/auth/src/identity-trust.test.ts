@@ -54,7 +54,12 @@ function fixture({
   stalledDelivery?: boolean;
 } & Pick<
   AuthEnv,
-  "singleAccount" | "afterDeleteSession" | "afterReplaceSession" | "beforeDeleteUser" | "analytics"
+  | "singleAccount"
+  | "afterDeleteSession"
+  | "afterReplaceSession"
+  | "beforeDeleteUser"
+  | "analytics"
+  | "partnerProgram"
 > = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
@@ -320,6 +325,39 @@ it("stores validated signup attribution once, hides it from auth responses, and 
     signupSurface: "android",
     signupUtmSource: "community",
     signupUtmCampaign: "launch",
+  });
+});
+
+it("keeps the partner link click a signup came from and reports the signup to the program", async () => {
+  const partnerProgram = {
+    trackSignup: vi.fn(async () => undefined),
+    trackSale: vi.fn(async () => undefined),
+    refundSale: vi.fn(async () => "withdrawn" as const),
+  };
+  const f = fixture({ partnerProgram });
+  const response = await f.auth.handler(
+    new Request("http://auth.example.test/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://web.example.test",
+        cookie: "rakazo_partner_click=click_1",
+      },
+      body: JSON.stringify({
+        email: "partner@example.test",
+        password: "offline-password12",
+        name: "Referred User",
+      }),
+    }),
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+  expect(f.data.user![0]).toMatchObject({ signupPartnerClickId: "click_1" });
+  expect(await response.json()).not.toHaveProperty("user.signupPartnerClickId");
+  expect(partnerProgram.trackSignup).toHaveBeenCalledWith({
+    clickId: "click_1",
+    customerId: f.data.user![0]!.id,
+    name: "Referred User",
+    email: "partner@example.test",
   });
 });
 

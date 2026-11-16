@@ -6,19 +6,20 @@ import { Button, Disclosure, Textarea } from "@rakazo/ui-web";
 import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web/components/ui/popover";
 import { History } from "lucide-react";
 import { useId, useState } from "react";
-import { rpc } from "../lib/rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
+
+type Change = { kind: "edit" } | { kind: "restore"; versionId: string } | { kind: "reload" };
 
 export function InstructionSettings({ bot }: { bot: Bot }) {
   const { t } = useLingui();
+  const queries = useSpaceQueries();
   const id = useId();
   const [previousBot, setPreviousBot] = useState(bot);
   const [current, setCurrent] = useState(bot);
   const [baseline, setBaseline] = useState(bot.instructions);
   const [instructions, setInstructions] = useState(bot.instructions);
-  const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
-  const [error, setError] = useState("");
   if (bot !== previousBot) {
     setPreviousBot(bot);
     if (instructions === baseline) {
@@ -27,22 +28,29 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
     }
     setCurrent(bot);
   }
-  async function save(action: () => Promise<Bot>) {
-    setPending(true);
-    setError("");
-    try {
-      const updated = await action();
+  const change = useSave({
+    save: (input: Change, rpc) =>
+      input.kind === "restore"
+        ? rpc.bots.restoreInstructions({
+            botId: bot.id,
+            versionId: input.versionId,
+            expectedInstructions: current.instructions,
+          })
+        : input.kind === "reload"
+          ? rpc.bots.get({ botId: bot.id })
+          : rpc.bots.update({ botId: bot.id, instructions, expectedInstructions: baseline }),
+    stale: (input) => (input.kind === "reload" ? [] : [queries.bots.list.key()]),
+    onSaved: (updated) => {
       setConflict(false);
       setCurrent(updated);
       setInstructions(updated.instructions);
       setBaseline(updated.instructions);
-    } catch (err) {
-      setError(errorText(err));
-      setConflict((current) => current || (err instanceof ORPCError && err.code === "CONFLICT"));
-    } finally {
-      setPending(false);
-    }
-  }
+    },
+    onFailed: (error) => {
+      if (error instanceof ORPCError && error.code === "CONFLICT") setConflict(true);
+    },
+  });
+  const pending = change.pending;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between pe-1">
@@ -82,15 +90,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
                   <Button
                     variant="outline"
                     disabled={pending}
-                    onClick={() =>
-                      void save(() =>
-                        rpc.bots.restoreInstructions({
-                          botId: bot.id,
-                          versionId: version.id,
-                          expectedInstructions: current.instructions,
-                        }),
-                      )
-                    }
+                    onClick={() => change.run({ kind: "restore", versionId: version.id })}
                   >
                     <Trans>Restore</Trans>
                   </Button>
@@ -108,19 +108,14 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         disabled={pending}
         onChange={(event) => setInstructions(event.target.value)}
         onBlur={() => {
-          if (!conflict && instructions !== current.instructions)
-            void save(() =>
-              rpc.bots.update({ botId: bot.id, instructions, expectedInstructions: baseline }),
-            );
+          if (!conflict && instructions !== current.instructions) change.run({ kind: "edit" });
         }}
       />
-      {error ? <p className="text-body text-destructive">{error}</p> : null}
+      {change.error ? (
+        <p className="text-body text-destructive">{errorText(change.error)}</p>
+      ) : null}
       {conflict ? (
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() => void save(() => rpc.bots.get({ botId: bot.id }))}
-        >
+        <Button variant="outline" disabled={pending} onClick={() => change.run({ kind: "reload" })}>
           <Trans>Reload</Trans>
         </Button>
       ) : null}

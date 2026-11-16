@@ -15,7 +15,14 @@ import {
 } from "../evals/apps.js";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
+import {
+  EVAL_CASES,
+  HISTORY_EVAL_CASES,
+  HISTORY_JUDGE_CALIBRATION,
+  PRODUCT_JUDGE_CALIBRATION,
+  PRODUCT_JUDGE_VERSION,
+  wakesRoutines,
+} from "../evals/cases.js";
 import {
   DELIBERATION_EVAL_CASES,
   DELIBERATION_FIXTURE_VERSION,
@@ -36,7 +43,7 @@ import {
   GROUP_JUDGE_VERSION,
 } from "../evals/group.js";
 import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
-import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
+import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
 import {
@@ -149,8 +156,16 @@ async function main() {
       judge?: { version: string; calibration: Array<{ input: JudgeInput; pass: boolean }> };
     }
   > = {
-    product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
-    history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
+    product: {
+      cases: EVAL_CASES,
+      fixtureVersion: "product-v2",
+      judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
+    },
+    history: {
+      cases: HISTORY_EVAL_CASES,
+      fixtureVersion: HISTORY_FIXTURE_VERSION,
+      judge: { version: HISTORY_JUDGE_VERSION, calibration: HISTORY_JUDGE_CALIBRATION },
+    },
     silence: {
       cases: SILENCE_EVAL_CASES,
       fixtureVersion: SILENCE_FIXTURE_VERSION,
@@ -315,7 +330,9 @@ async function main() {
     limitations: [
       "Does not evaluate browser perception, native recording perception, or real external services.",
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
-      "Silence replies and memory contents are graded by meaning with a calibrated LLM judge; other suites retain their existing task-specific graders.",
+      suiteJudge
+        ? "What replies, saved files and memory mean is graded by a calibrated LLM judge under the suite's rubric; effects, identifiers and structured output are checked deterministically."
+        : "This suite has no LLM judge: every criterion is a check in code.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
       "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],

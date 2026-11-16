@@ -48,14 +48,16 @@ export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
   };
 }
 
+/** `defaultConnectorId` is the connector a card that names none belongs to. */
 export function matchesAppConnection(
   block: MessageBlock,
   connectorId: string,
   provider: string,
+  defaultConnectorId: string,
 ): block is AppConnectBlock {
   return (
     block.kind === "app_connect" &&
-    (block.connectorId ?? "composio") === connectorId &&
+    (block.connectorId ?? defaultConnectorId) === connectorId &&
     (block.provider.toLowerCase() === provider.toLowerCase() ||
       featuredConnectorProvidersMatch(block.provider, provider))
   );
@@ -66,8 +68,10 @@ export function connectedAppBlock(
   block: MessageBlock,
   connectorId: string,
   provider: string,
+  defaultConnectorId: string,
 ): MessageBlock {
-  return matchesAppConnection(block, connectorId, provider) && block.status !== "connected"
+  return matchesAppConnection(block, connectorId, provider, defaultConnectorId) &&
+    block.status !== "connected"
     ? { ...block, status: "connected" }
     : block;
 }

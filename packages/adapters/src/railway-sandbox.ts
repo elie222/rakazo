@@ -15,6 +15,7 @@ import type {
   UnreferencedMachine,
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type * as Railway from "railway";
@@ -350,7 +351,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     const maxBytes = options?.maxBytes ?? this.maxWorkspaceFileBytes;
     if (content.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return content;
   }

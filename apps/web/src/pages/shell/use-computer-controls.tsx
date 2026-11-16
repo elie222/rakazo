@@ -11,6 +11,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { computersAreUnavailable } from "../../components/ComputersUnavailableHint";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { bootComputerOnce, embeddableScreenUrl } from "../../lib/computer-screen";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
@@ -415,7 +416,7 @@ export function useComputerControls({
     Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
     screenMissing({
       state: computer?.state,
-      kind: computer?.kind,
+      runsOnUserMachine: runsOnUserMachine(computer),
       booting,
       screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),
       embeddedUrl: embeddedScreenUrl,
@@ -494,13 +495,13 @@ export function useComputerControls({
     ) : null;
   const computerPreviewScreen =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     computer?.state === "running" &&
     Boolean(embeddedScreenUrl) &&
     !computerScreenError;
   const showingRecoveryHint =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     !computerPreviewScreen &&
     !computerScreenError &&
     showComputerRecoveryHint;

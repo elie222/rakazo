@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -255,13 +257,12 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
   await render();
   const base = state.rpc.getMockImplementation()!;
   let stored: string | null = null;
-  let finishRead: () => void = () => undefined;
+  let finishRead!: Deferred;
   state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
     if (proc === "autoReview/set") throw new Error("offline");
     if (proc === "autoReview/get") {
-      await new Promise<void>((resolve) => {
-        finishRead = resolve;
-      });
+      finishRead = deferred();
+      await finishRead.promise;
       if (!stored) throw new Error("offline");
       return { ...state.settings, mode: stored };
     }
@@ -275,14 +276,14 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
   );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
   // If what is stored can't be read either, the row shows no mode and offers to read it again.
-  await act(async () => finishRead());
+  await act(async () => finishRead.resolve());
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
   expect(choices()).toEqual([]);
 
   // A save that landed before its reply was lost shows as saved.
   stored = "never";
   await act(async () => container.querySelector("span")!.click());
-  await act(async () => finishRead());
+  await act(async () => finishRead.resolve());
   expect(row()).toBe(
     "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
@@ -385,21 +386,19 @@ it("holds the menu while a save is in flight", async () => {
 it("keeps a saved mode when a read that started before the save lands after it", async () => {
   await render();
   const base = state.rpc.getMockImplementation()!;
-  let resolveRead: (value: Settings) => void = () => undefined;
-  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) =>
-    proc === "autoReview/get"
-      ? new Promise((resolve) => {
-          resolveRead = resolve;
-        })
-      : base(proc, input),
-  );
+  let resolveRead!: Deferred<Settings>;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc !== "autoReview/get") return base(proc, input);
+    resolveRead = deferred<Settings>();
+    return resolveRead.promise;
+  });
   const stale = { ...state.settings };
 
   // Coming back starts a refresh; the owner picks Never ask before it lands with the old mode.
   state.rules = [{ id: "rule-1" }];
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
-  await act(async () => resolveRead(stale));
+  await act(async () => resolveRead.resolve(stale));
   expect(row()).toBe(
     "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
@@ -412,14 +411,12 @@ it.each(["autoReview/get", "approvalRules/list"])(
   async (failedProc) => {
     await render();
     const base = state.rpc.getMockImplementation()!;
-    let rejectRead: (reason: Error) => void = () => undefined;
-    state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
-      proc === failedProc
-        ? new Promise((_, reject) => {
-            rejectRead = reject;
-          })
-        : base(proc, input),
-    );
+    let rejectRead!: Deferred<never>;
+    state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) => {
+      if (proc !== failedProc) return base(proc, input);
+      rejectRead = deferred<never>();
+      return rejectRead.promise;
+    });
 
     await act(async () => state.refocus());
     await act(async () => choice("Never ask").click());
@@ -427,7 +424,7 @@ it.each(["autoReview/get", "approvalRules/list"])(
     expect(row()).toBe(
       "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
     );
-    await act(async () => rejectRead(new Error("offline")));
+    await act(async () => rejectRead.reject(new Error("offline")));
     expect(row()).toBe(
       "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
     );
@@ -439,18 +436,16 @@ it("ignores an older refresh failure while a save is pending", async () => {
   await render();
   const slow = slowSaves();
   const base = state.rpc.getMockImplementation()!;
-  let rejectRead: (reason: Error) => void = () => undefined;
-  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
-    proc === "autoReview/get"
-      ? new Promise((_, reject) => {
-          rejectRead = reject;
-        })
-      : base(proc, input),
-  );
+  let rejectRead!: Deferred<never>;
+  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) => {
+    if (proc !== "autoReview/get") return base(proc, input);
+    rejectRead = deferred<never>();
+    return rejectRead.promise;
+  });
 
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
-  await act(async () => rejectRead(new Error("offline")));
+  await act(async () => rejectRead.reject(new Error("offline")));
   expect(row()).toBe(
     "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );

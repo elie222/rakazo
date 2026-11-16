@@ -36,6 +36,8 @@ model User {
   signupUtmContent             String?
   signupUtmTerm                String?
   signupReferringDomain        String?
+  /// The partner program click this account signed up from; its organizations' plan payments credit that partner.
+  signupPartnerClickId         String?
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
@@ -537,6 +539,23 @@ model Referral {
 
   @@index([referrerOrganizationId])
   @@map("referrals")
+}
+
+/// A plan payment reported to the partner program, so each is reported, and refunded, once.
+/// Kept by billing customer, not organization: a refund after the account is deleted must still
+/// withdraw the commission.
+model PartnerSale {
+  invoiceId  String    @id
+  customerId       String
+  /// When the provider created the invoice, so a later refund check reads back far enough.
+  invoiceCreatedAt DateTime
+  createdAt        DateTime  @default(now())
+  /// When the sale was sent, set just before sending; cleared when the send failed so it is retried.
+  reportedAt       DateTime?
+  refundedAt       DateTime?
+
+  @@index([customerId])
+  @@map("partner_sales")
 }
 
 model AccessGrant {
@@ -1675,7 +1694,7 @@ model AgentImport {
   @@map("agent_imports")
 }
 
-/// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
+/// Skills: reusable how-to recipes shared across bots (not per-bot).
 /// Distinct from TaughtSkill (demo/record playbooks).
 model AgentSkill {
   id          String   @id @default(cuid())

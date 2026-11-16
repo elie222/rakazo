@@ -461,7 +461,7 @@ export async function provisionComputer(
               botId: existing.homeKey,
               homePath,
               providerRef: existing.providerRef ?? undefined,
-              providerKind: existing.kind as ComputerRef["kind"],
+              providerKind: existing.kind,
               // A save from an older release has no time; the provider keeps its own state then.
               savedAt:
                 existing.homeRevision === "empty"

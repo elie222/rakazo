@@ -2,16 +2,15 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, usePreventRemove, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocalSearchParams, usePreventRemove, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -22,7 +21,6 @@ function errorCode(error: unknown): unknown {
 /** One memory note: a bot's when opened with its id, otherwise one shared by the space's bots. */
 export default function MemoryNoteScreen() {
   const params = useLocalSearchParams<{ id: string; botId?: string }>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -166,37 +164,13 @@ export default function MemoryNoteScreen() {
     ]);
   }
 
-  const canSave = dirty && writable;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: note?.path ?? "",
-      ...(!note || state === "gone"
-        ? { headerRight: undefined, unstable_headerRightItems: undefined }
-        : iosAtLeast(26)
-          ? {
-              unstable_headerRightItems: () => [
-                {
-                  type: "button" as const,
-                  label: t`Save`,
-                  variant: "prominent" as const,
-                  tintColor: mobileTokens().primary,
-                  disabled: !canSave,
-                  onPress: () => void saveRef.current(),
-                },
-              ],
-            }
-          : {
-              headerRight: () => (
-                <NativeActionButton
-                  disabled={!canSave}
-                  fill={false}
-                  label={t`Save`}
-                  onPress={() => void saveRef.current()}
-                />
-              ),
-            }),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, note, state, canSave, t]);
+  useScreenHeader({
+    title: note?.path ?? "",
+    action:
+      !note || state === "gone"
+        ? null
+        : { label: t`Save`, disabled: !(dirty && writable), onPress: () => void save() },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>

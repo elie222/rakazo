@@ -6,7 +6,9 @@ import {
   HonchoMemoryProvider,
   honchoRequiresPrivateEndpoint,
   honchoWorkspaceId,
+  isReservedHonchoPeerId,
   prepareHonchoConnection,
+  UNRESERVED_HONCHO_PEER_PATTERN,
 } from "./honcho-memory-provider.js";
 import type { ResolveHostname } from "./network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
@@ -1076,4 +1078,10 @@ describe("Honcho local mode", () => {
     ).resolves.toEqual({ ok: false, error: expect.stringMatching(/private-network/) });
     expect(fetch).not.toHaveBeenCalled();
   });
+});
+
+it("gives the settings form the same reserved peer IDs the server refuses", () => {
+  const unreserved = new RegExp(UNRESERVED_HONCHO_PEER_PATTERN);
+  for (const id of ["rakazo-shared", "bot-", "bot-1", "rakazo-shared-2", "abot-1", "user-1"])
+    expect(unreserved.test(id)).toBe(!isReservedHonchoPeerId(id));
 });

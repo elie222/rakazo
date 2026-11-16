@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CATALOGS,
@@ -149,12 +150,9 @@ describe("desktop language", () => {
   it("keeps the last report when an earlier save finishes later", async () => {
     startDesktopLocale(null, "en-US");
     const saved: string[] = [];
-    let releaseFirst!: () => void;
-    const firstWrite = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstWrite = deferred();
     const save = vi.fn(async (locale: string) => {
-      if (locale === "es") await firstWrite;
+      if (locale === "es") await firstWrite.promise;
       saved.push(locale);
     });
     const handle = createLocaleHandler(save, () => undefined);
@@ -162,7 +160,7 @@ describe("desktop language", () => {
     const first = handle(event, "es");
     await vi.waitFor(() => expect(save).toHaveBeenCalledWith("es"));
     const second = handle(event, "en");
-    releaseFirst();
+    firstWrite.resolve();
     await Promise.all([first, second]);
 
     expect(saved).toEqual(["es", "en"]);

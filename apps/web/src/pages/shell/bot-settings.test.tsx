@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { Bot } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -119,12 +121,6 @@ let container: HTMLDivElement;
 let root: Root;
 let queryClient: QueryClient;
 
-async function flush() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -158,7 +154,7 @@ async function submitToolName(input: HTMLSelectElement, value: string) {
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(input, value);
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await flush();
+  await act(flush);
 }
 
 async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, currentBot = bot) {
@@ -175,7 +171,7 @@ async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, curre
       </QueryClientProvider>,
     );
   });
-  await flush();
+  await act(flush);
 }
 
 describe("BotSettings rarely changed settings", () => {
@@ -233,7 +229,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       save.click();
     });
-    await flush();
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("disabledBuiltinTools");
@@ -248,7 +244,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       toggle.click();
     });
-    await flush();
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ disabledBuiltinTools: [] }));
   });
@@ -270,13 +266,12 @@ describe("BotSettings disabled tools", () => {
   it.each([false, true])(
     "rebases a refresh during an in-flight save (reject: %s)",
     async (reject) => {
-      let release: (() => void) | undefined;
+      let release: Deferred | undefined;
       const onSave = vi
         .fn<(patch: SavePatch) => Promise<void>>()
         .mockImplementationOnce(async () => {
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
+          release = deferred();
+          await release.promise;
           if (reject) throw new Error("Network failed");
         })
         .mockResolvedValue(undefined);
@@ -285,9 +280,9 @@ describe("BotSettings disabled tools", () => {
       await submitToolName(input, "web_search");
       await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["web_fetch"] });
       await act(async () => {
-        release?.();
+        release?.resolve();
       });
-      await flush();
+      await act(flush);
       expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
       expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
       if (reject) {
@@ -300,13 +295,12 @@ describe("BotSettings disabled tools", () => {
   );
 
   it("rebases queued edits and a removal on a refresh during a save", async () => {
-    let release: (() => void) | undefined;
+    let release: Deferred | undefined;
     const onSave = vi
       .fn<(patch: SavePatch) => Promise<void>>()
       .mockImplementationOnce(async () => {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        release = deferred();
+        await release.promise;
       })
       .mockResolvedValue(undefined);
     await renderSettings(onSave);
@@ -317,9 +311,9 @@ describe("BotSettings disabled tools", () => {
     await submitToolName(input, "web_search");
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["remember", "web_fetch"] });
     await act(async () => {
-      release?.();
+      release?.resolve();
     });
-    await flush();
+    await act(flush);
     expect(onSave.mock.calls.map(([patch]) => patch.disabledBuiltinTools)).toEqual([
       [],
       ["web_fetch"],
@@ -381,7 +375,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       toggle.click();
     });
-    await flush();
+    await act(flush);
 
     expect(container.textContent).toContain("Network failed");
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();
@@ -413,8 +407,8 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       releaseFirst?.();
     });
-    await flush();
-    await flush();
+    await act(flush);
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave.mock.calls[1]?.[0]).toEqual(
@@ -428,13 +422,12 @@ describe("BotSettings disabled tools", () => {
   });
 
   it("returns to the last saved list when a later disable also fails", async () => {
-    let releaseFirst: (() => void) | undefined;
+    let releaseFirst: Deferred | undefined;
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async (patch) => {
       const tools = patch.disabledBuiltinTools ?? [];
       if (tools.includes("web_search") && !tools.includes("web_fetch")) {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        releaseFirst = deferred();
+        await releaseFirst.promise;
       }
       throw new Error("Network failed");
     });
@@ -445,10 +438,10 @@ describe("BotSettings disabled tools", () => {
     await submitToolName(input, "web_search");
     await submitToolName(input, "web_fetch");
     await act(async () => {
-      releaseFirst?.();
+      releaseFirst?.resolve();
     });
-    await flush();
-    await flush();
+    await act(flush);
+    await act(flush);
 
     expect(container.textContent).toContain("Network failed");
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();

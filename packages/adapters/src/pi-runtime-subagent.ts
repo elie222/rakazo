@@ -2,6 +2,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { isTerminatingReplyResult, terminatingReplyText } from "./approval-effect.js";
 import { withAutomatedLabels } from "./automated-messages.js";
+import { helperResultLabel } from "./background-helpers.prompt.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin.tool-definition.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -380,7 +381,7 @@ export async function executeSubagent(
     const budgetMessage = budgetExceeded
       ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
       : undefined;
-    const label = `Result from your helper "${name}" (not a message from the user):\n`;
+    const label = helperResultLabel(name);
     // The parent clips label and result together, so the result gets what is left.
     const tail = budgetMessage ?? endedReply;
     const clipped = helperResultText(

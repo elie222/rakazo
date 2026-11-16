@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { McpServerConfigInput } from "@rakazo/contracts";
 import { buildSkillMd, deadlineSignal, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
 import {
   isAgentSkillResourcePath,

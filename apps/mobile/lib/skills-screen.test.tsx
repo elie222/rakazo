@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (create: () => unknown) => create() }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./api-server", () => ({}));
@@ -82,7 +85,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<SkillsScreen />));
@@ -110,20 +113,19 @@ it("offers Retry when a browse read fails and loads again from it", async () => 
   expect(container.textContent).toContain("Some plugins could not be loaded.");
   expect(spinner()).toBeNull();
 
-  let finish: (rows: unknown[]) => void = () => undefined;
+  let finish!: Deferred<unknown[]>;
   fail = false;
-  mocks.rpc.mockImplementation((method: string) =>
-    method === "capabilities/list"
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : Promise.resolve(method === "marketplace/catalog" ? catalog : []),
-  );
+  mocks.rpc.mockImplementation((method: string) => {
+    if (method !== "capabilities/list")
+      return Promise.resolve(method === "marketplace/catalog" ? catalog : []);
+    finish = deferred<unknown[]>();
+    return finish.promise;
+  });
   await act(async () => retry()?.click());
   await settle();
   expect(spinner()).not.toBeNull();
   expect(retry()).toBeUndefined();
-  await act(async () => finish([]));
+  await act(async () => finish.resolve([]));
   await settle();
   expect(spinner()).toBeNull();
   expect(container.textContent).not.toContain("Some plugins could not be loaded.");
