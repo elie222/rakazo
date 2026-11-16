@@ -1,7 +1,11 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
-import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { LAST_SIGN_IN_COOKIE, SignupAttribution } from "@rakazo/contracts";
+import type {
+  PartnerProgram,
+  ProductAnalytics,
+  TransactionalEmailProvider,
+} from "@rakazo/adapter-kit";
+import { LAST_SIGN_IN_COOKIE, PartnerClickId, SignupAttribution } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -9,6 +13,7 @@ import {
   MAX_PASSWORD_LENGTH,
   MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
+  partnerClickFromHeaders,
   signupAttributionFromHeaders,
   signupPolicyFromEnv,
 } from "@rakazo/core";
@@ -19,6 +24,7 @@ import {
   recordSecurityEvent,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -87,6 +93,7 @@ export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {
   analytics?: ProductAnalytics;
+  partnerProgram?: PartnerProgram;
   passwordAuth?: boolean;
   /** Opt-in: rejects new passwords found in Have I Been Pwned. Calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -390,6 +397,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         signupUtmContent: attributionField,
         signupUtmTerm: attributionField,
         signupReferringDomain: attributionField,
+        signupPartnerClickId: attributionField,
       },
       validateUserInfo: async ({ user, source }, ctx) => {
         if (source.method !== "oauth") return;
@@ -560,6 +568,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (ctx.path === "/sign-in/social") {
           await addOAuthServerContext({
             signupAttribution: signupAttributionFromHeaders(ctx.headers),
+            partnerClickId: partnerClickFromHeaders(ctx.headers),
           });
         }
         if (
@@ -907,6 +916,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               userId: user.id,
               metadata: { via: ctx?.path ?? null },
             });
+            // Never holds up the signup it reports.
+            const partnerClick = PartnerClickId.safeParse(user.signupPartnerClickId);
+            if (env.partnerProgram && partnerClick.success)
+              void bestEffort(
+                "partner program signup",
+                env.partnerProgram.trackSignup({
+                  clickId: partnerClick.data,
+                  customerId: user.id,
+                  name: user.name,
+                  email: user.email,
+                }),
+              );
           },
           before: async (user, ctx = null) => {
             if (isMessagingEmail(user.email)) {
@@ -920,6 +941,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const attribution = callbackAttribution.success
               ? callbackAttribution.data
               : signupAttributionFromHeaders(ctx?.headers);
+            const callbackClick = PartnerClickId.safeParse(
+              ctx?.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext?.partnerClickId
+                : undefined,
+            );
+            const partnerClickId = callbackClick.success
+              ? callbackClick.data
+              : partnerClickFromHeaders(ctx?.headers);
             return {
               data: {
                 ...user,
@@ -930,6 +959,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 signupUtmContent: attribution.utmContent,
                 signupUtmTerm: attribution.utmTerm,
                 signupReferringDomain: attribution.referringDomain,
+                signupPartnerClickId: partnerClickId,
                 ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
               },
             };

@@ -5,6 +5,7 @@ import {
   isScratchpadStatus,
   listScratchpadItems,
   mapScratchpadItem,
+  memoryProviderDescriptors,
   readAgentMemory,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
@@ -137,6 +138,7 @@ export function memoryRoutes(ctx: RouterContext) {
         const config = await findSpaceMemoryConfig(deps.prisma, context.actor.spaceId);
         return config ? serializeSpaceMemoryConfig(config) : null;
       }),
+      providers: authed.memory.providers.handler(() => memoryProviderDescriptors()),
       connectProvider: authed.memory.connectProvider.handler(async ({ context, input }) =>
         persistMemoryProviderConfig(deps, context.actor, input),
       ),

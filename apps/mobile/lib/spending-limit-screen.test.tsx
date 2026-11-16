@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
@@ -225,15 +226,6 @@ it("lists the payments that count under the limit", async () => {
   expect(button("other.example.test").textContent).toBe("other.example.test | €5.00 | just now");
 });
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 const currentStatus = {
   limit: { amount: 20_000, currency: "usd", period: "month" },
   spent: 2340,

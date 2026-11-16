@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -203,17 +204,11 @@ describe("Pi usage accounting", () => {
     }
   }, 30000);
   it("persists a generation id before exposing the first SSE chunk", async () => {
-    let release = () => {};
-    let entered = () => {};
-    const waiting = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const durable = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const waiting = deferred();
+    const durable = deferred();
     const onRequestId = vi.fn(async () => {
-      entered();
-      await durable;
+      waiting.resolve();
+      await durable.promise;
     });
     const fields = new Set<keyof AgentUsage>();
     const wrapped = usageReportingFetch(
@@ -230,9 +225,9 @@ describe("Pi usage accounting", () => {
       exposed = true;
       return text;
     });
-    await waiting;
+    await waiting.promise;
     expect(exposed).toBe(false);
-    release();
+    durable.resolve();
     await read;
     expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
     expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
@@ -330,11 +325,10 @@ describe("Pi usage accounting", () => {
   });
 
   it("settles a thrown provider call before exposing the terminal event", async () => {
-    let finishSettlement = () => {};
-    const settlement = new Promise<void>((resolve) => {
-      finishSettlement = resolve;
-    });
-    const afterCall = vi.fn(async (_reservation: string, _usage: AgentUsage | null) => settlement);
+    const settlement = deferred();
+    const afterCall = vi.fn(
+      async (_reservation: string, _usage: AgentUsage | null) => settlement.promise,
+    );
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -354,7 +348,7 @@ describe("Pi usage accounting", () => {
     for (let index = 0; index < 4; index++) await Promise.resolve();
     expect(afterCall).toHaveBeenCalledOnce();
     expect(terminalSeen).toBe(false);
-    finishSettlement();
+    settlement.resolve();
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",

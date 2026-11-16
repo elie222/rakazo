@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
+  ConnectionSetupError,
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
@@ -212,7 +213,7 @@ export async function verifyCatalogProviderApiKey(
     });
   } catch {
     // Transport errors may contain the request's credential. Never forward them.
-    if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+    if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
     return;
   }
   const rejected =
@@ -221,9 +222,9 @@ export async function verifyCatalogProviderApiKey(
       : response.status === 401 || response.status === 403;
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
-    throw new Error(MODEL_KEY_REJECTED_ERROR);
+    throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
   }
-  if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+  if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
 }
 
 /**
@@ -237,7 +238,7 @@ export async function probeCatalogProviderModels(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = catalogProviderProbeBaseUrl(input.provider);
-  if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  if (!baseUrl) throw new ConnectionSetupError("This provider cannot be tested without saving.");
   await verifyCatalogProviderApiKey(input, fetchImpl, signal);
   return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
     allowPublic: true,

@@ -10,7 +10,7 @@ import {
   previewPluginInstall,
 } from "@rakazo/adapters";
 import type { Actor, CapabilityInstall, PluginPart } from "@rakazo/contracts";
-import { installedPluginParts } from "@rakazo/core";
+import { ClientError, installedPluginParts } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
@@ -22,7 +22,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { assertNameFreeWhereAvailable, lockOwner } from "./availability.js";
+import { assertNameFreeWhereAvailable, lockOwner, NameTakenError } from "./availability.js";
 
 export type PluginInstallDeps = {
   prisma: PrismaClient;
@@ -59,9 +59,7 @@ async function loadPlugin(
     plugin = await previewPluginInstall({ source, fetcher: deps.fetcher, signal });
   } catch (error) {
     rethrowUnlessPluginSourceFailed(error, signal);
-    throw new ORPCError("BAD_REQUEST", {
-      message: "Could not load a supported plugin from this repository",
-    });
+    throw new ClientError("BAD_REQUEST", "Could not load a supported plugin from this repository");
   }
   if (plugin.digest !== digest) {
     throw new ORPCError("CONFLICT", {
@@ -135,8 +133,8 @@ async function assertSkillNamesFree(
         spaceAvailability(install),
       );
     } catch (error) {
-      if (!(error instanceof ORPCError) || error.code !== "CONFLICT") throw error;
-      throw new ORPCError("CONFLICT", { message: "A plugin skill name is already in use" });
+      if (!(error instanceof NameTakenError)) throw error;
+      throw new ClientError("CONFLICT", "A plugin skill name is already in use");
     }
   }
 }
@@ -367,7 +365,7 @@ export async function installPlugin(
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ORPCError("CONFLICT", { message: "Plugin or skill is already installed" });
+        throw new ClientError("CONFLICT", "Plugin or skill is already installed");
       }
       throw error;
     }
@@ -459,7 +457,7 @@ export async function setPluginParts(
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ORPCError("CONFLICT", { message: "A plugin skill name is already in use" });
+        throw new ClientError("CONFLICT", "A plugin skill name is already in use");
       }
       throw error;
     }

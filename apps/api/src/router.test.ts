@@ -10,6 +10,7 @@ import {
   connectionCleanupJob,
   connectionCleanupJobKey,
   routineWakeupJob,
+  SandboxFileTooLargeError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
 import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
@@ -72,6 +73,11 @@ const withRoleDeps = (deps: RouterDeps) => {
   return deps;
 };
 const createRouter = (deps: RouterDeps) => createRouterWith(withRoleDeps(deps));
+/** A handler that answers errors as the app does, so a domain error keeps its own status. */
+const appHandler = (deps: RouterDeps) =>
+  new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
 const enqueueBotIntroRun = (deps: RouterDeps, ...rest: [Actor, Bot]) =>
   enqueueBotIntroRunWith(withRoleDeps(deps), ...rest);
 
@@ -230,10 +236,18 @@ describe("account preferences", () => {
         throw new SecretStoreUnavailableError();
       }),
     } as never;
-    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
-    await expect(client.models.credentials()).rejects.toMatchObject({
-      code: "SERVICE_UNAVAILABLE",
-      status: 503,
+    const response = await handle(
+      appHandler(deps),
+      new Request("http://127.0.0.1/rpc/models/credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      json: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service Unavailable" },
     });
   });
 
@@ -628,6 +642,60 @@ describe("account preferences", () => {
     });
     if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
     else expect(register).not.toHaveBeenCalled();
+  });
+
+  describe("registering a device from a session that was signed out meanwhile", () => {
+    const registrations = [
+      ["notifications/registerPush", { token: "ExponentPushToken[fake-token]" }],
+      [
+        "notifications/registerCallPush",
+        {
+          deviceId: "11111111-1111-4111-8111-111111111111",
+          platform: "android",
+          expoToken: "ExponentPushToken[fake-token]",
+        },
+      ],
+    ] as const;
+    const register = (deps: RouterDeps, actor: Actor, path: string, body: unknown) =>
+      handle(
+        appHandler(deps),
+        new Request(`http://127.0.0.1/rpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor, sessionId: "session-phone" } as never },
+      );
+    const failingStore = (error: Error) => ({
+      load: vi.fn(async () => undefined),
+      save: vi.fn().mockRejectedValue(error),
+      saveDevice: vi.fn().mockRejectedValue(error),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+    });
+
+    it.each(registrations)("answers %s as unauthorized", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new adapters.PushSessionEndedError());
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        json: { defined: false, code: "UNAUTHORIZED", status: 401, message: "Unauthorized" },
+      });
+    });
+
+    it.each(registrations)("reports any other %s failure as a server fault", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new Error("token table is locked"));
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(500);
+      expect(JSON.stringify(await response.json())).not.toContain("token table");
+    });
   });
 
   it("ends only the calling session's push registration, keeping another session's", async () => {
@@ -1148,7 +1216,7 @@ describe("answers the server can't save", () => {
     } satisfies Actor;
     const answer = `fake-code-${"x".repeat(16_400)}`;
     const response = await handle(
-      new RPCHandler(createRouter(deps)),
+      appHandler(deps),
       new Request("http://127.0.0.1/rpc/threads/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3489,6 +3557,34 @@ describe("connections.begin", () => {
     return { call, jobs, tx, root, prisma, errors, warnings, events };
   }
 
+  it("answers a connector this build does not have with a client error", async () => {
+    const managed = vi.fn(() => undefined);
+    const begin = (deps: object, connectorId?: string) =>
+      beginConnection(
+        { connectors: { defaultConnectorId: "first-connector", managed }, ...deps } as never,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId, provider: "gmail", displayName: "Gmail" },
+      );
+    const refusal = { name: "ClientError", kind: "BAD_REQUEST" };
+    await expect(begin({}, "a-provider-since-removed")).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector a-provider-since-removed is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("a-provider-since-removed");
+    // A request that names no connector means the one the server's registry calls the default.
+    await expect(begin({})).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector first-connector is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("first-connector");
+    // Saved integration settings answer only for the providers they have.
+    const integrationSettings = { has: vi.fn(() => false), resolve: vi.fn() };
+    await expect(begin({ integrationSettings }, "a-provider-since-removed")).rejects.toMatchObject(
+      refusal,
+    );
+    expect(integrationSettings.resolve).not.toHaveBeenCalled();
+  });
+
   it("records the removal with the lost race and deletes the record once it is done", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const { call, jobs, tx, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
@@ -5038,7 +5134,7 @@ describe("computer screen url", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const response = await handle(
       handler,
       new Request("http://127.0.0.1/rpc/computer/screenUrl", {
@@ -5234,10 +5330,7 @@ describe("computer terminal and file transfer", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps), {
-      // As the app does, so a domain error answers with its own status.
-      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
-    });
+    const handler = appHandler(deps);
     const call = async (procedure: string, json: Record<string, unknown>) => {
       const response = await handle(
         handler,
@@ -5579,10 +5672,10 @@ describe("computer terminal and file transfer", () => {
 
   it("answers 400 when a running computer's file is too large or not text to preview", async () => {
     const large = setup();
-    large.sandbox.readFile.mockRejectedValueOnce(new Error("computer file exceeds 2097152 bytes"));
+    large.sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(2 * 1024 * 1024));
     await expect(large.call("readFile", { path: "big.log" })).resolves.toMatchObject({
       status: 400,
-      body: { json: { message: "file is too large to preview" } },
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
     });
 
     const binary = setup();
@@ -5629,6 +5722,26 @@ describe("computer terminal and file transfer", () => {
       status: 409,
     });
   });
+
+  it("answers 400 when a running computer's file is over the download limit", async () => {
+    const { sandbox, call } = setup();
+    sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(10 * 1024 * 1024));
+    await expect(call("downloadFile", { path: "big.zip" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "File exceeds the 10 MiB download limit." } },
+    });
+  });
+
+  it.each(["readFile", "downloadFile"] as const)(
+    "reports a computer failure that only mentions a size as a fault from %s",
+    async (route) => {
+      for (const message of ["request entity too large", "command output exceeds the buffer"]) {
+        const { sandbox, call } = setup();
+        sandbox.readFile.mockRejectedValueOnce(new Error(message));
+        await expect(call(route, { path: "notes.txt" })).resolves.toMatchObject({ status: 500 });
+      }
+    },
+  );
 });
 
 describe("integration setup authorization", () => {
@@ -5816,10 +5929,89 @@ describe("OpenAI-compatible model probes", () => {
     const client = createRouterClient(createRouter(deps), {
       context: { actor: options.actor ?? actor } as never,
     });
-    return { client, fetch, credentials, findCredential, findCredentials, findSecret, load };
+    return { client, deps, fetch, credentials, findCredential, findCredentials, findSecret, load };
   }
 
   afterEach(() => vi.restoreAllMocks());
+
+  /** The answer a client receives, through the app's error translation. */
+  const probeOverHttp = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  it("tells the member what the server answered when it refuses the probe", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockResolvedValue(new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: {
+        code: "BAD_REQUEST",
+        message: "Model server returned 401. You can still Connect with an explicit model id.",
+      },
+    });
+  });
+
+  it("tells the member the server could not be reached", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "fetch failed" },
+    });
+  });
+
+  it("reports a probe that fails for a reason of our own as a server fault", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new Error("egress proxy pool exhausted"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("egress proxy");
+  });
+
+  it("tells the member a catalog provider rejected the key", async () => {
+    const { deps } = fixture();
+    deps.modelConnectionFetch = vi.fn(async () => new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "API key was rejected by the provider." },
+    });
+  });
+
+  it("reports a catalog probe that fails for a reason of our own as a server fault", async () => {
+    const { deps } = fixture();
+    vi.spyOn(adapters, "probeCatalogProviderModels").mockRejectedValue(
+      new Error("catalog registry failed to load"),
+    );
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("catalog registry");
+  });
 
   it("does not inject the connection transport into non-Ollama probes", async () => {
     const { client } = fixture();
@@ -6156,7 +6348,7 @@ describe("model credential persistence", () => {
         deploymentModelConfigured: options?.deploymentModelConfigured ?? false,
       },
     } as unknown as RouterDeps;
-    return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
+    return { upsert, finish, deps, handler: appHandler(deps) };
   }
 
   /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
@@ -7062,7 +7254,7 @@ describe("model settings", () => {
         agentRuntime: "pi",
       },
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const call = (body: unknown) =>
       handle(
         handler,
@@ -7991,7 +8183,7 @@ describe("codex live catalog", () => {
         codexCatalog: { read },
         refreshExpiredModelCredential,
       } as unknown as RouterDeps;
-      const handler = new RPCHandler(createRouter(deps));
+      const handler = appHandler(deps);
 
       const response = await call(handler, "models/setDefault", {
         provider: "openai-codex",
@@ -8540,7 +8732,7 @@ describe("bot model auth on save", () => {
       preferenceFindFirst,
       secretFindFirst,
       botUpdate,
-      handler: new RPCHandler(createRouter(deps)),
+      handler: appHandler(deps),
     };
   }
 
@@ -9085,14 +9277,12 @@ describe("routines.update", () => {
         ),
       },
     };
-    const handler = new RPCHandler(
-      createRouter({
-        prisma,
-        env: { sandboxProvider: "fake" },
-        events: { append: vi.fn(async () => undefined) },
-        jobs: { enqueue, cancel },
-      } as unknown as RouterDeps),
-    );
+    const handler = appHandler({
+      prisma,
+      env: { sandboxProvider: "fake" },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue, cancel },
+    } as unknown as RouterDeps);
     const call = (patch: Record<string, unknown> = {}) =>
       handle(
         handler,
@@ -11424,17 +11614,37 @@ describe("routine watch creation boundaries", () => {
       crons: [],
       watch: null,
     }));
-    const client = createRouterClient(
-      createRouter({
-        prisma: {
-          bot: { findFirst: findBot },
-          routine: { findFirst: findRoutine, create, update },
-        },
-        env: { sandboxProvider: "fake" },
-      } as unknown as RouterDeps),
-      { context: { actor } as never },
-    );
-    return { client, create, update, findBot, findRoutine };
+    const deps = {
+      prisma: {
+        bot: { findFirst: findBot },
+        routine: { findFirst: findRoutine, create, update },
+      },
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    const handler = appHandler(deps);
+    /** What the app answers, for the create and then the update of a routine with this watch. */
+    const answers = async (watch: Record<string, unknown>) => {
+      const calls = [
+        ["create", { botId: "bot-1", name: "Check", prompt: "Check changes", watch }],
+        ["update", { routineId: "routine-1", watch }],
+      ] as const;
+      const responses = [];
+      for (const [procedure, json] of calls) {
+        const response = await handle(
+          handler,
+          new Request(`http://127.0.0.1/rpc/routines/${procedure}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        );
+        responses.push({ status: response.status, body: await response.text() });
+      }
+      return responses;
+    };
+    return { client, create, update, findBot, findRoutine, answers };
   }
 
   it("rejects team file escapes on create and update before writing", async () => {
@@ -11450,6 +11660,32 @@ describe("routine watch creation boundaries", () => {
       code: "BAD_REQUEST",
       message: expect.stringContaining("inside the bot's folder"),
     });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("answers a watched path outside the bot's folder as the caller's to fix", async () => {
+    const { answers, create, update } = fixture();
+    const watch = { kind: "files", paths: ["/etc"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(400);
+      expect(JSON.parse(body).json).toMatchObject({
+        code: "BAD_REQUEST",
+        message: "The watched path must stay inside the bot's folder.",
+      });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure to check the watch as a server fault, without its message", async () => {
+    const { answers, create, update, findBot } = fixture();
+    findBot.mockResolvedValue({ id: "bot-1", computer: { scope: "mainframe" } });
+    const watch = { kind: "files", paths: ["notes"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(500);
+      expect(body).not.toContain("mainframe");
+    }
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });

@@ -169,7 +169,9 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
 Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
-enabling either managed catalog. Connector credentials are encrypted on the server and are never
+enabling either managed catalog. Local (stdio) MCP servers are off until you set
+`MCP_STDIO_ENABLED=true` and list their commands in `MCP_STDIO_ALLOWED_COMMANDS`; see
+[Tools and integrations](./docs/self-host-integrations.md). Connector credentials are encrypted on the server and are never
 returned by the API.
 
 Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.

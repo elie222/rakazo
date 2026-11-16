@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -193,7 +195,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<TeamConversationSettings />));
@@ -353,16 +355,19 @@ it("reads the room again on a later visit instead of showing the earlier copy", 
   const rooms = (await answers("spaces/list")) as {
     current: { externalConversations: object[] };
   };
-  let answer!: (navigation: unknown) => void;
-  vi.mocked(rpc).mockImplementation(((path: string) =>
-    path === "spaces/list"
-      ? new Promise((resolve) => (answer = resolve))
-      : answers(path)) as never);
+  let answer!: Deferred<unknown>;
+  vi.mocked(rpc).mockImplementation(((path: string) => {
+    if (path !== "spaces/list") return answers(path);
+    answer = deferred<unknown>();
+    return answer.promise;
+  }) as never);
   await render();
   expect(container.textContent).not.toContain("Replies to");
   const [room] = rooms.current.externalConversations;
   await act(async () =>
-    answer({ current: { externalConversations: [{ ...room, teamChatAmbientEnabled: true }] } }),
+    answer.resolve({
+      current: { externalConversations: [{ ...room, teamChatAmbientEnabled: true }] },
+    }),
   );
   await settle();
   expect(rows()).toContain("Replies to: Every message");
@@ -398,12 +403,9 @@ it("starts another room from what was read for it, not from the last room's edit
 
   // The second room waits for its own read: the copy read for the first room is not shown.
   const answers = vi.mocked(rpc).getMockImplementation() as (...args: unknown[]) => unknown;
-  let land!: () => void;
-  const landed = new Promise<void>((resolve) => {
-    land = resolve;
-  });
+  const landed = deferred();
   vi.mocked(rpc).mockImplementation((async (...args: unknown[]) => {
-    await landed;
+    await landed.promise;
     return answers(...args);
   }) as never);
   route.conversationId = "room-2";
@@ -411,7 +413,7 @@ it("starts another room from what was read for it, not from the last room's edit
   expect(rows()).toEqual([]);
   expect(navigation.options.headerRight).toBeUndefined();
 
-  await act(async () => land());
+  await act(async () => landed.resolve());
   await settle();
   expect(rows()).toContain("Replies to: Mentions only");
   await save();

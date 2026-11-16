@@ -39,3 +39,8 @@ export const BACKGROUND_HELPER_CHAT_REQUIRED =
 export function backgroundHelperLimitNote(limit: number): string {
   return `${limit} background helpers are already working. Wait for a result before starting another.`;
 }
+
+/** Opens a helper's result as the parent bot reads it in a tool result. */
+export function helperResultLabel(name: string): string {
+  return `Result from your helper "${name}" (not a message from the user):\n`;
+}

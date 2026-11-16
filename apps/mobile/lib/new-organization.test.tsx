@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -127,15 +128,6 @@ async function start(name = "  Second  ") {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field(), name);
     field().dispatchEvent(new Event("input", { bubbles: true }));
   });
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
 }
 
 it("creates the organization for the account and opens it", async () => {

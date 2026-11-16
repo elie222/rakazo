@@ -121,6 +121,8 @@ describe("background job contracts", () => {
     const payload = { kind: "secret_row", recordId: "secret-a", ref: "remote-reference" } as const;
     await dispatchBackgroundJob(target, "secret.cleanup", payload);
     expect(target["secret.cleanup"]).toHaveBeenCalledWith(payload);
+    const shared = { ...payload, kind: "secret_tables" };
+    expect(parseBackgroundJob("secret.cleanup", shared).payload).toEqual(shared);
     expect(() => parseBackgroundJob("secret.cleanup", { ...payload, kind: "unknown" })).toThrow();
     expect(() => parseBackgroundJob("secret.cleanup", { ...payload, recordId: "" })).toThrow();
   });

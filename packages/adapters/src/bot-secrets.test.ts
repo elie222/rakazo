@@ -1,6 +1,8 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { BOT_SECRET_ORIGIN_MISSING_MESSAGE, encodeLoginSecret } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
@@ -448,10 +450,11 @@ describe("authenticated secret requests", () => {
     const recordUse = vi.fn(async () => {});
     // Cancelled while the destination is still being checked: nothing is sent, then or after.
     const early = new AbortController();
-    let checked = (_addresses: { address: string; family: 4 }[]) => {};
-    const resolveHostname = vi.fn(
-      () => new Promise<{ address: string; family: 4 }[]>((resolve) => (checked = resolve)),
-    );
+    let checked: Deferred<{ address: string; family: 4 }[]> | undefined;
+    const resolveHostname = vi.fn(() => {
+      checked = deferred<{ address: string; family: 4 }[]>();
+      return checked.promise;
+    });
     const checking = requestWithBotSecret({
       ...input,
       recordUse,
@@ -461,8 +464,8 @@ describe("authenticated secret requests", () => {
     await vi.waitFor(() => expect(resolveHostname).toHaveBeenCalled());
     early.abort();
     expect(await checking).toHaveProperty("error");
-    checked([{ address: "203.0.113.10", family: 4 }]);
-    await new Promise((resolve) => setTimeout(resolve));
+    checked?.resolve([{ address: "203.0.113.10", family: 4 }]);
+    await flush();
     expect(recordUse).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
     // Cancelled while the request is out, with no answer yet.

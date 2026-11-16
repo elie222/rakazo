@@ -61,8 +61,8 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
    there is something to act on: a review finding you have not seen, a check
-   that newly failed, or every check run and commit status on the exact head
-   SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   that newly failed, or every check run, commit status and workflow run on the
+   exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
    Review bots usually answer long before the slowest check, so expect to
    handle comments while CI is still running.
 
@@ -91,6 +91,10 @@ steps too. Inspect `"$PRD" --logs <job-id>` before classifying the failure. Only
 rerun as infrastructure when the evidence establishes a setup/infrastructure
 failure, rather than a test assertion — `gh run rerun <run-id> --failed` and go
 back to 1.
+
+A `FAIL workflow` line is a run that ended without a failed job of its own, so
+there is no job log; `gh run view <run-id>` shows why it did not run, such as an
+invalid workflow file.
 
 The logs flag returns the assertion and code frame. Raw CI
 logs prefix every line with job name, step name, and a timestamp, and a
@@ -186,7 +190,7 @@ gh api graphql -f query='mutation($id:ID!){
 Finish only when one observation of a single SHA proves all of:
 
 1. `VERDICT green` — local, upstream, and PR head agree; no failing check or
-   status.
+   status, and no workflow run still queued or running.
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.

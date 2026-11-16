@@ -17,6 +17,7 @@ import {
   SandboxSizeUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread, planComputerSize } from "@rakazo/db";
@@ -2400,21 +2401,18 @@ describe("Team Computer wake", () => {
   it("does not hold the boot past the folder cleanup's time budget", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      let markStarted: () => void = () => undefined;
-      const cleanupStarted = new Promise<void>((resolve) => {
-        markStarted = resolve;
-      });
+      const cleanupStarted = deferred();
       const harness = wakeHarness("stopped");
       harness.execute.mockImplementation(async function* (_computer, request) {
         if (isFolderListing(request)) {
-          markStarted();
+          cleanupStarted.resolve();
           await new Promise(() => undefined);
         }
         yield { type: "exit" as const, code: 0 };
       });
 
       const booting = boot(harness);
-      await cleanupStarted;
+      await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
       await expect(booting).resolves.toEqual(harness.ref);

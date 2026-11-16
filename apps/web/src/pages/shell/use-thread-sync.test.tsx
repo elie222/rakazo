@@ -2,6 +2,7 @@
 
 import type { ProductEvent, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -24,15 +25,6 @@ vi.mock("@rakazo/core/query", () => ({ fetchFresh: vi.fn(async () => []) }));
 
 const ref = <T,>(current: T) => ({ current });
 const flush = () => act(async () => {});
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 function syncInput({
   inGroup,

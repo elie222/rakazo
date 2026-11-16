@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, expect, it, vi } from "vitest";
 import { completeSsoCallback, runSsoFlow, SSO_CALLBACK_PATH } from "./sso-flow";
 
@@ -213,22 +214,15 @@ it.each([false, true])(
   async (pending) => {
     vi.useFakeTimers();
     const { begin, popup, channels, land, location } = desktopWindow();
-    let finish!: (value: typeof result) => void;
-    const first = runSsoFlow(
-      pending
-        ? () =>
-            new Promise((resolve) => {
-              finish = resolve;
-            })
-        : begin,
-      ["/app"],
-    );
+    const finish = deferred<typeof result>();
+    const first = runSsoFlow(pending ? () => finish.promise : begin, ["/app"]);
     await vi.advanceTimersByTimeAsync(0);
     const second = runSsoFlow(begin, ["/app"]);
     await expect(first).resolves.toEqual({ data: null, error: null });
     expect(popup.close).toHaveBeenCalledTimes(1);
     expect(channels[0]?.close).toHaveBeenCalled();
-    if (pending) finish({ data: { url: "https://stale.example.test/authorize" }, error: null });
+    if (pending)
+      finish.resolve({ data: { url: "https://stale.example.test/authorize" }, error: null });
     await vi.advanceTimersByTimeAsync(0);
     expect(popup.location.href).toBe(result.data.url);
     channels[0]?.onmessage?.({

@@ -1,3 +1,4 @@
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { reportDesktopError } from "./monitoring.js";
 import {
@@ -48,13 +49,8 @@ describe("stop local stack menu item", () => {
 
   it("rebuilds the menu after a stop settles, including one that changes no phase", async () => {
     const rebuildMenu = vi.fn();
-    let settle!: () => void;
-    const stop = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          settle = resolve;
-        }),
-    );
+    const stopped = deferred();
+    const stop = vi.fn(() => stopped.promise);
     const item = stopLocalStackItem({ mode: "existing", stackRunning: true, stop, rebuildMenu });
 
     item.click?.(undefined as never, undefined as never, undefined as never);
@@ -65,7 +61,7 @@ describe("stop local stack menu item", () => {
     expect(rebuildMenu).toHaveBeenCalledOnce();
 
     // A stack stopped outside the app settles without a phase transition; the menu follows.
-    settle();
+    stopped.resolve();
     await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledTimes(2));
   });
 
@@ -80,7 +76,7 @@ describe("stop local stack menu item", () => {
     try {
       item.click?.(undefined as never, undefined as never, undefined as never);
       expect(rebuildMenu).toHaveBeenCalledOnce();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(rebuildMenu).toHaveBeenCalledTimes(2);
       expect(vi.mocked(reportDesktopError)).toHaveBeenCalledWith(expect.any(Error), "desktop.menu");
       expect(unhandled).toEqual([]);

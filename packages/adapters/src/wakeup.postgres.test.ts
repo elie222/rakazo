@@ -774,29 +774,48 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
-  it("prunes only exhausted jobs past retention, keeping retry notices and live jobs", async () => {
+  it("prunes only jobs that gave up longer ago than the retention, and counts them by name", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const prefix = `contract:prune:${Date.now()}`;
+    const sleep = (computerId: string) =>
+      ({ name: "computer.sleep", payload: { computerId } }) as const;
     const jobs = {
-      oldDead: { name: "computer.sleep", payload: { computerId: "old-dead" } },
-      recentDead: { name: "computer.sleep", payload: { computerId: "recent-dead" } },
-      lockedDead: { name: "computer.sleep", payload: { computerId: "locked-dead" } },
-      oldLive: { name: "computer.sleep", payload: { computerId: "old-live" } },
+      oldDead: sleep("old-dead"),
+      oldDeadWake: routineWakeupJob("old-dead-wake", new Date()),
+      recentDead: sleep("recent-dead"),
+      // Queued long ago for a far-off time, then failed every try just now.
+      queuedLongAgo: sleep("queued-long-ago"),
+      lockedDead: sleep("locked-dead"),
+      oldLive: sleep("old-live"),
+      future: sleep("future"),
       notice: { name: "routine.retry", payload: { runId: "notice" } },
     } as const;
-    const keys = Object.keys(jobs).map((name) => `${prefix}:${name}`);
+    const key = (name: keyof typeof jobs) => `${prefix}:${name}`;
+    const keys = (Object.keys(jobs) as (keyof typeof jobs)[]).map(key);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
     try {
       for (const [name, job] of Object.entries(jobs)) {
         await publisher.enqueue({ ...job, replaceKey: `${prefix}:${name}` } as BackgroundJob);
       }
       await testPool().query(
         `update graphile_worker._private_jobs
-         set attempts = case when key = $2 then 1 else max_attempts end,
-             locked_at = case when key = $3 then now() else null end,
+         set attempts = case when key = any($2::text[]) then 0 else max_attempts end,
+             locked_at = case when key = $3 then now() - interval '30 days' else null end,
              locked_by = case when key = $3 then 'contract-worker' else null end,
-             updated_at = case when key = $4 then now() else now() - interval '8 days' end
+             updated_at = case when key = $4 then now() else now() - interval '30 days' end,
+             run_at = case when key = $5 then now() + interval '30 days'
+                           when key = any($6::text[]) then now()
+                           else now() - interval '30 days' end
          where key = any($1::text[])`,
-        [keys, `${prefix}:oldLive`, `${prefix}:lockedDead`, `${prefix}:recentDead`],
+        [
+          keys,
+          [key("oldLive"), key("future")],
+          key("lockedDead"),
+          key("recentDead"),
+          key("future"),
+          [key("recentDead"), key("queuedLongAgo")],
+        ],
       );
 
       await createDeadJobPruner(testPool())();
@@ -806,16 +825,131 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         [keys],
       );
       expect(remaining.rows.map((row) => row.key.slice(prefix.length + 1)).sort()).toEqual([
+        "future",
         "lockedDead",
         "notice",
         "oldLive",
+        "queuedLongAgo",
         "recentDead",
       ]);
+      // Other test files share this database, so their old rows may be counted too.
+      const pruned = sink.events.filter((event) => event.message === "jobs.dead_pruned");
+      expect(pruned).toEqual([
+        expect.objectContaining({
+          level: "info",
+          "jobs.removed": expect.any(Number),
+          "jobs.removed_by_type": expect.stringMatching(
+            /(^|,)computer\.sleep=\d+,(.*,)?routine\.wakeup=\d+(,|$)/,
+          ),
+        }),
+      ]);
+      expect(JSON.stringify(pruned)).not.toContain("old-dead");
     } finally {
       await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
         keys,
       ]);
       await publisher.close();
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+    }
+  });
+
+  it("says once that a job gave up, without its payload", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
+    const ref = `gave-up-${Date.now()}`;
+    const key = `contract:gave-up:${ref}`;
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const gaveUp = () =>
+      sink.events.filter(
+        (event) => event.message === "job.gave_up" && event["job.type"] === "secret.cleanup",
+      );
+    const target = handlers({
+      "secret.cleanup": async () => {
+        throw new Error("intentional contract-test failure");
+      },
+    });
+    const queuedAt = Date.now();
+    try {
+      await host.start(target);
+      await publisher.enqueue({
+        name: "secret.cleanup",
+        payload: { kind: "secret_row", recordId: `record-${ref}`, ref },
+        replaceKey: key,
+        maxAttempts: 2,
+      });
+      await waitFor(async () =>
+        expect(await jobState(key)).toMatchObject({ attempts: 1, locked_at: null }),
+      );
+      expect(gaveUp()).toEqual([]);
+      await testPool().query(
+        "update graphile_worker._private_jobs set run_at = now() where key = $1",
+        [key],
+      );
+      await waitFor(async () =>
+        expect(await jobState(key)).toMatchObject({ attempts: 2, locked_at: null }),
+      );
+      expect(gaveUp()).toEqual([
+        expect.objectContaining({
+          level: "error",
+          "job.type": "secret.cleanup",
+          "job.id": expect.any(String),
+          "job.attempts": 2,
+          "job.max_attempts": 2,
+          "job.queued_ms": expect.any(Number),
+          error: expect.objectContaining({ message: "intentional contract-test failure" }),
+        }),
+      ]);
+      const [event] = gaveUp();
+      expect(event!["job.queued_ms"]).toBeGreaterThanOrEqual(0);
+      expect(event!["job.queued_ms"]).toBeLessThanOrEqual(Date.now() - queuedAt + 1_000);
+      expect(JSON.stringify(event)).not.toContain(ref);
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+    }
+  });
+
+  it("does not say a job gave up when a later try succeeds", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
+    const ref = `recovered-${Date.now()}`;
+    const key = `contract:recovered:${ref}`;
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    let tries = 0;
+    const target = handlers({
+      "secret.cleanup": async () => {
+        tries += 1;
+        if (tries === 1) throw new Error("intentional contract-test failure");
+      },
+    });
+    try {
+      await host.start(target);
+      await publisher.enqueue({
+        name: "secret.cleanup",
+        payload: { kind: "secret_row", recordId: `record-${ref}`, ref },
+        replaceKey: key,
+        maxAttempts: 2,
+      });
+      await waitFor(async () =>
+        expect(await jobState(key)).toMatchObject({ attempts: 1, locked_at: null }),
+      );
+      await testPool().query(
+        "update graphile_worker._private_jobs set run_at = now() where key = $1",
+        [key],
+      );
+      await waitFor(async () => expect(await jobState(key)).toBeUndefined());
+      expect(tries).toBe(2);
+      expect(sink.events.filter((event) => event.message === "job.completed")).toHaveLength(2);
+      expect(sink.events.filter((event) => event.message === "job.gave_up")).toEqual([]);
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
     }
   });
 

@@ -214,8 +214,14 @@ variable rather than placing a key on the command line:
 
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
-  --api-key-env OPENROUTER_API_KEY --trials 3
+  --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> \
+  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> \
+  --trials 3
 ```
+
+Cases that grade what the bot wrote need the judge: without `--judge-connection`
+and `--judge-pricing` a run that selects one schedules no inference and reports
+every trial not run. Select only effect cases with `--case` to run without one.
 
 `--connection <private-json-file>` also accepts the shared `models/connect`
 shape, including a generic compatible endpoint. Never commit that file. Use
@@ -305,6 +311,15 @@ baseline, not a statistically precise reliability estimate.
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
+
+The `product-meaning-v1` rubrics grade what the bot wrote: the urgent items and
+launch blocker it saved, the CRM status it reported, the Slack customer update,
+the remembered report language and the release changes. Exact file contents,
+identifiers such as a version or ticket reference, service reads and writes,
+approvals and schedules stay deterministic, and the judge is asked only once
+they all hold. Its calls and cost are reported under `judge`, apart from the
+bot's; a judge that fails or is missing leaves the trial incomplete, never
+passed.
 
 Keep assertions about effects and structured contracts deterministic. Use an LLM
 judge for natural-language meaning, with a versioned rubric and calibration
@@ -739,7 +754,7 @@ rates use the same four fields plus `thresholdTokens`. Optional `cacheWrite1h`
 prices one-hour writes separately; these tokens are a subset of all cache writes.
 
 ```sh
-pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 1 --spend-cap-usd 5
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --judge-connection /tmp/eval-judge-connection.json --judge-pricing /tmp/eval-judge-pricing.json --trials 1 --spend-cap-usd 5
 ```
 
 The default live cap is USD 5. Every runtime model call reserves its estimated
@@ -767,8 +782,12 @@ not guarantee a cache hit or an exact expiration time.
 History fixtures seed 100, 1,000, and 10,000 original messages directly without
 inference. They cover facts, paraphrases, dates, superseded decisions, open work,
 ambiguity, absence, durable constraints, injected historical instructions,
-oversized input, stale compaction coverage, and invalid summaries. Cases report
-factual checks and forbidden external effects; they do not grade prose quality.
+oversized input, stale compaction coverage, and invalid summaries. Each case holds
+the reply to the identifiers it must or must not carry (a label, a component, a
+file name, a canary) and to no external writes; the `history-meaning-v1` rubric
+then grades by meaning whether the reply says what the earlier chat established.
+The session SQL case is held to its schema and table names alone and needs no
+judge. Results recorded before this rubric were graded by word matches.
 The original strategy includes the stable-guidance-first prompt ordering change.
 
 Reports record the code revision, working diff hash, fixture version, strategy,
@@ -804,7 +823,7 @@ gate. Current integration checks also verify system transcript instructions and
 tools reach the provider after history selection.
 
 ```sh
-pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 2 --spend-cap-usd 1
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --judge-connection /tmp/eval-judge-connection.json --judge-pricing /tmp/eval-judge-pricing.json --trials 2 --spend-cap-usd 1
 ```
 
 Ordinary long-history cases begin with a deterministic prepared summary that

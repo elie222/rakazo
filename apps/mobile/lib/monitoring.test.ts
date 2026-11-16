@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sdk = vi.hoisted(() => ({
@@ -551,19 +553,17 @@ describe("mobile monitoring", () => {
 
   it("shares pending configuration and retries after it fails", async () => {
     const monitor = await import("./monitoring");
-    let release!: (value: Response) => void;
-    const fetchConfig = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
-    );
+    let release!: Deferred<Response>;
+    const fetchConfig = vi.fn(() => {
+      release = deferred<Response>();
+      return release.promise;
+    });
     const first = monitor.configureMobileMonitoring("https://app.example.com", {}, fetchConfig);
     await vi.waitFor(() => expect(fetchConfig).toHaveBeenCalledTimes(1));
     expect(monitor.configureMobileMonitoring("https://app.example.com", {}, fetchConfig)).toBe(
       first,
     );
-    release(new Response(null, { status: 503 }));
+    release.resolve(new Response(null, { status: 503 }));
     await first;
 
     const error = new Error("waiting for reporting");

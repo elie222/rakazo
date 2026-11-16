@@ -36,6 +36,7 @@ const sink = createTestSink();
 
 function fixture(
   options: {
+    stoppingSignal?: AbortSignal;
     startedAt?: Date;
     switching?: boolean;
     dedicated?: boolean;
@@ -77,12 +78,14 @@ function fixture(
     // Stop at attempt setup so the fixture exercises only the real startup path.
     attempt: {
       create: vi.fn(async () => Promise.reject(new Error("attempt setup failed"))),
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
     },
   };
   const enqueue = vi.fn(async () => undefined);
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue },
+    stoppingSignal: options.stoppingSignal,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma,
@@ -119,16 +122,22 @@ describe("execution start timing", () => {
     },
   );
 
-  it("waits without a retry timer while another run of the bot holds the computer", async () => {
-    leases.acquire.mockRejectedValue(new ComputerBusyError());
-    const { prisma, enqueue, start } = fixture({ heldBy: "lease-of-run-0" });
-    await start();
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "queued", wakeAt: null }),
-      }),
-    );
+  it("waits due, without a retry timer, while another run of the bot holds the computer", async () => {
+    const now = new Date("2026-11-01T12:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"], now });
+    try {
+      leases.acquire.mockRejectedValue(new ComputerBusyError());
+      const { prisma, enqueue, start } = fixture({ heldBy: "lease-of-run-0" });
+      await start();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "queued", wakeAt: now }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([undefined, new Date("2026-01-01T00:00:00Z")])(
@@ -176,14 +185,43 @@ describe("execution start timing", () => {
         if (failure === "database error") throw new Error("database unavailable");
         return { count: 0 };
       });
-      if (failure === "database error")
-        await expect(start()).rejects.toThrow("database unavailable");
-      else await start();
+      if (failure === "database error") {
+        // The failed setup is recorded as an attempt, and this fixture's attempt write fails too.
+        await expect(start()).rejects.toThrow("attempt setup failed");
+        expect(prisma.attempt.create).toHaveBeenCalledOnce();
+      } else {
+        await start();
+        expect(prisma.attempt.create).not.toHaveBeenCalled();
+      }
       expect(leases.release).toHaveBeenCalledWith(prisma, lease);
-      expect(prisma.attempt.create).not.toHaveBeenCalled();
       expect(sink.events.some((event) => event.message === "run.execution_started")).toBe(false);
     },
   );
+});
+
+it("reuses the attempt a failed write already committed, adding no second row", async () => {
+  const { prisma, start } = fixture({});
+  leases.acquire.mockResolvedValue(lease);
+  prisma.attempt.findFirst.mockResolvedValue({ id: "attempt-1" });
+  // What follows the claim is outside this fixture; only the attempt rows matter here.
+  await start().catch(() => undefined);
+  expect(prisma.attempt.findFirst).toHaveBeenCalledWith({
+    where: { runId: "run-1", fence: expect.any(Number) },
+  });
+  expect(prisma.attempt.create).toHaveBeenCalledOnce();
+});
+
+it("claims nothing when the process begins stopping while the run is being looked up", async () => {
+  const stopping = new AbortController();
+  const { prisma, start } = fixture({ stoppingSignal: stopping.signal });
+  const run = await prisma.run.findUnique();
+  prisma.run.findUnique.mockImplementation(async () => {
+    stopping.abort();
+    return run;
+  });
+  await start();
+  expect(prisma.run.updateMany).not.toHaveBeenCalled();
+  expect(leases.acquire).not.toHaveBeenCalled();
 });
 
 it("stops a superseded claim before it settles the new attempt's takeover cards", async () => {

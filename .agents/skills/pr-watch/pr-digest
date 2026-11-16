@@ -26,11 +26,12 @@ seen_path() { echo "$SEEN_DIR/${1//\//-}-$2"; }
 # One line per failed check run or commit status on a head. The head and the
 # job URL make a re-run or a new commit's failure distinct from an earlier one.
 failure_ids() {
-  local head=$1 runs=$2 statuses=$3
+  local head=$1 runs=$2 statuses=$3 workflows=$4
   {
     jq -r --arg h "$head" '.[] | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))
       | "\($h) run \(.name) \(.html_url // "")"' <<<"$runs"
     jq -r --arg h "$head" '.[] | select(.state | test("^(failure|error)$")) | "\($h) status \(.context)"' <<<"$statuses"
+    failed_workflows "$runs" "$workflows" | jq -r --arg h "$head" '.[] | "\($h) workflow \(.html_url)"'
   } | sort -u
 }
 
@@ -49,6 +50,27 @@ api() {
 check_runs() {
   api --paginate "repos/$1/commits/$2/check-runs?per_page=100" \
     --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
+}
+
+# A workflow queued behind a runner backlog has no jobs yet, so it shows up
+# here before it creates any check run. Only runs the PR's own commits trigger
+# count; a manual dispatch on the same commit is not part of the PR's checks.
+# A newer run of the same workflow replaces an older one.
+workflow_runs() {
+  api --paginate "repos/$1/actions/runs?head_sha=$2&per_page=100" \
+    --jq '.workflow_runs[] | select(.event | test("^(pull_request|pull_request_target|push)$"))
+      | {id, workflow_id, event, name, status, conclusion, html_url}' |
+    jq -s 'group_by([.workflow_id, .event]) | map(max_by(.id))'
+}
+
+# Workflow runs that ended unsuccessfully without a failed job of their own,
+# such as one that never started; nothing else would report them.
+failed_workflows() {
+  jq --argjson runs "$1" '[.[] | . as $w
+    | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))
+    | select([$runs[] | select((.html_url // "") | startswith($w.html_url + "/job/"))
+              | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))]
+             | length == 0)]' <<<"$2"
 }
 
 # Fork PRs always carry Vercel's "Authorization required to deploy." failure,
@@ -297,20 +319,27 @@ digest() {
     fi
   fi
 
-  local runs statuses pending failed
+  local runs statuses workflows wf_failed pending failed
   runs=$(check_runs "$repo" "$head") || die "could not read check runs"
   statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
+  workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
+  wf_failed=$(failed_workflows "$runs" "$workflows")
 
   # Legacy commit statuses gate a PR exactly like check runs do, so they have to
   # reach the verdict rather than only being printed.
   pending=$(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$runs") +
-              $(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses") ))
+              $(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses") +
+              $(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows") ))
   failed=$(( $(jq '[.[] | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))] | length' <<<"$runs") +
-             $(jq '[.[] | select(.state | test("^(failure|error)$"))] | length' <<<"$statuses") ))
+             $(jq '[.[] | select(.state | test("^(failure|error)$"))] | length' <<<"$statuses") +
+             $(jq length <<<"$wf_failed") ))
 
-  jq -r '"checks " + (if length == 0 then "none"
-    else ([.[].conclusion // "pending"] | group_by(.) | map("\(length) \(.[0])") | join(" · ")) end)' <<<"$runs"
+  jq -r --argjson wf "$workflows" '"checks " + (if length == 0 then "none"
+    else ([.[].conclusion // "pending"] | group_by(.) | map("\(length) \(.[0])") | join(" · ")) end)
+    + ([$wf[] | select(.status != "completed") | .status]
+       | group_by(.) | map(" · \(length) workflow \(.[0])") | join(""))' <<<"$runs"
   jq -r '.[] | select(.state != "success") | "STATUS \(.context) \(.state)"' <<<"$statuses"
+  jq -r '.[] | "FAIL workflow \(.name) [\(.conclusion)]\n     \(.html_url)"' <<<"$wf_failed"
 
   # Report the failed step and skipped successors without inferring whether
   # tests ran: a test assertion failure can also skip later report steps.
@@ -423,19 +452,20 @@ main() {
   [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local head runs statuses empty=0 baseline="" first=1 seen
+    local head runs statuses workflows empty=0 baseline="" first=1 seen
     seen=$(seen_path "$repo" "$pr")
     while :; do
       head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
         || die "could not read PR head"
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
+      workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
       # Wake as soon as there is something to act on, rather than when the slowest
       # check settles: a check that newly failed, or a finding not yet shown.
       # Failures already present at the start were seen and do not wake it again.
       if [ "$first" = 1 ]; then
-        baseline=$(failure_ids "$head" "$runs" "$statuses"); first=0
-      elif [ -n "$(comm -13 <(echo "$baseline") <(failure_ids "$head" "$runs" "$statuses"))" ]; then
+        baseline=$(failure_ids "$head" "$runs" "$statuses" "$workflows"); first=0
+      elif [ -n "$(comm -13 <(echo "$baseline") <(failure_ids "$head" "$runs" "$statuses" "$workflows"))" ]; then
         break
       fi
       findings "$pr" "$repo" "$viewer"
@@ -443,7 +473,8 @@ main() {
         break
       fi
       if [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")" = "0" ] &&
-         [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ]; then
+         [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ] &&
+         [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows")" = "0" ]; then
         # Nothing outstanding. Wait a few polls before believing a PR that has
         # reported nothing at all, in case checks are still registering.
         if [ "$(jq 'length' <<<"$runs")" != "0" ] ||

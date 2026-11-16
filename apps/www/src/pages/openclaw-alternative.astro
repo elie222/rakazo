@@ -8,7 +8,6 @@ import SetupSteps from "../components/SetupSteps.astro";
 import VsCard from "../components/VsCard.astro";
 import {
   COMPARISON_ROWS,
-  faqPageStructuredData,
   OPENCLAW_DAY_TO_DAY_PARAGRAPHS,
   OPENCLAW_DESCRIPTION,
   OPENCLAW_DOCS_URL,
@@ -26,11 +25,20 @@ import {
 import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
-import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { APP_URL, GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH } from "../site";
+import { pageArticleStructuredData } from "../structured-data";
 import { vsCard } from "../vs-points";
 
 const starsLabel = await githubStarsLabel();
-const structuredData = faqPageStructuredData(OPENCLAW_FAQS);
+const structuredData = pageArticleStructuredData({
+  path: OPENCLAW_ALTERNATIVE_PATH,
+  headline: OPENCLAW_H1,
+  description: OPENCLAW_DESCRIPTION,
+  crumb: "OpenClaw alternative",
+  parents: [{ name: "Alternatives", path: "/alternatives/" }],
+  image: ogPublicPath("openclaw-alternative"),
+  faq: OPENCLAW_FAQS,
+});
 const card = vsCard("openclaw-alternative");
 ---
 
@@ -38,7 +46,6 @@ const card = vsCard("openclaw-alternative");
   title={OPENCLAW_TITLE}
   description={OPENCLAW_DESCRIPTION}
   {structuredData}
-  localeAlternates={false}
   ogImage={ogPublicPath("openclaw-alternative")}
 >
   <div class="container">

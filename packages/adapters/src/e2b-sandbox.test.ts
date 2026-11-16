@@ -14,6 +14,7 @@ import {
   TimeoutError,
 } from "@e2b/desktop";
 import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
@@ -22,6 +23,7 @@ import { E2BSandboxProvider, e2bCreateOptions, keepingAwake } from "./e2b-sandbo
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "e2b-test",
@@ -654,6 +656,7 @@ describe("E2B computer backend", () => {
       commands: { run: command },
       files: {
         makeDir: vi.fn(async () => undefined),
+        getInfo: vi.fn(async (file: string) => ({ size: files.get(file)?.byteLength ?? 0 })),
         write: vi.fn(async (entries: Array<{ path: string; data: ArrayBuffer }>) => {
           for (const entry of entries) files.set(entry.path, new Uint8Array(entry.data));
         }),
@@ -741,17 +744,12 @@ describe("E2B computer backend", () => {
       expect.objectContaining({ timeoutMs: 42, signal: context.signal }),
     );
 
-    await provider.writeFile(
-      computer,
-      {
-        path: "notes/result.txt",
-        content: new TextEncoder().encode("portable"),
-      },
-      context,
-    );
+    const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
+    await provider.writeFile(computer, note, context);
     expect(
       new TextDecoder().decode(await provider.readFile(computer, "notes/result.txt", context)),
     ).toBe("portable");
+    await assertSandboxReadLimit(provider, computer, context, note);
     expect(await provider.listFiles(computer, "notes", context)).toEqual([
       { path: "notes/result.txt", kind: "file", size: 8 },
     ]);
@@ -1468,10 +1466,10 @@ describe("keepingAwake", () => {
     vi.stubEnv("SANDBOX_IDLE_MS", "180000");
     try {
       const desktop = { setTimeout: vi.fn(async () => undefined) };
-      let finish!: () => void;
+      const finish = deferred();
       const slow = (async function* () {
         yield "first";
-        await new Promise<void>((resolve) => (finish = resolve));
+        await finish.promise;
         yield "last";
       })();
       const read: string[] = [];
@@ -1486,7 +1484,7 @@ describe("keepingAwake", () => {
       expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
       expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-      finish();
+      finish.resolve();
       await done;
       const calls = desktop.setTimeout.mock.calls.length;
       await vi.advanceTimersByTimeAsync(600_000);

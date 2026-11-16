@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -206,13 +207,9 @@ describe("Android sheet selection", () => {
     expect(mocks.styles).toContainEqual({ flex: 1, paddingTop: 60, paddingBottom: 24 });
   });
   it("preloads before opening and renders no fallback while loading", async () => {
-    let resolve!: () => void;
+    const pending = deferred();
     mocks.load.mockClear();
-    await loadComponents(
-      new Promise<void>((done) => {
-        resolve = done;
-      }),
-    );
+    await loadComponents(pending.promise);
     expect(mocks.load).toHaveBeenCalledOnce();
     const root = await mount(
       <RunErrorSheetContainer expanded={false} onClose={vi.fn()}>
@@ -221,17 +218,13 @@ describe("Android sheet selection", () => {
     );
     expect(root.element.textContent).toBe("");
     expect(mocks.modal).not.toHaveBeenCalled();
-    await act(async () => resolve());
+    await act(async () => pending.resolve());
     expect(root.element.textContent).toBe("Error");
     expect(mocks.modal).not.toHaveBeenCalled();
   });
   it("falls back after an import failure and keeps dismissal working", async () => {
-    let reject!: (error: Error) => void;
-    await loadComponents(
-      new Promise<void>((_resolve, fail) => {
-        reject = fail;
-      }),
-    );
+    const held = deferred();
+    await loadComponents(held.promise);
     const close = vi.fn();
     await mount(
       <RunErrorSheetContainer expanded={false} onClose={close}>
@@ -239,7 +232,7 @@ describe("Android sheet selection", () => {
       </RunErrorSheetContainer>,
     );
     expect(mocks.modal).not.toHaveBeenCalled();
-    await act(async () => reject(new Error("Unavailable")));
+    await act(async () => held.reject(new Error("Unavailable")));
     expect(mocks.modal.mock.lastCall?.[0]).toMatchObject({ visible: true, onRequestClose: close });
     act(() => mocks.modal.mock.lastCall?.[0].onRequestClose());
     expect(close).toHaveBeenCalledOnce();
@@ -396,30 +389,22 @@ describe("inbox organization actions", () => {
     },
   );
   it("waits for preload without flashing a Modal and keeps Cancel working", async () => {
-    let resolve!: () => void;
-    await loadComponents(
-      new Promise<void>((done) => {
-        resolve = done;
-      }),
-    );
+    const pending = deferred();
+    await loadComponents(pending.promise);
     const { root, click, props } = await organize();
     expect(root.element.textContent).toBe("");
     expect(mocks.modal).not.toHaveBeenCalled();
-    await act(async () => resolve());
+    await act(async () => pending.resolve());
     await click("Cancel");
     expect(props.onClose).toHaveBeenCalledOnce();
     expect(mocks.modal).not.toHaveBeenCalled();
   });
   it("falls back on import failure with Cancel and request-close intact", async () => {
-    let reject!: (error: Error) => void;
-    await loadComponents(
-      new Promise<void>((_resolve, fail) => {
-        reject = fail;
-      }),
-    );
+    const held = deferred();
+    await loadComponents(held.promise);
     const { click, props } = await organize();
     expect(mocks.modal).not.toHaveBeenCalled();
-    await act(async () => reject(new Error("Unavailable")));
+    await act(async () => held.reject(new Error("Unavailable")));
     expect(mocks.modal.mock.lastCall?.[0]).toMatchObject({
       transparent: true,
       onRequestClose: props.onClose,

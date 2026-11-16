@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { deleteItemAsync, getItemAsync, setItemAsync } from "expo-secure-store";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -220,15 +221,11 @@ it("ends a unit still playing from an earlier start instead of overlapping it", 
 });
 
 it("cancels a cue pending its settings read at hang-up", async () => {
-  let resolve!: (value: string | null) => void;
-  vi.mocked(getItemAsync).mockReturnValueOnce(
-    new Promise((done) => {
-      resolve = done;
-    }),
-  );
+  const waiting = deferred<string | null>();
+  vi.mocked(getItemAsync).mockReturnValueOnce(waiting.promise);
   const playing = playCallCue("start");
   releaseWaitSound();
-  resolve(null);
+  waiting.resolve(null);
   await playing;
   expect(createAudioPlayer).not.toHaveBeenCalled();
 });
@@ -256,25 +253,19 @@ it("still plays a settings preview after call cleanup", async () => {
 
 it("cancels a cue pending its audio import at hang-up", async () => {
   vi.resetModules();
-  let finishImport!: () => void;
-  let importStarted!: () => void;
-  const started = new Promise<void>((resolve) => {
-    importStarted = resolve;
-  });
-  const pendingImport = new Promise<void>((resolve) => {
-    finishImport = resolve;
-  });
+  const started = deferred();
+  const pendingImport = deferred();
   vi.doMock("expo-audio", async () => {
-    importStarted();
-    await pendingImport;
+    started.resolve();
+    await pendingImport.promise;
     return { createAudioPlayer, setAudioModeAsync };
   });
   try {
     const sounds = await import("./call-sounds");
     const playing = sounds.playCallCue("start");
-    await started;
+    await started.promise;
     sounds.releaseWaitSound();
-    finishImport();
+    pendingImport.resolve();
     await playing;
     expect(createAudioPlayer).not.toHaveBeenCalled();
   } finally {

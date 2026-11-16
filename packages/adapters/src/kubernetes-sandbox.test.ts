@@ -5,6 +5,8 @@ import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
@@ -1130,13 +1132,11 @@ describe("KubernetesSandboxProvider", () => {
     async (mode) => {
       vi.useFakeTimers();
       try {
-        let connect!: (socket: Awaited<ReturnType<Exec["exec"]>>) => void;
-        const exec = vi.fn(
-          () =>
-            new Promise<Awaited<ReturnType<Exec["exec"]>>>((resolve) => {
-              connect = resolve;
-            }),
-        );
+        let connect!: Deferred<Awaited<ReturnType<Exec["exec"]>>>;
+        const exec = vi.fn(() => {
+          connect = deferred<Awaited<ReturnType<Exec["exec"]>>>();
+          return connect.promise;
+        });
         const controller = new AbortController();
         const consume = async () => {
           const events: ProcessEvent[] = [];
@@ -1154,7 +1154,7 @@ describe("KubernetesSandboxProvider", () => {
         else await vi.advanceTimersByTimeAsync(11_000);
         expect(await result).toContainEqual({ type: "exit", code: mode === "abort" ? 130 : 124 });
         const socket = { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
-        connect(socket);
+        connect.resolve(socket);
         await vi.advanceTimersByTimeAsync(0);
         expect(socket.close).toHaveBeenCalledOnce();
       } finally {

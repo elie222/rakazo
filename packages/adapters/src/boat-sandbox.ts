@@ -35,6 +35,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
@@ -1142,7 +1143,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     let size = 0;
     try {
       if (maxBytes !== undefined && Number(response.headers.get("content-length")) > maxBytes) {
-        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(maxBytes);
       }
       if (!reader) {
         finished = true;
@@ -1153,7 +1154,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         if (done) break;
         size += value.byteLength;
         if (maxBytes !== undefined && size > maxBytes) {
-          throw new Error(`computer file exceeds ${maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(maxBytes);
         }
         yield value;
       }
@@ -1189,7 +1190,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       } catch (error) {
         if (isArtifactTooLarge(error)) {
           if (maxBytes !== undefined && maxBytes < BOAT_ARTIFACT_MAX_BYTES) {
-            throw new Error(`computer file exceeds ${maxBytes} bytes`);
+            throw new SandboxFileTooLargeError(maxBytes);
           }
         } else if (!(error instanceof SandboxUnresponsiveError)) throw error;
       }

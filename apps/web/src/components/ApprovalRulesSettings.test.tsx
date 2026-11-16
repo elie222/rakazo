@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { act } from "react";
@@ -327,19 +329,14 @@ it("keeps a saved mode when the revisit's older background read lands after it",
     );
     await act(async () => first.unmount());
 
-    let resolveRead: (value: typeof settings) => void = () => undefined;
-    rpcMock.autoReview.get.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveRead = resolve;
-        }),
-    );
+    const resolveRead = deferred<typeof settings>();
+    rpcMock.autoReview.get.mockImplementationOnce(() => resolveRead.promise);
     const second = await mount();
     // Cached, so the mode can change while the refresh is out.
     expect(rpcMock.autoReview.get).toHaveBeenCalledTimes(2);
     await act(async () => neverAsk()?.click());
     await vi.waitFor(() => expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true"));
-    await act(async () => resolveRead(settings));
+    await act(async () => resolveRead.resolve(settings));
     // Query updates reach components on a timer; let any late write land.
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true");
@@ -467,13 +464,11 @@ it("saves a change once for two clicks in one tick, in the Space the page is bou
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
-  let saved: (value: typeof settings) => void = () => undefined;
-  rpcMock.autoReview.set.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        saved = resolve;
-      }),
-  );
+  let saved: Deferred<typeof settings> | undefined;
+  rpcMock.autoReview.set.mockImplementation(() => {
+    saved = deferred();
+    return saved.promise;
+  });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
@@ -496,7 +491,7 @@ it("saves a change once for two clicks in one tick, in the Space the page is bou
     expect(rpcMock.autoReview.set.mock.calls).toEqual([[{ scope: "space", mode: "never" }]]);
     expect(wrote).toEqual(["space-b"]);
     expect(button(container, "Add rule")!.disabled).toBe(true);
-    await act(async () => saved({ ...settings, mode: "never", skipApprovals: true }));
+    await act(async () => saved?.resolve({ ...settings, mode: "never", skipApprovals: true }));
     await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
     expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true");
   } finally {
@@ -539,13 +534,11 @@ it("keeps a change that lands after the page closed, for when it reopens", async
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([]);
   rpcMock.autoReview.get.mockResolvedValueOnce(settings);
-  let saved: (value: typeof settings) => void = () => undefined;
-  rpcMock.autoReview.set.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        saved = resolve;
-      }),
-  );
+  let saved: Deferred<typeof settings> | undefined;
+  rpcMock.autoReview.set.mockImplementation(() => {
+    saved = deferred();
+    return saved.promise;
+  });
   const first = await render();
   first.container.remove();
   const container = document.createElement("div");
@@ -557,7 +550,7 @@ it("keeps a change that lands after the page closed, for when it reopens", async
     );
     await act(async () => button(first.container, "Never ask")?.click());
     await act(async () => first.root.unmount());
-    await act(async () => saved({ ...settings, mode: "never", skipApprovals: true }));
+    await act(async () => saved?.resolve({ ...settings, mode: "never", skipApprovals: true }));
 
     rpcMock.autoReview.get.mockReturnValue(new Promise(() => undefined));
     await act(async () => {

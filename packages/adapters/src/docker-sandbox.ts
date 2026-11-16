@@ -19,6 +19,7 @@ import type {
 import {
   INVALID_BROWSER_REQUEST,
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -589,6 +590,8 @@ export class DockerSandboxProvider implements SandboxProvider {
     );
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
+      if (res.status === 413 && maxBytes !== undefined)
+        throw new SandboxFileTooLargeError(maxBytes);
       throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
     }
     const body = await readSandboxJson<{ content: string }>(
