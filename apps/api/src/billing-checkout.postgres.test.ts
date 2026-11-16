@@ -5,6 +5,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -92,14 +93,6 @@ dbTests("billing checkout coordination", () => {
     ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
   });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 /** Holds the provider's customer and checkout calls until the test releases them. */
 class GatedCheckoutEmulator extends BillingEmulator {

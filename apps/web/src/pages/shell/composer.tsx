@@ -49,6 +49,7 @@ import {
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
 import { isFilePaste } from "../../lib/pending-attachments";
+import { useEventListener } from "../../lib/use-event-listener";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -346,27 +347,21 @@ const ComposerBody = memo(function Composer({
     talk,
     available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
   };
-  useEffect(() => {
-    const apple = isApplePlatform();
-    function onKey(event: KeyboardEvent) {
-      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
-        return;
-      if (!primaryModifier(event, apple)) return;
-      const { talk, available } = dictateKey.current;
-      if (talk.recording) {
-        // Pressed while typing elsewhere, it belongs to that field rather than this recording.
-        if (!talk.recording.locked || talk.transcribing) return;
-        if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
-        event.preventDefault();
-        talk.submit();
-      } else if (available && document.activeElement === textareaRef.current) {
-        event.preventDefault();
-        talk.startHandsFree();
-      }
+  useEventListener(window, "keydown", (event) => {
+    if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d") return;
+    if (!primaryModifier(event, isApplePlatform())) return;
+    const { talk, available } = dictateKey.current;
+    if (talk.recording) {
+      // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+      if (!talk.recording.locked || talk.transcribing) return;
+      if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+      event.preventDefault();
+      talk.submit();
+    } else if (available && document.activeElement === textareaRef.current) {
+      event.preventDefault();
+      talk.startHandsFree();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [textareaRef]);
+  });
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
     const selection = pendingCaret.current;

@@ -43,11 +43,7 @@ describePostgres("team chat engagement through Graphile jobs (PostgreSQL)", () =
     system = asSystem(db.prisma);
     graphile = new GraphileJobPublisher(db.pool);
     identity = await runAsSystem("teamchat fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
   });
 

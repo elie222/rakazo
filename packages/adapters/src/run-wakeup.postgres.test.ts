@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { BackgroundJobHandlers, JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessage } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEvent,
@@ -35,11 +36,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     db = createDb(url!);
     system = asSystem(db.prisma);
     identity = await runAsSystem("direct dispatch fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
   });
   afterAll(async () => {
@@ -485,10 +482,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       new RunWorkerHost(db.prisma, realtime, new RunStarter(realtime), { intervalMs: 25 }),
     ];
     const claims: string[] = [];
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     const handlers = {
       "run.continue": async ({ runId }, execution) => {
         if (runId !== run.id) return;
@@ -504,7 +498,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           if (!claimed.count) return;
           claims.push(runId);
           execution!.onRunStarted();
-          await pending;
+          await pending.promise;
           await db.prisma.run.update({ where: { id: runId }, data: { status: "completed" } });
         });
       },
@@ -522,11 +516,11 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       });
       await new Promise((resolve) => setImmediate(resolve));
       expect(stopped).toBe(false);
-      release();
+      pending.resolve();
       await stopping;
       expect(claims).toEqual([run.id]);
     } finally {
-      release();
+      pending.resolve();
       await Promise.all(hosts.map((host) => host.stop()));
     }
   });

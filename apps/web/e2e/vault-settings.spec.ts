@@ -334,6 +334,8 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await page.reload();
   const own = (await openUserSettings(page, "vault")).getByTestId("vault");
   await loaded;
+  await expect(own.getByTestId("vault-own-space-note")).toBeVisible();
+  await captureScreenshot(page, testInfo, "vault-own-space-note");
   await own.getByText("scoped.example.test", { exact: true }).click();
   await page.getByTestId("vault-item-edit").click();
   await expect(

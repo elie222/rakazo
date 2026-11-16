@@ -98,6 +98,13 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
     .strict(),
   // A manual edit in bot settings; which setting only, never its value.
   z.object({ name: z.literal("bot_setting_changed"), setting: AnalyticsBotSetting }).strict(),
+  // Someone asked for a computer to be repaired; whether it worked shows in the logs.
+  z
+    .object({
+      name: z.literal("computer_repair_started"),
+      action: z.enum(["reset", "recover"]),
+    })
+    .strict(),
   // Only the fixed choices; free-text answers stay in the database.
   z
     .object({

@@ -729,11 +729,12 @@ describeMessaging("messaging surface journeys", () => {
 });
 
 async function waitForDatabase<T>(pred: () => Promise<T | false | null | undefined>): Promise<T> {
-  const start = Date.now();
-  while (Date.now() - start < 15_000) {
-    const value = await pred();
-    if (value) return value as T;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("timeout waiting for database state");
+  return vi.waitFor(
+    async () => {
+      const value = await pred();
+      if (value) return value as T;
+      throw new Error("timeout waiting for database state");
+    },
+    { timeout: 15_000, interval: 25 },
+  );
 }

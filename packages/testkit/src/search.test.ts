@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SearchHit, ThreadSnapshot } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -275,12 +275,12 @@ async function waitFor(
   botId: string,
   pred: (snap: ThreadSnapshot) => boolean,
 ) {
-  const start = Date.now();
-  let last: ThreadSnapshot | null = null;
-  while (Date.now() - start < 20_000) {
-    last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
-    if (pred(last)) return last;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+  return vi.waitFor(
+    async () => {
+      const last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
+      if (pred(last)) return last;
+      throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+    },
+    { timeout: 20_000, interval: 100 },
+  );
 }

@@ -5,7 +5,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
-  openBotPanelTab,
+  openBotPanel,
   rpc,
   signup,
 } from "./helpers";
@@ -487,7 +487,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   await expect(pageFrame(page, "Signups dashboard").getByText("1.9%")).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await openBotPanelTab(page, "Pages");
+  await openBotPanel(page);
   await page
     .getByTestId("bot-pages")
     .getByRole("button", { name: /^Signups dashboard/ })
@@ -517,30 +517,23 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   await page.keyboard.press("Escape");
   await expect(view).toBeHidden();
 
-  // The Library pins a page into its own group and deletes it after naming it.
+  // The panel's pages pin and delete a page after naming it.
   const library = page.getByTestId("bot-pages");
   const more = library.getByRole("button", { name: "Actions for Signups dashboard" });
   await more.click();
   await captureScreenshot(page, testInfo, "page-library-menu");
   await page.getByRole("menuitem", { name: "Pin" }).click();
-  await expect(library.getByRole("heading", { name: "Pinned" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "page-library-pinned");
+  await expect(page.getByRole("menuitem", { name: "Pin" })).toBeHidden();
   await more.click();
+  await expect(page.getByRole("menuitem", { name: "Unpin" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-library-pinned");
   await page.getByRole("menuitem", { name: "Delete" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Delete Signups dashboard?" });
   await captureScreenshot(page, testInfo, "page-delete-confirm");
   await confirm.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("Pages this bot builds for you appear here.")).toBeVisible();
+  // A bot with no pages shows no Pages section at all.
+  await expect(library).toHaveCount(0);
   await captureScreenshot(page, testInfo, "page-library-empty");
-
-  // The header pill reopens the bot panel on the Pages tab it closed on.
-  const pill = page.getByTestId("bot-settings-trigger");
-  await pill.click();
-  await expect(pill).toHaveAttribute("aria-expanded", "false");
-  await pill.click();
-  await expect(
-    page.getByTestId("bot-settings").getByRole("tab", { name: "Pages", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
 });
 
 function tiny(heading: string) {
@@ -818,8 +811,9 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await closePage(page);
 
   // The Library's Share opens the popover, every time.
-  await openBotPanelTab(page, "Pages");
-  const library = page.getByTestId("bot-pages");
+  await openBotPanel(page);
+  // The panel shows the latest pages; the whole list is a separate view once there are more.
+  const library = page.getByTestId("bot-pages").filter({ visible: true });
   for (let round = 0; round < 2; round++) {
     await library.getByRole("button", { name: "Actions for Alpha" }).click();
     await page.getByRole("menuitem", { name: "Share" }).click();
@@ -860,7 +854,9 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
 
   // A longer list gets a field to find a page by title.
   for (const title of ["One", "Two", "Three", "Four", "Five", "Six", "Seven"]) await save(title);
-  await openBotPanelTab(page, "Pages");
+  await openBotPanel(page);
+  await expect(library.getByRole("listitem")).toHaveCount(3);
+  await library.getByRole("button", { name: "Pages", exact: true }).click();
   await expect(library.getByRole("listitem")).toHaveCount(8);
   await expect(library.getByRole("button", { name: "Show more" })).toBeHidden();
   await library.getByRole("searchbox", { name: "Find a page" }).fill("sev");
@@ -908,17 +904,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await expect(listError).toContainText("Couldn't load pages.");
   await expect(library.getByRole("listitem")).toHaveCount(8);
   await captureScreenshot(page, testInfo, "page-library-stale-error");
-  // A list that can't be read at all is not shown as empty.
-  await page.reload();
-  await openBotPanelTab(page, "Pages");
-  const unread = page.getByTestId("bot-settings").getByRole("alert");
-  await expect(unread).toContainText("Couldn't load pages.");
-  await expect(page.getByText("Pages this bot builds for you appear here.")).toBeHidden();
-  await captureScreenshot(page, testInfo, "page-library-error");
   await page.unroute("**/rpc/pages/list");
-  await unread.getByRole("button", { name: "Try again" }).click();
-  await expect(library.getByRole("listitem")).toHaveCount(8);
-  await expect(unread).toBeHidden();
 });
 
 test("a group's pages show in its settings, and the palette finds and opens a page", async ({

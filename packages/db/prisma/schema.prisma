@@ -803,9 +803,6 @@ model DeploymentSettings {
   id                              String   @id @default("default")
   /// Deprecated: retained for rolling-release compatibility; never authorizes app users.
   ownerUserId                     String?
-  signupsEnabled                  Boolean  @default(true)
-  signupAllowlist                 String   @default("")
-  signupPolicyInitialized         Boolean  @default(false)
   defaultModelProvider            String?
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
@@ -1915,6 +1912,17 @@ model HomeDeletionNotice {
   createdAt      DateTime  @default(now())
 
   @@map("home_deletion_notices")
+}
+
+/// One holder at a time for long work across processes. `withLease` in packages/db/src/leases.ts
+/// is the only writer. A release deletes its row; `fence` comes from `leases_fence_seq`, so a key's
+/// next holder always outranks every earlier one.
+model Lease {
+  key       String   @id
+  fence     BigInt
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@map("leases")
 }
 
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,

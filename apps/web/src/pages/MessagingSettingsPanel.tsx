@@ -21,6 +21,7 @@ import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { useEventListener } from "../lib/use-event-listener";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
 const LINK_POLL_MS = 3_000;
@@ -158,12 +159,8 @@ export function MessagingSettingsPanel() {
     }
   }
 
-  useEffect(() => {
-    // A failed read shows through the queries' error.
-    const onFocus = () => void refresh().catch(() => undefined);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  // A failed read shows through the queries' error.
+  useEventListener(window, "focus", () => void refresh().catch(() => undefined));
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";

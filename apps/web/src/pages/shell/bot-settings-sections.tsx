@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
+import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -15,14 +15,10 @@ import {
   Textarea,
   Toggle,
 } from "@rakazo/ui-web";
-import { Download, Settings, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { ChatModelPicker } from "./chat-model-picker";
-
-const rowLabelClass = "text-body text-foreground";
-
-type MemoryScope = "isolated" | "shared" | null;
 
 export function ComputerModePicker({
   value,
@@ -50,25 +46,53 @@ export function ComputerModePicker({
   );
 }
 
-/** `plain` drops the card for a section whose single control already draws its own frame. */
-function BotPanelGroup({
+/** A panel section: its label, an optional control beside it, then its content. */
+export function PanelSection({
   label,
-  plain = false,
+  action,
   children,
 }: {
-  label: string;
-  plain?: boolean;
-  children: ReactNode;
+  label: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <section>
-      <SectionHeading variant="label" className="mb-2">
+      <SectionHeading variant="label" className="mb-2 flex min-h-6 items-center justify-between">
         {label}
+        {action}
       </SectionHeading>
-      <div className={`space-y-3 [&>*]:mt-0 ${plain ? "" : "rounded-xl bg-muted/50 p-4"}`}>
-        {children}
-      </div>
+      {children}
     </section>
+  );
+}
+
+/** Rows of one card. */
+export function SettingsCard({ children }: { children: ReactNode }) {
+  return <div className="rounded-xl bg-muted/50 px-4 py-1">{children}</div>;
+}
+
+export function SwitchRow({
+  id,
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className="flex min-h-12 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
+    >
+      {label}
+      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+    </label>
   );
 }
 
@@ -77,46 +101,10 @@ function humanizeTool(name: string) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function NotificationsSection({
-  ids,
-  notifyOnFinish,
-  onNotifyOnFinishChange,
-}: {
-  ids: string;
-  notifyOnFinish: boolean;
-  onNotifyOnFinishChange: (checked: boolean) => void;
-}) {
-  return (
-    <section className="mt-6">
-      <SectionHeading variant="label" className="mb-2">
-        <Trans>Notifications</Trans>
-      </SectionHeading>
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
-        <div>
-          <label
-            htmlFor={`${ids}-notify-finish`}
-            id={`${ids}-notify-finish-label`}
-            className="text-body"
-          >
-            <Trans>When it finishes or needs input</Trans>
-          </label>
-        </div>
-        <Switch
-          id={`${ids}-notify-finish`}
-          checked={notifyOnFinish}
-          aria-labelledby={`${ids}-notify-finish-label`}
-          onCheckedChange={onNotifyOnFinishChange}
-        />
-      </div>
-    </section>
-  );
-}
-
-/** The model picker and, when the model offers levels, its thinking level. */
-export function ModelSection({
+/** The model row and, when the model offers levels, a thinking row under it. */
+export function ModelRow({
   ids,
   containerRef,
-  onOpenConnections,
   choices,
   value,
   onModelChange,
@@ -127,7 +115,6 @@ export function ModelSection({
 }: {
   ids: string;
   containerRef: RefObject<HTMLDivElement | null>;
-  onOpenConnections?: () => void;
   choices: readonly ChatModelChoice[];
   value: string;
   onModelChange: (key: string) => void;
@@ -138,254 +125,75 @@ export function ModelSection({
 }) {
   const { t } = useLingui();
   return (
-    <div ref={containerRef}>
-      <div className="mb-2 flex items-center justify-between text-label font-medium text-muted-foreground pe-1">
-        <Trans>Model</Trans>
-        {onOpenConnections ? (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t`Model connections`}
-            onClick={onOpenConnections}
-          >
-            <Settings className="size-4" />
-          </Button>
-        ) : null}
-      </div>
-      <div className="rounded-xl bg-muted/50 p-4 space-y-3">
-        <div className="flex min-h-11 items-center justify-between gap-3">
-          <label htmlFor={`${ids}-model`} className="sr-only">
-            <Trans>Model</Trans>
-          </label>
-          <div className="min-w-0 w-full [&>div]:mt-0 [&>button]:mt-0">
-            <ChatModelPicker
-              id={`${ids}-model`}
-              choices={choices}
-              value={value}
-              onChange={onModelChange}
-            />
-          </div>
-        </div>
-        {thinkingOptions.length ? (
-          <label
-            htmlFor={`${ids}-thinking`}
-            className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
-          >
-            <Trans>Thinking</Trans>
-            <NativeSelect
-              id={`${ids}-thinking`}
-              className="max-w-2/3"
-              value={thinkingLevel}
-              onChange={(event) => onThinkingLevelChange(event.target.value)}
-            >
-              <NativeSelectOption value="">
-                {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-              </NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export function ComputerGroup({
-  computerMode,
-  onComputerModeChange,
-  memoryProviderConfigured,
-  memoryScope,
-  onMemoryScopeChange,
-  actions,
-}: {
-  computerMode: ComputerMode;
-  onComputerModeChange: (mode: ComputerMode) => void;
-  memoryProviderConfigured: boolean;
-  memoryScope: MemoryScope;
-  onMemoryScopeChange: (scope: MemoryScope) => void;
-  actions?: ReactNode;
-}) {
-  const { t } = useLingui();
-  return (
-    <BotPanelGroup label={t`Computer`} plain>
-      <ComputerModePicker value={computerMode} onChange={onComputerModeChange} />
-      {memoryProviderConfigured ? (
-        <div className="mt-4 text-body text-foreground">
-          <Trans>Memory scope</Trans>
-          <div className="mt-2 flex gap-2">
-            {(
-              [
-                { value: null, label: t`Inherit default` },
-                { value: "isolated" as const, label: t`Isolated` },
-                { value: "shared" as const, label: t`Shared` },
-              ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
-            ).map((option) => (
-              <Toggle
-                key={option.label}
-                variant="outline"
-                size="sm"
-                pressed={memoryScope === option.value}
-                onPressedChange={(pressed) => {
-                  if (pressed) onMemoryScopeChange(option.value);
-                }}
-                className="flex-1 aria-pressed:border-foreground/40 aria-pressed:text-foreground"
-              >
-                {option.label}
-              </Toggle>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {actions}
-    </BotPanelGroup>
-  );
-}
-
-export function VoiceGroup({
-  ids,
-  autoSpeak,
-  onAutoSpeakChange,
-  voices,
-  voiceId,
-  onVoiceIdChange,
-}: {
-  ids: string;
-  autoSpeak: boolean;
-  onAutoSpeakChange: (checked: boolean) => void;
-  voices: ReadonlyArray<{ id: string; label: string }> | undefined;
-  voiceId: string;
-  onVoiceIdChange: (voiceId: string) => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <BotPanelGroup label={t`Voice`}>
-      <label
-        htmlFor={`${ids}-auto-speak`}
-        className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
-      >
-        <span className={rowLabelClass}>
-          <Trans>Read replies aloud</Trans>
-        </span>
-        <Switch
-          id={`${ids}-auto-speak`}
-          checked={autoSpeak}
-          onCheckedChange={(checked) => onAutoSpeakChange(checked)}
+    <>
+      <div ref={containerRef}>
+        <ChatModelPicker
+          id={`${ids}-model`}
+          choices={choices}
+          value={value}
+          onChange={onModelChange}
         />
-      </label>
-      {voices?.length ? (
+      </div>
+      {thinkingOptions.length ? (
         <label
-          htmlFor={`${ids}-voice`}
-          className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
+          htmlFor={`${ids}-thinking`}
+          className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
         >
-          <Trans>Voice</Trans>
+          <Trans>Thinking</Trans>
           <NativeSelect
-            id={`${ids}-voice`}
+            id={`${ids}-thinking`}
             className="max-w-2/3"
-            value={voiceId}
-            onChange={(event) => onVoiceIdChange(event.target.value)}
+            value={thinkingLevel}
+            onChange={(event) => onThinkingLevelChange(event.target.value)}
           >
-            <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
-            {voices.map((voice) => (
-              <NativeSelectOption key={voice.id} value={voice.id}>
-                {voice.label}
+            <NativeSelectOption value="">
+              {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
+            </NativeSelectOption>
+            {thinkingOptions.map((level) => (
+              <NativeSelectOption key={level} value={level}>
+                {thinkingLevelLabel(level)}
               </NativeSelectOption>
             ))}
           </NativeSelect>
         </label>
       ) : null}
-    </BotPanelGroup>
+    </>
   );
 }
 
-export function PermissionsGroup({
+/** The voice that reads replies aloud. */
+export function VoiceRow({
   ids,
-  saving,
-  dailyCheckIns,
-  onDailyCheckInsChange,
-  crossSpaceCommunication,
-  onCrossSpaceCommunicationChange,
-  fleetManagement,
-  onFleetManagementChange,
+  voices,
+  voiceId,
+  onVoiceIdChange,
 }: {
   ids: string;
-  saving: boolean;
-  dailyCheckIns: boolean;
-  onDailyCheckInsChange: (checked: boolean) => void;
-  crossSpaceCommunication: boolean;
-  onCrossSpaceCommunicationChange: (checked: boolean) => void;
-  fleetManagement: boolean;
-  onFleetManagementChange: (checked: boolean) => void;
+  voices: ReadonlyArray<{ id: string; label: string }>;
+  voiceId: string;
+  onVoiceIdChange: (voiceId: string) => void;
 }) {
   const { t } = useLingui();
   return (
-    <BotPanelGroup label={t`Permissions`}>
-      <div className="flex min-h-11 items-center justify-between gap-3 text-body">
-        <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
-          <Trans>Daily check-ins on unfinished work</Trans>
-        </label>
-        <Switch
-          id={`${ids}-daily-check-ins`}
-          checked={dailyCheckIns}
-          disabled={saving}
-          onCheckedChange={onDailyCheckInsChange}
-        />
-      </div>
-      <div className="flex min-h-11 items-center justify-between gap-3 text-body">
-        <label htmlFor={`${ids}-cross-space`} className={rowLabelClass}>
-          <Trans>Allow cross-space bot communication</Trans>
-        </label>
-        <Switch
-          id={`${ids}-cross-space`}
-          checked={crossSpaceCommunication}
-          disabled={saving}
-          onCheckedChange={onCrossSpaceCommunicationChange}
-        />
-      </div>
-      <div className="flex min-h-11 items-center justify-between gap-3 text-body">
-        <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
-          <Trans>Manage other bots</Trans>
-        </label>
-        <Switch
-          id={`${ids}-fleet-management`}
-          checked={fleetManagement}
-          disabled={saving}
-          onCheckedChange={onFleetManagementChange}
-        />
-      </div>
-    </BotPanelGroup>
-  );
-}
-
-export function RepliesGroup({
-  ids,
-  saving,
-  replyMode,
-  onReplyModeChange,
-}: {
-  ids: string;
-  saving: boolean;
-  replyMode: ReplyMode;
-  onReplyModeChange: (mode: ReplyMode) => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <BotPanelGroup label={t`Replies`} plain>
+    <label
+      htmlFor={`${ids}-voice`}
+      className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
+    >
+      <Trans>Voice</Trans>
       <NativeSelect
-        id={`${ids}-reply-mode`}
-        aria-label={t`Replies`}
-        className="w-full"
-        value={replyMode}
-        disabled={saving}
-        onChange={(event) => onReplyModeChange(event.target.value as ReplyMode)}
+        id={`${ids}-voice`}
+        className="max-w-2/3"
+        value={voiceId}
+        onChange={(event) => onVoiceIdChange(event.target.value)}
       >
-        <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
-        <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
+        <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
+        {voices.map((voice) => (
+          <NativeSelectOption key={voice.id} value={voice.id}>
+            {voice.label}
+          </NativeSelectOption>
+        ))}
       </NativeSelect>
-    </BotPanelGroup>
+    </label>
   );
 }
 
@@ -403,7 +211,7 @@ export function DescriptionGroup({
 }) {
   const { t } = useLingui();
   return (
-    <BotPanelGroup label={t`How other bots see it`} plain>
+    <PanelSection label={t`How other bots see it`}>
       <Textarea
         id={`${ids}-description`}
         aria-label={t`How other bots see it`}
@@ -415,7 +223,7 @@ export function DescriptionGroup({
         rows={2}
         className="min-h-16 max-h-96 resize-none field-sizing-content"
       />
-    </BotPanelGroup>
+    </PanelSection>
   );
 }
 
@@ -432,7 +240,7 @@ export function ToolsGroup({
 }) {
   const { t } = useLingui();
   return (
-    <BotPanelGroup label={t`Tools`} plain>
+    <PanelSection label={t`Tools`}>
       <section data-testid="bot-settings-tools">
         <div className="space-y-2 [&>*]:mt-0">
           <div>
@@ -473,34 +281,6 @@ export function ToolsGroup({
           ))}
         </div>
       </section>
-    </BotPanelGroup>
-  );
-}
-
-export function ExportAndClear({
-  onExport,
-  onClear,
-}: {
-  onExport: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
-      <button
-        type="button"
-        className="flex min-h-12 w-full items-center justify-between text-body"
-        onClick={onExport}
-      >
-        <Trans>Export</Trans>
-        <Download className="size-4 text-muted-foreground" />
-      </button>
-      <button
-        type="button"
-        className="min-h-12 w-full border-t border-border text-start text-body text-destructive"
-        onClick={onClear}
-      >
-        <Trans>Clear conversation</Trans>
-      </button>
-    </div>
+    </PanelSection>
   );
 }

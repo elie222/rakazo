@@ -6,6 +6,7 @@ import { desktopBridge } from "../../lib/desktop";
 export type ShellShortcut =
   | { type: DesktopMenuCommand }
   | { type: "focus-composer" }
+  | { type: "quote-selection" }
   | { type: "bot"; index: number };
 
 /**
@@ -36,6 +37,35 @@ export function primaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey"
 }
 
 /**
+ * Browsers keep the plain chord for their address bar, so on the web the page answers Shift instead.
+ * The desktop app has no address bar, so it answers the plain chord. Neither consumes the key on its
+ * own: the shell only takes it while a transcript selection is armed.
+ */
+function quoteChord(host: ShortcutHost) {
+  return { key: "L", shift: !host.desktop };
+}
+
+export function quoteShortcutKeys(host: ShortcutHost) {
+  const chord = quoteChord(host);
+  return [
+    host.apple ? "⌘" : "Ctrl",
+    ...(chord.shift ? [host.apple ? "⇧" : "Shift"] : []),
+    chord.key,
+  ];
+}
+
+export function isQuoteShortcut(event: KeyboardEvent, host: ShortcutHost) {
+  if (!primaryModifier(event, host.apple) || event.altKey || event.repeat) return false;
+  const chord = quoteChord(host);
+  return event.key.toUpperCase() === chord.key && event.shiftKey === chord.shift;
+}
+
+/** The chord `isQuoteShortcut` answers, written the way the pill shows it. */
+export function quoteShortcutLabel(host: ShortcutHost) {
+  return quoteShortcutKeys(host).join(host.apple ? "" : "+");
+}
+
+/**
  * The shell shortcut a key press asks for. Next and previous bot are Ctrl-Tab in the desktop app and
  * Cmd/Ctrl-Shift-ArrowDown/Up in a browser, which owns Ctrl-Tab; arrows rather than brackets because
  * Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs, and not while typing, where they select.
@@ -43,6 +73,9 @@ export function primaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey"
 export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellShortcut | null {
   if (event.repeat || !event.key) return null;
   const key = event.key.toLowerCase();
+  if (key === "l" && !event.isComposing && isQuoteShortcut(event, host)) {
+    return { type: "quote-selection" };
+  }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
     if (key === "k") return { type: "command-menu" };
     if (key === "n") return { type: "new" };
