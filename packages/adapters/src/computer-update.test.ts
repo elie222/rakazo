@@ -50,6 +50,7 @@ function fixture(status = "queued") {
       scope: "team",
       spaceId: "space",
       userId: "user",
+      providerRef: "provider-1",
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
@@ -177,7 +178,6 @@ describe("background computer maintenance", () => {
     ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
     ["a provider rate limit", new SandboxRateLimitError(), "warn"],
     ["a computer that did not start", new SandboxUnavailableError(), "warn"],
-    ["files too large to save", new WorkspaceTooLargeError("bytes"), "warn"],
     ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
   ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
@@ -189,16 +189,38 @@ describe("background computer maintenance", () => {
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
   });
-  it("tells the computer's bots when its files are too large to save before an update", async () => {
-    const { row, deps } = fixture();
+  it("tells the bots of a computer left running because its files are too large to save", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
     const error = new WorkspaceTooLargeError("files");
     replacement.mockRejectedValueOnce(error);
     await performComputerUpdate(deps, row.id);
     expect(row.status).toBe("failed");
+    expect(computer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: row.computerId, state: "running", providerRef: "provider-1" },
+      }),
+    );
     expect(announceUnsavedHome).toHaveBeenCalledExactlyOnceWith(deps, row.computer, error);
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+  });
+  it("reports a too-large home as a failure once the computer is no longer running", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["error"]);
   });
   it("still records the failure when the too-large note cannot be posted", async () => {
-    const { row, deps } = fixture();
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
     vi.mocked(announceUnsavedHome).mockRejectedValueOnce(new Error("database unavailable"));
     replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
     await performComputerUpdate(deps, row.id);

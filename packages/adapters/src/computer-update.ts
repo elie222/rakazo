@@ -559,21 +559,35 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         data: { status: "queued" },
       });
     } else {
-      if (
-        error instanceof SandboxAllowanceUsedError ||
-        error instanceof WorkspaceTooLargeError ||
-        isSandboxProviderOutage(error)
-      ) {
+      // Only the save before teardown leaves the computer running on its machine; the same limit
+      // on restoring the stored home after teardown is a failed replacement.
+      const keptUnsaved =
+        error instanceof WorkspaceTooLargeError &&
+        update.computer.providerRef !== null &&
+        (await deps.prisma.computer.findFirst({
+          where: {
+            id: update.computerId,
+            state: "running",
+            providerRef: update.computer.providerRef,
+          },
+          select: { id: true },
+        }))
+          ? error
+          : undefined;
+      const expected =
+        error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)
+          ? error
+          : keptUnsaved;
+      if (expected) {
         getLogger().warn("computer update failed", {
           updateId,
           computerId: update.computerId,
-          reason: error.message,
+          reason: expected.message,
         });
-        // Replacing the computer would lose files it cannot save, so it keeps running as it is.
-        if (error instanceof WorkspaceTooLargeError)
+        if (keptUnsaved)
           await bestEffort(
             "tell the computer's bots it is too large to save",
-            announceUnsavedHome(deps, update.computer, error),
+            announceUnsavedHome(deps, update.computer, keptUnsaved),
           );
       } else {
         getLogger().error("computer update failed", error, {
