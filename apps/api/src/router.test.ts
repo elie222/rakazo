@@ -1176,7 +1176,12 @@ describe("answers the server can't save", () => {
   it.each([
     ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
     // The person blocked bots from the item while the request waited.
-    ["for a blocked item", new VaultItemRefusedError(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for a blocked item",
+      new VaultItemRefusedError(BLOCKED_ITEM_ANSWER),
+      BLOCKED_ITEM_ANSWER,
+      400,
+    ],
     [
       "for an item chosen for other bots",
       new VaultItemRefusedError(UNCHOSEN_ITEM_ANSWER),
