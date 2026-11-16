@@ -37,6 +37,7 @@ const composioSdkState = vi.hoisted(() => ({
     error: string | null;
     resultType?: "completed" | "failed" | "blocked";
   },
+  executeThrows: null as null | string,
   failTools: null as null | string[],
   logIds: null as null | string[],
   connectedAccounts: {
@@ -134,6 +135,7 @@ vi.mock("@composio/core", () => ({
           options?: { account?: string },
         ) => {
           composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
+          if (composioSdkState.executeThrows) throw new Error(composioSdkState.executeThrows);
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
           const result = failed
             ? { data: { ok: false }, error: "listing failed" }
@@ -1030,7 +1032,53 @@ describe("composio tool mapping", () => {
       {
         type: "error",
         message:
-          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This connection was not granted Mail.Read.Shared. Its sign-in setup must request that permission, and the account must then be reconnected.",
+          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This call needs the Mail.Read.Shared permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.",
+      },
+    ]);
+  });
+
+  it("adds the shared-access hint when the provider throws the refusal", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeThrows = "Access denied: requires Mail.Send.Shared";
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-shared-scope-thrown",
+      traceId: "composio-shared-scope-thrown",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-mail",
+          connectorId: "composio",
+          externalId: "outlook",
+          displayName: "Mail",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "OUTLOOK_SEND_EMAIL",
+          args: { user_id: "shared@example.test" },
+          executionId: "composio-shared-scope-thrown",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeThrows = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message: expect.stringContaining("This call needs the Mail.Send.Shared permission."),
       },
     ]);
   });

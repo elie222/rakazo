@@ -669,7 +669,7 @@ export class ComposioConnector implements ComposioProvider {
       const logIds = collectLogIds(executed);
       yield {
         type: "error",
-        message: sanitizeIntegrationError(error),
+        message: withSharedAccessHint(sanitizeIntegrationError(error)),
         ...(logIds.length > 0 ? { logIds } : {}),
       };
     }
@@ -987,7 +987,7 @@ const SHARED_ACCESS_SCOPE = /\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)*\.Shared\b/;
 export function withSharedAccessHint(message: string): string {
   const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
   if (!scope) return message;
-  return `${message.replace(/[.\s]+$/, "")}. This connection was not granted ${scope}. Its sign-in setup must request that permission, and the account must then be reconnected.`;
+  return `${message.replace(/[.\s]+$/, "")}. This call needs the ${scope} permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {
