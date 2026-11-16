@@ -1,17 +1,18 @@
 import { GITHUB_URL } from "../site";
 import {
   COMPOSIO,
+  homepage,
   INTEGRATIONS_DOC,
   PIPEDREAM,
   PRICES_CHECKED,
   TWILIO,
   TWILIO_SMS_PRICING,
-  homepage,
   usd,
 } from "./shared";
 
 /** Texts a month in the Twilio example. */
 const REMINDERS = 300;
+
 import type { IntegrationPlatform } from "./types";
 
 export const apiConnectors: IntegrationPlatform = {
@@ -20,7 +21,8 @@ export const apiConnectors: IntegrationPlatform = {
   gives: "One tool per operation in an OpenAPI or GraphQL API",
   logins: "Your API key or token, encrypted in Rakazo",
   bestFor: "APIs with a key and no MCP server",
-  title: "API connectors for AI agents: turn OpenAPI and GraphQL APIs into tools, and what they cost",
+  title:
+    "API connectors for AI agents: turn OpenAPI and GraphQL APIs into tools, and what they cost",
   description:
     "How Rakazo turns an OpenAPI description or a GraphQL endpoint into tools for AI agents, what calling a third-party API really costs, how it compares with MCP and Composio, and how integrations.sh helps find an app's API.",
   h1: "Turn any OpenAPI or GraphQL API into tools for your AI agents",
@@ -72,7 +74,10 @@ export const apiConnectors: IntegrationPlatform = {
         rows: [
           {
             topic: "GitHub REST API",
-            cells: ["Included with any GitHub account", "5,000 requests an hour with a personal access token"],
+            cells: [
+              "Included with any GitHub account",
+              "5,000 requests an hour with a personal access token",
+            ],
           },
           {
             topic: "HubSpot API",
@@ -110,7 +115,11 @@ export const apiConnectors: IntegrationPlatform = {
         rows: [
           {
             topic: "Who writes the tools",
-            cells: ["Generated from the API's description", "The app's team or whoever runs the server", "The platform"],
+            cells: [
+              "Generated from the API's description",
+              "The app's team or whoever runs the server",
+              "The platform",
+            ],
           },
           {
             topic: "Sign-in",
@@ -126,11 +135,19 @@ export const apiConnectors: IntegrationPlatform = {
           },
           {
             topic: "Tool quality",
-            cells: ["As good as the API's descriptions", "Usually written for agents", "Written for agents"],
+            cells: [
+              "As good as the API's descriptions",
+              "Usually written for agents",
+              "Written for agents",
+            ],
           },
           {
             topic: "Best for",
-            cells: ["APIs with a key and no MCP server, and your own APIs", "Apps that publish a server", "Apps that need OAuth and have no server"],
+            cells: [
+              "APIs with a key and no MCP server, and your own APIs",
+              "Apps that publish a server",
+              "Apps that need OAuth and have no server",
+            ],
           },
         ],
       },
