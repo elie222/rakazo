@@ -76,7 +76,6 @@
     "scripts/build-server.mjs -> ../packages/core/src/node/prompt-source-version.ts"
   ],
   "server": [
-    "apps/web/src/preview-middleware.ts -> @rakazo/adapters/wuying-screen-policy",
     "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-assets.ts",
     "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-policy.ts"
   ]

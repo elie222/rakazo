@@ -93,9 +93,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(async (proc: string, input: Record<string, string>) => {
     const page = host.server.find((each) => each.id === input.pageId);

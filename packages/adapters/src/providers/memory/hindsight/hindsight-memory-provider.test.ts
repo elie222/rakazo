@@ -4,6 +4,8 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolveHostname } from "../../../network-address.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { HINDSIGHT_CLOUD_BASE_URL } from "./hindsight-client.js";
 import {
   createHindsightProvider,
@@ -11,8 +13,6 @@ import {
   prepareHindsightConnection,
   resetHindsightBankState,
 } from "./hindsight-memory-provider.js";
-import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 const context: AdapterContext = {
   operationId: "op-1",

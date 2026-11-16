@@ -84,9 +84,6 @@ vi.mock("../components/sandboxed-html-preview", () => ({
     return null;
   },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "https://app.example", rpc: vi.fn() }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));

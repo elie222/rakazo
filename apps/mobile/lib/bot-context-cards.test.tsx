@@ -16,9 +16,6 @@ const { rpc, push, focus } = vi.hoisted(() => ({
   push: vi.fn(),
   focus: { effects: new Set<() => (() => void) | undefined>() },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",

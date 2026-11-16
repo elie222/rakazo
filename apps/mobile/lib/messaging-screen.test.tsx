@@ -14,9 +14,6 @@ import { rpc } from "./api";
 import { queryClient } from "./query";
 
 const foreground = vi.hoisted(() => ({ active: true }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://app.example.test",

@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { isBuildId } from "@rakazo/contracts/client-build";
 import { webDarkTokens } from "@rakazo/ui-tokens";
 import type { Plugin, Rolldown } from "vite";
-import { CACHE_PREFIX } from "./service-worker.js";
+import { CACHE_PREFIX } from "../src/pwa/service-worker.js";
 
 const SERVICE_WORKER_FILE = "sw.js";
 const MANIFEST_FILE = "site.webmanifest";
@@ -97,7 +97,7 @@ export function rakazoPwa(buildId: string): Plugin[] {
       buildStart() {
         this.emitFile({
           type: "chunk",
-          id: fileURLToPath(new URL("./sw.ts", import.meta.url)),
+          id: fileURLToPath(new URL("../src/pwa/sw.ts", import.meta.url)),
           fileName: SERVICE_WORKER_FILE,
         });
       },

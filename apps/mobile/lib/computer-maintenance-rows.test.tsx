@@ -17,9 +17,6 @@ const { rpc, alert, start, subscribe, selection } = vi.hoisted(() => ({
   alert: vi.fn(),
   start: vi.fn(async (..._args: unknown[]) => undefined),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
