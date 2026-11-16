@@ -20,7 +20,8 @@ export function useEventListener<T extends EventTarget, K extends keyof EventMap
   target: T | null | undefined,
   type: K,
   handler: (event: EventMap<T>[K]) => void,
-  options?: boolean | AddEventListenerOptions,
+  // A null target stops listening; there is no signal to pass.
+  options?: boolean | Omit<AddEventListenerOptions, "signal">,
 ): void {
   const listener = useEffectEvent((event: Event) => handler(event as EventMap<T>[K]));
   const capture = typeof options === "boolean" ? options : options?.capture;

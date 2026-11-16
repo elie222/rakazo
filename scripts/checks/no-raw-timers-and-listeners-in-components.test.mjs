@@ -22,6 +22,8 @@ const timer = window.setTimeout(close, 100);
 `,
   "apps/web/src/pages/shell/use-clock.ts": `${effects}const timer = setInterval(tick, 1000);\n`,
   "apps/mobile/components/card.tsx": "const timer = setTimeout (() => setFailed(true), 50);\n",
+  "apps/web/src/components/frame.tsx":
+    'const GUARD = `\ndocument.addEventListener("click", block);\nsetTimeout(ready, 0);\n`;\nsetTimeout(close, 10);\n',
   "apps/web/src/pages/leak.tsx": `useEffect(() => {\n  window.addEventListener("resize", sync);\n}, []);\n`,
   "apps/mobile/lib/use-foreground.ts": `${effects}const sub = AppState.addEventListener("change", onChange);\nsignal.addEventListener("abort", stop);\n`,
   "apps/mobile/lib/use-pulse.ts": `${effects}globalThis.setTimeout(pulse, 10);\n`,
@@ -47,6 +49,7 @@ test("counts raw timers and added listeners, including one never removed", () =>
     {
       "apps/web/src/pages/panel.tsx": [2, 5],
       "apps/web/src/pages/leak.tsx": [2],
+      "apps/web/src/components/frame.tsx": [5],
       "apps/web/src/pages/shell/use-clock.ts": [2],
       "apps/mobile/components/card.tsx": [1],
       "apps/mobile/lib/use-pulse.ts": [2],

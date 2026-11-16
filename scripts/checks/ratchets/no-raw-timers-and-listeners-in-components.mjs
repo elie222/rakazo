@@ -18,12 +18,15 @@ export const exclude = [
 const CALL =
   /(?<![\w$.])(?:window\.|globalThis\.)?(?:setTimeout|setInterval)\s*\(|(?<!(?:\b(?:AppState|BackHandler|Linking|Keyboard|Dimensions|[sS]ignal)|\))\s*\.\s*)\baddEventListener\s*\(/g;
 const EFFECTS = /^import \{[^}]*\buse(?:Layout)?Effect\b[^}]*\} from "react";/m;
+// Script text sent into a sandboxed frame or web view runs there, where no React hook can.
+const TEMPLATE = /`(?:[^`\\]|\\.)*`/g;
 
 /** A component (.tsx) or a module that runs React effects; stores and plain helpers keep their timers. */
 export function count(text, file) {
   if (!file.endsWith(".tsx") && !EFFECTS.test(text)) return [];
+  const code = text.replace(TEMPLATE, (literal) => literal.replace(/[^\n]/g, " "));
   const hits = [];
-  for (const match of text.matchAll(CALL)) {
+  for (const match of code.matchAll(CALL)) {
     const line = text.slice(0, match.index).split("\n").length;
     hits.push({ line, text: text.split("\n")[line - 1].trim() });
   }
