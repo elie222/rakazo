@@ -38,12 +38,6 @@ runs:
         DIGESTS_DIRECTORY: ${{ inputs.digests-directory }}
         TAGS: ${{ steps.meta.outputs.tags }}
       run: bash "$ACTION_PATH/publish.sh"
-    - name: Attest the published image
-      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-      with:
-        subject-name: ${{ inputs.image }}
-        subject-digest: ${{ steps.manifest.outputs.digest }}
-        push-to-registry: true
     # The repository moved to an organization, but installs made before the move pull the images
     # from the personal account's packages, which do not move with it. Every tag this run published
     # is copied there too, under its own login so the primary one stays as it was.
@@ -58,3 +52,9 @@ runs:
         DIGEST: ${{ steps.manifest.outputs.digest }}
         TAGS: ${{ steps.meta.outputs.tags }}
       run: bash "$ACTION_PATH/mirror.sh"
+    - name: Attest the published image
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ steps.manifest.outputs.digest }}
+        push-to-registry: true
