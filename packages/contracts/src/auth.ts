@@ -63,7 +63,7 @@ export const authCapabilitiesSchema = z.object({
   crispWebsiteId: z.string().min(1).nullable().optional(),
   /** A shared account whose login is public, prefilled on sign-in; only throwaway demo servers set it. */
   demoAccount: z
-    .object({ email: z.string().email(), password: z.string().min(1) })
+    .object({ email: z.string().min(1), password: z.string().min(1) })
     .nullable()
     .optional(),
 });

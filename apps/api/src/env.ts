@@ -515,6 +515,6 @@ function androidCertFingerprints(value: string | undefined): string[] {
 
 function demoAccountFromEnv(source: NodeJS.ProcessEnv) {
   const email = optional(source.DEMO_ACCOUNT_EMAIL);
-  const password = optional(source.DEMO_ACCOUNT_PASSWORD);
+  const password = source.DEMO_ACCOUNT_PASSWORD;
   return email && password ? { email, password } : null;
 }
