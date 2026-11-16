@@ -34,6 +34,13 @@ import { SettingsRow } from "./settings-group";
 
 type ContactKey = keyof ContactFields;
 
+// Keeps a filled card or contact from spilling into the item's own text.
+const noAutofill = {
+  autoComplete: "off",
+  textContentType: "none",
+  importantForAutofill: "no",
+} as const satisfies TextInputProps;
+
 /**
  * Adds or edits a vault item of one kind, in Settings or for a bot's request in chat. Protected
  * values live only in this sheet's state and are cleared on save and before it closes. `ask` hides
@@ -359,6 +366,7 @@ export function VaultItemEditor({
                 keyboardType: "number-pad",
                 textContentType: "creditCardNumber",
                 autoComplete: "cc-number",
+                importantForAutofill: "yes",
               })}
               {brand ? <Text style={styles.brand}>{brand}</Text> : null}
               <View style={styles.separator} />
@@ -366,21 +374,26 @@ export function VaultItemEditor({
                 field(t`Expiry`, draft.expiry, (expiry) => update({ expiry }), {
                   placeholder: "MM/YY",
                   keyboardType: "numbers-and-punctuation",
+                  textContentType: "creditCardExpiration",
                   autoComplete: "cc-exp",
+                  importantForAutofill: "yes",
                 }),
                 field(t`Security code`, draft.cvc, (cvc) => update({ cvc }), {
                   slot: 1,
                   secureTextEntry: true,
                   keyboardType: "number-pad",
                   autoComplete: "cc-csc",
-                  textContentType: "none",
+                  textContentType: "creditCardSecurityCode",
+                  importantForAutofill: "yes",
                 }),
               )}
               <View style={styles.separator} />
               {field(t`Name on card`, draft.cardName, (cardName) => update({ cardName }), {
                 autoCapitalize: "words",
-                autoComplete: "cc-name",
-                textContentType: "name",
+                // Android has no card-name hint and turns autofill off for one it doesn't know.
+                autoComplete: Platform.OS === "android" ? "name" : "cc-name",
+                textContentType: "creditCardName",
+                importantForAutofill: "yes",
               })}
               {contacts.length ? (
                 <>
@@ -527,11 +540,13 @@ export function VaultItemEditor({
                 {
                   placeholder: kind === "contact" ? t`Home` : item?.title,
                   autoCapitalize: "sentences",
+                  ...noAutofill,
                 },
               )}
               <View style={styles.separator} />
               {field(t`When to use`, draft.note, (note) => update({ note }), {
                 autoCapitalize: "sentences",
+                ...noAutofill,
               })}
             </View>
           )}
