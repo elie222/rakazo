@@ -9,6 +9,7 @@ import {
 import { promisify } from "node:util";
 import type { LibraryHandle } from "koffi";
 import koffi from "koffi";
+import { WorkspacePathError } from "./computer-support.js";
 
 type KoffiFunction = ReturnType<LibraryHandle["func"]>;
 
@@ -42,7 +43,7 @@ const STATUS_OBJECT_NAME_NOT_FOUND = -1073741772;
 const STATUS_OBJECT_PATH_NOT_FOUND = -1073741763;
 
 function escapeWorkspace(): never {
-  throw new Error("Path escapes the computer workspace");
+  throw new WorkspacePathError("Path escapes the computer workspace");
 }
 
 type NtFns = {
