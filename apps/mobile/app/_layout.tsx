@@ -67,6 +67,7 @@ import {
 import { OpenPageContext } from "../lib/message-mentions";
 import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useNavigatorMounted } from "../lib/navigator-mounted";
 import { useNotificationResponses } from "../lib/open-notification";
 import { clearQueries, resetRpcQueries } from "../lib/query";
 import { useReferral } from "../lib/referral";
@@ -620,6 +621,7 @@ function LayoutContent() {
 }
 
 export default function Layout() {
+  useNavigatorMounted();
   return (
     <I18nProvider i18n={i18n}>
       <AppErrorBoundary>
