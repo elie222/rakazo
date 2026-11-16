@@ -2,7 +2,7 @@ import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
-import { AttachmentValidationError, ClientError } from "@rakazo/core";
+import { AttachmentValidationError, ClientError, validTimezoneOrUtc } from "@rakazo/core";
 import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
 import {
   createOwnedArtifact,
@@ -199,17 +199,18 @@ export function contentRoutes(ctx: RouterContext) {
           userId: context.actor.userId,
         } as const;
         const now = new Date();
-        let since: Date | null = null;
-        if (input.range === "today") {
-          since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        } else if (input.range === "7d") {
-          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        } else if (input.range === "30d") {
-          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        }
-        const rangeFilter = since
-          ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
-          : Prisma.empty;
+        const member = await deps.prisma.user.findUnique({
+          where: { id: context.actor.userId },
+          select: { timezone: true },
+        });
+        const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
+        const rollingDays = { "7d": 7, "30d": 30 }[input.range as "7d" | "30d"];
+        const rangeFilter =
+          input.range === "today"
+            ? Prisma.sql`AND u."createdAt" >= (date_trunc('day', now() AT TIME ZONE ${timezone}) AT TIME ZONE ${timezone}) AT TIME ZONE 'UTC'`
+            : rollingDays
+              ? Prisma.sql`AND u."createdAt" >= ${new Date(now.getTime() - rollingDays * 86_400_000)}::timestamp(3)`
+              : Prisma.empty;
         const modelFilter =
           input.provider && input.model
             ? Prisma.sql`AND u.provider = ${input.provider} AND u.model = ${input.model}`
@@ -280,7 +281,7 @@ export function contentRoutes(ctx: RouterContext) {
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
           deps.prisma.$queryRaw<TimeRow[]>(Prisma.sql`
-            SELECT date_trunc('day', u."createdAt") AS bucket,
+            SELECT date_trunc('day', u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}) AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
               BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",

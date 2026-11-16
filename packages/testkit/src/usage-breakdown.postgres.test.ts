@@ -234,6 +234,46 @@ describeBreakdown("usage.breakdown", () => {
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
+
+  it("cuts today and day buckets at the member's own midnight", async () => {
+    const offset = 14 * 60 * 60 * 1000;
+    const left = DAY - ((Date.now() + offset) % DAY);
+    if (left < 90_000) await new Promise((resolve) => setTimeout(resolve, left + 1000));
+    const cookie = await signup(app, `usage-breakdown-tz-${stamp}@rakazo.test`, "Zoned");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Zoned",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    await prisma.user.update({
+      where: { id: thread.userId },
+      data: { timezone: "Pacific/Kiritimati" },
+    });
+    const now = Date.now();
+    const localMidnight = now + offset - ((now + offset) % DAY) - offset;
+    const record = (createdAt: number) => ({
+      spaceId: thread.spaceId,
+      userId: thread.userId,
+      botId: bot.id,
+      provider: "p",
+      model: "m",
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+      costUsd: 0.001,
+      createdAt: new Date(createdAt),
+    });
+    await prisma.usageRecord.createMany({
+      data: [record(localMidnight + 1000), record(localMidnight - 1000)],
+    });
+    const today = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "today" });
+    expect(today.totals.modelCalls).toBe(1);
+    const all = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
+    expect(all.overTime.map((p) => p.modelCalls)).toEqual([1, 1]);
+  });
 });
 
 async function signup(app: App, email: string, name: string) {
