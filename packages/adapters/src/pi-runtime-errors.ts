@@ -103,11 +103,16 @@ const OWN_ENDPOINT_PROVIDERS = new Set([OPENAI_COMPATIBLE_PROVIDER_ID, LOCAL_PRO
  * attributes to the user's provider account, key, plan or model choice, or to the model's own
  * unusable output, is not a server fault. Anything it cannot place stays a plain error.
  * `provider` served `error`; `primaryProvider` served the first model of a fallback chain.
+ * `failedAfterAccepting`: `provider` answered the request with a success status, then failed.
  */
 export function modelFailure(
   error: string,
   message: string,
-  { provider, primaryProvider }: { provider: string; primaryProvider: string },
+  {
+    provider,
+    primaryProvider,
+    failedAfterAccepting = false,
+  }: { provider: string; primaryProvider: string; failedAfterAccepting?: boolean },
 ): Error {
   // When every model failed, the run is only as clear as its least explained failure: an
   // unexplained part stays a server error, and a part the user must fix outranks bad output,
@@ -120,7 +125,7 @@ export function modelFailure(
           .filter((item) => item.status === "failed")
           .map((item) => modelFailureClass(item.reason, item.reason, item.provider)),
       ]
-    : [modelFailureClass(error, message, provider)];
+    : [modelFailureClass(error, message, provider, failedAfterAccepting)];
   const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? Error;
   return new Failure(message);
 }
@@ -128,7 +133,12 @@ export function modelFailure(
 /** Least to most severe; a server fault (plain Error) is last. */
 const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
 
-function modelFailureClass(error: string, message: string, provider: string): number {
+function modelFailureClass(
+  error: string,
+  message: string,
+  provider: string,
+  failedAfterAccepting = false,
+): number {
   const { kind, recovery, status } = normalizeRunError(message);
   // Output diagnostics can quote generated text that looks like a timeout.
   if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
@@ -143,6 +153,10 @@ function modelFailureClass(error: string, message: string, provider: string): nu
   // provider the same rejection more likely means Rakazo built the request wrong.
   if ((status === 400 || status === 422) && OWN_ENDPOINT_PROVIDERS.has(provider))
     return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
+  // The user's own endpoint took the request, then reported a failure of its own in the reply
+  // with no status to place it: nothing Rakazo sent was refused, and another try can succeed.
+  if (failedAfterAccepting && status === undefined && OWN_ENDPOINT_PROVIDERS.has(provider))
+    return MODEL_FAILURE_RANK.indexOf(TransientModelError);
   return MODEL_FAILURE_RANK.indexOf(Error);
 }
 
