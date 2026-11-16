@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { FakeWebProvider } from "./fake-web.js";
 import {
@@ -150,16 +151,13 @@ describe("keyless HTTP web provider", () => {
 
   it.each(["text/plain", "application/json"])("cancels an ongoing %s read", async (contentType) => {
     const controller = new AbortController();
-    let bodyStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      bodyStarted = resolve;
-    });
+    const started = deferred();
     const provider = new KeylessHttpWebProvider({
       fetch: async () =>
         new Response(
           new ReadableStream({
             start() {
-              bodyStarted();
+              started.resolve();
             },
           }),
           {
@@ -173,7 +171,7 @@ describe("keyless HTTP web provider", () => {
       { ...ctx, signal: controller.signal },
       { url: "https://example.test/doc" },
     );
-    await started;
+    await started.promise;
     controller.abort(new Error("cancelled"));
     await expect(pending).resolves.toEqual({ error: "cancelled" });
   });

@@ -136,10 +136,7 @@ describe("durable direct run wakeups", () => {
       const f = fixture();
       const scans: string[] = [];
       let chatReady = false;
-      let release!: () => void;
-      const blocked = new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      const blocked = deferred();
       let backgroundPage = 0;
       let notified = false;
       f.findMany.mockImplementation(async ({ where }) => {
@@ -148,7 +145,7 @@ describe("durable direct run wakeups", () => {
         const readyAtSnapshot = chatReady;
         if (lane === notifiedLane && !notified) {
           notified = true;
-          await blocked;
+          await blocked.promise;
         }
         if (lane === "background") {
           if (backgroundPage++ > 0) return [];
@@ -172,7 +169,7 @@ describe("durable direct run wakeups", () => {
         chatReady = true;
         // A previous release announces work without naming the run.
         await f.realtime.publish("runs:ready", "");
-        release();
+        blocked.resolve();
         await vi.advanceTimersByTimeAsync(1);
         expect(entered).toEqual(["timer", "chat"]);
         expect(scans.slice(0, 4)).toEqual([
@@ -183,7 +180,7 @@ describe("durable direct run wakeups", () => {
         ]);
         expect(backgroundPage).toBe(2);
       } finally {
-        release();
+        blocked.resolve();
         await host.stop();
       }
     },
@@ -196,10 +193,7 @@ describe("durable direct run wakeups", () => {
       const f = fixture();
       let interactivePage = 0;
       let backgroundReady = false;
-      let release!: () => void;
-      const blocked = new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      const blocked = deferred();
       f.findMany.mockImplementation(async ({ where }) => {
         if (where.trigger.in) {
           if (!backgroundReady) return [];
@@ -216,7 +210,7 @@ describe("durable direct run wakeups", () => {
           ];
         }
         const page = interactivePage++;
-        if (page === 1) await blocked;
+        if (page === 1) await blocked.promise;
         if (page >= 3) return [];
         return [
           {
@@ -239,7 +233,7 @@ describe("durable direct run wakeups", () => {
         expect(interactivePage).toBe(2);
         backgroundReady = true;
         await f.realtime.publish("runs:ready", "");
-        release();
+        blocked.resolve();
         await vi.advanceTimersByTimeAsync(1);
         expect(entered).toEqual(["chat-0", "chat-1", "chat-2", trigger]);
         const thirdChatQuery = f.findMany.mock.calls.filter(
@@ -258,7 +252,7 @@ describe("durable direct run wakeups", () => {
           },
         });
       } finally {
-        release();
+        blocked.resolve();
         await host.stop();
       }
     },
@@ -359,15 +353,12 @@ describe("durable direct run wakeups", () => {
   it("starts chat without invoking Graphile, deduplicates wakeups, and drains long executions", async () => {
     const f = fixture();
     f.rows.set("chat", { status: "queued", wakeAt: null });
-    let release!: () => void;
-    const done = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const done = deferred();
     const handler = vi.fn(async ({ runId }, execution) => {
       expect(currentDbContext()?.kind).toBe("system");
       f.rows.get(runId)!.status = "running";
       execution.onRunStarted();
-      await done;
+      await done.promise;
     });
     try {
       await f.host.start({ "run.continue": handler } as unknown as BackgroundJobHandlers);
@@ -381,10 +372,10 @@ describe("durable direct run wakeups", () => {
       });
       await Promise.resolve();
       expect(stopped).toBe(false);
-      release();
+      done.resolve();
       await stopping;
     } finally {
-      release();
+      done.resolve();
       await f.host.stop();
     }
   });
@@ -426,23 +417,20 @@ describe("durable direct run wakeups", () => {
     const f = fixture();
     f.rows.set("slow", { status: "queued", wakeAt: null });
     f.rows.set("fast", { status: "queued", wakeAt: null });
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     const entered: string[] = [];
     const handler = async ({ runId }: { runId: string }) => {
-      if (runId === "slow") await pending;
+      if (runId === "slow") await pending.promise;
       entered.push(runId);
       f.rows.get(runId)!.status = "completed";
     };
     try {
       await f.host.start({ "run.continue": handler } as unknown as BackgroundJobHandlers);
       await vi.waitFor(() => expect(entered).toEqual(["fast"]));
-      release();
+      pending.resolve();
       await vi.waitFor(() => expect(entered).toEqual(["fast", "slow"]));
     } finally {
-      release();
+      pending.resolve();
       await f.host.stop();
     }
   });
@@ -477,11 +465,8 @@ describe("durable direct run wakeups", () => {
     expect(runs.stop).not.toHaveBeenCalled();
   });
   it("drains direct runs before propagating a fatal scheduler startup failure", async () => {
-    let release!: () => void;
-    const drain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const runs = { start: vi.fn(), stop: vi.fn(() => drain) } as unknown as RunWorkerHost;
+    const drain = deferred();
+    const runs = { start: vi.fn(), stop: vi.fn(() => drain.promise) } as unknown as RunWorkerHost;
     const background = {
       start: vi.fn().mockRejectedValue(new Error("fatal fixture startup")),
       stop: vi.fn(),
@@ -494,18 +479,15 @@ describe("durable direct run wakeups", () => {
       });
     await vi.waitFor(() => expect(runs.stop).toHaveBeenCalledOnce());
     expect(rejected).toBe(false);
-    release();
+    drain.resolve();
     await starting;
     expect(rejected).toBe(true);
   });
 
   it("waits for an in-flight scheduler start before finishing shutdown", async () => {
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     const runs = { start: vi.fn(), stop: vi.fn() } as unknown as RunWorkerHost;
-    const background = { start: vi.fn(() => pending), stop: vi.fn() };
+    const background = { start: vi.fn(() => pending.promise), stop: vi.fn() };
     const host = withRunWorker(runs, background);
     const starting = host.start({} as BackgroundJobHandlers);
     await vi.waitFor(() => expect(background.start).toHaveBeenCalledOnce());
@@ -516,7 +498,7 @@ describe("durable direct run wakeups", () => {
     await Promise.resolve();
     expect(runs.stop).toHaveBeenCalledOnce();
     expect(stopped).toBe(false);
-    release();
+    pending.resolve();
     await starting;
     await stopping;
     expect(stopped).toBe(true);
@@ -544,16 +526,13 @@ describe("durable direct run wakeups", () => {
 
   it("never holds one run's start behind another run, however slow", async () => {
     const f = fixture();
-    let release!: () => void;
-    const stuck = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const stuck = deferred();
     const entered: string[] = [];
     try {
       f.starter.attach({
         "run.continue": async ({ runId }: { runId: string }) => {
           entered.push(runId);
-          if (runId === "stuck") await stuck;
+          if (runId === "stuck") await stuck.promise;
         },
       } as unknown as BackgroundJobHandlers);
       await f.publisher.enqueue(runContinueJob("stuck"));
@@ -562,7 +541,7 @@ describe("durable direct run wakeups", () => {
       }
       await vi.waitFor(() => expect(entered).toHaveLength(21));
     } finally {
-      release();
+      stuck.resolve();
       await f.starter.stop();
     }
   });
@@ -630,12 +609,9 @@ describe("durable direct run wakeups", () => {
 
   it("starts a run again when it is made due while this process is still finishing it", async () => {
     const f = fixture();
-    let release!: () => void;
-    const finishing = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const finishing = deferred();
     const handler = vi.fn(async () => {
-      if (handler.mock.calls.length === 1) await finishing;
+      if (handler.mock.calls.length === 1) await finishing.promise;
     });
     try {
       f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
@@ -643,12 +619,12 @@ describe("durable direct run wakeups", () => {
       await vi.waitFor(() => expect(handler).toHaveBeenCalledOnce());
       await f.publisher.enqueue(runContinueJob("answered"));
       await f.publisher.enqueue(runContinueJob("answered"));
-      release();
+      finishing.resolve();
       await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(2));
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(handler).toHaveBeenCalledTimes(2);
     } finally {
-      release();
+      finishing.resolve();
       await f.starter.stop();
     }
   });

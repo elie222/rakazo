@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
@@ -311,14 +313,11 @@ describe("InMemoryJobQueue", () => {
     ["close", "stop"],
   ] as const)("waits for an active handler before %s/%s", async (first, second) => {
     const queue = new InMemoryJobQueue();
-    let releaseHandler: () => void = () => undefined;
-    let markStarted: () => void = () => undefined;
+    let releaseHandler: Deferred | undefined;
     let nestedEnqueueFailed = false;
     let delayedEnqueueFailed = false;
     let chainedEnqueueFailed = false;
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
+    const started = deferred();
     const target = handlers();
     target["computer.sleep"] = vi.fn(async () => {
       try {
@@ -328,10 +327,9 @@ describe("InMemoryJobQueue", () => {
       }
     });
     target["run.continue"] = vi.fn(async () => {
-      markStarted();
-      await new Promise<void>((resolve) => {
-        releaseHandler = resolve;
-      });
+      started.resolve();
+      releaseHandler = deferred();
+      await releaseHandler.promise;
       try {
         await queue.enqueue({
           name: "computer.sleep",
@@ -359,14 +357,14 @@ describe("InMemoryJobQueue", () => {
     });
     await queue.start(target);
     await queue.enqueue({ name: "run.continue", payload: { runId: "run-1" } });
-    await started;
+    await started.promise;
 
     const closing = Promise.all([queue[first](), queue[second]()] as const);
     const closeState = await Promise.race([
       closing.then(() => "closed" as const),
       new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 5)),
     ]);
-    releaseHandler();
+    releaseHandler?.resolve();
     await closing;
     expect(closeState).toBe("waiting");
     expect(nestedEnqueueFailed).toBe(false);
@@ -380,16 +378,12 @@ describe("InMemoryJobQueue", () => {
 
   it("rejects a keyed enqueue that resumes after close", async () => {
     const queue = new InMemoryJobQueue();
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -397,9 +391,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.close();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is closed");
   });
@@ -407,16 +401,12 @@ describe("InMemoryJobQueue", () => {
   it("rejects a keyed enqueue that resumes after stop", async () => {
     const queue = new InMemoryJobQueue();
     await queue.start(handlers());
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -424,9 +414,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.stop();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is stopped");
   });

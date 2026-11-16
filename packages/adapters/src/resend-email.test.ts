@@ -1,4 +1,6 @@
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
 
@@ -228,19 +230,17 @@ describe("ResendEmailProvider", () => {
   });
 
   it("waits for accepted delivery on shutdown", async () => {
-    let complete!: (response: Response) => void;
-    const email = provider(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
+    let complete!: Deferred<Response>;
+    const email = provider(() => {
+      complete = deferred<Response>();
+      return complete.promise;
+    });
     const delivery = email.send(message);
     const drained = vi.fn();
     const draining = email.drain().then(drained);
     await Promise.resolve();
     expect(drained).not.toHaveBeenCalled();
-    complete(Response.json({ id: "email-1" }));
+    complete.resolve(Response.json({ id: "email-1" }));
     await delivery;
     await draining;
     expect(drained).toHaveBeenCalledOnce();

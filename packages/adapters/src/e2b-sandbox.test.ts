@@ -14,6 +14,7 @@ import {
   TimeoutError,
 } from "@e2b/desktop";
 import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
@@ -1465,10 +1466,10 @@ describe("keepingAwake", () => {
     vi.stubEnv("SANDBOX_IDLE_MS", "180000");
     try {
       const desktop = { setTimeout: vi.fn(async () => undefined) };
-      let finish!: () => void;
+      const finish = deferred();
       const slow = (async function* () {
         yield "first";
-        await new Promise<void>((resolve) => (finish = resolve));
+        await finish.promise;
         yield "last";
       })();
       const read: string[] = [];
@@ -1483,7 +1484,7 @@ describe("keepingAwake", () => {
       expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
       expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-      finish();
+      finish.resolve();
       await done;
       const calls = desktop.setTimeout.mock.calls.length;
       await vi.advanceTimersByTimeAsync(600_000);

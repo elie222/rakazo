@@ -6,6 +6,8 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
@@ -136,10 +138,7 @@ describe("Docker sandbox", () => {
   });
 
   it("yields stdout from a streaming exec before the command exits", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const encoder = new TextEncoder();
     const fetchMock = vi.fn(
       async () =>
@@ -151,7 +150,7 @@ describe("Docker sandbox", () => {
                   `${JSON.stringify({ type: "stdout", data: "code: ABCD-1234\nhttps://github.com/login/device\n" })}\n`,
                 ),
               );
-              await exitGate;
+              await exitGate.promise;
               controller.enqueue(encoder.encode(`${JSON.stringify({ type: "exit", code: 0 })}\n`));
               controller.close();
             },
@@ -182,7 +181,7 @@ describe("Docker sandbox", () => {
     })();
     await Promise.resolve();
     expect(exitSeen).toBe(false);
-    releaseExit();
+    exitGate.resolve();
     await expect(rest).resolves.toEqual({ value: { type: "exit", code: 0 }, done: false });
   });
 
@@ -293,13 +292,11 @@ describe("Docker sandbox", () => {
     });
 
     it("shares one home probe while callers stop waiting independently", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       vi.stubGlobal("fetch", fetchMock);
       const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
       const stopped = new AbortController();
@@ -308,7 +305,7 @@ describe("Docker sandbox", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       stopped.abort(new Error("stopped"));
       await expect(first).rejects.toThrow("stopped");
-      answer(commandOutput(""));
+      answer?.resolve(commandOutput(""));
       await expect(second).resolves.toBeUndefined();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -432,13 +429,11 @@ describe("Docker sandbox", () => {
     );
 
     it("observes a failed check after its only caller stops waiting", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const unhandled = vi.fn();
       process.on("unhandledRejection", unhandled);
@@ -449,7 +444,7 @@ describe("Docker sandbox", () => {
         stopped.abort(new Error("stopped"));
         await expect(check).rejects.toThrow("stopped");
 
-        answer(exit(1));
+        answer?.resolve(exit(1));
         await new Promise((resolve) => setImmediate(resolve));
         await new Promise((resolve) => setImmediate(resolve));
         expect(unhandled).not.toHaveBeenCalled();
@@ -487,30 +482,26 @@ describe("Docker sandbox", () => {
     });
 
     it("runs one check for callers that need it at the same time", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const first = provider.prepare(computer, context);
       const second = provider.prepare(computer, context);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-      answer(exit(0));
+      answer?.resolve(exit(0));
       await Promise.all([first, second]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it("lets the other callers' check finish when one caller stops waiting", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const stopped = new AbortController();
       const first = provider.prepare(computer, { ...context, signal: stopped.signal });
@@ -518,18 +509,16 @@ describe("Docker sandbox", () => {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       stopped.abort(new Error("stopped"));
       await expect(first).rejects.toThrow("stopped");
-      answer(exit(0));
+      answer?.resolve(exit(0));
       await expect(second).resolves.toBeUndefined();
     });
 
     it("checks again after a stall that happened during a passing check", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const check = provider.prepare(computer, context);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -541,7 +530,7 @@ describe("Docker sandbox", () => {
           [Symbol.asyncIterator]()
           .next(),
       ).rejects.toBeInstanceOf(SandboxUnresponsiveError);
-      passing(exit(0));
+      passing?.resolve(exit(0));
       await check;
       fetchMock.mockResolvedValueOnce(exit(0));
       await provider.prepare(computer, context);

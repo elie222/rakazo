@@ -1,4 +1,5 @@
 import { ConnectionSetupError, MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SpaceCatalogAuth } from "./model-selection.js";
 import { defaultCatalogModelId, spaceCanRunCatalogModel } from "./model-selection.js";
@@ -139,10 +140,7 @@ describe("catalog provider authentication", () => {
 
   it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
     const controller = new AbortController();
-    let waitingForBody: (() => void) | undefined;
-    const bodyStarted = new Promise<void>((resolve) => {
-      waitingForBody = resolve;
-    });
+    const bodyStarted = deferred();
     const result = verifyCatalogProviderApiKey(
       { provider: "google", apiKey: "fixture-key" },
       async (_url, init) =>
@@ -155,7 +153,7 @@ describe("catalog provider authentication", () => {
                 () => body.error(new Error("private fixture-key details")),
                 { once: true },
               );
-              waitingForBody?.();
+              bodyStarted.resolve();
             },
           }),
           { status: 400 },
@@ -163,7 +161,7 @@ describe("catalog provider authentication", () => {
       controller.signal,
     );
     const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
-    await bodyStarted;
+    await bodyStarted.promise;
     controller.abort();
     await assertion;
   });

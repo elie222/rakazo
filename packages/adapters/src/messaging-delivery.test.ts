@@ -20,6 +20,7 @@ import {
   CHAT_APP_TAKEOVER_NOTE,
   TAKEOVER_COMPUTER_PENDING_STATE,
 } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
@@ -709,14 +710,6 @@ const backupJob = (t: Setup, outboundId: string) =>
   t.jobs.scheduled.get(messagingSendJobKey(outboundId));
 const sendJobs = (t: Setup) =>
   [...t.jobs.scheduled.values()].filter((job) => job.name === "messaging.send");
-
-function gate() {
-  let open!: () => void;
-  const opened = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return { opened, open };
-}
 
 describe("deliverRun to a 1:1 chat", () => {
   it("sends a chat run's reply to its owner's conversation and settles its jobs", async () => {
@@ -2413,16 +2406,16 @@ describe("conversation order", () => {
     const t = setup();
     await t.record(threadLane("t-slow"), [post("t-slow", "slow-1")]);
     await t.record(threadLane("t-fast"), [post("t-fast", "fast-1")]);
-    const slow = gate();
+    const slow = deferred();
     t.sendToThread.mockImplementation(async (request) => {
-      if (request.body === "slow-1") await slow.opened;
+      if (request.body === "slow-1") await slow.promise;
       return { handle: `handle-${request.body}` };
     });
 
     const sending = t.delivery.send([threadLane("t-slow"), threadLane("t-fast")]);
     // The fast conversation is out before the slow one answers.
     await vi.waitFor(() => expect(statuses(t)).toEqual(["in-flight", "sent"]));
-    slow.open();
+    slow.resolve();
     await sending;
 
     expect(statuses(t)).toEqual(["sent", "sent"]);
@@ -2431,9 +2424,9 @@ describe("conversation order", () => {
   it("keeps one conversation in order while its first send is running", async () => {
     const t = setup();
     await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
-    const first = gate();
+    const first = deferred();
     t.sendToThread.mockImplementationOnce(async () => {
-      await first.opened;
+      await first.promise;
       return { handle: "h-1" };
     });
 
@@ -2444,7 +2437,7 @@ describe("conversation order", () => {
     await t.delivery.send([threadLane("t-a")]);
     expect(t.sendToThread).toHaveBeenCalledOnce();
 
-    first.open();
+    first.resolve();
     await sending;
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["sent", "sent"]);

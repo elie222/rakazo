@@ -1,4 +1,5 @@
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
@@ -611,14 +612,11 @@ describe("MCP OAuth", () => {
     const shared = sharedCredentials(reauthorizableMaterial());
     // Hold both 401s until each process has one.
     let rejected = 0;
-    let releaseRejections: () => void = () => undefined;
-    const bothRejected = new Promise<void>((resolve) => {
-      releaseRejections = resolve;
-    });
+    const bothRejected = deferred();
     const mcp = earlyRevokingMcpServer(auth.fetch, async () => {
       rejected += 1;
-      if (rejected === 2) releaseRejections();
-      await bothRejected;
+      if (rejected === 2) bothRejected.resolve();
+      await bothRejected.promise;
     });
     const api = await shared.startProcess(mcp.network);
     const worker = await shared.startProcess(mcp.network);

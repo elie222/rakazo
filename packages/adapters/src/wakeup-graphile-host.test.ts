@@ -5,6 +5,7 @@ import {
   messagingReplyJob,
   teamChatAmbientJob,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { DatabaseOutage, databaseCapacityBackoffMs } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
@@ -38,7 +39,6 @@ import {
   GraphileJobWorkerHost,
 } from "./wakeup.js";
 import {
-  deferred,
   handlers,
   helpers,
   mockRunner,
@@ -323,17 +323,13 @@ describe("reserved Graphile workloads", () => {
 
   it("does not start another workload after shutdown interrupts startup", async () => {
     const first = mockRunner();
-    let release!: (runner: Runner) => void;
-    run.mockReturnValueOnce(
-      new Promise<Runner>((resolve) => {
-        release = resolve;
-      }),
-    );
+    const release = deferred<Runner>();
+    run.mockReturnValueOnce(release.promise);
     const host = createReservedGraphileJobWorkerHost({} as Pool);
     const starting = host.start(handlers());
     await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
     await host.stop();
-    release(first.runner);
+    release.resolve(first.runner);
     await starting;
     expect(run).toHaveBeenCalledOnce();
     expect(first.runner.stop).toHaveBeenCalledOnce();
