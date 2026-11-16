@@ -968,9 +968,15 @@ export interface BackgroundJobPayloads {
   "messaging.send": { outboundId: string };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
-  /** compat-shim(after v0.11.0): the previous release's outbox drain, drained by the new path. */
+  /**
+   * The previous release's outbox drain, drained by the new path.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.deliver": { runId?: string };
-  /** compat-shim(after v0.11.0): the previous release's interim-message mirror. */
+  /**
+   * The previous release's interim-message mirror.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.progress": { runId: string };
   /**
    * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
@@ -978,7 +984,10 @@ export interface BackgroundJobPayloads {
    * unreferenced. `ref` is the store's reference to a remote entry, never a value.
    */
   "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
-  /** compat-shim(after v0.11.0): the previous release's `secret.cleanup` for a messaging install. */
+  /**
+   * The previous release's `secret.cleanup` for a messaging install.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /**
    * Backup for removing an authorization a connection flow left at the provider with no local

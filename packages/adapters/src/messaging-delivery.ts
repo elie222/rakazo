@@ -430,8 +430,9 @@ export class MessagingDelivery {
   }
 
   /**
-   * compat-shim(after v0.11.0): the previous release's whole-outbox drain. Sends every
-   * conversation that has unsent rows, so its queued jobs finish under this release.
+   * The previous release's whole-outbox drain. Sends every conversation that has unsent rows,
+   * so its queued jobs finish under this release. Those jobs can stay queued across releases,
+   * so this goes only once none are left.
    */
   async drainAll(): Promise<void> {
     const rows = await runAsSystem("find conversations with unsent chat messages", () =>
