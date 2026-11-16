@@ -102,6 +102,7 @@ describe("stop stack left behind", () => {
       managedStackRunning: () => running,
       state: () => ({ phase }) as DesktopLocalStackState,
       stop,
+      webUrl: () => "http://127.0.0.1:45173",
     };
   }
 
@@ -111,6 +112,7 @@ describe("stop stack left behind", () => {
     stopStackLeftBehind({
       previousMode: "existing",
       mode: "existing",
+      serverUrl: "https://rakazo.example",
       stack: running,
       rebuildMenu,
     });
@@ -124,10 +126,23 @@ describe("stop stack left behind", () => {
     stopStackLeftBehind({
       previousMode: "new",
       mode: "existing",
+      serverUrl: "https://rakazo.example",
       stack: unflagged,
       rebuildMenu: vi.fn(),
     });
     expect(unflagged.stop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the stack when its own address is chosen as an existing server", () => {
+    const own = stack(true);
+    stopStackLeftBehind({
+      previousMode: "new",
+      mode: "existing",
+      serverUrl: "http://127.0.0.1:45173/",
+      stack: own,
+      rebuildMenu: vi.fn(),
+    });
+    expect(own.stop).not.toHaveBeenCalled();
   });
 
   it("stops a start that has not launched anything yet", () => {
@@ -135,6 +150,7 @@ describe("stop stack left behind", () => {
     stopStackLeftBehind({
       previousMode: "existing",
       mode: "existing",
+      serverUrl: "https://rakazo.example",
       stack: pulling,
       rebuildMenu: vi.fn(),
     });
@@ -148,6 +164,7 @@ describe("stop stack left behind", () => {
     stopStackLeftBehind({
       previousMode: "existing",
       mode: "existing",
+      serverUrl: "https://rakazo.example",
       stack: missing,
       rebuildMenu: vi.fn(),
     });
@@ -155,12 +172,14 @@ describe("stop stack left behind", () => {
     stopStackLeftBehind({
       previousMode: "new",
       mode: "new",
+      serverUrl: "http://127.0.0.1:45173",
       stack: connected,
       rebuildMenu: vi.fn(),
     });
     stopStackLeftBehind({
       previousMode: "existing",
       mode: "existing",
+      serverUrl: "https://rakazo.example",
       stack: idle,
       rebuildMenu: vi.fn(),
     });
@@ -178,6 +197,7 @@ describe("stop stack left behind", () => {
       stopStackLeftBehind({
         previousMode: "existing",
         mode: "existing",
+        serverUrl: "https://rakazo.example",
         stack: rejecting,
         rebuildMenu,
       });

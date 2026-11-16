@@ -7,6 +7,7 @@ import type { MenuItemConstructorOptions } from "electron";
 import { t } from "./i18n.js";
 import type { StackController } from "./local-stack.js";
 import { reportDesktopError } from "./monitoring.js";
+import { managedLocalOpenUrl } from "./setup-config.js";
 
 /**
  * Quit and Stop Bots applies whenever the app manages a local stack: connected in `new`
@@ -60,11 +61,18 @@ const STARTING = new Set<DesktopLocalStackPhase>([
 /** Bots on a stack the user switched away from would keep running out of sight. */
 export function stopStackLeftBehind(input: {
   mode: DesktopInstanceMode | null | undefined;
+  serverUrl: string | undefined;
   previousMode: DesktopInstanceMode | null | undefined;
-  stack: Pick<StackController, "managedStackRunning" | "state" | "stop">;
+  stack: Pick<StackController, "managedStackRunning" | "state" | "stop" | "webUrl">;
   rebuildMenu: () => void;
 }): void {
   if (input.mode === "new") return;
+  // Its own address entered as an existing server still needs it running.
+  if (
+    input.serverUrl !== undefined &&
+    managedLocalOpenUrl(input.serverUrl, input.stack.webUrl()) !== null
+  )
+    return;
   // Leaving This computer always stops it: containers from an older version can still run
   // unflagged. A start still pulling or waiting for Docker has not launched anything yet, but would.
   if (

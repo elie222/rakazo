@@ -919,6 +919,7 @@ app.whenReady().then(async () => {
     stopStackLeftBehind: (previousMode) =>
       stopStackLeftBehind({
         mode: desktop.currentSetup?.mode,
+        serverUrl: desktop.currentSetup?.serverUrl,
         previousMode,
         stack: desktop.localStack,
         rebuildMenu: () => installApplicationMenu(),
