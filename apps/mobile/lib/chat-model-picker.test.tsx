@@ -107,6 +107,7 @@ notifyManager.setScheduler((callback) => callback());
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async () => ({ headers: {} }),

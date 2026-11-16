@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import type { Deferred } from "@rakazo/core/test-async";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SpaceMembersScreen from "../app/space-members";
+import { queryClient } from "./query";
 
 const { rpc, selectSpace, selectedSpaceId, alert, share, router } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -23,7 +25,15 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   selectedSpaceId,
+  currentApiBase: () => "https://app.example.test",
+  captureApiRequestContext: async (spaceId: string | null = selectedSpaceId()) => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./api-server", () => ({
   selectSpace,
 }));
@@ -37,6 +47,7 @@ vi.mock("expo-router", () => ({
   useRouter: () => router,
   // Opened from Settings: no name in the link, so the sheet takes it from the list.
   useLocalSearchParams: () => ({ spaceId: "space-shared" }),
+  useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   Stack: { Screen: () => null },
 }));
 vi.mock("react-native", () => ({
@@ -83,18 +94,20 @@ vi.mock("../components/settings-group", () => ({
     title,
     detail,
     value,
+    disabled,
     onPress,
   }: {
     title: string;
     detail?: string;
     value?: string;
+    disabled?: boolean;
     onPress?: () => void;
   }) =>
     createElement(
       "li",
       null,
       onPress
-        ? createElement("button", { type: "button", onClick: onPress }, title)
+        ? createElement("button", { type: "button", disabled, onClick: onPress }, title)
         : [title, detail, value].filter(Boolean).join(" | "),
     ),
 }));
@@ -126,8 +139,12 @@ const member = {
 let host: HTMLDivElement;
 let root: Root;
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 beforeEach(() => {
   vi.clearAllMocks();
+  queryClient.clear();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -147,21 +164,49 @@ function pressAlertButton(text: string) {
   buttons.find((button) => button.text === text)?.onPress?.();
 }
 
+/** What the server holds, so a read after a change sees it. */
+const server = { members: [owner, member], openInvites: 0 };
+const pinned = {
+  requestContext: {
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-shared" },
+  },
+};
+const reads = () => rpc.mock.calls.filter(([procedure]) => procedure === "spaces/members/list");
+
 async function render(canManage: boolean) {
-  rpc.mockImplementation(async (procedure: string) => {
+  server.members = [owner, member];
+  server.openInvites = 0;
+  rpc.mockImplementation(async (procedure: string, input?: { userId?: string }) => {
     if (procedure === "spaces/members/list")
-      return { spaceName: "Home", members: [owner, member], canManage };
-    if (procedure === "spaces/invites/create")
+      return {
+        spaceName: "Home",
+        members: server.members,
+        openInvites: server.openInvites,
+        canManage,
+      };
+    if (procedure === "spaces/invites/create") {
+      server.openInvites += 1;
       return { url: "https://rakazo.example/invite/token-1", expiresAt: "2026-10-29T00:00:00Z" };
+    }
+    if (procedure === "spaces/invites/cancel") server.openInvites = 0;
+    if (procedure === "spaces/members/remove")
+      server.members = server.members.filter((item) => item.userId !== input?.userId);
     if (procedure === "spaces/members/leave") return { ok: true, activeSpaceId: "space-own" };
     return { ok: true };
   });
   await act(async () => root.render(createElement(SpaceMembersScreen)));
+  await act(flush);
 }
 
 it("lets the owner share an invite link and remove a member after confirming", async () => {
   await render(true);
-  expect(rpc).toHaveBeenCalledWith("spaces/members/list", { spaceId: "space-shared" });
+  expect(rpc).toHaveBeenCalledWith(
+    "spaces/members/list",
+    { spaceId: "space-shared" },
+    expect.objectContaining({ requestContext: pinned.requestContext }),
+  );
   expect([...host.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
     "Ada Lovelace | ada@example.test | Owner",
     "Bob Stone | bob@example.test",
@@ -170,21 +215,25 @@ it("lets the owner share an invite link and remove a member after confirming", a
   expect(buttonNamed("Leave space")).toBeUndefined();
 
   await act(async () => buttonNamed("Invite")?.click());
-  expect(rpc).toHaveBeenCalledWith("spaces/invites/create", { spaceId: "space-shared" });
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith("spaces/invites/create", { spaceId: "space-shared" }, pinned);
   expect(share).toHaveBeenCalledWith({ url: "https://rakazo.example/invite/token-1" });
   // An open link can be cancelled until someone uses it.
   await act(async () => buttonNamed("Cancel open invites")?.click());
-  expect(rpc).toHaveBeenCalledWith("spaces/invites/cancel", { spaceId: "space-shared" });
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith("spaces/invites/cancel", { spaceId: "space-shared" }, pinned);
   expect(buttonNamed("Cancel open invites")).toBeUndefined();
 
   await act(async () => buttonNamed("Remove")?.click());
   expect(alert.mock.calls.at(-1)?.[0]).toBe("Remove Bob Stone?");
   expect(rpc).not.toHaveBeenCalledWith("spaces/members/remove", expect.anything());
   await act(async () => pressAlertButton("Remove"));
-  expect(rpc).toHaveBeenCalledWith("spaces/members/remove", {
-    spaceId: "space-shared",
-    userId: "user-member",
-  });
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith(
+    "spaces/members/remove",
+    { spaceId: "space-shared", userId: "user-member" },
+    pinned,
+  );
   expect(host.querySelectorAll("li")).toHaveLength(2);
 });
 
@@ -196,7 +245,8 @@ it("lets a member leave and returns home in their own space", async () => {
   await act(async () => buttonNamed("Leave space")?.click());
   expect(alert.mock.calls.at(-1)?.[0]).toBe("Leave Home?");
   await act(async () => pressAlertButton("Leave"));
-  expect(rpc).toHaveBeenCalledWith("spaces/members/leave", { spaceId: "space-shared" });
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith("spaces/members/leave", { spaceId: "space-shared" }, pinned);
   expect(selectSpace).toHaveBeenCalledWith("space-own");
   expect(router.dismissAll).toHaveBeenCalled();
   expect(router.replace).toHaveBeenCalledWith("/");
@@ -216,7 +266,11 @@ it("retries a failed first load without reopening the members screen", async () 
   expect(buttonNamed("Retry")).toBeUndefined();
   expect(host.querySelector('[role="progressbar"]')).not.toBeNull();
   expect(rpc).toHaveBeenCalledTimes(2);
-  expect(rpc).toHaveBeenLastCalledWith("spaces/members/list", { spaceId: "space-shared" });
+  expect(rpc).toHaveBeenLastCalledWith(
+    "spaces/members/list",
+    { spaceId: "space-shared" },
+    expect.anything(),
+  );
   await act(async () =>
     finishRetry.resolve({ spaceName: "Home", members: [owner, member], canManage: true }),
   );
@@ -235,4 +289,72 @@ it("offers retry again if reloading the members fails", async () => {
   expect(host.textContent).toContain("Still offline");
   expect(buttonNamed("Retry")).toBeDefined();
   expect(host.querySelector('[role="progressbar"]')).toBeNull();
+});
+
+it("holds Invite while open invites are being cancelled, so a new link is not cancelled with them", async () => {
+  await render(true);
+  await act(async () => buttonNamed("Invite")?.click());
+  await act(flush);
+  const cancelling = deferred<unknown>();
+  rpc.mockImplementationOnce(() => cancelling.promise);
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  expect(buttonNamed("Invite")?.disabled).toBe(true);
+  await act(async () => buttonNamed("Invite")?.click());
+  expect(
+    rpc.mock.calls.filter(([procedure]) => procedure === "spaces/invites/create"),
+  ).toHaveLength(1);
+  server.openInvites = 0;
+  await act(async () => cancelling.resolve({ ok: true }));
+  await act(flush);
+  expect(buttonNamed("Invite")?.disabled).toBe(false);
+  expect(buttonNamed("Cancel open invites")).toBeUndefined();
+});
+
+it("removes a member once when the confirmation is pressed twice, and reads the members again", async () => {
+  await render(true);
+  const before = reads().length;
+  const removing = deferred<unknown>();
+  rpc.mockImplementationOnce(() => removing.promise);
+  await act(async () => buttonNamed("Remove")?.click());
+  await act(async () => {
+    pressAlertButton("Remove");
+    pressAlertButton("Remove");
+  });
+  expect(
+    rpc.mock.calls.filter(([procedure]) => procedure === "spaces/members/remove"),
+  ).toHaveLength(1);
+  expect(buttonNamed("Invite")?.disabled).toBe(true);
+  server.members = [owner];
+  await act(async () => removing.resolve({ ok: true }));
+  await act(flush);
+  expect(reads().length).toBe(before + 1);
+  expect(host.querySelectorAll("li")).toHaveLength(2);
+  expect(buttonNamed("Invite")?.disabled).toBe(false);
+});
+
+it("keeps a member and releases the controls when removing fails", async () => {
+  await render(true);
+  rpc.mockImplementationOnce(async () => {
+    throw new Error("Offline");
+  });
+  await act(async () => buttonNamed("Remove")?.click());
+  await act(async () => pressAlertButton("Remove"));
+  await act(flush);
+  expect(alert).toHaveBeenLastCalledWith("Could not remove member", "Offline");
+  expect(host.textContent).toContain("Bob Stone");
+  expect(buttonNamed("Invite")?.disabled).toBe(false);
+});
+
+it("holds Leave until the space is left, and releases it when leaving fails", async () => {
+  await render(false);
+  const leaving = deferred<unknown>();
+  rpc.mockImplementationOnce(() => leaving.promise);
+  await act(async () => buttonNamed("Leave space")?.click());
+  await act(async () => pressAlertButton("Leave"));
+  expect(buttonNamed("Leave space")?.disabled).toBe(true);
+  await act(async () => leaving.reject(new Error("Offline")));
+  await act(flush);
+  expect(alert).toHaveBeenLastCalledWith("Could not leave space", "Offline");
+  expect(buttonNamed("Leave space")?.disabled).toBe(false);
+  expect(router.replace).not.toHaveBeenCalled();
 });
