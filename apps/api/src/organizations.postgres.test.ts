@@ -755,6 +755,58 @@ describePostgres("organizations (PostgreSQL)", () => {
     await until(() => sandbox.destroyed.includes(hungRef));
   });
 
+  it("hands the claim back when its deadline passes while the claim is being taken", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const claiming = deferred();
+    const held = deferred();
+    const deadline = new AbortController();
+    // The claim is the attempt's first transaction; hold it open until the deadline has passed.
+    let first = true;
+    const holdingClaim = new Proxy(prisma, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (property !== "$transaction" || typeof value !== "function") return value;
+        return async (...args: unknown[]) => {
+          if (first) {
+            first = false;
+            claiming.resolve();
+            await held.promise;
+          }
+          return value.apply(target, args);
+        };
+      },
+    }) as PrismaClient;
+    const late = runAsSystem("an attempt cut off while claiming", () =>
+      deleteOrganization(
+        { ...deps(), prisma: holdingClaim } as Parameters<typeof deleteOrganization>[0],
+        ada.userId,
+        work.id,
+        deadline.signal,
+      ),
+    );
+    await claiming.promise;
+    deadline.abort(new Error("Organization deletion timed out"));
+    await expect(late).rejects.toThrow("timed out");
+    held.resolve();
+    // Once the late claim lands it is handed back and the attempt lets its lease go, so a retry
+    // starts at once instead of being turned away until the claim lapses.
+    await vi.waitFor(
+      async () => {
+        const [lease] = await system.$queryRaw<unknown[]>`
+          SELECT 1 FROM "leases" WHERE "key" = ${`organization-deletion:${work.id}`}`;
+        expect(lease).toBeUndefined();
+        const spaces = await system.space.findMany({ where: { organizationId: work.id } });
+        expect(
+          spaces.every((space) => !space.deletingAt || space.deletingAt.getTime() < 1000),
+        ).toBe(true);
+      },
+      { timeout: 5_000, interval: 20 },
+    );
+    await client(ada).organizations.remove({ organizationId: work.id });
+    expect(await system.organization.findUnique({ where: { id: work.id } })).toBeNull();
+  });
+
   it("starts no teardown from an attempt whose billing call returns after its deadline", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });

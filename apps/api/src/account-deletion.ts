@@ -159,10 +159,25 @@ export async function deleteOrganization(
     // still under the overall deadline; any left are another attempt's.
     return (await deps.prisma.space.count({ where: { organizationId } })) === 0;
   };
+  /** Lets the next attempt start at once: nothing of this one is left running. */
+  const handBack = async (taken: NonNullable<typeof claim>) => {
+    const { claimId, fresh } = taken;
+    if (fresh && !billingCancelled)
+      await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
+    else
+      await setOrganizationDeletionLease(deps.prisma, { organizationId, claimId, at: new Date(0) });
+  };
   const operationId = `organization-delete:${organizationId}`;
   const work = async (lease: HeldLease) => {
     leaseSignal = lease.signal;
-    claim = await claimOrganizationForDeletion(deps.prisma, { userId, organizationId });
+    const taken = await claimOrganizationForDeletion(deps.prisma, { userId, organizationId });
+    // Cut off while the claim was being taken: the caller has gone, so the claim goes back now
+    // rather than holding off the next attempt until it lapses.
+    if (lease.signal.aborted) {
+      await handBack(taken);
+      lease.signal.throwIfAborted();
+    }
+    claim = taken;
     const { claimId, spaceIds } = claim;
     // Work cut off by the deadline or a lost lease that resumes later starts nothing new: a later
     // attempt may own it.
@@ -227,17 +242,7 @@ export async function deleteOrganization(
     // Work cut off by the deadline or a lost lease may still be running, so the claim is left to
     // lapse or to the attempt that took it. Otherwise the work has settled and renewal stopped, so
     // nothing is left running and the next attempt may start at once.
-    if (claim && !leaseSignal?.aborted) {
-      const { claimId, fresh } = claim;
-      if (fresh && !billingCancelled)
-        await releaseOrganizationDeletionClaim(deps.prisma, { organizationId, claimId });
-      else
-        await setOrganizationDeletionLease(deps.prisma, {
-          organizationId,
-          claimId,
-          at: new Date(0),
-        });
-    }
+    if (claim && !leaseSignal?.aborted) await handBack(claim);
     throw error;
   } finally {
     deadline.dispose();
