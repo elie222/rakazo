@@ -145,3 +145,52 @@ it("shows admins the deployment's voice on the account page only", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("shows the provider an admin just saved for everyone when they have no voice of their own", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  voice.catalog.mockReset().mockResolvedValue([
+    { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+    { id: "cartesia", name: "Cartesia", description: "", transcribe: true },
+  ]);
+  voice.credentials.mockReset().mockResolvedValue([]);
+  const status = (provider: string) => ({
+    configured: true,
+    ready: true,
+    transcribe: true,
+    provider,
+    voiceId: "voice-a",
+    deployment: true,
+  });
+  voice.status.mockReset().mockResolvedValue(status("elevenlabs"));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const providerField = () => {
+    const label = [...container.querySelectorAll("label")].find(
+      (node) => node.textContent === "Provider",
+    );
+    return container.querySelector<HTMLSelectElement>(`[id="${label?.htmlFor}"]`)!;
+  };
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(
+          <VoiceSettingsOverlay
+            embedded
+            onClose={() => undefined}
+            scope="account"
+            canConfigureDeployment
+          />,
+        ),
+      );
+    });
+    expect(providerField().value).toBe("elevenlabs");
+    voice.status.mockResolvedValue(status("cartesia"));
+    await act(async () => deploymentVoice.onSaved?.());
+    expect(providerField().value).toBe("cartesia");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

@@ -155,7 +155,10 @@ export function parseModelAllowlist(value: string | null | undefined): string[] 
       const colon = entry.indexOf(":");
       const provider = entry.slice(0, colon).trim();
       const model = entry.slice(colon + 1).trim();
-      return colon > 0 && model ? [`${canonicalPiProviderId(provider)}:${model}`] : [];
+      // "*" stands alone: a "*:" entry would look kept but open nothing.
+      return colon > 0 && model && provider !== "*"
+        ? [`${canonicalPiProviderId(provider)}:${model}`]
+        : [];
     });
   return [...new Set(entries)];
 }

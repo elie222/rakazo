@@ -439,5 +439,7 @@ describe("deployment models", () => {
       "*",
       "openrouter:meta/llama:free",
     ]);
+    // A wildcard provider would look kept but open nothing; "*" alone opens everything.
+    expect(parseModelAllowlist("*:*, *:gpt-4o")).toEqual([]);
   });
 });

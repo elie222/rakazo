@@ -108,7 +108,11 @@ async function savedEndpoint(deps: DeploymentModelDeps, row: { ciphertext: strin
       ),
     );
     return secret.kind === "openai_compatible" ? secret : undefined;
-  } catch {
+  } catch (error) {
+    // Only the error's class: a store's error can echo the request it failed on.
+    getLogger().warn("deployment_model.endpoint_unreadable", {
+      "error.name": error instanceof Error ? error.name : typeof error,
+    });
     return undefined;
   }
 }

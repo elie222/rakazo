@@ -184,14 +184,27 @@ export function VoiceSettingsOverlay({
   }
 
   /** After a change (every call but the one on open) it never reuses a read sent before it. */
-  async function refresh(nextProvider?: string, { keepForm = false, reuse = false } = {}) {
+  async function refresh(
+    nextProvider?: string,
+    {
+      keepForm = false,
+      reuse = false,
+      /** Show the provider the status now names, even over the one shown before. */
+      followStatus = false,
+    } = {},
+  ) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
       fetchFresh(queryClient, queries.voice.catalog.queryOptions(), { reuse }),
       fetchFresh(queryClient, queries.voice.credentials.queryOptions(scoped), { reuse }),
       fetchFresh(queryClient, queries.voice.status.queryOptions(scoped), { reuse }),
     ]);
     const current = providerRef.current;
-    const selected = selectedProvider(nextCatalog, [nextProvider, current, nextStatus.provider]);
+    const selected = selectedProvider(
+      nextCatalog,
+      followStatus
+        ? [nextProvider, nextStatus.provider, current]
+        : [nextProvider, current, nextStatus.provider],
+    );
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setStatus(nextStatus);
@@ -729,9 +742,11 @@ export function VoiceSettingsOverlay({
         <DeploymentVoiceSettings
           // An admin without a voice of their own speaks with the one just saved.
           onSaved={() =>
-            void refresh(undefined, { keepForm: true }).catch((err: unknown) =>
-              setError(errorText(err, t`Could not load voice settings`)),
-            )
+            void refresh(undefined, {
+              keepForm: true,
+              // Without a voice of their own, the shown provider follows the one just saved.
+              followStatus: credentials.length === 0,
+            }).catch((err: unknown) => setError(errorText(err, t`Could not load voice settings`)))
           }
         />
       ) : null}
