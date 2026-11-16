@@ -76,7 +76,7 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
       >
         <TextQuote strokeWidth={2} />
         {t`Reply`}
-        <span className="text-label text-muted-foreground">
+        <span className="hidden text-label text-muted-foreground pointer-fine:inline">
           {quoteShortcutLabel({ desktop: Boolean(desktopBridge()), apple: isApplePlatform() })}
         </span>
       </Button>
