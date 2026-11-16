@@ -19,6 +19,7 @@ import {
   runAsSystem,
   runAsTenant,
   setSpaceSettingOverride,
+  withLease,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
@@ -1990,12 +1991,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       claimSpaceDeletionForMember(handles.prisma, deleteInput),
     );
     expect(replacementClaim.recovered).toBe(true);
+    // Even while holding the Space's lease, a replaced claim deletes nothing.
     await expect(
       asMember(() =>
-        deleteClaimedSpaceForMember(handles.prisma, {
-          ...deleteInput,
-          claimId: firstClaim.claimId,
-        }),
+        withLease(handles.prisma, `space-deletion:${space.id}`, { ttlMs: 60_000 }, (lease) =>
+          deleteClaimedSpaceForMember(handles.prisma, {
+            ...deleteInput,
+            claimId: firstClaim.claimId,
+            lease,
+          }),
+        ),
       ),
     ).rejects.toThrow("Space deletion is already in progress");
     await asMember(() =>
