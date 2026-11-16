@@ -453,7 +453,11 @@ export function useSpaceBootstrap({
           if (!cancelled) setInitialLoadFailed(true);
         });
       })
-      .finally(() => rosterSignals.firstLoadSettled());
+      // Only the load whose answer was applied lets held re-reads go: one answering for an effect
+      // already torn down would let them repair the route before the kept load places its chat.
+      .finally(() => {
+        if (!cancelled) rosterSignals.firstLoadSettled();
+      });
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
       if (document.visibilityState !== "visible" && !callsEnabledRef.current) return;
