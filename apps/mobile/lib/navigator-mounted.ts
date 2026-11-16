@@ -17,7 +17,7 @@ export function markNavigatorMounted(): () => void {
   };
 }
 
-/** Called by the root layout; layout effects bind and unbind together with the router's own. */
-export function useNavigatorMounted(): void {
-  useLayoutEffect(markNavigatorMounted, []);
+/** Called by the root layout with whether it renders the Stack; a layout effect keeps it in step. */
+export function useNavigatorMounted(rendered: boolean): void {
+  useLayoutEffect(() => (rendered ? markNavigatorMounted() : undefined), [rendered]);
 }

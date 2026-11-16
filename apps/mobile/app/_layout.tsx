@@ -288,6 +288,7 @@ function LayoutContent() {
   const canInvite = Boolean(useReferral());
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
+  useNavigatorMounted(ready);
   useNotificationResponses(ready);
   const callSession = useSyncExternalStore(
     subscribeSessionGeneration,
@@ -621,7 +622,6 @@ function LayoutContent() {
 }
 
 export default function Layout() {
-  useNavigatorMounted();
   return (
     <I18nProvider i18n={i18n}>
       <AppErrorBoundary>
