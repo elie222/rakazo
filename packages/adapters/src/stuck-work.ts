@@ -15,6 +15,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   expireStuckRun,
+  membersInQuietHours,
   runHoldsOwnSecrets,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
@@ -217,6 +218,9 @@ async function remindStuckRun(
   // so a later sweep can still remind during this same wait.
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
+  // A run still waiting to start asks nothing of its owner, so it waits out their quiet hours;
+  // left unmarked, a sweep after them reminds.
+  if ((await membersInQuietHours(deps.prisma, [run.userId], deps.now)).has(run.userId)) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) => claimStuckReminder(tx, run, deps.now),

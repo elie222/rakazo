@@ -74,6 +74,32 @@ describe("reconcileStuckWork", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("holds a queued run's reminder through its owner's quiet hours, then sends it", async () => {
+    const run = candidate("queued", 5);
+    const stamps: Array<{ runId: string | null; payload: unknown }> = [];
+    const prisma = noticePrisma(run, stamps);
+    // Quiet the whole day, read in UTC, so the test can't land outside them.
+    const hour = now.getUTCHours();
+    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([
+      {
+        id: run.userId,
+        timezone: "UTC",
+        quietHoursStart: (hour + 23) % 24,
+        quietHoursEnd: (hour + 1) % 24,
+      },
+    ] as never);
+    const { jobs } = publisher();
+    const { provider, send } = notifications();
+
+    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    expect(send).not.toHaveBeenCalled();
+    expect(stamps).toHaveLength(0);
+
+    // After them, the next sweep reminds.
+    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("reminds once for a run that has been queued for hours", async () => {
     const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
@@ -694,6 +720,8 @@ function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) 
       }),
     },
     thread: { update: vi.fn(async () => ({ nextEventSeq: stamps.length + 1 })) },
+    // Nobody is in quiet hours unless a test sets them.
+    user: { findMany: vi.fn(async () => [] as unknown[]) },
     $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),

@@ -174,18 +174,17 @@ export function GeneralSettingsPanels({
   const timezonePending = timezoneSave.pending;
   const deviceTimezone = localTimezone();
   const quietHoursId = useId();
-  // The choice being saved, shown until the server answers; undefined while none is.
-  const quietHoursSave = useSave({
+  const quietHoursSaving = useSave({
     save: (next: QuietHours | null, client) =>
       onQuietHoursChange?.(next, client) ?? Promise.resolve(),
     // A save that also keeps this device's timezone moves the usage days, as a timezone save does.
     stale: [queries.usage.breakdown.key()],
   });
   // The choice being saved shows until the server answers.
-  const shownQuietHours = quietHoursSave.pending ? quietHoursSave.input : quietHours;
+  const shownQuietHours = quietHoursSaving.pending ? quietHoursSaving.input : quietHours;
   // A quiet hours save can also keep this device's timezone, so it and a timezone save wait for
   // each other rather than racing.
-  const zoneSaving = timezonePending || quietHoursSave.pending;
+  const zoneSaving = timezonePending || quietHoursSaving.pending;
   const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {
@@ -200,7 +199,7 @@ export function GeneralSettingsPanels({
 
   function chooseQuietHours(next: QuietHours | null) {
     if (!onQuietHoursChange || zoneSaving) return;
-    quietHoursSave.run(next);
+    quietHoursSaving.run(next);
   }
 
   function chooseTimezone(next: string) {
@@ -479,7 +478,7 @@ export function GeneralSettingsPanels({
                 </p>
               </div>
             ) : null}
-            {quietHoursSave.error ? (
+            {quietHoursSaving.error ? (
               <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
                 {t`Couldn't update quiet hours`}
               </p>

@@ -25,7 +25,7 @@ Turn on **Quiet hours** and pick when they start and end, on the hour; 10 PM to 
 change it. Every day in that window, replies and other news in your chats don't notify you on any
 device. They wait in your chats as unread. A question for you, a request to take over the screen,
 and a run of yours that failed still notify you, since only you can act on them. The hours follow
-your timezone, or your device's if you never set one.
+your timezone; turning them on without one saves your device's.
 
 ## Sign-in and security
 
