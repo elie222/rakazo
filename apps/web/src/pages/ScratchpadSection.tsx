@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
@@ -30,7 +30,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
   }
 
   const change = useSave({
-    // Resolves with whether reading the list again failed; the change itself stands either way.
+    stale: [list.queryKey],
     save: async (input: Change, rpc) => {
       if ("title" in input) {
         const created = await rpc.scratchpad.create({ botId, title: input.title });
@@ -50,12 +50,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         await rpc.scratchpad.remove({ itemId: input.item.id });
         await setItems((current) => current.filter((entry) => entry.id !== input.item.id));
       }
-      return fetchFresh(queryClient, list).then(
-        () => false,
-        () => true,
-      );
     },
-    onSaved: (failed, input) => setRefreshFailed(failed ? input : null),
   });
   const busy = change.pending;
   const input = change.input;
@@ -66,18 +61,9 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         ? t`Could not update`
         : t`Could not remove`
     : null;
-  const [refreshFailed, setRefreshFailed] = useState<Change | null>(null);
-  const shownError =
-    error ??
-    (refreshFailed
-      ? "remove" in refreshFailed
-        ? t`Removed, but list refresh failed`
-        : t`Saved, but list refresh failed`
-      : null);
 
   function run(next: Change) {
     if (busy) return;
-    setRefreshFailed(null);
     change.run(next);
   }
 
@@ -87,7 +73,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     run({ title });
   }
 
-  if (!items.length && !shownError && !adding) return null;
+  if (!items.length && !error && !adding) return null;
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
@@ -174,7 +160,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           </form>
         ) : null}
       </div>
-      {shownError ? <div className="mt-2 text-body-sm text-destructive">{shownError}</div> : null}
+      {error ? <div className="mt-2 text-body-sm text-destructive">{error}</div> : null}
     </div>
   );
 }
