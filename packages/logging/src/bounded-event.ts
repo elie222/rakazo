@@ -11,7 +11,7 @@ const STAND_IN = { maxFields: 64, stringChars: 1_024, include: () => true };
 const SMALLEST_STAND_IN = {
   maxFields: 16,
   stringChars: 256,
-  include: (key: string) => ESSENTIAL_FIELDS.has(key) || key.endsWith(".id"),
+  include: isEssential,
 };
 
 // Room left for the marker added to a shortened line, so adding it cannot cross the limit.
@@ -54,13 +54,20 @@ function cap(value: string, limit: number): string {
  * The line's plain top-level fields and its error's name and message, each shortened; if even
  * that is too large, only its message, level, service, ids and error name.
  */
+function isEssential(key: string): boolean {
+  return ESSENTIAL_FIELDS.has(key) || key.endsWith(".id");
+}
+
 function standIn(event: LogEvent, flag: string): Record<string, unknown> {
   const fields: Array<[string, unknown]> = [];
   if (event.error) {
     fields.push(["error.name", event.error.name], ["error.message", event.error.message]);
   }
-  // Appended one by one: spreading a very large set of fields into one call can throw.
-  for (const entry of Object.entries(event)) fields.push(entry);
+  // Identifiers first, so a line with many fields still keeps what ties it to its run. Appended
+  // one by one: spreading a very large set of fields into one call can throw.
+  const rest: Array<[string, unknown]> = [];
+  for (const entry of Object.entries(event)) (isEssential(entry[0]) ? fields : rest).push(entry);
+  for (const entry of rest) fields.push(entry);
   // The flag goes last so no field of the same name can overwrite it.
   const kept = { ...plainFields(fields, STAND_IN), [flag]: true };
   if (JSON.stringify(kept).length <= MAX_LOG_EVENT_CHARS) return kept;

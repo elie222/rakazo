@@ -58,6 +58,18 @@ describe("boundLogEvent", () => {
     expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(MAX_LOG_EVENT_CHARS);
   });
 
+  it("keeps a line's identifiers when many fields come before them", () => {
+    const fields: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i++) fields[`f${i}`] = "x".repeat(MAX_LOG_STRING_CHARS);
+    const bounded = boundLogEvent({ ...fields, ...event({ "space.id": "space-a" }) });
+    expect(bounded).toMatchObject({
+      "log.oversized": true,
+      message: "run.setup_failed",
+      "run.id": "run-a",
+      "space.id": "space-a",
+    });
+  });
+
   it("returns a line that serializes when a field is a BigInt", () => {
     const bounded = boundLogEvent(event({ "run.steps": 12345678901234567890n }));
 
