@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import path from "node:path";
 import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import type { RunDocker } from "./docker-cli.js";
@@ -65,6 +66,11 @@ const POSTGRES_LISTENING = "listening on IPv4 address";
 const POSTGRES_READY = "database system is ready to accept connections";
 const HEALTH_POLL_INTERVAL_MS = 1_000;
 const POSTGRES_READY_TIMEOUT_MS = 120_000;
+/** The VM logs ready before its published port reliably carries connections, so the host asks too. */
+const DATABASE_ANSWER_ATTEMPTS = 30;
+const DATABASE_ANSWER_TIMEOUT_MS = 5_000;
+/** Postgres's SSLRequest: a length of 8 and the code 80877103, answered with one byte, S or N. */
+const SSL_REQUEST = Buffer.from([0, 0, 0, 8, 4, 210, 22, 47]);
 const MIGRATE_TIMEOUT_MS = 10 * 60_000;
 const CLI_TIMEOUT_MS = 60_000;
 const IMAGE_PULL_TIMEOUT_MS = 60 * 60_000;
@@ -72,6 +78,26 @@ const STOP_GRACE_MS = 10_000;
 /** A process that stayed up this long starts its next crash from the shortest delay again. */
 const STABLE_RUN_MS = 60_000;
 const LOG_TAIL_LINES = 12;
+
+/** Resolves once Postgres itself answers on the loopback port; a forwarder that only accepts is not enough. */
+export function postgresAnswers(port: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port, signal });
+    const fail = (error: Error) => {
+      socket.destroy();
+      reject(error);
+    };
+    socket.setTimeout(DATABASE_ANSWER_TIMEOUT_MS, () => fail(new Error("Postgres did not answer")));
+    socket.once("connect", () => socket.write(SSL_REQUEST));
+    socket.once("data", (reply) => {
+      socket.destroy();
+      if (reply[0] === 0x4e || reply[0] === 0x53) resolve();
+      else reject(new Error("Postgres sent an unexpected reply"));
+    });
+    socket.once("error", fail);
+    socket.once("close", () => reject(new Error("Postgres closed the connection")));
+  });
+}
 
 /** Doubles from one second up to thirty, so a crash loop never spins. */
 export function restartDelay(attempt: number): number {
@@ -264,6 +290,7 @@ export interface NativeStackDeps {
   importFromDocker?: (target: DockerImportTarget) => Promise<void>;
   spawn?: SpawnProcess;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  databaseAnswers?: (port: number, signal: AbortSignal) => Promise<void>;
   portFree?: (port: number) => Promise<boolean>;
   allocatePort?: () => Promise<number>;
   healthTimeoutMs?: number;
@@ -521,6 +548,7 @@ export class NativeStackController extends StackLifecycle {
       .catch((error: Error) => {
         throw new StartFailure(servicesFailed(), [...postgres.tail, error.message]);
       });
+    await this.waitForDatabasePort(databasePort, signal);
 
     const at = (login: string, secret: string) =>
       `postgres://${encodeURIComponent(login)}:${encodeURIComponent(secret)}@127.0.0.1:${databasePort}/${encodeURIComponent(database)}`;
@@ -792,6 +820,23 @@ export class NativeStackController extends StackLifecycle {
     );
     if (pulled.code !== 0 && !signal.aborted)
       throw new DownloadError(`Pulling the database image exited with code ${pulled.code}`);
+  }
+
+  private async waitForDatabasePort(port: number, signal: AbortSignal) {
+    const answers = this.deps.databaseAnswers ?? postgresAnswers;
+    const sleep = this.deps.sleep ?? defaultSleep;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await answers(port, signal);
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (attempt === DATABASE_ANSWER_ATTEMPTS)
+          throw new StartFailure(servicesFailed(), [
+            `Postgres did not answer on 127.0.0.1:${port}: ${error instanceof Error ? error.message : String(error)}`,
+          ]);
+        await sleep(HEALTH_POLL_INTERVAL_MS, signal);
+      }
+    }
   }
 
   private async runtimeCommand(
