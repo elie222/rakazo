@@ -898,9 +898,10 @@ app.whenReady().then(async () => {
     commitPendingAppSwitch,
     abandonPendingAppSwitch,
     recoverFromCrashedSave,
-    stopStackLeftBehind: () =>
+    stopStackLeftBehind: (previousMode) =>
       stopStackLeftBehind({
         mode: desktop.currentSetup?.mode,
+        previousMode,
         stack: desktop.localStack,
         rebuildMenu: () => installApplicationMenu(),
       }),

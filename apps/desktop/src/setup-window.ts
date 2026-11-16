@@ -107,7 +107,7 @@ type SetupIpcDeps = {
     previousSetup: DesktopSetup | null,
     previousUrl: string | null,
   ) => Promise<string>;
-  stopStackLeftBehind: () => void;
+  stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
 };
 
 /** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
@@ -213,7 +213,7 @@ export function registerSetupIpc({
           return { ok: false, error: message };
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
-        stopStackLeftBehind();
+        stopStackLeftBehind(previousSetup?.mode);
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);

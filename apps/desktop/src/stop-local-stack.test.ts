@@ -41,12 +41,12 @@ describe("quit and stop bots menu item", () => {
     expect(item({ mode: null, stackRunning: false }).visible).toBe(false);
   });
 
-  it("quits straight away when no stack is running, even without Docker", () => {
-    const stop = vi.fn(async () => failed);
+  it("stops before quitting even when no stack is flagged, since an older version's may run", async () => {
+    const stop = vi.fn(async () => stopped);
     const quit = vi.fn();
     click(item({ mode: "new", stackRunning: false, stop, quit }));
-    expect(stop).not.toHaveBeenCalled();
-    expect(quit).toHaveBeenCalledOnce();
+    expect(stop).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
   });
 
   it("quits only after the stack has stopped", async () => {
@@ -108,15 +108,36 @@ describe("stop stack left behind", () => {
   it("stops a running stack once the app switches to another server", async () => {
     const running = stack(true);
     const rebuildMenu = vi.fn();
-    stopStackLeftBehind({ mode: "existing", stack: running, rebuildMenu });
+    stopStackLeftBehind({
+      previousMode: "existing",
+      mode: "existing",
+      stack: running,
+      rebuildMenu,
+    });
     expect(running.stop).toHaveBeenCalledOnce();
     // A stop that changes no phase still refreshes the menu once it settles.
     await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledOnce());
   });
 
+  it("always stops when leaving This computer, even with nothing flagged", () => {
+    const unflagged = stack(false, undefined, "failed");
+    stopStackLeftBehind({
+      previousMode: "new",
+      mode: "existing",
+      stack: unflagged,
+      rebuildMenu: vi.fn(),
+    });
+    expect(unflagged.stop).toHaveBeenCalledOnce();
+  });
+
   it("stops a start that has not launched anything yet", () => {
     const pulling = stack(false, undefined, "pulling");
-    stopStackLeftBehind({ mode: "existing", stack: pulling, rebuildMenu: vi.fn() });
+    stopStackLeftBehind({
+      previousMode: "existing",
+      mode: "existing",
+      stack: pulling,
+      rebuildMenu: vi.fn(),
+    });
     expect(pulling.stop).toHaveBeenCalledOnce();
   });
 
@@ -124,10 +145,25 @@ describe("stop stack left behind", () => {
     const connected = stack(true);
     const idle = stack(false);
     const missing = stack(false, undefined, "docker-missing");
-    stopStackLeftBehind({ mode: "existing", stack: missing, rebuildMenu: vi.fn() });
+    stopStackLeftBehind({
+      previousMode: "existing",
+      mode: "existing",
+      stack: missing,
+      rebuildMenu: vi.fn(),
+    });
     expect(missing.stop).not.toHaveBeenCalled();
-    stopStackLeftBehind({ mode: "new", stack: connected, rebuildMenu: vi.fn() });
-    stopStackLeftBehind({ mode: "existing", stack: idle, rebuildMenu: vi.fn() });
+    stopStackLeftBehind({
+      previousMode: "new",
+      mode: "new",
+      stack: connected,
+      rebuildMenu: vi.fn(),
+    });
+    stopStackLeftBehind({
+      previousMode: "existing",
+      mode: "existing",
+      stack: idle,
+      rebuildMenu: vi.fn(),
+    });
     expect(connected.stop).not.toHaveBeenCalled();
     expect(idle.stop).not.toHaveBeenCalled();
   });
@@ -139,7 +175,12 @@ describe("stop stack left behind", () => {
       vi.fn(() => Promise.reject(new Error("docker went away"))),
     );
     try {
-      stopStackLeftBehind({ mode: "existing", stack: rejecting, rebuildMenu });
+      stopStackLeftBehind({
+        previousMode: "existing",
+        mode: "existing",
+        stack: rejecting,
+        rebuildMenu,
+      });
       await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledOnce());
       expect(vi.mocked(reportDesktopError)).toHaveBeenCalledWith(expect.any(Error), "desktop.ipc");
     } finally {
