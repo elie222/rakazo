@@ -15,6 +15,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
+import { selectedSpaceId } from "../lib/api";
 import type { InboxBotOutcome } from "../lib/create-inbox-bot";
 import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
 import { openChatFromInbox } from "../lib/inbox-changes";
@@ -42,25 +43,42 @@ export default function NewBot() {
   const [look, setLook] = useState(newBotLook);
   // Once the screen is gone, a creation still in flight must not open the chat.
   const gone = useRef(false);
+  // Set with the Create tap: the header's Cancel can still be the one rendered before it.
+  const started = useRef(false);
   // Create waits for the check made as the screen opened, so the model prompt shows once.
   const modelCheck = useRef<Promise<boolean>>(Promise.resolve(false));
   const trimmed = name.trim();
   const identity = newBotPreviewIdentity(avatarSet, look);
+  // The Space the bot is created in, kept from the Create tap so a later switch leaves it shown.
+  const tappedIn = useRef<string | undefined>(undefined);
+  const createdIn = tappedIn.current ?? params.spaceId ?? selectedSpaceId() ?? undefined;
   const creation = useSave({
-    target: params.spaceId ? { scope: "space", spaceId: params.spaceId } : undefined,
+    // The bot's onboarding and focus prompt still reach its Space after another is selected.
+    target: createdIn ? { scope: "space", spaceId: createdIn } : undefined,
     save: async (input: NewBotInput, send): Promise<InboxBotOutcome | "asked"> => {
-      // That check is asking for a model and closing the screen.
-      if (await modelCheck.current) return "asked";
-      return createInboxBot({
-        input,
-        openChat: (href) => {
-          if (gone.current) return;
-          router.dismiss();
-          if (!openChatFromInbox(href)) router.push(href);
-        },
-        send,
-        spaceId: params.spaceId,
-      });
+      let outcome: InboxBotOutcome | "asked" | undefined;
+      try {
+        // That check is asking for a model and closing the screen.
+        outcome = (await modelCheck.current)
+          ? "asked"
+          : await createInboxBot({
+              input,
+              openChat: (href) => {
+                if (gone.current) return;
+                router.dismiss();
+                if (!openChatFromInbox(href)) router.push(href);
+              },
+              send,
+              // The chat opens in the Space the bot was written to.
+              spaceId: createdIn,
+            });
+        return outcome;
+      } finally {
+        // Cleared here, not in onFailed, which a save no longer shown skips.
+        if (outcome !== "created") started.current = false;
+        // A failed create is tried again in the Space selected then.
+        if (outcome === undefined) tappedIn.current = undefined;
+      }
     },
     // A model is needed first, or the account or space changed: nothing is left to do here.
     onSaved: (outcome) => {
@@ -80,7 +98,11 @@ export default function NewBot() {
   useEffect(() => {
     gone.current = false;
     // A first bot needs a model; ask before the form is filled in rather than after.
-    modelCheck.current = askForModelBeforeFirstBot(params.spaceId, () => !gone.current);
+    // The same Space Create would ask about, so both open the same model settings.
+    modelCheck.current = askForModelBeforeFirstBot(
+      params.spaceId ?? selectedSpaceId() ?? undefined,
+      () => !gone.current,
+    );
     void modelCheck.current.then((asked) => {
       if (asked && !gone.current) router.back();
     });
@@ -97,7 +119,10 @@ export default function NewBot() {
   }, [pending]);
 
   function create() {
-    if (trimmed) creation.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
+    if (!trimmed) return;
+    started.current = true;
+    tappedIn.current = createdIn;
+    creation.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
   }
 
   return (
@@ -105,7 +130,7 @@ export default function NewBot() {
       <Stack.Screen
         options={{
           ...cancelHeaderOptions(t`Cancel`, () => {
-            if (!pending) router.back();
+            if (!started.current) router.back();
           }),
           gestureEnabled: !pending,
         }}

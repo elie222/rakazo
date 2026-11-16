@@ -3,6 +3,7 @@ import { IncomingBotCallSchema, SpaceChangeKind } from "@rakazo/contracts";
 import {
   cancelResponseBody,
   displayIdentityEvent,
+  IDLE_TIMEOUT_MS,
   isServerUnreachable,
   isUnreachableStatus,
 } from "@rakazo/core";
@@ -33,8 +34,6 @@ type ThreadEvent = {
   threadId?: string;
   payload?: Record<string, unknown>;
 };
-/** No frame at all for this long means the stream is half-open; the server beats far faster. */
-export const IDLE_TIMEOUT_MS = 45_000;
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,

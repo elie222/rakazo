@@ -12,6 +12,7 @@ import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, rpc, SPACE_SELECTED_EVENT, selectedSpaceId } from "../lib/rpc";
 import type { SupportChat } from "../lib/support-chat";
 import { useSupportChat } from "../lib/support-chat";
+import { useEventListener } from "../lib/use-event-listener";
 
 const PaywallPage = lazyComponent(() =>
   import("../pages/Paywall").then((module) => module.PaywallPage),
@@ -109,50 +110,44 @@ export function SubscriptionGate({
   // drops its status.
   const [billed, setBilled] = useState(false);
   if (!billed && state.kind !== "loading" && state.status !== undefined) setBilled(true);
-  useEffect(() => {
-    if (!billed) return;
-    // Checkout can finish in another window (the system browser on desktop), and a free period
-    // can end while the app is open.
-    let active = true;
-    // Numbered, so an older read (say, for the Space just left) never replaces a newer one.
-    let latest = 0;
-    const recheck = (onFailure?: () => void) => {
-      if (document.visibilityState === "hidden") return;
-      const read = ++latest;
-      const client = createSpaceRpc(tabSpaceId.current);
-      client.billing
-        .status()
-        .then((status) => {
-          if (active && read === latest) setState(gateFor(status, client));
-        })
-        .catch(() => {
-          if (active && read === latest) onFailure?.();
-        });
-    };
-    const onFocus = () => recheck();
-    // Another Space can belong to another organization with its own invite link and plan: the
-    // previous one's link is dropped at once, and billing reloads for the new one.
-    // If the new Space's read fails, nothing of the previous one stays: the app opens without a
-    // status, as on any failed lookup, since the API enforces access.
-    const spaceSelected = () => {
-      tabSpaceId.current = selectedSpaceId();
-      setState((current) =>
-        current.kind !== "loading" && current.status
-          ? { ...current, status: { ...current.status, referral: null } }
-          : current,
-      );
-      recheck(() => setState({ kind: "open" }));
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-    window.addEventListener(SPACE_SELECTED_EVENT, spaceSelected);
-    return () => {
-      active = false;
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-      window.removeEventListener(SPACE_SELECTED_EVENT, spaceSelected);
-    };
-  }, [billed]);
+  // Numbered, so an older read (say, for the Space just left) never replaces a newer one.
+  const latestRead = useRef(0);
+  useEffect(
+    () => () => {
+      latestRead.current += 1;
+    },
+    [],
+  );
+  // Checkout can finish in another window (the system browser on desktop), and a free period
+  // can end while the app is open.
+  const recheck = (onFailure?: () => void) => {
+    if (document.visibilityState === "hidden") return;
+    const read = ++latestRead.current;
+    const client = createSpaceRpc(tabSpaceId.current);
+    client.billing
+      .status()
+      .then((status) => {
+        if (read === latestRead.current) setState(gateFor(status, client));
+      })
+      .catch(() => {
+        if (read === latestRead.current) onFailure?.();
+      });
+  };
+  useEventListener(billed ? window : null, "focus", () => recheck());
+  useEventListener(billed ? document : null, "visibilitychange", () => recheck());
+  // Another Space can belong to another organization with its own invite link and plan: the
+  // previous one's link is dropped at once, and billing reloads for the new one.
+  // If the new Space's read fails, nothing of the previous one stays: the app opens without a
+  // status, as on any failed lookup, since the API enforces access.
+  useEventListener<EventTarget, string>(billed ? window : null, SPACE_SELECTED_EVENT, () => {
+    tabSpaceId.current = selectedSpaceId();
+    setState((current) =>
+      current.kind !== "loading" && current.status
+        ? { ...current, status: { ...current.status, referral: null } }
+        : current,
+    );
+    recheck(() => setState({ kind: "open" }));
+  });
 
   // On the required paywall only: the plans dialog blocks pointer input outside itself.
   useSupportChat(state.kind === "paywall" ? supportChat : null);

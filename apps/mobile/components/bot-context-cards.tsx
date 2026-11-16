@@ -1,7 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import { isEmptyBotMemory } from "@rakazo/contracts";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { writeSaved } from "@rakazo/core/query";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { native, useMobileTokens } from "../lib/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query";
@@ -41,15 +42,18 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
     ) => {
       if (action.kind === "create") {
         const item = await send("scratchpad/create", { botId, title: action.title });
-        queryClient.setQueryData(workRead.queryKey, (items) => [item, ...(items ?? [])]);
+        await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
-        queryClient.setQueryData(workRead.queryKey, (items) =>
-          items?.filter((entry) => entry.id !== action.itemId),
+        await writeSaved(queryClient, workRead.queryKey, (items) =>
+          (items ?? []).filter((entry) => entry.id !== action.itemId),
         );
       }
     },
   });
+  // A failed add or complete is not shown again on return, as the lists are read again then.
+  const { reset } = change;
+  useFocusEffect(useCallback(() => reset(), [reset]));
   const busy = change.pending;
   const readError = section === "work" ? workQuery.error : docsQuery.error;
   const failure = change.error ?? readError;

@@ -8,6 +8,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -391,5 +392,12 @@ describe("withConnectionName", () => {
     expect(withConnectionName("Claude Sonnet", "OpenRouter (Work)")).toBe(
       "Claude Sonnet (OpenRouter, Work)",
     );
+    expect(withConnectionName("M", "A (B) (C)")).toBe("M (A (B), C)");
+    expect(withConnectionName("M", "A ()")).toBe("M (A ())");
+    expect(withConnectionName("M", " (B)")).toBe("M ( (B))");
+  });
+
+  it("stays fast on a long name full of brackets", () => {
+    expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
 });

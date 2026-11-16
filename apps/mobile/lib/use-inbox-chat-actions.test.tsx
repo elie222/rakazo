@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import { alertGroupNotDeleted, confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
@@ -318,7 +318,36 @@ it("group delete asks with the chat's own confirmation and refreshes once delete
   vi.mocked(confirmDeleteGroup).mock.calls[0]![1]!();
   // A chat in the selected space is deleted with the session's own space.
   await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(rpc).mock.calls).toEqual([["groups/remove", { groupId: "x" }, undefined]]);
+  expect(vi.mocked(rpc).mock.calls).toEqual([
+    [
+      "groups/remove",
+      { groupId: "x" },
+      {
+        requestContext: expect.objectContaining({
+          headers: expect.objectContaining({ "x-rakazo-space-id": "space-a" }),
+        }),
+      },
+    ],
+  ]);
+  expect(notifyArchivedChatsChanged).toHaveBeenCalledOnce();
+});
+
+it("sends each confirmed group delete and reports a failure", async () => {
+  const removal = deferred<unknown>();
+  const h = await handlers(() => removal.promise);
+  await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
+  await h.runRowAction("group", { id: "y", name: "Bo" }, "delete");
+  const [first, second] = vi.mocked(confirmDeleteGroup).mock.calls;
+  first![1]!();
+  second![1]!();
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(rpc).mock.calls.map(([, body]) => body)).toEqual([
+    { groupId: "x" },
+    { groupId: "y" },
+  ]);
+  removal.reject(new Error("offline"));
+  await vi.waitFor(() => expect(alertGroupNotDeleted).toHaveBeenCalledTimes(2));
+  expect(h.loadBots).not.toHaveBeenCalled();
 });
 
 it("bot delete from another space targets that space", async () => {
@@ -335,7 +364,6 @@ it("group delete from another space targets that space", async () => {
   vi.mocked(confirmDeleteGroup).mock.calls[0]![1]!();
   await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
   expect(vi.mocked(rpc).mock.calls[0]![2]).toMatchObject({
-    skipSpaceAuthRecovery: true,
     requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
   });
 });

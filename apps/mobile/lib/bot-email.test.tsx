@@ -108,6 +108,19 @@ it("claims once on a double tap and keeps the address over an older read", async
   expect(button("scout@mail.test")).toBeDefined();
 });
 
+it("shows the claimed address, not the claim form, on returning to the screen", async () => {
+  await act(async () => root.render(<Rows />));
+  await act(async () => button("Claim")!.click());
+  await act(async () => claimed.resolve({ address: "scout@mail.test" }));
+  await act(async () => root.unmount());
+  // The screen's own read is held open, so only what the claim saved can show.
+  rpc.mockImplementation(() => new Promise(() => undefined));
+  root = createRoot(container);
+  await act(async () => root.render(<Rows />));
+  expect(button("scout@mail.test")).toBeDefined();
+  expect(button("Claim")).toBeUndefined();
+});
+
 it("says why a name is refused, before sending it or after", async () => {
   await act(async () => root.render(<Rows />));
   await type("a");
