@@ -18,7 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { useId, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query";
+import type { RpcClient } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
@@ -38,57 +39,52 @@ export function NewSpaceDialog({
   onDone,
 }: {
   onCancel: () => void;
-  onCreate: (name: string) => Promise<string>;
+  onCreate: (name: string, client: RpcClient) => Promise<string>;
   /** The user's own skills, servers, plugins and tool sources, across their spaces. */
   loadItems: () => Promise<AccountItem[]>;
-  chooseItems: (spaceId: string, items: AccountItem[]) => Promise<void>;
+  chooseItems: (spaceId: string, items: AccountItem[], client: RpcClient) => Promise<void>;
   onDone: (spaceId: string) => void;
 }) {
   const { t } = useLingui();
   const nameId = useId();
   const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; items: AccountItem[] } | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const key = (item: AccountItem) => `${item.kind}:${item.id}`;
+  // Both steps end by leaving the name step, so a success keeps it held.
+  const creation = useSave({
+    save: async (trimmed: string, client) => {
+      const spaceId = await onCreate(trimmed, client);
+      return { spaceId, items: await loadItems().catch(() => []) };
+    },
+    onSaved: ({ spaceId, items }) => {
+      // Without items of their own there is nothing to choose, so the space is ready.
+      if (!items.length) return onDone(spaceId);
+      setChosen(new Set(items.filter((item) => item.availability.allSpaces).map(key)));
+      setCreated({ id: spaceId, items });
+    },
+    closesScreen: true,
+  });
+  const choice = useSave({
+    save: ({ id, items }: { id: string; items: AccountItem[] }, client) =>
+      chooseItems(id, items, client),
+    onSaved: (_, { id }) => onDone(id),
+    closesScreen: true,
+  });
+  const saving = created ? choice.pending : creation.pending;
+  const error = created
+    ? choice.error && errorText(choice.error, t`Could not save`)
+    : creation.error && errorText(creation.error, t`Could not create space`);
 
   const create = () => {
     const trimmed = name.trim();
     if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    void (async () => {
-      let spaceId: string;
-      try {
-        spaceId = await onCreate(trimmed);
-      } catch (reason) {
-        setError(errorText(reason, t`Could not create space`));
-        setSaving(false);
-        return;
-      }
-      // Without items of their own there is nothing to choose, so the space is ready.
-      const items = await loadItems().catch(() => []);
-      if (!items.length) return onDone(spaceId);
-      setChosen(new Set(items.filter((item) => item.availability.allSpaces).map(key)));
-      setCreated({ id: spaceId, items });
-      setSaving(false);
-    })();
+    creation.run(trimmed);
   };
 
   const finish = () => {
     if (!created || saving) return;
-    setSaving(true);
-    setError(null);
-    void chooseItems(
-      created.id,
-      created.items.filter((item) => chosen.has(key(item))),
-    )
-      .then(() => onDone(created.id))
-      .catch((reason: unknown) => {
-        setError(errorText(reason, t`Could not save`));
-        setSaving(false);
-      });
+    choice.run({ id: created.id, items: created.items.filter((item) => chosen.has(key(item))) });
   };
 
   if (created)
@@ -187,13 +183,15 @@ export function NewBotSectionDialog({
 }: {
   bot: Pick<Bot, "name">;
   onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
+  onConfirm: (name: string, client: RpcClient) => Promise<void>;
 }) {
   const { t } = useLingui();
   const nameId = useId();
   const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The parent closes this dialog once the section exists, so a success keeps it held.
+  const save = useSave({ save: onConfirm, closesScreen: true });
+  const saving = save.pending;
+  const error = save.error && errorText(save.error, t`Could not create section`);
 
   return (
     <Dialog open onOpenChange={closeUnlessBusy(saving, onCancel)}>
@@ -204,12 +202,7 @@ export function NewBotSectionDialog({
             event.preventDefault();
             const trimmed = name.trim();
             if (!trimmed || saving) return;
-            setSaving(true);
-            setError(null);
-            void onConfirm(trimmed).catch((err: unknown) => {
-              setError(errorText(err, t`Could not create section`));
-              setSaving(false);
-            });
+            save.run(trimmed);
           }}
         >
           <DialogHeader>
@@ -252,13 +245,14 @@ export function RenameBotSectionDialog({
 }: {
   section: Pick<BotSection, "name">;
   onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
+  onConfirm: (name: string, client: RpcClient) => Promise<void>;
 }) {
   const { t } = useLingui();
   const nameId = useId();
   const [name, setName] = useState(section.name);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useSave({ save: onConfirm, closesScreen: true });
+  const saving = save.pending;
+  const error = save.error && errorText(save.error, t`Could not rename section`);
   const trimmed = name.trim();
   const unchanged = trimmed === section.name;
 
@@ -270,12 +264,7 @@ export function RenameBotSectionDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!trimmed || saving || unchanged) return;
-            setSaving(true);
-            setError(null);
-            void onConfirm(trimmed).catch((err: unknown) => {
-              setError(errorText(err, t`Could not rename section`));
-              setSaving(false);
-            });
+            save.run(trimmed);
           }}
         >
           <DialogHeader>

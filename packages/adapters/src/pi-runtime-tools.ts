@@ -54,7 +54,7 @@ export interface ToolCallBudget {
   limit: number;
   inFlight: number;
 }
-// Optional fuse is process-local. continueRun on another worker starts at zero.
+// Optional fuse kept in memory across a pause; a turn resumed elsewhere starts from its saved count.
 const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
 
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
@@ -994,15 +994,16 @@ export function redactAskUserDetailInMessage(
   }
 }
 
-export function toolCallBudgetFor(runId: string): ToolCallBudget {
+export function toolCallBudgetFor(runId: string, savedCount = 0): ToolCallBudget {
   const existing = toolCallBudgetsByRun.get(runId);
   if (existing) {
     existing.inFlight = 0;
     existing.limit = maxToolCallsPerTurn();
+    existing.count = Math.max(existing.count, savedCount);
     return existing;
   }
   const budget: ToolCallBudget = {
-    count: 0,
+    count: savedCount,
     exceeded: false,
     limit: maxToolCallsPerTurn(),
     inFlight: 0,
