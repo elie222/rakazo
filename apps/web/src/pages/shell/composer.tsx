@@ -16,7 +16,7 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Box, Plus } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, RefObject } from "react";
+import type { ClipboardEvent, ComponentProps, ReactNode, RefObject } from "react";
 import {
   memo,
   useEffect,
@@ -107,6 +107,7 @@ const ComposerBody = memo(function Composer({
   draftKey,
   enterToSend,
   sendColors,
+  modelPicker,
   docked = false,
 }: {
   activeName?: string;
@@ -151,6 +152,8 @@ const ComposerBody = memo(function Composer({
   enterToSend: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
   sendColors?: { background: string; foreground: string };
+  /** The chat's model, shown beside Send when the person turned that on. */
+  modelPicker?: ReactNode;
   /** Floating over an open page instead of sitting under the chat. */
   docked?: boolean;
 }) {
@@ -924,6 +927,7 @@ const ComposerBody = memo(function Composer({
           sendDisabled={sending || !canSend || disabled}
           stopDisabled={sending}
           sendColors={sendColors}
+          modelPicker={modelPicker}
           onSend={() => void send()}
           onStop={() => void onStop()}
         />
