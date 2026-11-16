@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkAuditCoverage } from "../check-dependency-audit.mjs";
+import { checkAuditCoverage } from "./dependency-audit.mjs";
 
 const lockfile = `---
 packages:

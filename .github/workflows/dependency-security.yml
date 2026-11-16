@@ -28,7 +28,7 @@ jobs:
       - name: Audit workspace dependencies
         run: |
           pnpm audit --audit-level high --json > dependency-audit.json
-          node scripts/check-dependency-audit.mjs dependency-audit.json
+          node scripts/checks/dependency-audit.mjs dependency-audit.json
       - name: Retain complete audit
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -49,13 +49,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if release=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest"); then
-            tags=$(jq -c '["edge", .tag_name] | unique' <<< "$release")
-          elif jq -e '.status == "404"' <<< "$release" >/dev/null; then
-            tags='["edge"]'
-          else
-            exit 1
-          fi
+          tags=$(gh api graphql \
+            -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName } } }' \
+            -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
+            --jq '["edge", .data.repository.latestRelease.tagName] | map(select(. != null)) | unique')
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
   published-images:

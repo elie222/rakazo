@@ -25,7 +25,7 @@ export function checkAuditCoverage(lockfile, report) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   checkAuditCoverage(
-    readFileSync(new URL("../pnpm-lock.yaml", import.meta.url), "utf8"),
+    readFileSync(new URL("../../pnpm-lock.yaml", import.meta.url), "utf8"),
     JSON.parse(readFileSync(process.argv[2], "utf8")),
   );
 }
