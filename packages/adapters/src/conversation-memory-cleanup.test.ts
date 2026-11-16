@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
-import { createHindsightProvider } from "./hindsight-memory-provider.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import { createHindsightProvider } from "./providers/memory/hindsight/hindsight-memory-provider.js";
 
 const payload = {
   spaceId: "space-1",
