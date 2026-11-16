@@ -147,6 +147,33 @@ describe("deployment voice settings", () => {
     expect(state.secrets.size).toBe(1);
   });
 
+  it("refuses a blank-key save when another admin replaced the key meanwhile", async () => {
+    const { deps, state } = makeDeps();
+    const { provider } = voiceProvider();
+    await updateDeploymentVoiceSettings(deps, actor, {
+      provider: "elevenlabs",
+      apiKey: "test-voice-key",
+    });
+    // Another admin saves a new key while this save checks the old one.
+    provider.verify.mockImplementationOnce(async () => {
+      state.secrets.set("cipher-newer", "newer-voice-key");
+      state.settings = { ...state.settings!, defaultVoiceCredentialCipher: "cipher-newer" };
+      return { ok: true };
+    });
+
+    await expect(
+      updateDeploymentVoiceSettings(deps, actor, {
+        provider: "elevenlabs",
+        apiKey: "",
+        voiceId: "second-voice",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(state.settings?.defaultVoiceCredentialCipher).toBe("cipher-newer");
+    // The copy this save made of the old key is not left behind.
+    expect(deps.secrets.delete).toHaveBeenCalledWith("cipher-2", "deployment-voice");
+    expect(state.secrets.has("cipher-2")).toBe(false);
+  });
+
   it("saves only a voice the key can use", async () => {
     const { deps } = makeDeps();
     const { provider } = voiceProvider();

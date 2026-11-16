@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
@@ -14,6 +13,7 @@ import type {
   DeploymentVoiceUpdate,
   VoiceInfo,
 } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -68,6 +68,8 @@ function saveRow(
     defaultVoiceId: string | null;
     defaultVoiceCredentialCipher: string | null;
   },
+  /** The saved key this save reuses, which must still be the saved one when it commits. */
+  reusing?: string,
 ) {
   return withTransactionRetry(() =>
     runAsSystem(reason, () =>
@@ -77,6 +79,11 @@ function saveRow(
             where: { id: "default" },
             select: { defaultVoiceCredentialCipher: true },
           });
+          if (reusing !== undefined && current?.defaultVoiceCredentialCipher !== reusing)
+            throw new ClientError(
+              "CONFLICT",
+              "The voice settings changed while you were saving. Check them, then save again.",
+            );
           await tx.deploymentSettings.upsert({
             where: { id: "default" },
             create: { id: "default", ...data },
@@ -113,7 +120,7 @@ export async function updateDeploymentVoiceSettings(
   }
   const provider = input.provider;
   if (!isDeploymentVoiceProvider(provider)) {
-    throw new ORPCError("BAD_REQUEST", { message: "Unknown voice provider." });
+    throw new ClientError("BAD_REQUEST", "Unknown voice provider.");
   }
   // Blank keeps the saved key, so an admin never has to see it again.
   const previous = await findSavedDeploymentVoice(deps.prisma);
@@ -122,12 +129,12 @@ export async function updateDeploymentVoiceSettings(
     (previous?.provider === provider
       ? await deps.secrets.load(previous.ciphertext, DEPLOYMENT_VOICE_RECORD)
       : "");
-  if (apiKey.length < 8) throw new ORPCError("BAD_REQUEST", { message: "Enter an API key." });
+  if (apiKey.length < 8) throw new ClientError("BAD_REQUEST", "Enter an API key.");
   const voices = createVoiceProvider(provider);
   const context = voiceContext(actor, input.signal);
   const verified = await voices.verify(apiKey, context);
   if (!verified.ok) {
-    throw new ORPCError("BAD_REQUEST", { message: verified.message ?? "That key was rejected." });
+    throw new ClientError("BAD_REQUEST", verified.message ?? "That key was rejected.");
   }
   // A voice the key cannot use would leave everyone without speech, so the one saved must be
   // among the key's voices: a voice kept from another key or provider gives way to its first one.
@@ -139,20 +146,27 @@ export async function updateDeploymentVoiceSettings(
   );
   // An account with no voices yet could not speak for anyone, whatever voice was asked for.
   if (listed?.length === 0)
-    throw new ORPCError("BAD_REQUEST", {
-      message: "That account has no voices yet. Add one with the provider, then save again.",
-    });
+    throw new ClientError(
+      "BAD_REQUEST",
+      "That account has no voices yet. Add one with the provider, then save again.",
+    );
   const voiceId =
     listed?.length && !listed.some((voice) => voice.id === asked) ? listed[0]!.id : asked;
   // Owned by the deployment row, not a user or space, so no account deletion removes it.
   const stored = await deps.secrets.put(apiKey, context, { recordId: DEPLOYMENT_VOICE_RECORD });
   let replaced: string | null;
   try {
-    replaced = await saveRow(deps, "an admin sets the deployment's voice", {
-      defaultVoiceProvider: provider,
-      defaultVoiceId: voiceId,
-      defaultVoiceCredentialCipher: stored.ciphertext,
-    });
+    replaced = await saveRow(
+      deps,
+      "an admin sets the deployment's voice",
+      {
+        defaultVoiceProvider: provider,
+        defaultVoiceId: voiceId,
+        defaultVoiceCredentialCipher: stored.ciphertext,
+      },
+      // A blank key reused the saved one, which another admin may have replaced since.
+      input.apiKey.trim() ? undefined : previous?.ciphertext,
+    );
   } catch (error) {
     await forget(stored.ciphertext);
     throw error;

@@ -243,16 +243,14 @@ export async function aiConsentStatus(
       ),
     );
     // The deployment's own endpoint is disclosed by its origin too, so re-pointing it asks again.
+    // A key that can't be read fails the check, rather than approving an unnamed endpoint.
     const deploymentEndpoint = models.some(
       (model) => !model.credential && model.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
     )
       ? await deploymentConnectionSecret(
           deps.secrets,
           deploymentConnection(deploymentModels, OPENAI_COMPATIBLE_PROVIDER_ID),
-        ).then(
-          (secret) => (secret?.kind === "openai_compatible" ? secret.baseUrl : undefined),
-          () => undefined,
-        )
+        ).then((secret) => (secret?.kind === "openai_compatible" ? secret.baseUrl : undefined))
       : undefined;
     for (const model of models) {
       add(
