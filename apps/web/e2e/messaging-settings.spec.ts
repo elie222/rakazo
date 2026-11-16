@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { deferred } from "@rakazo/core/test-async";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test.afterEach(async ({ page }) => {
@@ -191,13 +192,10 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
   await expect(messagingSettings.getByText("Example workspace", { exact: false })).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-slack-workspace");
-  let releaseCode!: () => void;
-  const codeReady = new Promise<void>((resolve) => {
-    releaseCode = resolve;
-  });
+  const codeReady = deferred();
   try {
     await page.route("**/rpc/messaging/link/start", async (route) => {
-      await codeReady;
+      await codeReady.promise;
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -213,7 +211,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
     await botPicker.selectOption("bot-2");
   } finally {
     // Always release the route before afterEach waits for pending handlers.
-    releaseCode();
+    codeReady.resolve();
   }
   await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
   await expect(page.getByTestId("messaging-link-code")).toHaveCount(0);
