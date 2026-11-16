@@ -62,7 +62,7 @@ function OptionSelect<T extends string>({
         aria-label={ariaLabel}
         aria-labelledby={labelledBy}
         data-testid={testId}
-        className={cn("w-full", className)}
+        className={cn("w-full data-[size=default]:h-9", className)}
       >
         <SelectValue />
       </SelectTrigger>
