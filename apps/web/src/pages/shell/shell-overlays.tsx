@@ -14,7 +14,7 @@ import { setLabs } from "../../lib/bootstrap";
 import type { connectedAppMarks } from "../../lib/connected-apps";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
 import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
 
@@ -134,7 +134,7 @@ export function SettingsOverlays({
   settingsSpace: Space | null;
   showSettings: boolean;
   spaces: Space[];
-  renameSpace: (spaceId: string, name: string) => Promise<void>;
+  renameSpace: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   removeSpace: (spaceId: string) => Promise<void>;
   leftSpace: (spaceId: string, activeSpaceId: string) => Promise<void>;
   refreshSpaces: () => Promise<void>;
@@ -186,10 +186,9 @@ export function SettingsOverlays({
           messagingEnabled={messagingEnabled}
           paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
-          onTimezoneChange={async (timezone) => {
-            const nextMe = await rpc.preferences.update({ timezone });
+          onTimezoneChange={async (timezone, client) => {
+            const nextMe = await client.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
-            void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
@@ -203,7 +202,7 @@ export function SettingsOverlays({
           }}
           labs={parseLabs(bootstrapMe?.labs)}
           labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
-          onLabsChange={async (labs) => {
+          onLabsChange={async (labs, client) => {
             const previous = parseLabs(bootstrapMe?.labs);
             const apply = (next: LabFeature[]) => {
               setLabs(next);
@@ -211,7 +210,7 @@ export function SettingsOverlays({
             };
             apply(labs);
             try {
-              apply((await rpc.preferences.update({ labs })).labs);
+              apply((await client.preferences.update({ labs })).labs);
             } catch (error) {
               apply(previous);
               throw error;

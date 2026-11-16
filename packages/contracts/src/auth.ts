@@ -61,6 +61,11 @@ export const authCapabilitiesSchema = z.object({
   nativePasskeys: z.object({ ios: z.boolean(), android: z.boolean() }).optional(),
   /** Crisp chat on the paywall; null or omitted when the deployment offers none. */
   crispWebsiteId: z.string().min(1).nullable().optional(),
+  /** A shared account whose login is public, offered on sign-in and sign-up; only throwaway demo servers set it. */
+  demoAccount: z
+    .object({ email: z.string().min(1), password: z.string().min(1) })
+    .nullable()
+    .optional(),
 });
 export type AuthCapabilities = z.infer<typeof authCapabilitiesSchema>;
 

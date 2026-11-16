@@ -83,13 +83,15 @@ export async function subscribeIncomingCallEvents(
   );
 }
 /**
- * Calls `onSignal` for each roster signal and `onSpaceChange` for each Space change signal: each
+ * Calls `onSignal` for each roster signal, `onSpaceChange` for each Space change signal and
+ * `onOrganizationsChange` when the user's organizations or their members may have changed: each
  * kind once when the stream opens, then once per change. Kinds this build does not know are skipped.
  */
 export async function subscribeRosterSignals(
   onSignal: () => void,
   signal: AbortSignal,
   onSpaceChange: (kind: SpaceChangeKind) => void = () => {},
+  onOrganizationsChange: () => void = () => {},
 ) {
   const context = await captureApiRequestContext();
   return subscribeRpcEvents(
@@ -97,6 +99,7 @@ export async function subscribeRosterSignals(
     {},
     (event) => {
       if (event.type === "roster") onSignal();
+      if (event.type === "organizations") onOrganizationsChange();
       const kind = SpaceChangeKind.safeParse(event.type);
       if (kind.success) onSpaceChange(kind.data);
     },

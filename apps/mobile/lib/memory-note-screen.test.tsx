@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MemoryNoteScreen from "../app/(settings)/memory-note";
+import { queryClient } from "./query";
 
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 
@@ -30,8 +32,22 @@ vi.mock("./native", () => ({
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: mocks.rpc }));
+vi.mock("./api", () => ({
+  rpc: mocks.rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => (() => void) | undefined) => {
+    useEffect(effect, [effect]);
+  },
   useLocalSearchParams: () => mocks.params,
   useRouter: () => ({ back: mocks.back }),
   useNavigation: () => ({
@@ -99,10 +115,14 @@ const note = {
   updatedAt: "2026-11-01T00:00:00.000Z",
 };
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   mocks.params = { id: note.id, botId: note.botId };
   mocks.options = {};
   mocks.preventRemove.active = false;
@@ -157,7 +177,11 @@ it("edits a bot's note against the revision it opened, then goes back", async ()
     throw new Error(`Unexpected ${proc}`);
   });
   await render();
-  expect(mocks.rpc).toHaveBeenCalledWith("memory/list", { botId: "bot-1", scope: "bot" });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "memory/list",
+    { botId: "bot-1", scope: "bot" },
+    expect.anything(),
+  );
   expect(mocks.options.title).toBe("preferences.md");
   expect(editor()?.value).toBe(note.content);
   expect((await headerSave()).disabled).toBe(true);
@@ -166,11 +190,15 @@ it("edits a bot's note against the revision it opened, then goes back", async ()
   await type("Prefers bullet points.\n");
   expect(mocks.preventRemove.active).toBe(true);
   await headerSave();
-  expect(mocks.rpc).toHaveBeenCalledWith("memory/update", {
-    documentId: note.id,
-    content: "Prefers bullet points.\n",
-    expectedRevision: 3,
-  });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "memory/update",
+    {
+      documentId: note.id,
+      content: "Prefers bullet points.\n",
+      expectedRevision: 3,
+    },
+    expect.anything(),
+  );
   expect(mocks.preventRemove.active).toBe(false);
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
@@ -222,11 +250,15 @@ it("offers the latest version or the edit when the note changed elsewhere", asyn
   expect(mocks.back).not.toHaveBeenCalled();
 
   await act(async () => lastAlert().press("Save mine"));
-  expect(mocks.rpc).toHaveBeenLastCalledWith("memory/update", {
-    documentId: note.id,
-    content: "My edit\n",
-    expectedRevision: 5,
-  });
+  expect(mocks.rpc).toHaveBeenLastCalledWith(
+    "memory/update",
+    {
+      documentId: note.id,
+      content: "My edit\n",
+      expectedRevision: 5,
+    },
+    expect.anything(),
+  );
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
 
@@ -253,10 +285,14 @@ it("deletes a note only after a destructive confirm", async () => {
   });
   await render();
   await act(async () => button("Delete")?.click());
-  expect(mocks.rpc).not.toHaveBeenCalledWith("memory/remove", expect.anything());
+  expect(mocks.rpc).not.toHaveBeenCalledWith("memory/remove", expect.anything(), expect.anything());
   expect(lastAlert().title).toBe("Delete preferences.md?");
   await act(async () => lastAlert().press("Delete"));
-  expect(mocks.rpc).toHaveBeenCalledWith("memory/remove", { documentId: note.id });
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "memory/remove",
+    { documentId: note.id },
+    expect.anything(),
+  );
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });
 
@@ -279,7 +315,7 @@ it("opens a shared note from the space's notes and never offers to delete MEMORY
     { ...note, id: "index-1", scope: "user", botId: null, path: "MEMORY.md" },
   ]);
   await render();
-  expect(mocks.rpc).toHaveBeenCalledWith("memory/list", { scope: "user" });
+  expect(mocks.rpc).toHaveBeenCalledWith("memory/list", { scope: "user" }, expect.anything());
   expect(mocks.options.title).toBe("MEMORY.md");
   expect(editor()).not.toBeNull();
   expect(button("Delete")).toBeUndefined();
@@ -367,4 +403,81 @@ it("loads the new note when the screen is reused for another one", async () => {
   await render();
   expect(editor()?.value).toBe(other.content);
   expect(mocks.options.title).toBe("sources.md");
+});
+
+it("saves once when Save is tapped twice before the first answer", async () => {
+  const answer = deferred<typeof note>();
+  mocks.rpc.mockImplementation((proc: string) =>
+    proc === "memory/list" ? Promise.resolve([note]) : answer.promise,
+  );
+  await render();
+  await type("Twice\n");
+  const holder = document.createElement("div");
+  const header = createRoot(holder);
+  act(() => header.render(mocks.options.headerRight?.()));
+  const save = holder.querySelector("button") as HTMLButtonElement;
+  await act(async () => {
+    save.click();
+    save.click();
+  });
+  act(() => header.unmount());
+  await act(async () => answer.resolve({ ...note, content: "Twice\n", revision: 4 }));
+  expect(mocks.rpc.mock.calls.filter(([proc]) => proc === "memory/update")).toHaveLength(1);
+  expect(mocks.back).toHaveBeenCalledTimes(1);
+});
+
+it("reads a note afresh when the screen switches to another note of the same bot", async () => {
+  const other = { ...note, id: "note-2", path: "sources.md", content: "Old copy.\n" };
+  const current = { ...other, content: "Current copy.\n", revision: 7 };
+  let lists = 0;
+  mocks.rpc.mockImplementation(async (proc: string, body: Record<string, unknown>) => {
+    if (proc === "memory/list") return lists++ === 0 ? [note, other] : [note, current];
+    if (proc === "memory/update") return { ...current, content: body.content, revision: 8 };
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await render();
+  mocks.params = { id: other.id, botId: note.botId };
+  await render();
+  expect(editor()?.value).toBe(current.content);
+  await type("Edited\n");
+  await headerSave();
+  expect(mocks.rpc).toHaveBeenLastCalledWith(
+    "memory/update",
+    { documentId: other.id, content: "Edited\n", expectedRevision: 7 },
+    expect.anything(),
+  );
+});
+
+it("shows the delete's failure, not an earlier save's", async () => {
+  const removing = deferred<never>();
+  mocks.rpc.mockImplementation((proc: string) => {
+    if (proc === "memory/list") return Promise.resolve([note]);
+    if (proc === "memory/update") return Promise.reject(new Error("Save failed"));
+    return removing.promise;
+  });
+  await render();
+  await type("Unsaved\n");
+  await headerSave();
+  expect(container.textContent).toContain("Save failed");
+  await act(async () => button("Delete")?.click());
+  await act(async () => lastAlert().press("Delete"));
+  expect(container.textContent).not.toContain("Save failed");
+  await act(async () => removing.reject(new Error("Delete failed")));
+  expect(container.textContent).toContain("Delete failed");
+  expect(container.textContent).not.toContain("Save failed");
+});
+
+it("keeps the controls disabled after a delete until the screen has closed", async () => {
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "memory/list") return [note];
+    if (proc === "memory/remove") return { ok: true };
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await render();
+  await type("Edit\n");
+  await act(async () => button("Delete")?.click());
+  await act(async () => lastAlert().press("Delete"));
+  expect(mocks.back).toHaveBeenCalledTimes(1);
+  expect(button("Delete")?.disabled).toBe(true);
+  expect((await headerSave()).disabled).toBe(true);
 });
