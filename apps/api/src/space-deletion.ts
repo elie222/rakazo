@@ -17,7 +17,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { HeldLease, PrismaClient } from "@rakazo/db";
 import {
   assertLeaseHeld,
-  assertSpaceDeletableForMember,
+  assertSpaceDeletable,
   claimSpaceDeletionForMember,
   deleteClaimedSpaceForMember,
   LeaseHeldError,
@@ -70,7 +70,7 @@ export async function deleteSpaceWithContent(
 ): Promise<{ activeSpaceId: string }> {
   const deleteInput = { currentSpaceId: actor.spaceId, userId: actor.userId, spaceId };
   // A caller who may not delete it takes no lease on it, and never learns whether one is held.
-  await assertSpaceDeletableForMember(deps.prisma, deleteInput);
+  await assertSpaceDeletable(deps.prisma, deleteInput);
   const context = (botId?: string): AdapterContext => ({
     operationId: `spaces.remove:${spaceId}`,
     traceId: `spaces.remove:${spaceId}`,

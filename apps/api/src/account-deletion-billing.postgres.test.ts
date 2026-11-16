@@ -680,6 +680,77 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
     }
   });
 
+  it("keeps going when a Space it gave up is claimed by another deletion", async () => {
+    const joined = await organization("joined-later");
+    const kept = await organization("deleted-after");
+    const neighbour = `${userId}-neighbour`;
+    await asSystem(prisma).user.create({
+      data: { id: neighbour, name: "Neighbour", email: `neighbour-${email}`, emailVerified: false },
+    });
+    await asSystem(prisma).artifact.create({
+      data: {
+        spaceId: kept.actor.spaceId,
+        userId,
+        name: "notes.txt",
+        mimeType: "text/plain",
+        size: 1,
+        hash: "notes-hash",
+        storageKey: `notes-${stamp}`,
+      },
+    });
+    const removing = deferred();
+    const resume = deferred();
+    const deps = deletionDeps({ cancelForDeletedUser: vi.fn() } as never);
+    deps.artifacts.remove = vi.fn(async () => {
+      removing.resolve();
+      await resume.promise;
+    });
+    const inBilling = deferred();
+    const billingHeld = deferred();
+    deps.billing = {
+      cancelForDeletedUser: vi.fn(async () => {
+        inBilling.resolve();
+        await billingHeld.promise;
+      }),
+    } as never;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const deleting = settled(
+        runAsSystem("account deletion billing test", () => deleteAccountContent(deps, userId)),
+      );
+      await inBilling.promise;
+      // Someone joins the first Space while the account is being deleted, so it is given up.
+      const createdAt = new Date();
+      await asSystem(prisma).member.create({
+        data: {
+          id: `${neighbour}-member`,
+          organizationId: joined.organizationId,
+          userId: neighbour,
+          role: "member",
+          createdAt,
+        },
+      });
+      billingHeld.resolve();
+      await removing.promise;
+      // Another deletion then claims the Space this one let go of.
+      await asSystem(prisma).space.update({
+        where: { id: joined.actor.spaceId },
+        data: { deletionClaimId: "another-deletion", deletingAt: new Date() },
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      resume.resolve();
+      await expect(deleting).resolves.toBe("fulfilled");
+      await expect(
+        prisma.space.findUnique({ where: { id: kept.actor.spaceId } }),
+      ).resolves.toBeNull();
+    } finally {
+      billingHeld.resolve();
+      resume.resolve();
+      vi.useRealTimers();
+      await prisma.user.deleteMany({ where: { id: neighbour } });
+    }
+  });
+
   it("gives its claims straight back when they land after it lost its lease", async () => {
     const only = await organization("late-claim");
     const reading = deferred();

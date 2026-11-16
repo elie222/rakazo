@@ -337,7 +337,7 @@ async function loadActorSpace(
 }
 
 /** Owner of a non-default Space that is not their last one in the organization. */
-async function assertSpaceDeletable(
+export async function assertSpaceDeletable(
   db: Pick<PrismaClient, "spaceMember">,
   input: SpaceMemberTargetInput,
 ): Promise<Array<{ spaceId: string; space: { isDefault: boolean } }>> {
@@ -357,13 +357,6 @@ async function assertSpaceDeletable(
 }
 
 /** Throws the error `claimSpaceDeletionForMember` would for a caller who may not delete the Space. */
-export async function assertSpaceDeletableForMember(
-  prisma: PrismaClient,
-  input: SpaceMemberTargetInput,
-): Promise<void> {
-  await assertSpaceDeletable(prisma, input);
-}
-
 /**
  * Claim a Space before tearing down its content. Bot and group creation take the same
  * advisory lock and reject a claimed Space, so once claimed it only loses content. A stale

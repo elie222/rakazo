@@ -60,6 +60,8 @@ export async function deleteAccountContent(
   let claim: Awaited<ReturnType<typeof claimSpacesLeavingWithAccount>> | undefined;
   let stage = "billing" as "billing" | "teardown" | "done";
   let leaseSignal: AbortSignal | undefined;
+  // Given up because someone joined: another deletion may claim them, and that is no takeover.
+  const released = new Set<string>();
   /** Lets the next attempt start at once: nothing of this one is left running. */
   const handBack = async (taken: NonNullable<typeof claim>) => {
     const { claimId, attemptId, takenOver } = taken;
@@ -110,6 +112,7 @@ export async function deleteAccountContent(
       computers: leaving,
       signal: lease.signal,
       lease,
+      onReleased: (spaceId) => released.add(spaceId),
     });
     stage = "done";
 
@@ -143,7 +146,12 @@ export async function deleteAccountContent(
       {
         ttlMs: SPACE_DELETION_CLAIM_TIMEOUT_MS,
         signal: deadline.signal,
-        onRenew: async () => !claim || renewAccountDeletionClaims(deps.prisma, claim),
+        onRenew: async () =>
+          !claim ||
+          renewAccountDeletionClaims(deps.prisma, {
+            ...claim,
+            spaceIds: claim.spaceIds.filter((spaceId) => !released.has(spaceId)),
+          }),
       },
       work,
     );
@@ -332,6 +340,8 @@ async function deleteClaimedSpaces(
     bots: Prisma.BotWhereInput;
     computers: Prisma.ComputerWhereInput;
     signal?: AbortSignal;
+    /** A Space someone else still belongs to is given up rather than deleted. */
+    onReleased?: (spaceId: string) => void;
   },
 ): Promise<void> {
   const context = (spaceId: string, botId?: string) =>
@@ -402,7 +412,10 @@ async function deleteClaimedSpaces(
       organizationId: input.organizationId,
       lease: input.lease,
     });
-    if (!deleted) continue;
+    if (!deleted) {
+      input.onReleased?.(spaceId);
+      continue;
+    }
     const cleanup = await Promise.allSettled(
       deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context(spaceId))),
     );
