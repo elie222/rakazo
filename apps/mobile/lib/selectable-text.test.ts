@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { selectableTextFromMarkdown } from "./selectable-text";
 
@@ -59,9 +60,10 @@ describe("selectableTextFromMarkdown", () => {
   });
 
   it("stays fast on a long line that almost looks like a table separator", () => {
-    const start = performance.now();
-    const text = selectableTextFromMarkdown(`| a |\n| - ${" ".repeat(99_000)}X`);
-    expect(performance.now() - start).toBeLessThan(500);
+    let text = "";
+    expectLinearTime(() => {
+      text = selectableTextFromMarkdown(`| a |\n| - ${" ".repeat(400_000)}X`);
+    });
     expect(text).toContain("X");
   });
 

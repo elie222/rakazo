@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   isModelCredentialRejected,
@@ -524,9 +525,9 @@ describe("status codes in long messages", () => {
   });
 
   it("stays fast on long runs of spacing after a status word", () => {
-    const started = performance.now();
-    isTransientModelError(`status${"\t".repeat(50_000)}x`);
-    isModelCredentialRejected(`http status${"\t".repeat(50_000)}x`);
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => {
+      isTransientModelError(`status${"\t".repeat(200_000)}x`);
+      isModelCredentialRejected(`http status${"\t".repeat(200_000)}x`);
+    });
   });
 });

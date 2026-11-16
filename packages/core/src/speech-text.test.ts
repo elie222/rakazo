@@ -79,10 +79,8 @@ describe("speakable", () => {
 
   it("strips emphasis in linear time on markers that never close", () => {
     for (const unit of ["(_a", ".*a", "(*a_"]) {
-      const text = unit.repeat(Math.floor(20_000 / unit.length));
-      const started = performance.now();
-      expect(speakable(text)).toBe(text);
-      expect(performance.now() - started).toBeLessThan(100);
+      const text = unit.repeat(Math.floor(200_000 / unit.length));
+      expectLinearTime(() => expect(speakable(text)).toBe(text));
     }
   });
 

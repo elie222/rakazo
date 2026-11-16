@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { outermostJsonObject, parseModelJson } from "./model-json.js";
@@ -32,8 +33,6 @@ describe("outermostJsonObject", () => {
   });
 
   it("stays fast on many unclosed braces", () => {
-    const started = performance.now();
-    expect(outermostJsonObject("{".repeat(200_000))).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() => expect(outermostJsonObject("{".repeat(800_000))).toBeUndefined());
   });
 });

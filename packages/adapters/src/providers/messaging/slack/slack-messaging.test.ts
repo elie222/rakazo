@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type * as SlackAdapterModule from "@chat-adapter/slack";
 import type { AdapterContext, MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
 import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
@@ -209,9 +210,10 @@ describe("Slack inbound formatting", () => {
     surface.onInbound(async (event) => {
       if (event.type === "message") events.push(event);
     });
-    const started = performance.now();
-    const response = await surface.handleWebhook("slack", mentionWebhook(undefined, hostile));
-    expect(performance.now() - started).toBeLessThan(1_500);
+    let response = null as Response | null;
+    await expectLinearTime(async () => {
+      response = await surface.handleWebhook("slack", mentionWebhook(undefined, hostile));
+    });
     expect(response?.status).toBe(200);
     expect(events[0]?.content).toBe(hostile);
   });
