@@ -1,8 +1,24 @@
-/** Native SVG lengths accept CSS units, but cannot parse the CSS priority suffix. */
-export function catalogSvgXml(xml: string): string {
-  return xml.replace(
-    /(\sstyle\s*=\s*)(["'])(.*?)\2/gis,
-    (_attribute, prefix, quote, style) =>
-      `${prefix}${quote}${style.replace(/\s*!important\b/gi, "")}${quote}`,
-  );
-}
+import type { Middleware } from "react-native-svg";
+
+/** Icons larger than this fall back to their initial rather than parsing unbounded artwork. */
+export const MAX_CATALOG_SVG_LENGTH = 512 * 1024;
+
+/** Normalize parsed style properties, leaving SVG text and other attributes untouched. */
+export const catalogSvgStyles: Middleware = (root) => {
+  const pending = [root];
+  while (pending.length) {
+    const node = pending.pop()!;
+    const style = node.props.style;
+    if (style && typeof style === "object") {
+      for (const [property, value] of Object.entries(style)) {
+        if (typeof value !== "string") continue;
+        const trimmed = value.trimEnd();
+        if (trimmed.slice(-10).toLowerCase() === "!important") {
+          style[property] = trimmed.slice(0, -10).trimEnd();
+        }
+      }
+    }
+    for (const child of node.children) if (typeof child !== "string") pending.push(child);
+  }
+  return root;
+};

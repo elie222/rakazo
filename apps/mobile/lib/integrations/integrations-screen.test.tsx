@@ -138,17 +138,31 @@ vi.mock("../../components/native/native-action-button", () => ({
   ),
 }));
 vi.mock("react-native-svg", () => ({
-  fetchText: async (uri: string) =>
-    uri.includes("styled.svg")
-      ? `<svg data-uri="${uri}"><line style="stroke-width:26.83px !important" /></svg>`
-      : `<svg data-uri="${uri}"/>`,
-  SvgXml: ({ xml, onError }: { xml: string | null; onError: () => void }) => {
-    if (!xml) return null;
-    const uri = /data-uri="([^"]*)"/.exec(xml)?.[1] ?? "";
-    if (uri.includes("unrenderable"))
-      throw new SyntaxError('Expected transform functions but "t" found.');
-    return createElement("svg", { "data-uri": uri, "data-xml": xml, onClick: onError });
+  fetchText: async (uri: string) => {
+    if (uri.includes("failed.svg")) throw new Error("Artwork unavailable");
+    return uri.includes("oversized.svg") ? " ".repeat(1_000_000) : `<svg data-uri="${uri}"/>`;
   },
+  parse: (xml: string, middleware: (ast: unknown) => unknown) => {
+    const uri = /data-uri="([^"]*)"/.exec(xml)?.[1] ?? "";
+    if (uri.includes("unrenderable")) throw new SyntaxError("Invalid artwork");
+    return middleware({
+      props: { uri, style: { strokeWidth: "26.83px !important" } },
+      children: [],
+    });
+  },
+  SvgAst: ({
+    ast,
+    override,
+  }: {
+    ast: { props: { uri: string; style: { strokeWidth: string } } };
+    override: { width: number; height: number };
+  }) =>
+    createElement("svg", {
+      "data-uri": ast.props.uri,
+      "data-stroke-width": ast.props.style.strokeWidth,
+      width: override.width,
+      height: override.height,
+    }),
 }));
 vi.mock("react-native", () => {
   const View = ({ children, testID }: { children?: ReactNode; testID?: string }) => (
@@ -335,19 +349,27 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     await render(<ConnectorIcon name="Example" logo={logo} size={32} />);
     expect(container.querySelector("svg")?.getAttribute("data-uri")).toBe(logo);
     expect(container.querySelector("img")).toBeNull();
-    await act(async () =>
-      container.querySelector("svg")?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-    );
-    expect(container.textContent).toBe("E");
+    expect(container.querySelector("svg")?.getAttribute("width")).toBe("24");
+    expect(container.querySelector("svg")?.getAttribute("height")).toBe("24");
     await render(<ConnectorIcon name="Example" logo="https://example.test/new.svg" />);
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
 it("removes inline CSS priority before passing artwork to the native SVG renderer", async () => {
   await render(<ConnectorIcon name="Example" logo="https://example.test/styled.svg" />);
-  const xml = container.querySelector("svg")?.getAttribute("data-xml");
-  expect(xml).toContain("stroke-width:26.83px");
-  expect(xml).not.toContain("!important");
+  expect(container.querySelector("svg")?.getAttribute("data-stroke-width")).toBe("26.83px");
+});
+
+it("falls back when fetching catalog artwork fails", async () => {
+  await render(<ConnectorIcon name="Example" logo="https://example.test/failed.svg" />);
+  expect(container.textContent).toBe("E");
+  expect(container.querySelector("svg")).toBeNull();
+});
+
+it("falls back before parsing oversized catalog artwork", async () => {
+  await render(<ConnectorIcon name="Example" logo="https://example.test/oversized.svg" />);
+  expect(container.textContent).toBe("E");
+  expect(container.querySelector("svg")).toBeNull();
 });
 
 it("falls back when SVG artwork throws while rendering", async () => {
@@ -369,9 +391,7 @@ it("retries extensionless artwork as SVG before falling back", async () => {
   await act(async () => container.querySelector("img")?.dispatchEvent(new Event("error")));
   expect(container.querySelector("img")).toBeNull();
   expect(container.querySelector("svg")?.getAttribute("data-uri")).toBe(logo);
-  await act(async () =>
-    container.querySelector("svg")?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-  );
+  await render(<ConnectorIcon name="Example" logo="https://example.test/unrenderable.svg" />);
   expect(container.textContent).toBe("E");
 });
 it("falls back for absent logos and empty names", async () => {

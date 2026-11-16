@@ -1,8 +1,8 @@
-import type { ReactElement, ReactNode } from "react";
-import { Component, useEffect, useEffectEvent, useState } from "react";
+import type { ReactNode } from "react";
+import { Component, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
-import { fetchText, SvgXml } from "react-native-svg";
-import { catalogSvgXml } from "../../lib/integrations/catalog-svg";
+import { fetchText, parse, SvgAst } from "react-native-svg";
+import { catalogSvgStyles, MAX_CATALOG_SVG_LENGTH } from "../../lib/integrations/catalog-svg";
 import { native, useThemedStyles } from "../../lib/native/native";
 
 /** Use the catalog artwork, matching web, with a local fallback for missing logos. */
@@ -38,7 +38,6 @@ export function ConnectorIcon({
               width={art}
               height={art}
               onError={() => setFailure({ logo: uri, svgFailed: true })}
-              fallback={initial}
             />
           </ArtworkBoundary>
         ) : (
@@ -60,12 +59,10 @@ export function ConnectorIcon({
 function CatalogSvg({
   uri,
   onError,
-  fallback,
   ...size
 }: {
   uri: string;
   onError: () => void;
-  fallback: ReactElement;
   width: number;
   height: number;
 }) {
@@ -75,7 +72,9 @@ function CatalogSvg({
     let current = true;
     void fetchText(uri).then(
       (value) => {
-        if (current) setXml(value === null ? null : catalogSvgXml(value));
+        if (!current) return;
+        if (value && value.length > MAX_CATALOG_SVG_LENGTH) fail();
+        else setXml(value);
       },
       () => {
         if (current) fail();
@@ -85,7 +84,8 @@ function CatalogSvg({
       current = false;
     };
   }, [uri]);
-  return <SvgXml xml={xml} {...size} onError={onError} fallback={fallback} />;
+  const ast = useMemo(() => (xml === null ? null : parse(xml, catalogSvgStyles)), [xml]);
+  return ast ? <SvgAst ast={ast} override={size} /> : null;
 }
 
 /** Catalog SVGs are untrusted; one that react-native-svg cannot render, such as a
