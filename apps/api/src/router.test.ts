@@ -596,7 +596,7 @@ describe("account preferences", () => {
         { prefix: "/rpc", context: { actor, sessionId: "session-phone" } as never },
       );
     const failingStore = (error: Error) => ({
-      load: vi.fn(async () => undefined),
+      list: vi.fn(async () => []),
       save: vi.fn().mockRejectedValue(error),
       saveDevice: vi.fn().mockRejectedValue(error),
       importLegacy: vi.fn(async () => false),
@@ -631,7 +631,7 @@ describe("account preferences", () => {
     const { deps, actor } = preferencesDeps("robot");
     const calls: string[] = [];
     deps.pushTokens = {
-      load: vi.fn(async () => undefined),
+      list: vi.fn(async () => []),
       save: vi.fn(async () => undefined),
       importLegacy: vi.fn(async () => false),
       endSession: vi.fn(async (userId: string, sessionId: string) => {
