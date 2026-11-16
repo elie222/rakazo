@@ -45,7 +45,9 @@ function writeExecutable(file: string, body: string) {
  */
 function writeQuickExitExecutable(file: string, body: string) {
   writeExecutable(file, body);
-  spawnSync(file, { cwd: root, env: { ...process.env, FOCUS_RECORDED: "/dev/null" } });
+  const warm = spawnSync(file, { cwd: root, env: { ...process.env, FOCUS_RECORDED: "/dev/null" } });
+  // A program that cannot run at all must fail here, not pass as one that exits at once.
+  if (warm.error) throw warm.error;
 }
 
 writeExecutable(
