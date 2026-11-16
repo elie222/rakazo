@@ -802,11 +802,26 @@ function SpaceShell() {
   );
   const quoteMessage = useCallback(
     (message: ThreadMessage, quote: string) => {
+      if (
+        computerOpen ||
+        mobileSidebarOpen ||
+        (isMobileSidebar && panel) ||
+        hasOpenDialog(document, true)
+      )
+        return;
       composer.setReplyTarget(message);
       composer.setReplyQuote(quote);
       focusComposer();
     },
-    [composer.setReplyQuote, composer.setReplyTarget, focusComposer],
+    [
+      composer.setReplyQuote,
+      composer.setReplyTarget,
+      focusComposer,
+      computerOpen,
+      mobileSidebarOpen,
+      isMobileSidebar,
+      panel,
+    ],
   );
   const markMessageUnread = useCallback(
     (message: ThreadMessage) => {
