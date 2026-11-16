@@ -55,7 +55,14 @@ export async function searchIntegrationCatalog(input: {
       `Integration catalog returned HTTP ${response.status}`,
     );
   }
-  const payload = parseJson(await readBoundedResponse(response));
+  let body: string;
+  try {
+    body = await readBoundedResponse(response);
+  } catch (error) {
+    if (error instanceof IntegrationCatalogUnavailableError || input.signal.aborted) throw error;
+    throw new IntegrationCatalogUnavailableError(undefined, { cause: error });
+  }
+  const payload = parseJson(body);
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
     throw new IntegrationCatalogUnavailableError(INVALID_RESPONSE);
   }

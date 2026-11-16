@@ -112,6 +112,23 @@ describe("searchIntegrationCatalog", () => {
     ).rejects.toThrow("invalid response");
   });
 
+  it("answers a response cut off mid-body as the catalog being unavailable", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"results":['));
+        controller.error(new TypeError("terminated"));
+      },
+    });
+    await expect(
+      searchIntegrationCatalog({
+        baseUrl: "https://mirror.example/catalog",
+        query: "github.com",
+        signal: new AbortController().signal,
+        fetch: async () => new Response(body),
+      }),
+    ).rejects.toBeInstanceOf(IntegrationCatalogUnavailableError);
+  });
+
   it("rejects oversized responses before reading them", async () => {
     await expect(
       searchIntegrationCatalog({
