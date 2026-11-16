@@ -53,6 +53,7 @@ import { TimeSeparator, UnreadDivider } from "./chat-context";
 import type { ImportSetupTarget } from "./import-setup-card";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { isEditableTarget } from "./shell-shortcuts";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
 export function bubbleFrameWidth(role: ThreadMessage["role"]) {
@@ -87,6 +88,7 @@ export const Transcript = memo(function Transcript({
   onMarkUnread,
   markedUnreadMessageId,
   onQuote,
+  onQuoteShortcutChange,
   onReact,
   onJumpToMessage,
   onOpenPeerMessages,
@@ -139,6 +141,7 @@ export const Transcript = memo(function Transcript({
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnreadMessageId?: string;
   onQuote: (message: ThreadMessage, quote: string) => void;
+  onQuoteShortcutChange?: (handler: (() => boolean) | null) => void;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
@@ -260,6 +263,36 @@ export const Transcript = memo(function Transcript({
     rangeText: string;
   } | null>(null);
   const selectingWithMouse = useRef(false);
+  const applyQuote = useCallback(() => {
+    const selection = window.getSelection();
+    if (
+      !quoteDraft ||
+      !selection ||
+      selection.isCollapsed ||
+      !selection.rangeCount ||
+      isDetachedRange(quoteDraft.range) ||
+      quoteDraft.range.toString() !== quoteDraft.rangeText
+    ) {
+      return false;
+    }
+    const range = selection.getRangeAt(0);
+    if (
+      range.compareBoundaryPoints(Range.START_TO_START, quoteDraft.range) !== 0 ||
+      range.compareBoundaryPoints(Range.END_TO_END, quoteDraft.range) !== 0
+    ) {
+      return false;
+    }
+    onQuote(quoteDraft.message, quoteDraft.text);
+    selection.removeAllRanges();
+    setQuoteDraft(null);
+    return true;
+  }, [onQuote, quoteDraft]);
+  useLayoutEffect(() => {
+    onQuoteShortcutChange?.(
+      quoteDraft ? () => !isEditableTarget(document.activeElement) && applyQuote() : null,
+    );
+    return () => onQuoteShortcutChange?.(null);
+  }, [onQuoteShortcutChange, applyQuote, quoteDraft]);
 
   // A streaming edit can replace the selected nodes without firing selectionchange: replacing
   // both endpoints collapses the range, replacing one moves it; the pill must not keep its
@@ -695,16 +728,7 @@ export const Transcript = memo(function Transcript({
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
       </div>
-      {quoteDraft ? (
-        <QuoteSelectionButton
-          range={quoteDraft.range}
-          onQuote={() => {
-            onQuote(quoteDraft.message, quoteDraft.text);
-            window.getSelection()?.removeAllRanges();
-            setQuoteDraft(null);
-          }}
-        />
-      ) : null}
+      {quoteDraft ? <QuoteSelectionButton range={quoteDraft.range} onQuote={applyQuote} /> : null}
       <Button
         ref={jumpButtonRef}
         variant="floating"
