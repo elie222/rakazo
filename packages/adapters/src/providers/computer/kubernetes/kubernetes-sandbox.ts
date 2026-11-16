@@ -10,30 +10,14 @@ import type {
   V1PodSpec,
   V1Status,
 } from "@kubernetes/client-node";
-import type {
-  AdapterContext,
-  CommandRequest,
-  ComputerActionRequest,
-  ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
-  ComputerRef,
-  ControlLeaseRef,
-  PortableFile,
-  ProcessEvent,
-  SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
-  TerminalRequest,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "../../../exec-computer.js";
-import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
-import { LinuxDesktop, onBotScreen } from "../../../linux-desktop.js";
+import { RawExecChannel, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
+import { ImageComputerSandbox, READY_PORT } from "../../../image-computer-sandbox.js";
 import { deleteUnreferencedMachine } from "../../../sandbox-cleanup.js";
 import { sandboxNotFoundError } from "../../../sandbox-errors.js";
 
-const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // The Compose stack's default image. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
 // production so every pod runs the image the API was tested against.
@@ -45,8 +29,6 @@ const CONTAINER_NAME = "computer";
 // never reused or replaced.
 const BOT_ID_LABEL = "rakazo-bot-id";
 const HOME_VOLUME = "home";
-const READY_PORT = 6080;
-const DESKTOP_PORT_START = 6100;
 export interface KubernetesSandboxOptions {
   namespace?: string;
   runtimeClassName?: string;
@@ -73,7 +55,7 @@ export interface KubernetesSandboxSdk {
   exec: Pick<Exec, "exec">;
 }
 
-export class KubernetesSandboxProvider implements SandboxProvider {
+export class KubernetesSandboxProvider extends ImageComputerSandbox {
   private readonly namespace: string;
   private readonly runtimeClassName: string | undefined;
   private readonly computerImage: string;
@@ -86,39 +68,9 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private readonly homeColocateNamespace: string | undefined;
   private readonly homeColocateLabels: Record<string, string>;
   private clientsValue: KubernetesSandboxSdk | undefined;
-  private readonly shell = new ExecComputer((...exec) => this.execRaw(...exec), "Kubernetes");
-
-  private readonly desktops = new LinuxDesktop({
-    environment: async (computer, context) => {
-      const pod = await this.readPod(this.podId(computer), context.signal);
-      return {
-        homeDir: WORKSPACE,
-        workspaceDir: WORKSPACE,
-        browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-        displayStart: DISPLAY_START,
-        portStart: DESKTOP_PORT_START,
-        // The relay must use the address family the web pod connects to.
-        bindHost: pod?.status?.podIP?.includes(":") ? "::" : "0.0.0.0",
-      };
-    },
-    run: async (computer, command, context) => {
-      const result = await this.run(computer, ["bash", "-c", command], context);
-      return { code: result.code, stdout: result.stdout, stderr: result.stderr };
-    },
-    screenUrl: async (computer, port, context) => {
-      const pod = await this.readPod(this.podId(computer), context.signal);
-      const podIp = pod?.status?.podIP;
-      if (!podIp) throw new Error("Kubernetes computer has no pod IP");
-      const host = podIp.includes(":") ? `[${podIp}]` : podIp;
-      // The web app frames /novnc/ pages with sandbox="allow-scripts", an opaque
-      // origin. Stock vnc.html reads localStorage and throws a SecurityError there,
-      // leaving a black screen. The image's embed.html is the page the Docker
-      // provider serves for the same frame.
-      return `http://${host}:${port}/embed.html`;
-    },
-  });
 
   constructor(options: KubernetesSandboxOptions = {}, clients?: KubernetesSandboxSdk) {
+    super("kubernetes", "Kubernetes");
     this.namespace = options.namespace?.trim() || DEFAULT_NAMESPACE;
     this.runtimeClassName = options.runtimeClassName?.trim() || undefined;
     this.computerImage = options.computerImage?.trim() || DEFAULT_COMPUTER_IMAGE;
@@ -139,20 +91,8 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     this.clientsValue = clients;
   }
 
-  describe() {
-    return {
-      id: "kubernetes",
-      contractVersion: "1",
-      adapterVersion: "0.1.0",
-      capabilities: {
-        graphical: true,
-        pty: true,
-        snapshots: true,
-        takeover: true,
-        persistentHome: this.homeClaim !== undefined,
-        multiScreen: true,
-      },
-    };
+  protected override persistentHome(): boolean {
+    return this.homeClaim !== undefined;
   }
 
   async provision(
@@ -242,123 +182,31 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     return !!pod && podMountsHome(pod, computer.botId, this.homeClaim);
   }
 
-  async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await this.shell.prepare(computer, context);
+  protected async relayBindHost(computer: ComputerRef, context: AdapterContext) {
+    const pod = await this.readPod(this.podId(computer), context.signal);
+    return pod?.status?.podIP?.includes(":") ? "::" : "0.0.0.0";
   }
 
-  async *execute(
+  protected async screenAddress(computer: ComputerRef, context: AdapterContext) {
+    const pod = await this.readPod(this.podId(computer), context.signal);
+    const podIp = pod?.status?.podIP;
+    if (!podIp) throw new Error("Kubernetes computer has no pod IP");
+    return podIp;
+  }
+
+  protected override async screenControlFailure(
     computer: ComputerRef,
-    requested: CommandRequest,
+    error: unknown,
     context: AdapterContext,
-  ): AsyncIterable<ProcessEvent> {
-    yield* this.shell.execute(computer, onBotScreen(requested, context, DISPLAY_START), context);
-  }
-
-  async connectScreen(
-    computer: ComputerRef,
-    request: ScreenRequest,
-    context: AdapterContext,
-  ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    // The API has already required the live human control token. Attach the
-    // terminal to that controlled display without trying to replace the bot
-    // run's screen fence: a new chat run may legitimately supersede the fence
-    // while the human keeps control of the same persistent Kubernetes pod.
-    return this.desktops.connectTerminal(computer, request, {
-      ...context,
-      screenLeaseId: undefined,
-    });
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
+  ): Promise<unknown> {
+    let pod: V1Pod | undefined;
     try {
-      await this.desktops.setScreenControl(computer, interactive, context, controlToken);
-    } catch (error) {
-      let pod: V1Pod | undefined;
-      try {
-        pod = await this.readPod(this.podId(computer), context.signal);
-      } catch {
-        throw error;
-      }
-      if (pod && !isTerminalPod(pod) && !pod.metadata?.deletionTimestamp) throw error;
-      throw sandboxGone(this.podId(computer), error);
+      pod = await this.readPod(this.podId(computer), context.signal);
+    } catch {
+      return error;
     }
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
-  async listFiles(
-    computer: ComputerRef,
-    directory: string,
-    context: AdapterContext,
-  ): Promise<ComputerFileEntry[]> {
-    return this.shell.listFiles(computer, directory, context);
-  }
-
-  async readFile(
-    computer: ComputerRef,
-    filePath: string,
-    context: AdapterContext,
-    options?: { maxBytes?: number },
-  ): Promise<Uint8Array> {
-    return this.shell.readFile(computer, filePath, context, options);
-  }
-
-  async writeFile(
-    computer: ComputerRef,
-    file: PortableFile,
-    context: AdapterContext,
-  ): Promise<void> {
-    await this.shell.writeFile(computer, file, context);
-  }
-
-  async *exportWorkspace(
-    computer: ComputerRef,
-    context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
-    await this.desktops.stopBrowsers(computer, context);
-    yield* this.shell.exportWorkspace(computer, context);
-  }
-
-  async importWorkspace(
-    computer: ComputerRef,
-    files: AsyncIterable<PortableFile>,
-    context: AdapterContext,
-  ): Promise<void> {
-    await this.desktops.stopBrowsers(computer, context);
-    await this.shell.importWorkspace(computer, files, context);
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
+    if (pod && !isTerminalPod(pod) && !pod.metadata?.deletionTimestamp) return error;
+    return sandboxGone(this.podId(computer), error);
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
@@ -560,15 +408,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async run(
-    computer: ComputerRef,
-    command: string[],
-    context: AdapterContext,
-  ): Promise<{ code: number; stdout: string; stderr: string }> {
-    return this.shell.run(computer, command, context);
-  }
-
-  private async *execRaw(
+  protected async *execRaw(
     computer: ComputerRef,
     command: string[],
     signal: AbortSignal,
@@ -576,62 +416,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     stdin?: Readable,
     tty = false,
   ): AsyncIterable<RawExecEvent> {
-    const queue: RawExecEvent[] = [];
-    let wake: (() => void) | undefined;
-    let done = false;
-    let failure: unknown;
     let socket: Awaited<ReturnType<KubernetesSandboxSdk["exec"]["exec"]>> | undefined;
-    let settled!: () => void;
-    const completed = new Promise<void>((resolve) => {
-      settled = resolve;
-    });
-    const push = (event: RawExecEvent) => {
-      if (done) return;
-      queue.push(event);
-      wake?.();
-      wake = undefined;
-    };
-    const finish = (code: number) => {
-      if (done) return;
-      queue.push({ type: "exit", code });
-      done = true;
-      settled();
-      wake?.();
-      wake = undefined;
-    };
-    const fail = (error: unknown) => {
-      if (done) return;
-      failure = error;
-      done = true;
-      settled();
-      wake?.();
-      wake = undefined;
-    };
+    const channel = new RawExecChannel(signal, timeoutMs, () => socket?.close());
     const stdout = new PassThrough();
     const stderr = tty ? undefined : new PassThrough();
-    stdout.on("data", (data: Buffer) => push({ type: "stdout", data: Buffer.from(data) }));
-    stderr?.on("data", (data: Buffer) => push({ type: "stderr", data: Buffer.from(data) }));
-    const abort = () => {
-      socket?.close();
-      push({ type: "stderr", data: Buffer.from("command aborted\n") });
-      finish(130);
-    };
-    const timeout = setTimeout(() => {
-      socket?.close();
-      push({
-        type: "stderr",
-        data: Buffer.from(`command timed out after ${timeoutMs} ms\n`),
-      });
-      finish(124);
-    }, timeoutMs + 10_000);
-    signal.addEventListener("abort", abort, { once: true });
+    stdout.on("data", (data: Buffer) => channel.push({ type: "stdout", data: Buffer.from(data) }));
+    stderr?.on("data", (data: Buffer) => channel.push({ type: "stderr", data: Buffer.from(data) }));
+    const fail = (error: unknown) => channel.fail(error);
     // A failing input stream (for example a workspace iterator that throws)
     // would otherwise leave the exec waiting for input until the timeout.
     stdin?.on("error", fail);
     try {
-      if (signal.aborted) {
-        abort();
-      } else {
+      if (!channel.done) {
         const connecting = this.clients().then((clients) =>
           clients.exec.exec(
             this.namespace,
@@ -642,29 +438,27 @@ export class KubernetesSandboxProvider implements SandboxProvider {
             stderr ?? null,
             stdin ?? null,
             tty,
-            (status) => finish(exitCode(status)),
+            (status) => channel.finish(exitCode(status)),
           ),
         );
         await Promise.race([
           connecting.then(
             (connected) => {
               socket = connected;
-              if (done) {
+              if (channel.done) {
                 connected.close();
                 return;
               }
-              connected.onclose = () => finish(1);
+              connected.onclose = () => channel.finish(1);
               connected.onerror = (event) => fail(execSocketError(event));
             },
             (event) => fail(execSocketError(event)),
           ),
-          completed,
+          channel.settled,
         ]);
       }
-      while (!done || queue.length) {
-        if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
-        while (queue.length) yield queue.shift()!;
-      }
+      yield* channel.drain();
+      const { failure } = channel;
       if (failure) {
         if (failure instanceof Error && /Unexpected server response: 404\b/.test(failure.message)) {
           let pod: V1Pod | undefined;
@@ -680,8 +474,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         throw failure;
       }
     } finally {
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", abort);
+      channel.close();
       socket?.close();
       stdin?.destroy();
       stdout.destroy();
