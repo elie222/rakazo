@@ -19,11 +19,10 @@ describePostgres("computer screen generation (PostgreSQL)", () => {
       await db.pool.end();
     };
     const identity = await runAsSystem("screen generation fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address: `screen-${randomUUID()}@example.test` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, {
+        provider: "email",
+        address: `screen-${randomUUID()}@example.test`,
+      }),
     );
     const bot = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
     computerId = bot.computerId!;

@@ -70,12 +70,8 @@ export async function startMessagingRuntime({
     jobs,
     delivery,
     sandbox,
-    provision: (request, policyEnv) => provisionMessagingIdentity(prisma, request, policyEnv),
+    provision: (request) => provisionMessagingIdentity(prisma, request),
     openSignup: env.messagingOpenSignup,
-    signupPolicy: {
-      signupsEnabled: env.signupsEnabled,
-      signupAllowlist: env.signupAllowlist,
-    },
     acknowledge: receipts.acknowledge,
     storeAttachment,
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>

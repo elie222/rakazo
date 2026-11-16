@@ -64,11 +64,7 @@ describe.skipIf(!enabled)("group reaction and clear lock order (PostgreSQL)", ()
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address }),
     );
     provisioned = true;
     ({ userId, spaceId } = identity);
