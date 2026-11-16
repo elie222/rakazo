@@ -247,3 +247,33 @@ it("connects a compatible endpoint with its URL, models and limits", async () =>
     maxTokens: 2048,
   });
 });
+
+it("offers the saved endpoint key only while its URL stays the same", async () => {
+  deployment.get.mockResolvedValue({
+    ...settings,
+    connections: [
+      ...settings.connections,
+      {
+        provider: "openai-compatible",
+        name: "OpenAI-compatible",
+        saved: true,
+        open: false,
+        baseUrl: "https://eu.example.test/v1",
+        models: [{ id: "model-a", label: "model-a" }],
+      },
+    ],
+  });
+  await render();
+  const add = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Add provider",
+  )!;
+  await act(async () => add.click());
+  await act(async () => change(byLabel<HTMLSelectElement>("Provider"), "openai-compatible"));
+  expect(byLabel<HTMLInputElement>("API key").placeholder).toBe("Saved");
+
+  // The server keeps the key only for the same URL, so a new one shows none to keep.
+  await act(async () =>
+    change(byLabel<HTMLInputElement>("Base URL"), "https://us.example.test/v1"),
+  );
+  expect(byLabel<HTMLInputElement>("API key").placeholder).toBe("");
+});

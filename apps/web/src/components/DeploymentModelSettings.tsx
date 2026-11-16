@@ -130,6 +130,11 @@ export function DeploymentModelSettings() {
   const replacing = settings.connections.find(
     (connection) => connection.saved && connection.provider === draft?.provider,
   );
+  // The server keeps a saved endpoint's key only while its URL stays the same, so a new URL
+  // shows no saved key to fall back on.
+  const keySaved = Boolean(
+    replacing && (!adding?.endpoint || draft?.baseUrl.trim() === (replacing.baseUrl ?? "")),
+  );
   const set = (patch: Partial<Draft>) =>
     setDraft((current) => ({ ...EMPTY_DRAFT, ...current, ...patch }));
 
@@ -333,8 +338,8 @@ export function DeploymentModelSettings() {
                   autoComplete="off"
                   spellCheck={false}
                   // A saved key stays unless a new one replaces it.
-                  required={!replacing && !adding?.endpoint}
-                  placeholder={replacing ? t`Saved` : undefined}
+                  required={!keySaved && !adding?.endpoint}
+                  placeholder={keySaved ? t`Saved` : undefined}
                   value={draft.apiKey}
                   onChange={(event) => set({ apiKey: event.target.value })}
                 />
