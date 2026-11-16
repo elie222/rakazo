@@ -50,19 +50,15 @@ export function ComposerModelPicker({
   });
   // Nothing to switch between.
   if (choices.length < 2) return null;
-  // The button names the model the Space default stands for; the list still says "Space default".
-  if (me.defaultModel)
-    choices[0] = {
-      ...choices[0]!,
-      label: defaultEntry?.label ?? me.defaultModel,
-      title: t`Space default`,
-    };
-
   return (
     <ChatModelPicker
       compact
       choices={choices}
       value={selectedModelKey}
+      // The button names the model behind the Space default; its row in the list keeps the name.
+      selectedLabel={
+        selectedModelKey ? undefined : (defaultEntry?.label ?? me.defaultModel ?? undefined)
+      }
       disabled={disabled || save.pending}
       onChange={(key) => {
         if (key !== savedKey) save.run(key);

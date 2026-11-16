@@ -27,6 +27,7 @@ export function ChatModelPicker({
   value,
   onChange,
   compact = false,
+  selectedLabel,
   disabled,
 }: {
   id?: string;
@@ -34,6 +35,8 @@ export function ChatModelPicker({
   value: string;
   onChange: (key: string) => void;
   compact?: boolean;
+  /** What the button calls the selected choice, when that differs from its row in the list. */
+  selectedLabel?: string;
   disabled?: boolean;
 }) {
   const { t } = useLingui();
@@ -58,11 +61,11 @@ export function ChatModelPicker({
         <PopoverTrigger
           id={id}
           disabled={disabled}
-          aria-label={t`Model: ${selected?.label ?? ""}`}
+          aria-label={t`Model: ${selectedLabel ?? selected?.label ?? ""}`}
           aria-describedby={textOnly ? imagesHintId : undefined}
           className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
         >
-          <span className="min-w-0 truncate">{selected?.label}</span>
+          <span className="min-w-0 truncate">{selectedLabel ?? selected?.label}</span>
           {textOnly ? <TextOnlyMark /> : null}
           <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
         </PopoverTrigger>
