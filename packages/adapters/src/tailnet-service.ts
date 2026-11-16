@@ -8,15 +8,16 @@ import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
 import { tailnetNodeAttributes, tailnetNodeHostname } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { TailnetScope } from "./tailnet-connections.js";
-import { resolveRunTailnet } from "./tailnet-connections.js";
+import { resolveRunTailnet, tailnetBotAllowed } from "./tailnet-connections.js";
 import type { TailnetRoute } from "./tailnet-fetch.js";
 import type { TailnetNodeHost } from "./tailscale-network.js";
 import { TailscaleApi, TailscaleNetwork } from "./tailscale-network.js";
 import { TailscaledNodeHost } from "./tailscaled-node-host.js";
 
-/** A node nobody dialed through for this long leaves the tailnet; the next dial rejoins. */
+/** A node with no open connection for this long leaves the tailnet; the next dial rejoins. */
 const DEFAULT_IDLE_MS = 10 * 60_000;
 const SWEEP_MS = 60_000;
 
@@ -34,6 +35,8 @@ type Node = {
   clientKey: string;
   network: PrivateNetworkProvider;
   lastUsed: number;
+  /** Connections still open through it; a node carrying any is not idle. */
+  open: number;
 };
 
 /**
@@ -44,6 +47,9 @@ type Node = {
  */
 export class TailnetService {
   private readonly nodes = new Map<string, Node>();
+  /** Nodes still logging out; their process holds the old client until it is gone. */
+  private readonly leaving = new Map<string, Promise<void>>();
+  /** API clients of live nodes' OAuth clients; dropped with the last node that uses one. */
   private readonly apis = new Map<string, TailscaleApi>();
   private readonly sweep: ReturnType<typeof setInterval> | undefined;
   private readonly now: () => number;
@@ -75,7 +81,7 @@ export class TailnetService {
 
   /** The OAuth client is checked by minting and revoking a short key. */
   async verify(config: TailnetConnectionConfig, signal: AbortSignal): Promise<void> {
-    await this.api(config).verify(signal);
+    await new TailscaleApi(config, { fetch: this.deps.fetch, now: this.deps.now }).verify(signal);
   }
 
   /** Join this run's bot to its member's tailnet, if they allowed it, and dial `destination`. */
@@ -86,13 +92,13 @@ export class TailnetService {
   ): Promise<Duplex> {
     const nodeHost = this.deps.nodeHost;
     if (!nodeHost) throw new PrivateNetworkError("unavailable", TAILNET_UNAVAILABLE_MESSAGE);
-    const config = await resolveRunTailnet({
-      prisma: this.deps.prisma,
-      secretStore: this.deps.secretStore,
-      run,
-    });
+    const config = await this.access(run);
     if (!config) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
     const nodeId = tailnetNodeId(run);
+    // A node still leaving must be gone before this one joins, or the dial would reuse it.
+    for (let leaving = this.leaving.get(nodeId); leaving; leaving = this.leaving.get(nodeId)) {
+      await leaving;
+    }
     let node = this.nodes.get(nodeId);
     if (node && node.clientKey !== clientKey(config)) {
       await this.leave(node);
@@ -106,6 +112,7 @@ export class TailnetService {
         clientKey: clientKey(config),
         network: new TailscaleNetwork(this.api(config), nodeHost),
         lastUsed: this.now(),
+        open: 0,
       };
       this.nodes.set(nodeId, node);
     }
@@ -119,10 +126,24 @@ export class TailnetService {
         },
         context,
       );
-      return await node.network.dial(nodeId, destination, context);
+      const socket = await node.network.dial(nodeId, destination, context);
+      const used = node;
+      used.open += 1;
+      socket.once("close", () => {
+        used.open -= 1;
+        used.lastUsed = this.now();
+      });
+      return socket;
     } finally {
       node.lastUsed = this.now();
     }
+  }
+
+  /** Whether the member still lets this bot onto their tailnet, for open connections to recheck. */
+  allows(run: { userId: string; spaceId: string; botId: string }): Promise<boolean> {
+    return runAsTenant({ spaceId: run.spaceId, userId: run.userId }, () =>
+      tailnetBotAllowed(this.deps.prisma, run),
+    );
   }
 
   /**
@@ -142,7 +163,9 @@ export class TailnetService {
   async close(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
     await Promise.all([...this.nodes.values()].map((node) => this.leave(node)));
+    await Promise.all(this.leaving.values());
     await this.deps.nodeHost?.stopAll?.();
+    this.apis.clear();
   }
 
   /** Visible for tests; runs on a timer otherwise. */
@@ -155,7 +178,7 @@ export class TailnetService {
     const cutoff = this.now() - this.idleMs;
     await Promise.all(
       [...this.nodes.values()]
-        .filter((node) => node.lastUsed <= cutoff)
+        .filter((node) => node.open === 0 && node.lastUsed <= cutoff)
         .map((node) => this.leave(node)),
     );
   }
@@ -169,21 +192,48 @@ export class TailnetService {
       [...this.nodes.values()].map(async (node) => {
         let config: TailnetConnectionConfig | undefined;
         try {
-          config = await resolveRunTailnet({
-            prisma: this.deps.prisma,
-            secretStore: this.deps.secretStore,
-            run: { ...node.scope, botId: node.botId },
+          config = await this.access({ ...node.scope, botId: node.botId });
+        } catch (error) {
+          // Unknown is not revoked: new connections check again and fail, and so does the next
+          // sweep. A check that keeps failing shows here.
+          getLogger().warn("tailnet access check failed; the node stays until the next check", {
+            error: error instanceof Error ? error.message : String(error),
           });
-        } catch {
-          return; // Unknown is not revoked; the next sweep checks again.
+          return;
         }
         if (!config || clientKey(config) !== node.clientKey) await this.leave(node);
       }),
     );
   }
 
+  /**
+   * The client a member's run may use, read as that member: the sweep and pooled connections run
+   * outside any request, where row-level security would hide the row.
+   */
+  private access(run: {
+    userId: string;
+    spaceId: string;
+    botId: string;
+  }): Promise<TailnetConnectionConfig | undefined> {
+    return runAsTenant({ spaceId: run.spaceId, userId: run.userId }, () =>
+      resolveRunTailnet({ prisma: this.deps.prisma, secretStore: this.deps.secretStore, run }),
+    );
+  }
+
   private async leave(node: Node): Promise<void> {
     if (this.nodes.get(node.nodeId) === node) this.nodes.delete(node.nodeId);
+    const stopping = this.stop(node);
+    this.leaving.set(node.nodeId, stopping);
+    try {
+      await stopping;
+    } finally {
+      if (this.leaving.get(node.nodeId) === stopping) this.leaving.delete(node.nodeId);
+      const inUse = [...this.nodes.values()].some((other) => other.clientKey === node.clientKey);
+      if (!inUse) this.apis.delete(node.clientKey);
+    }
+  }
+
+  private async stop(node: Node): Promise<void> {
     const context: AdapterContext = {
       operationId: node.nodeId,
       traceId: node.nodeId,
@@ -232,10 +282,10 @@ export function botTailnetRoute(
   if (!tailnet?.available || !botId) return undefined;
   return {
     async dial(destination, signal) {
-      const bot = await prisma.bot.findFirst({
-        where: { id: botId, spaceId },
-        select: { name: true },
-      });
+      // Pooled connections dial outside the request that made them, so read as the member.
+      const bot = await runAsTenant({ spaceId, userId }, () =>
+        prisma.bot.findFirst({ where: { id: botId, spaceId }, select: { name: true } }),
+      );
       if (!bot) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
       return tailnet.dial({ userId, spaceId, botId, botName: bot.name }, destination, {
         operationId,

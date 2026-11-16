@@ -61,15 +61,16 @@ export function tailnetDatabase(bots: Array<{ id: string; spaceId: string }> = [
     findFirst: async ({ where }: { where: { id: string; spaceId: string } }) =>
       bots.find((entry) => entry.id === where.id && entry.spaceId === where.spaceId) ?? null,
   };
-  return {
-    rows,
-    prisma: {
-      tailnetConnection,
-      bot,
-      secret: none,
-      botSecret: none,
-      vaultCredential: none,
-      integrationProviderConfig: none,
-    } as unknown as PrismaClient,
+  const prisma = {
+    tailnetConnection,
+    bot,
+    secret: none,
+    botSecret: none,
+    vaultCredential: none,
+    integrationProviderConfig: none,
+    // One caller at a time here, so the row lock has nothing to do.
+    $queryRaw: async () => [],
+    $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
   };
+  return { rows, prisma: prisma as unknown as PrismaClient };
 }

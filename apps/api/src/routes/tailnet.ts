@@ -1,5 +1,4 @@
 import { ORPCError } from "@orpc/server";
-import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetCommandAccess, TailnetRoute, TailnetService } from "@rakazo/adapters";
 import {
   botTailnetRoute,
@@ -7,7 +6,6 @@ import {
   removeTailnetConnection,
   saveTailnetConnection,
   setTailnetBotAccess,
-  TailnetBotNotFoundError,
 } from "@rakazo/adapters";
 import type { Actor, TailnetStatus } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -40,21 +38,13 @@ export function tailnetRoutes(ctx: RouterContext) {
             message: "This server can't put bots on a tailnet.",
           });
         }
-        try {
-          await saveTailnetConnection({
-            prisma: deps.prisma,
-            secretStore: deps.secrets,
-            scope: scope(context.actor),
-            config: input,
-            verify: (config) =>
-              tailnet.service.verify(config, signal ?? AbortSignal.timeout(30_000)),
-          });
-        } catch (error) {
-          if (error instanceof PrivateNetworkError) {
-            throw new ORPCError("BAD_REQUEST", { message: error.message });
-          }
-          throw error;
-        }
+        await saveTailnetConnection({
+          prisma: deps.prisma,
+          secretStore: deps.secrets,
+          scope: scope(context.actor),
+          config: input,
+          verify: (config) => tailnet.service.verify(config, signal ?? AbortSignal.timeout(30_000)),
+        });
         // Nodes joined with the old client keep its tag until they leave.
         await tailnet.service.disconnect(scope(context.actor));
         return status(context.actor);
@@ -65,20 +55,12 @@ export function tailnetRoutes(ctx: RouterContext) {
         return status(context.actor);
       }),
       setBotAccess: authed.tailnet.setBotAccess.handler(async ({ context, input }) => {
-        let updated: Awaited<ReturnType<typeof setTailnetBotAccess>>;
-        try {
-          updated = await setTailnetBotAccess({
-            prisma: deps.prisma,
-            scope: scope(context.actor),
-            botId: input.botId,
-            enabled: input.enabled,
-          });
-        } catch (error) {
-          if (error instanceof TailnetBotNotFoundError) {
-            throw new ORPCError("NOT_FOUND", { message: error.message });
-          }
-          throw error;
-        }
+        const updated = await setTailnetBotAccess({
+          prisma: deps.prisma,
+          scope: scope(context.actor),
+          botId: input.botId,
+          enabled: input.enabled,
+        });
         if (!updated)
           throw new ORPCError("BAD_REQUEST", { message: "Connect your tailnet first." });
         if (!input.enabled) await tailnet?.service.disconnect(scope(context.actor), input.botId);

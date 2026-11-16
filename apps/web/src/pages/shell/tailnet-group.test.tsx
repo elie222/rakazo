@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -67,7 +68,7 @@ async function render() {
     ),
   );
   await act(async () => vi.waitFor(() => expect(tailnet.status).toHaveBeenCalled()));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(async () => flush());
 }
 
 function button(label: string) {

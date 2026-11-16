@@ -42,7 +42,7 @@ import {
 } from "./network-address.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import type { TailnetRoute } from "./tailnet-fetch.js";
-import { createTailnetFetch, isTailnetUrl } from "./tailnet-fetch.js";
+import { createTailnetFetch, tailnetEndpoint } from "./tailnet-fetch.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_MAX_MCP_TOOLS = 250;
@@ -605,23 +605,6 @@ async function remoteEndpoint(
     endpoint: await assertSafeRemoteUrl(options.endpoint, resolve, policy),
     safeFetch: createSafeRemoteFetch(options.fetch, resolve, policy),
   };
-}
-
-/** A tailnet endpoint, or undefined for any other address. Plain HTTP is carried by the tailnet. */
-export function tailnetEndpoint(value: string): URL | undefined {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return undefined;
-  }
-  if (!isTailnetUrl(url)) return undefined;
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Connector URL must use HTTP or HTTPS");
-  }
-  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
-  if (url.hash) throw new Error("Connector URL must not contain a fragment");
-  return url;
 }
 
 /** A saved MCP endpoint is stored and shown in plaintext, so its credentials belong in headers. */

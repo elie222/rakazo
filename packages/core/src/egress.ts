@@ -1,4 +1,4 @@
-import { parseTailnetDestination, tailnetDestinationKey } from "@rakazo/contracts";
+import { parseNetworkDestination, tailnetDestinationKey } from "@rakazo/contracts";
 import { parse } from "tldts";
 import { SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL } from "./action-approval.js";
 
@@ -95,7 +95,7 @@ export function requestSite(toolName: string, request: unknown): string | undefi
   const values = request && typeof request === "object" ? (request as Record<string, unknown>) : {};
   if (toolName === TAILNET_CONNECT_TOOL) {
     const port = values.port;
-    const destination = parseTailnetDestination(
+    const destination = parseNetworkDestination(
       typeof values.host === "string" ? values.host : "",
       typeof port === "number" || typeof port === "string" ? port : "",
     );

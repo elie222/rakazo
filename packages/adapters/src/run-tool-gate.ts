@@ -30,7 +30,7 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
-import { normalizedHttpUrl, requestSite, urlSite } from "@rakazo/core/egress";
+import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
@@ -84,6 +84,7 @@ import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
 import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
+import { tailnetConnectSite } from "./tailnet-host.js";
 import { refusal } from "./tool-refusal.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
@@ -214,7 +215,7 @@ export async function gateToolCall(
     connectorProviders,
   );
   // A tailnet destination is a site too: allowed by a site rule or this run's earlier approval.
-  const tailnetSite = name === TAILNET_CONNECT_TOOL ? requestSite(name, args) : undefined;
+  const tailnetSite = name === TAILNET_CONNECT_TOOL ? tailnetConnectSite(args) : undefined;
   if (name === TAILNET_CONNECT_TOOL && !tailnetSite)
     return {
       result: refusal(

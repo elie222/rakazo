@@ -2,8 +2,9 @@ import type { Duplex } from "node:stream";
 import type { AdapterContext, PrivateNetworkProvider } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
-import { isTailnetHost } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging";
 import { combineSignals } from "./connector-safety.js";
+import { isTailnetHost } from "./tailnet-host.js";
 
 const TAILSCALE_API = "https://api.tailscale.com";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -103,9 +104,7 @@ export class TailscaleApi {
       },
       signal,
     );
-    const body = (await response.json().catch(() => undefined)) as
-      | { id?: unknown; key?: unknown }
-      | undefined;
+    const body = (await jsonBody(response)) as { id?: unknown; key?: unknown } | undefined;
     if (typeof body?.id !== "string" || typeof body.key !== "string" || !body.key) {
       throw new PrivateNetworkError("unavailable", "Tailscale returned an unexpected auth key.");
     }
@@ -137,11 +136,9 @@ export class TailscaleApi {
     options: { allowNotFound?: boolean } = {},
   ): Promise<Response> {
     const token = await this.accessToken(signal);
-    const response = await this.send(path, {
-      ...init,
-      headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${token}` },
-      signal,
-    });
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    const response = await this.send(path, { ...init, headers, signal });
     if (response.ok || (options.allowNotFound && response.status === 404)) return response;
     // A revoked client or a token Tailscale stopped honoring: start over next time.
     if (response.status === 401) this.token = undefined;
@@ -170,7 +167,7 @@ export class TailscaleApi {
           )
         : await this.failure(response);
     }
-    const body = (await response.json().catch(() => undefined)) as
+    const body = (await jsonBody(response)) as
       | { access_token?: unknown; expires_in?: unknown }
       | undefined;
     if (typeof body?.access_token !== "string" || !body.access_token) {
@@ -283,9 +280,21 @@ export class TailscaleNetwork implements PrivateNetworkProvider {
       );
     } catch (error) {
       // An unused key could still join a node until it expires; revoke it.
-      await this.api.deleteKey(key.id, AbortSignal.timeout(REQUEST_TIMEOUT_MS)).catch(() => {});
+      await bestEffort(
+        "revoke an unused tailnet auth key",
+        this.api.deleteKey(key.id, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
+      );
       throw error;
     }
+  }
+}
+
+/** The body as JSON, or undefined when it isn't; callers refuse a body they can't use. */
+async function jsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
   }
 }
 

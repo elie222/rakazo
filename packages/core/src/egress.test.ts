@@ -163,7 +163,6 @@ describe("requestSite", () => {
   });
 
   it("names nothing a tool cannot reach", () => {
-    expect(requestSite("tailnet_connect", { host: "example.com", port: 22 })).toBeUndefined();
     expect(requestSite("tailnet_connect", { host: "nas.tail1234.ts.net" })).toBeUndefined();
     expect(requestSite("shell", { url: "https://example.com" })).toBeUndefined();
     expect(requestSite("web_fetch", null)).toBeUndefined();

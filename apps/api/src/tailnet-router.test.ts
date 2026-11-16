@@ -1,3 +1,4 @@
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import { EncryptedSecretStore } from "@rakazo/adapters";
@@ -6,6 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 type Row = {
   id: string;
@@ -80,6 +82,9 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     botSecret: none,
     vaultCredential: none,
     integrationProviderConfig: none,
+    // One caller at a time here, so the row lock has nothing to do.
+    $queryRaw: async () => [],
+    $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
   };
   const service = {
     available: options.available ?? true,
@@ -97,7 +102,10 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     env: { webOrigin: "https://rakazo.example.test", screenProxySecret: "fake-test-secret" },
     dataDir: "/tmp/rakazo-router-test",
   } as unknown as RouterDeps;
-  const handler = new RPCHandler(createRouter(deps));
+  // As the app does, so a domain error answers with its own status.
+  const handler = new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
   async function call(path: string, input?: unknown, actor: Actor = ALICE) {
     const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/tailnet/${path}`, {

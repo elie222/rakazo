@@ -1,12 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type {
-  Bot,
-  BotAvatarSet,
-  ComputerMode,
-  TailnetStatus,
-  ThinkingLevel,
-} from "@rakazo/contracts";
+import type { Bot, BotAvatarSet, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -47,6 +41,7 @@ import {
   SettingsRow,
   SettingsSwitch,
 } from "../components/settings-group";
+import { TailnetBotAccess } from "../components/tailnet-bot-access";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
@@ -103,8 +98,6 @@ export default function BotSettingsScreen() {
     crossSpaceCommunication: boolean;
     fleetManagement: boolean;
   } | null>(null);
-  // The member's own tailnet connection here; connecting one is done on web or desktop.
-  const [tailnet, setTailnet] = useState<TailnetStatus | null>(null);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -236,12 +229,6 @@ export default function BotSettingsScreen() {
       })
       .catch((err) => setError(errorText(err, t`Could not load bot`)));
   }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
-
-  useEffect(() => {
-    void rpc("tailnet/status")
-      .then(setTailnet)
-      .catch(() => setTailnet(null));
-  }, []);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -720,20 +707,7 @@ export default function BotSettingsScreen() {
               </SettingsGroup>
             ) : null}
 
-            {botId && tailnet?.connection && !tailnet.unavailable ? (
-              <SettingsGroup label={t`Tailnet`}>
-                <SettingsSwitch
-                  label={t`Reach machines on your tailnet`}
-                  value={tailnet.connection.botIds.includes(botId)}
-                  onChange={(enabled) => {
-                    setError(null);
-                    void rpc("tailnet/setBotAccess", { botId, enabled })
-                      .then(setTailnet)
-                      .catch((err) => setError(errorText(err, t`Couldn't update tailnet access`)));
-                  }}
-                />
-              </SettingsGroup>
-            ) : null}
+            {botId ? <TailnetBotAccess botId={botId} /> : null}
             <View style={{ gap: 7 }}>
               <View
                 style={{

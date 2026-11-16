@@ -2,9 +2,13 @@ import { once } from "node:events";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Duplex } from "node:stream";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { deferred, flush } from "@rakazo/core/test-async";
+import type { DbContext } from "@rakazo/db";
+import { currentDbContext } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
 import { EncryptedSecretStore } from "./secrets.js";
 import { saveTailnetConnection, setTailnetBotAccess } from "./tailnet-connections.js";
 import { tailnetDatabase } from "./tailnet-connections.test-support.js";
@@ -69,6 +73,15 @@ async function setup(options: { nodeHost?: false } = {}) {
 
 const RUN = { ...ALICE, botId: "helper", botName: "Home Lab Helper" };
 
+/** Close a connection and wait until it has gone, as its owner does. */
+async function closed(socket: Duplex): Promise<void> {
+  socket.destroy();
+  await once(socket, "close");
+}
+
+const tokenRequests = (emulator: TailscaleApiEmulator) =>
+  emulator.requests.filter((request) => request.path === "/api/v2/oauth/token").length;
+
 async function rejection(promise: Promise<unknown>): Promise<PrivateNetworkError> {
   const error = await promise.then(
     () => undefined,
@@ -98,8 +111,8 @@ describe("TailnetService", () => {
     const { emulator, service } = await setup();
     (await service.dial(RUN, NAS, context())).destroy();
     (await service.dial(RUN, NAS, context())).destroy();
-    // One key for the check when saving, one for the node.
-    expect(emulator.requests.filter((request) => request.method === "POST").length).toBe(3);
+    // A token and a key for the check when saving, then a token and a key for the node.
+    expect(emulator.requests.filter((request) => request.method === "POST").length).toBe(4);
   });
 
   it("never dials from another member's run, even through the same bot", async () => {
@@ -157,7 +170,7 @@ describe("TailnetService", () => {
 
   it("leaves idle nodes and rejoins on the next dial", async () => {
     const { emulator, service, advance } = await setup();
-    (await service.dial(RUN, NAS, context())).destroy();
+    await closed(await service.dial(RUN, NAS, context()));
     advance(30_000);
     await service.leaveIdle();
     expect(emulator.devices.size).toBe(1);
@@ -168,6 +181,64 @@ describe("TailnetService", () => {
     expect(emulator.devices.size).toBe(1);
     await service.close();
     expect(emulator.devices.size).toBe(0);
+  });
+
+  it("keeps a node carrying an open connection past the idle time", async () => {
+    const { emulator, service, advance } = await setup();
+    const socket = await service.dial(RUN, NAS, context());
+    advance(120_000);
+    await service.leaveIdle();
+    expect(socket.destroyed).toBe(false);
+    await closed(socket);
+    advance(120_000);
+    await service.leaveIdle();
+    expect(emulator.devices.size).toBe(0);
+  });
+
+  it("rechecks access as each node's member, outside any request", async () => {
+    const { db, emulator, service } = await setup();
+    const seen: Array<DbContext | undefined> = [];
+    const findUnique = db.prisma.tailnetConnection.findUnique.bind(db.prisma.tailnetConnection);
+    vi.spyOn(db.prisma.tailnetConnection, "findUnique").mockImplementation(((args: never) => {
+      seen.push(currentDbContext());
+      return findUnique(args);
+    }) as never);
+    await service.dial(RUN, NAS, context());
+    seen.length = 0;
+    await service.tidy();
+    expect(seen).toEqual([{ kind: "tenant", spaceId: "home", userId: "alice" }]);
+    expect(emulator.devices.size).toBe(1);
+  });
+
+  it("joins again only once the node it replaces has left", async () => {
+    const { nodes, service } = await setup();
+    await closed(await service.dial(RUN, NAS, context()));
+    const stopping = deferred();
+    const stop = nodes.stop.bind(nodes);
+    vi.spyOn(nodes, "stop").mockImplementationOnce(async (nodeId) => {
+      await stopping.promise;
+      await stop(nodeId);
+    });
+    const start = vi.spyOn(nodes, "start");
+    const leaving = service.disconnect(ALICE, "helper");
+    const dialing = service.dial(RUN, NAS, context());
+    await flush();
+    expect(start).not.toHaveBeenCalled();
+    stopping.resolve();
+    await leaving;
+    await closed(await dialing);
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets an OAuth client once no node uses it", async () => {
+    const { emulator, service } = await setup();
+    await closed(await service.dial(RUN, NAS, context()));
+    const tokens = tokenRequests(emulator);
+    await closed(await service.dial(RUN, NAS, context()));
+    expect(tokenRequests(emulator)).toBe(tokens);
+    await service.disconnect(ALICE);
+    await closed(await service.dial(RUN, NAS, context()));
+    expect(tokenRequests(emulator)).toBe(tokens + 1);
   });
 });
 

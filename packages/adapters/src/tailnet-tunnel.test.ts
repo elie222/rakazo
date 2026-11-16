@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { duplexPair } from "node:stream";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import { TAILNET_CONNECT_PATH } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { tailnetHelper } from "./page-browser-install.js";
@@ -44,6 +45,7 @@ async function gateway(overrides: Partial<TailnetTunnelDeps> = {}) {
   const gateway = new TailnetTunnelGateway({
     key: KEY,
     activeRun: async (claims) => (claims.runId === "run1" ? RUN : undefined),
+    allowed: async () => true,
     authorize: async () => true,
     // An echo service on the far side of the tailnet.
     dial: async () => {
@@ -206,6 +208,43 @@ describe("TailnetTunnelGateway", () => {
     first.close();
   });
 
+  it("counts tunnels still being dialed toward the limit", async () => {
+    const dialing = deferred();
+    const { connect } = await gateway({
+      maxPerRun: 1,
+      dial: async () => {
+        await dialing.promise;
+        return duplexPair()[0];
+      },
+    });
+    const first = connect();
+    expect((await refusal(connect())).status).toBe(429);
+    dialing.resolve();
+    await once(first, "open");
+    first.close();
+  });
+
+  it("closes a run's tunnel once its destination is no longer approved", async () => {
+    let approved = true;
+    const { connect } = await gateway({
+      authorize: async () => (approved ? true : "Connecting to nas.tail1234.ts.net:22 is blocked."),
+      recheckMs: 10,
+    });
+    const socket = connect();
+    await once(socket, "open");
+    approved = false;
+    await once(socket, "close");
+  });
+
+  it("closes a run's tunnels once its member stops letting the bot on", async () => {
+    let allowed = true;
+    const { connect } = await gateway({ allowed: async () => allowed, recheckMs: 10 });
+    const socket = connect();
+    await once(socket, "open");
+    allowed = false;
+    await once(socket, "close");
+  });
+
   it("closes a run's tunnels once it ends", async () => {
     let active = true;
     const { connect } = await gateway({
@@ -291,6 +330,17 @@ describe("tailnet tunnels from a computer's browsers", () => {
     await once(socket, "open");
     // The member hands the screen back and the bot's run carries on.
     holder = { kind: "run", run: { ...RUN, runId: "run1" } };
+    await once(socket, "close");
+  });
+
+  it("closes a member's tunnels once they stop letting the bot on", async () => {
+    let allowed = true;
+    const { open } = await browser(async () => ({ kind: "member", member: MEMBER }), {
+      allowed: async () => allowed,
+    });
+    const socket = open();
+    await once(socket, "open");
+    allowed = false;
     await once(socket, "close");
   });
 

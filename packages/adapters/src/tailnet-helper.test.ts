@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import { tailnetHelper } from "./page-browser-install.js";
 import type { TailnetTunnelDeps } from "./tailnet-tunnel.js";
@@ -90,7 +90,9 @@ beforeAll(async () => {
     socket.on("data", (chunk) => chunks.push(chunk));
     socket.on("end", () => socket.end(Buffer.concat(chunks)));
   });
-  web = createServer((request, response) => response.end(`tailnet web ${request.url}`));
+  web = createServer((request, response) =>
+    response.writeHead(200, { "content-type": "text/plain" }).end(`tailnet web ${request.url}`),
+  );
   await Promise.all([
     new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve)),
     new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve)),
@@ -105,6 +107,7 @@ beforeAll(async () => {
       pass.computerId === "computer1" && botId === "helper"
         ? { kind: "member", member: { userId: "alice", spaceId: "home", botId, botName: "Helper" } }
         : undefined,
+    allowed: async () => true,
     authorize: async () => refuse ?? true,
     dial: async (_run, destination) => {
       const local = services.get(tailnetDestinationKey(destination));
@@ -266,15 +269,17 @@ describe("rakazo-net's proxy for a computer's browsers", () => {
     ].join("\n");
     const child = spawn("python3", ["-c", serve], { env: { PATH: process.env.PATH } });
     children.push(child);
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const ready = await new Promise<boolean>((resolve) => {
+    await vi.waitFor(
+      async () => {
         const probe = connect(proxyPort, "127.0.0.1");
-        probe.once("connect", () => resolve(true)).once("error", () => resolve(false));
-        probe.once("connect", () => probe.destroy());
-      });
-      if (ready) break;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+        try {
+          await once(probe, "connect");
+        } finally {
+          probe.destroy();
+        }
+      },
+      { timeout: 5_000, interval: 50 },
+    );
     /** One HTTP request to the proxy, as a browser sends it, and the whole reply. */
     const request = async (head: string, body = "") => {
       const socket = connect(proxyPort, "127.0.0.1");

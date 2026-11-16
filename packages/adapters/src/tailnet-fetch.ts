@@ -5,10 +5,10 @@ import type { TLSSocket } from "node:tls";
 import { connect as tlsConnect } from "node:tls";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
-import { isTailnetAddress, isTailnetHost } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import type { SafeRemoteFetch } from "./remote-mcp.js";
+import { isTailnetAddress, isTailnetHost } from "./tailnet-host.js";
 import { dispatcherFetch } from "./undici-fetch.js";
 
 /** Dials one TCP connection from a bot's tailnet node; bound to that bot and its run's member. */
@@ -24,6 +24,23 @@ const KEEP_ALIVE_MS = 10_000;
 export function isTailnetUrl(url: URL): boolean {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   return isTailnetHost(host) || isTailnetAddress(host);
+}
+
+/** A tailnet endpoint, or undefined for any other address. Plain HTTP is carried by the tailnet. */
+export function tailnetEndpoint(value: string): URL | undefined {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (!isTailnetUrl(url)) return undefined;
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Connector URL must use HTTP or HTTPS");
+  }
+  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
+  if (url.hash) throw new Error("Connector URL must not contain a fragment");
+  return url;
 }
 
 /**

@@ -12,7 +12,7 @@ import {
   TAILNET_CONNECT_TOOL,
 } from "@rakazo/core";
 import { availableInSpace, parseComputerMode } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
 import { backgroundHelpersAllowed } from "./background-helpers.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin.tool-definition.js";
@@ -674,9 +674,15 @@ export async function selectRunTools(
   const tailnetOffered = Boolean(
     deps.tailnet &&
       !disabledBuiltinTools.has(TAILNET_CONNECT_TOOL) &&
-      (await deps.tailnet
-        .environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
-        .catch(() => undefined)),
+      (await bestEffort(
+        "check whether a run may reach its member's tailnet",
+        deps.tailnet.environment({
+          runId,
+          userId: run.userId,
+          spaceId: run.spaceId,
+          botId: bot.id,
+        }),
+      )),
   );
   const builtins = [
     ...selectBuiltinToolsForRun({

@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { isTailnetHost, normalizeHost } from "./network-host.js";
+import { normalizeHost } from "./network-host.js";
 
 export { TAILNET_CONNECT_PATH } from "./tailnet-path.js";
 
@@ -43,15 +43,18 @@ export function tailnetDestinationKey(destination: TailnetDestination): string {
   return `${host}:${destination.port}`;
 }
 
-/** A normalized tailnet destination, or undefined when the host or port is not one. */
-export function parseTailnetDestination(
+/**
+ * A normalized host (a name or an IP literal) and TCP port, or undefined when either is not one.
+ * Which hosts a tailnet serves is its provider's to say; the adapter checks that before dialing.
+ */
+export function parseNetworkDestination(
   host: string,
   port: number | string,
 ): TailnetDestination | undefined {
   const normalized = normalizeHost(host);
   const portNumber = typeof port === "number" ? port : /^\d{1,5}$/.test(port) ? Number(port) : NaN;
   if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return undefined;
-  if (!isTailnetHost(normalized)) return undefined;
+  if (!/^[a-z0-9.:-]+$/.test(normalized)) return undefined;
   return { host: normalized, port: portNumber };
 }
 
@@ -64,9 +67,10 @@ export function tailnetNodeHostname(bot: { name: string; id: string }): string {
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    // Runs are single hyphens by now, so one at each end is all there can be.
+    .replace(/^-|-$/g, "")
     .slice(0, 40)
-    .replace(/-+$/, "");
+    .replace(/-$/, "");
   const suffix = bot.id
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")

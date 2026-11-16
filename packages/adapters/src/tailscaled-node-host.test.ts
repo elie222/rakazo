@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TailscaledNodeHost } from "./tailscaled-node-host.js";
 
 /** Stands in for tailscaled: a control socket for the CLI and a SOCKS5 proxy to `services`. */
@@ -114,14 +114,6 @@ async function events(): Promise<Event[]> {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Event);
-}
-
-async function until(check: () => Promise<boolean>): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("condition not met");
 }
 
 function signal(): AbortSignal {
@@ -246,8 +238,17 @@ describe("TailscaledNodeHost", () => {
     await host.start(NODE, signal());
     const pid = (await events())[0]?.pid;
     process.kill(pid ?? 0, "SIGKILL");
-    await until(async () => !(await host.running(NODE.nodeId)));
-    await until(async () => (await readdir(runDir)).length === 0);
+    await vi.waitFor(async () => expect(await host.running(NODE.nodeId)).toBe(false));
+    await vi.waitFor(async () => expect(await readdir(runDir)).toEqual([]));
+  });
+
+  it("stops a node still joining, which then never joins", async () => {
+    const starting = host.start(NODE, signal()).catch((caught: unknown) => caught);
+    await host.stop(NODE.nodeId, signal());
+    expect(await starting).toBeInstanceOf(Error);
+    expect(await host.running(NODE.nodeId)).toBe(false);
+    expect((await events()).map((entry) => entry.event)).not.toContain("up");
+    expect(await readdir(runDir)).toEqual([]);
   });
 
   it("reports a missing tailscaled", async () => {

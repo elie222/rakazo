@@ -4,12 +4,7 @@ import type { Duplex } from "node:stream";
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
-import {
-  isLoopbackHost,
-  parseTailnetDestination,
-  TAILNET_CONNECT_PATH,
-  tailnetDestinationKey,
-} from "@rakazo/contracts";
+import { isLoopbackHost, TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { siteAlwaysAllowed, TAILNET_CONNECT_TOOL } from "@rakazo/core";
 import { requestSite } from "@rakazo/core/egress";
@@ -19,6 +14,7 @@ import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { tailnetHelper } from "./page-browser-install.js";
 import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { parseTailnetDestination } from "./tailnet-host.js";
 import type { TailnetRun } from "./tailnet-service.js";
 
 const TOKEN_PREFIX = "rtn1";
@@ -150,6 +146,8 @@ export type TailnetTunnelDeps = {
   activeRun: (claims: TailnetTunnelClaims) => Promise<Omit<TailnetTunnelRun, "runId"> | undefined>;
   /** Who is using this bot's screen on the pass's computer right now, if anyone may. */
   screen?: (pass: ComputerTailnetPass, botId: string) => Promise<TailnetPrincipal | undefined>;
+  /** Whether the member still lets this bot onto their tailnet; open tunnels close once not. */
+  allowed: (identity: TailnetRun) => Promise<boolean>;
   /** Whether this run may reach this destination now. A string refuses with that reason. */
   authorize: (
     run: TailnetRun & { runId: string },
@@ -166,10 +164,15 @@ export type TailnetTunnelDeps = {
   recheckMs?: number;
 };
 
+type Tunnel = { destination: TailnetDestination; close(): void };
+
 type TunnelGroup = {
-  tunnels: Set<{ close(): void }>;
+  tunnels: Set<Tunnel>;
   timer?: ReturnType<typeof setInterval>;
 };
+
+/** Who opened a tunnel, and how to tell later that they still may. */
+type Opened = { principal: TailnetPrincipal; current: () => Promise<boolean> };
 
 /**
  * Serves tunnel upgrades from bots' computers. Before upgrading it checks the token, that its run
@@ -180,6 +183,8 @@ export class TailnetTunnelGateway {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   /** Open tunnels by who opened them, with the check that closes them once that ends. */
   private readonly open = new Map<string, TunnelGroup>();
+  /** Tunnels still being checked and dialed, which count toward the limit already. */
+  private readonly opening = new Map<string, number>();
   private closed = false;
 
   constructor(private readonly deps: TailnetTunnelDeps) {}
@@ -218,10 +223,7 @@ export class TailnetTunnelGateway {
   }
 
   /** Who opens this tunnel, and how to tell later that they still may. */
-  private async principal(
-    request: IncomingMessage,
-    url: URL,
-  ): Promise<{ principal: TailnetPrincipal; current: () => Promise<boolean> } | undefined> {
+  private async principal(request: IncomingMessage, url: URL): Promise<Opened | undefined> {
     const now = this.deps.now ?? Date.now;
     const token = /^Bearer (\S+)$/.exec(request.headers.authorization ?? "")?.[1] ?? "";
     const pass = openComputerTailnetPass(token, this.deps.key);
@@ -294,12 +296,36 @@ export class TailnetTunnelGateway {
       });
     };
     const key = groupKey(principal);
+    const opening = this.opening.get(key) ?? 0;
     if (
-      (this.open.get(key)?.tunnels.size ?? 0) >= (this.deps.maxPerRun ?? TAILNET_TUNNELS_PER_RUN)
+      (this.open.get(key)?.tunnels.size ?? 0) + opening >=
+      (this.deps.maxPerRun ?? TAILNET_TUNNELS_PER_RUN)
     ) {
       record("refused", { reason: "Too many open tailnet connections." });
       return refuse(socket, 429, "Too many open tailnet connections. Close some and retry.");
     }
+    // The slot is held while this tunnel is checked and dialed, so ones opened together count.
+    this.opening.set(key, opening + 1);
+    try {
+      await this.connect({ request, socket, head, opened, destination, key, record });
+    } finally {
+      const left = (this.opening.get(key) ?? 1) - 1;
+      if (left > 0) this.opening.set(key, left);
+      else this.opening.delete(key);
+    }
+  }
+
+  private async connect(input: {
+    request: IncomingMessage;
+    socket: Duplex;
+    head: Buffer;
+    opened: Opened;
+    destination: TailnetDestination;
+    key: string;
+    record: (outcome: TailnetTunnelRecord["outcome"], extra?: Partial<TailnetTunnelRecord>) => void;
+  }): Promise<void> {
+    const { request, socket, head, opened, destination, key, record } = input;
+    const { principal } = opened;
     // A member browsing for themselves needs no approval; a bot's run needs its own.
     const allowed =
       principal.kind === "run" ? await this.deps.authorize(principal.run, destination) : true;
@@ -331,9 +357,10 @@ export class TailnetTunnelGateway {
       upstream.destroy();
       return;
     }
+    // Upgrading completes in this call, so the tunnel joins its group before the slot is freed.
     this.wss.handleUpgrade(request, socket, head, (ws) => {
-      const tunnel = { close: () => ws.terminate() };
-      const group = this.join(key, opened.current);
+      const tunnel: Tunnel = { destination, close: () => ws.terminate() };
+      const group = this.join(key, opened);
       group.tunnels.add(tunnel);
       let bytesSent = 0;
       let bytesReceived = 0;
@@ -382,7 +409,7 @@ export class TailnetTunnelGateway {
   }
 
   /** The group for this principal, checking every few seconds that it still may tunnel. */
-  private join(key: string, current: () => Promise<boolean>): TunnelGroup {
+  private join(key: string, opened: Opened): TunnelGroup {
     let group = this.open.get(key);
     if (group) return group;
     const created: TunnelGroup = { tunnels: new Set() };
@@ -390,10 +417,7 @@ export class TailnetTunnelGateway {
     created.timer = setInterval(() => {
       if (checking) return;
       checking = true;
-      void current()
-        .then((still) => {
-          if (!still) this.closeGroup(key);
-        })
+      void this.recheck(key, created, opened)
         .catch((error: unknown) =>
           getLogger().warn("tailnet tunnel recheck failed", {
             error: error instanceof Error ? error.message : String(error),
@@ -409,7 +433,30 @@ export class TailnetTunnelGateway {
     return group;
   }
 
-  private leave(key: string, group: TunnelGroup, tunnel: { close(): void }): void {
+  /**
+   * Close what may no longer stay open: every tunnel once whoever opened them can't, or the
+   * member stops letting the bot on; a run's tunnel once its destination is no longer approved.
+   */
+  private async recheck(key: string, group: TunnelGroup, opened: Opened): Promise<void> {
+    const { principal } = opened;
+    const identity = principal.kind === "run" ? principal.run : principal.member;
+    if (!(await opened.current()) || !(await this.deps.allowed(identity))) {
+      return this.closeGroup(key);
+    }
+    if (principal.kind !== "run") return;
+    const verdicts = new Map<string, Promise<true | string>>();
+    for (const tunnel of [...group.tunnels]) {
+      const site = tailnetDestinationKey(tunnel.destination);
+      let verdict = verdicts.get(site);
+      if (!verdict) {
+        verdict = this.deps.authorize(principal.run, tunnel.destination);
+        verdicts.set(site, verdict);
+      }
+      if ((await verdict) !== true) tunnel.close();
+    }
+  }
+
+  private leave(key: string, group: TunnelGroup, tunnel: Tunnel): void {
     group.tunnels.delete(tunnel);
     if (group.tunnels.size > 0 || this.open.get(key) !== group) return;
     clearInterval(group.timer);

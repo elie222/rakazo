@@ -9,6 +9,8 @@ import type { Readable } from "node:stream";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
 import { tailnetDestinationKey } from "@rakazo/contracts";
+import { abortableDelay, anySignal, deadlineSignal, pollUntil } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import { Socks5Error, socks5Connect } from "./socks5-client.js";
 import type { TailnetNodeHost } from "./tailscale-network.js";
 
@@ -47,6 +49,8 @@ type RunningNode = {
  */
 export class TailscaledNodeHost implements TailnetNodeHost {
   private readonly nodes = new Map<string, RunningNode>();
+  /** Starts in progress, so a stop that arrives first cancels them instead of missing them. */
+  private readonly starting = new Map<string, { cancel: AbortController; done: Promise<void> }>();
 
   constructor(private readonly options: TailscaledNodeHostOptions) {}
 
@@ -55,6 +59,23 @@ export class TailscaledNodeHost implements TailnetNodeHost {
     signal: AbortSignal,
   ): Promise<void> {
     if (this.nodes.has(node.nodeId)) return;
+    const pending = this.starting.get(node.nodeId);
+    if (pending) return await pending.done;
+    const cancel = new AbortController();
+    const done = this.launch(node, anySignal([signal, cancel.signal]));
+    const entry = { cancel, done };
+    this.starting.set(node.nodeId, entry);
+    try {
+      await done;
+    } finally {
+      if (this.starting.get(node.nodeId) === entry) this.starting.delete(node.nodeId);
+    }
+  }
+
+  private async launch(
+    node: { nodeId: string; hostname: string; authKey: string },
+    signal: AbortSignal,
+  ): Promise<void> {
     const timeoutMs = this.options.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
     const deadline = Date.now() + timeoutMs;
     // A fresh directory per start, so cleanup after an old process never touches a new one.
@@ -63,6 +84,10 @@ export class TailscaledNodeHost implements TailnetNodeHost {
     await mkdir(dir, { mode: 0o700 });
     const socketPath = join(dir, "tailscaled.sock");
     const proxyPort = await freeLoopbackPort();
+    if (signal.aborted) {
+      await rm(dir, { recursive: true, force: true });
+      signal.throwIfAborted();
+    }
     const child = spawn(
       this.options.tailscaled,
       [
@@ -86,7 +111,10 @@ export class TailscaledNodeHost implements TailnetNodeHost {
     // A node that crashes or is killed outside stop() leaves nothing behind.
     void exited.then(async () => {
       this.cleanUp(node.nodeId, running);
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      await bestEffort(
+        "remove a stopped tailnet node's directory",
+        rm(dir, { recursive: true, force: true }),
+      );
     });
     try {
       await waitForSocket(socketPath, deadline, signal, exited, diagnostics);
@@ -110,6 +138,8 @@ export class TailscaledNodeHost implements TailnetNodeHost {
       } finally {
         await rm(keyFile, { force: true });
       }
+      // Stopped while joining: the device must not stay on the tailnet untracked.
+      signal.throwIfAborted();
     } catch (error) {
       await this.terminate(node.nodeId, running);
       if (signal.aborted) throw error;
@@ -151,10 +181,22 @@ export class TailscaledNodeHost implements TailnetNodeHost {
   }
 
   async stop(nodeId: string, signal: AbortSignal): Promise<void> {
+    const pending = this.starting.get(nodeId);
+    if (pending) {
+      pending.cancel.abort(new Error("The tailnet node was stopped while it was joining."));
+      // Its own failure is reported to whoever started it.
+      await pending.done.then(
+        () => undefined,
+        () => undefined,
+      );
+    }
     const node = this.nodes.get(nodeId);
     if (!node) return;
     // Logging out deletes the ephemeral node now, instead of when Tailscale notices it is gone.
-    await this.cli(node.socketPath, ["logout"], LOGOUT_TIMEOUT_MS, signal).catch(() => {});
+    await bestEffort(
+      "log a tailnet node out",
+      this.cli(node.socketPath, ["logout"], LOGOUT_TIMEOUT_MS, signal),
+    );
     await this.terminate(nodeId, node);
   }
 
@@ -168,10 +210,12 @@ export class TailscaledNodeHost implements TailnetNodeHost {
     this.cleanUp(nodeId, node);
     if (node.child.exitCode === null && node.child.signalCode === null) {
       node.child.kill("SIGTERM");
+      const exitedInTime = new AbortController();
       const killed = await Promise.race([
         node.exited.then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), KILL_GRACE_MS).unref()),
+        abortableDelay(KILL_GRACE_MS, exitedInTime.signal).then(() => false),
       ]);
+      exitedInTime.abort();
       if (!killed) node.child.kill("SIGKILL");
     }
     await node.exited;
@@ -194,7 +238,7 @@ export class TailscaledNodeHost implements TailnetNodeHost {
       const child = spawn(this.options.tailscale, [`--socket=${socketPath}`, ...args], {
         env: nodeEnvironment(undefined),
         stdio: ["ignore", "ignore", "pipe"],
-        signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, timeoutMs))]),
+        signal: deadlineSignal(Math.max(1, timeoutMs), signal),
       });
       const diagnostics = collect(child.stderr);
       child.once("error", (error) =>
@@ -245,20 +289,24 @@ async function waitForSocket(
   void exited.then(() => {
     done = true;
   });
-  while (Date.now() < deadline) {
-    signal.throwIfAborted();
-    if (done) throw new Error(diagnostics() || "tailscaled stopped while starting.");
-    if (
-      await stat(path).then(
+  signal.throwIfAborted();
+  await pollUntil(
+    async () => {
+      if (done) throw new Error(diagnostics() || "tailscaled stopped while starting.");
+      return await stat(path).then(
         () => true,
         () => false,
-      )
-    ) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, SOCKET_POLL_MS));
-  }
-  throw new Error("tailscaled did not start in time.");
+      );
+    },
+    {
+      intervalMs: SOCKET_POLL_MS,
+      timeoutMs: Math.max(0, deadline - Date.now()),
+      signal,
+      onTimeout: () => {
+        throw new Error("tailscaled did not start in time.");
+      },
+    },
+  );
 }
 
 /** The last lines a process wrote to stderr, for a short reason when it fails. */

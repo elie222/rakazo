@@ -52,7 +52,11 @@ function fetchOver(route: TailnetRoute) {
 describe("createTailnetFetch", () => {
   it("reaches a tailnet host over HTTP through the bot's node", async () => {
     const port = await listen(
-      createServer((request, response) => response.end(`${request.headers.host} ${request.url}`)),
+      createServer((request, response) =>
+        response
+          .writeHead(200, { "content-type": "text/plain" })
+          .end(`${request.headers.host} ${request.url}`),
+      ),
     );
     const { route, dials } = nodeTo(port);
     const tailnetFetch = fetchOver(route);
@@ -85,7 +89,7 @@ describe("createTailnetFetch", () => {
     expect(dials).toEqual([{ host: "nas.tail1234.ts.net", port: 443 }]);
     // A TLS handshake record whose ClientHello carries the name for SNI.
     expect(hello?.[0]).toBe(0x16);
-    expect(hello?.includes("nas.tail1234.ts.net")).toBe(true);
+    expect(hello?.toString("latin1")).toContain("nas.tail1234.ts.net");
   });
 
   it("says why the tailnet refused", async () => {

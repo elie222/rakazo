@@ -18,8 +18,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 import { PanelSection } from "./bot-settings-sections";
 
@@ -31,29 +30,32 @@ export function TailnetGroup({ botId }: { botId: string }) {
   const { t } = useLingui();
   const ids = useId();
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const statusOptions = queries.tailnet.status.queryOptions();
   const status = useQuery(statusOptions).data;
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // Each save answers with the status after it, which shows at once.
+  const saved = (next: TailnetStatus) =>
+    writeSaved(queryClient, statusOptions.queryKey, () => next);
   const [connecting, setConnecting] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const access = useSave({
+    save: (enabled: boolean, client) => client.tailnet.setBotAccess({ botId, enabled }),
+    onSaved: saved,
+  });
+  const disconnect = useSave<void, TailnetStatus>({
+    save: (_input, client) => client.tailnet.disconnect(),
+    onSaved: async (next) => {
+      await saved(next);
+      setConfirmingDisconnect(false);
+    },
+    onFailed: () => setConfirmingDisconnect(false),
+  });
 
   if (!status || status.unavailable) return null;
   const connection = status.connection;
-
-  async function act(action: () => Promise<TailnetStatus>) {
-    setPending(true);
-    setError(null);
-    try {
-      const next = await action();
-      await writeSaved(queryClient, statusOptions.queryKey, () => next);
-    } catch (reason) {
-      setError(errorText(reason, t`Couldn't update tailnet access`));
-    } finally {
-      setPending(false);
-    }
-  }
+  const pending = access.pending || disconnect.pending;
+  const failed = access.error ?? disconnect.error;
+  const error = failed ? errorText(failed, t`Couldn't update tailnet access`) : null;
 
   return (
     <PanelSection label={t`Tailnet`}>
@@ -67,9 +69,7 @@ export function TailnetGroup({ botId }: { botId: string }) {
               id={`${ids}-tailnet`}
               checked={connection.botIds.includes(botId)}
               disabled={pending}
-              onCheckedChange={(enabled) =>
-                void act(() => rpc.tailnet.setBotAccess({ botId, enabled }))
-              }
+              onCheckedChange={(enabled) => access.run(enabled)}
             />
           </div>
           <Button
@@ -96,7 +96,7 @@ export function TailnetGroup({ botId }: { botId: string }) {
         open={connecting}
         onOpenChange={setConnecting}
         onConnected={async (next) => {
-          await writeSaved(queryClient, statusOptions.queryKey, () => next);
+          await saved(next);
           setConnecting(false);
         }}
       />
@@ -104,10 +104,8 @@ export function TailnetGroup({ botId }: { botId: string }) {
         <ConfirmDialog
           onCancel={() => setConfirmingDisconnect(false)}
           title={t`Disconnect tailnet?`}
-          busy={pending}
-          onConfirm={() =>
-            void act(() => rpc.tailnet.disconnect()).finally(() => setConfirmingDisconnect(false))
-          }
+          busy={disconnect.pending}
+          onConfirm={() => disconnect.run()}
           confirmLabel={<Trans>Disconnect</Trans>}
         />
       ) : null}
@@ -130,33 +128,31 @@ function ConnectTailnetDialog({
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [tag, setTag] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useSave({
+    save: (input: { clientId: string; clientSecret: string; tag?: string }, client) =>
+      client.tailnet.connect(input),
+    onSaved: async (next) => {
+      reset();
+      await onConnected(next);
+    },
+  });
+  const saving = save.pending;
+  const error = save.error ? errorText(save.error, t`Couldn't connect tailnet`) : null;
 
   function reset() {
     setClientId("");
     setClientSecret("");
     setTag("");
-    setError(null);
+    save.reset();
   }
 
-  async function connect() {
-    if (saving || !clientId.trim() || !clientSecret.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const next = await rpc.tailnet.connect({
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        ...(tag.trim() ? { tag: tag.trim() } : {}),
-      });
-      reset();
-      await onConnected(next);
-    } catch (reason) {
-      setError(errorText(reason, t`Couldn't connect tailnet`));
-    } finally {
-      setSaving(false);
-    }
+  function connect() {
+    if (!clientId.trim() || !clientSecret.trim()) return;
+    save.run({
+      clientId: clientId.trim(),
+      clientSecret: clientSecret.trim(),
+      ...(tag.trim() ? { tag: tag.trim() } : {}),
+    });
   }
 
   return (
@@ -178,7 +174,7 @@ function ConnectTailnetDialog({
           className="contents"
           onSubmit={(event) => {
             event.preventDefault();
-            void connect();
+            connect();
           }}
         >
           <Field>

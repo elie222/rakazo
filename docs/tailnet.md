@@ -96,7 +96,8 @@ must be on your tailnet too.
 
 Each bot appears as its own device, named after the bot, such as `rakazo-home-lab-helper-abc123`,
 with your tag. Devices are ephemeral: a bot's device joins when the bot first connects, and leaves
-after ten idle minutes, when you turn the bot's access off, or when you disconnect Tailscale.
+after ten minutes with no open connection, when you turn the bot's access off, or when you
+disconnect Tailscale.
 
 On a Premium or Enterprise plan, when the OAuth client may write device posture attributes, every
 device also carries `custom:rakazoSpace`, `custom:rakazoBot` and `custom:rakazoUser`, which grants
@@ -120,4 +121,5 @@ server from Docker computers isn't supported yet.
 
 The API runs devices for the tunnels it receives, and the API and worker each run devices for the
 MCP servers their runs call, so a bot can have a device on each. Every process checks its devices'
-access each minute, and takes off any whose bot was turned off elsewhere.
+access each minute, and takes off any whose bot was turned off elsewhere. Open tunnels check every
+few seconds, and close once the bot's access is off or their destination is no longer approved.

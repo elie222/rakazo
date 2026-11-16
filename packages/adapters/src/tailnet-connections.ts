@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
+import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig } from "@rakazo/contracts";
 import { TailnetConnectionConfigSchema } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
@@ -44,7 +46,12 @@ export async function saveTailnetConnection(input: {
 }): Promise<TailnetConnectionView> {
   const { prisma, secretStore, scope } = input;
   const config = TailnetConnectionConfigSchema.parse(input.config);
-  await input.verify(config);
+  await input.verify(config).catch((error: unknown) => {
+    if (error instanceof PrivateNetworkError) {
+      throw new TailnetConnectionRefusedError(error.message, { cause: error });
+    }
+    throw error;
+  });
   const where = { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } };
   const existing = await prisma.tailnetConnection.findUnique({ where, select: { id: true } });
   const id = existing?.id ?? randomBytes(12).toString("hex");
@@ -87,41 +94,66 @@ export async function removeTailnetConnection(input: {
   return count > 0;
 }
 
+/** The tailnet refused the client, or couldn't be reached to check it. */
+export class TailnetConnectionRefusedError extends ClientError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("BAD_REQUEST", message, "BAD_REQUEST", options);
+    this.name = "TailnetConnectionRefusedError";
+  }
+}
+
 /** The bot is not one of this Space's. */
-export class TailnetBotNotFoundError extends Error {
+export class TailnetBotNotFoundError extends ClientError {
   constructor() {
-    super("Bot not found in this space.");
+    super("NOT_FOUND", "Bot not found in this space.");
     this.name = "TailnetBotNotFoundError";
   }
 }
 
 /** Let a bot of this Space onto this member's tailnet, or take it off. Null when not connected. */
 export async function setTailnetBotAccess(input: {
-  prisma: TailnetPrisma & Pick<PrismaClient, "bot">;
+  prisma: Pick<PrismaClient, "$transaction">;
   scope: TailnetScope;
   botId: string;
   enabled: boolean;
 }): Promise<TailnetConnectionView | null> {
-  const where = { spaceId_userId: { spaceId: input.scope.spaceId, userId: input.scope.userId } };
-  const current = await input.prisma.tailnetConnection.findUnique({
-    where,
-    select: { id: true, botIds: true },
-  });
-  if (!current) return null;
-  if (input.enabled) {
-    const bot = await input.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: input.scope.spaceId },
-      select: { id: true },
+  const { scope, botId } = input;
+  // The row stays locked while its list changes, so two switches flipped at once both count.
+  return await input.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM tailnet_connections
+      WHERE "spaceId" = ${scope.spaceId} AND "userId" = ${scope.userId} FOR UPDATE`;
+    const current = await tx.tailnetConnection.findUnique({
+      where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
+      select: { id: true, botIds: true },
     });
-    if (!bot) throw new TailnetBotNotFoundError();
-  }
-  const others = current.botIds.filter((id) => id !== input.botId);
-  // By id, as in saveTailnetConnection.
-  return await input.prisma.tailnetConnection.update({
-    where: { id: current.id },
-    data: { botIds: input.enabled ? [...others, input.botId] : others },
-    select: { tag: true, botIds: true },
+    if (!current) return null;
+    if (input.enabled) {
+      const bot = await tx.bot.findFirst({
+        where: { id: botId, spaceId: scope.spaceId },
+        select: { id: true },
+      });
+      if (!bot) throw new TailnetBotNotFoundError();
+    }
+    const others = current.botIds.filter((id) => id !== botId);
+    // By id, as in saveTailnetConnection.
+    return await tx.tailnetConnection.update({
+      where: { id: current.id },
+      data: { botIds: input.enabled ? [...others, botId] : others },
+      select: { tag: true, botIds: true },
+    });
   });
+}
+
+/** Whether this member still lets the bot onto their tailnet, without opening the client. */
+export async function tailnetBotAllowed(
+  prisma: TailnetPrisma,
+  run: { userId: string; spaceId: string; botId: string },
+): Promise<boolean> {
+  const row = await prisma.tailnetConnection.findUnique({
+    where: { spaceId_userId: { spaceId: run.spaceId, userId: run.userId } },
+    select: { botIds: true },
+  });
+  return Boolean(row?.botIds.includes(run.botId));
 }
 
 /**

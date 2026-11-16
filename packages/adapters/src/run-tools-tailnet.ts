@@ -1,14 +1,14 @@
 import { TAILNET_CONNECT_TOOL } from "@rakazo/core";
-import { requestSite } from "@rakazo/core/egress";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { tailnetConnectSite } from "./tailnet-host.js";
 
 /**
  * Past the gate, the destination is allowed for this run (or always, by a rule): the tunnel
  * gateway checks the same approval when a command connects. Nothing connects here.
  */
 async function tailnetConnect(_ctx: RunContext, call: ToolCall) {
-  const destination = requestSite(TAILNET_CONNECT_TOOL, call.args);
+  const destination = tailnetConnectSite(call.args);
   if (!destination) return call.finish({ error: "host and port must name a tailnet destination" });
   return call.finish({
     allowed: destination,

@@ -22,7 +22,7 @@ import { getLogger } from "@rakazo/logging";
  */
 export function createTailnetTunnel(deps: {
   prisma: Pick<PrismaClient, "run" | "computer" | "bot" | "computerExecutionLease">;
-  tailnet: Pick<TailnetService, "dial">;
+  tailnet: Pick<TailnetService, "dial" | "allows">;
   events: Pick<ThreadEvents, "append">;
   encryptionKey: string;
   authorize: TailnetTunnelDeps["authorize"];
@@ -31,6 +31,7 @@ export function createTailnetTunnel(deps: {
     key: tailnetTunnelKey(deps.encryptionKey),
     activeRun: (claims) => activeTailnetRun(deps.prisma, claims),
     screen: (pass, botId) => activeTailnetScreen(deps.prisma, pass, botId),
+    allowed: (run) => deps.tailnet.allows(run),
     authorize: deps.authorize,
     dial: (run, destination, context) =>
       runAsTenant({ spaceId: run.spaceId, userId: run.userId }, () =>
