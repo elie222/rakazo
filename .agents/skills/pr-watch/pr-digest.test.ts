@@ -47,7 +47,13 @@ else if (args[0] === "pr" && args[1] === "view") {
   else if (endpoint.includes("/actions/runs?")) {
     const polls = fixture.workflows ?? [[]];
     const count = readFileSync(process.env.POLLS, "utf8").length;
-    for (const run of polls[Math.min(count, polls.length) - 1]) print(run);
+    const jq = args[args.indexOf("--jq") + 1];
+    const runs = polls[Math.min(count, polls.length) - 1].map((run) => ({ event: "pull_request", ...run }));
+    const input = JSON.stringify({ workflow_runs: runs });
+    const result = require("node:child_process").spawnSync("jq", ["-c", jq], { input, encoding: "utf8" });
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    process.exit(result.status);
   }
   else if (endpoint.includes("/issues/")) print(fixture.conversation ?? []);
   else if (endpoint.includes("/reviews?")) print(fixture.reviews ?? []);
@@ -453,6 +459,15 @@ describe("pr-digest", () => {
       const result = runDigest({ check: passed, workflows: [[workflow]] });
       expect(result.status).toBe(12);
       expect(result.stdout).toContain("checks 1 success · 1 workflow queued");
+    });
+
+    it("ignores a manually dispatched workflow on the same commit", () => {
+      const result = runDigest({
+        check: passed,
+        workflows: [[{ ...workflow, event: "workflow_dispatch" }]],
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("workflow queued");
     });
 
     it("fails on a workflow that ended without a failed job of its own", () => {
