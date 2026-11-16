@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotEmailAddress, BotEmailAddresses } from "@rakazo/contracts";
 import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
@@ -92,6 +93,7 @@ export function useBotEmailRows({
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  useTimeout(() => setCopied(false), copied ? 1500 : null);
   const domain = email.address?.domain;
   const address = email.address?.address ?? null;
 
@@ -138,7 +140,6 @@ export function useBotEmailRows({
         onPress={() =>
           void Clipboard.setStringAsync(address).then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
           })
         }
       />,
@@ -186,6 +187,7 @@ export function BotEmailAddressesGroup() {
   const { t } = useLingui();
   const [email, setEmail] = useState<BotEmailAddresses>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  useTimeout(() => setCopied(null), copied ? 1500 : null);
   // Read on each visit, so an address claimed elsewhere meanwhile shows up.
   useFocusEffect(
     useCallback(() => {
@@ -224,7 +226,6 @@ export function BotEmailAddressesGroup() {
           onPress={() =>
             void Clipboard.setStringAsync(row.address).then(() => {
               setCopied(row.address);
-              setTimeout(() => setCopied(null), 1500);
             })
           }
         />

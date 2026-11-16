@@ -5,6 +5,7 @@ import { BotAvatar, Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-w
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 import { errorText } from "../lib/user-error";
 import { DeleteItemDialog } from "./shell/dialogs";
 
@@ -270,22 +271,17 @@ export function GroupSettings({
   // Closing while a save is in flight would let its completion close the panel
   // again after a reopen. While the delete confirmation or an overlay is open,
   // Escape belongs to it.
-  useEffect(() => {
-    if (saving || confirmingDelete || covered) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !event.defaultPrevented &&
-        !event.isComposing &&
-        event.keyCode !== 229
-      ) {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [saving, confirmingDelete, covered, onClose]);
+  useEventListener(saving || confirmingDelete || covered ? null : window, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
+      onClose();
+    }
+  });
 
   async function save() {
     if (saving) return;
