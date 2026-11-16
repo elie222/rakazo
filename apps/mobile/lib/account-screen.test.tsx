@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import * as SecureStore from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -26,7 +27,9 @@ import type * as ApiServer from "./api-server";
 import { replaceWithSignIn } from "./auth-routing";
 import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
+import { queryClient } from "./query";
 import type * as Session from "./session";
+import { currentSessionGeneration } from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
 import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
@@ -170,16 +173,18 @@ vi.mock("../components/native-segmented-control", () => ({
     accessibilityLabel,
     value,
     options,
+    disabled = false,
     onChange,
   }: {
     accessibilityLabel: string;
     value: string;
     options: { value: string; label: string }[];
+    disabled?: boolean;
     onChange: (value: string) => void;
   }) =>
     createElement(
       "div",
-      { "aria-label": accessibilityLabel },
+      { "aria-label": accessibilityLabel, "data-disabled": String(disabled) },
       options.map((option) =>
         createElement(
           "button",
@@ -273,7 +278,13 @@ vi.mock("./api", async (importOriginal) => ({
                 : {},
   ),
   selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+    apiBase: "http://127.0.0.1:3100",
+    sessionGeneration: currentSessionGeneration(),
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./api-auth", () => ({
   deleteAccount: vi.fn(),
   fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
@@ -395,8 +406,12 @@ function security(overrides: Partial<AccountSecurity> = {}): AccountSecurity {
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 beforeEach(() => {
   vi.clearAllMocks();
+  queryClient.clear();
   account.me = {
     userId: "user-1",
     name: "Tester",
@@ -440,17 +455,62 @@ it("keeps bot style visible when the account has no saved style", async () => {
   expect(container.textContent).not.toContain("Organic");
 });
 
+/** Answers one preference save when the test says so; the account read sees it only then. */
+function holdPreferenceSave() {
+  const saving = deferred<unknown>();
+  const reads = () => vi.mocked(rpc).mock.calls.filter(([method]) => method === "me").length;
+  vi.mocked(rpc).mockImplementationOnce(async () => saving.promise as never);
+  return { saving, reads };
+}
+
+function botStyleButton(screen: HTMLElement, label: string) {
+  const picker = screen.querySelector('[aria-label="Bot style"]')!;
+  return Array.from(picker.querySelectorAll("button")).find((node) => node.textContent === label)!;
+}
+
 it("saves an Original choice even when the saved style is absent", async () => {
   const { screen } = await renderAccount(General);
-  const picker = screen.querySelector('[aria-label="Bot style"]')!;
-  const original = Array.from(picker.querySelectorAll("button")).find(
-    (node) => node.textContent === "Original",
-  )!;
-  expect(original.getAttribute("aria-pressed")).toBe("false");
-  vi.mocked(rpc).mockResolvedValueOnce({ ...account.me, botAvatarSet: "organic" } as never);
-  await act(async () => original.click());
-  expect(original.getAttribute("aria-pressed")).toBe("true");
-  expect(rpc).toHaveBeenCalledWith("preferences/update", { botAvatarSet: "organic" });
+  const original = () => botStyleButton(screen, "Original");
+  expect(original().getAttribute("aria-pressed")).toBe("false");
+  const { saving, reads } = holdPreferenceSave();
+  const before = reads();
+  await act(async () => original().click());
+  expect(rpc).toHaveBeenCalledWith(
+    "preferences/update",
+    { botAvatarSet: "organic" },
+    expect.anything(),
+  );
+  expect(original().getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.querySelector('[aria-label="Bot style"][data-disabled]')?.getAttribute("data-disabled"),
+  ).toBe("true");
+  account.me = { ...account.me, botAvatarSet: "organic" };
+  await act(async () => saving.resolve({}));
+  await act(flush);
+  expect(reads()).toBe(before + 1);
+  expect(original().getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.querySelector('[aria-label="Bot style"][data-disabled]')?.getAttribute("data-disabled"),
+  ).toBe("false");
+});
+
+it("puts the bot style back and releases it when the save fails", async () => {
+  account.me = { ...account.me, botAvatarSet: "rakazo" };
+  const { screen } = await renderAccount(General);
+  const { saving } = holdPreferenceSave();
+  await act(async () => botStyleButton(screen, "Original").click());
+  // A second choice while the first is saving is not sent.
+  await act(async () => botStyleButton(screen, "Rakazo").click());
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([method]) => method === "preferences/update"),
+  ).toHaveLength(1);
+  await act(async () => saving.reject(new Error("offline")));
+  await act(flush);
+  expect(Alert.alert).toHaveBeenCalledWith("Couldn't update bot style");
+  expect(botStyleButton(screen, "Rakazo").getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.querySelector('[aria-label="Bot style"][data-disabled]')?.getAttribute("data-disabled"),
+  ).toBe("false");
 });
 
 async function renderAccount(Screen: () => ReactNode = Account) {
@@ -879,6 +939,30 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   expect(titles).not.toContain("Messaging");
 });
 
+it("shows the spending limit only once its read says so, and leaves it out when the read fails", async () => {
+  const rows = (view: Awaited<ReturnType<typeof renderAccount>>) =>
+    Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  const fallback = vi.mocked(rpc).getMockImplementation()!;
+  vi.mocked(rpc).mockImplementation(async (...args) =>
+    args[0] === "spendingLimit/get" ? ({ shown: true, limit: null } as never) : fallback(...args),
+  );
+  const shown = await renderAccount();
+  await act(flush);
+  expect(rows(shown)).toContain("Spending limit");
+  act(() => root?.unmount());
+
+  queryClient.clear();
+  vi.mocked(rpc).mockImplementation(async (...args) => {
+    if (args[0] === "spendingLimit/get") throw new Error("offline");
+    return fallback(...args);
+  });
+  const failed = await renderAccount();
+  await act(flush);
+  expect(rows(failed)).not.toContain("Spending limit");
+  expect(rows(failed)).toContain("Skills");
+  vi.mocked(rpc).mockImplementation(fallback);
+});
+
 it("shows the Board shortcut only to accounts that turned it on in Labs", async () => {
   const titles = (view: Awaited<ReturnType<typeof renderAccount>>) =>
     Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
@@ -900,21 +984,40 @@ it("hides Labs when the server turns every feature on for everyone", async () =>
   expect(titles).toContain("Board");
 });
 
-it("saves a Labs switch at once and turns it back off when the save fails", async () => {
+it("holds a Labs switch while it saves, then reads the account again", async () => {
   account.me = { ...account.me, labs: [] };
   const view = await renderAccount(Labs);
-  const board = () => view.screen.querySelector('[role="switch"][aria-label="Board"]')!;
+  const board = () =>
+    view.screen.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Board"]')!;
   expect(board().getAttribute("aria-checked")).toBe("false");
 
-  vi.mocked(rpc).mockResolvedValueOnce({ ...account.me, labs: ["board"] } as never);
-  await act(async () => (board() as HTMLElement).click());
-  expect(rpc).toHaveBeenCalledWith("preferences/update", { labs: ["board"] });
+  const { saving, reads } = holdPreferenceSave();
+  const before = reads();
+  await act(async () => board().click());
+  expect(rpc).toHaveBeenCalledWith("preferences/update", { labs: ["board"] }, expect.anything());
   expect(board().getAttribute("aria-checked")).toBe("true");
+  expect(board().disabled).toBe(true);
+  account.me = { ...account.me, labs: ["board"] };
+  await act(async () => saving.resolve({}));
+  await act(flush);
+  expect(reads()).toBe(before + 1);
+  expect(board().getAttribute("aria-checked")).toBe("true");
+  expect(board().disabled).toBe(false);
+});
 
-  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => (board() as HTMLElement).click());
-  expect(rpc).toHaveBeenLastCalledWith("preferences/update", { labs: [] });
+it("turns a Labs switch back and releases it when the save fails", async () => {
+  account.me = { ...account.me, labs: ["board"] };
+  const view = await renderAccount(Labs);
+  const board = () =>
+    view.screen.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Board"]')!;
+  const { saving } = holdPreferenceSave();
+  await act(async () => board().click());
+  expect(rpc).toHaveBeenLastCalledWith("preferences/update", { labs: [] }, expect.anything());
+  expect(board().getAttribute("aria-checked")).toBe("false");
+  await act(async () => saving.reject(new Error("offline")));
+  await act(flush);
   expect(board().getAttribute("aria-checked")).toBe("true");
+  expect(board().disabled).toBe(false);
   expect(Alert.alert).toHaveBeenCalledWith("Labs", "Could not save");
 });
 
