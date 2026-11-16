@@ -60,6 +60,26 @@ vi.mock("@rakazo/ui-web", () => {
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    // The app's dropdown, as a plain select under the same id.
+    OptionSelect: ({
+      id,
+      value,
+      options,
+      onValueChange,
+    }: {
+      id?: string;
+      value: string | null;
+      options: readonly { value: string; label: string }[];
+      onValueChange: (value: string) => void;
+    }) => (
+      <select id={id} value={value ?? ""} onChange={(event) => onValueChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
   };
 });
 
