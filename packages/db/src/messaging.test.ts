@@ -1,6 +1,11 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { provisionMessagingIdentity, redeemMessagingLinkCode } from "./messaging.js";
+import {
+  issueMessagingLinkCode,
+  provisionMessagingIdentity,
+  redeemMessagingLinkCode,
+} from "./messaging.js";
 
 describe("provisionMessagingIdentity", () => {
   it("returns the existing identity without creating anything when already provisioned", async () => {
@@ -294,4 +299,139 @@ it("cannot redeem another space's personal link code through a workspace install
     }),
   ).toBeNull();
   expect(transaction).not.toHaveBeenCalled();
+});
+
+describe("messaging link issuance cancellation", () => {
+  const request = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+
+  it("does not write when the request was already canceled", async () => {
+    const controller = new AbortController();
+    const reason = new Error("client disconnected");
+    controller.abort(reason);
+    const tx = {
+      $queryRaw: vi.fn(async () => {}),
+      messagingLinkCode: { deleteMany: vi.fn(), create: vi.fn() },
+    };
+    const prisma = { $transaction: async (run: (client: typeof tx) => Promise<void>) => run(tx) };
+    await expect(
+      issueMessagingLinkCode(prisma as unknown as PrismaClient, request, {
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(tx.messagingLinkCode.deleteMany).not.toHaveBeenCalled();
+    expect(tx.messagingLinkCode.create).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a code when canceled while waiting for the issuance lock", async () => {
+    const lockEntered = deferred<void>();
+    const lockReleased = deferred<void>();
+    const controller = new AbortController();
+    const reason = new Error("client disconnected");
+    const tx = {
+      $queryRaw: vi.fn(async () => {
+        lockEntered.resolve();
+        await lockReleased.promise;
+      }),
+      messagingLinkCode: { deleteMany: vi.fn(), create: vi.fn() },
+    };
+    const prisma = { $transaction: async (run: (client: typeof tx) => Promise<void>) => run(tx) };
+    const issuing = issueMessagingLinkCode(prisma as unknown as PrismaClient, request, {
+      signal: controller.signal,
+    });
+    const rejected = expect(issuing).rejects.toBe(reason);
+    await lockEntered.promise;
+    controller.abort(reason);
+    lockReleased.resolve();
+    await rejected;
+    expect(tx.messagingLinkCode.deleteMany).not.toHaveBeenCalled();
+    expect(tx.messagingLinkCode.create).not.toHaveBeenCalled();
+  });
+
+  it("still replaces the code transactionally when no cancellation signal is supplied", async () => {
+    const order: string[] = [];
+    const tx = {
+      $queryRaw: vi.fn(async () => {
+        order.push("lock");
+      }),
+      messagingLinkCode: {
+        deleteMany: vi.fn(async () => {
+          order.push("delete");
+        }),
+        create: vi.fn(async () => {
+          order.push("create");
+        }),
+      },
+    };
+    const prisma = { $transaction: async (run: (client: typeof tx) => Promise<void>) => run(tx) };
+    const issued = await issueMessagingLinkCode(prisma as unknown as PrismaClient, request);
+    expect(order).toEqual(["lock", "delete", "create"]);
+    expect(tx.messagingLinkCode.deleteMany).toHaveBeenCalledWith({
+      where: { userId: request.userId },
+    });
+    expect(tx.messagingLinkCode.create).toHaveBeenCalledWith({
+      data: { ...request, ...issued },
+    });
+  });
+
+  it("finishes an already-started write before a later issuance takes the lock", async () => {
+    const deleting = deferred<void>();
+    const finishDelete = deferred<void>();
+    const firstCommitted = deferred<void>();
+    const secondWaiting = deferred<void>();
+    const controller = new AbortController();
+    const order: string[] = [];
+    let transactions = 0;
+    let storedBot: string | null = null;
+    const prisma = {
+      $transaction: async (
+        run: (client: {
+          $queryRaw: () => Promise<void>;
+          messagingLinkCode: {
+            deleteMany: () => Promise<void>;
+            create: (args: { data: { botId: string } }) => Promise<void>;
+          };
+        }) => Promise<void>,
+      ) => {
+        const first = transactions++ === 0;
+        await run({
+          $queryRaw: async () => {
+            if (!first) {
+              secondWaiting.resolve();
+              await firstCommitted.promise;
+            }
+            order.push(first ? "A lock" : "B lock");
+          },
+          messagingLinkCode: {
+            deleteMany: async () => {
+              if (first) {
+                deleting.resolve();
+                await finishDelete.promise;
+              }
+              storedBot = null;
+            },
+            create: async ({ data }) => {
+              storedBot = data.botId;
+              order.push(first ? "A write" : "B write");
+            },
+          },
+        });
+        if (first) firstCommitted.resolve();
+      },
+    };
+    const first = issueMessagingLinkCode(prisma as unknown as PrismaClient, request, {
+      signal: controller.signal,
+    });
+    await deleting.promise;
+    controller.abort(new Error("client disconnected after write began"));
+    const second = issueMessagingLinkCode(prisma as unknown as PrismaClient, {
+      ...request,
+      botId: "bot-2",
+    });
+    await secondWaiting.promise;
+    expect(order).toEqual(["A lock"]);
+    finishDelete.resolve();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["A lock", "A write", "B lock", "B write"]);
+    expect(storedBot).toBe("bot-2");
+  });
 });
