@@ -190,8 +190,10 @@ function commandCodeModel(
       provider: COMMANDCODE_PROVIDER_ID,
       api: "anthropic-messages",
       baseUrl: MESSAGES_BASE_URL,
-      // An id the Anthropic catalogue does not know yet keeps working, without a thinking knob.
-      reasoning: trait !== undefined,
+      // Thinking support belongs to the model, not to the fact that an ancestor was found: a prefix
+      // match on a model that cannot think must not hand the picker a knob the model rejects. An id
+      // the Anthropic catalogue does not know yet keeps working, without a knob either.
+      reasoning: trait?.reasoning ?? false,
       input: trait?.input ?? ["text", "image"],
       contextWindow,
       maxTokens: trait?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,

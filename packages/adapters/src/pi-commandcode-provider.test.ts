@@ -1,3 +1,4 @@
+import type { MutableModels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { COMMANDCODE_PROVIDER_ID, commandCodeCatalogProvider } from "./pi-commandcode-provider.js";
@@ -103,5 +104,22 @@ describe("commandcode catalogue", () => {
     );
     expect([...chatRoots]).toEqual(["https://api.commandcode.ai/provider/v1"]);
     expect(catalogProviderProbeBaseUrl(COMMANDCODE_PROVIDER_ID)).toBeNull();
+  });
+
+  it("inherits thinking support from the matched Anthropic entry instead of assuming it", () => {
+    const withAnthropic = (reasoning: boolean) => {
+      const anthropic = { id: "anthropic", getModels: () => [{ id: "claude-fable-5", reasoning }] };
+      const base = {
+        getProviders: () => [anthropic],
+        getProvider: (id: string) => (id === "anthropic" ? anthropic : undefined),
+      } as unknown as MutableModels;
+      // claude-fable-5-2 has no entry of its own, so it inherits from claude-fable-5 by prefix.
+      return commandCodeCatalogProvider(base)
+        .getModels()
+        .find((model) => model.id === "claude-fable-5-2");
+    };
+
+    expect(withAnthropic(true)?.reasoning).toBe(true);
+    expect(withAnthropic(false)?.reasoning).toBe(false);
   });
 });
