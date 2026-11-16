@@ -15,17 +15,10 @@ import type {
 } from "@rakazo/adapter-kit";
 import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
 import { MAX_SPEAK_CHARS } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 export const MACOS_VOICE_PROVIDER_ID = "macos";
 const SAY_BIN = "/usr/bin/say";
-
-export const MACOS_VOICE_CATALOG_ENTRY = {
-  id: MACOS_VOICE_PROVIDER_ID,
-  name: "Server (Mac)",
-  description: "Voices installed on the Mac running the server.",
-  transcribe: false,
-  keyless: true,
-} as const;
 
 const LIST_TIMEOUT_MS = 10_000;
 const SPEAK_TIMEOUT_MS = 60_000;
@@ -183,3 +176,14 @@ function runSay(
     child.stdin.end(options.input ?? "");
   });
 }
+
+export const macOsVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Server (Mac)",
+    description: "Voices installed on the Mac running the server.",
+    transcribe: false,
+    keyless: true,
+  },
+  available: macOsSayAvailable,
+  create: () => new MacOsVoiceProvider(),
+};
