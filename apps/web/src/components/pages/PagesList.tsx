@@ -252,6 +252,19 @@ function OwnerPages({
       <Trans>Could not pin this page. Try again.</Trans>
     </p>
   ) : null;
+  const laterReadError = pages.isError ? (
+    // A later read failed (Show more, or reading the list again): the pages above may be stale.
+    <div role="alert" className="flex items-center gap-2 px-2 text-label text-destructive">
+      <Trans>Couldn't load pages.</Trans>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => void (pages.isFetchNextPageError ? pages.fetchNextPage() : pages.refetch())}
+      >
+        <Trans>Try again</Trans>
+      </Button>
+    </div>
+  ) : null;
   if (preview) {
     const more = items.length > PREVIEW_COUNT || pages.hasNextPage;
     return (
@@ -272,6 +285,7 @@ function OwnerPages({
         </SectionHeading>
         {actionError}
         <ul className="flex flex-col">{[...pinned, ...rest].slice(0, PREVIEW_COUNT).map(row)}</ul>
+        {laterReadError}
         {deleteDialog}
       </section>
     );
@@ -306,21 +320,7 @@ function OwnerPages({
         </section>
       ) : null}
       {rest.length ? <ul className="flex flex-col">{rest.map(row)}</ul> : null}
-      {pages.isError ? (
-        // A later read failed (Show more, or reading the list again): the pages above may be stale.
-        <div role="alert" className="flex items-center gap-2 px-2 text-label text-destructive">
-          <Trans>Couldn't load pages.</Trans>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              void (pages.isFetchNextPageError ? pages.fetchNextPage() : pages.refetch())
-            }
-          >
-            <Trans>Try again</Trans>
-          </Button>
-        </div>
-      ) : null}
+      {laterReadError}
       {pages.hasNextPage ? (
         <Button
           variant="ghost"

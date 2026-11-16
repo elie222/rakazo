@@ -102,7 +102,7 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z
     .object({
       name: z.literal("computer_repair_started"),
-      action: z.enum(["reset", "recover", "update"]),
+      action: z.enum(["reset", "recover"]),
     })
     .strict(),
   // Only the fixed choices; free-text answers stay in the database.

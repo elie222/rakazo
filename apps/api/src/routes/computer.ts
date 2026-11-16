@@ -285,12 +285,7 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Computer update is not available on this device",
           });
         try {
-          const update = await queueComputerUpdate(deps, bot.computer.id, bot.id);
-          deps.analytics?.capture(context.actor.userId, {
-            name: "computer_repair_started",
-            action: "update",
-          });
-          return update;
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id);
         } finally {
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
