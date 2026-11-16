@@ -356,6 +356,14 @@ async function assertSpaceDeletable(
   return memberships;
 }
 
+/** Throws the error `claimSpaceDeletionForMember` would for a caller who may not delete the Space. */
+export async function assertSpaceDeletableForMember(
+  prisma: PrismaClient,
+  input: SpaceMemberTargetInput,
+): Promise<void> {
+  await assertSpaceDeletable(prisma, input);
+}
+
 /**
  * Claim a Space before tearing down its content. Bot and group creation take the same
  * advisory lock and reject a claimed Space, so once claimed it only loses content. A stale
@@ -488,6 +496,25 @@ export async function restoreSpaceDeletionClaims(
 }
 
 /**
+ * Keeps an account deletion attempt's claims fresh. False once another deletion holds one of the
+ * Spaces it claimed; one it released or deleted no longer counts.
+ */
+export async function renewAccountDeletionClaims(
+  prisma: PrismaClient,
+  claim: { claimId: string; attemptId: string; spaceIds: string[] },
+): Promise<boolean> {
+  const ours = { deletionClaimId: claim.claimId, deletionAttemptId: claim.attemptId };
+  await prisma.space.updateMany({
+    where: { id: { in: claim.spaceIds }, ...ours },
+    data: { deletingAt: new Date() },
+  });
+  const takenOver = await prisma.space.count({
+    where: { id: { in: claim.spaceIds }, deletionClaimId: { not: null }, NOT: ours },
+  });
+  return takenOver === 0;
+}
+
+/**
  * Hands an attempt's claims to the next attempt at once, once nothing of it is left running. Like
  * the restore, it leaves claims a later attempt took over.
  */
@@ -506,11 +533,12 @@ export async function expireSpaceDeletionClaims(
  * destroy every bot and leftover sandbox, clearing its providerRef, so a failed external
  * destroy never loses the only persisted handle; remaining rows go by cascade. Returns the
  * stored artifacts and computer homes to remove after commit, and the space the client
- * should switch to when the active space was deleted.
+ * should switch to when the active space was deleted. Nothing commits unless the caller still
+ * holds `lease`.
  */
 export async function deleteClaimedSpaceForMember(
   prisma: PrismaClient,
-  input: ClaimedSpaceDeleteInput,
+  input: ClaimedSpaceDeleteInput & { lease: Pick<HeldLease, "key" | "fence"> },
 ): Promise<{
   id: string;
   artifactKeys: string[];
@@ -520,6 +548,7 @@ export async function deleteClaimedSpaceForMember(
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
+        await assertLeaseHeld(tx, input.lease);
         await lockSpaceDeletion(tx, input.spaceId);
         const claim = await tx.space.findFirst({
           where: { id: input.spaceId, deletionClaimId: input.claimId },
