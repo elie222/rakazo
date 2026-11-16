@@ -12,6 +12,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { withVertexRouting } from "./google-vertex-routing.js";
+import { registerCommandCodeProvider } from "./pi-commandcode-provider.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { liveModelSibling, withLiveImageInput, withModelCapabilities } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -35,7 +36,7 @@ import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 let catalogModelsCache: Models | undefined;
 export function createRuntimeModels(): MutableModels {
   return registerOpenAiCompatibleCatalog(
-    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+    registerCommandCodeProvider(registerLocalProvider(applyPiModelCompatibility(builtinModels()))),
   );
 }
 function catalogModels(): Models {
@@ -160,7 +161,9 @@ export function modelsForRequest(
   const store = credentials ?? credentialStoreForRequest(request, provider);
   if (store) {
     return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
+      registerCommandCodeProvider(
+        registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
+      ),
     );
   }
   if (
@@ -169,7 +172,9 @@ export function modelsForRequest(
     request.model.id.trim()
   ) {
     const models = registerOpenAiCompatibleCatalog(
-      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+      registerCommandCodeProvider(
+        registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+      ),
     );
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,

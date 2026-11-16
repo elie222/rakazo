@@ -3,6 +3,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
+import { registerCommandCodeProvider } from "./pi-commandcode-provider.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
@@ -71,7 +72,7 @@ let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
   // Same catalog the runtime calls, including configured compatible providers.
   catalogModelsCache ??= registerOpenAiCompatibleCatalog(
-    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+    registerCommandCodeProvider(registerLocalProvider(applyPiModelCompatibility(builtinModels()))),
   );
   return catalogModelsCache;
 }
