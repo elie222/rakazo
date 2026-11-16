@@ -5,6 +5,7 @@ import {
   AccountExportRecordSchema,
   accountExportPaths,
 } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { AccountExportSource } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -290,20 +291,17 @@ describe("account export archive", () => {
 
   it("ends quietly when the download is cancelled while a file is being read", async () => {
     const error = vi.spyOn(getLogger(), "error");
-    let release!: () => void;
-    const waiting = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const waiting = deferred();
     async function* slow(): AsyncGenerator<Uint8Array> {
       yield new Uint8Array(1);
-      await waiting;
+      await waiting.promise;
       yield new Uint8Array(1);
     }
     const reader = zipStream(generate([{ path: "slow.bin", data: slow() }])).getReader();
     const read = reader.read();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     const cancelled = reader.cancel();
-    release();
+    waiting.resolve();
     await cancelled;
     await expect(read).resolves.toEqual({ done: true, value: undefined });
     expect(error).not.toHaveBeenCalled();
