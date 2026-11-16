@@ -296,6 +296,12 @@ describeBreakdown("usage.breakdown", () => {
         record(localMidnight - days * DAY + 1000),
       ]),
     });
+    await prisma.usageRecord.create({ data: record(Date.now() + 2 * DAY) });
+    const current = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "today" });
+    expect(current.totals.modelCalls).toBe(1);
+    expect(current.overTime).toHaveLength(1);
+    const complete = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
+    expect(complete.totals.modelCalls).toBe(7);
     const week = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "7d" });
     expect(week.overTime).toHaveLength(7);
     expect(week.totals.modelCalls).toBe(3);

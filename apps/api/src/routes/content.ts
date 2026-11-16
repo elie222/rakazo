@@ -218,9 +218,10 @@ export function contentRoutes(ctx: RouterContext) {
           input.range === "all"
             ? null
             : zonedDateTime(firstDate.toISOString().slice(0, 10), timezone)!;
-        const rangeFilter = since
-          ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
-          : Prisma.empty;
+        const rangeFilter = Prisma.sql`
+          AND u."createdAt" <= ${now}::timestamp(3)
+          ${since ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)` : Prisma.empty}
+        `;
         const modelFilter =
           input.provider && input.model
             ? Prisma.sql`AND u.provider = ${input.provider} AND u.model = ${input.model}`
@@ -384,7 +385,7 @@ export function contentRoutes(ctx: RouterContext) {
           }),
         );
         const firstDay = since ? localDay(since) : timeRows[0]?.bucket;
-        const lastDay = [localDay(now), timeRows.at(-1)?.bucket ?? ""].sort().at(-1) ?? "";
+        const lastDay = localDay(now);
         const overTimeUnit =
           input.range === "all" &&
           firstDay &&
