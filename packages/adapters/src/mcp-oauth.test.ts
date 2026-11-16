@@ -9,6 +9,7 @@ import {
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpOAuthRefusedError,
+  McpOAuthStoreError,
   McpOAuthUnavailableError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
@@ -3374,6 +3375,59 @@ describe("MCP OAuth", () => {
       expect(error).toBeInstanceOf(McpOAuthRefusedError);
       expect((error as Error).message).toBe("Could not start MCP OAuth");
       expect((error as Error).cause).toBeInstanceOf(McpOAuthRefusedError);
+    });
+
+    function beginError(broker: McpOAuthBroker) {
+      return broker
+        .begin({
+          serverId: "server-1",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+        })
+        .then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+    }
+
+    /** A server that challenges but publishes no metadata, so every discovery probe answers 404. */
+    function metadataLessServer() {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          if (
+            logicalHref(input, init) === "https://mcp.example.test/mcp" &&
+            request.method === "POST"
+          )
+            return new Response(null, { status: 401 });
+          return new Response("not found", { status: 404 });
+        }),
+      );
+    }
+
+    it("answers our own failure to save sign-in state as a fault after discovery's 404s", async () => {
+      metadataLessServer();
+      const { broker, secrets } = brokerWithMaterial({ oauthClient });
+      const storeDown = new Error("secret store unavailable");
+      secrets.put.mockRejectedValue(storeDown);
+
+      const error = await beginError(broker);
+
+      expect(error).toBeInstanceOf(McpOAuthStoreError);
+      expect(error).not.toBeInstanceOf(ClientError);
+      expect((error as Error).cause).toBe(storeDown);
+    });
+
+    it("still answers the server's refusal of the sign-in as a refusal", async () => {
+      metadataLessServer();
+      const { broker } = brokerWithMaterial({});
+
+      const error = await beginError(broker);
+
+      expect(error).toBeInstanceOf(McpOAuthRefusedError);
+      expect((error as Error).message).toBe("Could not start MCP OAuth");
     });
 
     it("treats the client secret as a credential that must never be shown", () => {

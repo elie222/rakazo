@@ -439,6 +439,14 @@ export class McpOAuthRefusedError extends ClientError {
   }
 }
 
+/** Saving sign-in state failed on our side: a fault to report, whatever the server last answered. */
+export class McpOAuthStoreError extends Error {
+  constructor(cause: unknown) {
+    super("Could not save MCP OAuth state", { cause });
+    this.name = "McpOAuthStoreError";
+  }
+}
+
 const SESSION_INVALID = "MCP OAuth session is invalid or expired";
 const TOO_MANY_PENDING = "Too many pending MCP authorization attempts; wait and try again";
 
@@ -844,7 +852,13 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     const held = this.material.oauth?.tokens;
     const storedRefreshToken = issued ? undefined : this.storedRefreshToken;
     const next = this.persistQueue.then(async () => {
-      const kept = await this.persistMaterial(snapshot, storedRefreshToken);
+      let kept: TokenGrant | undefined;
+      try {
+        kept = await this.persistMaterial(snapshot, storedRefreshToken);
+      } catch (error) {
+        if (isCredentialRefusal(error) || error instanceof ClientError) throw error;
+        throw new McpOAuthStoreError(error);
+      }
       const oauth = this.material.oauth;
       if (kept && oauth && oauth.tokens === held) applyGrant(oauth, kept);
       this.storedRefreshToken = (kept ?? snapshot.oauth)?.tokens?.refresh_token ?? null;
@@ -935,6 +949,7 @@ function oauthFetch(
     fetch: recordingFetch,
     close: () => safeFetch.close(),
     publicError: (error, message) => {
+      if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
       if (error instanceof Error && networkErrors.has(error)) {
         const reason = sanitizeConnectorError(error, secrets);
