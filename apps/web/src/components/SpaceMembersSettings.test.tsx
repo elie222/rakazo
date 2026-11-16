@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { SpaceMembers } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,7 +10,7 @@ import { SpaceMembersSettings } from "./SpaceMembersSettings";
 const { rpc, toast } = vi.hoisted(() => ({
   rpc: {
     spaces: {
-      members: { list: vi.fn(), remove: vi.fn(), leave: vi.fn() },
+      members: { list: vi.fn(), add: vi.fn(), remove: vi.fn(), leave: vi.fn() },
       invites: { create: vi.fn(), cancel: vi.fn() },
     },
   },
@@ -45,6 +46,7 @@ vi.mock("@rakazo/ui-web", () => {
     DropdownMenu: Plain,
     DropdownMenuContent: Plain,
     DropdownMenuItem: PlainButton,
+    DropdownMenuSeparator: () => null,
     DropdownMenuTrigger: () => null,
     InputGroup: Plain,
     InputGroupAddon: Plain,
@@ -53,7 +55,13 @@ vi.mock("@rakazo/ui-web", () => {
     toast,
   };
 });
-vi.mock("../lib/space-rpc", () => ({ useSpaceRpc: () => rpc }));
+vi.mock("../lib/space-rpc", () => ({ useSpaceRpc: () => rpc, useBoundSpaceId: () => undefined }));
+vi.mock("../lib/rpc", () => ({
+  rpc,
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+  selectedSpaceId: () => space.id,
+}));
 
 const owner = {
   userId: "user-owner",
@@ -92,7 +100,13 @@ function buttonNamed(label: string) {
 
 async function renderWith(members: SpaceMembers, onLeft = vi.fn()) {
   rpc.spaces.members.list.mockResolvedValue(members);
-  await act(async () => root.render(<SpaceMembersSettings space={space} onLeft={onLeft} />));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SpaceMembersSettings space={space} onLeft={onLeft} />
+      </QueryClientProvider>,
+    ),
+  );
   return onLeft;
 }
 
@@ -175,4 +189,41 @@ it("removes a member only after confirming", async () => {
   });
   expect(host.querySelectorAll('ul[aria-label="Members"] > li')).toHaveLength(1);
   expect(host.querySelector("h2")).toBeNull();
+});
+
+it("adds someone from the organization, and keeps the link for anyone else", async () => {
+  const writeText = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, addable: [colleague] });
+  rpc.spaces.members.add.mockResolvedValue({ ok: true });
+  rpc.spaces.members.list.mockResolvedValue({
+    spaceName: "Home",
+    members: [owner, { ...colleague, role: "member" }],
+    canManage: true,
+    addable: [],
+  });
+
+  await act(async () => buttonNamed("Cy Ray")?.click());
+  expect(rpc.spaces.members.add).toHaveBeenCalledWith({
+    spaceId: space.id,
+    userId: "user-colleague",
+  });
+  await vi.waitFor(() =>
+    expect(
+      [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
+    ).toEqual(["AAda LovelaceOwnerada@example.test", "CCy Raycy@example.testRemove"]),
+  );
+
+  rpc.spaces.invites.create.mockResolvedValue({
+    url: "https://rakazo.example/invite/token-2",
+    expiresAt: new Date().toISOString(),
+  });
+  await act(async () => buttonNamed("Invite")?.click());
+  expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-2");
 });

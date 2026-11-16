@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { ClientError } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole } from "./billing.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
@@ -121,13 +121,14 @@ export async function listSpaceMembers(
   }>;
   canManage: boolean;
   openInvites: number;
+  addable?: Array<{ userId: string; name: string; email: string; image: string | null }>;
 }> {
   const rows = await prisma.spaceMember.findMany({
     where: { spaceId: input.spaceId },
     select: {
       userId: true,
       role: true,
-      space: { select: { name: true } },
+      space: { select: { name: true, organizationId: true } },
       member: { select: { user: { select: { name: true, email: true, image: true } } } },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -144,12 +145,62 @@ export async function listSpaceMembers(
     }))
     .sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   const canManage = isOwnerRole(self.role);
-  const openInvites = canManage
-    ? await prisma.spaceInvite.count({
-        where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
-      })
-    : 0;
-  return { spaceName: self.space.name, members, canManage, openInvites };
+  if (!canManage) return { spaceName: self.space.name, members, canManage, openInvites: 0 };
+  const [openInvites, others] = await Promise.all([
+    prisma.spaceInvite.count({
+      where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
+    }),
+    prisma.member.findMany({
+      where: {
+        organizationId: self.space.organizationId,
+        role: { not: GUEST_ROLE },
+        spaceMemberships: { none: { spaceId: input.spaceId } },
+      },
+      select: { userId: true, user: { select: { name: true, email: true, image: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+  ]);
+  const addable = others.map(({ userId, user }) => ({ userId, ...user }));
+  return { spaceName: self.space.name, members, canManage, openInvites, addable };
+}
+
+/**
+ * Owner only: adds someone who is already a full member of the Space's organization, so nobody
+ * outside it joins without an invite link.
+ */
+export async function addSpaceMember(
+  prisma: PrismaClient,
+  input: SpaceRef & { memberUserId: string },
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // Under the lock a deletion and a handover take, so the owner and the Space are current.
+    await lockSpaceDeletion(tx, input.spaceId);
+    await requireSpaceOwner(tx, input);
+    const space = await tx.space.findUnique({
+      where: { id: input.spaceId },
+      select: { organizationId: true, deletingAt: true },
+    });
+    if (!space || space.deletingAt) throw new SpaceNotFoundError();
+    // Locked, so a removal from the organization either finishes first or waits for this.
+    const [member] = await tx.$queryRaw<Array<{ role: string }>>`
+      SELECT role FROM "member"
+      WHERE "organizationId" = ${space.organizationId} AND "userId" = ${input.memberUserId}
+      FOR UPDATE
+    `;
+    if (!member || member.role === GUEST_ROLE) throw new SpaceMemberNotFoundError();
+    await tx.spaceMember.upsert({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
+      create: {
+        id: randomUUID(),
+        spaceId: input.spaceId,
+        organizationId: space.organizationId,
+        userId: input.memberUserId,
+        role: "member",
+        createdAt: new Date(),
+      },
+      update: {},
+    });
+  });
 }
 
 /** A new single-use link. Only its SHA-256 is stored; the token is returned once. */
@@ -410,9 +461,9 @@ export async function leaveInvitedSpaces(
  */
 async function handOwnership(
   tx: Prisma.TransactionClient,
-  input: SpaceRef,
+  input: SpaceRef & { organizationId: string; fallbackOwnerId?: string },
 ): Promise<string | null> {
-  const { spaceId, userId } = input;
+  const { spaceId, userId, fallbackOwnerId } = input;
   const coOwner = await tx.spaceMember.findFirst({
     where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
     select: { id: true },
@@ -423,9 +474,61 @@ async function handOwnership(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, userId: true },
   });
-  if (!successor) return null;
-  await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
-  return successor.userId;
+  if (successor) {
+    await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
+    return successor.userId;
+  }
+  if (!fallbackOwnerId) return null;
+  // Nobody else full belongs to it: whoever removed its owner from the organization keeps it,
+  // named after them so it stands apart from the new owner's own Spaces.
+  const departing = await tx.user.findUnique({ where: { id: userId }, select: { name: true } });
+  const name = departing ? displayName(departing.name, "").slice(0, 60).trim() : "";
+  if (name) await tx.space.update({ where: { id: spaceId }, data: { name } });
+  await tx.spaceMember.upsert({
+    where: { spaceId_userId: { spaceId, userId: fallbackOwnerId } },
+    create: {
+      id: randomUUID(),
+      spaceId,
+      organizationId: input.organizationId,
+      userId: fallbackOwnerId,
+      role: "owner",
+      createdAt: new Date(),
+    },
+    update: { role: "owner" },
+  });
+  return fallbackOwnerId;
+}
+
+/**
+ * Takes someone being removed from an organization out of each of its Spaces, as a removal from
+ * each Space would. A Space they own passes to its longest-standing full member, else to
+ * `removedBy`, so their work stays with the organization. Returns each departure, already
+ * committed, for the caller's follow-up.
+ */
+export async function leaveOrganizationSpaces(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string; removedBy: string },
+): Promise<Array<SpaceDeparture & { spaceId: string }>> {
+  const memberships = await prisma.spaceMember.findMany({
+    where: { organizationId: input.organizationId, userId: input.userId },
+    select: { spaceId: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const departures: Array<SpaceDeparture & { spaceId: string }> = [];
+  for (const { spaceId } of memberships) {
+    const departure = await departSpace(prisma, {
+      spaceId,
+      userId: input.userId,
+      handOver: true,
+      fallbackOwnerId: input.removedBy,
+    }).catch((error: unknown) => {
+      // Already gone from it, by leaving or another removal.
+      if (error instanceof SpaceMemberNotFoundError) return null;
+      throw error;
+    });
+    if (departure) departures.push({ spaceId, ...departure });
+  }
+  return departures;
 }
 
 /**
@@ -445,9 +548,11 @@ async function departSpace(
     /** A departing owner first hands the Space over, in the same transaction, so a failed
      * departure never leaves it handed over without having left. */
     handOver?: boolean;
+    /** Who takes it over when no other full member can; a co-owner keeps it as it is. */
+    fallbackOwnerId?: string;
   },
 ): Promise<SpaceDeparture> {
-  const { spaceId, userId, removedBy, leaving, deactivated, handOver } = input;
+  const { spaceId, userId, removedBy, leaving, deactivated, handOver, fallbackOwnerId } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
@@ -481,8 +586,14 @@ async function departSpace(
           // Someone made owner since they asked to leave stays: the Space is theirs now.
           if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
           let ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
-          if (handOver && isOwnerRole(departing.role)) {
-            ownerId = (await handOwnership(tx, { spaceId, userId })) ?? undefined;
+          if (handOver && isOwnerRole(departing.role) && !(fallbackOwnerId && ownerId)) {
+            ownerId =
+              (await handOwnership(tx, {
+                spaceId,
+                userId,
+                organizationId: departing.organizationId,
+                fallbackOwnerId,
+              })) ?? undefined;
             if (!ownerId) throw new SpaceOwnerCannotLeaveError();
           }
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();

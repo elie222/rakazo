@@ -10,6 +10,7 @@ import { requestDeadline } from "@rakazo/core";
 import type { HeldLease, Prisma, ThreadEvents } from "@rakazo/db";
 import {
   assertLeaseHeld,
+  assertNoOwnedOrganizationWithMembers,
   assertOrganizationOwner,
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
@@ -56,6 +57,8 @@ export async function deleteAccountContent(
   },
   userId: string,
 ): Promise<void> {
+  // Nobody can take an organization over yet, so its owner removes the others first.
+  await assertNoOwnedOrganizationWithMembers(deps.prisma, userId);
   const deadline = requestDeadline(DELETION_TIMEOUT_MS, "Account deletion timed out");
   let claim: Awaited<ReturnType<typeof claimSpacesLeavingWithAccount>> | undefined;
   let stage = "billing" as "billing" | "teardown" | "done";

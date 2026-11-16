@@ -20,6 +20,7 @@ import {
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  OwnedOrganizationHasMembersError,
   personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
@@ -79,6 +80,7 @@ export {
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export type { OidcConfig } from "./oidc.js";
+export { organizationInvitationEmail } from "./organization-invitation-email.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {
   integrationClaimConfirmEmail,
@@ -480,7 +482,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           try {
             await env.beforeDeleteUser?.(user.id);
           } catch (error) {
-            if (error instanceof SpaceDeletionInProgressError)
+            if (
+              error instanceof SpaceDeletionInProgressError ||
+              error instanceof OwnedOrganizationHasMembersError
+            )
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }

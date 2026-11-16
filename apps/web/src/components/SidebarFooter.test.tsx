@@ -250,6 +250,8 @@ const personal = {
   defaultSpaceId: "s1",
   spaceIds: ["s1"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const work = {
   id: "org-work",
@@ -257,6 +259,8 @@ const work = {
   defaultSpaceId: "s2",
   spaceIds: ["s2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 
 async function renderOrganizations(

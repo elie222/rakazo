@@ -403,8 +403,45 @@ export const SpaceMembersSchema = z.object({
   canManage: z.boolean(),
   /** For the owner: links created but not yet used or expired. */
   openInvites: z.number().int().nonnegative().optional(),
+  /** For the owner: people in the Space's organization who are not in it yet. */
+  addable: z.array(SpaceMemberSchema.omit({ role: true })).optional(),
 });
 export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+/** The organization's one owner, admins who manage its members with them, and everyone else. */
+export const OrganizationRoleSchema = z.enum(["owner", "admin", "member"]);
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>;
+
+export const OrganizationMemberSchema = SpaceMemberSchema.extend({
+  role: OrganizationRoleSchema,
+  /** Whether the viewer may change their role or remove them: never the owner or themselves. */
+  manageable: z.boolean(),
+});
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
+
+export const OrganizationInvitationSchema = z.object({
+  id: Id,
+  email: z.string(),
+  /** The link to accept it, for sharing by hand when no email arrives. */
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>;
+
+export const OrganizationMembersSchema = z.object({
+  members: z.array(OrganizationMemberSchema),
+  /** Pending invitations; empty for someone who cannot manage members. */
+  invitations: z.array(OrganizationInvitationSchema),
+  /** True for the owner and admins: they invite, change roles and remove people. */
+  canManage: z.boolean(),
+});
+export type OrganizationMembers = z.infer<typeof OrganizationMembersSchema>;
+
+export const OrganizationInvitationPreviewSchema = z.object({
+  organizationName: z.string(),
+  inviterName: z.string(),
+});
+export type OrganizationInvitationPreview = z.infer<typeof OrganizationInvitationPreviewSchema>;
 
 export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),

@@ -129,6 +129,26 @@ async function createSpaceDefaults(
   });
 }
 
+/** A new Space only `userId` belongs to, in an organization they are a member of. */
+export async function createOwnSpace(
+  tx: Prisma.TransactionClient,
+  input: { organizationId: string; userId: string; name: string },
+): Promise<string> {
+  const spaceId = randomUUID();
+  await createSpace(tx, {
+    ...input,
+    spaceId,
+    spaceMembershipId: randomUUID(),
+    createdAt: new Date(),
+  });
+  await createSpaceDefaults(tx, {
+    spaceId,
+    userId: input.userId,
+    memoryContent: "# Space memory\n\n",
+  });
+  return spaceId;
+}
+
 export function normalizeSpaceName(name: string): string {
   const trimmed = name.trim();
   if (!displayName(trimmed, "") || trimmed.length > 60) throw new InvalidSpaceNameError();

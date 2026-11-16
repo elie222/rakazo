@@ -1,0 +1,477 @@
+import { randomUUID } from "node:crypto";
+import type { OrganizationRole } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
+import { IsolationError } from "./scope.js";
+import { createOwnSpace, lockOrganizationSpaces } from "./spaces.js";
+import { withTransactionRetry } from "./transaction-retry.js";
+
+export const ORGANIZATION_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Pending invitations per organization, so a mistaken or abusive batch of email stays small. */
+export const MAX_PENDING_INVITATIONS = 50;
+/** The Space each person gets when they join, theirs alone until they share it. */
+const OWN_SPACE_NAME = "Personal";
+
+const PENDING = "pending";
+
+/** Inviting, changing roles and removing people: the owner and admins. */
+export class OrganizationAdminRequiredError extends ClientError {
+  constructor() {
+    super("FORBIDDEN", "Only the organization's owner and admins can do that");
+    this.name = "OrganizationAdminRequiredError";
+  }
+}
+
+export class OrganizationMemberNotFoundError extends ClientError {
+  constructor() {
+    super("NOT_FOUND", "Member not found");
+    this.name = "OrganizationMemberNotFoundError";
+  }
+}
+
+/** Someone kept being added to Spaces while their removal ran. */
+export class OrganizationMemberBusyError extends ClientError {
+  constructor() {
+    super("CONFLICT", "They were added to a Space while being removed; try again");
+    this.name = "OrganizationMemberBusyError";
+  }
+}
+
+export class OrganizationOwnerUnchangeableError extends ClientError {
+  constructor() {
+    super("BAD_REQUEST", "The organization's owner cannot be removed or given another role");
+    this.name = "OrganizationOwnerUnchangeableError";
+  }
+}
+
+export class AlreadyOrganizationMemberError extends ClientError {
+  constructor() {
+    super("CONFLICT", "They are already a member", "ALREADY_MEMBER");
+    this.name = "AlreadyOrganizationMemberError";
+  }
+}
+
+export class OrganizationInvitationLimitError extends ClientError {
+  constructor() {
+    super("BAD_REQUEST", "Too many pending invitations; cancel some or wait for them to expire");
+    this.name = "OrganizationInvitationLimitError";
+  }
+}
+
+/** One answer for unknown, expired, cancelled and used invitations, so none can be told apart. */
+export class OrganizationInvitationNotFoundError extends ClientError {
+  constructor() {
+    super("NOT_FOUND", "This invitation is invalid or has expired");
+    this.name = "OrganizationInvitationNotFoundError";
+  }
+}
+
+/** Never names the address it went to: whoever holds the link may not own it. */
+export class OrganizationInvitationEmailError extends ClientError {
+  constructor(unverified = false) {
+    super(
+      "FORBIDDEN",
+      unverified
+        ? "Verify your email address to accept this invitation"
+        : "Sign in with the email address this invitation was sent to",
+      unverified ? "EMAIL_NOT_VERIFIED" : "INVITATION_EMAIL_MISMATCH",
+    );
+    this.name = "OrganizationInvitationEmailError";
+  }
+}
+
+/** Account deletion while others still depend on the organization the account owns. */
+export class OwnedOrganizationHasMembersError extends ClientError {
+  constructor() {
+    super("CONFLICT", "Remove the other members of your organization before deleting your account");
+    this.name = "OwnedOrganizationHasMembersError";
+  }
+}
+
+/** The role shown and checked for a stored Better Auth role; guests are never listed. */
+export function organizationRole(role: string): OrganizationRole {
+  if (isOwnerRole(role)) return "owner";
+  return role.split(",").some((value) => value.trim() === "admin") ? "admin" : "member";
+}
+
+/** Serializes one organization's membership changes, so each check holds until it commits. */
+async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizationId: string) {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${`organization-members:${organizationId}`}, 0))::text AS "lock"
+  `);
+}
+
+async function memberRole(
+  db: Pick<PrismaClient, "member">,
+  organizationId: string,
+  userId: string,
+): Promise<OrganizationRole | null> {
+  const member = await db.member.findFirst({
+    where: { organizationId, userId, role: { not: GUEST_ROLE }, organization: LIVE_ORGANIZATION },
+    select: { role: true },
+  });
+  return member ? organizationRole(member.role) : null;
+}
+
+/** Throws `IsolationError` for a non-member, so the organization's existence stays private. */
+async function requireManager(
+  db: Pick<PrismaClient, "member">,
+  organizationId: string,
+  userId: string,
+): Promise<OrganizationRole> {
+  const role = await memberRole(db, organizationId, userId);
+  if (!role) throw new IsolationError();
+  if (role === "member") throw new OrganizationAdminRequiredError();
+  return role;
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export async function listOrganizationMembers(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string },
+): Promise<{
+  members: Array<{
+    userId: string;
+    name: string;
+    email: string;
+    image: string | null;
+    role: OrganizationRole;
+    manageable: boolean;
+  }>;
+  invitations: Array<{ id: string; email: string; expiresAt: Date }>;
+  canManage: boolean;
+}> {
+  const role = await memberRole(prisma, input.organizationId, input.userId);
+  if (!role) throw new IsolationError();
+  const canManage = role !== "member";
+  const [rows, invitations] = await Promise.all([
+    prisma.member.findMany({
+      where: { organizationId: input.organizationId, role: { not: GUEST_ROLE } },
+      select: {
+        userId: true,
+        role: true,
+        user: { select: { name: true, email: true, image: true } },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+    canManage
+      ? prisma.invitation.findMany({
+          where: {
+            organizationId: input.organizationId,
+            status: PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true, email: true, expiresAt: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : [],
+  ]);
+  const rank = { owner: 0, admin: 1, member: 2 } as const;
+  const members = rows
+    .map((row) => {
+      const memberRole = organizationRole(row.role);
+      return {
+        userId: row.userId,
+        ...row.user,
+        role: memberRole,
+        manageable: canManage && memberRole !== "owner" && row.userId !== input.userId,
+      };
+    })
+    .sort((a, b) => rank[a.role] - rank[b.role]);
+  return { members, invitations, canManage };
+}
+
+/**
+ * Owner and admins. A pending invitation to the same address is renewed instead of repeated, so
+ * sending again is how a lost email is resent.
+ */
+export async function createOrganizationInvitation(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string; email: string },
+): Promise<{ id: string; email: string; organizationName: string; inviterName: string }> {
+  const email = normalizeEmail(input.email);
+  return withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      await lockOrganizationMembers(tx, input.organizationId);
+      await requireManager(tx, input.organizationId, input.userId);
+      const existing = await tx.member.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          role: { not: GUEST_ROLE },
+          user: { email: { equals: email, mode: "insensitive" } },
+        },
+        select: { id: true },
+      });
+      if (existing) throw new AlreadyOrganizationMemberError();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + ORGANIZATION_INVITATION_TTL_MS);
+      const pending = await tx.invitation.findFirst({
+        where: { organizationId: input.organizationId, email, status: PENDING },
+        select: { id: true },
+      });
+      let id = pending?.id;
+      if (id) {
+        await tx.invitation.update({
+          where: { id },
+          data: { expiresAt, inviterId: input.userId },
+        });
+      } else {
+        const open = await tx.invitation.count({
+          where: { organizationId: input.organizationId, status: PENDING, expiresAt: { gt: now } },
+        });
+        if (open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();
+        id = randomUUID();
+        await tx.invitation.create({
+          data: {
+            id,
+            organizationId: input.organizationId,
+            email,
+            role: "member",
+            status: PENDING,
+            expiresAt,
+            createdAt: now,
+            inviterId: input.userId,
+          },
+        });
+      }
+      const [organization, inviter] = await Promise.all([
+        tx.organization.findUniqueOrThrow({
+          where: { id: input.organizationId },
+          select: { name: true },
+        }),
+        tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { name: true } }),
+      ]);
+      return { id, email, organizationName: organization.name, inviterName: inviter.name };
+    }),
+  );
+}
+
+export async function cancelOrganizationInvitation(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string; invitationId: string },
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await lockOrganizationMembers(tx, input.organizationId);
+    await requireManager(tx, input.organizationId, input.userId);
+    await tx.invitation.updateMany({
+      where: { id: input.invitationId, organizationId: input.organizationId, status: PENDING },
+      data: { status: "canceled" },
+    });
+  });
+}
+
+type InvitationRow = {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string | null;
+  organization: { name: string };
+  user: { name: string };
+};
+
+type InviteeInput = {
+  invitationId: string;
+  userId: string;
+  /**
+   * Whether the account must have proved it receives the address's mail. Set when the server
+   * sends email, so every account could have; without email delivery nobody is verified, and the
+   * unguessable link sent to that address stands in for the proof.
+   */
+  requireVerifiedEmail: boolean;
+};
+
+/** A pending, unexpired invitation to a live organization, for the signed-in invitee only. */
+async function findInvitation(
+  db: Pick<PrismaClient, "invitation" | "user">,
+  input: InviteeInput,
+): Promise<InvitationRow> {
+  const invitation = await db.invitation.findFirst({
+    where: {
+      id: input.invitationId,
+      status: PENDING,
+      expiresAt: { gt: new Date() },
+      organization: LIVE_ORGANIZATION,
+    },
+    select: {
+      id: true,
+      organizationId: true,
+      email: true,
+      role: true,
+      organization: { select: { name: true } },
+      user: { select: { name: true } },
+    },
+  });
+  if (!invitation) throw new OrganizationInvitationNotFoundError();
+  const user = await db.user.findUnique({
+    where: { id: input.userId },
+    select: { email: true, emailVerified: true },
+  });
+  if (!user || normalizeEmail(user.email) !== invitation.email)
+    throw new OrganizationInvitationEmailError();
+  if (input.requireVerifiedEmail && !user.emailVerified)
+    throw new OrganizationInvitationEmailError(true);
+  return invitation;
+}
+
+export async function previewOrganizationInvitation(
+  prisma: PrismaClient,
+  input: InviteeInput,
+): Promise<{ organizationName: string; inviterName: string }> {
+  const invitation = await findInvitation(prisma, input);
+  return { organizationName: invitation.organization.name, inviterName: invitation.user.name };
+}
+
+/**
+ * Joins the organization an invitation is for. Claiming the invitation and adding the member
+ * commit together, so it is used at most once. The new member sees none of anyone else's Spaces:
+ * they get one of their own to land in, and others add them to theirs.
+ */
+export async function acceptOrganizationInvitation(
+  prisma: PrismaClient,
+  input: InviteeInput,
+): Promise<{ organizationId: string; spaceId: string }> {
+  return withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        const invitation = await findInvitation(tx, input);
+        const { organizationId } = invitation;
+        await lockOrganizationMembers(tx, organizationId);
+        // A Space created here waits for, or is refused by, a deletion of the organization.
+        await lockOrganizationSpaces(tx, organizationId);
+        const claimed = await tx.invitation.updateMany({
+          where: { id: invitation.id, status: PENDING, expiresAt: { gt: new Date() } },
+          data: { status: "accepted" },
+        });
+        if (claimed.count !== 1) throw new OrganizationInvitationNotFoundError();
+        const role = organizationRole(invitation.role ?? "member");
+        const existing = await tx.member.findUnique({
+          where: { organizationId_userId: { organizationId, userId: input.userId } },
+          select: { id: true, role: true },
+        });
+        if (existing && existing.role !== GUEST_ROLE) throw new AlreadyOrganizationMemberError();
+        if (existing) {
+          // A guest in some of its Spaces becomes a full member, keeping those Spaces.
+          await tx.member.update({ where: { id: existing.id }, data: { role } });
+        } else {
+          const memberId = randomUUID();
+          await tx.member.create({
+            data: {
+              id: memberId,
+              organizationId,
+              userId: input.userId,
+              role,
+              createdAt: new Date(),
+            },
+          });
+          // A database trigger adds every new member to the default Space, which is the owner's
+          // own; a new member starts with none of anyone else's Spaces.
+          await tx.spaceMember.deleteMany({
+            where: { id: `default-space-member:${memberId}`, userId: input.userId },
+          });
+        }
+        const spaceId = await createOwnSpace(tx, {
+          organizationId,
+          userId: input.userId,
+          name: OWN_SPACE_NAME,
+        });
+        return { organizationId, spaceId };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+}
+
+/** Owner and admins, between admin and member. The owner's role never changes. */
+export async function setOrganizationMemberRole(
+  prisma: PrismaClient,
+  input: {
+    organizationId: string;
+    userId: string;
+    memberUserId: string;
+    role: Exclude<OrganizationRole, "owner">;
+  },
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await lockOrganizationMembers(tx, input.organizationId);
+    await requireManager(tx, input.organizationId, input.userId);
+    const target = await memberRole(tx, input.organizationId, input.memberUserId);
+    if (!target) throw new OrganizationMemberNotFoundError();
+    if (target === "owner") throw new OrganizationOwnerUnchangeableError();
+    await tx.member.update({
+      where: {
+        organizationId_userId: { organizationId: input.organizationId, userId: input.memberUserId },
+      },
+      data: { role: input.role },
+    });
+  });
+}
+
+/** Checks a removal before any of the person's Spaces change hands. */
+export async function assertOrganizationMemberRemovable(
+  db: Pick<PrismaClient, "member">,
+  input: { organizationId: string; userId: string; memberUserId: string },
+): Promise<void> {
+  await requireManager(db, input.organizationId, input.userId);
+  if (input.memberUserId === input.userId) throw new OrganizationAdminRequiredError();
+  const target = await memberRole(db, input.organizationId, input.memberUserId);
+  if (!target) throw new OrganizationMemberNotFoundError();
+  if (target === "owner") throw new OrganizationOwnerUnchangeableError();
+}
+
+/**
+ * The last step of a removal, once the person has left every Space there: their membership goes.
+ * False when they belong to a Space again (someone added them meanwhile), so the caller has them
+ * leave it and tries again.
+ */
+export async function deleteOrganizationMember(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string; memberUserId: string },
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    await lockOrganizationMembers(tx, input.organizationId);
+    // Checked again under the lock: the remover may have lost their role meanwhile.
+    await assertOrganizationMemberRemovable(tx, input);
+    const { count } = await tx.member.deleteMany({
+      where: {
+        organizationId: input.organizationId,
+        userId: input.memberUserId,
+        spaceMemberships: { none: {} },
+      },
+    });
+    return count === 1;
+  });
+}
+
+/**
+ * Refuses deleting the account of an organization's only owner while other people still belong
+ * to it, since nobody would be left to manage it.
+ */
+export async function assertNoOwnedOrganizationWithMembers(
+  prisma: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<void> {
+  const owned = await prisma.member.findMany({
+    where: { userId, role: { contains: "owner" } },
+    select: {
+      organization: {
+        select: {
+          members: {
+            where: { userId: { not: userId }, role: { not: GUEST_ROLE } },
+            select: { role: true },
+          },
+        },
+      },
+    },
+  });
+  const ownerless = owned.some(
+    ({ organization }) =>
+      organization.members.length > 0 &&
+      !organization.members.some((member) => isOwnerRole(member.role)),
+  );
+  if (ownerless) throw new OwnedOrganizationHasMembersError();
+}
