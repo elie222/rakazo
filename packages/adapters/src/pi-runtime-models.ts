@@ -7,16 +7,13 @@ import type {
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { withVertexRouting } from "./google-vertex-routing.js";
-import { registerCommandCodeProvider } from "./pi-commandcode-provider.js";
+import { piBaseRegistry } from "./pi-base-registry.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { liveModelSibling, withLiveImageInput, withModelCapabilities } from "./pi-live-model.js";
-import { registerLocalProvider } from "./pi-local-provider.js";
-import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -35,9 +32,7 @@ import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 export function createRuntimeModels(): MutableModels {
-  return registerOpenAiCompatibleCatalog(
-    registerCommandCodeProvider(registerLocalProvider(applyPiModelCompatibility(builtinModels()))),
-  );
+  return registerOpenAiCompatibleCatalog(piBaseRegistry());
 }
 function catalogModels(): Models {
   catalogModelsCache ??= createRuntimeModels();
@@ -160,22 +155,14 @@ export function modelsForRequest(
 ): Models {
   const store = credentials ?? credentialStoreForRequest(request, provider);
   if (store) {
-    return registerOpenAiCompatibleCatalog(
-      registerCommandCodeProvider(
-        registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
-      ),
-    );
+    return registerOpenAiCompatibleCatalog(piBaseRegistry({ credentials: store }));
   }
   if (
     provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
     request.model.baseUrl &&
     request.model.id.trim()
   ) {
-    const models = registerOpenAiCompatibleCatalog(
-      registerCommandCodeProvider(
-        registerLocalProvider(applyPiModelCompatibility(builtinModels())),
-      ),
-    );
+    const models = registerOpenAiCompatibleCatalog(piBaseRegistry());
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,

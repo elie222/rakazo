@@ -1,6 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   CompatibleEndpointPreset,
   ModelOAuthSignInMode,
@@ -15,9 +14,9 @@ import {
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
-import { COMMANDCODE_PROVIDER_ID, registerCommandCodeProvider } from "./pi-commandcode-provider.js";
-import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
-import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import { piBaseRegistry } from "./pi-base-registry.js";
+import { COMMANDCODE_PROVIDER_ID } from "./pi-commandcode-provider.js";
+import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -298,9 +297,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
   catalogBaseUrls.clear();
   hiddenCatalogKeys.clear();
   pricedCatalogKeys.clear();
-  const models = registerOpenAiCompatibleCatalog(
-    registerCommandCodeProvider(registerLocalProvider(applyPiModelCompatibility(builtinModels()))),
-  );
+  const models = registerOpenAiCompatibleCatalog(piBaseRegistry());
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const providerName = PROVIDER_DISPLAY_NAMES[provider.id] ?? provider.name;

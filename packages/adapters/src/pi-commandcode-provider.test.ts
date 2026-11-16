@@ -1,10 +1,6 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
-import {
-  COMMANDCODE_API_KEY_ENV,
-  COMMANDCODE_PROVIDER_ID,
-  commandCodeCatalogProvider,
-} from "./pi-commandcode-provider.js";
+import { COMMANDCODE_PROVIDER_ID, commandCodeCatalogProvider } from "./pi-commandcode-provider.js";
 import { catalogProviderProbeBaseUrl, listPiCatalog } from "./pi-models.js";
 
 const provider = commandCodeCatalogProvider(builtinModels());
@@ -77,23 +73,20 @@ describe("commandcode catalogue", () => {
     });
   });
 
-  it("authenticates from the saved connection key, falling back to the deployment env var", async () => {
+  it("authenticates only from the saved connection, never from a vendor env var", async () => {
     const auth = provider.auth.apiKey;
     if (!auth) throw new Error("CommandCode must accept an API key");
     const signal = new AbortController().signal;
-    const ctx = { env: async () => undefined, fileExists: async () => false };
+    // A key in the environment must not stand in for the connection: the shared connection
+    // settings are the only place a provider's key is configured.
+    const ctx = {
+      env: async (name: string) => (name === "COMMANDCODE_API_KEY" ? "env-key" : undefined),
+      fileExists: async () => false,
+    };
 
     await expect(
       auth.resolve({ ctx, credential: { type: "api_key", key: " saved-key " }, signal }),
     ).resolves.toMatchObject({ auth: { apiKey: "saved-key" } });
-
-    const env = {
-      env: async (name: string) => (name === COMMANDCODE_API_KEY_ENV ? "env-key" : undefined),
-      fileExists: async () => false,
-    };
-    await expect(auth.resolve({ ctx: env, signal })).resolves.toMatchObject({
-      auth: { apiKey: "env-key" },
-    });
 
     await expect(auth.resolve({ ctx, signal })).resolves.toBeUndefined();
   });

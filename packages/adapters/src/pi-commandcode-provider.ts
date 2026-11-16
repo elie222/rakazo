@@ -18,8 +18,6 @@ import { guardToolCallNames } from "./pi-tool-call-guard.js";
 
 export const COMMANDCODE_PROVIDER_ID = "commandcode";
 
-export const COMMANDCODE_API_KEY_ENV = "COMMANDCODE_API_KEY";
-
 /** Chat Completions root: the OpenAI SDK appends `/chat/completions`. */
 const CHAT_BASE_URL = "https://api.commandcode.ai/provider/v1";
 
@@ -233,14 +231,10 @@ export function commandCodeCatalogProvider(base: MutableModels): Provider {
     auth: {
       apiKey: {
         name: "CommandCode API key",
-        resolve: async ({ ctx, credential }) => {
-          const apiKey =
-            credential?.key?.trim() || (await ctx.env(COMMANDCODE_API_KEY_ENV))?.trim();
+        resolve: async ({ credential }) => {
+          const apiKey = credential?.key?.trim();
           if (!apiKey) return undefined;
-          return {
-            auth: { apiKey },
-            source: credential?.key ? "CommandCode API key" : COMMANDCODE_API_KEY_ENV,
-          };
+          return { auth: { apiKey }, source: "CommandCode API key" };
         },
       },
     },
@@ -250,8 +244,9 @@ export function commandCodeCatalogProvider(base: MutableModels): Provider {
 }
 
 export function registerCommandCodeProvider(base: MutableModels): MutableModels {
-  // Tests stub the registry with only the lookups a run needs, and the traits below are read from
-  // the other providers, so registration needs a base that can actually hold providers.
+  // Several runtime tests replace Pi's bundled catalogue with a stub that only answers getModel, and
+  // this provider's traits are read from the other providers, so registration has to accept a base
+  // that cannot hold providers instead of failing the run it is building.
   if (typeof base.getProviders !== "function" || typeof base.setProvider !== "function")
     return base;
   base.setProvider(commandCodeCatalogProvider(base));
