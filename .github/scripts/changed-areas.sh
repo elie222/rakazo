@@ -79,7 +79,7 @@ while IFS= read -r file; do
 done <<<"$files"
 if [[ "$e2e" == true ]]; then www=true; fi
 if [[ "$all_packages" == true || "$unit_packages" == true ]]; then
-  unit_shards="[1,2,3,4,5,6]"
+  unit_shards="[1,2,3,4]"
 elif [[ "$unit_site" == true ]]; then
   unit_shards="[1]"
 else

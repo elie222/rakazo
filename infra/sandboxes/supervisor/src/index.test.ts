@@ -5,6 +5,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { resolveSupervisorToken } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import { resolveDockerSocketPath } from "./context.js";
@@ -737,13 +738,10 @@ describe("sandbox supervisor input containment", () => {
   it("serializes screen lifecycle operations by container", async () => {
     const locks = new Map<string, Promise<void>>();
     const events: string[] = [];
-    let releaseFirst!: () => void;
-    const firstBlocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstBlocked = deferred();
     const first = withKeyedLock(locks, "container-1", async () => {
       events.push("ensure:start");
-      await firstBlocked;
+      await firstBlocked.promise;
       events.push("ensure:end");
     });
     const release = withKeyedLock(locks, "container-1", async () => {
@@ -752,7 +750,7 @@ describe("sandbox supervisor input containment", () => {
 
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(events).toEqual(["ensure:start"]);
-    releaseFirst();
+    firstBlocked.resolve();
     await Promise.all([first, release]);
     expect(events).toEqual(["ensure:start", "ensure:end", "release"]);
     expect(locks.size).toBe(0);

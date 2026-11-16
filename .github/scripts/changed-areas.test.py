@@ -63,7 +63,7 @@ def vitest_config_files(config):
 
 
 AREAS = ("web", "e2e", "server", "www", "native", "compose", "all_packages")
-EVERY_SHARD = "[1,2,3,4,5,6]"
+EVERY_SHARD = "[1,2,3,4]"
 
 
 def expect(*on, unit=EVERY_SHARD):

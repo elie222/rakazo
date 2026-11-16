@@ -9,6 +9,7 @@ export function useRedrawAtMidnight() {
     midnight.setHours(24, 0, 0, 0);
     return midnight.getTime() - Date.now();
   }, [day]);
-  useTimeout(() => setDay(new Date()), untilMidnight);
+  // Keyed on the day: two nights can leave the same delay, which alone would not restart it.
+  useTimeout(() => setDay(new Date()), untilMidnight, day);
   return day;
 }

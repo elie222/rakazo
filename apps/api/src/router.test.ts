@@ -36,6 +36,8 @@ import {
   SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
+  VaultItemRefusedError,
+  VaultRetryError,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
@@ -48,6 +50,8 @@ import {
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
@@ -1172,17 +1176,22 @@ describe("answers the server can't save", () => {
   it.each([
     ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
     // The person blocked bots from the item while the request waited.
-    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for a blocked item",
+      new VaultItemRefusedError(BLOCKED_ITEM_ANSWER),
+      BLOCKED_ITEM_ANSWER,
+      400,
+    ],
     [
       "for an item chosen for other bots",
-      new Error(UNCHOSEN_ITEM_ANSWER),
+      new VaultItemRefusedError(UNCHOSEN_ITEM_ANSWER),
       UNCHOSEN_ITEM_ANSWER,
       400,
     ],
     // The saved login it replaces can't be read for now: a retry may save it.
     [
       "held back by a saved login it can't read",
-      new Error(SAVED_LOGIN_UNREADABLE),
+      new VaultRetryError(SAVED_LOGIN_UNREADABLE),
       SAVED_LOGIN_UNREADABLE,
       409,
     ],
@@ -1270,7 +1279,7 @@ describe("secret request dismissal", () => {
       email: "user@example.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const send = (json: Record<string, unknown>) =>
       handle(
         handler,
@@ -1376,7 +1385,7 @@ describe("secret request dismissal", () => {
   it("reports a credential its destination cannot carry as a bad request", async () => {
     const h = setup(true);
     h.answerRunInput.mockRejectedValue(
-      new Error("Credential cannot be used with this authentication method"),
+      new VaultItemRefusedError("Credential cannot be used with this authentication method"),
     );
     const response = await h.send({ answer: "example\nvalue" });
 
@@ -1387,9 +1396,13 @@ describe("secret request dismissal", () => {
     expect(h.enqueue).not.toHaveBeenCalled();
   });
 
-  it("keeps unexpected answer failures as server errors", async () => {
+  it.each([
+    ["an unexpected failure", "database unavailable"],
+    // Only the vault's own refusal is the person's to fix, whatever another error says.
+    ["one that reads like a refusal", "Invalid credential destination — name: x"],
+  ])("keeps %s as a server error", async (_case, message) => {
     const h = setup(true);
-    h.answerRunInput.mockRejectedValue(new Error("database unavailable"));
+    h.answerRunInput.mockRejectedValue(new Error(message));
     const response = await h.send({ answer: "Paris" });
 
     expect(response.status).toBe(500);
@@ -1404,14 +1417,14 @@ describe("thread stream authorization", () => {
   function threadStream() {
     vi.useFakeTimers();
     const queued: ProductEvent[] = [];
-    let waiting: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+    let waiting: Deferred<IteratorResult<ProductEvent>> | undefined;
     const follow = {
-      next: () =>
-        queued.length > 0
-          ? Promise.resolve({ done: false as const, value: queued.shift()! })
-          : new Promise<IteratorResult<ProductEvent>>((resolve) => {
-              waiting = resolve;
-            }),
+      next: () => {
+        if (queued.length > 0)
+          return Promise.resolve({ done: false as const, value: queued.shift()! });
+        waiting = deferred();
+        return waiting.promise;
+      },
       return: vi.fn(async () => ({ done: true as const, value: undefined })),
     };
     const emit = (seq: number, text: string, extra?: Partial<ProductEvent>) => {
@@ -1427,7 +1440,7 @@ describe("thread stream authorization", () => {
         ...extra,
       };
       if (waiting) {
-        waiting({ done: false, value: event });
+        waiting.resolve({ done: false, value: event });
         waiting = undefined;
       } else {
         queued.push(event);
@@ -2579,8 +2592,6 @@ describe("MCP server health", () => {
     args: ["-y", "@klodr/gmail-mcp@2.0.2"],
   };
 
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   it.each([
     [{ mcpStdioEnabled: false }, "Stdio MCP servers aren't available here"],
     [{ mcpStdioAllowedCommands: [] }, "Stdio MCP servers aren't available here"],
@@ -3406,16 +3417,13 @@ describe("connections.begin", () => {
 
   it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {
     vi.useFakeTimers();
-    let releaseSlot = () => {};
+    const slot = deferred();
     let holder: Promise<void> = Promise.resolve();
     const begin = vi.fn(async () => {
       // Another provider call takes this scope's slot while this one talks to the provider.
       holder = runProviderTransaction(
         providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-        () =>
-          new Promise<void>((resolve) => {
-            releaseSlot = resolve;
-          }),
+        () => slot.promise,
         120_000,
       );
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
@@ -3493,7 +3501,7 @@ describe("connections.begin", () => {
         expect.objectContaining({ data: { status: "error" } }),
       );
     } finally {
-      releaseSlot();
+      slot.resolve();
       await holder;
       vi.useRealTimers();
     }
@@ -3509,7 +3517,11 @@ describe("connections.begin", () => {
   const { ref: _ref, ...LEFTOVER_APP } = LEFTOVER_REQUEST;
 
   /** A begin whose row a revoke took while the provider was answering. */
-  function lostBegin(connector: Record<string, unknown>, state: string) {
+  function lostBegin(
+    connector: Record<string, unknown>,
+    state: string,
+    authorizationUrl: string | null = "https://provider.test/go",
+  ) {
     const jobs = {
       enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
       enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
@@ -3536,7 +3548,7 @@ describe("connections.begin", () => {
       connection: root,
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as PrismaClient;
-    const begin = vi.fn(async () => ({ state, authorizationUrl: "https://provider.test/go" }));
+    const begin = vi.fn(async () => ({ state, authorizationUrl }));
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const call = () =>
@@ -3587,6 +3599,40 @@ describe("connections.begin", () => {
     );
     expect(integrationSettings.resolve).not.toHaveBeenCalled();
   });
+
+  it("returns the normalized sign-in URL that it validated", async () => {
+    const { call, tx, jobs } = lostBegin(
+      {},
+      "request-1",
+      "  https://provider.test/sign in?state=a b  ",
+    );
+    tx.connection.updateMany.mockResolvedValue({ count: 1 });
+    await expect(call()).resolves.toEqual({
+      connectionId: "conn-1",
+      authorizationUrl: "https://provider.test/sign%20in?state=a%20b",
+    });
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each(["example-app", "javascript:alert(1)", "file:///tmp/fixture", "custom-app:signin"])(
+    "rejects an invalid sign-in URL before returning it to clients: %s",
+    async (url) => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1", url);
+      await expect(call()).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+        message: "The app returned an invalid sign-in URL.",
+      });
+      expect(root.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: "error" } }),
+      );
+      expect(tx.connection.updateMany).not.toHaveBeenCalled();
+      expect(jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "connection.cleanup" }),
+      );
+      expect(cancelAuthorizationRequest).toHaveBeenCalledOnce();
+    },
+  );
 
   it("records the removal with the lost race and deletes the record once it is done", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
@@ -4268,15 +4314,12 @@ describe("connections.complete", () => {
           dataDir: "/tmp/rakazo-router-test",
         } as unknown as RouterDeps),
       );
-      let releaseSlot = () => {};
+      const slot = deferred();
       const holder =
         held === "slot"
           ? runProviderTransaction(
               providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-              () =>
-                new Promise<void>((resolve) => {
-                  releaseSlot = resolve;
-                }),
+              () => slot.promise,
               60_000,
             )
           : Promise.resolve();
@@ -4308,7 +4351,7 @@ describe("connections.complete", () => {
         expect(connectionReady).not.toHaveBeenCalled();
         expect(prisma.$transaction).toHaveBeenCalledTimes(held === "lock" ? 1 : 0);
       } finally {
-        releaseSlot();
+        slot.resolve();
         await holder;
         vi.useRealTimers();
       }
