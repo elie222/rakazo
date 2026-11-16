@@ -103,7 +103,7 @@ describe("provisionRuntimeRole", () => {
 
 describe("timeZoneWarning", () => {
   const session = (zone: string) =>
-    ({ $queryRawUnsafe: async () => [{ zone, login: "rakazo_app" }] }) as never;
+    ({ $queryRawUnsafe: async () => [{ zone, login: "rakazo_app", database: "rakazo" }] }) as never;
 
   it.each(["UTC", "Etc/UTC", "GMT", "Etc/GMT", "GMT0", "Etc/GMT+0", "Greenwich", "Zulu"])(
     "stays quiet for %s",
@@ -112,9 +112,10 @@ describe("timeZoneWarning", () => {
     },
   );
 
-  it("warns for a zone with an offset, naming the login", async () => {
-    await expect(timeZoneWarning(session("Europe/London"))).resolves.toContain(
-      "ALTER ROLE rakazo_app",
-    );
+  it("warns for a zone with an offset, naming the database and the login", async () => {
+    const warning = await timeZoneWarning(session("Europe/London"));
+    expect(warning).toContain("ALTER DATABASE rakazo SET timezone TO 'UTC'");
+    expect(warning).toContain("ALTER ROLE rakazo_app");
+    expect(warning).not.toContain("db:migrate");
   });
 });

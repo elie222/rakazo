@@ -298,13 +298,15 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
 
 /** Warns when sessions do not run in UTC, which every timestamp comparison with now() assumes. */
 export async function timeZoneWarning(prisma: PrismaClient): Promise<string | undefined> {
-  const [row] = await prisma.$queryRawUnsafe<Array<{ zone: string; login: string }>>(
-    "SELECT current_setting('TimeZone') AS zone, current_user AS login",
+  const [row] = await prisma.$queryRawUnsafe<
+    Array<{ zone: string; login: string; database: string }>
+  >(
+    "SELECT current_setting('TimeZone') AS zone, quote_ident(current_user) AS login, quote_ident(current_database()) AS database",
   );
   if (!row || /^(Etc\/)?(UTC|UCT|Universal|Zulu|GMT|GMT[+-]?0|Greenwich)$/i.test(row.zone))
     return undefined;
   // A time zone set on the login wins over the database's, so the fix may be either.
-  return `The database time zone is ${row.zone}, so stored times are compared hours off. Run \`pnpm db:migrate\` as the database owner (or ALTER DATABASE <name> SET timezone TO 'UTC'); if the ${row.login} login has its own time zone, also run ALTER ROLE ${row.login} SET timezone TO 'UTC'.`;
+  return `The database time zone is ${row.zone}, so stored times are compared hours off. As the database owner, run ALTER DATABASE ${row.database} SET timezone TO 'UTC'; if the ${row.login} login has its own time zone, also run ALTER ROLE ${row.login} SET timezone TO 'UTC'.`;
 }
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
