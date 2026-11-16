@@ -161,11 +161,14 @@ export function ComputerProviderSettings({
                 <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
                 <OptionSelect
                   id={`${selectId}-${field.key}`}
-                  value={draft.values[field.key] || null}
+                  value={draft.values[field.key] || (field.required ? null : "")}
                   onValueChange={change}
                   required={field.required}
                   className="w-fit"
-                  options={field.options ?? []}
+                  options={[
+                    ...(field.required ? [] : [{ value: "", label: t`Default` }]),
+                    ...(field.options ?? []),
+                  ]}
                 />
               </Field>
             ) : (

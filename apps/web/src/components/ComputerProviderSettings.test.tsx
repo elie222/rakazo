@@ -229,3 +229,43 @@ it("reports the deployment's provider and reads the account again", async () => 
   });
   expect(me).toHaveBeenCalledTimes(2);
 });
+
+it("lets an optional choice go back to the provider's default", async () => {
+  const withRegion = {
+    ...saved,
+    providers: [
+      {
+        ...saved.providers[0]!,
+        fields: [
+          ...saved.providers[0]!.fields,
+          {
+            key: "region",
+            label: "Region",
+            kind: "select",
+            required: false,
+            options: [{ value: "eu", label: "Europe" }],
+          },
+        ],
+      },
+    ],
+    values: { ...saved.values, region: "eu" },
+  };
+  account.get.mockResolvedValue(withRegion);
+  account.update.mockResolvedValue(withRegion);
+  await act(async () => root.render(settings({ scope: "account" })));
+  const id = [...host.querySelectorAll("label")].find(
+    (node) => node.textContent === "Region",
+  )?.htmlFor;
+  const trigger = document.getElementById(id ?? "");
+  expect(trigger?.textContent).toContain("Europe");
+  await act(async () => trigger?.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (node) => node.textContent === "Default",
+  );
+  await act(async () => option?.click());
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(account.update).toHaveBeenCalledWith({
+    provider: saved.provider,
+    values: { ...saved.values, region: "" },
+  });
+});
