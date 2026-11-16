@@ -174,7 +174,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     return () => {
       current = false;
     };
-  }, [opened, rpc, scope]);
+  }, [rpc, scope]);
 
   const canChooseBots = vaultBotsChoosable(items);
   // Read for each edit, so bots added or a Space's vault changed since are what it offers.
