@@ -265,7 +265,7 @@ function reasoningEffortChoices(message: string): string | undefined {
   if (!detail || typeof detail !== "object" || !("param" in detail)) return undefined;
   if (detail.param !== "reasoning.effort" && detail.param !== "reasoning_effort") return undefined;
   if (!("message" in detail) || typeof detail.message !== "string") return undefined;
-  return detail.message.match(/\bsupported values\b\s*(?:are|:)?\s*([^.}"]*)/i)?.[1];
+  return detail.message.match(/\b(?:supported values|one of)\b\s*(?:are|:)?\s*([^.}"]*)/i)?.[1];
 }
 
 /**
