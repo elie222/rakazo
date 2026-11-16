@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -23,7 +23,7 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
 
-type Options = { enabled?: boolean; onForeground?: boolean };
+type Options = { enabled?: boolean; onForeground?: boolean; restart?: boolean };
 function Screen({ focused, ...options }: { focused: boolean } & Options) {
   return focused ? <Focused {...options} /> : null;
 }
@@ -101,4 +101,23 @@ it("joins a read already in flight instead of restarting it", async () => {
   await render({ focused: true });
   expect(state.rpc).toHaveBeenCalledTimes(2);
   expect(container.textContent).toBe("second");
+});
+
+it("restarts a read still in flight on return to the foreground when asked to", async () => {
+  await render({ focused: true, restart: true });
+  const earlier = deferred<string>();
+  const later = deferred<string>();
+  state.rpc.mockReturnValueOnce(earlier.promise).mockReturnValueOnce(later.promise);
+  state.foreground = false;
+  await render({ focused: true, restart: true });
+  await act(async () => void queryClient.invalidateQueries());
+  state.foreground = true;
+  await render({ focused: true, restart: true });
+  expect(state.rpc).toHaveBeenCalledTimes(3);
+  await act(async () => {
+    earlier.resolve("earlier");
+    later.resolve("later");
+  });
+  await act(flush);
+  expect(container.textContent).toBe("later");
 });

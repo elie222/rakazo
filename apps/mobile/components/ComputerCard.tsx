@@ -205,7 +205,7 @@ export function ComputerCard({
 function useComputerPreview(botId: string | undefined, runId: string | undefined) {
   // A still is only worth keeping while the card shows it.
   const read = { ...rpcQuery("computer/preview", { botId: botId ?? "", runId }), gcTime: 0 };
-  const preview = useScreenQuery(read, { enabled: Boolean(botId) });
+  const preview = useScreenQuery(read, { enabled: Boolean(botId), restart: true });
   // A card that turns read-only or moves to another run never keeps the earlier screen.
   return (botId && preview.data?.image) || null;
 }

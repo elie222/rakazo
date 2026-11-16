@@ -10,6 +10,7 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 import type { ViewProps } from "react-native";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import type { ImportSetupBlock } from "../lib/import-setup";
@@ -56,11 +57,18 @@ export function ImportSetupCard({
   const { width: windowWidth } = useWindowDimensions();
   const retired = isRetiredImportSetup(block);
   // Read again on return from a routine or model screen, and when the thread brings a new block.
-  const state: AgentImportSetupState | null =
-    useScreenQuery(rpcQuery("bots/importSetupState", importSetupStateInput(botId, block)), {
-      enabled: !retired,
-      onForeground: false,
-    }).data ?? null;
+  const query = useScreenQuery(
+    rpcQuery("bots/importSetupState", importSetupStateInput(botId, block)),
+    { enabled: !retired, onForeground: false },
+  );
+  const state: AgentImportSetupState | null = query.data ?? null;
+  const { refetch } = query;
+  const readBlock = useRef(block);
+  useEffect(() => {
+    if (readBlock.current === block) return;
+    readBlock.current = block;
+    if (!retired) void refetch();
+  }, [block, retired, refetch]);
 
   if (retired) return null;
   const cardStyle = [

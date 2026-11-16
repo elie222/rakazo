@@ -15,7 +15,6 @@ import {
   displayName as safeDisplayName,
   workingRoutineName,
 } from "@rakazo/core";
-import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
@@ -34,7 +33,7 @@ import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
-import { queryClient, rpcQuery } from "../../lib/query";
+import { rpcQuery } from "../../lib/query";
 import { useScreenQuery } from "../../lib/screen-query";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
@@ -86,12 +85,12 @@ function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
 }
 
+const noAgentSkills: AgentSkillCatalogEntry[] = [];
+
 /**
  * The chat screen. Hook order is effect order: the snapshot, scroll, sync and send hooks run their
  * effects at the positions the screen ran them before they were split out.
  */
-
-const noAgentSkills: AgentSkillCatalogEntry[] = [];
 export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string }) {
   useChatOnScreen();
   const tokens = mobileTokens();
@@ -297,7 +296,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
 
   const agentSkills: AgentSkillCatalogEntry[] =
-    useQuery(rpcQuery("agentSkills/list"), queryClient).data ?? noAgentSkills;
+    useScreenQuery(rpcQuery("agentSkills/list"), { onForeground: false }).data ?? noAgentSkills;
 
   const scroll = useThreadListScroll({
     history,
