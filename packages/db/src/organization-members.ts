@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { OrganizationRole } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
@@ -16,8 +16,8 @@ export const MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY = 3;
 /** Invitation emails one person sends per day across every organization they manage. */
 export const MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Each invitation email, kept in the security log: no foreign keys, so deleting an
- * organization, an invitation or an account never resets the counts. */
+/** Each invitation email by whom, kept in the security log: no foreign keys, so deleting an
+ * organization or an invitation never resets an inviter's count. It never names the address. */
 const INVITATION_SENT = "organization.invitation.sent";
 /** The Space each person gets when they join, theirs alone until they share it. */
 const OWN_SPACE_NAME = "Personal";
@@ -150,6 +150,7 @@ export async function listOrganizationMembers(
     image: string | null;
     role: OrganizationRole;
     manageable: boolean;
+    roleChangeable: boolean;
   }>;
   invitations: Array<{ id: string; email: string; expiresAt: Date }>;
   canManage: boolean;
@@ -191,20 +192,18 @@ export async function listOrganizationMembers(
   const members = rows
     .map((row) => {
       const memberRole = organizationRole(row.role);
+      const manageable = canManage && memberRole !== "owner" && row.userId !== input.userId;
       return {
         userId: row.userId,
         ...row.user,
         role: memberRole,
-        manageable: canManage && memberRole !== "owner" && row.userId !== input.userId,
+        manageable,
+        // A guest listed here is a removal that stopped part way: removing again finishes it.
+        roleChangeable: manageable && row.role !== GUEST_ROLE,
       };
     })
     .sort((a, b) => rank[a.role] - rank[b.role]);
   return { members, invitations, canManage };
-}
-
-/** Names an address in the security log without storing it. */
-function recipientKey(email: string): string {
-  return createHash("sha256").update(email).digest("hex");
 }
 
 async function lockKey(tx: Prisma.TransactionClient, key: string) {
@@ -215,9 +214,9 @@ async function lockKey(tx: Prisma.TransactionClient, key: string) {
 
 /**
  * Owner and admins. Inviting the same address again replaces its pending invitation with a new
- * one, which is how a lost email is resent. With `sendsEmail`, each email is recorded as it is
- * allowed, in the same transaction, and the daily limits count those records: resending,
- * cancelling or deleting the organization never resets them. Past an address's limit nothing is
+ * one, which is how a lost email is resent. An address's daily limit counts its invitations from
+ * every organization, which cancelling keeps. An inviter's counts the emails they sent, recorded
+ * in the same transaction, which nothing resets. Past an address's limit nothing is
  * emailed: its pending invitation, or a new one, is returned unsent for its link to be shared by
  * hand.
  */
@@ -235,14 +234,13 @@ export async function createOrganizationInvitation(
   send: boolean;
 }> {
   const email = normalizeEmail(input.email);
-  const recipient = recipientKey(email);
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await lockOrganizationMembers(tx, input.organizationId);
       await requireManager(tx, input.organizationId, input.userId);
       // So two invitations at once cannot both take the last email allowed.
       await lockKey(tx, `invitation-sender:${input.userId}`);
-      await lockKey(tx, `invitation-recipient:${recipient}`);
+      await lockKey(tx, `invitation-recipient:${email}`);
       const existing = await tx.member.findFirst({
         where: {
           organizationId: input.organizationId,
@@ -269,13 +267,7 @@ export async function createOrganizationInvitation(
           },
           select: { id: true },
         }),
-        tx.securityEvent.count({
-          where: {
-            type: INVITATION_SENT,
-            createdAt: today,
-            metadata: { path: ["recipient"], equals: recipient },
-          },
-        }),
+        tx.invitation.count({ where: { email, createdAt: today } }),
         tx.securityEvent.count({
           where: { type: INVITATION_SENT, userId: input.userId, createdAt: today },
         }),
@@ -315,7 +307,7 @@ export async function createOrganizationInvitation(
           data: {
             type: INVITATION_SENT,
             userId: input.userId,
-            metadata: { organizationId: input.organizationId, recipient },
+            metadata: { organizationId: input.organizationId },
           },
         });
       return { id, email, ...names, created: true, send };

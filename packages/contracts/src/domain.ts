@@ -414,8 +414,10 @@ export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>;
 
 export const OrganizationMemberSchema = SpaceMemberSchema.extend({
   role: OrganizationRoleSchema,
-  /** Whether the viewer may change their role or remove them: never the owner or themselves. */
+  /** Whether the viewer may remove them: never the owner or themselves. */
   manageable: z.boolean(),
+  /** Whether the viewer may make them an admin or a member: not while their removal is unfinished. */
+  roleChangeable: z.boolean(),
 });
 export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
 

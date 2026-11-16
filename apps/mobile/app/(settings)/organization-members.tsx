@@ -176,11 +176,13 @@ export default function OrganizationMembersScreen() {
                 shouldOpenOnLongPress
                 colorScheme={appearance}
                 actions={[
-                  { id: "role", title: roleTitle, image: "person.badge.key" },
+                  ...(member.roleChangeable
+                    ? [{ id: "role", title: roleTitle, image: "person.badge.key" as const }]
+                    : []),
                   {
                     id: "remove",
                     title: t`Remove`,
-                    image: "person.badge.minus",
+                    image: "person.badge.minus" as const,
                     attributes: { destructive: true },
                   },
                 ]}
@@ -194,7 +196,7 @@ export default function OrganizationMembersScreen() {
                   detail={display.label === member.email ? undefined : member.email}
                   value={member.role === "admin" ? t`Admin` : undefined}
                   accessibilityActions={[
-                    { name: "role", label: roleTitle },
+                    ...(member.roleChangeable ? [{ name: "role", label: roleTitle }] : []),
                     { name: "remove", label: t`Remove` },
                   ]}
                   onAccessibilityAction={({ nativeEvent }) => {

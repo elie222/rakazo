@@ -307,6 +307,7 @@ describe("organization members", () => {
     image: null,
     role,
     manageable,
+    roleChangeable: manageable,
   });
 
   async function render() {

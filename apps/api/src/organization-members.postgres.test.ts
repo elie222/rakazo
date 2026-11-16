@@ -218,7 +218,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     expect(capped.json).toEqual({ url: third.json.url, emailed: false });
     expect(sent.length).toBe(sentBefore + 2);
-    // Each email is on record, and only a hash names the address.
+    // Each email is on record against its sender, and the record never names the address.
     const records = await system.securityEvent.findMany({
       where: { type: "organization.invitation.sent", userId: owner.id },
       select: { metadata: true },
@@ -564,7 +564,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     // Still listed, so the removal can be finished.
     const listed = await call(owner.actor, "organizations/members/list", { organizationId });
     expect(listed.json.members).toContainEqual(
-      expect.objectContaining({ userId: member.id, manageable: true }),
+      expect.objectContaining({ userId: member.id, manageable: true, roleChangeable: false }),
     );
 
     // The owner finishes the removal and keeps the Space.

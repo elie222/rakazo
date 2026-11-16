@@ -138,23 +138,27 @@ export function OrganizationMembersSettings({
                 trailing={
                   member.manageable ? (
                     <RowMenu label={accountDisplay(member, member.email).label}>
-                      <DropdownMenuItem
-                        disabled={change.pending}
-                        onClick={() =>
-                          change.run({
-                            kind: "role",
-                            member,
-                            role: member.role === "admin" ? "member" : "admin",
-                          })
-                        }
-                      >
-                        {member.role === "admin" ? (
-                          <Trans>Make member</Trans>
-                        ) : (
-                          <Trans>Make admin</Trans>
-                        )}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
+                      {member.roleChangeable ? (
+                        <>
+                          <DropdownMenuItem
+                            disabled={change.pending}
+                            onClick={() =>
+                              change.run({
+                                kind: "role",
+                                member,
+                                role: member.role === "admin" ? "member" : "admin",
+                              })
+                            }
+                          >
+                            {member.role === "admin" ? (
+                              <Trans>Make member</Trans>
+                            ) : (
+                              <Trans>Make admin</Trans>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      ) : null}
                       <DropdownMenuItem
                         variant="destructive"
                         onClick={() => {
