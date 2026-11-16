@@ -38,6 +38,7 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
@@ -132,6 +133,8 @@ export function GeneralSettingsPanels({
   const showToolActivityId = useId();
   const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
+  const composerModel = composerModelPickerPreference.use();
+  const composerModelId = useId();
   const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
   const timezoneId = useId();
@@ -424,6 +427,21 @@ export function GeneralSettingsPanels({
               data-testid="composer-enter-to-send-toggle"
               checked={enterToSend}
               onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
+            />
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={composerModelId} className="text-body font-normal text-foreground">
+              <Trans>Model picker in chat</Trans>
+            </Label>
+          }
+          control={
+            <Switch
+              id={composerModelId}
+              data-testid="composer-model-picker-toggle"
+              checked={composerModel}
+              onCheckedChange={(checked) => composerModelPickerPreference.set(checked)}
             />
           }
         />
