@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
-import { databaseClock } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import { enforceModelCreditCap } from "./model-credit-cap.js";
@@ -67,17 +66,17 @@ export async function unexpiredCreditAccount(
 
 /**
  * Payment replay, refunds and disputes reconcile one durable grant. Refunds can never be
- * re-credited; credits an open dispute holds come back when it is won. `readAt` is the database
- * clock before the provider read: a read older than one already applied to the account is
- * skipped, so it cannot release a hold a newer read placed. Returns the micros a purchase seen
- * for the first time granted.
+ * re-credited; credits an open dispute holds come back when it is won. `read` is the account's
+ * read number taken before the provider read: a read older than one already applied is skipped,
+ * so it cannot release a hold a newer read placed. Returns the micros a purchase seen for the
+ * first time granted.
  */
 export async function reconcileCreditPurchase(
   prisma: PrismaClient,
   organizationId: string,
   purchase: BillingCreditPurchase,
   now = new Date(),
-  readAt?: Date,
+  read?: bigint,
 ) {
   const disputedCents = purchase.disputedCents ?? 0;
   if (
@@ -89,9 +88,9 @@ export async function reconcileCreditPurchase(
     throw new Error("Invalid credit purchase");
   await creditAccount(prisma, organizationId);
   return prisma.$transaction(async (tx) => {
-    const [account] = await tx.$queryRaw<[{ purchasesSyncedAt: Date | null }]>`
-      SELECT "purchasesSyncedAt" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
-    if (readAt && account.purchasesSyncedAt && account.purchasesSyncedAt > readAt) return 0;
+    const [account] = await tx.$queryRaw<[{ purchaseReadApplied: bigint }]>`
+      SELECT "purchaseReadApplied" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
+    if (read !== undefined && account.purchaseReadApplied > read) return 0;
     const withheldMicros = await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const source = `purchase:${purchase.id}`;
@@ -326,19 +325,21 @@ export async function syncCreditPurchases(
   load: () => Promise<BillingCreditPurchase[]>,
 ) {
   await creditAccount(prisma, organizationId);
-  const readAt = await databaseClock(prisma);
+  // Numbered before the provider read starts, so later reads always carry larger numbers.
+  const { purchaseReadsStarted: read } = await prisma.modelCreditAccount.update({
+    where: { organizationId },
+    data: { purchaseReadsStarted: { increment: 1 } },
+    select: { purchaseReadsStarted: true },
+  });
   const purchases = await load();
-  // Every completed read moves the mark, even an empty one, so no older read can apply after it.
+  // Every completed read is recorded, even an empty one, so no older read can apply after it.
   await prisma.modelCreditAccount.updateMany({
-    where: {
-      organizationId,
-      OR: [{ purchasesSyncedAt: null }, { purchasesSyncedAt: { lt: readAt } }],
-    },
-    data: { purchasesSyncedAt: readAt },
+    where: { organizationId, purchaseReadApplied: { lt: read } },
+    data: { purchaseReadApplied: read },
   });
   let added = false;
   for (const purchase of purchases) {
-    if ((await reconcileCreditPurchase(prisma, organizationId, purchase, new Date(), readAt)) > 0)
+    if ((await reconcileCreditPurchase(prisma, organizationId, purchase, new Date(), read)) > 0)
       added = true;
   }
   return added;

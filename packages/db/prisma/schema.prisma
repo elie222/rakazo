@@ -2577,8 +2577,10 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
-  /// Database time before the newest provider read of purchases applied; older reads are skipped.
-  purchasesSyncedAt     DateTime?
+  /// Numbers each provider read of purchases in the order it started.
+  purchaseReadsStarted  BigInt             @default(0)
+  /// The newest provider read of purchases that completed; older reads are skipped.
+  purchaseReadApplied   BigInt             @default(0)
   entries               ModelCreditEntry[]
   lots                  ModelCreditLot[]
   createdAt             DateTime           @default(now())

@@ -383,14 +383,6 @@ export function needsBillingPortal(status: string | null): boolean {
   return status === "unpaid" || status === "paused";
 }
 
-/** The database clock, so API instances with skewed clocks still order provider reads correctly. */
-export async function databaseClock(prisma: PrismaClient): Promise<Date> {
-  const [{ now }] = await prisma.$queryRaw<[{ now: Date }]>(
-    Prisma.sql`SELECT clock_timestamp() AS "now"`,
-  );
-  return now;
-}
-
 /**
  * Loads the customer's current subscription and overwrites the stored snapshot (`null` clears
  * it). The write only lands if no sync that started later has written first, so an older read
@@ -401,7 +393,10 @@ export async function syncBillingSnapshot(
   customerId: string,
   load: () => Promise<BillingSubscriptionSnapshot | null>,
 ): Promise<boolean> {
-  const startedAt = await databaseClock(prisma);
+  // The database clock, so API instances with skewed clocks still order correctly.
+  const [{ startedAt }] = await prisma.$queryRaw<[{ startedAt: Date }]>(
+    Prisma.sql`SELECT clock_timestamp() AS "startedAt"`,
+  );
   const snapshot = await load();
   const written = await prisma.billingAccount.updateMany({
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },

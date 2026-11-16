@@ -373,7 +373,6 @@ describe("Stripe prepaid model credits", () => {
             disputed: false,
             amount: 50000,
             amount_refunded: 0,
-            created: 1_800_000_000,
           },
         ],
         has_more: false,
@@ -420,7 +419,6 @@ describe("Stripe prepaid model credits", () => {
             disputed: false,
             amount: 2000,
             amount_refunded: 500,
-            created: 1_800_000_000,
           },
         ],
         has_more: false,
@@ -491,7 +489,6 @@ describe("Stripe prepaid model credits", () => {
             disputed: false,
             amount: 1000,
             amount_refunded: 0,
-            created: 1_800_000_000,
           },
         ],
         has_more: false,
@@ -651,7 +648,6 @@ describe("Stripe prepaid model credits", () => {
             disputed: false,
             amount: 999,
             amount_refunded: 0,
-            created: 1_800_000_000,
           },
         ],
         has_more: false,
@@ -723,7 +719,6 @@ describe("Stripe prepaid model credits", () => {
               disputed: false,
               amount: paid,
               amount_refunded: refund,
-              created: 1_800_000_000,
             },
           ],
           has_more: false,
@@ -783,19 +778,14 @@ describe("Stripe credit disputes", () => {
     won: [{ id: "dp_won", amount: 2000, status: "won" }],
     lost: [{ id: "dp_lost", amount: 2000, status: "lost" }],
     partial: [{ id: "dp_needs_response", amount: 1000, status: "needs_response" }],
-    settled: [{ id: "dp_settled", amount: 2000, status: "lost" }],
   };
   const ids = Object.keys(disputes);
   const page = (data: unknown[]) => Response.json({ data, has_more: false });
-  const lookups: string[] = [];
-  const now = 1_800_000_000;
   const provider = new StripeBillingProvider({
     secretKey: "sk_test_fixture",
     webhookSecret: "whsec_fixture",
-    now: () => now * 1000,
     fetch: vi.fn(async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v1/disputes") lookups.push(url.searchParams.get("charge") ?? "");
       if (url.pathname === "/v1/charges")
         return page(
           ids.map((id) => ({
@@ -807,7 +797,6 @@ describe("Stripe credit disputes", () => {
             disputed: true,
             amount: 2000,
             amount_refunded: id === "partial" ? 500 : 0,
-            created: id === "settled" ? now - 3 * 365 * 86_400 : now - 86_400,
           })),
         );
       if (url.pathname === "/v1/checkout/sessions")
@@ -837,12 +826,5 @@ describe("Stripe credit disputes", () => {
       { id: "cs_lost", amountCents: 0 },
       { id: "cs_partial", amountCents: 1500, disputedCents: 1000 },
     ]);
-  });
-
-  it("leaves a purchase whose dispute window has passed as the ledger has it, without a lookup", async () => {
-    lookups.length = 0;
-    const purchases = await provider.listCreditPurchases("cus_fixture");
-    expect(purchases.map((purchase) => purchase.id)).not.toContain("cs_settled");
-    expect(lookups).not.toContain("settled");
   });
 });

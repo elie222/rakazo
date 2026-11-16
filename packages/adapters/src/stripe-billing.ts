@@ -462,7 +462,6 @@ export class StripeBillingProvider implements BillingProvider {
       disputed: z.boolean(),
       amount: z.number().int(),
       amount_refunded: z.number().int(),
-      created: z.number().int(),
     });
     const chargesPromise = this.listPages(`/v1/charges?customer=${customer}`, chargeSchema);
     const metadata = z.record(z.string(), z.string());
@@ -520,20 +519,10 @@ export class StripeBillingProvider implements BillingProvider {
       (charge) =>
         charge.payment_intent && charge.currency === "usd" && charge.paid && charge.captured,
     );
-    // `disputed` stays set after a dispute is won, so each dispute's own status decides. Past the
-    // window no dispute can still open or change, so those purchases are left as the ledger has
-    // them instead of being looked up on every sync.
-    const settledBefore = this.now() / 1000 - DISPUTE_WINDOW_SECONDS;
-    const final = new Set(
-      settled
-        .filter((charge) => charge.disputed && charge.created < settledBefore)
-        .map((charge) => charge.payment_intent!),
-    );
+    // `disputed` stays set after a dispute is won, so each dispute's own status decides.
     // One at a time, so an account with many disputes cannot burst the rate limit.
     const disputes = new Map<string, Array<{ amount: number; status: string }>>();
-    for (const charge of settled.filter(
-      (charge) => charge.disputed && !final.has(charge.payment_intent!),
-    ))
+    for (const charge of settled.filter((charge) => charge.disputed))
       disputes.set(
         charge.id,
         await this.listPages(
@@ -563,8 +552,7 @@ export class StripeBillingProvider implements BillingProvider {
         session.currency !== "usd" ||
         !amount ||
         session.amount_total !== amount ||
-        !session.payment_intent ||
-        final.has(session.payment_intent)
+        !session.payment_intent
       )
         continue;
       purchases.push(
@@ -598,7 +586,6 @@ export class StripeBillingProvider implements BillingProvider {
               creditLineSchema,
             ),
       ]);
-      if (payments.some((payment) => final.has(payment.payment.payment_intent ?? ""))) continue;
       const paid = payments.reduce((sum, payment) => {
         const net = netPaid.get(payment.payment.payment_intent ?? "") ?? NOTHING_PAID;
         return { paid: sum.paid + net.paid, disputed: sum.disputed + net.disputed };
@@ -1020,8 +1007,6 @@ const syncEventTypes = new Set([
 ]);
 
 type NetPayment = { paid: number; disputed: number };
-// Card networks accept disputes for up to 540 days after a charge, and decide them within months.
-const DISPUTE_WINDOW_SECONDS = 2 * 365 * 24 * 60 * 60;
 const NOTHING_PAID: NetPayment = { paid: 0, disputed: 0 };
 // Inquiries (`warning_*`) withdraw no money, and a won dispute returns it.
 const OPEN_DISPUTE = ["needs_response", "under_review"] as const;
