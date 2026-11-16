@@ -33,8 +33,10 @@ const PROSE_MATCHER = /\b(?:instructions|description)\s*:\s*["']~/g;
 export function seeksWords(literal) {
   if (literal.startsWith("/")) {
     const source = literal.slice(1, literal.lastIndexOf("/"));
-    // An anchored pattern with no alternatives compares the whole value, like ===.
-    if (/^\^[^|]*\$$/.test(source)) return false;
+    // An anchored pattern with no alternatives or open spans compares the whole value, like ===;
+    // `^.*words.*$` is still a search for words.
+    if (/^\^[^|]*\$$/.test(source) && !/(?:\.|\[\^?(?:[^\]\\]|\\.)*\])[*+]/.test(source))
+      return false;
     const plain = source.replace(/\\[a-zA-Z]/g, " ").replace(/\(\?[:=!<]+/g, " ");
     return plain.split(/[^A-Za-z0-9_.\-/]+/).some(isWord);
   }

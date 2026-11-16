@@ -249,6 +249,24 @@ describe("tool-choice grading", () => {
     ).toBe(true);
   });
 
+  it("judges only the bot's own settings; other tools' prose arguments need only be present", () => {
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    for (const others of [
+      { calls: [{ tool: "spawn_bot", args: { instructions: "*" } }] },
+      { anyOf: [{ tool: "skill_create", args: { description: "*" } }] },
+      { calls: [{ tool: "update_bot", args: { bot_id: "*", instructions: "*" } }] },
+    ]) {
+      const scenario = toolChoiceEvalCase({ ...base, expect: others });
+      expect(scenario.judge).toBeUndefined();
+    }
+    expect(
+      ToolChoiceCaseSchema.safeParse({
+        ...base,
+        expect: { calls: [{ tool: "spawn_bot", args: { instructions: "~bullet" } }] },
+      }).success,
+    ).toBe(false);
+  });
+
   it("calibrates the judge against passing and failing references", () => {
     expect(new Set(TOOL_CHOICE_JUDGE_CALIBRATION.map((c) => c.pass))).toEqual(
       new Set([true, false]),

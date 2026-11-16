@@ -24,6 +24,8 @@ const graders = [
   "pass: replyText.match(/order placed/i) !== null,",
   "expect(\n  reply,\n).toContain('a summary');",
   'const told = e.memory\n  .toLowerCase()\n  .includes("the user said");',
+  "pass: /^.*bullet points.*$/i.test(reply),",
+  "pass: /^[^.]*next step[\\s\\S]+$/.test(reply),",
 ].join("\n");
 
 const deterministic = [
@@ -58,7 +60,9 @@ test("counts word matches on model prose in eval code, not in grader tests or pr
   assert.deepEqual(
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
-      "packages/testkit/src/evals/graders.ts": [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 19],
+      "packages/testkit/src/evals/graders.ts": [
+        1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 19, 20, 21,
+      ],
       "packages/testkit/src/flows/shopping.ts": [1],
     },
   );

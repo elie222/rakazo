@@ -202,6 +202,19 @@ export function restoreEvidence(value: unknown): unknown {
   );
 }
 
+/**
+ * Without a judge, trials of judged cases stay not-run (unqualified, never a pass) with `reason`,
+ * so the cases checked in code still run. Returns the held-back case ids.
+ */
+export function holdBackJudged(
+  trials: TrialResult[],
+  judged: ReadonlySet<string>,
+  reason: string,
+): Set<string> {
+  for (const trial of trials) if (judged.has(trial.caseId)) trial.reason = reason;
+  return new Set(trials.filter((t) => judged.has(t.caseId)).map((t) => t.caseId));
+}
+
 export function emptyTrial(caseId: string, trial: number): TrialResult {
   return {
     caseId,

@@ -23,6 +23,10 @@ const some = (matcher: Matcher | undefined, test: (m: Matcher) => boolean): bool
     ? matcher.some((m) => some(m, test))
     : matcher !== undefined && test(matcher);
 
+/** `update_bot` without a `bot_id` saves the calling bot's own settings, which botMeans grades. */
+const changesOwnSettings = (call: { tool: string; args?: Record<string, Matcher> }) =>
+  call.tool === "update_bot" && call.args?.bot_id === undefined;
+
 const CallSchema = z.object({
   tool: z.string().min(1),
   args: z.record(z.string(), MatcherSchema).optional(),
@@ -61,10 +65,13 @@ const ExpectSchema = z
   )
   .refine(
     ({ bot, calls, anyOf, botMeans }) =>
-      [bot, ...[...(calls ?? []), ...(anyOf ?? [])].map((c) => c.args)].every((fields) =>
-        PROSE_SETTINGS.every((key) => !some(fields?.[key], (m) => m === "*") || botMeans?.[key]),
-      ),
-    { message: 'A prose setting expected as "*" needs botMeans saying what it must mean' },
+      [bot, ...[...(calls ?? []), ...(anyOf ?? [])].filter(changesOwnSettings).map((c) => c.args)]
+        .flatMap((fields) => PROSE_SETTINGS.filter((key) => some(fields?.[key], (m) => m === "*")))
+        .every((key) => botMeans?.[key]),
+    {
+      message:
+        'The bot\'s own prose setting expected as "*" needs botMeans saying what it must mean',
+    },
   );
 export type ToolChoiceExpect = z.infer<typeof ExpectSchema>;
 

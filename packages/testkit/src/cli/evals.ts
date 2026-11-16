@@ -71,7 +71,13 @@ import {
   RECALL_JUDGE_VERSION,
 } from "../evals/recall.js";
 import type { TrialResult } from "../evals/report.js";
-import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
+import {
+  emptyTrial,
+  holdBackJudged,
+  redact,
+  summarize,
+  validateControls,
+} from "../evals/report.js";
 import type { CasePlan } from "../evals/run-store.js";
 import { judgeIdentity, RunStore } from "../evals/run-store.js";
 import {
@@ -449,15 +455,25 @@ async function main() {
     maxOutputTokens: connection.maxTokens ?? null,
   };
   let judge: EvalJudge | undefined;
-  if (selected.some((c) => c.judge) && !values["cache-probe"]) {
-    if (!suiteJudge) return notRun("This suite has no judge rubric; no inference was scheduled");
-    if (!values["judge-connection"] || !values["judge-pricing"])
-      return notRun(
-        "Semantic cases require --judge-connection and --judge-pricing; no inference was scheduled",
-      );
+  let heldBack = new Set<string>();
+  const judged = new Set(selected.filter((c) => c.judge).map((c) => c.id));
+  const judgeConnectionFile = values["judge-connection"];
+  const judgePricingFile = values["judge-pricing"];
+  if (judged.size && !values["cache-probe"] && !suiteJudge)
+    return notRun("This suite has no judge rubric; no inference was scheduled");
+  if (judged.size && !values["cache-probe"] && (!judgeConnectionFile || !judgePricingFile)) {
+    const reason =
+      "Not run: graded by meaning, which needs --judge-connection and --judge-pricing; unqualified, not a pass";
+    if (judged.size === selected.length) return notRun(reason);
+    heldBack = holdBackJudged(trials, judged, reason);
+    console.log(
+      `Without a judge, ${heldBack.size} judged case(s) stay not-run and unqualified: ${[...heldBack].join(", ")}`,
+    );
+    save();
+  } else if (judged.size && !values["cache-probe"] && suiteJudge) {
     let rawJudgeConnection: unknown;
     try {
-      rawJudgeConnection = readConnection(values["judge-connection"]);
+      rawJudgeConnection = readConnection(judgeConnectionFile!);
     } catch {
       return notRun("A valid judge model connection file is required; no inference was scheduled");
     }
@@ -467,7 +483,7 @@ async function main() {
     const judgeConnection = parsedJudge.data;
     let judgePricing: EvalPricing;
     try {
-      judgePricing = validatePricing(JSON.parse(readFileSync(values["judge-pricing"], "utf8")));
+      judgePricing = validatePricing(JSON.parse(readFileSync(judgePricingFile!, "utf8")));
     } catch {
       return notRun(
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
@@ -712,6 +728,7 @@ async function main() {
       };
     };
     for (let i = 0; i < trials.length; i++) {
+      if (heldBack.has(trials[i]!.caseId)) continue;
       if (stopRequested) {
         for (const remaining of trials.slice(i))
           remaining.reason =

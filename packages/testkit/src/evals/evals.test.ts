@@ -13,10 +13,11 @@ import {
 import { regradeTrial } from "./grading.js";
 import { HISTORY_JUDGE_VERSION } from "./history-fixtures.js";
 import type { EvalJudge } from "./judge.js";
-import { emptyTrial, redact, summarize, validateControls } from "./report.js";
+import { emptyTrial, holdBackJudged, redact, summarize, validateControls } from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
 import { EvalServices } from "./services.js";
+import { TOOL_CHOICE_CASES } from "./tool-choice-cases.js";
 
 const context: AdapterContext = {
   operationId: "synthetic",
@@ -496,6 +497,20 @@ describe("product meaning graded by the judge", () => {
 });
 
 describe("eval run controls and reporting", () => {
+  it("without a judge, holds back only judged cases as unqualified and leaves the rest to run", () => {
+    const judgedIds = new Set(TOOL_CHOICE_CASES.filter((c) => c.judge).map((c) => c.id));
+    expect(judgedIds.size).toBeGreaterThan(0);
+    const trials = TOOL_CHOICE_CASES.map((c) => emptyTrial(c.id, 1));
+    const heldBack = holdBackJudged(trials, judgedIds, "needs a judge");
+    expect(heldBack).toEqual(judgedIds);
+    for (const trial of trials) {
+      expect(trial.status).toBe("not-run");
+      expect(trial.reason === "needs a judge").toBe(judgedIds.has(trial.caseId));
+    }
+    expect(heldBack.size).toBeLessThan(trials.length);
+    expect(summarize(trials).every((row) => row.passed === 0)).toBe(true);
+  });
+
   it("keeps not-run trials separate from failures and first attempt from later success", () => {
     const a = { ...emptyTrial("one", 1), status: "failed" as const, latencyMs: 100 };
     const b = { ...emptyTrial("one", 2), status: "passed" as const, latencyMs: 300 };
