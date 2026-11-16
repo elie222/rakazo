@@ -15,7 +15,6 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { Dispatcher } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -26,7 +25,7 @@ import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-ca
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import { withRejectedRequestCapture } from "./provider-request-shape.js";
-import { fetchPairedWithDispatcher } from "./undici-fetch.js";
+import { fetchForRequest } from "./undici-fetch.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
 export type ReportedUsageFields = Set<keyof AgentUsage>;
@@ -224,13 +223,7 @@ export function usageReportingFetch(
   onRequestId?: (id: string) => void | Promise<void>,
 ): typeof fetch {
   return async (input, init) => {
-    // The wrapper hides the default fetch identity from the SSRF guard. Pair
-    // its transport when the guard attaches a package dispatcher (a plain or proxy-aware
-    // agent); keep injected fetches.
-    const transport =
-      init && "dispatcher" in init && init.dispatcher instanceof Dispatcher
-        ? fetchPairedWithDispatcher(fetcher)
-        : fetcher;
+    const transport = fetchForRequest(fetcher, init);
     rejectedRequests.delete(reported);
     sseObserved.delete(reported);
     dispatchedRequests.add(reported);
@@ -467,38 +460,44 @@ export function observedPiStream(
             ...(observer ? { maxRetries: 0 } : {}),
           }),
         );
+        // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
+        const streamOptions = hooks?.onRejectedRequest
+          ? withRejectedRequestCapture(
+              collectRawUsage
+                ? { ...historyOptions, fetch: historyOptions?.fetch ?? globalThis.fetch }
+                : historyOptions,
+              hooks.onRejectedRequest,
+            )
+          : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
         try {
           const reportRequestId = (id: string) =>
             reservation !== undefined ? observer?.onRequestId?.(reservation, id) : undefined;
-          const callerOnProviderStreamEvent = historyOptions?.onProviderStreamEvent;
-          const requestOptions = collectRawUsage
-            ? {
-                ...historyOptions,
-                fetch: usageReportingFetch(
-                  model.provider === "openrouter"
-                    ? openRouterInferenceFetch(
-                        historyOptions?.fetch ?? globalThis.fetch,
-                        attribution.userId,
-                      )
-                    : (historyOptions?.fetch ?? globalThis.fetch),
-                  reported,
-                  reportRequestId,
-                ),
-                onProviderStreamEvent: async (event: unknown, eventModel: Model<Api>) => {
-                  if (!sseObserved.has(reported)) {
-                    await observeUsageEvent(event, reported, reportRequestId);
-                  }
-                  await callerOnProviderStreamEvent?.(event, eventModel);
-                },
-              }
-            : historyOptions;
+          const callerOnProviderStreamEvent = streamOptions?.onProviderStreamEvent;
           upstream = models.streamSimple(
             model,
             preparedContext,
-            hooks?.onRejectedRequest
-              ? withRejectedRequestCapture(requestOptions, hooks.onRejectedRequest)
-              : requestOptions,
+            collectRawUsage
+              ? {
+                  ...streamOptions,
+                  fetch: usageReportingFetch(
+                    model.provider === "openrouter"
+                      ? openRouterInferenceFetch(
+                          streamOptions?.fetch ?? globalThis.fetch,
+                          attribution.userId,
+                        )
+                      : (streamOptions?.fetch ?? globalThis.fetch),
+                    reported,
+                    reportRequestId,
+                  ),
+                  onProviderStreamEvent: async (event, eventModel) => {
+                    if (!sseObserved.has(reported)) {
+                      await observeUsageEvent(event, reported, reportRequestId);
+                    }
+                    await callerOnProviderStreamEvent?.(event, eventModel);
+                  },
+                }
+              : streamOptions,
           );
         } catch (error) {
           // The request is sent while the stream is consumed, so this one never left.

@@ -1,4 +1,5 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { fetchForRequest } from "./undici-fetch.js";
 
 /**
  * The shape of a model request a provider rejected, safe to log: key names, counts, part types,
@@ -331,7 +332,7 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
       ? {
           fetch: ((input, init) => {
             sent = describeSentBody(input, init);
-            return fetcher(input, init);
+            return fetchForRequest(fetcher, init)(input, init);
           }) as typeof fetch,
         }
       : {}),
