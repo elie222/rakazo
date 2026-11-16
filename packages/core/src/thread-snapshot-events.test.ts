@@ -1103,6 +1103,22 @@ describe("thread event reduction", () => {
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_input");
   });
 
+  it("shows no working line for a question's call that lands after the run paused", () => {
+    const run = threadRun("run-1");
+    const waiting = reduceThreadSnapshot(
+      { ...snapshot([]), run, activeRuns: [run] },
+      event({ type: "run.waiting_input", seq: 6, runId: run.id }),
+    );
+
+    const late = reduceThreadSnapshot(
+      waiting,
+      event({ type: "agent.tool.called", seq: 7, runId: run.id, payload: { name: "ask_user" } }),
+    );
+
+    expect(late?.messages).toEqual([]);
+    expect(late?.cursor).toBe(7);
+  });
+
   it("accumulates tool-call steps and collapses repeats into a count", () => {
     const initial = snapshot([]);
 

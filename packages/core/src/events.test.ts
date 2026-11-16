@@ -701,6 +701,20 @@ describe("projectMessages", () => {
       "m1",
       expect.stringMatching(/^progress:/),
     ]);
+
+    const asked = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "ask_user" },
+        createdAt: at,
+      },
+    ]);
+    expect(asked.map((message) => message.id)).toEqual(["m1"]);
   });
 });
 
