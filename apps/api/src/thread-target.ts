@@ -49,6 +49,7 @@ import {
   retireWaitingQuestionInTransaction,
   SpaceDeletionInProgressError,
   spaceTakesWork,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
@@ -401,13 +402,15 @@ async function verifiedExtraQuotes(
   const verified: ExtraReplyQuote[] = [];
   for (const quote of requested) {
     const parent = parents.get(quote.messageId);
-    const blocks = parent ? MessageBlockSchema.array().safeParse(parent.blocks) : undefined;
-    const role = MessageRole.safeParse(parent?.role);
-    if (!parent || !blocks?.success || !role.success) continue;
+    if (!parent) continue;
+    // Read entry by entry, so a block from an earlier release beside the text does not lose the excerpt.
+    const blocks = storedMessageBlocks(parent);
+    const role = MessageRole.safeParse(parent.role);
+    if (!role.success) continue;
     let text: string | undefined;
     try {
       text = deriveMessageQuote(
-        blocks.data,
+        blocks,
         quote.text,
         parent.role === "user" ? "plain-text" : "markdown",
       );

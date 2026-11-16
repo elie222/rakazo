@@ -4,6 +4,7 @@ import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { reactToThreadMessage } from "./thread-reactions.js";
 import { threadSnapshot } from "./thread-snapshot.js";
@@ -4480,6 +4481,51 @@ describe("sendThreadMessage", () => {
       expect(saved.replyQuote).toBe("42% growth");
       expect(saved.extraReplyQuotes).toEqual([
         { messageId: "second", role: "bot", text: "42% growth" },
+      ]);
+    });
+
+    it("leaves out only the further excerpt whose message blocks cannot be read, and warns about that row", async () => {
+      const warn = vi.spyOn(getLogger(), "warn");
+      const tx = await sendStacked({
+        extraReplyQuotes: [
+          { messageId: "broken-blocks-row", text: "ship on friday" },
+          { messageId: "second", text: "ship on friday" },
+        ],
+        others: [
+          { id: "broken-blocks-row", role: "bot", blocks: { not: "a list" } },
+          { id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] },
+        ],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved.extraReplyQuotes).toEqual([
+        { messageId: "second", role: "bot", text: "ship on friday" },
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ table: "messages", column: "blocks", id: "broken-blocks-row" }),
+      );
+      warn.mockRestore();
+    });
+
+    it("keeps a further excerpt whose message also holds a block this release no longer reads", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "older", text: "ship on friday" }],
+        others: [
+          {
+            id: "older",
+            role: "bot",
+            blocks: [
+              { kind: "text", text: "we should ship on friday" },
+              { kind: "retired_block_kind", detail: 1 },
+            ],
+          },
+        ],
+      });
+
+      expect(tx.message.create.mock.calls[0]![0].data.extraReplyQuotes).toEqual([
+        { messageId: "older", role: "bot", text: "ship on friday" },
       ]);
     });
 
