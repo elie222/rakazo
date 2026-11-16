@@ -51,7 +51,6 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
-  reconcileCreditPurchase,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
   releaseCheckoutLease,
@@ -59,6 +58,7 @@ import {
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
+  syncCreditPurchases,
   unexpiredCreditAccount,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -121,8 +121,6 @@ export interface BillingService {
    * payments could not be read; a failed sale report is left for the next event.
    */
   reportPartnerSales(customerId: string): Promise<void>;
-  /** Whether a partner program is configured to report to. */
-  partnerProgramEnabled: boolean;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
   /** Pushes the organization's member count to the provider. Call when members change. */
@@ -255,11 +253,10 @@ export function createBillingService(deps: {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
       if (account) {
-        let added = false;
-        for (const purchase of await provider.listCreditPurchases(customerId)) {
-          if ((await reconcileCreditPurchase(prisma, account.organizationId, purchase)) > 0)
-            added = true;
-        }
+        const listCreditPurchases = provider.listCreditPurchases.bind(provider);
+        const added = await syncCreditPurchases(prisma, account.organizationId, () =>
+          listCreditPurchases(customerId),
+        );
         await prisma.modelCreditAccount.updateMany({
           where: {
             organizationId: account.organizationId,
@@ -891,7 +888,6 @@ export function createBillingService(deps: {
     },
 
     sync,
-    partnerProgramEnabled: Boolean(deps.partnerProgram),
     async reportPartnerSales(customerId) {
       const account = await prisma.billingAccount.findUnique({
         where: { customerId },

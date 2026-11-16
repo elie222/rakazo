@@ -337,18 +337,13 @@ export function routinesRoutes(ctx: RouterContext) {
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
         const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
         const { threadId } = target;
-        // The previous release stored the key without the user id; a retry still replays it.
-        const keys = input.clientNonce
-          ? [
-              routineTestRunNonce(context.actor, input.clientNonce),
-              `routine-test:${input.clientNonce}`,
-            ]
-          : [];
-        const nonce = keys[0];
+        const nonce = input.clientNonce
+          ? routineTestRunNonce(context.actor, input.clientNonce)
+          : undefined;
         const findExisting = async () =>
-          keys.length
+          nonce
             ? deps.prisma.run.findFirst({
-                where: { threadId, userId: context.actor.userId, clientNonce: { in: keys } },
+                where: { threadId, userId: context.actor.userId, clientNonce: nonce },
                 select: { id: true },
               })
             : null;

@@ -516,15 +516,33 @@ export class StripeBillingProvider implements BillingProvider {
       sessionsPromise,
       invoicesPromise,
     ]);
-    const netPaid = new Map<string, number>();
-    for (const charge of charges) {
-      if (!charge.payment_intent || charge.currency !== "usd" || !charge.paid || !charge.captured)
-        continue;
-      netPaid.set(
-        charge.payment_intent,
-        (netPaid.get(charge.payment_intent) ?? 0) +
-          (charge.disputed ? 0 : Math.max(0, charge.amount - charge.amount_refunded)),
+    const settled = charges.filter(
+      (charge) =>
+        charge.payment_intent && charge.currency === "usd" && charge.paid && charge.captured,
+    );
+    // `disputed` stays set after a dispute is won, so each dispute's own status decides.
+    // One at a time, so an account with many disputes cannot burst the rate limit.
+    const disputes = new Map<string, Array<{ amount: number; status: string }>>();
+    for (const charge of settled.filter((charge) => charge.disputed))
+      disputes.set(
+        charge.id,
+        await this.listPages(
+          `/v1/disputes?charge=${encodeURIComponent(charge.id)}`,
+          z.object({ amount: z.number().int(), status: z.string() }),
+        ),
       );
+    const netPaid = new Map<string, NetPayment>();
+    for (const charge of settled) {
+      const sum = (statuses: readonly string[]) =>
+        (disputes.get(charge.id) ?? [])
+          .filter((dispute) => statuses.includes(dispute.status))
+          .reduce((total, dispute) => total + dispute.amount, 0);
+      const paid = Math.max(0, charge.amount - charge.amount_refunded - sum(LOST_DISPUTE));
+      const previous = netPaid.get(charge.payment_intent!) ?? NOTHING_PAID;
+      netPaid.set(charge.payment_intent!, {
+        paid: previous.paid + paid,
+        disputed: previous.disputed + Math.min(paid, sum(OPEN_DISPUTE)),
+      });
     }
     const purchases: BillingCreditPurchase[] = [];
     for (const session of sessions) {
@@ -538,10 +556,11 @@ export class StripeBillingProvider implements BillingProvider {
         !session.payment_intent
       )
         continue;
-      purchases.push({
-        id: session.id,
-        amountCents: Math.min(amount, netPaid.get(session.payment_intent) ?? 0),
-      });
+      purchases.push(
+        creditPurchase(session.id, netPaid.get(session.payment_intent) ?? NOTHING_PAID, (paid) =>
+          Math.min(amount, paid),
+        ),
+      );
     }
     for (const invoice of invoices) {
       const amount = creditAmount(
@@ -568,10 +587,10 @@ export class StripeBillingProvider implements BillingProvider {
               creditLineSchema,
             ),
       ]);
-      const paid = payments.reduce(
-        (sum, payment) => sum + (netPaid.get(payment.payment.payment_intent ?? "") ?? 0),
-        0,
-      );
+      const paid = payments.reduce((sum, payment) => {
+        const net = netPaid.get(payment.payment.payment_intent ?? "") ?? NOTHING_PAID;
+        return { paid: sum.paid + net.paid, disputed: sum.disputed + net.disputed };
+      }, NOTHING_PAID);
       const periods = lines.filter(
         (line) =>
           line.parent?.type === "subscription_item_details" &&
@@ -593,14 +612,15 @@ export class StripeBillingProvider implements BillingProvider {
           0,
         ),
       );
-      // Credits cover the subscription lines, excluding tax and other items. Refunds
-      // reduce that paid portion proportionally because charges do not identify a line.
-      const amountCents = Number(
-        (BigInt(Math.min(creditAmountCents, invoice.amount_paid)) *
-          BigInt(Math.min(paid, invoice.amount_paid))) /
-          BigInt(invoice.amount_paid),
-      );
-      purchases.push({ id: invoice.id, amountCents, expiresAt });
+      // Credits cover the subscription lines, excluding tax and other items. Refunds and
+      // disputes reduce that paid portion proportionally because charges do not identify a line.
+      const grant = (net: number) =>
+        Number(
+          (BigInt(Math.min(creditAmountCents, invoice.amount_paid)) *
+            BigInt(Math.min(net, invoice.amount_paid))) /
+            BigInt(invoice.amount_paid),
+        );
+      purchases.push({ ...creditPurchase(invoice.id, paid, grant), expiresAt });
     }
     return purchases;
   }
@@ -1062,9 +1082,28 @@ const syncEventTypes = new Set([
   "charge.refunded",
   "charge.dispute.created",
   "charge.dispute.closed",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated",
 ]);
 
-/** Verifies a Stripe-signed webhook and extracts the customer to re-sync. */
+type NetPayment = { paid: number; disputed: number };
+const NOTHING_PAID: NetPayment = { paid: 0, disputed: 0 };
+// Inquiries (`warning_*`) withdraw no money, and a won dispute returns it.
+const OPEN_DISPUTE = ["needs_response", "under_review"] as const;
+const LOST_DISPUTE = ["lost"] as const;
+
+/** `disputedCents` is what open disputes hold back: the grant minus the grant without them. */
+function creditPurchase(
+  id: string,
+  payment: NetPayment,
+  grant: (paidCents: number) => number,
+): BillingCreditPurchase {
+  const amountCents = grant(payment.paid);
+  const disputedCents = amountCents - grant(payment.paid - payment.disputed);
+  return { id, amountCents, ...(disputedCents > 0 ? { disputedCents } : {}) };
+}
+
+/** Verifies a Stripe-signed webhook and extracts the customer, or disputed charge, to re-sync. */
 export function parseStripeWebhook(
   secret: string,
   rawBody: string,

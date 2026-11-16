@@ -2596,6 +2596,10 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
+  /// Numbers each provider read of purchases in the order it started.
+  purchaseReadsStarted  BigInt             @default(0)
+  /// The newest read that applied every purchase it saw; older reads are skipped.
+  purchaseReadApplied   BigInt             @default(0)
   entries               ModelCreditEntry[]
   lots                  ModelCreditLot[]
   createdAt             DateTime           @default(now())
@@ -2611,6 +2615,10 @@ model ModelCreditEntry {
   account                ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
   source                 String             @unique
   amountMicros           BigInt
+  /// A purchase's paid credits an open dispute holds back; `amountMicros` excludes them.
+  disputedMicros         BigInt             @default(0)
+  /// The provider read that last changed this purchase; older reads are skipped.
+  purchaseRead           BigInt             @default(0)
   pending                Boolean            @default(false)
   callId                 String?            @unique
   userId                 String?

@@ -1635,7 +1635,10 @@ export interface BillingPrice {
 export interface BillingCreditPurchase {
   /** Stable provider payment identity, including any subsequent refund adjustment. */
   id: string;
+  /** Paid net of refunds and lost disputes; a reduction is final. */
   amountCents: number;
+  /** Part of `amountCents` an open payment dispute holds back; it returns if the dispute is won. */
+  disputedCents?: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
 }

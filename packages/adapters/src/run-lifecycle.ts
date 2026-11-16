@@ -274,8 +274,7 @@ export async function writeComputerRunRequeue(
     leaseOwner: workerId,
     leaseFence: fence,
   };
-  // With no retry timer a queued run is due now. Set, so the legacy retry trigger does not
-  // stamp a delay that makes the release, which starts only due runs, pass over it.
+  // With no retry timer a queued run is due now.
   const queuedWakeAt = retryAt ?? new Date();
   const releasedHold = {
     status: "queued" as const,
@@ -332,7 +331,6 @@ export async function requeueInterruptedRun(
       error: null,
       leaseOwner: null,
       leaseExpiresAt: null,
-      // Set, so the legacy retry trigger does not hold it back as a failed setup.
       wakeAt,
     },
   });

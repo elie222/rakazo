@@ -26,31 +26,19 @@ export function mountBillingRoutes(
     const parsed = deps.provider.parseWebhook(raw, c.req.raw.headers);
     if (parsed === null) return c.json({ error: "Invalid signature" }, 400);
     if (parsed === "ignored") return c.json({ ok: true });
-    // A payment event only reconciles partner earnings.
-    if (!("customerId" in parsed) && !deps.billing.partnerProgramEnabled)
-      return c.json({ ok: true });
     let customerId: string | null;
     try {
       customerId =
         "customerId" in parsed
           ? parsed.customerId
-          : ((await deps.provider.customerForPayment?.(parsed.paymentId)) ?? null);
+          : await deps.provider.customerForPayment(parsed.paymentId);
+      if (customerId) await deps.billing.sync(customerId);
     } catch (error) {
-      getLogger().error("billing webhook payment lookup failed", error);
+      // A non-2xx makes the provider retry the delivery.
+      getLogger().error("billing webhook sync failed", error);
       return c.json({ error: "Sync failed" }, 500);
     }
     if (!customerId) return c.json({ ok: true });
-    // An event about a payment, such as a dispute, only reconciles partner earnings: credit
-    // balances keep reading disputes as before.
-    if ("customerId" in parsed) {
-      try {
-        await deps.billing.sync(customerId);
-      } catch (error) {
-        // A non-2xx makes the provider retry the delivery.
-        getLogger().error("billing webhook sync failed", error);
-        return c.json({ error: "Sync failed" }, 500);
-      }
-    }
     try {
       await deps.billing.reportPartnerSales(customerId);
     } catch (error) {
