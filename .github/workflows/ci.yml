@@ -381,6 +381,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    secrets:
+      LEGACY_GHCR_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}
 
   publish-mobile-update:
     name: Publish compatible mobile update
