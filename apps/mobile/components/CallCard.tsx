@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import { useQuery } from "@tanstack/react-query";
 import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
@@ -10,11 +11,11 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
+import { accountRpcQuery, queryClient } from "../lib/query";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
 import { getVoicePlaybackState, subscribeVoicePlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
@@ -26,8 +27,6 @@ const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
 const START_RETRY_MS = 3000;
 const START_ATTEMPTS = 20;
-
-let cachedInitial: string | null = null;
 
 /** Fallback until the native call service owns the call. */
 function KeepCallAwake() {
@@ -42,11 +41,14 @@ export function CallCard() {
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [initial, setInitial] = useState(cachedInitial ?? "");
+  // The card stays mounted across account switches; the next account reads its own initial.
+  useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
   const onCall = Boolean(call);
+  const me = useQuery({ ...accountRpcQuery("me"), enabled: onCall }, queryClient).data;
+  const initial = me ? (accountDisplay(me, t`You`).initial ?? "") : "";
   // A crash inside the call UI unmounts this card without ending the call, so the
   // service and its wake lock are released here rather than on the next call change.
   const mountedCall = useRef(false);
@@ -55,29 +57,6 @@ export function CallCard() {
     () => () => {
       if (mountedCall.current) void stopCallBackground();
     },
-    [],
-  );
-
-  useEffect(() => {
-    if (!onCall || cachedInitial !== null) return;
-    const generation = currentSessionGeneration();
-    void rpc("me")
-      .then((me) => {
-        // A sign-out while the request is in flight must not restore the old account's initial.
-        if (generation !== currentSessionGeneration()) return;
-        cachedInitial = accountDisplay(me, t`You`).initial ?? "";
-        setInitial(cachedInitial);
-      })
-      .catch(() => undefined);
-  }, [onCall]);
-
-  // The card stays mounted across account switches; the next account re-reads its own initial.
-  useEffect(
-    () =>
-      subscribeSessionGeneration(() => {
-        cachedInitial = null;
-        setInitial("");
-      }),
     [],
   );
 

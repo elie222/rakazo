@@ -1907,10 +1907,6 @@ model Computer {
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)
-  executionRunId          String?
-  executionBotId          String?
-  executionLeaseExpiresAt DateTime?
-  executionFence          Int                      @default(0)
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
@@ -1928,7 +1924,6 @@ model Computer {
   homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
-  @@index([executionRunId])
   @@map("computers")
 }
 

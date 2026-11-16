@@ -19,6 +19,7 @@ import {
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
@@ -107,3 +108,12 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }
 }
+
+export const openaiVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "OpenAI",
+    description: "Simple TTS plus Whisper-class transcription. Reuse an OpenAI key.",
+    transcribe: true,
+  },
+  create: () => new OpenAIVoiceProvider(),
+};

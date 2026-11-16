@@ -10935,18 +10935,9 @@ describe("groups.archive", () => {
         }),
       },
       computer: {
-        findMany: vi.fn(async ({ where }: { where: { OR?: unknown } }) =>
-          where.OR
-            ? [
-                {
-                  id: "computer-1",
-                  homeKey: "home-1",
-                  kind: "docker",
-                  providerRef: "computer-1",
-                  executionBotId: null,
-                  executionRunId: null,
-                },
-              ]
+        findMany: vi.fn(async ({ where }: { where: { id?: unknown } }) =>
+          where.id
+            ? [{ id: "computer-1", homeKey: "home-1", kind: "docker", providerRef: "computer-1" }]
             : [],
         ),
         updateMany: vi.fn(),
@@ -11079,18 +11070,9 @@ describe("groups.remove", () => {
           ]),
       },
       computer: {
-        findMany: vi.fn(async ({ where }: { where: { OR?: unknown } }) =>
-          where.OR
-            ? [
-                {
-                  id: "computer-1",
-                  homeKey: "home-1",
-                  kind: "docker",
-                  providerRef: "computer-1",
-                  executionBotId: null,
-                  executionRunId: null,
-                },
-              ]
+        findMany: vi.fn(async ({ where }: { where: { id?: unknown } }) =>
+          where.id
+            ? [{ id: "computer-1", homeKey: "home-1", kind: "docker", providerRef: "computer-1" }]
             : [],
         ),
       },

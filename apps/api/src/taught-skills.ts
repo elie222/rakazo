@@ -113,10 +113,6 @@ async function cancelActiveRuns(
   const runIds = activeRuns.map((run) => run.id);
   await clearEndedRunState(deps.prisma, runIds);
   await expireComputerExecutionLeases(deps.prisma, { botId, runId: { in: runIds } });
-  await deps.prisma.computer.updateMany({
-    where: { executionBotId: botId, executionRunId: { in: runIds } },
-    data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
-  });
   await deps.prisma.event.deleteMany({
     where: { type: "thread.progress", runId: { in: runIds } },
   });
