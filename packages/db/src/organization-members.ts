@@ -217,8 +217,9 @@ async function lockKey(tx: Prisma.TransactionClient, key: string) {
  * Owner and admins. Inviting the same address again replaces its pending invitation with a new
  * one, which is how a lost email is resent. With `sendsEmail`, each email is recorded as it is
  * allowed, in the same transaction, and the daily limits count those records: resending,
- * cancelling or deleting the organization never resets them. Past an address's limit its pending
- * invitation is returned unsent, for its link to be shared by hand.
+ * cancelling or deleting the organization never resets them. Past an address's limit nothing is
+ * emailed: its pending invitation, or a new one, is returned unsent for its link to be shared by
+ * hand.
  */
 export async function createOrganizationInvitation(
   prisma: PrismaClient,
@@ -283,11 +284,11 @@ export async function createOrganizationInvitation(
         }),
       ]);
       const names = { organizationName: organization.name, inviterName: inviter.name };
-      const send = input.sendsEmail;
-      if (send && toRecipient >= MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY) {
-        if (pending) return { id: pending.id, email, ...names, created: false, send: false };
-        throw new OrganizationInvitationRateError();
-      }
+      // Past the address's limit nothing is emailed, but the inviter still gets a link to share:
+      // the pending one, or a new one when another organization's invitations used the limit up.
+      const send = input.sendsEmail && toRecipient < MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY;
+      if (input.sendsEmail && !send && pending)
+        return { id: pending.id, email, ...names, created: false, send: false };
       if (send && byInviter >= MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY)
         throw new OrganizationInvitationRateError();
       if (!pending && open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();

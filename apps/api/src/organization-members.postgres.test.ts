@@ -226,7 +226,8 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect(records).toHaveLength(3);
     expect(JSON.stringify(records)).not.toContain(invitee.email);
     const latest = new URL(third.json.url as string).pathname.split("/").at(-1)!;
-    // Cancelling does not reset the count either.
+    // Cancelling does not reset the count either, and another organization's invitations count
+    // too; past the limit the inviter still gets a link to share, unsent.
     const other = `other-${invitee.email}`;
     for (let count = 0; count < 3; count += 1) await invite(owner, organizationId, other);
     const pendingOther = await system.invitation.findFirstOrThrow({
@@ -236,14 +237,16 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       organizationId,
       invitationId: pendingOther.id,
     });
-    expect(
-      (
-        await call(owner.actor, "organizations/invitations/create", {
-          organizationId,
-          email: other,
-        })
-      ).status,
-    ).toBe(429);
+    const elsewhere = await person("elsewhere");
+    for (const inviter of [owner, elsewhere]) {
+      const unsent = await call(inviter.actor, "organizations/invitations/create", {
+        organizationId: inviter.organizationId,
+        email: other,
+      });
+      expect(unsent.status).toBe(200);
+      expect(unsent.json.emailed).toBe(false);
+    }
+    expect(sent.filter((message) => message.to === other)).toHaveLength(3);
 
     // Someone else holding the link learns nothing and cannot join.
     for (const path of ["preview", "accept"]) {
