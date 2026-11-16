@@ -53,9 +53,11 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   decisions. Do not pause monitoring or ask for a merge strategy merely because
   the base advanced, even repeatedly. Review the interaction and proceed: merge
   the tested head for unrelated advances, or update the base and verify material
-  interactions. Treat a routine request to include the current base as a safety
-  objective, not an endless freshness race; an explicit instruction forbidding
-  any behind-base merge remains binding. Ask only for a concrete unresolved
+  interactions. Explicit user conditions remain binding: when the user requires
+  the current base, merge it and rerun the affected checks and required CI,
+  continuing without another permission request if it advances again. Do not
+  reinterpret that condition as permission to merge behind the base. Ask only
+  for a concrete unresolved
   product, security or compatibility decision, or missing access. State that
   decision and your recommendation, rather than asking permission to continue.
   Enforced branch protection still applies. Never bypass required checks.
