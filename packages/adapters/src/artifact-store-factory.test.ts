@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext } from "@rakazo/adapter-kit";
@@ -95,6 +95,8 @@ describe("object artifacts", () => {
     const saved = await routed.put(artifact(), context());
     expect(saved.id).toMatch(/^object:/);
     expect(storage.objects.size).toBe(1);
+    // The data directory stays free of new artifacts, so a replica's own scratch directory suffices.
+    expect(await readdir(path.join(root, "artifacts", context().spaceId))).toEqual([old.id]);
     // Taking away the bucket must fail explicitly, never silently read another backend.
     await expect(new DeploymentArtifactStore(local).get(saved.id, context())).rejects.toThrow(
       "object storage",
