@@ -25,9 +25,7 @@ import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -101,7 +99,13 @@ describePostgres("computer stop (PostgreSQL)", () => {
     await system.thread.create({ data: { spaceId: id, userId: id, botId: bot.id } });
     const sandbox = new FailingSandbox();
     const enqueue = vi.fn<JobPublisher["enqueue"]>(async () => undefined);
-    const jobs: JobPublisher = { enqueue, cancel: vi.fn(), close: async () => undefined };
+    const jobs: JobPublisher = {
+      enqueue,
+      enqueueIn: vi.fn(),
+      cancelIn: vi.fn(),
+      cancel: vi.fn(),
+      close: async () => undefined,
+    };
     const events = createThreadEvents(prisma);
     const home = new LocalAgentHomeStore(dataDir);
     const actor: Actor = {

@@ -5,10 +5,17 @@ import path from "node:path";
 import {
   ChatSdkMessagingSurface,
   createEmulatedSendbluePlatform,
+  MessagingDelivery,
   ScriptedAgentRuntime,
   SendBlueEmulator,
 } from "@rakazo/adapters";
-import { formatMessagingLinkCode, issueMessagingLinkCode } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import {
+  createThreadEvents,
+  createThreadMessage,
+  formatMessagingLinkCode,
+  issueMessagingLinkCode,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { asSystem } from "./system-db.js";
 
@@ -17,7 +24,7 @@ process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
-const describeMessaging = hasDb ? describe.sequential : describe.skip;
+const describeMessaging = hasDb ? describe : describe.skip;
 
 type App = {
   request: (input: string | Request, init?: RequestInit) => Response | Promise<Response>;
@@ -27,9 +34,11 @@ type App = {
 describeMessaging("messaging surface journeys", () => {
   let app: App;
   let stop: () => Promise<void>;
-  let prisma: any;
+  let prisma: PrismaClient;
   const emulator = new SendBlueEmulator();
   const platform = createEmulatedSendbluePlatform(emulator);
+  const messaging = new ChatSdkMessagingSurface([platform]);
+  let delivery: MessagingDelivery;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-messaging-"));
   // Unique per run: identities, threads, and outbox rows persist in the dev
   // database. Random E.164 fixtures — a timestamp suffix repeats within
@@ -45,6 +54,10 @@ describeMessaging("messaging surface journeys", () => {
   const dmThreadId = (address: string) => platform.directThreadId!(address);
   const findIdentity = (address: string) =>
     prisma.messagingIdentity.findUnique({
+      where: { provider_address: { provider: "sendblue", address } },
+    });
+  const requireIdentity = (address: string) =>
+    prisma.messagingIdentity.findUniqueOrThrow({
       where: { provider_address: { provider: "sendblue", address } },
     });
 
@@ -99,11 +112,18 @@ describeMessaging("messaging surface journeys", () => {
       // These journeys exercise the Poke-style open line; the linking journey
       // below covers the default (linking-only) posture explicitly.
       messagingOpenSignup: true,
-      messaging: new ChatSdkMessagingSurface([platform]),
+      messaging,
     });
     app = handles.app;
     stop = handles.stop;
     prisma = asSystem(handles.prisma);
+    delivery = new MessagingDelivery({
+      prisma,
+      messaging,
+      events: createThreadEvents(prisma),
+      jobs: handles.jobs,
+      artifacts: { get: vi.fn(async () => new Uint8Array()) },
+    });
   });
 
   afterAll(async () => {
@@ -152,15 +172,41 @@ describeMessaging("messaging surface journeys", () => {
       where: { identityId: identity.id, kind: "dm" },
     });
     expect(outbound).toHaveLength(1);
-    expect(outbound[0].providerHandle).toBeTruthy();
+    expect(outbound[0]?.providerHandle).toBeTruthy();
 
     const userMessage = await prisma.message.findFirst({
       where: {
-        threadId: (await prisma.thread.findFirst({ where: { botId: identity.botId } })).id,
+        threadId: (await prisma.thread.findFirstOrThrow({ where: { botId: identity.botId } })).id,
         role: "user",
       },
     });
-    expect(userMessage.clientNonce).toBe(`messaging:sendblue:${dmHandle}`);
+    expect(userMessage?.clientNonce).toBe(`messaging:sendblue:${dmHandle}`);
+  });
+
+  it("returns an independent subagent's result to the DM that requested it", async () => {
+    const address = uniqueNumber();
+    const handle = `helper-dm-${stamp}`;
+    await dmAndWaitForReply(address, "summarize the venue notes in the background", handle);
+    const identity = await requireIdentity(address);
+    const result = await waitForDatabase(async () =>
+      prisma.run.findFirst({
+        where: {
+          botId: identity.botId,
+          trigger: "helper_result",
+          status: "completed",
+          messagingMirroredAt: { not: null },
+        },
+      }),
+    );
+    const reply = await prisma.message.findFirstOrThrow({
+      where: { runId: result.id, role: "bot" },
+    });
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: { sourceMessageId: reply.id, identityId: identity.id, kind: "dm", status: "sent" },
+      }),
+    );
+    expect(emulator.sent.some((send) => send.kind === "dm" && send.to === address)).toBe(true);
   });
 
   it("replays the same handle without a duplicate message or send", async () => {
@@ -176,8 +222,8 @@ describeMessaging("messaging surface journeys", () => {
     // Give any erroneous duplicate work a chance to appear.
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const identity = await findIdentity(sender);
-    const thread = await prisma.thread.findFirst({ where: { botId: identity.botId } });
+    const identity = await requireIdentity(sender);
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: identity.botId } });
     const userMessages = await prisma.message.findMany({
       where: { threadId: thread.id, role: "user" },
     });
@@ -208,7 +254,7 @@ describeMessaging("messaging surface journeys", () => {
     await waitForDatabase(async () => (await sentReplies()) === 1);
 
     // The owner started a turn in the app; it is still queued when the text arrives.
-    const thread = await prisma.thread.findFirst({ where: { botId: identity.botId } });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: identity.botId } });
     const task = await prisma.task.create({
       data: {
         spaceId: identity.spaceId,
@@ -250,7 +296,7 @@ describeMessaging("messaging surface journeys", () => {
         }),
       );
       await waitForDatabase(async () => {
-        const run = await prisma.run.findUnique({ where: { id: appRun.id } });
+        const run = await prisma.run.findUniqueOrThrow({ where: { id: appRun.id } });
         return run.status === "completed";
       });
       // The app turn's reply stays in the app, so the text needs its own reply by text.
@@ -262,7 +308,7 @@ describeMessaging("messaging surface journeys", () => {
       2,
     );
     // Only the run that answers the text sees it.
-    const continuation = await prisma.run.findFirst({
+    const continuation = await prisma.run.findFirstOrThrow({
       where: { threadId: thread.id, trigger: "messaging", createdAt: { gt: appRun.createdAt } },
     });
     expect(histories.get(appRun.id)).not.toContain("How is it going?");
@@ -294,25 +340,24 @@ describeMessaging("messaging surface journeys", () => {
         }),
       ),
     );
-    const channel = await prisma.messagingChannel.findUnique({ where: { threadId } });
-    expect(channel).toBeTruthy();
+    const channel = await prisma.messagingChannel.findUniqueOrThrow({ where: { threadId } });
     expect(channel.provider).toBe("sendblue");
     const members = await prisma.messagingChannelMember.findMany({
       where: { channelId: channel.id },
       orderBy: { address: "asc" },
     });
     expect(members).toHaveLength(2);
-    const senderMember = members.find((m: any) => m.address === sender);
-    expect(senderMember.status).toBe("invited");
-    expect(senderMember.identityId).toBeTruthy();
-    const strangerMember = members.find((m: any) => m.address === stranger);
-    expect(strangerMember.identityId).toBeNull();
+    const senderMember = members.find((m) => m.address === sender);
+    expect(senderMember?.status).toBe("invited");
+    expect(senderMember?.identityId).toBeTruthy();
+    const strangerMember = members.find((m) => m.address === stranger);
+    expect(strangerMember?.identityId).toBeNull();
     // invite DM went out to the sender, intro went to the group, both once
     expect(
       emulator.sent.filter((send) => send.kind === "group" && send.groupId === groupId),
     ).toHaveLength(1);
     // the invited-only sender's message was not fanned out to any bot
-    const identity = await findIdentity(sender);
+    const identity = await requireIdentity(sender);
     const runsBefore = await prisma.run.count({ where: { botId: identity.botId } });
 
     // 2. The owner approves by text command, sent as plain SMS.
@@ -358,10 +403,69 @@ describeMessaging("messaging surface journeys", () => {
     });
     expect(posts).toHaveLength(1);
     // Messaging-provisioned users default to "<Provider> <last4>".
-    expect(posts[0].body).toMatch(/^Sendblue's agent: /);
+    expect(posts[0]?.body).toMatch(/^Sendblue's agent: /);
     expect(await prisma.run.count({ where: { botId: identity.botId } })).toBeGreaterThan(
       runsBefore,
     );
+    await app.request(
+      emulator.buildInboundRequest({
+        fromNumber: sender,
+        content: "summarize the venue notes in the background",
+        groupId,
+        participants: [sender, stranger, emulator.phoneNumber],
+        handle: `grp-helper-${stamp}`,
+      }),
+    );
+    const result = await waitForDatabase(async () =>
+      prisma.run.findFirst({
+        where: {
+          botId: identity.botId,
+          trigger: "helper_result",
+          status: "completed",
+          messagingMirroredAt: { not: null },
+        },
+      }),
+    );
+    const reply = await prisma.message.findFirstOrThrow({
+      where: { runId: result.id, role: "bot" },
+    });
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: { sourceMessageId: reply.id, threadId, kind: "group", status: "sent" },
+      }),
+    );
+    expect(
+      await prisma.messagingOutbound.count({ where: { sourceMessageId: reply.id, kind: "dm" } }),
+    ).toBe(0);
+    // A private answer in the helper must also protect later parent replies. The source
+    // blocks are sealed in Postgres, so this exercises decoding rather than a JSON filter.
+    if (!result.delegatedFromRunId) throw new Error("Helper result has no originating helper");
+    const helper = await prisma.run.findUniqueOrThrow({ where: { id: result.delegatedFromRunId } });
+    await createThreadMessage(prisma, {
+      threadId: helper.threadId,
+      botId: helper.botId,
+      runId: helper.id,
+      role: "bot",
+      blocks: [
+        {
+          kind: "ask",
+          text: "Private question",
+          status: "answered",
+          answer: "Private fixture answer",
+        },
+      ],
+    });
+    const privateReply = await createThreadMessage(prisma, {
+      threadId: result.threadId,
+      botId: result.botId,
+      runId: result.id,
+      role: "bot",
+      blocks: [{ kind: "text", text: "A response influenced by a private answer" }],
+    });
+    await delivery.deliverRun(result.id);
+    expect(
+      await prisma.messagingOutbound.count({ where: { sourceMessageId: privateReply.id } }),
+    ).toBe(0);
   });
 
   it("rejects a bad signing secret", async () => {
@@ -438,7 +542,7 @@ describeMessaging("messaging surface journeys", () => {
     const text = (content: string, handle: string, extra: Record<string, unknown> = {}) =>
       app.request(emulator.buildInboundRequest({ fromNumber: owner, content, handle, ...extra }));
     const runStatus = async (id: string) =>
-      (await prisma.run.findUnique({ where: { id }, select: { status: true } })).status;
+      (await prisma.run.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
     const running = () =>
       waitForDatabase(async () =>
         prisma.run.findFirst({ where: { botId: identity.botId, status: "running" } }),
@@ -452,7 +556,7 @@ describeMessaging("messaging surface journeys", () => {
 
     await text("keep working until I stop you", `stop-work-${stamp}`);
     const identity = await waitForDatabase(async () => findIdentity(owner));
-    const thread = await prisma.thread.findFirst({ where: { botId: identity.botId } });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: identity.botId } });
     const first = await running();
 
     await text("stop", `stop-group-${stamp}`, {
@@ -618,7 +722,7 @@ describeMessaging("messaging surface journeys", () => {
     expect(outbound.providerHandle).toBeTruthy();
 
     const status = await app.request(
-      emulator.buildStatusRequest({ handle: outbound.providerHandle, status: "ERROR" }),
+      emulator.buildStatusRequest({ handle: outbound.providerHandle!, status: "ERROR" }),
     );
     expect(status.status).toBe(200);
     await waitForDatabase(async () => {
@@ -678,8 +782,7 @@ describeMessaging("messaging surface journeys", () => {
 
   // Runs last: it unlinks the first journey's identity to free its bot.
   it("links a new address to an existing account via a web-issued code", async () => {
-    const owner = await findIdentity(sender);
-    expect(owner).toBeTruthy();
+    const owner = await requireIdentity(sender);
     // Unlink (as the web UI would) so the bot is free to link again.
     await prisma.messagingIdentity.delete({ where: { id: owner.id } });
     const issued = await issueMessagingLinkCode(prisma, {
@@ -726,11 +829,12 @@ describeMessaging("messaging surface journeys", () => {
 });
 
 async function waitForDatabase<T>(pred: () => Promise<T | false | null | undefined>): Promise<T> {
-  const start = Date.now();
-  while (Date.now() - start < 15_000) {
-    const value = await pred();
-    if (value) return value as T;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("timeout waiting for database state");
+  return vi.waitFor(
+    async () => {
+      const value = await pred();
+      if (value) return value as T;
+      throw new Error("timeout waiting for database state");
+    },
+    { timeout: 15_000, interval: 25 },
+  );
 }

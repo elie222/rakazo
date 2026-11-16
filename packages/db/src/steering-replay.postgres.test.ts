@@ -2,15 +2,16 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { claimSteering, createPendingSteeringRun, finalizeRun, sendUserMessage } from "./events.js";
+import { finalizeRun, sendUserMessage } from "./events.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
 import { createThreadMessage, loadRunHistoryMessages } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
+import { claimSteering, createPendingSteeringRun } from "./thread-steering.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 describePostgres("steering after a run ends without completing (PostgreSQL)", () => {
   let prisma: PrismaClient;
@@ -22,6 +23,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
   let botId: string;
   let threadId: string;
   const address = `+1555${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`;
+  const partnerId = `steering-partner-${randomUUID()}`;
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
@@ -35,11 +37,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     ({ userId, spaceId, botId, threadId } = identity);
     provisioned = true;
@@ -50,7 +48,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       if (prisma && provisioned) {
         await system.messagingIdentity.deleteMany({ where: { provider: "sendblue", address } });
         await system.organization.deleteMany({ where: { id: spaceId } });
-        await system.user.deleteMany({ where: { id: userId } });
+        await system.user.deleteMany({ where: { id: { in: [userId, partnerId] } } });
       }
     } finally {
       await close?.();
@@ -60,9 +58,12 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
   /** The executor finalizes and claims steering inside the run owner's tenant job. */
   const asOwner = <T>(fn: () => Promise<T>) => runAsTenant({ spaceId, userId }, fn);
 
-  async function runSteeredByMessage(status: "running" | "waiting_input") {
+  async function runSteeredByMessage(status: "running" | "waiting_input" | "waiting_takeover") {
     await system.run.updateMany({
-      where: { threadId, status: { in: ["queued", "running", "waiting_input"] } },
+      where: {
+        threadId,
+        status: { in: ["queued", "running", "waiting_input", "waiting_takeover"] },
+      },
       data: { status: "cancelled" },
     });
     const task = await system.task.create({
@@ -108,7 +109,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
         seenIds: [],
       }),
     );
-    if (status === "waiting_input") {
+    if (status !== "running") {
       await system.run.update({ where: { id: run.id }, data: { status, leaseOwner: null } });
     }
     return { task, run, attempt };
@@ -143,6 +144,114 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       }),
     );
   }
+
+  it.each(["app", "direct", "channel"] as const)(
+    "keeps private app steering out of a delegated result originating in %s",
+    async (surface) => {
+      await system.steeringMessage.deleteMany({ where: { botId } });
+      const { run: parent } = await runSteeredByMessage("running");
+      await system.steeringMessage.deleteMany({ where: { botId } });
+      const channelBlock = {
+        kind: "channel_message" as const,
+        provider: "sendblue",
+        channelId: "fixture-channel",
+        fromAddress: address,
+        fromLabel: "Fixture sender",
+        text: "Continue the shared task",
+      };
+      const source = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: userId,
+        blocks: surface === "channel" ? [channelBlock] : [{ kind: "text", text: "Start the task" }],
+      });
+      await system.run.update({
+        where: { id: parent.id },
+        data: {
+          status: "completed",
+          trigger: surface === "app" ? "user" : "messaging",
+          sourceMessageId: source.id,
+        },
+      });
+      const helper = await system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: parent.taskId,
+          status: "completed",
+          trigger: "helper",
+          delegatedFromRunId: parent.id,
+        },
+      });
+      const result = await system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: parent.taskId,
+          status: "running",
+          trigger: "helper_result",
+          delegatedFromRunId: helper.id,
+          leaseOwner: "result-worker",
+          leaseFence: 1,
+        },
+      });
+      const privateIds: string[] = [];
+      for (const addressed of [false, true]) {
+        const message = await createThreadMessage(system, {
+          threadId,
+          role: "user",
+          authorUserId: userId,
+          blocks: [{ kind: "text", text: "Private app instruction" }],
+        });
+        const steering = await system.steeringMessage.create({
+          data: {
+            botId,
+            userId,
+            messageId: message.id,
+            runId: addressed ? result.id : null,
+          },
+        });
+        privateIds.push(steering.id);
+      }
+      const externalMessage = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        blocks:
+          surface === "channel" ? [channelBlock] : [{ kind: "text", text: "Connected follow-up" }],
+      });
+      const externalSteering = await system.steeringMessage.create({
+        data: {
+          botId,
+          userId,
+          messageId: externalMessage.id,
+          originTrigger: "messaging",
+        },
+      });
+      const claimed = await asOwner(() =>
+        claimSteering(prisma, {
+          threadId,
+          botId,
+          runId: result.id,
+          leaseOwner: "result-worker",
+          leaseFence: 1,
+          seenIds: [],
+        }),
+      );
+      expect(claimed.map((row) => row.id)).toEqual(
+        surface === "app" ? privateIds : [externalSteering.id],
+      );
+      const rows = await system.steeringMessage.findMany({ where: { id: { in: privateIds } } });
+      expect(rows.every((row) => row.claimedAt === null)).toBe(surface !== "app");
+      const event = await system.event.findFirstOrThrow({
+        where: { runId: result.id, type: "run.steering.claimed" },
+      });
+      expect(event.payload).toMatchObject({ externalSafe: surface !== "app" });
+    },
+  );
 
   it("does not answer a message again after the failed run already replied to it", async () => {
     const fixture = await runSteeredByMessage("running");
@@ -344,7 +453,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
   });
 
   it("does not answer a message again after an expired wait that already replied to it", async () => {
-    const fixture = await runSteeredByMessage("waiting_input");
+    const fixture = await runSteeredByMessage("waiting_takeover");
     await botReplies(fixture.run.id);
     const { updatedAt } = await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } });
 
@@ -353,12 +462,164 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       expireStuckRun(tx, {
         runId: fixture.run.id,
         threadId,
-        status: "waiting_input",
+        status: "waiting_takeover",
         updatedAt,
         now: new Date(),
       }),
     );
 
     expect(expired).toMatchObject({ continuationRunId: null });
+  });
+
+  /** A second person in the same space, so messages from both land in one bot thread. */
+  async function addPartner() {
+    if (await system.user.findUnique({ where: { id: partnerId } })) return;
+    const { organizationId } = await system.space.findUniqueOrThrow({ where: { id: spaceId } });
+    await system.user.create({
+      data: { id: partnerId, name: "Partner", email: `${partnerId}@example.test` },
+    });
+    await system.member.create({
+      data: {
+        id: randomUUID(),
+        organizationId,
+        userId: partnerId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    // Joining the organization may already add the person to its spaces.
+    await system.spaceMember.upsert({
+      where: { spaceId_userId: { spaceId, userId: partnerId } },
+      create: {
+        id: randomUUID(),
+        organizationId,
+        spaceId,
+        userId: partnerId,
+        createdAt: new Date(),
+      },
+      update: {},
+    });
+  }
+
+  const sendAs = (sender: string, text: string) =>
+    runAsTenant({ spaceId, userId: sender }, () =>
+      sendUserMessage(prisma, {
+        spaceId,
+        threadId,
+        botId,
+        userId: sender,
+        authorUserId: sender,
+        blocks: [{ kind: "text", text }],
+        prompt: text,
+        trigger: "follow_up",
+      }),
+    );
+
+  it("keeps another member's message out of a busy run and continues it as that member", async () => {
+    await addPartner();
+    await system.steeringMessage.deleteMany({ where: { botId, runId: null } });
+    const { task, run, attempt } = await runSteeredByMessage("running");
+
+    const partnerSend = await sendAs(partnerId, `Book the table ${randomUUID()}`);
+    const ownSend = await sendAs(userId, `Also the train ${randomUUID()}`);
+
+    const rows = await system.steeringMessage.findMany({
+      where: { messageId: { in: [partnerSend.messageId, ownSend.messageId] } },
+    });
+    expect(rows.find((row) => row.messageId === partnerSend.messageId)).toMatchObject({
+      userId: partnerId,
+      runId: null,
+    });
+    expect(rows.find((row) => row.messageId === ownSend.messageId)).toMatchObject({
+      userId,
+      runId: run.id,
+    });
+
+    const seenIds = (
+      await system.steeringMessage.findMany({
+        where: { runId: run.id, claimedAt: { not: null } },
+        select: { id: true },
+      })
+    ).map((row) => row.id);
+    const claimed = await asOwner(() =>
+      claimSteering(prisma, {
+        threadId,
+        botId,
+        runId: run.id,
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        seenIds,
+      }),
+    );
+    expect(claimed.map((item) => item.messageId)).toEqual([ownSend.messageId]);
+
+    const result = await asOwner(() =>
+      finalizeRun(prisma, {
+        spaceId,
+        threadId,
+        botId,
+        runId: run.id,
+        taskId: task.id,
+        attemptId: attempt.id,
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "completed",
+        blocks: [{ kind: "text", text: "Done." }],
+      }),
+    );
+    const continuation = await system.run.findUniqueOrThrow({
+      where: { id: (result as { continuationRunId: string }).continuationRunId },
+      include: { task: true },
+    });
+    expect(continuation).toMatchObject({
+      userId: partnerId,
+      trigger: "follow_up",
+      sourceMessageId: partnerSend.messageId,
+    });
+    expect(continuation.task.userId).toBe(partnerId);
+  });
+
+  it("continues each sender's pending messages in a run of their own", async () => {
+    await addPartner();
+    await system.run.updateMany({
+      where: { threadId, status: { in: ["queued", "running", "waiting_input"] } },
+      data: { status: "cancelled" },
+    });
+    await system.steeringMessage.deleteMany({ where: { botId, runId: null } });
+    const pending = [];
+    for (const sender of [partnerId, userId, partnerId]) {
+      const message = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: sender,
+        blocks: [{ kind: "text", text: `pending ${randomUUID()}` }],
+      });
+      pending.push(
+        await system.steeringMessage.create({
+          data: { messageId: message.id, botId, userId: sender },
+        }),
+      );
+    }
+
+    const firstRunId = await asOwner(() =>
+      prisma.$transaction((tx) => createPendingSteeringRun(tx, { spaceId, threadId, botId })),
+    );
+    const first = await system.run.findUniqueOrThrow({ where: { id: firstRunId! } });
+    expect(first.userId).toBe(partnerId);
+    const firstBatch = await system.steeringMessage.findMany({ where: { runId: firstRunId! } });
+    expect(firstBatch.map((row) => row.id).sort()).toEqual([pending[0]!.id, pending[2]!.id].sort());
+
+    await system.run.update({ where: { id: firstRunId! }, data: { status: "cancelled" } });
+    await system.steeringMessage.deleteMany({ where: { runId: firstRunId! } });
+    const secondRunId = await asOwner(() =>
+      prisma.$transaction((tx) => createPendingSteeringRun(tx, { spaceId, threadId, botId })),
+    );
+    const second = await system.run.findUniqueOrThrow({ where: { id: secondRunId! } });
+    expect(second.userId).toBe(userId);
+    expect(
+      (await system.steeringMessage.findMany({ where: { runId: secondRunId! } })).map(
+        (row) => row.id,
+      ),
+    ).toEqual([pending[1]!.id]);
   });
 });

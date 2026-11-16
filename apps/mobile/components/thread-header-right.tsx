@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
 import { Pressable } from "react-native";
@@ -17,20 +18,18 @@ export function openInvite() {
 export function threadHeaderRight({
   inGroup,
   readOnly,
-  t,
   color,
   onGroupSettings,
   onInvite,
 }: {
   inGroup: boolean;
   readOnly: boolean;
-  t: (text: string) => string;
   color: string;
   onGroupSettings: () => void;
   /** Opens the invite sheet; absent when the account cannot invite. */
   onInvite?: () => void;
 }): NativeStackNavigationOptions {
-  const label = inGroup ? t("Group settings") : t("Invite a friend");
+  const label = inGroup ? t`Group settings` : t`Invite a friend`;
   const onPress = inGroup ? onGroupSettings : onInvite;
   // Undefined, not an empty list, so an older iOS header keeps a Restore button set elsewhere.
   if (readOnly || !onPress) return { headerRight: undefined, unstable_headerRightItems: undefined };

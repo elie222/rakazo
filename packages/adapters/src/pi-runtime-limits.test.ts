@@ -41,27 +41,59 @@ describe("modelStreamMaxRetries", () => {
 });
 
 describe.each([
-  ["MODEL_STREAM_TIMEOUT_MS", modelStreamTimeoutMs, MODEL_STREAM_TIMEOUT_MS],
-  ["MODEL_CONNECT_TIMEOUT_MS", modelConnectTimeoutMs, MODEL_CONNECT_TIMEOUT_MS],
-  ["MODEL_STREAM_IDLE_TIMEOUT_MS", modelStreamIdleTimeoutMs, MODEL_STREAM_IDLE_TIMEOUT_MS],
-] as const)("%s", (name, read, fallback) => {
+  ["MODEL_STREAM_TIMEOUT_MS", modelStreamTimeoutMs, MODEL_STREAM_TIMEOUT_MS, 1_000, 2_147_483_647],
+  ["MODEL_CONNECT_TIMEOUT_MS", modelConnectTimeoutMs, MODEL_CONNECT_TIMEOUT_MS, 1_000, 300_000],
+  [
+    "MODEL_STREAM_IDLE_TIMEOUT_MS",
+    modelStreamIdleTimeoutMs,
+    MODEL_STREAM_IDLE_TIMEOUT_MS,
+    0,
+    2_147_483_647,
+  ],
+] as const)("%s", (name, read, fallback, minimum, maximum) => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("reads whole milliseconds from 1 second to 5 minutes and keeps the default otherwise", () => {
+  it("accepts supported whole-millisecond values and retains defaults for invalid values", () => {
     vi.stubEnv(name, undefined);
     expect(read()).toBe(fallback);
-    for (const [value, expected] of [
-      ["1000", 1_000],
-      [" 240000 ", 240_000],
-      ["300000", 300_000],
-    ] as const) {
-      vi.stubEnv(name, value);
-      expect(read()).toBe(expected);
+
+    for (const value of [minimum, 240_000, maximum]) {
+      vi.stubEnv(name, String(value));
+      expect(read()).toBe(value);
     }
-    for (const value of ["", " ", "0", "999", "300001", "-1000", "1500.5", "Infinity", "10m"]) {
+
+    for (const value of [
+      "",
+      " ",
+      String(minimum - 1),
+      String(maximum + 1),
+      "-1000",
+      "1500.5",
+      "Infinity",
+      "10m",
+    ]) {
       vi.stubEnv(name, value);
       expect(read()).toBe(fallback);
     }
+  });
+});
+
+describe("extended model inference timeouts", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("accepts a 230-minute model request timeout", () => {
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "13800000");
+    expect(modelStreamTimeoutMs()).toBe(13_800_000);
+  });
+
+  it("allows disabling stream inactivity detection", () => {
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+    expect(modelStreamIdleTimeoutMs()).toBe(0);
+  });
+
+  it("does not extend connection timeout validation", () => {
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "13800000");
+    expect(modelConnectTimeoutMs()).toBe(MODEL_CONNECT_TIMEOUT_MS);
   });
 });
 
@@ -211,9 +243,30 @@ describe("clipToolResultText", () => {
     expect(clipped.endsWith("…")).toBe(true);
     expect(clipped.length).toBe(TOOL_RESULT_TEXT_LIMIT + 1);
   });
+
+  it("does not split an emoji at the limit", () => {
+    const clipped = clipToolResultText(`${"a".repeat(89)}😀b`, 90);
+    expect(clipped).toBe(`${"a".repeat(89)}…`);
+  });
+
+  it("keeps an emoji that ends exactly at the limit", () => {
+    expect(clipToolResultText(`${"a".repeat(88)}😀b`, 90)).toBe(`${"a".repeat(88)}😀…`);
+  });
 });
 
 describe("clipToolResultContent", () => {
+  it("does not split an emoji where the shared budget runs out", () => {
+    const clipped = clipToolResultContent(
+      [
+        { type: "text" as const, text: "a".repeat(10) },
+        { type: "text" as const, text: `${"b".repeat(4)}😀tail` },
+      ],
+      15,
+    );
+    const last = clipped[1] as { text: string };
+    expect(last.text).toBe(`${"b".repeat(4)}…`);
+  });
+
   it("shares one character budget across all text parts and leaves images", () => {
     const first = "a".repeat(TOOL_RESULT_TEXT_LIMIT - 10);
     const second = "b".repeat(40);

@@ -1,7 +1,7 @@
 import type { SpaceBot } from "@rakazo/contracts";
 import { StyleSheet, View } from "react-native";
-import type { MobileBot } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import type { MobileBot } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 

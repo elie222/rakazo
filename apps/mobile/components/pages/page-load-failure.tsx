@@ -1,5 +1,5 @@
+import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, View } from "react-native";
-import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
 import { pageLoadProblem } from "../../lib/pages";
 import { NativeActionButton } from "../native-action-button";
@@ -19,14 +19,14 @@ export function PageLoadFailure({
   gone?: string;
   onRetry: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const problem = pageLoadProblem(error);
   const message =
     problem === "gone" && gone
       ? gone
       : problem === "offline"
-        ? t("Could not reach the server")
+        ? t`Could not reach the server`
         : fallback;
   return (
     <View style={styles.failure}>
@@ -34,7 +34,7 @@ export function PageLoadFailure({
         {message}
       </Text>
       {message === gone ? null : (
-        <NativeActionButton label={t("Try again")} prominence="secondary" onPress={onRetry} />
+        <NativeActionButton label={t`Try again`} prominence="secondary" onPress={onRetry} />
       )}
     </View>
   );

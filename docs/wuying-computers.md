@@ -8,11 +8,11 @@ and use the mouse and keyboard there, and you can watch or take over the screen 
 
 ## How it fits together
 
-| Part | What it does |
-| --- | --- |
-| ECD API (AccessKey) | Reads the desktop's state, starts it, and issues one-time screen logins |
-| The desktop's MCP gateway | Runs commands, reads and writes files, takes screenshots, sends mouse and keyboard input |
-| Wuying Web SDK | Draws the live screen in the computer panel, served by Rakazo at `/computer-screen/screen.html` |
+| Part                      | What it does                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| ECD API (AccessKey)       | Reads the desktop's state, starts it, and issues one-time screen logins                         |
+| The desktop's MCP gateway | Runs commands, reads and writes files, takes screenshots, sends mouse and keyboard input        |
+| Wuying Web SDK            | Draws the live screen in the computer panel, served by Rakazo at `/computer-screen/screen.html` |
 
 Each bot computer's home is a folder on the desktop, `%USERPROFILE%\rakazo\<home>`. The desktop's
 own disk keeps it. Computers share the desktop, so Rakazo powers it off only when the last
@@ -40,8 +40,8 @@ You need:
 
 Admins can switch new computers to Wuying without editing the environment.
 
-1. Make yourself an admin: add your account's email to `RAKAZO_ADMIN_EMAILS` in `.env` and
-   restart the API. The email must be verified.
+1. Make yourself an admin: add your account's email to `RAKAZO_ADMIN_EMAILS` in `.env`, set
+   `COMPUTER_SETTINGS_ENABLED=true`, and restart the API. The email must be verified.
 2. Open **Settings → Computer**.
 3. Under **New computers run on**, choose **Wuying**.
 4. Fill in the desktop ID, end user ID, region (defaults to `cn-hangzhou`), AccessKey ID and
@@ -54,21 +54,21 @@ token are never shown again. To change other fields later, leave the secret fiel
 keep their saved values. A new MCP gateway URL needs all credentials entered again. Paste the URL
 and token into their separate fields. The gateway must use HTTPS and a public address.
 
-Choosing **Deployment default** sends new computers back to `SANDBOX_PROVIDER` and deletes the
+Choosing **Default** sends new computers back to `SANDBOX_PROVIDER` and deletes the
 saved Wuying connection, so computers still on Wuying start again on the default the next time
 they are used.
 
 ### Each account's own desktop
 
 Every account can use **Settings → Computer**; admins expand **My computers** below the deployment
-form. This sets where that account's own Team Computers run: **Deployment default** keeps them on
+form. This sets where that account's own Team Computers run: **Default** keeps them on
 the deployment's computers (the admin's choice above, or `SANDBOX_PROVIDER`), and **Wuying** runs
 them on a desktop the account brings, with its own AccessKey and MCP gateway. The same checks run
 before it is saved.
 
 The connection is saved to the account, not a space, and no one else can read it. A Team Computer
 moves the next time it starts; files it kept on the old desktop stay there. Private
-Computers always use the deployment's computers. Going back to **Deployment default** deletes the
+Computers always use the deployment's computers. Going back to **Default** deletes the
 saved connection. Accounts choose their own desktop only when the deployment has computers and
 `SANDBOX_PROVIDER` is not `desktop` or `fake`.
 
@@ -76,13 +76,13 @@ saved connection. Accounts choose their own desktop only when the deployment has
 
 Set `SANDBOX_PROVIDER=wuying` and these, on both the API and the worker:
 
-| Variable | Notes |
-| --- | --- |
-| `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | The RAM user's AccessKey |
-| `WUYING_REGION_ID` | Defaults to `cn-hangzhou` |
-| `WUYING_DESKTOP_ID` | The cloud computer |
-| `WUYING_END_USER_ID` | The end user it is assigned to |
-| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
+| Variable                                            | Notes                                          |
+| --------------------------------------------------- | ---------------------------------------------- |
+| `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | The RAM user's AccessKey                       |
+| `WUYING_REGION_ID`                                  | Defaults to `cn-hangzhou`                      |
+| `WUYING_DESKTOP_ID`                                 | The cloud computer                             |
+| `WUYING_END_USER_ID`                                | The end user it is assigned to                 |
+| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN`               | The desktop's MCP gateway and its bearer token |
 
 A connection saved in Settings takes precedence over these variables, for existing Wuying
 computers too. Settings has no effect when `SANDBOX_PROVIDER` is `desktop` or `fake`.
@@ -140,10 +140,10 @@ An unchanged Caddy matcher would add X-Frame-Options to the new runtime and bloc
 
 ## Troubleshooting
 
-| Symptom | Cause and fix |
-| --- | --- |
-| Computer panel stays blank | Run `node scripts/wuying-web-sdk.mjs`; the page needs `WuyingWebSDK.js` and `sdk/ASP/container.html` |
-| Screen connects, then drops | Another viewer took the session; close the other panel or the Wuying client |
-| `Could not reach the Wuying desktop` on Save | Check the AccessKey's permissions, the region and the desktop ID; a running desktop's gateway must answer |
-| Chinese output is garbled | The command did not run through PowerShell; Rakazo switches PowerShell output to UTF-8, other shells keep the system code page |
-| Settings has no Computer provider choice | Your account is not an admin; check `RAKAZO_ADMIN_EMAILS` and that the email is verified |
+| Symptom                                      | Cause and fix                                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Computer panel stays blank                   | Run `node scripts/wuying-web-sdk.mjs`; the page needs `WuyingWebSDK.js` and `sdk/ASP/container.html`                                      |
+| Screen connects, then drops                  | Another viewer took the session; close the other panel or the Wuying client                                                               |
+| `Could not reach the Wuying desktop` on Save | Check the AccessKey's permissions, the region and the desktop ID; a running desktop's gateway must answer                                 |
+| Chinese output is garbled                    | The command did not run through PowerShell; Rakazo switches PowerShell output to UTF-8, other shells keep the system code page            |
+| Settings has no Computer provider choice     | Set `COMPUTER_SETTINGS_ENABLED=true` on the API; for the deployment form, also check `RAKAZO_ADMIN_EMAILS` and that the email is verified |

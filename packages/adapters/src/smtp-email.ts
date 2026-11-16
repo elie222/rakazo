@@ -1,4 +1,6 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import type { NodemailerError, Transporter } from "nodemailer";
 import nodemailer from "nodemailer";
 
@@ -39,10 +41,11 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
   private readonly transport: Transporter;
   private readonly retryDelaysMs: readonly number[];
   private readonly drainTimeoutMs: number;
-  private readonly sleep: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  private readonly sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>;
   private readonly inFlight = new Set<Promise<void>>();
   private readonly shutdown = new AbortController();
   private accepting = true;
+  private draining?: Promise<void>;
 
   constructor(
     private readonly config: SmtpEmailConfig,
@@ -59,7 +62,7 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
       (dependencies.createTransport ?? nodemailer.createTransport)(secureUrl);
     this.retryDelaysMs = dependencies.retryDelaysMs ?? [250, 1_000];
     this.drainTimeoutMs = dependencies.drainTimeoutMs ?? 10_000;
-    this.sleep = dependencies.sleep ?? wait;
+    this.sleep = dependencies.sleep;
   }
 
   describe() {
@@ -82,46 +85,62 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
     return delivery;
   }
 
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     this.accepting = false;
-    const deadline = Date.now() + this.drainTimeoutMs;
-    while (this.inFlight.size > 0) {
-      const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
-      if (completed) continue;
-      this.shutdown.abort();
-      this.inFlight.clear();
+    this.draining ??= this.finishDrain();
+    return this.draining;
+  }
+
+  private async finishDrain(): Promise<void> {
+    try {
+      const deadline = Date.now() + this.drainTimeoutMs;
+      while (this.inFlight.size > 0) {
+        const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
+        if (completed) continue;
+        this.shutdown.abort(new Error("SMTP delivery stopped during shutdown"));
+        this.inFlight.clear();
+        return;
+      }
+    } finally {
       try {
         this.transport.close();
       } catch {
         // Cleanup must continue even when the transport cannot close cleanly.
       }
-      return;
     }
   }
 
   private async deliver(message: TransactionalEmail): Promise<void> {
-    for (let attempt = 0; ; attempt += 1) {
-      if (this.shutdown.signal.aborted) {
-        throw new Error("SMTP delivery stopped during shutdown");
-      }
-      try {
-        await this.transport.sendMail({
-          from: this.config.from,
-          to: message.to,
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-          replyTo: this.config.replyTo,
-          headers: message.headers,
-        });
-        return;
-      } catch (error) {
-        if (this.shutdown.signal.aborted) throw error;
-        const retryDelay = this.retryDelaysMs[attempt];
-        if (retryDelay === undefined || !retrySafe(error)) throw error;
-        await this.sleep(retryDelay, this.shutdown.signal);
-      }
-    }
+    const { signal } = this.shutdown;
+    const { sleep } = this;
+    await retry(
+      async () => {
+        signal.throwIfAborted();
+        try {
+          await this.transport.sendMail({
+            from: message.from ?? this.config.from,
+            to: message.to,
+            ...(message.cc?.length ? { cc: message.cc } : {}),
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+            replyTo: message.replyTo ?? this.config.replyTo,
+            headers: message.headers,
+          });
+        } catch (error) {
+          const refused = signal.aborted ? undefined : refusedRecipientCode(error);
+          if (!refused) throw error;
+          throw new EmailRecipientRejectedError(`SMTP server rejected the recipient (${refused})`);
+        }
+      },
+      {
+        attempts: this.retryDelaysMs.length + 1,
+        delayMs: this.retryDelaysMs,
+        retryable: (error) => !signal.aborted && retrySafe(error),
+        delay: sleep && ((delayMs) => sleep(delayMs, signal)),
+        signal,
+      },
+    );
   }
 }
 
@@ -166,22 +185,12 @@ function retrySafe(error: unknown): boolean {
   return false;
 }
 
-function wait(delayMs: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new Error("SMTP delivery stopped during shutdown"));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new Error("SMTP delivery stopped during shutdown"));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, delayMs);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
+/** The permanent reply code when the server refused a recipient address, before any data. */
+function refusedRecipientCode(error: unknown): number | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const { code, command, responseCode } = error as NodemailerError;
+  if (code !== "EENVELOPE" || command !== "RCPT TO") return undefined;
+  return responseCode && responseCode >= 500 ? responseCode : undefined;
 }
 
 async function settlesWithin(

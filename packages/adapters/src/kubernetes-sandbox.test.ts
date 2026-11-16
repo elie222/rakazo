@@ -5,13 +5,26 @@ import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import { providerFor, readyPod } from "./kubernetes-sandbox.test-support.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
+import { settleMachineCleanup } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
+
+/** Native `AbortSignal.timeout` ignores fake timers. */
+function fakeRequestDeadline() {
+  return vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("request deadline")), ms);
+    return controller.signal;
+  });
+}
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -20,31 +33,6 @@ const context: AdapterContext = {
   userId: "user",
   signal: new AbortController().signal,
 };
-
-const readyPod: V1Pod = {
-  metadata: { name: "pod", labels: { "rakazo-bot-id": "bot-a" } },
-  status: {
-    phase: "Running",
-    podIP: "10.0.0.8",
-    conditions: [{ type: "Ready", status: "True" }],
-  },
-};
-
-function providerFor(
-  core: Partial<KubernetesSandboxSdk["core"]> = {},
-  exec: KubernetesSandboxSdk["exec"]["exec"] = vi.fn(),
-  options: ConstructorParameters<typeof KubernetesSandboxProvider>[0] = {},
-) {
-  return new KubernetesSandboxProvider(options, {
-    core: {
-      readNamespacedPod: vi.fn().mockResolvedValue(readyPod),
-      createNamespacedPod: vi.fn().mockResolvedValue(readyPod),
-      deleteNamespacedPod: vi.fn().mockResolvedValue({ status: "Success" }),
-      ...core,
-    },
-    exec: { exec },
-  } as unknown as KubernetesSandboxSdk);
-}
 
 const computer: ComputerRef = {
   id: "pod",
@@ -73,81 +61,72 @@ function successfulExec(stdoutText = "", stderrText = "", code = 0) {
 }
 
 describe("KubernetesSandboxProvider", () => {
-  it("passes the shared offline sandbox workspace contract", async () => {
-    const files = new Map<string, { content: Buffer; executable: boolean }>();
-    let exportedNames: string[] = [];
-    const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
-      const command = args[3];
-      if (!Array.isArray(command)) throw new Error("expected argv");
-      const stdout = args[4];
-      const stdin = args[6];
-      const finish = () => args[8]?.({ status: "Success" });
-      if (stdin) {
-        const chunks: Buffer[] = [];
-        stdin.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-        stdin.on("end", () => {
-          const content = Buffer.concat(chunks);
-          const write = command.indexOf("rakazo-write");
-          if (write >= 0) {
-            files.set(command[write + 1]!, {
-              content,
-              executable: command[write + 2] === "700",
-            });
-          } else {
-            expect(command).toContain("rakazo-export-list");
-            exportedNames = content.toString().split("\0").filter(Boolean);
-          }
-          finish();
-        });
-      } else {
-        queueMicrotask(() => {
-          if (command.includes("echo")) stdout?.write("graphical-ok\n");
-          else if (command.includes("stat"))
-            stdout?.write(String(files.get(command.at(-1)!)!.content.length));
-          else if (command.includes("cat")) stdout?.write(files.get(command.at(-1)!)!.content);
-          else if (
-            command.includes("find") ||
-            command.some((arg) => arg.includes("find . -regextype"))
-          ) {
-            const directory = command.includes("find")
-              ? command[command.indexOf("find") + 1]!
-              : "/home/rakazo";
-            for (const [name, file] of files) {
-              const relative = name.slice(directory.length + 1);
-              if (!name.startsWith(`${directory}/`)) continue;
-              if (command.includes("-maxdepth")) {
-                if (relative.includes("/")) continue;
-                stdout?.write(
-                  `${relative}\0f\0${file.content.length}\0${file.executable ? "700" : "600"}\0`,
-                );
-              } else stdout?.write(`${relative}\0`);
-            }
-          } else if (command.includes("tar")) {
-            for (const name of exportedNames) {
-              const file = files.get(`/home/rakazo/${name}`)!;
-              for (const chunk of encodeTarEntry(name, file.content, file.executable))
-                stdout?.write(chunk);
-            }
-            stdout?.write(TAR_END);
-          } else if (command.some((arg) => arg.includes("RAKAZO_DESKTOP=")))
-            stdout?.write("RAKAZO_DESKTOP=0:offline-view-token\n");
-          else if (command.some((arg) => arg.includes("getmouselocation")))
-            stdout?.write("cG5n\nCURSOR X=1 Y=2\n");
-          finish();
-        });
+  describe("when the exec connection is refused", () => {
+    class SocketErrorEvent {
+      readonly #status: number;
+      constructor(status: number) {
+        this.#status = status;
       }
-      return { close: vi.fn(), onclose: null, onerror: null } as unknown as Awaited<
-        ReturnType<Exec["exec"]>
-      >;
+      get error() {
+        return new Error(`Unexpected server response: ${this.#status}`);
+      }
+    }
+
+    it("keeps the reason", async () => {
+      expect(JSON.stringify(new SocketErrorEvent(503))).toBe("{}");
+      const failure = await providerFor({}, vi.fn().mockRejectedValue(new SocketErrorEvent(503)))
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ message: "Unexpected server response: 503" });
+      expect(isSandboxGoneError(failure)).toBe(false);
     });
-    const provider = providerFor({}, exec);
-    const provisioned = await provisionPrepared(
-      provider,
-      { botId: "bot-a", homePath: "/unused" },
-      context,
+
+    it.each([
+      ["missing", undefined],
+      ["failed", { status: { phase: "Failed" } }],
+      ["succeeded", { status: { phase: "Succeeded" } }],
+      ["deleting", { ...readyPod, metadata: { deletionTimestamp: new Date() } }],
+    ])("reports a %s pod as a computer that is gone", async (_state, pod) => {
+      const reason = new Error("Unexpected server response: 404");
+      const readNamespacedPod = pod
+        ? vi.fn().mockResolvedValue(pod)
+        : vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404 }));
+      const failure = await providerFor(
+        { readNamespacedPod },
+        vi.fn().mockRejectedValue({ error: reason }),
+      )
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(isSandboxGoneError(failure)).toBe(true);
+      expect(failure).toMatchObject({ message: "Kubernetes computer pod no longer exists" });
+      expect((failure as Error).cause).toBe(reason);
+      expect(readNamespacedPod).toHaveBeenCalledWith(
+        { name: "pod", namespace: "rakazo-sandboxes" },
+        expect.anything(),
+      );
+    });
+
+    it.each(["running", "read fails"])(
+      "keeps the original 404 when the pod is %s",
+      async (state) => {
+        const reason = new Error("Unexpected server response: 404");
+        const readNamespacedPod =
+          state === "running"
+            ? vi.fn().mockResolvedValue(readyPod)
+            : vi.fn().mockRejectedValue(new Error("API unavailable"));
+        const failure = await providerFor(
+          { readNamespacedPod },
+          vi.fn().mockRejectedValue({ error: reason }),
+        )
+          .prepare(computer, context)
+          .catch((error: unknown) => error);
+
+        expect(failure).toBe(reason);
+        expect(isSandboxGoneError(failure)).toBe(false);
+      },
     );
-    await assertSandboxWorkspaceContract(provider, provisioned, context);
-    await provider.destroy(provisioned, context);
   });
 
   it("validates the immutable computer image without package installation", async () => {
@@ -227,6 +206,7 @@ describe("KubernetesSandboxProvider", () => {
     await provider.destroy(computer, context);
     expect(deleteNamespacedPod).toHaveBeenCalledWith(
       expect.objectContaining({ name: computer.providerRef, namespace: "sandboxes" }),
+      expect.anything(),
     );
   });
 
@@ -569,7 +549,10 @@ describe("KubernetesSandboxProvider", () => {
         { botId: "bot-a", homePath: "/unused", providerKind: "kubernetes", providerRef: "pod" },
         context,
       );
-      expect(del).toHaveBeenCalledWith(expect.objectContaining({ gracePeriodSeconds: 0 }));
+      expect(del).toHaveBeenCalledWith(
+        expect.objectContaining({ gracePeriodSeconds: 0 }),
+        expect.anything(),
+      );
       expect(create).toHaveBeenCalledOnce();
     },
   );
@@ -867,12 +850,17 @@ describe("KubernetesSandboxProvider", () => {
     ]);
   });
 
-  it("imports every file through one tar exec", async () => {
+  it("imports large files through bounded chunks in one tar exec", async () => {
     const stdinChunks: Buffer[] = [];
+    const large = Buffer.alloc(64 * 1024 * 1024, 0xa5);
+    let largestChunk = 0;
     const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
       const stdin = args[6];
       if (stdin) {
-        stdin.on("data", (data: Buffer) => stdinChunks.push(Buffer.from(data)));
+        stdin.on("data", (data: Buffer) => {
+          largestChunk = Math.max(largestChunk, data.length);
+          stdinChunks.push(data);
+        });
         stdin.on("end", () => args[8]?.({ status: "Success" }));
       } else {
         queueMicrotask(() => args[8]?.({ status: "Success" }));
@@ -884,15 +872,19 @@ describe("KubernetesSandboxProvider", () => {
     async function* files() {
       yield { path: "one", content: Buffer.from("1") };
       yield { path: `${"d/".repeat(60)}two`, content: Buffer.from("2"), executable: true };
+      yield { path: "large.bin", content: large };
     }
     await providerFor({}, exec).importWorkspace(computer, files(), context);
     const tarCalls = exec.mock.calls.filter((call) => (call[3] as string[]).includes("tar"));
     expect(tarCalls).toHaveLength(1);
-    const reader = new TarReader(1024);
+    expect(largestChunk).toBeLessThanOrEqual(1024 * 1024);
+    const reader = new TarReader(large.length);
     const read = reader.push(Buffer.concat(stdinChunks));
+    expect(Buffer.from(read[2]!.content).equals(large)).toBe(true);
     expect(read.map((file) => [file.path, file.executable])).toEqual([
       ["one", undefined],
       [`${"d/".repeat(60)}two`, true],
+      ["large.bin", undefined],
     ]);
   });
 
@@ -969,6 +961,7 @@ describe("KubernetesSandboxProvider", () => {
       await expect(provider[method](computer, context)).resolves.toBeUndefined();
       expect(del).toHaveBeenCalledWith(
         expect.objectContaining({ gracePeriodSeconds: 0, name: "pod" }),
+        expect.anything(),
       );
     },
   );
@@ -1034,13 +1027,11 @@ describe("KubernetesSandboxProvider", () => {
     async (mode) => {
       vi.useFakeTimers();
       try {
-        let connect!: (socket: Awaited<ReturnType<Exec["exec"]>>) => void;
-        const exec = vi.fn(
-          () =>
-            new Promise<Awaited<ReturnType<Exec["exec"]>>>((resolve) => {
-              connect = resolve;
-            }),
-        );
+        let connect!: Deferred<Awaited<ReturnType<Exec["exec"]>>>;
+        const exec = vi.fn(() => {
+          connect = deferred<Awaited<ReturnType<Exec["exec"]>>>();
+          return connect.promise;
+        });
         const controller = new AbortController();
         const consume = async () => {
           const events: ProcessEvent[] = [];
@@ -1058,7 +1049,7 @@ describe("KubernetesSandboxProvider", () => {
         else await vi.advanceTimersByTimeAsync(11_000);
         expect(await result).toContainEqual({ type: "exit", code: mode === "abort" ? 130 : 124 });
         const socket = { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
-        connect(socket);
+        connect.resolve(socket);
         await vi.advanceTimersByTimeAsync(0);
         expect(socket.close).toHaveBeenCalledOnce();
       } finally {
@@ -1147,11 +1138,7 @@ describe("KubernetesSandboxProvider", () => {
   );
   it.each(["caller", "deadline"])("bounds stalled desktop environment reads (%s)", async (mode) => {
     vi.useFakeTimers();
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(new Error("request deadline")), ms);
-      return controller.signal;
-    });
+    const timeout = fakeRequestDeadline();
     try {
       const controller = new AbortController();
       const read = vi.fn<KubernetesSandboxSdk["core"]["readNamespacedPod"]>(
@@ -1160,6 +1147,7 @@ describe("KubernetesSandboxProvider", () => {
       const provider = providerFor({ readNamespacedPod: read });
       const result = provider.releaseScreen(computer, { ...context, signal: controller.signal });
       const assertion = expect(result).rejects.toThrow();
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
       if (mode === "caller") controller.abort(new Error("caller cancelled"));
       else await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
@@ -1171,5 +1159,124 @@ describe("KubernetesSandboxProvider", () => {
       timeout.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  it("bounds stalled pod deletion without letting cancellation skip it", async () => {
+    vi.useFakeTimers();
+    const timeout = fakeRequestDeadline();
+    try {
+      const cancelled = AbortSignal.abort(new Error("run cancelled"));
+      const terminalPod = { ...readyPod, status: { phase: "Failed" } };
+      const operations = [
+        (provider: KubernetesSandboxProvider) =>
+          provider.stop(computer, { ...context, signal: cancelled }),
+        (provider: KubernetesSandboxProvider) =>
+          provider.destroy(computer, { ...context, signal: cancelled }),
+        (provider: KubernetesSandboxProvider) =>
+          provider.provision({ botId: "bot-a", homePath: "/unused", providerRef: "pod" }, context),
+      ];
+      for (const operation of operations) {
+        const del = vi.fn<KubernetesSandboxSdk["core"]["deleteNamespacedPod"]>(
+          () => new Promise<V1Pod>(() => {}),
+        );
+        const provider = providerFor({
+          readNamespacedPod: vi.fn().mockResolvedValue(terminalPod),
+          deleteNamespacedPod: del,
+        });
+        let outcome: unknown = "pending";
+        operation(provider).catch((error) => {
+          outcome = error;
+        });
+        await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+        expect(outcome).toBe("pending");
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(outcome).toEqual(new Error("request deadline"));
+        const setSignal = vi.fn();
+        await del.mock.calls[0]?.[1]?.middleware?.[0]?.pre({ setSignal } as never).toPromise();
+        expect(setSignal).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }));
+      }
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns the original start error after cleanup outlasts a cancelled caller", async () => {
+    vi.useFakeTimers();
+    const timeout = fakeRequestDeadline();
+    try {
+      const controller = new AbortController();
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockReturnValue(new Promise<V1Pod>(() => {}));
+      const del = vi.fn(() => new Promise<V1Pod>(() => {}));
+      const provider = providerFor({ readNamespacedPod: read, deleteNamespacedPod: del });
+      let outcome: unknown = "pending";
+      provider
+        .provision(
+          { botId: "bot-a", homePath: "/unused" },
+          { ...context, signal: controller.signal },
+        )
+        .catch((error) => {
+          outcome = error;
+        });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      controller.abort(new Error("caller cancelled"));
+      await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(19_000);
+      expect(outcome).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1_000);
+      // Two tries of 10 seconds each fill the cleanup's 20 seconds.
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(outcome).toEqual(new Error("caller cancelled"));
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  describe("a pod created by a start that then fails", () => {
+    const failedPod = { ...readyPod, status: { phase: "Failed" } };
+    const start = async (del: KubernetesSandboxSdk["core"]["deleteNamespacedPod"]) => {
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockResolvedValue(failedPod);
+      const create = vi.fn().mockResolvedValue(readyPod);
+      const provider = providerFor({
+        readNamespacedPod: read,
+        createNamespacedPod: create,
+        deleteNamespacedPod: del,
+      });
+      const outcome = await settleMachineCleanup(() =>
+        provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+      );
+      const pod: string = create.mock.calls[0]![0].body.metadata.name;
+      return { ...outcome, pod };
+    };
+
+    it("is deleted, trying a failed delete again", async () => {
+      const del = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockResolvedValue({ status: "Success" });
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const del = vi.fn().mockRejectedValue(new Error("connection reset"));
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "kubernetes", machineId: pod }]);
+    });
   });
 });

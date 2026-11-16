@@ -7,9 +7,11 @@ import {
   normalizeOneTimeCode,
   vaultKind,
 } from "@rakazo/contracts";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 import type { AskBlock, AskCardProps } from "./AskCard";
 import { BuiCard } from "./ai/primitives";
 import { siteHost, VaultTile } from "./vault/kinds";
@@ -63,24 +65,20 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
   // such as an SSH private key. That text is kept as is and the field turns read-only, so what
   // is saved is exactly what was pasted; Clear makes it editable again.
-  useEffect(() => {
-    if (!commandInput || !secretField) return;
+  useEventListener(commandInput ? secretField : null, "beforeinput", (event) => {
+    if (!secretField) return;
     const field = secretField;
-    const keepLineBreaks = (event: InputEvent) => {
-      const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
-        /\r\n?/g,
-        "\n",
-      );
-      if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
-      event.preventDefault();
-      const start = field.selectionStart ?? field.value.length;
-      const end = field.selectionEnd ?? start;
-      setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
-      setPastedLines(true);
-    };
-    field.addEventListener("beforeinput", keepLineBreaks);
-    return () => field.removeEventListener("beforeinput", keepLineBreaks);
-  }, [commandInput, secretField]);
+    const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
+      /\r\n?/g,
+      "\n",
+    );
+    if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
+    event.preventDefault();
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
+    setPastedLines(true);
+  });
 
   async function send(value: string, fields?: LoginFieldInput[], remember?: false) {
     setPending("submit");
@@ -102,9 +100,9 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
     if (submitting || answer.length === 0) return;
     try {
       await send(answer);
-    } catch {
-      // A secret answer's failure may echo the secret, so never show its message.
-      setError(t`Could not submit this answer`);
+    } catch (err) {
+      // A secret answer's failure may echo the secret, so only a known fixed message shows.
+      setError(secretAnswerErrorText(err, t`Could not submit this answer`));
     }
   }
 
@@ -166,7 +164,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             : undefined,
         onDismiss: canDismiss ? dismiss : undefined,
         onSave: saveForm,
-        failureText: () => t`Could not submit this answer`,
+        failureText: (err: unknown) => secretAnswerErrorText(err, t`Could not submit this answer`),
       }
     : undefined;
 
@@ -176,28 +174,34 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
         <VaultTile
           kind={block.credential ? vaultKind(block.credential.auth.type) : null}
           title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
+          origin={form === "login" ? block.credential?.origin : undefined}
         />
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-medium leading-[1.4] text-foreground">
+          <div className="text-body-lg font-medium leading-[1.4] text-foreground">
             <ChatMarkdown>{block.text}</ChatMarkdown>
           </div>
           {destination ? (
             <div
               data-testid="secret-ask-destination"
               // A code's line is a sentence, so it wraps between words; an address breaks anywhere.
-              className={`${codeHost ? "wrap-anywhere" : "break-all"} text-[12.5px] text-muted-foreground`}
+              className={`${codeHost ? "wrap-anywhere" : "break-all"} text-body-sm text-muted-foreground`}
             >
               {destination}
             </div>
           ) : null}
+          {block.sharedBrowser && !ownerOnly && !answered ? (
+            <div className="text-body-sm text-muted-foreground">
+              {t`The bot's browser stays signed in for everyone in this space`}
+            </div>
+          ) : null}
           {block.replaces && !ownerOnly && !answered ? (
-            <div className="break-all text-[12.5px] text-muted-foreground">
+            <div className="break-all text-body-sm text-muted-foreground">
               {t`Replaces the login saved for ${block.replaces.origin}`}
             </div>
           ) : null}
         </div>
         {answered ? (
-          <div className="flex shrink-0 items-center gap-1.5 text-[13.5px] font-medium text-muted-foreground">
+          <div className="flex shrink-0 items-center gap-1.5 text-body font-medium text-muted-foreground">
             {shownDismissed ? null : <Check aria-hidden className="size-4" />}
             {status}
           </div>
@@ -217,10 +221,10 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
         ) : null}
       </div>
       {codeInput && block.detail ? (
-        <div className="mt-2 break-words text-[13px] text-muted-foreground">{block.detail}</div>
+        <div className="mt-2 break-words text-body-sm text-muted-foreground">{block.detail}</div>
       ) : null}
       {!answered && !canAnswer ? (
-        <div className="mt-2.5 text-[13.5px] font-medium text-muted-foreground">
+        <div className="mt-2.5 text-body font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
       ) : null}
@@ -292,7 +296,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
           </div>
         </form>
       ) : null}
-      {error ? <p className="mt-2.5 text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2.5 text-body-sm text-destructive">{error}</p> : null}
       {editorProps && editorOpen ? (
         form === "card" ? (
           <CardEditor {...editorProps} />

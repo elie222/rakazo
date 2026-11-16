@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { APP_LOCALE_LABELS } from "@rakazo/core";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   normalizeUiLocale,
   persistUiLocale,
   resolveUiLocale,
-  UI_LOCALE_LABELS,
   UI_LOCALE_STORAGE_KEY,
   UI_LOCALES,
 } from "./ui-locale";
@@ -15,7 +15,7 @@ describe("normalizeUiLocale", () => {
 
   it("offers Polish in the language picker", () => {
     expect(UI_LOCALES).toContain("pl");
-    expect(UI_LOCALE_LABELS.pl).toBe("Polski");
+    expect(APP_LOCALE_LABELS.pl).toBe("Polski");
   });
 
   it("maps regional tags onto supported locales", () => {
@@ -182,6 +182,25 @@ describe("resolveUiLocale", () => {
       getItem: (key: string) => (key === UI_LOCALE_STORAGE_KEY ? "de" : null),
     };
     expect(resolveUiLocale({ storage, envDefault: null, navigatorLanguage: null })).toBe("de");
+  });
+});
+
+describe("blocked storage", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  afterEach(() => {
+    if (original) Object.defineProperty(globalThis, "localStorage", original);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  });
+
+  it("falls back to the browser language and skips saving when reading storage throws", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("Access is denied for this document.", "SecurityError");
+      },
+    });
+    expect(resolveUiLocale({ envDefault: null, navigatorLanguage: "de-DE" })).toBe("de");
+    expect(() => persistUiLocale("de")).not.toThrow();
   });
 });
 

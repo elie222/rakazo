@@ -15,7 +15,7 @@ import {
   commandVariableProblem,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { mapBotSecretInputError } from "./routes/bots.js";
+import { requireSpaceOwner } from "@rakazo/db";
 
 type AgentSecretDeps = {
   prisma: PrismaClient;
@@ -38,15 +38,6 @@ function agentSecretDto(row: { name: string; createdAt: Date; updatedAt: Date })
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-async function requireSpaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
-  const membership = await prisma.spaceMember.findUnique({
-    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
-    select: { role: true },
-  });
-  const roles = membership?.role.split(",").map((role) => role.trim());
-  if (!roles?.includes("owner")) throw new ORPCError("FORBIDDEN");
 }
 
 export async function listAgentSecrets(deps: AgentSecretDeps, actor: Actor) {
@@ -79,18 +70,13 @@ export async function putAgentSecret(
   if (!BotSecretName.safeParse(name).success) {
     throw new ORPCError("BAD_REQUEST", { message: "Variable names must start with a letter" });
   }
-  let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
-  try {
-    row = await storeBotSecret({
-      prisma: deps.prisma,
-      secretStore: deps.secrets,
-      scope: vaultScope(actor),
-      destination: { name, origin: "", auth: { type: "command" } },
-      plaintext: input.value,
-    });
-  } catch (error) {
-    throw mapBotSecretInputError(error);
-  }
+  const row = await storeBotSecret({
+    prisma: deps.prisma,
+    secretStore: deps.secrets,
+    scope: vaultScope(actor),
+    destination: { name, origin: "", auth: { type: "command" } },
+    plaintext: input.value,
+  });
   if (!row) throw new ORPCError("CONFLICT", { message: "Variable was not saved" });
   return agentSecretDto(row);
 }

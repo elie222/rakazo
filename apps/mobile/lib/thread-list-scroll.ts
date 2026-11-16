@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ThreadItem } from "@rakazo/core";
 import { reconcileThreadScrollState } from "@rakazo/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -6,15 +7,15 @@ import type {
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  ScrollView,
-  View,
+  ScrollViewInstance,
+  ViewInstance,
 } from "react-native";
 import { Platform } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
-import type { MobileMessage } from "./api";
 import { helperHeaderOffset, helperOpenTarget } from "./helper-header-offset";
 import { KeyboardScrollBack } from "./keyboard-scroll-back";
+import type { MobileMessage } from "./mobile-types";
 import type { ThreadHistory } from "./thread-history";
 import type { ThreadRowKey, ThreadScrollAction, ThreadScrollState } from "./thread-scroll";
 import { ThreadScrollBehavior } from "./thread-scroll";
@@ -57,8 +58,8 @@ export function useThreadListScroll({
     pinnedScrollMetrics,
   } = history;
   const list = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
-  const pinnedList = useRef<ScrollView>(null);
-  const helperViewport = useRef<View>(null);
+  const pinnedList = useRef<ScrollViewInstance>(null);
+  const helperViewport = useRef<ViewInstance>(null);
   const helperScrollOffset = useRef(0);
   const helperResize = useRef<(() => void) | null>(null);
   const behavior = useRef(new ThreadScrollBehavior());
@@ -71,8 +72,9 @@ export function useThreadListScroll({
   const publish = useCallback((next: ThreadScrollState) => {
     setState((previous) => reconcileThreadScrollState(previous, next));
   }, []);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A new object highlights for another 1.2 seconds, even when the row is the same.
+  const [highlight, setHighlight] = useState<{ messageId: string } | null>(null);
+  useTimeout(() => setHighlight(null), highlight ? 1200 : null, highlight);
 
   useLayoutEffect(() => {
     behavior.current.openThread(threadKey ?? "");
@@ -92,13 +94,6 @@ export function useThreadListScroll({
   useEffect(() => {
     publish(behavior.current.state());
   }, [threadKey, publish]);
-
-  useEffect(
-    () => () => {
-      if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    },
-    [],
-  );
 
   const pinnedTarget = pinnedAroundRef.current;
   const showPinnedPage = Boolean(
@@ -223,9 +218,7 @@ export function useThreadListScroll({
     const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, anchor);
     if (offset == null) return;
     scrollPinnedTo(offset);
-    setHighlightedMessageId(messageId);
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 1200);
+    setHighlight({ messageId });
     requestAnimationFrame(() => {
       const again = jumpAnchor.current.align(anchor);
       if (again != null) scrollPinnedTo(again);
@@ -303,7 +296,7 @@ export function useThreadListScroll({
     jumpTarget: jumpScrollTarget.current,
     pinnedTarget,
     pinnedNewerCursor,
-    highlightedMessageId,
+    highlightedMessageId: highlight?.messageId ?? null,
     performScroll,
     follow,
     pinnedNearEnd,

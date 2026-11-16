@@ -18,6 +18,8 @@ import type {
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
@@ -30,6 +32,8 @@ import {
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
 } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DESKTOP_PORT_START = 6100;
@@ -52,7 +56,8 @@ const OPERATION_WAIT_SECONDS = 20;
 // SIGTERM first. The `timeout` wrapper passes it to the whole process group and kills the group
 // if it is still there after its kill-after delay, so the streams stay open past that.
 const TERMINATE_GRACE_MS = COMMAND_KILL_AFTER_MS + 2_000;
-// The computer image runs as `USER 1000:1000`; Incus runs exec as root unless told otherwise.
+// The uid and gid the computer image declares (`USER 1000:1000`). Incus runs the start
+// command and exec as root unless told otherwise, so both set it explicitly.
 const IMAGE_USER = 1000;
 // The computer image's own command (its Dockerfile CMD). The instance starts it without privilege
 // escalation, as Docker and Kubernetes computers start, which a restricted project cannot set on
@@ -75,6 +80,7 @@ export interface IncusSandboxOptions {
   memoryLimit?: string;
   processLimit?: string;
   readyTimeoutMs?: number;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }
 
 export interface IncusResponse {
@@ -146,6 +152,7 @@ interface IncusOperation {
 
 export class IncusSandboxProvider implements SandboxProvider {
   private readonly project: string;
+  private readonly machines: UnreferencedMachineRecords | undefined;
   private readonly computerImage: string;
   private readonly cpuLimit: string;
   private readonly memoryLimit: string;
@@ -178,6 +185,7 @@ export class IncusSandboxProvider implements SandboxProvider {
   });
 
   constructor(options: IncusSandboxOptions, client?: IncusClient) {
+    this.machines = options.unreferencedMachines;
     this.project = options.project?.trim() || DEFAULT_PROJECT;
     this.computerImage = options.computerImage?.trim() || DEFAULT_COMPUTER_IMAGE;
     this.cpuLimit = options.cpuLimit?.trim() || DEFAULT_CPU_LIMIT;
@@ -233,11 +241,17 @@ export class IncusSandboxProvider implements SandboxProvider {
     // A new name for every start, as the Daytona provider does: a later start never adopts an
     // instance that an abandoned one created, so that one can be deleted without a race.
     const name = `rakazo-${randomUUID()}`;
+    const machine = { provider: "incus", machineId: name, homeKey: request.botId };
+    // The name is chosen here, so it is recorded before Incus is asked: a create whose answer is
+    // lost, or that this process does not outlive, is still deleted.
+    await recordUnreferencedMachine(this.machines, machine);
     await this.create(name, request.botId, signal);
     try {
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
+      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
+        this.remove(name, signal),
+      );
       throw error;
     }
     return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh: true };
@@ -368,6 +382,10 @@ export class IncusSandboxProvider implements SandboxProvider {
     await this.removeOwned(instanceName(computer), computer.botId);
   }
 
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.remove(machine.machineId, signal);
+  }
+
   private async removeOwned(name: string, botId: string): Promise<void> {
     const signal = AbortSignal.timeout(STOP_TIMEOUT_MS);
     const instance = await this.instance(name, signal);
@@ -431,6 +449,11 @@ export class IncusSandboxProvider implements SandboxProvider {
         "security.privileged": "false",
         "security.nesting": "false",
         "security.idmap.isolated": "true",
+        // Enforced like the Docker computer's `User`, instead of trusting the image's
+        // `USER`: a custom image without one would start its command as the container's
+        // root.
+        "oci.uid": String(IMAGE_USER),
+        "oci.gid": String(IMAGE_USER),
         "oci.entrypoint": `setpriv --no-new-privs -- ${IMAGE_COMMAND}`,
         ...Object.fromEntries(
           Object.entries(environment).map(([key, value]) => [`environment.${key}`, value]),
@@ -940,9 +963,7 @@ function isIncusStatus(error: unknown, status: number): boolean {
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {
-  const error = new Error(`Incus computer ${name} no longer exists`, { cause });
-  error.name = "SandboxNotFoundError";
-  return error;
+  return sandboxNotFoundError(`Incus computer ${name} no longer exists`, { cause });
 }
 
 function toBuffer(data: WebSocket.RawData): Buffer {

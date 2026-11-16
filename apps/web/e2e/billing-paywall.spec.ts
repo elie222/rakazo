@@ -1,10 +1,11 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import type { BillingStatus } from "@rakazo/contracts";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
-const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 };
+const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
-function billingStatus(overrides: Record<string, unknown>) {
+function billingStatus(overrides: Partial<BillingStatus>): BillingStatus {
   return {
     access: false,
     canManage: true,
@@ -20,6 +21,33 @@ function billingStatus(overrides: Record<string, unknown>) {
     ...overrides,
   };
 }
+
+const tiers: NonNullable<BillingStatus["byokTiers"]> = [
+  {
+    tier: "standard",
+    name: "Standard",
+    monthlyPriceCents: 1500,
+    annualPriceCents: 14400,
+    computerSize: "standard",
+    computerHours: 25,
+  },
+  {
+    tier: "pro",
+    name: "Pro",
+    monthlyPriceCents: 4900,
+    annualPriceCents: 46800,
+    computerSize: "large",
+    computerHours: 100,
+  },
+  {
+    tier: "max",
+    name: "Max",
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
+    computerSize: "xlarge",
+    computerHours: 200,
+  },
+];
 
 async function enableBilling(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
@@ -81,6 +109,17 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await page.getByRole("button", { name: "Account", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-account-menu");
+  // A log out the server rejects reports the log-out failure, not a billing error.
+  await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 500, body: "" }), {
+    times: 1,
+  });
+  await page.getByRole("menuitem", { name: "Log out" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Could not log out. Try again." }),
+  ).toBeVisible();
+  await page.unroute("**/api/auth/sign-out");
+  // The failed log out reloaded the page; reopen the menu to reach deletion.
+  await page.getByRole("button", { name: "Account", exact: true }).click();
   await page.getByRole("menuitem", { name: "Delete account" }).click();
   const deletion = page.getByRole("dialog", { name: "Delete account" });
   await expect(deletion.getByLabel("Current password")).toBeVisible();
@@ -103,7 +142,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
-  await page.getByRole("button", { name: "Subscribe to Rakazo credits", exact: true }).click();
+  await page.getByRole("button", { name: "Subscribe to credits", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
   expect(purchase).toEqual({ amountCents: 3000, monthly: true });
   const settings = await openUserSettings(page, "billing");
@@ -226,6 +265,47 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   expect(purchase).toEqual({ amountCents: 5000, monthly: false });
 });
 
+test("delete an unpaid organization from the plan choice", async ({ page }, testInfo) => {
+  await signup(page, `org-paywall-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  const work = await rpc<{ id: string; defaultSpaceId: string }>(page, "organizations/create", {
+    name: "Work",
+  });
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  // Only the new organization is unpaid.
+  await page.route("**/rpc/billing/status", async (route) => {
+    const unpaid = route.request().headers()["x-rakazo-space-id"] === work.defaultSpaceId;
+    await route.fulfill({
+      json: { json: billingStatus(unpaid ? {} : { access: true, state: "active" }) },
+    });
+  });
+  await page.evaluate(
+    (spaceId) => window.localStorage.setItem("rakazo:space-id", spaceId),
+    work.defaultSpaceId,
+  );
+  await page.reload();
+  await expect(page.getByTestId("billing-paywall")).toBeVisible();
+
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete organization" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Delete Work?" });
+  await confirm.getByLabel("Type Work to confirm").fill("Work");
+  await captureScreenshot(page, testInfo, "billing-delete-organization");
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Chief").first()).toBeVisible();
+  const { organizations } = await rpc<{ organizations: Array<{ name: string }> }>(
+    page,
+    "organizations/list",
+    {},
+  );
+  expect(organizations.map((organization) => organization.name)).toEqual(["Personal"]);
+});
+
 test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `byok-yearly-${stamp}@rakazo.test`, "password12", "Demo Customer");
@@ -264,6 +344,52 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   // The checkout is mocked, so the paywall returns; waiting lets the reload's requests settle.
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
   expect(selected).toEqual({ funding: "byok", interval: "year" });
+});
+
+test("start a bigger tier's trial from the tiers layout", async ({ page }, testInfo) => {
+  await signup(page, `plan-tiers-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokAnnualPriceCents: 14400,
+    byokTiers: tiers,
+    planLayout: "tiers",
+    funding: null,
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Max" })).toBeVisible();
+  await expect(page.getByText("A 2× more powerful computer for your bot")).toBeVisible();
+  await expect(page.getByText("$49", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Monthly credits" })).toContainText(
+    "$30 / month",
+  );
+  await captureScreenshot(page, testInfo, "billing-plan-tiers");
+  let selected: unknown;
+  await page.route("**/rpc/billing/selectFunding", async (route) => {
+    selected = route.request().postDataJSON().json;
+    await route.fulfill({ json: { json: { url: new URL("/app?paid", page.url()).href } } });
+  });
+  await page
+    .getByRole("group", { name: "Billing period" })
+    .getByRole("button", { name: /Yearly/ })
+    .click();
+  await expect(page.getByText("$39", { exact: true })).toBeVisible();
+  await Promise.all([
+    page.waitForURL(/[?&]paid/),
+    page.getByRole("button", { name: "Start Pro trial", exact: true }).click(),
+  ]);
+  await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
+  expect(selected).toEqual({ funding: "byok", interval: "year", tier: "pro" });
 });
 
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
@@ -309,6 +435,49 @@ test("end an own-key trial early to get full computer hours", async ({ page }, t
   await captureScreenshot(page, testInfo, "billing-end-trial-confirm");
   await confirm.getByRole("button", { name: "Start plan", exact: true }).click();
   await expect.poll(() => ended).toBe(true);
+});
+
+test("a cancelled trial explains its missing computer hours and offers renewal", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `trial-cancelled-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const trial = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1000,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "trialing",
+    cancelAtPeriodEnd: true,
+    trialEndsAt: "2030-01-15T12:00:00.000Z",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+    computerHoursLeft: 0,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
+  let portalOpened = false;
+  await page.route("**/rpc/billing/portal", async (route) => {
+    portalOpened = true;
+    await route.fulfill({ json: { json: { url: "/app" } } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(
+    settings.getByText("Cancelled trials have no computer hours.", { exact: true }),
+  ).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Start plan now" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "billing-cancelled-trial-computer-hours");
+  await settings.getByRole("button", { name: "Renew plan", exact: true }).click();
+  await expect.poll(() => portalOpened).toBe(true);
 });
 
 test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
@@ -365,18 +534,6 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   });
   await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
   await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const tiers = [
-    ["standard", "Standard", 1500, 14400, "standard", 25],
-    ["pro", "Pro", 4900, 46800, "large", 100],
-    ["max", "Max", 14900, 142800, "xlarge", 200],
-  ].map(([tier, name, monthlyPriceCents, annualPriceCents, computerSize, computerHours]) => ({
-    tier,
-    name,
-    monthlyPriceCents,
-    annualPriceCents,
-    computerSize,
-    computerHours,
-  }));
   let status = billingStatus({
     access: true,
     trialAvailable: false,
@@ -405,7 +562,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   const plan = settings.getByTestId("own-key-plan");
   await expect(plan.getByText("4 vCPU, 8 GB, 25 computer hours a month")).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
-  await expect(page.getByRole("option", { name: /Max · \$149 \/ month/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Max · \$99 \/ month/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers");
   await page.getByRole("option", { name: /Pro · \$49 \/ month/ }).click();
   const confirm = page.getByRole("alertdialog", { name: "Switch to Pro?" });
@@ -417,4 +574,36 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await expect.poll(() => changedTo).toBe("pro");
   await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
   await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
+});
+
+test("yearly billing shows the monthly computer reset separately from renewal", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `annual-hours-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    access: true,
+    trialAvailable: false,
+    funding: "byok",
+    byokTier: "max",
+    byokPriceCents: 94800,
+    byokInterval: "year",
+    state: "active",
+    hasCustomer: true,
+    currentPeriodEndsAt: "2031-01-15T12:00:00.000Z",
+    computerHoursLeft: 180,
+    computerHoursResetAt: "2030-02-15T12:00:00.000Z",
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(settings.getByText("Resets Feb 15, 2030", { exact: true })).toBeVisible();
+  await expect(settings.getByText("Renews Jan 15, 2031", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-annual-computer-reset");
 });

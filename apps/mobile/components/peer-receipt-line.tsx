@@ -1,9 +1,10 @@
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { splitPeerLabel } from "@rakazo/core";
 import type { PressableProps } from "react-native";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { peerExchangeLabel, useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
@@ -29,9 +30,15 @@ export function PeerReceiptLine({
     "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
   >;
 }) {
-  useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const label = peerExchangeLabel(count, direction, peerBotName);
+  const peer = peerBotName;
+  const label =
+    count > 1
+      ? t`${plural(count, { one: `# message with ${peer}`, other: `# messages with ${peer}` })}`
+      : direction === "sent"
+        ? t`Messaged ${peer}`
+        : t`Message from ${peer}`;
   const parts = splitPeerLabel(label, peerBotName);
   return (
     <Pressable
@@ -42,6 +49,7 @@ export function PeerReceiptLine({
       disabled={!onPress}
       accessibilityLabel={label}
       onPress={onPress}
+      hitSlop={{ top: 6, bottom: 6 }}
       style={({ pressed }) => [styles.line, { opacity: pressed ? 0.6 : 1 }]}
     >
       {parts.before ? <Text style={styles.label}>{parts.before}</Text> : null}
@@ -61,7 +69,7 @@ function createStyles() {
   return StyleSheet.create({
     line: {
       width: "100%",
-      paddingVertical: 8,
+      paddingVertical: 4,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",

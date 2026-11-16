@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  createNamedBot,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -9,6 +15,19 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await signup(page, `board-${stamp}@rakazo.test`, "password12", "Board QA");
   await completeOnboarding(page);
   await createNamedBot(page, "Planner");
+
+  await page.getByTestId("user-menu-trigger").click();
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = await openUserSettings(page, "labs");
+  const boardLab = settings.getByTestId("lab-board-toggle");
+  await expect(boardLab).not.toBeChecked();
+  await boardLab.click();
+  await expect(boardLab).toBeChecked();
+  await expect(boardLab).toBeEnabled();
+  await captureScreenshot(page, testInfo, "settings-labs");
+  await settings.getByRole("button", { name: "Close user settings" }).click();
+  await expect(settings).toBeHidden();
 
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Board", exact: true }).click();
@@ -35,8 +54,10 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await dialog.getByLabel("Title").fill(title);
   await dialog.getByLabel("Description").fill(description);
   const owner = dialog.getByLabel("Owner");
-  await expect(owner.locator("option", { hasText: "Planner" })).toHaveCount(1);
-  await owner.selectOption({ label: "Planner" });
+  await owner.click();
+  const planner = page.getByRole("option", { name: "Planner", exact: true });
+  await expect(planner).toHaveCount(1);
+  await planner.click();
   await dialog.getByRole("button", { name: "Create", exact: true }).click();
 
   await expect(dialog).toBeHidden();

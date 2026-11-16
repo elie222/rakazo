@@ -131,6 +131,12 @@ export async function seedIosScreenshotFixture(input: {
       botIds: [researcher.id, writer.id, support.id],
     });
   }
+  if (!groups.some((item) => item.name === "Review pair")) {
+    await rpc<GroupRow>(input.apiUrl, populated.headers, "groups/create", {
+      name: "Review pair",
+      botIds: [researcher.id, writer.id],
+    });
+  }
   const routines = await rpc<RoutineRow[]>(input.apiUrl, populated.headers, "routines/list", {
     botId: researcher.id,
   });
@@ -197,7 +203,12 @@ export async function seedIosScreenshotFixture(input: {
   // One of each kind people save: a website sign-in, a card, a contact, an API token, and a
   // command variable. The card number is a well-known test number, not a real card.
   const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
-  const vaultEntries: { destination: BotSecretDestination; value: string; title?: string }[] = [
+  const vaultEntries: {
+    destination: BotSecretDestination;
+    value: string;
+    title?: string;
+    alsoOn?: string[];
+  }[] = [
     {
       title: "Help desk",
       destination: {
@@ -205,11 +216,15 @@ export async function seedIosScreenshotFixture(input: {
         origin: "https://help.example.com",
         auth: { type: "login" },
       },
+      // Also on another site, with an authenticator key (RFC 6238's test key), so the item and
+      // its editor show both.
+      alsoOn: ["https://support.example.com"],
       value: encodeLoginSecret({
         fields: [
           { label: "Email", value: "support@example.com", hidden: false },
           { label: "Password", value: "fixture-password", hidden: true },
         ],
+        otp: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
       }),
     },
     {
@@ -324,7 +339,18 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
+    await ensureMemoryNotes(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      botId: researcher.id,
+    });
     await ensureRequestCards(db.prisma, { threadId: support.threadId, botId: support.id });
+    await ensurePayments(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      researcher,
+      writer,
+    });
     const billing = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
     await ensurePlan({ ...billing, headers: populated.headers, userId: me.userId, trial: false });
     await ensurePlan({ ...billing, headers: empty.headers, userId: emptyMe.userId, trial: true });
@@ -356,6 +382,39 @@ export async function seedIosScreenshotFixture(input: {
   } finally {
     await db.prisma.$disconnect();
     await db.pool.end();
+  }
+}
+
+/** A note the bot remembered and one every bot in the space shares, for the memory screens. */
+async function ensureMemoryNotes(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; botId: string },
+) {
+  const notes = [
+    {
+      scope: "bot",
+      botId: input.botId,
+      path: "preferences.md",
+      content:
+        "# Preferences\n\n- Cite a source for every claim.\n- Keep summaries under five bullets.\n",
+    },
+    {
+      scope: "user",
+      botId: null,
+      path: "team.md",
+      content:
+        "# Launch team\n\n- Dana owns the announcement.\n- Lee reviews every customer quote.\n",
+    },
+  ];
+  for (const note of notes) {
+    const existing = await prisma.memoryDocument.findFirst({
+      where: { spaceId: input.spaceId, scope: note.scope, botId: note.botId, path: note.path },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.memoryDocument.create({
+      data: { ...note, spaceId: input.spaceId, userId: input.userId },
+    });
   }
 }
 
@@ -617,13 +676,49 @@ const TICKETS = [
   { title: "Publish the changelog", status: "done" },
 ] as const;
 
-/** Board cards in several columns. Only an API with the board enabled shows them. */
+/** Two payments bots made with the wallet, as the spending limit lists them. */
+async function ensurePayments(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; researcher: BotRow; writer: BotRow },
+) {
+  const payments = [
+    {
+      key: "groceries",
+      bot: input.researcher,
+      site: "groceries.example.com",
+      amount: 2_340,
+      hours: 2,
+    },
+    { key: "books", bot: input.writer, site: "books.example.com", amount: 1_299, hours: 30 },
+  ];
+  for (const payment of payments) {
+    const operationKey = `ios-screenshot-payment-${payment.key}`;
+    const data = {
+      userId: input.userId,
+      spaceId: input.spaceId,
+      botId: payment.bot.id,
+      threadId: payment.bot.threadId,
+      site: payment.site,
+      amount: payment.amount,
+      currency: "usd",
+      createdAt: new Date(Date.now() - payment.hours * 3_600_000),
+    };
+    await prisma.payment.upsert({
+      where: { operationKey },
+      create: { operationKey, ...data },
+      update: data,
+    });
+  }
+}
+
+/** Board cards in several columns, with the board turned on in Labs so it shows. */
 async function ensureTickets(
   prisma: ReturnType<typeof createDb>["prisma"],
   spaceId: string,
   userId: string,
   botIds: string[],
 ) {
+  await prisma.user.update({ where: { id: userId }, data: { labs: ["board"] } });
   const board = await ensureBoard(prisma, spaceId);
   if (await prisma.ticket.count({ where: { boardId: board.id } })) return;
   for (const [index, ticket] of TICKETS.entries()) {
@@ -740,6 +835,30 @@ async function ensureRequestCards(
   ]);
   await bot([
     { kind: "computer", state: "Needs you", text: "Approve the sign-in code on your phone." },
+  ]);
+  await bot([
+    {
+      kind: "ask",
+      approvalEffectId: "ios-screenshot-pay",
+      text: "Pay on freshcart.test?",
+      detailFormat: "text",
+      receipt: {
+        button: "Place order",
+        items: [
+          { name: "Bananas × 6", amount: "$3.00" },
+          { name: "Oat milk 1L × 2", amount: "$8.40" },
+          { name: "Delivery", amount: "$6.00" },
+        ],
+        amount: "$17.40",
+        amountSource: "page",
+      },
+      status: "answered",
+      answer: "allow",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
   ]);
 }
 

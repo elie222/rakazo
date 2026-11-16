@@ -10,13 +10,27 @@ export type ArticleImage = {
   caption: string;
 };
 
+/** A comparison table, such as prices across providers. Cells take the same markup as section text. */
+export type ArticleTable = {
+  caption: string;
+  /** Column headings; the first labels the row headings. */
+  columns: readonly string[];
+  rows: readonly { topic: string; cells: readonly string[] }[];
+  /** Small print under the table, such as when prices were checked. */
+  note?: string;
+};
+
 /**
  * One part of a provider article. Text may use `code` and [links](/path/) or
  * [links](https://example.com).
  */
 export type ArticleSection = {
   heading: string;
+  /** Anchor for links to this section, such as `pricing`. */
+  id?: string;
   paragraphs?: readonly string[];
+  /** Shown after the paragraphs. */
+  table?: ArticleTable;
   bullets?: readonly string[];
   /** Numbered steps, for setup. */
   steps?: readonly string[];

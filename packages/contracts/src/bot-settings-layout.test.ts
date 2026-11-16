@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOT_COMPUTER_MODES, BOT_SETTINGS_SECTIONS } from "./bot-settings-layout.js";
-import type { ComputerMode } from "./domain.js";
+import type { ComputerMode } from "./computer.js";
 
 describe("bot settings layout", () => {
   it("offers Team before Private using valid computer modes", () => {

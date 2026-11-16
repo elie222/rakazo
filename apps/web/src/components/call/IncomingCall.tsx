@@ -1,11 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot } from "@rakazo/contracts";
 import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isLeavingSession, startCall, useCallSession } from "../../lib/call-session";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  isLeavingSession,
+  prepareCallAudio,
+  startCall,
+  useCallSession,
+} from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
 
@@ -58,13 +65,13 @@ export function IncomingCall({
   transcribe,
   onAnswered,
 }: {
-  bots: Bot[];
+  bots: readonly Pick<Bot, "id" | "name" | "color" | "avatarSet" | "incomingCall">[];
   transcribe?: boolean;
   onAnswered: (botId: string) => void;
 }) {
   const { t } = useLingui();
   const onCall = useCallSession() !== null;
-  /** Calls this tab already acted on, so a stale roster poll cannot ring them again. */
+  /** Calls this tab already acted on, so a stale roster read cannot ring them again. */
   const [handled, setHandled] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -85,15 +92,15 @@ export function IncomingCall({
   const call = bot?.incomingCall;
   const callId = call?.callId;
 
+  const expiresAt = call?.expiresAt;
   useEffect(() => {
-    if (!callId) return;
-    setNow(Date.now());
-    const timer = setTimeout(
-      () => setNow(Date.now()),
-      Math.max(0, Date.parse(call.expiresAt) - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [callId, call?.expiresAt]);
+    if (callId) setNow(Date.now());
+  }, [callId, expiresAt]);
+  const untilExpiry = useMemo(
+    () => (callId && expiresAt ? Math.max(0, Date.parse(expiresAt) - Date.now()) : null),
+    [callId, expiresAt],
+  );
+  useTimeout(() => setNow(Date.now()), untilExpiry, `${callId}:${expiresAt}`);
 
   useEffect(() => {
     if (!callId) return;
@@ -109,26 +116,23 @@ export function IncomingCall({
     };
   }, [callId]);
 
-  useEffect(() => {
-    const notify = () => {
-      if (!bot || !call || notified.current.has(call.callId)) return;
-      if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
-      if (Notification.permission !== "granted") return;
-      const notice = new Notification(t`${bot.name} is calling you`, {
-        tag: `call:${call.callId}`,
-        requireInteraction: true,
-      });
-      notification.current = notice;
-      notified.current.add(call.callId);
-      notice.onclick = () => {
-        window.focus();
-        notice.close();
-      };
+  const notify = () => {
+    if (!bot || !call || notified.current.has(call.callId)) return;
+    if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    const notice = new Notification(t`${bot.name} is calling you`, {
+      tag: `call:${call.callId}`,
+      requireInteraction: true,
+    });
+    notification.current = notice;
+    notified.current.add(call.callId);
+    notice.onclick = () => {
+      window.focus();
+      notice.close();
     };
-    notify();
-    document.addEventListener("visibilitychange", notify);
-    return () => document.removeEventListener("visibilitychange", notify);
-  }, [bot, call, t]);
+  };
+  useEffect(notify, [bot, call, t]);
+  useEventListener(document, "visibilitychange", notify);
 
   if (!bot || !call) return null;
 
@@ -154,6 +158,7 @@ export function IncomingCall({
 
   const answer = async () => {
     if (isLeavingSession()) return;
+    prepareCallAudio();
     setBusy(true);
     setError(null);
     const target = { botId: bot.id, callId: call.callId };
@@ -211,26 +216,26 @@ export function IncomingCall({
           </span>
         </span>
         <span className="flex flex-col items-center gap-1 md:items-start">
-          <span className="text-2xl font-semibold text-foreground md:text-lg" dir="auto">
+          <span className="text-heading1 font-semibold text-foreground md:text-heading3" dir="auto">
             {bot.name}
           </span>
         </span>
       </div>
       <p
-        className="my-4 max-w-80 rounded-xl bg-muted px-3 py-2 text-sm text-foreground md:my-0 md:max-w-none"
+        className="my-4 max-w-80 rounded-xl bg-muted px-3 py-2 text-body text-foreground md:my-0 md:max-w-none"
         dir="auto"
       >
         {call.reason}
       </p>
       {error ? (
-        <p role="alert" className="mb-4 text-center text-sm text-destructive md:mb-0">
+        <p role="alert" className="mb-4 text-center text-body text-destructive md:mb-0">
           {error}
         </p>
       ) : null}
       <div className="grid w-full max-w-80 grid-cols-2 gap-3 md:max-w-none">
         <Button
           variant="destructive"
-          className="h-14 text-sm md:h-11"
+          className="h-14 text-body md:h-11"
           disabled={busy}
           onClick={() => void settle()}
         >
@@ -239,7 +244,7 @@ export function IncomingCall({
         </Button>
         <Button
           disabled={busy}
-          className="h-14 bg-success text-sm text-background hover:bg-success/90 md:h-11"
+          className="h-14 bg-success text-body text-background hover:bg-success/90 md:h-11"
           onClick={() => void answer()}
         >
           <Phone className="size-5" aria-hidden="true" />

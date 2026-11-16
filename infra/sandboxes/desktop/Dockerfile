@@ -1,8 +1,11 @@
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
-RUN apt-get update && apt-get install -y --no-install-recommends \
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+COPY apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh \
+  && apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git python3 python3-pip xvfb x11vnc fluxbox procps \
-    && rm -rf /var/lib/apt/lists/*
-RUN useradd -m -s /bin/bash rakazo
+  && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash rakazo \
+  && /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 WORKDIR /home/rakazo
 USER rakazo
 ENV DISPLAY=:1

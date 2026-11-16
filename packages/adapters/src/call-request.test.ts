@@ -15,8 +15,11 @@ function prismaWith(options: {
   status?: string;
   updated?: number;
   expiresAt?: string;
+  beside?: unknown[];
+  before?: unknown[];
 }) {
-  const blocks = [
+  const blocks: unknown[] = [
+    ...(options.before ?? []),
     {
       kind: "call_request",
       callId: "call-1",
@@ -25,8 +28,10 @@ function prismaWith(options: {
       status: options.status ?? "ringing",
       expiresAt: options.expiresAt ?? new Date(Date.now() + 45_000).toISOString(),
     },
+    ...(options.beside ?? []),
   ];
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
     event: { create: vi.fn(async () => ({ seq: 0 })) },
@@ -125,6 +130,17 @@ describe("call_user", () => {
     ]);
     expect(newCallRequest({ reason: "", opening: "Hi" })).toEqual({ error: "reason is required." });
   });
+
+  it("does not split an emoji when it shortens the reason or opening", () => {
+    const request = newCallRequest({
+      reason: `${"r".repeat(119)}😀tail`,
+      opening: `${"o".repeat(239)}😀tail`,
+    });
+    if ("error" in request) throw new Error(request.error);
+    const block = request.blocks[0] as { reason: string; opening: string };
+    expect(block.reason).toBe("r".repeat(119));
+    expect(block.opening).toBe("o".repeat(239));
+  });
 });
 
 describe("settleCallRequest", () => {
@@ -149,6 +165,44 @@ describe("settleCallRequest", () => {
         }),
       }),
     );
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+  });
+
+  it("settles a call stored beside an entry that is not a block, and writes that entry back", async () => {
+    const stray = { text: "no kind" };
+    const prisma = prismaWith({ beside: [stray, null] });
+    const settled = await settleCallRequest(
+      { prisma, events: { notify: vi.fn(async () => undefined) } },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "answered" },
+    );
+
+    expect(settled).toMatchObject({ status: "answered" });
+    const answered = expect.objectContaining({ kind: "call_request", status: "answered" });
+    expect(prisma.message.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { blocks: [answered, stray, null] } }),
+    );
+    expect(prisma.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ payload: expect.objectContaining({ blocks: [answered] }) }),
+      }),
+    );
+  });
+
+  it("settles a call stored after an entry that is not a block, matching the card where it is stored", async () => {
+    const stray = { text: "no kind" };
+    const prisma = prismaWith({ before: [stray] });
+    const settled = await settleCallRequest(
+      { prisma, events: { notify: vi.fn(async () => undefined) } },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "answered" },
+    );
+
+    expect(settled).toMatchObject({ status: "answered" });
+    expect(prisma.message.updateMany).toHaveBeenCalledWith({
+      where: { id: "message-1", blocks: { path: ["1", "status"], equals: "ringing" } },
+      data: {
+        blocks: [stray, expect.objectContaining({ kind: "call_request", status: "answered" })],
+      },
+    });
   });
 
   it("keeps a committed answer recoverable when notification fails", async () => {
@@ -244,6 +298,7 @@ describe("requestUserCall security", () => {
     let saved: { id: string; blocks: unknown; botId: string; thread: { spaceId: string } } | null =
       null;
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       $queryRaw: vi.fn(async () => []),
       thread: {
         findFirst: vi.fn(
@@ -292,7 +347,13 @@ describe("requestUserCall security", () => {
       prisma,
       phoneCallsEnabled: true,
       events: { append: vi.fn(), notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(), close: vi.fn() },
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        enqueueIn: vi.fn(),
+        cancelIn: vi.fn(),
+        cancel: vi.fn(),
+        close: vi.fn(),
+      },
     };
     return { deps, tx, saved: () => saved };
   }
@@ -413,7 +474,12 @@ describe("requestUserCall security", () => {
     ]);
     expect(results.filter((result) => "ok" in result)).toHaveLength(1);
     expect(tx.message.create).toHaveBeenCalledOnce();
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The ring lock, once per attempt; the rest set and restore the unread mark's system context.
+    expect(
+      tx.$queryRaw.mock.calls.filter((call) =>
+        ((call as unknown[])[0] as TemplateStringsArray).join("?").includes("pg_advisory"),
+      ),
+    ).toHaveLength(2);
     expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
@@ -430,6 +496,7 @@ describe("requestUserCall security", () => {
       message: {
         findMany: vi.fn(async () => [
           {
+            id: "message-1",
             threadId: "thread-1",
             blocks: [
               {
@@ -438,6 +505,19 @@ describe("requestUserCall security", () => {
                 status: "ringing",
                 expiresAt: "2026-10-14T18:30:45Z",
               },
+            ],
+          },
+          {
+            id: "message-2",
+            threadId: "thread-2",
+            blocks: [
+              {
+                kind: "call_request",
+                callId: "call-2",
+                status: "ringing",
+                expiresAt: "2026-10-14T18:30:45Z",
+              },
+              { text: "an entry that is not a block" },
             ],
           },
         ]),
@@ -449,6 +529,9 @@ describe("requestUserCall security", () => {
         name: "call.expire",
         payload: { threadId: "thread-1", callId: "call-1" },
       }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { threadId: "thread-2", callId: "call-2" } }),
     );
   });
 });

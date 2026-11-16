@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { activitySections, isRetryableError } from "@rakazo/core";
+import { activitySections } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -11,8 +11,7 @@ import {
   GroupAvatar,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
@@ -71,13 +70,9 @@ export function ActivityList({
 }: ActivityListProps) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  // Polls while open; a refused request (signed out, forbidden) stops polling.
-  const poll = {
-    refetchInterval: (query: { state: { error: unknown } }) =>
-      query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
-  } as const;
-  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...poll }));
-  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...poll }));
+  const live = { refetchOnWindowFocus: "always" } as const;
+  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...live }));
+  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...live }));
   const activeRuns = active.data?.runs ?? NO_RUNS;
   const recentRuns = recent.data?.runs ?? NO_RUNS;
   // "Try again" shows its progress in place of the error it answers.
@@ -111,9 +106,7 @@ export function ActivityList({
     groups,
   });
   // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
-  const recentRows = filtersOn
-    ? filteredRecent.filter((run) => !sections.attention.includes(run))
-    : sections.recent;
+  const recentRows = filtersOn ? sections.settled : sections.recent;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,
@@ -136,14 +129,7 @@ export function ActivityList({
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
   return (
-    <div
-      className={
-        hasAnyRuns || unreadCount > 0 || filtersOn || filtersExpanded
-          ? "mb-2 border-b border-border pb-2"
-          : undefined
-      }
-      data-testid="activity-list"
-    >
+    <div data-testid="activity-list">
       <ActivityFilters
         filters={filters}
         onChange={onFiltersChange}
@@ -158,12 +144,16 @@ export function ActivityList({
       ) : null}
 
       {loading && !hasAnyRuns ? (
-        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80">
+        <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80">
           <Spinner aria-label={t`Loading activity…`} />
         </p>
       ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
-        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
+        <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
           <Trans>No runs match these filters.</Trans>
+        </p>
+      ) : !error && !hasAnyRuns && unreadCount === 0 ? (
+        <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
+          <Trans>No runs yet</Trans>
         </p>
       ) : null}
 
@@ -241,7 +231,7 @@ function ActivityError({
 }) {
   return (
     <>
-      <p className={`${compact ? "text-[12.5px]" : "text-[13px]"} text-destructive`}>{error}</p>
+      <p className={`${compact ? "text-body-sm" : "text-body-sm"} text-destructive`}>{error}</p>
       <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={onRetry}>
         <Trans>Try again</Trans>
       </Button>
@@ -273,32 +263,27 @@ function ActivityFilters({
         <CollapsibleContent id={id} keepMounted className="flex flex-col">
           <div className="space-y-2 pt-1 pb-2">
             <div>
-              <Label htmlFor={statusId} className="text-[12.5px] text-muted-foreground/80">
+              <Label htmlFor={statusId} className="text-body-sm text-muted-foreground/80">
                 <Trans>Status</Trans>
               </Label>
-              <NativeSelect
+              <OptionSelect<ActivityListFilters["status"]>
                 id={statusId}
                 data-testid="activity-status-filter"
                 value={filters.status}
-                onChange={(event) =>
-                  onChange({
-                    ...filters,
-                    status: event.target.value as ActivityListFilters["status"],
-                  })
-                }
-                className="mt-1 w-full"
-              >
-                <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
-                {STATUS_FILTERS.map((status) => (
-                  <NativeSelectOption key={status} value={status}>
-                    {statusLabel(status)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={(status) => onChange({ ...filters, status })}
+                className="mt-1"
+                options={[
+                  { value: "all", label: t`All statuses` },
+                  ...STATUS_FILTERS.map((status) => ({
+                    value: status,
+                    label: statusLabel(status),
+                  })),
+                ]}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0">
-                <Label htmlFor={fromId} className="text-[12.5px] text-muted-foreground/80">
+                <Label htmlFor={fromId} className="text-body-sm text-muted-foreground/80">
                   <Trans>From</Trans>
                 </Label>
                 <Input
@@ -312,11 +297,11 @@ function ActivityFilters({
                       dateRange: { ...filters.dateRange, from: event.target.value },
                     })
                   }
-                  className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
+                  className="mt-1 rounded-xl bg-card text-body-sm dark:bg-input"
                 />
               </div>
               <div className="min-w-0">
-                <Label htmlFor={toId} className="text-[12.5px] text-muted-foreground/80">
+                <Label htmlFor={toId} className="text-body-sm text-muted-foreground/80">
                   <Trans>To</Trans>
                 </Label>
                 <Input
@@ -330,7 +315,7 @@ function ActivityFilters({
                       dateRange: { ...filters.dateRange, to: event.target.value },
                     })
                   }
-                  className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
+                  className="mt-1 rounded-xl bg-card text-body-sm dark:bg-input"
                 />
               </div>
             </div>
@@ -367,7 +352,7 @@ function ActivityFilters({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-[12px]"
+            className="h-7 px-2 text-label"
             data-testid="activity-reset-filters"
             onClick={() => onChange(emptyActivityFilters())}
           >
@@ -384,7 +369,7 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
   return (
     <button
       type="button"
-      className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11.5px] text-foreground hover:bg-accent"
+      className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-label text-foreground hover:bg-accent"
       onClick={onClear}
       aria-label={t`Clear filter ${label}`}
     >
@@ -450,7 +435,7 @@ function ActivityRow({
       type="button"
       aria-label={activityLabel}
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-accent"
     >
       <BotAvatar
         identity={run.botId}
@@ -461,26 +446,26 @@ function ActivityRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 gap-2 text-sm font-medium">
+          <span className="flex min-w-0 gap-2 text-body font-medium">
             <span className="truncate text-foreground">{run.botName}</span>
             {run.groupName ? (
               <span className="truncate text-muted-foreground">{run.groupName}</span>
             ) : null}
           </span>
           {detailed ? (
-            <span className="shrink-0 text-xs text-muted-foreground/80">
+            <span className="shrink-0 text-label text-muted-foreground/80">
               {formatRelativeTime(run.updatedAt)}
             </span>
           ) : null}
         </div>
         <div className="flex items-baseline gap-2">
           {preview ? (
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-body-sm text-muted-foreground">
               {preview}
             </span>
           ) : null}
           {detailed ? (
-            <span className={`ms-auto shrink-0 text-xs ${statusTone(run.status)}`}>{label}</span>
+            <span className={`ms-auto shrink-0 text-label ${statusTone(run.status)}`}>{label}</span>
           ) : null}
         </div>
       </div>
@@ -505,18 +490,18 @@ function ChatRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-accent"
     >
       {avatar}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground/80">
+          <span className="truncate text-body font-medium text-foreground">{name}</span>
+          <span className="shrink-0 text-label text-muted-foreground/80">
             {formatRelativeTime(updatedAt)}
           </span>
         </div>
         {preview ? (
-          <div className="truncate text-[13px] text-muted-foreground">{preview}</div>
+          <div className="truncate text-body-sm text-muted-foreground">{preview}</div>
         ) : null}
       </div>
     </button>

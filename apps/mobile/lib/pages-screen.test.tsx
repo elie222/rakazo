@@ -86,12 +86,6 @@ vi.mock("../components/native-action-button", () => ({
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./activity", () => ({ formatActivityRelativeTime: () => "now" }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string>) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
-  }),
-}));
 vi.mock("./native", () => ({
   native: {},
   useMobileTokens: () => ({}),

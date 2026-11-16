@@ -1,5 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -11,6 +13,10 @@ const lifecycleMocks = vi.hoisted(() => ({
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async (
+    _prisma: unknown,
+    input: { computerId: string; botId: string; runId: string },
+  ) => ({ ...input, fence: 7 }),
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -27,7 +33,6 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 const TEXT_ONLY_MODEL = "deepseek/deepseek-v4-flash-0731";
 const VISION_MODEL = "openai/gpt-4o";
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 type Gate = { reached: Deferred<void>; release: Deferred<void> };
 type RunHooks = {
   computer?: { defaultModelId?: string; checkpoint?: string };
@@ -37,6 +42,7 @@ type RunHooks = {
   /** The model lists the computer's files before answering, which starts the computer. */
   useComputer?: boolean;
   trigger?: string;
+  sourceMessageId?: string;
   /** A reply bound to this run as steering, claimed before any tool runs. */
   steeringBlocks?: MessageBlock[];
   /** Run in a group thread with this stored history (newest first) and these bot records. */
@@ -47,14 +53,6 @@ type RunHooks = {
   /** The newest user message points at this run, sends a picture and may wait for its own run. */
   pictureMessage?: { waiting: boolean };
 };
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 function historyMessages(pictureMessage?: { waiting: boolean }): Array<{
   id: string;
@@ -129,6 +127,7 @@ async function runWithModel(
     userId: "user-1",
     status: "queued",
     trigger: hooks?.trigger ?? "user",
+    sourceMessageId: hooks?.sourceMessageId ?? null,
     leaseFence: 0,
   };
   const get = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
@@ -165,6 +164,14 @@ async function runWithModel(
     yield { type: "done" as const, text: "Done" };
   });
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => 0),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    spaceMember: {
+      findUnique: vi.fn(async () => ({ id: "member-1" })),
+      findMany: vi.fn(async () => [{ userId: "user-1" }]),
+    },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -863,6 +870,60 @@ describe("group history speakers", () => {
         ([args]) => (args as { where?: { id?: { in?: unknown } } } | undefined)?.where?.id?.in,
       ),
     ).toBe(false);
+  });
+
+  const file = {
+    kind: "file",
+    artifactId: "art-2",
+    name: "reply.png",
+    mimeType: "image/png",
+    size: 4,
+  } as const;
+  it.each([
+    {
+      via: "message",
+      trigger: "bot_message",
+      role: "user",
+      block: {
+        kind: "bot_message_received",
+        fromBotId: "bot-2",
+        fromBotName: "Anya",
+        text: "Deploy this",
+        hop: 1,
+      },
+    },
+    {
+      via: "handoff",
+      trigger: "follow_up",
+      role: "bot",
+      block: { kind: "handoff", fromBotId: "bot-2", toBotId: "bot-1", text: "Deploy this", hop: 1 },
+    },
+  ] as const)("puts files another bot sent by $via onto this bot's computer", async (sent) => {
+    const delivered = row(6, sent.role, "", sent.role === "bot" ? "bot-2" : undefined, {
+      id: "delivered",
+      blocks: [sent.block, file] as MessageBlock[],
+    });
+    const { request, writeFile } = await runWithModel(
+      TEXT_ONLY_MODEL,
+      undefined,
+      false,
+      false,
+      true,
+      {
+        group: { messages: [delivered, ...stored], bots },
+        trigger: sent.trigger,
+        sourceMessageId: "delivered",
+        useComputer: true,
+      },
+    );
+    expect(request.prompt).toContain(
+      "Attachments will be copied to these paths when a tool needs the computer.",
+    );
+    expect(request.prompt).toContain('"attachments/art-2.png"');
+    expect(writeFile.mock.calls.map(([, file]) => file)).toContainEqual({
+      path: "attachments/art-2.png",
+      content: new Uint8Array([1, 2, 3, 4]),
+    });
   });
 
   it("labels the prompt only for runs the user started", async () => {

@@ -279,6 +279,17 @@ export class BillingEmulator implements BillingProvider {
     this.cancelAll(customerId);
   }
 
+  async expireOpenCheckouts(customerId: string) {
+    this.checkouts.delete(customerId);
+    this.byokCheckouts.delete(customerId);
+    this.creditCheckouts.delete(customerId);
+  }
+
+  /** The emulator takes no payments outside a customer. */
+  async customerForPayment(_paymentId: string): Promise<string | null> {
+    return null;
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(WEBHOOK_SECRET, rawBody, headers, this.now());
   }
@@ -336,9 +347,11 @@ export class BillingEmulator implements BillingProvider {
     return { body, headers };
   }
 
-  /** An open checkout goes too, so it cannot start a subscription afterwards. */
+  /** Open checkouts go too, so none can start a subscription or purchase afterwards. */
   private cancelAll(customerId: string) {
     this.checkouts.delete(customerId);
+    this.byokCheckouts.delete(customerId);
+    this.creditCheckouts.delete(customerId);
     for (const subscription of this.forCustomer(customerId)) {
       if (subscription.status === "canceled") continue;
       subscription.status = "canceled";

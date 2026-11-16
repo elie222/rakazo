@@ -6,6 +6,8 @@ import { useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import { InviteDialog } from "../../components/InviteDialog";
 import { useBilling } from "../../components/SubscriptionGate";
+import { desktopBridge, windowChromeKind } from "../../lib/desktop";
+import { WindowChrome } from "../WindowChrome";
 
 /** The floating header over the transcript: navigation, the chat's name, call and invite. */
 export function ChatHeader({
@@ -37,9 +39,11 @@ export function ChatHeader({
   const { t } = useLingui();
   const referral = useBilling().status?.referral;
   const [inviteOpen, setInviteOpen] = useState(false);
+  const macChrome = windowChromeKind(desktopBridge()) === "darwin";
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
       <div className="flex items-center">
+        {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
           size="icon-lg"
@@ -69,7 +73,7 @@ export function ChatHeader({
           />
         ) : null}
         <span className="min-w-0">
-          <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
+          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
             {inGroup
               ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
               : (active?.name ?? t`Select a bot`)}

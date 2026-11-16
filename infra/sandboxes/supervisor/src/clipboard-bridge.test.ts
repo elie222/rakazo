@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachHostClipboardPaste,
@@ -281,22 +282,19 @@ describe("mobile paste control", () => {
     const { button, listeners } = pasteButton();
     const rfb = connectedRfb();
     const fallbackFocus = pasteTarget("___");
-    let settle: ((value: string) => void) | undefined;
+    const clipboardText = deferred<string>();
+    const readText = vi.fn(() => clipboardText.promise);
     attachMobilePaste(rfb, {
       button,
-      clipboard: {
-        readText: () =>
-          new Promise((resolve) => {
-            settle = resolve;
-          }),
-      },
+      clipboard: { readText },
       fallbackFocus,
     });
     const pending = listeners.get("click")?.({});
     expect(fallbackFocus.focus).toHaveBeenCalledOnce();
     expect(fallbackFocus.setSelectionRange).toHaveBeenCalledWith(3, 3);
     expect(rfb.clipboardPasteFrom).not.toHaveBeenCalled();
-    settle?.("from-phone");
+    expect(readText).toHaveBeenCalledOnce();
+    clipboardText.resolve("from-phone");
     await pending;
     expect(rfb.clipboardPasteFrom).toHaveBeenCalledWith("from-phone");
     expect(fallbackFocus.blur).toHaveBeenCalledOnce();

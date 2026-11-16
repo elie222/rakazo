@@ -1,10 +1,10 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { RakazoDesktopSpeechEvent } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
-import type { IpcMainInvokeEvent, WebContents } from "electron";
+import type { WebContents } from "electron";
 import type { AppTarget } from "./app-frame.js";
-import { fromAppFrame } from "./app-frame.js";
 import { isLanguageTag } from "./i18n.js";
+import type { IpcCaller } from "./ipc.js";
 
 export const SPEECH_EVENT_CHANNEL = "desktop.speech.event";
 
@@ -20,7 +20,7 @@ const ERROR_CODES = new Set([
 ]);
 const MAX_LINE_CHARS = 64 * 1024;
 
-type InvokeEvent = Pick<IpcMainInvokeEvent, "sender" | "senderFrame">;
+type InvokeEvent = Pick<IpcCaller, "sender">;
 type Listening = {
   sender: WebContents;
   session: number;
@@ -42,12 +42,7 @@ export function createSystemSpeech(
   const watched = new WeakSet<WebContents>();
 
   const owner = (event: InvokeEvent, session: unknown) =>
-    active !== null &&
-    active.session === session &&
-    active.sender === event.sender &&
-    fromAppFrame(getTarget(), event)
-      ? active
-      : null;
+    active !== null && active.session === session && active.sender === event.sender ? active : null;
 
   /** A page that is gone gets no more events; a replaced or aborted session still ends. */
   function close(listening: Listening, pageGone = false) {
@@ -58,10 +53,8 @@ export function createSystemSpeech(
 
   return {
     start(event: InvokeEvent, language: unknown, session: unknown): boolean {
-      const target = getTarget();
       if (
-        !secureHttpOrigin(target?.url) ||
-        !fromAppFrame(target, event) ||
+        !secureHttpOrigin(getTarget()?.url) ||
         // Language tags only: the value becomes the recognizer's argument.
         !isLanguageTag(language) ||
         !Number.isSafeInteger(session) ||

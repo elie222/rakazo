@@ -32,6 +32,7 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
   "created",
   "tickets",
   "bot_message",
+  "helper",
 ]);
 
 /**
@@ -76,12 +77,65 @@ export function isRunWorking(status: string | null | undefined): boolean {
   return WORKING_RUN_STATUSES.some((working) => working === status);
 }
 
+export function workingRoutineName(
+  runs: readonly {
+    status: string;
+    botId?: string;
+    trigger?: string;
+    routineName?: string | null;
+  }[],
+): string | undefined {
+  const running = runs.filter((candidate) => candidate.status === "running");
+  const [run] = running;
+  if (running.length !== 1 || run?.trigger !== "routine") return undefined;
+  const otherBotWorking = runs.some(
+    (candidate) => isRunWorking(candidate.status) && candidate.botId !== run.botId,
+  );
+  return (!otherBotWorking && run.routineName?.trim()) || undefined;
+}
+
 export function isRunWaitingOnUser(status: string | null | undefined): boolean {
   return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
 }
 
 export function isTerminal(status: string): boolean {
   return TERMINAL.includes(status as RunStatus);
+}
+
+/**
+ * A helper the bot started in the background. It works in a thread of its own, so the chat
+ * that started it stays free, and its result comes back there as a HELPER_RESULT_TRIGGER run.
+ */
+export const BACKGROUND_HELPER_TRIGGER = "helper";
+export const HELPER_RESULT_TRIGGER = "helper_result";
+/** The result a stopped background helper's card settles with, beside status "failed". */
+export const STOPPED_HELPER_RESULT = "stopped";
+
+/**
+ * How a helper card reads: a stopped helper settles as failed but did not fail, and shows no
+ * body; otherwise the body is its result, or its progress while it works.
+ */
+export function helperCardState(block: { status: string; result?: string; progress?: string }): {
+  stopped: boolean;
+  failed: boolean;
+  body: string;
+} {
+  const stopped = block.status === "failed" && block.result === STOPPED_HELPER_RESULT;
+  return {
+    stopped,
+    failed: block.status === "failed" && !stopped,
+    body: stopped ? "" : block.result || block.progress || "",
+  };
+}
+
+/** A helper only holds up computer operations after a worker claimed that computer. */
+export function computerUsingRuns(now: Date = new Date()) {
+  return {
+    OR: [
+      { trigger: { not: BACKGROUND_HELPER_TRIGGER } },
+      { computerUseStartedAt: { not: null }, leaseExpiresAt: { gt: now } },
+    ],
+  };
 }
 
 /** Prompt of a run created to answer messages that waited behind another turn. */

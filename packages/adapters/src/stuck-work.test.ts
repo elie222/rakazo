@@ -5,9 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExpoPushProvider } from "./expo-push.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
-import { reconcileStuckWork, STUCK_NOTICE_CLAIM_TTL_MS } from "./stuck-work.js";
+import {
+  expireWaitHoldingSecrets,
+  reconcileStuckWork,
+  STUCK_NOTICE_CLAIM_TTL_MS,
+} from "./stuck-work.js";
 
 const now = new Date("2026-09-28T16:00:00.000Z");
+const budget = { timeout: 20_000 };
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -17,7 +22,7 @@ function age(hours: number) {
   return new Date(now.getTime() - hours * 60 * 60 * 1000);
 }
 
-function candidate(status: "queued" | "waiting_input" | "waiting_takeover", hours: number) {
+function candidate(status: "queued" | "waiting_takeover", hours: number) {
   return {
     id: `run-${status}`,
     status,
@@ -36,6 +41,8 @@ function publisher() {
   const enqueue = vi.fn(async () => undefined);
   const jobs: JobPublisher = {
     enqueue,
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };
@@ -67,8 +74,8 @@ describe("reconcileStuckWork", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("reminds once for a question that has been waiting for hours", async () => {
-    const run = candidate("waiting_input", 5);
+  it("reminds once for a run that has been queued for hours", async () => {
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -96,8 +103,8 @@ describe("reconcileStuckWork", () => {
     expect(publishChatAlert).toHaveBeenCalledTimes(1);
     expect(publishChatAlert).toHaveBeenCalledWith("user-1", {
       kind: "help",
-      title: "Ada still needs an answer",
-      body: "This has been waiting on you.",
+      title: "Ada is still queued",
+      body: "It has been waiting to start.",
       spaceId: "space-1",
       botId: "bot-1",
       threadId: "thread-1",
@@ -106,8 +113,8 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledWith(
       {
         kind: "help",
-        title: "Ada still needs an answer",
-        body: "This has been waiting on you.",
+        title: "Ada is still queued",
+        body: "It has been waiting to start.",
         botId: "bot-1",
         threadId: "thread-1",
         sender: expect.objectContaining({ botId: "bot-1", name: "Ada" }),
@@ -124,10 +131,12 @@ describe("reconcileStuckWork", () => {
         },
       }),
     ]);
+    // The claim and the delivered stamp lock the thread row behind snapshot reads.
+    expect(prisma.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget, budget]);
   });
 
   it("does not send again when this episode was already reminded", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps = [
       {
         runId: run.id,
@@ -167,7 +176,7 @@ describe("reconcileStuckWork", () => {
 
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -198,7 +207,7 @@ describe("reconcileStuckWork", () => {
 
   it("drops the claim when the token is removed before Expo accepts the push", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ id?: string; runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -232,7 +241,7 @@ describe("reconcileStuckWork", () => {
 
   it("stops reminding once Expo reports the device unregistered", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -254,7 +263,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("retries a pending reminder left behind when the worker stops", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const otherEpisode = {
       id: "event-other-episode",
       runId: run.id,
@@ -298,7 +307,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not send a second reminder while a claim is still in flight", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const pending = {
       runId: run.id,
       payload: {
@@ -320,7 +329,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("retries the four-hour reminder when the push fails", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -382,7 +391,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not record a reminder when nothing can deliver it", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const prisma = noticePrisma(run, []);
     const { jobs } = publisher();
 
@@ -429,6 +438,7 @@ describe("reconcileStuckWork", () => {
       }),
       expect.anything(),
     );
+    expect(client.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget]);
   });
 
   it("alerts open apps when work is cancelled, even without a push provider", async () => {
@@ -506,7 +516,6 @@ describe("reconcileStuckWork", () => {
             {
               OR: [
                 { status: "queued", updatedAt: { lte: age(4) } },
-                { status: "waiting_input", updatedAt: { lte: age(4) } },
                 { status: "waiting_takeover", updatedAt: { lte: age(0.5) } },
               ],
             },
@@ -536,7 +545,7 @@ describe("reconcileStuckWork", () => {
 
   it("keeps scanning past an already reminded row", async () => {
     const first = candidate("queued", 6);
-    const second = { ...candidate("waiting_input", 5), id: "run-next-page" };
+    const second = { ...candidate("queued", 5), id: "run-next-page" };
     const seen: unknown[] = [];
     const prisma = {
       run: {
@@ -685,6 +694,7 @@ function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) 
       }),
     },
     thread: { update: vi.fn(async () => ({ nextEventSeq: stamps.length + 1 })) },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
@@ -740,9 +750,47 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
         },
       ]),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
   };
   return Object.assign(client, {
-    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>, _options?: unknown) =>
+      fn(client),
+    ),
   });
 }
+
+describe("expireWaitHoldingSecrets", () => {
+  function waitingPrisma(hours: number, holdsSecret: boolean) {
+    return {
+      run: {
+        findUnique: vi.fn(async () => ({ ...candidate("queued", hours), status: "waiting_input" })),
+      },
+      secret: { findFirst: vi.fn(async () => (holdsSecret ? { id: "secret-1" } : null)) },
+      $transaction: vi.fn(async () => null),
+    };
+  }
+  const expire = (prisma: ReturnType<typeof waitingPrisma>) =>
+    expireWaitHoldingSecrets(
+      { prisma: prisma as unknown as PrismaClient, jobs: publisher().jobs, now },
+      "run-1",
+    );
+
+  it("looks again at the expiry while the question is younger", async () => {
+    const prisma = waitingPrisma(1, true);
+    await expect(expire(prisma)).resolves.toEqual(age(1 - 24));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("leaves an old question open when its run holds no login or code of its own", async () => {
+    const prisma = waitingPrisma(30, false);
+    await expect(expire(prisma)).resolves.toBeUndefined();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("ends an old question whose run still holds a login or code of its own", async () => {
+    const prisma = waitingPrisma(30, true);
+    await expect(expire(prisma)).resolves.toBeUndefined();
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+});

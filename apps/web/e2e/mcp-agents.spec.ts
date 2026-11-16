@@ -20,6 +20,7 @@ const server: McpServer = {
   oauthClientId: null,
   health: { status: "ok", message: null, toolCount: 7, checkedAt: "2026-10-30T00:00:00.000Z" },
   enabled: true,
+  verbatimResults: false,
   allBots: true,
   revision: 1,
   createdAt: "2026-10-30T00:00:00.000Z",

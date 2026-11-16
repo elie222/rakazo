@@ -61,11 +61,12 @@ const apnsTransport: ApnsTransport = (origin, headers, body) =>
     request.end(body);
   });
 
-export class ApnsVoipProvider implements VoipPushProvider {
+/** Signs and sends one APNs request; each push type adds its own topic and payload. */
+export class ApnsClient {
   private readonly key;
   private jwt?: { value: string; issuedAt: number };
   constructor(
-    private readonly config: ApnsVoipConfig,
+    readonly config: ApnsVoipConfig,
     private readonly transport: ApnsTransport = apnsTransport,
   ) {
     this.key = createPrivateKey(config.privateKey);
@@ -89,10 +90,18 @@ export class ApnsVoipProvider implements VoipPushProvider {
     this.jwt = { value, issuedAt: now };
     return value;
   }
-  async send(token: string, call: IncomingCallPush): Promise<"sent" | "invalid" | "unavailable"> {
-    const expiration = Math.floor(Date.parse(call.expiresAt) / 1000);
-    if (!(expiration > Date.now() / 1000)) return "unavailable";
-    const authorization = this.authorization();
+  /** Sends one push. Failures are logged under `failureEvent` and never thrown. */
+  async send(
+    token: string,
+    request: {
+      topic: string;
+      pushType: string;
+      priority: 5 | 10;
+      expiration: number;
+      body: unknown;
+    },
+    failureEvent: string,
+  ): Promise<"sent" | "invalid" | "unavailable"> {
     try {
       const reply = await this.transport(
         this.config.environment === "sandbox"
@@ -101,29 +110,51 @@ export class ApnsVoipProvider implements VoipPushProvider {
         {
           ":method": "POST",
           ":path": `/3/device/${token}`,
-          authorization,
-          "apns-topic": `${this.config.bundleId}.voip`,
-          "apns-push-type": "voip",
-          "apns-priority": "10",
-          "apns-expiration": String(expiration),
+          authorization: this.authorization(),
+          "apns-topic": request.topic,
+          "apns-push-type": request.pushType,
+          "apns-priority": String(request.priority),
+          "apns-expiration": String(request.expiration),
           "content-type": "application/json",
         },
-        JSON.stringify({
+        JSON.stringify(request.body),
+      );
+      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
+      if (reply.status === 200) return "sent";
+      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
+      getLogger().warn(failureEvent, { status: reply.status, reason: reply.reason });
+      return "unavailable";
+    } catch (error) {
+      getLogger().warn(failureEvent, { error });
+      return "unavailable";
+    }
+  }
+}
+
+export class ApnsVoipProvider implements VoipPushProvider {
+  private readonly client: ApnsClient;
+  constructor(config: ApnsVoipConfig, transport?: ApnsTransport) {
+    this.client = new ApnsClient(config, transport);
+  }
+  async send(token: string, call: IncomingCallPush): Promise<"sent" | "invalid" | "unavailable"> {
+    const expiration = Math.floor(Date.parse(call.expiresAt) / 1000);
+    if (!(expiration > Date.now() / 1000)) return "unavailable";
+    return this.client.send(
+      token,
+      {
+        topic: `${this.client.config.bundleId}.voip`,
+        pushType: "voip",
+        priority: 10,
+        expiration,
+        body: {
           aps: {},
           callId: call.callId,
           botId: call.botId,
           botName: call.botName.slice(0, 100),
           expiresAt: call.expiresAt,
-        }),
-      );
-      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
-      if (reply.status === 200) return "sent";
-      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
-      getLogger().warn("call.voip_push_failed", { status: reply.status, reason: reply.reason });
-      return "unavailable";
-    } catch (error) {
-      getLogger().warn("call.voip_push_failed", { error });
-      return "unavailable";
-    }
+        },
+      },
+      "call.voip_push_failed",
+    );
   }
 }

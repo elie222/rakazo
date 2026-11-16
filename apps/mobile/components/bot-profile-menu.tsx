@@ -1,12 +1,14 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { archiveBot, confirmClearConversation, confirmDeleteBot } from "../lib/bot-lifecycle";
-import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useConfirmationGuard } from "../lib/use-confirmation-guard";
+import { useLeaveDeletedChat } from "../lib/use-leave-deleted-chat";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
@@ -19,8 +21,10 @@ export type BotProfileAction = {
 
 /** The bot's less common actions, in its profile's "…" menu. */
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
+  const leaveDeletedChat = useLeaveDeletedChat();
+  const beginDelete = useConfirmationGuard();
   function leave() {
     router.dismissAll();
     router.replace("/");
@@ -28,29 +32,36 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
   return [
     {
       id: "clear",
-      text: t("Clear conversation"),
+      text: t`Clear conversation`,
       destructive: true,
       onPress: () => confirmClearConversation(botId),
     },
     {
       id: "archive",
-      text: t("Archive"),
+      text: t`Archive`,
       onPress: () =>
         void archiveBot(botId)
           .then(leave)
-          .catch((error) =>
-            Alert.alert(t("Could not archive bot"), errorText(error, t("Try again."))),
-          ),
+          .catch((error) => Alert.alert(t`Could not archive bot`, errorText(error, t`Try again.`))),
     },
     {
       id: "delete",
-      text: t("Delete…"),
+      text: t`Delete…`,
       destructive: true,
-      onPress: () =>
-        confirmDeleteBot({ id: botId, name }, () => {
-          notifyArchivedChatsChanged();
-          leave();
-        }),
+      onPress: () => {
+        const confirmation = beginDelete();
+        if (!confirmation) return;
+        void confirmDeleteBot(
+          { id: botId, name },
+          (removedGroupIds, recoveryContext) => {
+            notifyArchivedChatsChanged();
+            void leaveDeletedChat(botId, removedGroupIds, recoveryContext);
+          },
+          confirmation.current,
+          undefined,
+          confirmation.finish,
+        );
+      },
     },
   ];
 }

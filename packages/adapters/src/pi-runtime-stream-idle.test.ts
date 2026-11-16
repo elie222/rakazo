@@ -8,6 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
@@ -54,6 +55,42 @@ describe("Model stream idle watchdog", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it("allows prolonged inactivity when the idle timeout is disabled", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+
+    const watchdog = modelStreamIdleWatchdog(undefined);
+    watchdog.ping();
+
+    await vi.advanceTimersByTimeAsync(13_800_000);
+
+    expect(watchdog.signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+
+    watchdog.dispose();
+  });
+
+  it("preserves explicit cancellation with the idle timeout disabled", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+
+    const upstream = new AbortController();
+    const watchdog = modelStreamIdleWatchdog(upstream.signal);
+    watchdog.ping();
+
+    await vi.advanceTimersByTimeAsync(13_800_000);
+    expect(watchdog.signal.aborted).toBe(false);
+
+    const reason = new Error("User cancelled the agent");
+    upstream.abort(reason);
+
+    expect(watchdog.signal.aborted).toBe(true);
+    expect(watchdog.signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+
+    watchdog.dispose();
   });
 
   it("waits out a configured idle bound longer than the default", async () => {
@@ -559,10 +596,7 @@ it("terminates a silent compatible HTTP stream through the real Pi provider", as
   vi.useFakeTimers();
   const caller = new AbortController();
   try {
-    let headersArrived!: () => void;
-    const headers = new Promise<void>((resolve) => {
-      headersArrived = resolve;
-    });
+    const headers = deferred();
     const fetch = vi.fn<NonNullable<SimpleStreamOptions["fetch"]>>(async (_input, init) => {
       return new Response(
         new ReadableStream({
@@ -595,7 +629,7 @@ it("terminates a silent compatible HTTP stream through the real Pi provider", as
         apiKey: "fake-key",
         signal: caller.signal,
         fetch,
-        onResponse: () => headersArrived(),
+        onResponse: () => headers.resolve(),
       },
       undefined,
     );
@@ -603,7 +637,7 @@ it("terminates a silent compatible HTTP stream through the real Pi provider", as
     const consume = (async () => {
       for await (const event of stream) events.push(event.type);
     })();
-    await headers;
+    await headers.promise;
     await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
     await consume;
     await expect(stream.result()).resolves.toMatchObject({

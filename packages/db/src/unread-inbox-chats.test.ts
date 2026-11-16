@@ -12,10 +12,15 @@ describe("unread inbox chat query", () => {
         reason: "count unread inbox chats across the member's Spaces",
       });
       expect(parameters).toContain(tenant.userId);
-      expect(parameters).toContain(tenant.spaceId);
+      expect(parameters).toContain("org-1");
       return [{ count: 4 }];
     });
-    const prisma = { $queryRaw: query } as unknown as PrismaClient;
+    const prisma = {
+      $queryRaw: query,
+      spaceMember: {
+        findUnique: async () => ({ organizationId: "org-1", member: { role: "member" } }),
+      },
+    } as unknown as PrismaClient;
     await runAsTenant(tenant, async () => {
       expect(await countUnreadInboxChats(prisma, tenant)).toBe(4);
       expect(currentDbContext()).toEqual({ kind: "tenant", ...tenant });

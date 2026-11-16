@@ -1,9 +1,14 @@
-import { isTerminal } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { expireComputerExecutionLeases } from "@rakazo/db";
 import { EXECUTION_LEASE_MS } from "./computer-lifecycle.js";
 
-type RecoveryRun = { id: string; botId: string; bot: { computerId: string | null } };
+type RecoveryRun = {
+  id: string;
+  botId: string;
+  trigger: string;
+  bot: { computerId: string | null };
+};
 
 /**
  * Leave resource waits untouched so recovery preserves their age and execution history.
@@ -31,11 +36,15 @@ export async function findRunRecoveryBlockers(
   }
   const blockers = new Map<string, string>();
   for (const run of runs) {
+    // Ordinary runs claim the computer only on first use. Only a held takeover
+    // still needs the dispatcher to arrange a release before a new run starts.
+    if (run.trigger === BACKGROUND_HELPER_TRIGGER) continue;
     const lease = leases.find(
       (lease) =>
         lease.botId === run.botId &&
         lease.computerId === run.bot.computerId &&
         lease.runId !== run.id &&
+        lease.expiresAt.getTime() > now.getTime() + 2 * EXECUTION_LEASE_MS &&
         !abandoned.has(lease.runId),
     );
     if (lease) blockers.set(run.id, lease.runId);

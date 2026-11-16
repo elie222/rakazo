@@ -96,7 +96,7 @@ export function LoginFieldsInput({
       <div className="flex flex-col gap-3" data-testid="login-fields">
         {fields.map((field, index) => (
           <div key={field.label} className="flex flex-col gap-1.5" data-testid="login-field">
-            <Label htmlFor={`${ids}-${index}`} className="text-[12.5px] text-muted-foreground">
+            <Label htmlFor={`${ids}-${index}`} className="text-body-sm text-muted-foreground">
               {displayLabels?.[index] ?? field.label}
             </Label>
             <div className="flex items-center gap-1.5">

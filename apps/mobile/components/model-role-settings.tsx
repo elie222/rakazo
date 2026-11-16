@@ -1,5 +1,7 @@
-import type { MenuAction } from "@expo/ui/community/menu";
+import type { MenuAction, MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   ModelCatalogEntry,
   ModelCredential,
@@ -13,26 +15,30 @@ import type {
 } from "@rakazo/contracts";
 import {
   backupChoiceKey,
-  canonicalPiProviderId,
   connectedBackupOptions,
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
   withConnectionName,
 } from "@rakazo/contracts";
-import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  connectionForModelChoice,
+  createModelRoleSettings,
+  modelRoleListPatch,
+  modelThinkingLevels,
+} from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, Platform, StyleSheet, Text, View } from "react-native";
 import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import type { ModelPickerRequest } from "../lib/model-picker-selection";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { thinkingLevelLabel } from "../lib/thinking-level";
+import { NativeSymbol } from "./native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
@@ -68,6 +74,7 @@ export function ModelRoleSettings({
   pickerRoute,
   connectRoute,
   onManage,
+  onManageModel,
   onChanged,
 }: {
   userId: string;
@@ -88,10 +95,12 @@ export function ModelRoleSettings({
   connectRoute: (provider: ConnectableProvider, intent: ModelConnectIntent) => Href;
   /** Opens one connection's screen. */
   onManage: (credential: ModelCredential) => void;
+  /** Opens one model's settings on the connection that runs it. */
+  onManageModel: (credential: ModelCredential, modelId: string) => void;
   /** The main model's first slot is the space default, which other settings read. */
   onChanged?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const apiBase = currentApiBase();
   const { controller, send } = useMemo(() => {
@@ -126,11 +135,7 @@ export function ModelRoleSettings({
   const rows = primary ? [primary, ...backups] : backups;
   const busy = state.busy || state.stale || !settings;
   const entryFor = (choice: ModelRoleChoice) =>
-    state.catalog.find(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
-        entry.id === choice.modelId,
-    );
+    catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
@@ -145,13 +150,7 @@ export function ModelRoleSettings({
   const deployment = state.settings?.deploymentPrimary ?? null;
   const deploymentName = deployment ? modelLabel(deployment) : null;
   /** The row's own connection, or the provider's newest for rows that name none. */
-  const connectionFor = (choice: ModelRoleChoice) =>
-    choice.credentialId
-      ? credentials.find((entry) => entry.id === choice.credentialId)
-      : credentials.find(
-          (entry) =>
-            canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
-        );
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
   const connectionName = (choice: ModelRoleChoice) => {
     const connection = choice.credentialId ? connectionFor(choice) : undefined;
     return connection
@@ -160,10 +159,11 @@ export function ModelRoleSettings({
   };
   const isPrimarySlot = (slot: Slot) => slot === "empty" || (slot === 0 && primary !== null);
 
-  // Compatible endpoints keep their effort with the connection.
   const thinkingLevels =
-    role === "main" && primary && primary.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
-      ? (entryFor(primary)?.thinkingLevels ?? []).filter((level) => level !== "off")
+    role === "main" && primary
+      ? modelThinkingLevels(connectionFor(primary), entryFor(primary), primary.modelId).filter(
+          (level) => level !== "off",
+        )
       : [];
   const thinking = primary?.thinkingLevel ?? null;
 
@@ -248,7 +248,7 @@ export function ModelRoleSettings({
       : undefined;
     const picks = new Map(pool.map((option) => [modelRoleChoiceKey(option), option]));
     return {
-      title: slot === "add" ? t("Add fallback") : title,
+      title: slot === "add" ? t`Add fallback` : title,
       selectedKey: currentKey ?? (offerDefault ? "default" : ""),
       choices: [
         ...(offerDefault
@@ -334,6 +334,9 @@ export function ModelRoleSettings({
       const next = [...rows];
       next.splice(target, 0, ...next.splice(index, 1));
       void commit(next);
+    } else if (id === "manageModel") {
+      const connection = connectionFor(choice);
+      if (connection) onManageModel(connection, choice.modelId);
     } else if (id === "manage") {
       const connection = connectionFor(choice);
       if (connection) onManage(connection);
@@ -371,11 +374,11 @@ export function ModelRoleSettings({
             ? [
                 {
                   id: "thinking",
-                  title: t("Thinking"),
+                  title: t`Thinking`,
                   subactions: [null, ...thinkingLevels].map((level) => ({
                     // MenuView reports an empty id as the title, so keep a prefix.
                     id: `thinking:${level ?? ""}`,
-                    title: level ? thinkingLevelLabel(level, t) : t("Default"),
+                    title: level ? thinkingLevelLabel(level) : t`Default`,
                     state: level === thinking ? "on" : "off",
                   })),
                 },
@@ -383,23 +386,21 @@ export function ModelRoleSettings({
             : [];
         const actions: MenuAction[] = [
           ...thinkingMenu,
-          ...(index > 0 ? [{ id: "moveUp", title: t("Move up") }] : []),
-          ...(index < rows.length - 1 ? [{ id: "moveDown", title: t("Move down") }] : []),
+          ...(index > 0 ? [{ id: "moveUp", title: t`Move up` }] : []),
+          ...(index < rows.length - 1 ? [{ id: "moveDown", title: t`Move down` }] : []),
           ...(connectionFor(choice)
             ? [
-                {
-                  id: "manage",
-                  title: t("Manage {provider}", { provider: connectionName(choice) }),
-                },
+                { id: "manageModel", title: t`Manage model` },
+                { id: "manage", title: t`Manage provider` },
               ]
             : []),
-          { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+          { id: "remove", title: t`Remove`, attributes: { destructive: true } },
         ];
         const accessibilityActions = actions.flatMap((action) =>
           action.subactions
             ? action.subactions.map((sub) => ({
                 name: sub.id ?? sub.title,
-                label: t("Thinking: {level}", { level: sub.title }),
+                label: t`Thinking: ${ph({ level: sub.title })}`,
               }))
             : action.attributes?.disabled
               ? []
@@ -408,33 +409,37 @@ export function ModelRoleSettings({
         const detail = [
           connectionName(choice),
           ...(showThinking && thinking
-            ? [t("Thinking: {level}", { level: thinkingLevelLabel(thinking, t) })]
+            ? [t`Thinking: ${ph({ level: thinkingLevelLabel(thinking) })}`]
             : []),
         ].join(", ");
         return (
-          <RowMenu
-            key={modelRoleChoiceKey(choice)}
-            title={name}
-            actions={actions}
-            onAction={(id) => act(index, id)}
-          >
-            <SettingsRow
-              accessibilityRole="button"
-              leading={ordered ? number(index + offset) : undefined}
+          <View key={modelRoleChoiceKey(choice)} style={rowMenuStyles.row}>
+            <View style={rowMenuStyles.content}>
+              <SettingsRow
+                accessibilityRole="button"
+                leading={ordered ? number(index + offset) : undefined}
+                title={name}
+                detail={detail}
+                disabled={busy}
+                onPress={() => pick(index)}
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              />
+            </View>
+            <RowMenuButton
               title={name}
-              detail={detail}
+              connection={connectionName(choice)}
+              actions={actions}
               disabled={busy}
-              onPress={() => pick(index)}
-              accessibilityActions={accessibilityActions}
-              onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              onAction={(id) => act(index, id)}
             />
-          </RowMenu>
+          </View>
         );
       })}
       {settings && backups.length < MAX_MODEL_BACKUPS ? (
         <SettingsRow
           key="add"
-          title={t("Add fallback")}
+          title={t`Add fallback`}
           disabled={busy}
           onPress={() => pick("add")}
         />
@@ -447,12 +452,71 @@ export function ModelRoleSettings({
       {state.error ? (
         <SettingsRow
           key="retry"
-          title={t("Retry")}
+          title={t`Retry`}
           disabled={state.busy}
           onPress={() => void controller.load()}
         />
       ) : null}
     </SettingsGroup>
+  );
+}
+
+function RowMenuButton({
+  title,
+  connection,
+  actions,
+  onAction,
+  disabled = false,
+}: {
+  title: string;
+  connection: string;
+  actions: MenuAction[];
+  onAction: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const menu = useRef<MenuComponentRef>(null);
+  const { t } = useLingui();
+  const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
+  const button = (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={t`${ph({ name: withConnectionName(title, connection) })} options`}
+      accessibilityState={{ disabled }}
+      accessibilityActions={
+        Platform.OS === "android" && !disabled ? [{ name: "activate" }] : undefined
+      }
+      onAccessibilityAction={
+        Platform.OS === "android"
+          ? ({ nativeEvent }) => {
+              if (!disabled && nativeEvent.actionName === "activate") menu.current?.show();
+            }
+          : undefined
+      }
+      style={rowMenuStyles.buttonInner}
+    >
+      <NativeSymbol
+        ios="ellipsis"
+        android="ellipsis-horizontal"
+        color={tokens.mutedForeground}
+        size={20}
+      />
+    </View>
+  );
+  return disabled ? (
+    <View style={rowMenuStyles.button}>{button}</View>
+  ) : (
+    <MenuView
+      ref={menu}
+      colorScheme={colorScheme}
+      title={title}
+      actions={actions}
+      onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
+      style={rowMenuStyles.button}
+    >
+      {button}
+    </MenuView>
   );
 }
 
@@ -490,7 +554,13 @@ export function RowMenu({
   );
 }
 
-const rowMenuStyles = StyleSheet.create({ fullWidth: { width: "100%" } });
+const rowMenuStyles = StyleSheet.create({
+  fullWidth: { width: "100%" },
+  row: { flexDirection: "row", alignItems: "center" },
+  content: { flex: 1 },
+  button: { borderRadius: 22, overflow: "hidden", marginEnd: 16 },
+  buttonInner: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+});
 
 function createStyles() {
   const tokens = mobileTokens();

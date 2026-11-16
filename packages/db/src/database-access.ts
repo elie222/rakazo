@@ -97,6 +97,16 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${RUNTIME_ROLE};
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${RUNTIME_ROLE};
   `);
+  // The runtime group may be created after migrations, or restored without its grants.
+  // Older databases need provisioning too, so each helper is optional until migrated.
+  await owner.query(`DO $$ BEGIN
+    IF to_regprocedure('public.app_vault_item_unrestricted(text)') IS NOT NULL THEN
+      GRANT EXECUTE ON FUNCTION public.app_vault_item_unrestricted(text) TO ${RUNTIME_ROLE};
+    END IF;
+    IF to_regprocedure('public.app_vault_run_unrestricted(text,text)') IS NOT NULL THEN
+      GRANT EXECUTE ON FUNCTION public.app_vault_run_unrestricted(text, text) TO ${RUNTIME_ROLE};
+    END IF;
+  END $$`);
   await owner.query(
     `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${RUNTIME_ROLE}', current_database()); END $$`,
   );
@@ -284,6 +294,19 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
     () => prisma.$queryRaw<Array<{ ok: boolean }>>`SELECT app_rls_bypass() AS ok`,
   );
   return { enforced: true, role: row.role, ...(system?.ok ? {} : { systemBlocked: true }) };
+}
+
+/** Warns when sessions do not run in UTC, which every timestamp comparison with now() assumes. */
+export async function timeZoneWarning(prisma: PrismaClient): Promise<string | undefined> {
+  const [row] = await prisma.$queryRawUnsafe<
+    Array<{ zone: string; login: string; database: string }>
+  >(
+    "SELECT current_setting('TimeZone') AS zone, quote_ident(current_user) AS login, quote_ident(current_database()) AS database",
+  );
+  if (!row || /^(Etc\/)?(UTC|UCT|Universal|Zulu|GMT|GMT[+-]?0|Greenwich)$/i.test(row.zone))
+    return undefined;
+  // A time zone set on the login wins over the database's, so the fix may be either.
+  return `The database time zone is ${row.zone}, so stored times are compared hours off. As the database owner, run ALTER DATABASE ${row.database} SET timezone TO 'UTC'; if the ${row.login} login has its own time zone, also run ALTER ROLE ${row.login} SET timezone TO 'UTC'.`;
 }
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {

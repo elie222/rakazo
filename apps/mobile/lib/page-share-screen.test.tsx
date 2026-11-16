@@ -61,12 +61,6 @@ vi.mock("../components/settings-group", () => ({
       title,
     ),
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string>) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
-  }),
-}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));

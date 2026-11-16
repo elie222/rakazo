@@ -66,7 +66,7 @@ export function modelStreamIdleWatchdog(
   else upstream?.addEventListener("abort", onUpstreamAbort, { once: true });
 
   const arm = () => {
-    if (disposed || controller.signal.aborted) return;
+    if (disposed || controller.signal.aborted || idleTimeoutMs === 0) return;
     timer = setTimeout(() => {
       timer = undefined;
       if (controller.signal.aborted) return;
@@ -139,7 +139,7 @@ export function modelStreamIdleWatchdog(
  * is retried like any other transport failure.
  */
 function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Response {
-  if (response.ok || response.body == null) return response;
+  if (idleTimeoutMs === 0 || response.ok || response.body == null) return response;
   const reader = response.body.getReader();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const clear = () => {

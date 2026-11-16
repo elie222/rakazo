@@ -1,207 +1,100 @@
-import { MenuView } from "@expo/ui/community/menu";
-import type { ComputerStatus } from "@rakazo/contracts";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useNavigation } from "expo-router";
-import { useLayoutEffect, useState } from "react";
-import { Alert, Text, View } from "react-native";
-import { rpc } from "../lib/api";
+import { useLingui } from "@lingui/react/macro";
+import type { ReactElement } from "react";
+import { useEffect, useState } from "react";
+import { Alert } from "react-native";
+import { selectedSpaceId } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
-import { useI18n } from "../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
+import { rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
-import { NativeSymbol } from "./native-symbol";
+import { SettingsRow } from "./settings-group";
 
-type Action = "stop" | "recover" | "reset" | "update";
+/** The one repair a bot's computer offers, and only while that computer is broken. */
+export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
+  const { t } = useLingui();
+  // The bot's own Space, the one selected when its settings opened, whatever is selected later.
+  const [spaceId] = useState(() => selectedSpaceId() ?? undefined);
+  const statusRead = rpcQuery("computer/status", { botId: botId ?? "" }, spaceId);
+  const status = useScreenQuery(statusRead, { enabled: Boolean(botId), onForeground: false });
+  const { refetch } = status;
+  // A stale status could offer an action the computer can no longer take.
+  const computer = status.error ? null : status.data;
 
-export function ComputerMaintenanceActions({
-  botId,
-  computer,
-  onChanged,
-}: {
-  botId: string;
-  computer: ComputerStatus | null;
-  onChanged: () => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const tokens = useMobileTokens();
-  const scheme = useResolvedAppearance();
-  const navigation = useNavigation();
-  const [pending, setPending] = useState<Action | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const busy = Boolean(computer?.busyBotName) || computer?.state === "booting" || pending !== null;
-
-  async function run(action: Action) {
-    if (busy) return;
-    setPending(action);
-    setError(null);
-    try {
-      if (action === "stop") await rpc("computer/stop", { botId });
-      else if (action === "recover") await computerUpdates.start(botId, "recover");
-      else if (action === "reset") await rpc("computer/reset", { botId });
-      else await computerUpdates.start(botId);
-      await onChanged();
-    } catch (err) {
-      setError(
-        errorText(
-          err,
-          action === "stop" ? t("Could not stop computer") : t("Could not update computer"),
-        ),
-      );
-    } finally {
-      setPending(null);
-    }
-  }
-
-  function confirm(action: "recover" | "reset") {
-    Alert.alert(
-      action === "reset" ? t("Reset computer?") : t("Recover computer?"),
-      action === "reset"
-        ? t("Restore the last saved workspace. Unsaved work on the computer is lost.")
-        : t("Recovery restores the last saved workspace. Unsaved work may be lost."),
-      [
-        { text: t("Cancel"), style: "cancel" },
-        {
-          text: action === "reset" ? t("Reset") : t("Recover computer"),
-          style: "destructive",
-          onPress: () => void run(action),
-        },
-      ],
-    );
-  }
-
-  const actions: {
-    id: string;
-    title: string;
-    explanation?: string;
-    destructive: boolean;
-    onPress: () => void;
-  }[] = [
-    ...(computer?.state === "running"
-      ? [
-          {
-            id: "stop",
-            title: t("Stop computer"),
-            destructive: false,
-            onPress: () => void run("stop"),
-          },
-        ]
-      : []),
-    // Recover rebuilds the computer's system, which only computers that can update have.
-    ...(computer?.canUpdate
-      ? [
-          {
-            id: "recover",
-            title: t("Recover computer"),
-            explanation: t("Recreate a computer that is not working."),
-            destructive: false,
-            onPress: () => confirm("recover"),
-          },
-        ]
-      : []),
-    {
-      id: "reset",
-      title: t("Reset computer"),
-      explanation: t("Restore the last saved workspace."),
-      destructive: true,
-      onPress: () => confirm("reset"),
+  // A queued update or recovery reports progress here; its status changes with it.
+  useEffect(
+    () =>
+      computerUpdates.subscribe(() => {
+        if (botId) void refetch();
+      }),
+    [botId, refetch],
+  );
+  const repair = useSave({
+    target: spaceId ? { scope: "space", spaceId } : undefined,
+    save: async ({ botId, action }: { botId: string; action: "reset" | "recover" }, send) => {
+      if (action === "reset") await send("computer/reset", { botId });
+      // Progress is shown for the selected Space only; another Space's repair is sent on its own.
+      else if (spaceId !== (selectedSpaceId() ?? undefined))
+        await send("computer/recover", { botId });
+      else
+        await computerUpdates.start(botId, action, (id, step) =>
+          send(`computer/${step}`, { botId: id }),
+        );
     },
-    ...(computer?.canUpdate
-      ? [
-          {
-            id: "update",
-            title: t("Update computer"),
-            explanation: t("Save the workspace and install current software."),
-            destructive: false,
-            onPress: () => void run("update"),
-          },
-        ]
+    stale: [statusRead.queryKey],
+  });
+  const error = repair.error ? errorText(repair.error, t`Could not update computer`) : null;
+
+  // A status from an earlier visit is never repaired from: the computer may have recovered since.
+  if (!status.isFetchedAfterMount) return [];
+  if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
+  // While the status is read again, it may no longer be broken.
+  const busy = Boolean(computer.busyBotName) || repair.pending || status.isFetching;
+  const pending = repair.pending;
+
+  // Recover rebuilds the system where the computer can update in place; otherwise Reset
+  // restores the last saved workspace.
+  const action = computer.canUpdate ? "recover" : "reset";
+
+  function run() {
+    if (botId && !busy) repair.run({ botId, action });
+  }
+
+  return [
+    <SettingsRow
+      key="repair"
+      accessibilityRole="button"
+      accessibilityState={{ disabled: busy }}
+      disabled={busy}
+      dimmed={busy}
+      destructive
+      title={
+        action === "recover"
+          ? pending
+            ? t`Recovering…`
+            : t`Recover computer`
+          : pending
+            ? t`Resetting…`
+            : t`Reset computer`
+      }
+      onPress={() =>
+        Alert.alert(
+          action === "recover" ? t`Recover computer?` : t`Reset computer?`,
+          action === "recover"
+            ? t`Recovery restores the last saved workspace. Unsaved work may be lost.`
+            : t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
+          [
+            { text: t`Cancel`, style: "cancel" },
+            {
+              text: action === "recover" ? t`Recover computer` : t`Reset`,
+              style: "destructive",
+              onPress: run,
+            },
+          ],
+        )
+      }
+    />,
+    ...(error
+      ? [<SettingsRow key="error" accessibilityRole="alert" destructive title={error} />]
       : []),
   ];
-
-  const hasComputer = computer !== null;
-  const canUpdate = Boolean(computer?.canUpdate);
-  const running = computer?.state === "running";
-  useLayoutEffect(() => {
-    if (!iosAtLeast(26)) return;
-    navigation.setOptions({
-      unstable_headerRightItems: () =>
-        computer
-          ? [
-              {
-                type: "menu" as const,
-                label: t("More computer actions"),
-                accessibilityLabel: t("More computer actions"),
-                icon: { type: "sfSymbol" as const, name: "ellipsis" },
-                menu: {
-                  items: actions.map((action) => ({
-                    type: "action" as const,
-                    label: action.title,
-                    description: action.explanation,
-                    destructive: action.destructive,
-                    disabled: busy,
-                    onPress: action.onPress,
-                  })),
-                },
-              },
-            ]
-          : [],
-    } satisfies NativeStackNavigationOptions);
-    return () => {
-      navigation.setOptions({ unstable_headerRightItems: () => [] });
-    };
-  }, [navigation, hasComputer, canUpdate, running, busy, t, botId, onChanged]);
-
-  if (!computer) return null;
-  return (
-    <View>
-      {!iosAtLeast(26) ? (
-        <MenuView
-          colorScheme={scheme}
-          title={t("More computer actions")}
-          actions={actions.map((action) =>
-            action.explanation
-              ? {
-                  id: action.id,
-                  title: action.explanation,
-                  displayInline: true,
-                  subactions: [
-                    {
-                      id: action.id,
-                      title: action.title,
-                      attributes: { destructive: action.destructive, disabled: busy },
-                    },
-                  ],
-                }
-              : {
-                  id: action.id,
-                  title: action.title,
-                  attributes: { destructive: action.destructive, disabled: busy },
-                },
-          )}
-          onPressAction={({ nativeEvent }) =>
-            actions.find((action) => action.id === nativeEvent.event)?.onPress()
-          }
-        >
-          <View
-            accessibilityRole="button"
-            accessibilityLabel={t("More computer actions")}
-            style={{ alignSelf: "flex-end", padding: 12 }}
-          >
-            <NativeSymbol
-              ios="ellipsis"
-              android="ellipsis-horizontal"
-              color={tokens.foreground}
-              size={22}
-            />
-          </View>
-        </MenuView>
-      ) : null}
-      {error ? (
-        <Text accessibilityRole="alert" style={{ color: tokens.destructive, fontSize: 13 }}>
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
 }

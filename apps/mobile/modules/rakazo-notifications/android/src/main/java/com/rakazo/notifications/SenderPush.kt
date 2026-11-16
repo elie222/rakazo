@@ -17,6 +17,9 @@ import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
 
+/** What the messaging service does with a message push that is not a call. */
+internal enum class PushDisposition { EXPO, DROP, POST }
+
 /**
  * Builds that register sender support get message pushes as data only, because Expo's
  * notification messages bypass app code in the background. Anything without that copy is
@@ -30,17 +33,46 @@ internal object SenderPush {
   /** Its own ID per thread, as Expo's had, so the poller's fallback post never replaces it. */
   fun notificationId(threadId: String) = "push:$threadId".hashCode()
 
-  fun present(context: Context, data: JSONObject): Boolean {
-    val title = data.optString("notificationTitle").takeIf(String::isNotBlank) ?: return false
-    val botId = data.optString("botId").takeIf(String::isNotBlank) ?: return false
-    val threadId = data.optString("threadId").takeIf(String::isNotBlank) ?: return false
-    if (RakazoNotificationService.isOpenThread(botId, threadId)) return true
+  /**
+   * Decides a message push without Android calls, so the policy stays unit-testable. A Rakazo
+   * push with no stored session belongs to an account that signed out or left for another
+   * server; it is dropped here, because handing it back to Expo would still show it.
+   */
+  fun disposition(
+    data: JSONObject,
+    hasSession: () -> Boolean,
+    openThread: () -> Boolean,
+    foreground: () -> Boolean,
+  ): PushDisposition {
+    if (data.optString("notificationTitle").isBlank()) return PushDisposition.EXPO
+    if (data.optString("botId").isBlank()) return PushDisposition.EXPO
+    if (data.optString("threadId").isBlank()) return PushDisposition.EXPO
+    if (!hasSession()) return PushDisposition.DROP
+    if (openThread()) return PushDisposition.DROP
     // Matches the app's foreground handler: finished work is already on screen.
-    val foreground = inForeground()
-    if (data.optString("kind") == "completion" && foreground) return true
-    return runCatching { post(context, data, title, botId, threadId, foreground) }
-      .onFailure { Log.w("RakazoSenderPush", "Could not post push", it) }
-      .isSuccess
+    if (data.optString("kind") == "completion" && foreground()) return PushDisposition.DROP
+    return PushDisposition.POST
+  }
+
+  fun present(context: Context, data: JSONObject): Boolean {
+    val foreground by lazy { inForeground() }
+    return when (
+      disposition(
+        data,
+        { NotificationStorage(context).token.isNotBlank() },
+        { RakazoNotificationService.isOpenThread(data.optString("botId"), data.optString("threadId")) },
+        { foreground },
+      )
+    ) {
+      PushDisposition.EXPO -> false
+      PushDisposition.DROP -> true
+      PushDisposition.POST ->
+        runCatching {
+            post(context, data, data.optString("notificationTitle"), data.optString("botId"), data.optString("threadId"), foreground)
+          }
+          .onFailure { Log.w("RakazoSenderPush", "Could not post push", it) }
+          .isSuccess
+    }
   }
 
   private fun post(

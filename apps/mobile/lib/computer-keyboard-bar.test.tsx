@@ -51,7 +51,6 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("react-native-keyboard-controller", () => ({ useKeyboardState: () => false }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}), useResolvedAppearance: () => "light" }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: (props: NativeActionButtonProps) => (

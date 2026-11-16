@@ -5,6 +5,7 @@ import { BotAvatar, Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-w
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 import { errorText } from "../lib/user-error";
 import { DeleteItemDialog } from "./shell/dialogs";
 
@@ -64,7 +65,7 @@ function MemberPicker({
   return (
     <div className="mt-5 flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Members ({selected.length})</Trans>
         </span>
         <Button
@@ -86,7 +87,7 @@ function MemberPicker({
             aria-label={t`Filter bots`}
             className="mt-2"
           />
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-body text-muted-foreground">
             <Trans>
               Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}
             </Trans>
@@ -115,7 +116,7 @@ function MemberPicker({
                   size={32}
                   status={bot.status}
                 />
-                <span className="flex-1 text-[15px] text-foreground" dir="auto">
+                <span className="flex-1 text-body-lg text-foreground" dir="auto">
                   {bot.name}
                 </span>
               </button>
@@ -130,7 +131,7 @@ function MemberPicker({
           );
         })}
         {visible.length === 0 ? (
-          <p className="px-2.5 py-2.5 text-sm text-muted-foreground">
+          <p className="px-2.5 py-2.5 text-body text-muted-foreground">
             {expanded ? <Trans>No bots match</Trans> : <Trans>No members yet</Trans>}
           </p>
         ) : null}
@@ -173,7 +174,7 @@ export function CreateGroupForm({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>New group</Trans>
         </span>
         <Button
@@ -187,11 +188,11 @@ export function CreateGroupForm({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-sm text-destructive">
+        <p role="alert" className="mb-3 text-body text-destructive">
           {error}
         </p>
       ) : null}
-      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
+      <label htmlFor={nameId} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={nameId}
@@ -270,22 +271,17 @@ export function GroupSettings({
   // Closing while a save is in flight would let its completion close the panel
   // again after a reopen. While the delete confirmation or an overlay is open,
   // Escape belongs to it.
-  useEffect(() => {
-    if (saving || confirmingDelete || covered) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !event.defaultPrevented &&
-        !event.isComposing &&
-        event.keyCode !== 229
-      ) {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [saving, confirmingDelete, covered, onClose]);
+  useEventListener(saving || confirmingDelete || covered ? null : window, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
+      onClose();
+    }
+  });
 
   async function save() {
     if (saving) return;
@@ -315,7 +311,7 @@ export function GroupSettings({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Trans>Group settings</Trans>
         </span>
         <Button
@@ -329,11 +325,11 @@ export function GroupSettings({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-sm text-destructive">
+        <p role="alert" className="mb-3 text-body text-destructive">
           {error}
         </p>
       ) : null}
-      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
+      <label htmlFor={nameId} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={nameId}

@@ -10,9 +10,7 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** The user's spaces; choosing where something is available only matters with two or more. */
@@ -41,7 +39,7 @@ export function AvailabilityLabel({ availability }: { availability?: SpaceAvaila
       ? spaces.find((s) => s.id === availability.spaceIds[0])
       : null;
   return (
-    <span className="shrink-0 text-[12.5px] text-muted-foreground">
+    <span className="shrink-0 text-body-sm text-muted-foreground">
       {only ? (
         only.name
       ) : (
@@ -65,22 +63,15 @@ export function AvailabilityControl({
 }) {
   const { t } = useLingui();
   const spaces = useOwnSpaces();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (spaces.length < 2 || !availability) return null;
-
-  async function save(next: SpaceAvailability) {
-    setSaving(true);
-    setError(null);
-    try {
+  const change = useSave({
+    save: async (next: SpaceAvailability, rpc) => {
       await rpc.availability.set({ kind, id, ...next });
       await onChanged();
-    } catch (err) {
-      setError(errorText(err, t`Could not change where this is available`));
-    } finally {
-      setSaving(false);
-    }
-  }
+    },
+  });
+  const saving = change.pending;
+  if (spaces.length < 2 || !availability) return null;
+  const save = change.run;
 
   const chosen = availability.allSpaces ? spaces.map((space) => space.id) : availability.spaceIds;
   const summary = availability.allSpaces ? (
@@ -96,11 +87,11 @@ export function AvailabilityControl({
       : [...chosen, spaceId];
     // At least one space keeps it; none would be removing it, which has its own action.
     if (!next.length) return;
-    void save({ allSpaces: false, spaceIds: next });
+    save({ allSpaces: false, spaceIds: next });
   };
 
   return (
-    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-xs">
+    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-label">
       <span className="text-muted-foreground">
         <Trans>Available in</Trans>
       </span>
@@ -111,7 +102,7 @@ export function AvailabilityControl({
               variant="ghost"
               size="sm"
               disabled={saving}
-              className="h-6 gap-1 px-1.5 text-xs font-normal text-foreground"
+              className="h-6 gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >
@@ -122,7 +113,7 @@ export function AvailabilityControl({
           <DropdownMenuCheckboxItem
             checked={availability.allSpaces}
             onCheckedChange={(checked) =>
-              void save(
+              save(
                 checked
                   ? { allSpaces: true, spaceIds: availability.spaceIds }
                   : { allSpaces: false, spaceIds: availability.spaceIds },
@@ -143,9 +134,9 @@ export function AvailabilityControl({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {error ? (
-        <span role="alert" className="text-[13px] text-destructive">
-          {error}
+      {change.error ? (
+        <span role="alert" className="text-body-sm text-destructive">
+          {errorText(change.error, t`Could not change where this is available`)}
         </span>
       ) : null}
     </div>

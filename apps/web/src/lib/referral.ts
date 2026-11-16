@@ -1,5 +1,5 @@
 import type { BillingStatus } from "@rakazo/contracts";
-import { rpc } from "./rpc";
+import type { RpcClient } from "./rpc";
 
 const STORAGE_KEY = "rakazo:referral";
 // What a server-issued invite code can look like; anything else would make billing status fail.
@@ -21,7 +21,7 @@ export function captureReferral(search: string): void {
  * invited friend's first status already offers the longer trial. The code is kept until a
  * request carrying it succeeds.
  */
-export async function loadBillingStatus(): Promise<BillingStatus> {
+export async function loadBillingStatus(client: RpcClient): Promise<BillingStatus> {
   let code: string | null = null;
   try {
     code = window.localStorage.getItem(STORAGE_KEY);
@@ -33,7 +33,7 @@ export async function loadBillingStatus(): Promise<BillingStatus> {
   } catch {
     // Storage can be unavailable; billing still loads.
   }
-  const status = await rpc.billing.status(code ? { referralCode: code } : undefined);
+  const status = await client.billing.status(code ? { referralCode: code } : undefined);
   if (code) {
     try {
       window.localStorage.removeItem(STORAGE_KEY);

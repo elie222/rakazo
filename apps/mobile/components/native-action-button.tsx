@@ -1,6 +1,7 @@
 import { ActivityIndicator, Platform, Pressable, Text } from "react-native";
 import type { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens } from "../lib/native";
+import { actionPressHandler } from "../lib/native-control-actions";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
 import { androidRipple, withAlpha } from "../lib/ripple";
@@ -18,6 +19,7 @@ export function NativeActionButton({
   prominence = "primary",
   variant,
   fill,
+  align = "center",
   style,
   size = "default",
   icon,
@@ -25,6 +27,7 @@ export function NativeActionButton({
 }: NativeActionButtonProps) {
   const tokens = useMobileTokens();
   const inactive = disabled || busy;
+  const press = actionPressHandler(inactive, onPress);
   const stretches = actionFills(prominence, fill);
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
@@ -47,7 +50,7 @@ export function NativeActionButton({
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
       android_ripple={androidRipple(withAlpha(colors.label, 0.2))}
-      onPress={onPress}
+      onPress={press}
       style={({ pressed }) => [
         {
           flexDirection: "row",
@@ -60,7 +63,7 @@ export function NativeActionButton({
                 : 48,
           borderRadius: 12,
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: align === "start" ? "flex-start" : "center",
           alignSelf: stretches ? "stretch" : "flex-start",
           paddingHorizontal: variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
           paddingVertical: variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
@@ -84,6 +87,8 @@ export function NativeActionButton({
             <Text
               style={{
                 color: colors.label,
+                flexShrink: 1,
+                textAlign: align === "start" ? "left" : "center",
                 fontSize:
                   variant === "text"
                     ? 16

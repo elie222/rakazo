@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -25,8 +26,8 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
 vi.mock("./lib/bootstrap", () => ({
-  getTicketBoardEnabled: () => capability.enabled,
-  subscribeTicketBoardEnabled: () => () => {},
+  getLabs: () => (capability.enabled ? ["board"] : []),
+  subscribeLabs: () => () => {},
 }));
 vi.mock("./lib/auth", () => ({
   authClient: {
@@ -46,8 +47,7 @@ vi.mock("./pages/Auth", async () => {
 });
 vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
 vi.mock("./lib/remote-images-preference", () => ({
-  getRemoteImagesEnabled: () => false,
-  subscribeRemoteImages: () => () => {},
+  remoteImagesPreference: { use: () => false },
 }));
 vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
 vi.mock("./lib/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
@@ -122,7 +122,7 @@ it("loads the board chunk only after bootstrap enables the route", async () => {
     capability.enabled = true;
     await act(async () => {
       root.render(render());
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     expect(capability.boardLoaded).toHaveBeenCalledOnce();
     expect(container.textContent).toBe("Board page");
@@ -144,7 +144,7 @@ it("keeps the sign-in page mounted while a signed-out session refetches", async 
           <App />
         </MemoryRouter>,
       );
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   };
   try {

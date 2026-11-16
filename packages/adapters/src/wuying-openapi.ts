@@ -1,4 +1,5 @@
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 /** Desktop states the ECD API reports; anything else is treated as in transition. */
 export type WuyingDesktopStatus = string;
@@ -19,6 +20,14 @@ export interface WuyingControlPlane {
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// Resolves the constructor from SDK builds that publish CommonJS with a default export,
+// under both Node and bundler module resolution.
+function cjsDefault<T>(module: T): T extends { default: infer C } ? C : T {
+  return ((module as { default?: unknown }).default ?? module) as T extends { default: infer C }
+    ? C
+    : T;
+}
+
 // Loaded only when a configured Wuying provider first uses its control plane.
 async function loadClients(config: WuyingOpenApiConfig) {
   const [ecd, appstream, openapi, dara] = await Promise.all([
@@ -27,10 +36,8 @@ async function loadClients(config: WuyingOpenApiConfig) {
     import("@alicloud/openapi-core"),
     import("@darabonba/typescript"),
   ]);
-  // These official SDK releases publish CommonJS with a default export.
-  const EcdClient = (ecd.default.default ?? ecd.default) as typeof ecd.default.default;
-  const AppstreamClient = (appstream.default.default ??
-    appstream.default) as typeof appstream.default.default;
+  const EcdClient = cjsDefault(ecd.default);
+  const AppstreamClient = cjsDefault(appstream.default);
   const desktop = new EcdClient(
     new openapi.$OpenApiUtil.Config({
       ...config,
@@ -138,9 +145,7 @@ export class WuyingOpenApi implements WuyingControlPlane {
       if (statusCode === 429 || (typeof code === "string" && code.startsWith("Throttling")))
         throw new SandboxRateLimitError();
       if (typeof code === "string" && /^(InvalidDesktop|DesktopNotFound|NotFound)/.test(code)) {
-        const missing = new Error(`Wuying ${action}: desktop not found`);
-        missing.name = "SandboxNotFoundError";
-        throw missing;
+        throw sandboxNotFoundError(`Wuying ${action}: desktop not found`);
       }
       // A refused AccessKey stays refused, so it is reported as such rather than as a retry.
       if (typeof code === "string" && /^(InvalidAccessKey|SignatureDoesNotMatch)/.test(code))

@@ -3,6 +3,8 @@
 Move a deployment to a new release, handle one-time migrations, and let the updater sidecar do it
 for you.
 
+English | [简体中文](./zh-CN/self-host-upgrading.md)
+
 ## Upgrade
 
 A Compose deployment on a published release tag upgrades by moving that tag:
@@ -24,7 +26,7 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 
 `up --wait` does not report success until the new API is healthy and the worker and web containers
 are running. Compose stops the old worker before it starts the new one, and the stop waits for the
-jobs it is running to finish, for up to 45 minutes, instead of cutting them off; new jobs start once
+jobs it is running to finish, for up to 50 minutes, instead of cutting them off; new jobs start once
 the new worker is up. The API starts only after the `migrate` container finishes, so a migration failure keeps the new API
 from starting. A failed CLI recreate does not auto-roll back; recover with the previous
 `RAKAZO_IMAGE_TAG` (or rebuild `local`) and `up -d --wait --pull never`.
@@ -90,8 +92,9 @@ with `pg_dumpall`, and compares roles, memberships, ownership, grants, row-level
 policies, sequences and the row count of every table. It also checks that `rakazo_app` signs in
 with `POSTGRES_APP_PASSWORD` and does not bypass row-level security. Only then does it switch
 Postgres 18 over and restart the services that were running. The site is down for the whole copy,
-which takes about as long as dumping and restoring the database: a few minutes for a small one. It needs free disk for one more copy of the
-database plus 1 GiB. Running it again after it succeeded does nothing. If any step fails, it stops
+which takes about as long as dumping and restoring the database: a few minutes for a small one.
+It needs free disk equal to 125% of the old database data directory's size, plus 1 GiB.
+Running it again after it succeeded does nothing. If any step fails, it stops
 with the stack down and the Postgres 16 data unchanged; fix the error and run it again. On the
 production host, then rerun the deploy that stopped.
 
@@ -135,11 +138,11 @@ application traffic queued indefinitely.
 `${{ github.repository }}` rather than hardcoded, so a fork's CI fills the fork's own namespace. For
 this repository that is:
 
-| Image | Contents |
-| --- | --- |
-| `ghcr.io/elie222/rakazo/app` | api, worker, web, and sandbox supervisor — one image, multiple commands |
-| `ghcr.io/elie222/rakazo/computer` | Linux desktop used as each bot computer |
-| `ghcr.io/elie222/rakazo/updater` | the updater sidecar, plus the Docker CLI |
+| Image                             | Contents                                                                |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `ghcr.io/elie222/rakazo/app`      | api, worker, web, and sandbox supervisor — one image, multiple commands |
+| `ghcr.io/elie222/rakazo/computer` | Linux desktop used as each bot computer                                 |
+| `ghcr.io/elie222/rakazo/updater`  | the updater sidecar, plus the Docker CLI                                |
 
 `infra/compose/docker-compose.images.yml` is the no-checkout path for those app and computer tags
 plus Postgres. The supervisor runs from the app image on the internal network only (not a separate
@@ -149,14 +152,14 @@ also pull the same app tags once `RAKAZO_IMAGE_TAG` is set to a published value.
 If you deploy from your own fork, set `RAKAZO_IMAGE` and `RAKAZO_UPDATER_IMAGE` to your namespace —
 your CI cannot publish into someone else's.
 
-| Tag | Published on | Moves? |
-| --- | --- | --- |
-| `local` | nothing — built locally by `up --build` | rebuilt in place |
-| `local-<full-commit>` | nothing — built on the server by a fork update | never |
-| `vX.Y.Z`, `vX.Y` | release tags | conventionally no / on patch releases |
-| `latest` | stable `vX.Y.Z` tags only (not prereleases) | yes, to the newest stable release |
-| `sha-<full-commit>` | every main commit, release tag and manual run | source-addressed; used by the updater sidecar |
-| `edge` | pushes to main | yes, to the newest main build |
+| Tag                   | Published on                                   | Moves?                                        |
+| --------------------- | ---------------------------------------------- | --------------------------------------------- |
+| `local`               | nothing — built locally by `up --build`        | rebuilt in place                              |
+| `local-<full-commit>` | nothing — built on the server by a fork update | never                                         |
+| `vX.Y.Z`, `vX.Y`      | release tags                                   | conventionally no / on patch releases         |
+| `latest`              | stable `vX.Y.Z` tags only (not prereleases)    | yes, to the newest stable release             |
+| `sha-<full-commit>`   | every main commit, release tag and manual run  | source-addressed; used by the updater sidecar |
+| `edge`                | pushes to main                                 | yes, to the newest main build                 |
 
 Every publish, including `edge` from main merges, is multi-arch (`amd64` + `arm64`): each
 architecture builds natively, on Depot when the `DEPOT_PROJECT_ID` repository variable names a
@@ -213,11 +216,11 @@ apply/rollback over that private HTTP API. Only deployment tooling calls it; app
 The API cannot update itself — its image has no `.git`, and nothing inside the container would
 restart it — so the work happens in a separate `updater` container that outlives the recreate:
 
-- *Official repository:* resolves the newest stable release and its source commit with
+- _Official repository:_ resolves the newest stable release and its source commit with
   `git ls-remote --tags`, pins the corresponding full `sha-<commit>` image tag in `.env`, keeps the
   outgoing tag in `RAKAZO_IMAGE_TAG_PREVIOUS`, explicitly pulls the new image, then runs
   `up -d --wait --pull never`. No build runs on the server.
-- *Fork (Advanced):* a fork has no published images, so the sidecar fast-forwards the checkout in
+- _Fork (Advanced):_ a fork has no published images, so the sidecar fast-forwards the checkout in
   `RAKAZO_DEPLOY_DIR` and runs `up -d --build`. This builds on the server and takes minutes rather
   than seconds. Point it only at a fork you control and have reviewed — the sidecar runs that
   Compose file through a root-equivalent Docker socket.
@@ -238,7 +241,7 @@ untracked source tree fails closed before anything runs (the application Dockerf
 (`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. Production
 Compose defaults both sides to `/srv/rakazo`; set the variable for any other layout. When the
 updater runs `docker compose -p <project> --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
-the Compose CLI *inside* the container expands this file's relative bind mounts — `../../.env`,
+the Compose CLI _inside_ the container expands this file's relative bind mounts — `../../.env`,
 `./Caddyfile.prod` — against that path and hands the results to the daemon. The daemon has to be
 able to resolve the same strings, or it silently creates empty directories where your `.env` and
 Caddyfile should be. Compose makes the effective `-p` value available for interpolation but does
@@ -260,13 +263,14 @@ sees:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  --profile updater run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
+  --profile updater run --rm updater \
+  sh -c 'git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1'
 ```
 
-  That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows
-  path is rejected by the daemon (`mount denied: … too many colons`, because the drive letter's
-  colon collides with the bind-mount separator), and `/mnt/c/...` fails *silently* — the container
-  starts, the mount is an empty directory, and the updater simply reports no checkout.
+That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows
+path is rejected by the daemon (`mount denied: … too many colons`, because the drive letter's
+colon collides with the bind-mount separator), and `/mnt/c/...` fails _silently_ — the container
+starts, the mount is an empty directory, and the updater simply reports no checkout.
 
 ## Deployments that layer a Compose overlay
 

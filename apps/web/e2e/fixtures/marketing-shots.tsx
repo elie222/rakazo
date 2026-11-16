@@ -7,7 +7,8 @@ import { createRoot } from "react-dom/client";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
-import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
+import type { RoutineDraftState } from "../../src/lib/routine-draft";
+import { rpc } from "../../src/lib/rpc";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
 import { BotSettings } from "../../src/pages/shell/bot-panel";
@@ -45,6 +46,8 @@ const demoRpc: Record<string, unknown> = {
   me: null,
   "scratchpad/list": [],
   "memory/list": [],
+  "pages/list": { items: [], nextCursor: null },
+  "bots/emailAddress": null,
   "agentSkills/list": [],
 };
 
@@ -86,6 +89,7 @@ function inboxBot(): Bot {
     createdAt: "2026-10-07T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    replyMode: "chat",
     modelProvider: "openai",
     modelId: "gpt-4.1",
     thinkingLevel: null,
@@ -93,6 +97,9 @@ function inboxBot(): Bot {
     teamChatRules: "",
     webhookConfigured: false,
     spawnKey: null,
+    runErrorId: null,
+    fleetManagement: true,
+    disabledBuiltinTools: [],
   };
 }
 
@@ -144,8 +151,7 @@ function ModelShot() {
     >
       <BotSettings
         bot={inboxBot()}
-        memoryProviderConfigured={false}
-        onSkillsChange={() => undefined}
+        focusModel={1}
         onSave={async () => undefined}
         onExport={async () => undefined}
         onClear={() => undefined}
@@ -163,12 +169,17 @@ function RoutineShot() {
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
+    emailSenders: null,
     active: true,
     runAtLocal: "",
+    modelKey: "",
+    thinkingLevel: "",
+    watch: null,
   });
   return (
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
       <RoutineEditor
+        bot={{ id: "bot-demo", name: "Scout" }}
         draft={draft}
         onChange={setDraft}
         editing={null}
@@ -185,6 +196,8 @@ function RoutineShot() {
         onTestRun={() => undefined}
         onDelete={() => undefined}
         onEnsureWebhook={async () => undefined}
+        onRevealWebhook={async () => undefined}
+        onHideWebhook={() => undefined}
       />
     </main>
   );
@@ -195,6 +208,8 @@ function ApprovalShot() {
     <main data-ready="true" className="mx-auto max-w-[760px] bg-background p-8 text-foreground">
       <AskCard
         canAnswer
+        canDismiss={false}
+        onDismiss={async () => undefined}
         onAnswer={async () => undefined}
         block={{
           kind: "ask",
@@ -214,7 +229,9 @@ function ApprovalShot() {
 }
 
 const subscriptionMe: Me = {
+  labs: [],
   ticketBoardEnabled: false,
+  labsAvailable: [],
   navLinks: [],
   phoneCallsEnabled: false,
   userId: "user-demo",
@@ -222,6 +239,7 @@ const subscriptionMe: Me = {
   name: "Ada",
   spaceId: "space-demo",
   isDeploymentOwner: true,
+  isAdmin: false,
   needsModel: false,
   defaultProvider: "anthropic",
   defaultModel: "claude-sonnet-5-5",
@@ -299,13 +317,18 @@ function SubscriptionShot() {
       className="min-h-screen bg-background text-foreground"
     >
       <SettingsOverlay
+        shellRpc={rpc}
         email="ada@example.test"
         name="Ada"
         section="models"
         onSectionChange={() => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
-        onUsageOpen={() => undefined}
+        timezone="UTC"
+        onTimezoneChange={async () => undefined}
+        labs={[]}
+        labsAvailable={[]}
+        onLabsChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>

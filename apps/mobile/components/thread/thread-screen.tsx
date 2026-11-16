@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import {
   buildComposerMentionOptions,
@@ -7,33 +9,38 @@ import {
   isRunWorking,
   liveActivityLine,
   liveMessageComposing,
-  memberName,
   newClientId,
   newestPageCards,
+  otherAuthor,
   displayName as safeDisplayName,
+  workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
-import { rpc } from "../../lib/api";
 import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
+import { useContentBottomInset } from "../../lib/content-bottom-inset";
 import { cronLabels } from "../../lib/cron";
-import { useI18n } from "../../lib/i18n";
+import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
+import { rpcQuery } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
 import {
+  THREAD_HEADER_PILL_BOTTOM_INSET,
   threadColumnPadding,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -44,6 +51,7 @@ import { useThreadSnapshot } from "../../lib/thread-history";
 import { threadKeyboardAvoidance } from "../../lib/thread-keyboard-offset";
 import { useThreadListScroll } from "../../lib/thread-list-scroll";
 import { useThreadMentionCatalog } from "../../lib/thread-mention-catalog";
+import { botDisplayName } from "../../lib/thread-message-text";
 import { useThreadPaging } from "../../lib/thread-paging";
 import { useThreadRead } from "../../lib/thread-read";
 import {
@@ -66,6 +74,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notic
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
+import { ThreadEdgeFade } from "./thread-edge-fade";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
@@ -76,6 +85,8 @@ function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
 }
 
+const noAgentSkills: AgentSkillCatalogEntry[] = [];
+
 /**
  * The chat screen. Hook order is effect order: the snapshot, scroll, sync and send hooks run their
  * effects at the positions the screen ran them before they were split out.
@@ -84,7 +95,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   useChatOnScreen();
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const focused = useIsFocused();
   const foreground = useAppForeground();
   const router = useRouter();
@@ -123,11 +135,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
   const call = useCallSession();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
+  const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
-  const bottomInset = Math.max(dockHeight, readOnly ? insets.bottom : 0);
+  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
@@ -151,35 +165,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       : undefined;
   const history = useThreadSnapshot();
   const { snap, composingBots, showingSaved } = history;
-  const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [uploadConfig, setUploadConfig] = useState<{
-    maxUploadSizeBytes?: number;
-    maxAttachmentsPerMessage?: number;
-  }>();
-  const [needsModel, setNeedsModel] = useState<boolean>();
   // Re-read on focus so returning from Models settings updates unsent missing-model messages.
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      void rpc("me")
-        .then((me) => {
-          if (cancelled) return;
-          setUploadConfig(me);
-          setNeedsModel(me.needsModel);
-        })
-        .catch(() => undefined);
-      return () => {
-        cancelled = true;
-      };
-    }, []),
-  );
+  const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
+  const needsModel = uploadConfig?.needsModel;
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots } = useThreadBots({
-    botId,
-    groupId,
-    name,
-    activeBotId,
-  });
+  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
+    useThreadBots({
+      botId,
+      groupId,
+      name,
+      activeBotId,
+    });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -188,11 +184,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
     mentionBots,
   );
-  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig });
   const draftScope = useMemo(
     () => composerDraftScope(userId, botId, groupId),
     [userId, botId, groupId],
   );
+  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig, draftScope });
   const echoed = useMemo(
     () =>
       snap && (snap.groupId ?? snap.botId) === threadKey
@@ -212,12 +208,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const visibleMessages = transcript.visibleMessages;
   const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
+  // The group's members in its order, once the chat or its group list has loaded them; the
+  // title seats the inbox's copy until then.
+  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        groupMemberNames: groupMembers?.map((member) => member.name),
         bots: mentionBots.map((bot) => ({
           id: bot.id,
           name: bot.name,
@@ -235,7 +235,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         connectors: mentionConnectors,
         cronLabels: cronLabels(locale),
       }),
-    [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
+    [
+      groupId,
+      groupMembers,
+      inGroup,
+      locale,
+      mentionBots,
+      mentionConnectors,
+      mentionGroups,
+      mentionRoutines,
+    ],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
@@ -243,22 +252,20 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const titleBot = currentBot ?? inboxBot;
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
-  const displayName = safeDisplayName(titleName, inGroup ? t("Group") : t("Bot"));
-  const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
+  const displayName = safeDisplayName(titleName, inGroup ? t`Group` : t`Bot`);
+  const composerPrompt = displayName ? t`Message ${ph({ name: displayName })}` : t`Message…`;
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus =
     snap && (!showingSaved || error)
       ? snap.run?.status
       : (titleBot?.threadStatus ?? snap?.run?.status);
-  // The group's members in its order, once the chat or its group list has loaded them; the
-  // title seats the inbox's copy until then.
-  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   // Only reply text being written replaces the footer; earlier sentences above a tool call don't.
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
   const activityLine = liveActivityLine(snap?.messages ?? []);
+  const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>
       !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
@@ -279,7 +286,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
-  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReplyRef = useAutoSpeakReply({
     botId,
@@ -289,11 +295,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     showingSaved,
   });
 
-  useEffect(() => {
-    void rpc("agentSkills/list")
-      .then(setAgentSkills)
-      .catch(() => setAgentSkills([]));
-  }, []);
+  const agentSkills: AgentSkillCatalogEntry[] =
+    useScreenQuery(rpcQuery("agentSkills/list"), { onForeground: false }).data ?? noAgentSkills;
 
   const scroll = useThreadListScroll({
     history,
@@ -327,7 +330,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     botId,
     readOnly,
     notificationThreadId,
-    refreshMentionBots,
+    refreshMentionBots: refreshMentionRoster,
     markReadIfVisible,
     speakFinishedReplyRef,
   });
@@ -340,7 +343,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     messageId,
     readOnly,
     foreground,
+    focused,
     sessionEpoch,
+    userId,
     activeBotId,
     activeGroupId,
     readVisibleTarget,
@@ -520,7 +525,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing: composingBots.split(",").includes(bot.id),
       }))}
       atBottom={!scroll.state.detached}
-      label={activityLine ?? t("Working…")}
+      label={
+        activityLine ?? (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Working…`)
+      }
     />
   );
 
@@ -558,6 +565,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
+        enabled={!rootAvoidsKeyboard}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
@@ -593,6 +601,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               showLatest={showLatest}
             />
           </NewestPageCards.Provider>
+          {headerHeight > 0 ? (
+            // Ends halfway down the floating header's 44pt pills.
+            <ThreadEdgeFade
+              edge="top"
+              style={{ height: headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET - 22 }}
+            />
+          ) : null}
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}
@@ -602,8 +617,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             replyTarget={replyTarget}
             replyAuthor={
               replyTarget?.role === "user"
-                ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
-                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
+                ? (otherAuthor(replyTarget.author, userId)?.name ??
+                  channelMessageSender(replyTarget.blocks) ??
+                  t`You`)
+                : (botDisplayName(snap?.members, mentionBots, replyTarget?.botId) ??
+                  displayName ??
+                  t`Bot`)
             }
             replyQuote={replyQuote}
             threadTarget={artifactTarget}
@@ -634,13 +653,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               )}
               botId={botId}
               onCall={onCall}
-              working={working}
-              sending={composer.sending || attachments.shareImporting}
+              sending={attachments.shareImporting}
               styles={styles}
               attachActions={attachments.attachActions}
               attachFrom={attachments.attachFrom}
               send={composer.send}
-              stop={composer.stop}
               startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
               onEmptied={composer.composerEmptied}
@@ -652,6 +669,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         ) : null}
         <RunErrorSheet
           details={detailsOpen ? runError : null}
+          summary={normalizedRunError?.summary}
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />
@@ -665,10 +683,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               setQuoteTarget(null);
             }}
           />
-        ) : null}
-        {/* The header buttons float over the chat; only the clock gets a soft backdrop. */}
-        {headerHeight > 0 ? (
-          <View pointerEvents="none" style={[styles.statusBarFade, { height: insets.top }]} />
         ) : null}
       </KeyboardAvoidingView>
     </View>

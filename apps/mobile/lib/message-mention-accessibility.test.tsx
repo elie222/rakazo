@@ -4,7 +4,13 @@ import type { ComponentProps } from "react";
 import { act, createContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 const surfaces = vi.hoisted(() => [] as Record<string, unknown>[]);
 
@@ -69,11 +75,13 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 
@@ -180,5 +188,98 @@ describe("bots named in a sent message", () => {
     expect(surface("@Ada replied", "bot")!.accessibilityActions).toEqual([
       { name: "reply", label: "Reply" },
     ]);
+  });
+});
+
+describe("bot authors after leaving a group", () => {
+  const bots = [
+    { id: "departed", name: "Ada" },
+    { id: "remaining", name: "Ben" },
+  ] as BubbleProps["bots"];
+  const members = [{ botId: "remaining", name: "Ben" }] as MobileSnapshot["members"];
+
+  function textFor(message: BubbleProps["message"], overrides: Partial<BubbleProps> = {}) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <Bubble
+          groupId="group"
+          botName="Project group"
+          showBotSenderName
+          bots={bots}
+          members={members}
+          message={message}
+          {...overrides}
+        />,
+      ),
+    );
+    const text = container.textContent;
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+    return text;
+  }
+
+  it.each([
+    { blocks: [{ kind: "text", text: "Earlier reply" }] },
+    {
+      blocks: [
+        {
+          kind: "file",
+          name: "notes.txt",
+          artifactId: "artifact",
+          mimeType: "text/plain",
+          size: 5,
+        },
+      ],
+    },
+  ] satisfies { blocks: BubbleProps["message"]["blocks"] }[])(
+    "keeps the departed author's name on %j",
+    ({ blocks }) => {
+      const text = textFor({ id: "message", role: "bot", botId: "departed", blocks });
+      expect(text).toContain("Ada");
+      expect(text).not.toContain("Project group");
+    },
+  );
+
+  it("keeps both handoff names from the space roster", () => {
+    const text = textFor(
+      {
+        id: "handoff",
+        role: "bot",
+        blocks: [{ kind: "handoff", fromBotId: "departed", toBotId: "remaining", text: "Review" }],
+      },
+      { members: [] },
+    );
+    expect(text).toContain("Ada messaged Ben");
+  });
+
+  it("prefers the current member's name to the roster", () => {
+    expect(
+      textFor(
+        {
+          id: "message",
+          role: "bot",
+          botId: "remaining",
+          blocks: [{ kind: "text", text: "Reply" }],
+        },
+        { members: [{ botId: "remaining", name: "Updated Ben" }] as MobileSnapshot["members"] },
+      ),
+    ).toContain("Updated Ben");
+  });
+
+  it("does not add a sender header in a direct chat", () => {
+    expect(
+      textFor(
+        {
+          id: "message",
+          role: "bot",
+          botId: "departed",
+          blocks: [{ kind: "text", text: "Reply" }],
+        },
+        { groupId: undefined, showBotSenderName: false },
+      ),
+    ).not.toContain("Ada");
   });
 });

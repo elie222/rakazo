@@ -10,7 +10,13 @@ import {
   parseCardExpiry,
   VaultPutInput,
 } from "./bot-secrets.js";
-import { vaultItemSubtitle } from "./vault-items.js";
+import { expectLinearTime } from "./timing.test-support.js";
+import {
+  otherSiteOrigin,
+  otherSitesText,
+  typedOtherSites,
+  vaultItemSubtitle,
+} from "./vault-items.js";
 
 describe("cards", () => {
   it("keeps a typed number as digits and refuses one that fails the Luhn check", () => {
@@ -47,6 +53,11 @@ describe("cards", () => {
     expect(parseCardExpiry("8 / 2029")).toEqual({ expMonth: 8, expYear: 2029 });
     expect(parseCardExpiry("0828")).toEqual({ expMonth: 8, expYear: 2028 });
     expect(parseCardExpiry("13/28")).toBeUndefined();
+    expect(parseCardExpiry(" 08-28 ")).toEqual({ expMonth: 8, expYear: 2028 });
+  });
+
+  it("rejects a long run of spaces quickly", () => {
+    expectLinearTime(() => expect(parseCardExpiry(`1${" ".repeat(200_000)}x`)).toBeUndefined());
   });
 });
 
@@ -141,5 +152,50 @@ describe("the vault list's subtitle, shared by web and mobile", () => {
       vaultItemSubtitle(item({ name: "deploy-token", auth: { type: "command" } }), words),
     ).toBe("$DEPLOY_TOKEN");
     expect(vaultItemSubtitle(item({ auth: null }), words)).toBe("");
+  });
+});
+
+describe("otherSiteOrigin", () => {
+  // The one rule the editors and the server keep: a site a login could itself be saved for.
+  it.each([
+    ["https://www.example.com", "https://www.example.com"],
+    ["https://www.example.com/sign-in?next=1", "https://www.example.com"],
+    ["https://login.example.com:8443", "https://login.example.com:8443"],
+    ["https://bücher.example", "https://xn--bcher-kva.example"],
+    ["http://www.example.com", undefined],
+    ["https://user:pass@www.example.com", undefined],
+    ["https://*.example.com", undefined],
+    ["https://169.254.169.254", undefined],
+    ["https://metadata.google.internal", undefined],
+    ["www.example.com", undefined],
+    [`https://www.example.com/${"a".repeat(2048)}`, undefined],
+  ])("reads %s as %s", (site, origin) => {
+    expect(otherSiteOrigin(site)).toBe(origin);
+  });
+
+  it("refuses typed sites the server would refuse", () => {
+    expect(typedOtherSites("https://a.example.com, https://169.254.169.254")).toBe("invalid");
+    expect(typedOtherSites("http://a.example.com")).toBe("invalid");
+    expect(typedOtherSites("https://a.example.com/x https://b.example.com")).toEqual([
+      "https://a.example.com/x",
+      "https://b.example.com",
+    ]);
+  });
+});
+
+describe("otherSitesText", () => {
+  // Saved before a release that checks them, or edited by hand: shown as written, never a crash.
+  it.each([
+    [
+      ["https://login.example.com", "https://www.example.com:8443"],
+      "login.example.com, www.example.com:8443",
+    ],
+    [["not a site", "https://ok.example.com"], "not a site, ok.example.com"],
+    [["", "https://"], ", https://"],
+    [["https://[::1", "login.example.com"], "https://[::1, login.example.com"],
+    [["mailto:someone@example.com"], "mailto:someone@example.com"],
+    [[], ""],
+  ])("shows %j as %j", (sites, text) => {
+    expect(otherSitesText(sites)).toBe(text);
   });
 });

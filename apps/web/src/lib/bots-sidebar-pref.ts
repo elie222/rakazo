@@ -1,3 +1,5 @@
+import { readStoredString, writeStoredString } from "./stored-preference";
+
 const STORAGE_PREFIX = "rakazo:bots-sidebar-collapsed:";
 
 export function botsSidebarCollapsedStorageKey(userId: string | null | undefined): string | null {
@@ -7,12 +9,7 @@ export function botsSidebarCollapsedStorageKey(userId: string | null | undefined
 
 export function readBotsSidebarCollapsed(userId: string | null | undefined): boolean {
   const storageKey = botsSidebarCollapsedStorageKey(userId);
-  if (!storageKey) return false;
-  try {
-    return window.localStorage.getItem(storageKey) === "1";
-  } catch {
-    return false;
-  }
+  return storageKey ? readStoredString(storageKey) === "1" : false;
 }
 
 export function writeBotsSidebarCollapsed(
@@ -20,13 +17,7 @@ export function writeBotsSidebarCollapsed(
   collapsed: boolean,
 ): void {
   const storageKey = botsSidebarCollapsedStorageKey(userId);
-  if (!storageKey) return;
-  try {
-    if (collapsed) window.localStorage.setItem(storageKey, "1");
-    else window.localStorage.removeItem(storageKey);
-  } catch {
-    // Ignore quota / private-mode failures; in-memory state still applies.
-  }
+  if (storageKey) writeStoredString(storageKey, collapsed ? "1" : null);
 }
 
 export const BOTS_SIDEBAR_MINI_WIDTH = 72;
@@ -54,22 +45,14 @@ export function clampBotsSidebarWidth(width: number, viewportWidth = Number.POSI
 export function readBotsSidebarWidth(userId: string | null | undefined): number {
   const key = botsSidebarWidthStorageKey(userId);
   if (!key) return BOTS_SIDEBAR_DEFAULT_WIDTH;
-  try {
-    const saved = Number(window.localStorage.getItem(key));
-    return Number.isFinite(saved) && saved >= BOTS_SIDEBAR_MIN_WIDTH
-      ? clampBotsSidebarWidth(saved)
-      : BOTS_SIDEBAR_DEFAULT_WIDTH;
-  } catch {
-    return BOTS_SIDEBAR_DEFAULT_WIDTH;
-  }
+  const saved = Number(readStoredString(key));
+  return Number.isFinite(saved) && saved >= BOTS_SIDEBAR_MIN_WIDTH
+    ? clampBotsSidebarWidth(saved)
+    : BOTS_SIDEBAR_DEFAULT_WIDTH;
 }
 
 export function writeBotsSidebarWidth(userId: string | null | undefined, width: number): void {
   const key = botsSidebarWidthStorageKey(userId);
   if (!key || !Number.isFinite(width)) return;
-  try {
-    window.localStorage.setItem(key, String(clampBotsSidebarWidth(width)));
-  } catch {
-    // Keep resizing usable when storage is unavailable.
-  }
+  writeStoredString(key, String(clampBotsSidebarWidth(width)));
 }

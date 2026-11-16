@@ -165,7 +165,8 @@ SecureStore, like password sign-in. Native builds need the Expo WebBrowser modul
 
 Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
 claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
-the account's email. Sign-in never links accounts by email.
+the account's email. Sign-in never links accounts by email, except to claim an account
+[directory provisioning](#directory-provisioning-scim) created.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
 matching email addresses. With email delivery, an account links SSO only after its email is
@@ -204,12 +205,132 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
+password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
 minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
 invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
+
+## Google and Apple sign-in
+
+Google and Apple sign-in are off until you set their credentials on the API. With nothing set,
+sign-in stays email and password (and any OpenID Connect provider you already configured). Each
+provider turns on only when its own values are complete. Email and password stay available next
+to the buttons.
+
+```env
+GOOGLE_CLIENT_ID=replace-with-client-id
+GOOGLE_CLIENT_SECRET=replace-with-client-secret
+
+APPLE_CLIENT_ID=replace-with-services-id
+APPLE_TEAM_ID=replace-with-team-id
+APPLE_KEY_ID=replace-with-key-id
+APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-key\n-----END PRIVATE KEY-----"
+```
+
+Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
+with Apple `.p8` file. A line break in the env value can be a real newline or the two characters
+`\n`. To mount the file instead, set `APPLE_PRIVATE_KEY_FILE` to its path and leave
+`APPLE_PRIVATE_KEY` empty. Set one of them, not both. In every Compose variant, this path is
+inside the API container: add an override for the `api` service with a read-only bind mount,
+for example `./secrets/apple.p8:/run/secrets/apple.p8:ro`, and set
+`APPLE_PRIVATE_KEY_FILE=/run/secrets/apple.p8`. The base Compose files do not mount host keys.
+
+The API signs Apple's client secret itself (ES256, from the key, team id, and key id), caches
+it, and signs a new one before it expires. Apple refuses a secret dated more than six months
+ahead, so there is nothing to rotate by hand and no client-secret JWT to paste in.
+
+Register these redirect URIs, using your public `BETTER_AUTH_URL` origin:
+
+```text
+https://app.example.com/api/auth/callback/google
+https://app.example.com/api/auth/callback/apple
+```
+
+For Google, create a web OAuth client and add that redirect URI. For Apple, create a Services ID
+(that value is `APPLE_CLIENT_ID`), enable Sign in with Apple on it, and return to the same
+redirect URI. The key is created under Keys with Sign in with Apple enabled; its id is
+`APPLE_KEY_ID`, and the team id is on the account page. Download the `.p8` once and store it
+with the API's other secrets.
+
+Web, desktop, and mobile use browser OAuth with the same callback URLs. iOS renders the native
+Apple button when available; it starts browser authorization rather than acquiring a bare identity
+token. Native token submission is not supported: the browser flow binds authorization to one-use
+server state and a nonce. The App Store requires an Apple option on a build that offers Google.
+
+Existing accounts connect Google, Apple, or generic OpenID Connect through authenticated
+linking in account settings. Matching provider and account emails never implicitly link them:
+historical provider verification does not prove current control of a mailbox hosted elsewhere.
+
+Linking requires the provider's verified email to match the verified Rakazo email. A different
+provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
+
+Signup through Google or Apple follows the same closed registration and allowlist as email
+signup. The provider email must be verified before any social account is created. Google verification
+counts only for Gmail or a matching verified Workspace domain. Apple verification counts only for
+Apple-managed mailboxes and relay addresses. Other provider mailboxes cannot
+create an account through social signup; verify an account through email and link it in settings.
+
+Google and Apple sign-in and linking do not confirm sensitive actions. Their browser sessions
+may be cached; an account chooser, consent screen, or nonce does not prove fresh authentication.
+Use a password, an emailed confirmation code, or organization OIDC with verified fresh `auth_time`.
+Social-only accounts on servers without a supported confirmation method or email delivery cannot
+self-confirm sensitive actions, including account deletion. The operator must configure a supported
+method; the interface hides unavailable confirmation options.
+
+## Directory provisioning (SCIM)
+
+Your identity provider can add people to Rakazo and remove them over SCIM 2.0. Generate a token
+(`openssl rand -hex 32`) and set it on the API:
+
+```env
+SCIM_BEARER_TOKEN=<your generated token>
+```
+
+In the identity provider, set the SCIM base URL to `https://app.example.com/api/auth/scim/v2`
+(your `BETTER_AUTH_URL` origin) and the bearer token to that value. The token manages users only;
+group requests are refused. Rotating it means changing the value and restarting the API.
+
+- **Adding a person** creates an account with their email, unverified, and no password. It
+  joins Rakazo even while signup is closed or the allowlist would refuse it, so
+  `SIGNUPS_ENABLED=false` with SCIM admits exactly the people the directory assigns. They sign in
+  through [SSO](#openid-connect-sso) (the first SSO sign-in with the same verified email claims the
+  account) or with an emailed sign-in code.
+- **A person who already has an account** keeps it: the directory takes it over by email without
+  changing its name, email or logins, and can then turn it off. Only an account whose email was
+  verified is taken over. Anyone could have signed up first with an address nobody proved, so
+  the directory gets a conflict for it, as it does when two accounts' emails differ only by case;
+  the operator decides what to do with those accounts.
+- **Turning a person off** (`active: false`) or **deleting** them deactivates the account at once.
+  It ends every sign-in and paired computer, removes notification registrations, cancels runs
+  they started, skips their routines, and refuses any new sign-in, run, webhook delivery or
+  message from their linked chat apps. Their bots, chats, memory, files and connections stay.
+  They also leave every shared space someone else invited them into, as if removed: what they
+  made there passes to that space's owner, and their routines there are paused. Spaces they own
+  stay theirs.
+  Turning them back on restores sign-in and their own spaces, and routines there resume from
+  their next scheduled time. Shared spaces they left need a new invite.
+- **Adding a deleted person again** with the same external id finds their existing account.
+
+Without an identity provider, the operator can do the same from the API container:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml exec api \
+  node dist/cli/account-status.js deactivate person@example.com   # or reactivate
+```
+
+While `SCIM_BEARER_TOKEN` is set, it leaves accounts the identity provider manages to the
+provider: it will not turn off one the provider has on, or turn back on one the provider turned
+off or deleted. Once the token is removed, it changes any account. The same command
+finishes a deactivation whose cleanup failed. Sign-in and runs are refused as soon as the account
+is off, and the API logs `directory.account_change.unfinished` with the account id if ending its
+sessions, computers or runs did not complete.
+
+Deactivation and reactivation are recorded as `auth.account.deactivated` and
+`auth.account.reactivated` [security events](./self-host-observability.md#security-events) and in
+each of the person's organizations' [audit log](./self-host-audit-log.md). The directory never
+deletes an account or its content.
 
 ## Passkeys
 

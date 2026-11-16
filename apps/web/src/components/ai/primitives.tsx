@@ -1,5 +1,6 @@
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { cn } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./beautiful-ui.css";
 
 /* Beautiful UI primitives — hand-ported from beautifului.dev
@@ -35,11 +36,7 @@ export function formatElapsed(startedAtMs: number, nowMs: number): string {
 
 function useElapsed(startedAtMs?: number): string {
   const [mountedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 100);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow(100);
   return formatElapsed(startedAtMs ?? mountedAt, now);
 }
 
@@ -57,10 +54,10 @@ function DefaultLoadingState({ label, startedAt }: { label: string; startedAt?: 
           />
         ))}
       </span>
-      <span className="text-[13.5px] font-medium">
+      <span className="text-body font-medium">
         <Shimmer>{label}</Shimmer>
       </span>
-      <span className="font-mono text-[12px] tabular-nums text-muted-foreground">{elapsed}</span>
+      <span className="font-mono text-label tabular-nums text-muted-foreground">{elapsed}</span>
     </>
   );
 }
@@ -113,7 +110,7 @@ export function SuccessPop({ label }: { label: string }) {
         </svg>
       </span>
       <span
-        className="text-[13px] font-medium text-foreground"
+        className="text-body-sm font-medium text-foreground"
         style={{ animation: "bui-fade-up 350ms cubic-bezier(0.23,1,0.32,1) 100ms both" }}
       >
         {label}
@@ -124,5 +121,5 @@ export function SuccessPop({ label }: { label: string }) {
 
 /** Card shell for every card in the chat. */
 export function BuiCard({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  return <div {...props} className={cn("rounded-[20px] bg-card", className)} />;
+  return <div {...props} className={cn("rounded-2xl bg-card", className)} />;
 }

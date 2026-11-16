@@ -45,7 +45,11 @@ function fakeDb(): never {
           },
       },
     );
-  return new Proxy({}, { get: (_, name: string) => model(name) }) as never;
+  // Raw statements (marking a chat unread for the Space's members) find nothing.
+  return new Proxy(
+    {},
+    { get: (_, name: string) => (name.startsWith("$") ? async () => [] : model(name)) },
+  ) as never;
 }
 
 const bot = { id: "bot-1", threadId: "thread-1", name: "Imported" } as Bot;
@@ -203,6 +207,37 @@ describe("an imported stdio server's setup state", () => {
       routineIds: [],
     });
     expect(state.serverIds).toEqual({ files: "unverifiable", docs: true });
+  });
+});
+
+describe("an import whose stored checklist cannot be read", () => {
+  it("leaves only that import's servers not set up, and judges the others", async () => {
+    const prisma = {
+      mcpServer: {
+        findMany: async () => [
+          { id: "files", secretId: null },
+          { id: "docs", secretId: null },
+        ],
+      },
+      botMcpServer: { findMany: async () => [{ serverId: "files" }, { serverId: "docs" }] },
+      routine: { findMany: async () => [] },
+      agentImport: {
+        findMany: async () => [
+          { id: "import-bad", created: { mcpServers: "files" } },
+          {
+            id: "import-good",
+            created: { mcpServers: [{ id: "docs", credentials: [], env: [] }] },
+          },
+        ],
+      },
+    };
+    const state = await agentImportSetupState(services({ prisma: prisma as never }), actor, {
+      botId: "bot-1",
+      providers: [],
+      serverIds: ["files", "docs"],
+      routineIds: [],
+    });
+    expect(state.serverIds).toEqual({ files: false, docs: true });
   });
 });
 

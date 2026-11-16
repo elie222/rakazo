@@ -1,7 +1,8 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import { flush } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
-import { spaceHasModelAccess } from "@rakazo/db";
+import { memberHasModelAccess } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   createStrategicInitiativeReconciler,
@@ -13,13 +14,15 @@ import {
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
-  spaceHasModelAccess: vi.fn(async () => true),
+  memberHasModelAccess: vi.fn(async () => true),
 }));
 
 function publisher() {
   const enqueue = vi.fn(async () => undefined);
   const jobs: JobPublisher = {
     enqueue,
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };
@@ -123,6 +126,7 @@ describe("reconcileStrategicInitiatives", () => {
     expect(tasks[0]?.prompt).toContain("NO_RESPONSE");
     expect(runs[0]).toMatchObject({ trigger: "routine" });
     expect(runs[0]?.clientNonce).toContain("strategic-initiative:bot-1:");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
     expect(enqueue).toHaveBeenCalledWith({
       name: "run.continue",
       payload: { runId: runs[0]?.id },
@@ -202,6 +206,34 @@ describe("reconcileStrategicInitiatives", () => {
                   clientNonce: { startsWith: "strategic-initiative:" },
                   status: "failed",
                   createdAt: { gt: new Date("2026-10-26T12:00:00.000Z") },
+                },
+              ]),
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it("treats a bot whose only active run is a background helper as free", async () => {
+    const { prisma } = strategicPrisma({ bots: [] });
+    await reconcileStrategicInitiatives({
+      prisma,
+      jobs: publisher().jobs,
+      now: new Date(),
+      pageSize: 10,
+    });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          runs: {
+            none: {
+              OR: expect.arrayContaining([
+                {
+                  status: {
+                    in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+                  },
+                  OR: expect.arrayContaining([{ trigger: { not: "helper" } }]),
                 },
               ]),
             },
@@ -327,8 +359,6 @@ describe("strategic initiative tool guard", () => {
   });
 });
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 const candidate = {
   id: "bot-1",
   spaceId: "space-1",
@@ -376,7 +406,7 @@ it.each([{ eligible: false }, { member: false }])(
 );
 
 it("uses routine model-access gating when billing is enabled", async () => {
-  vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false);
+  vi.mocked(memberHasModelAccess).mockResolvedValueOnce(false);
   const { prisma } = strategicPrisma({ bots: [candidate] });
   const { jobs, enqueue } = publisher();
   expect(
@@ -388,7 +418,10 @@ it("uses routine model-access gating when billing is enabled", async () => {
       billingEnabled: true,
     }),
   ).toBe(0);
-  expect(spaceHasModelAccess).toHaveBeenCalledWith(prisma, "space-1");
+  expect(memberHasModelAccess).toHaveBeenCalledWith(
+    prisma,
+    expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+  );
   expect(enqueue).not.toHaveBeenCalled();
 });
 
@@ -452,7 +485,7 @@ it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async
   let now = new Date("2026-11-02T12:00:00Z");
   const { prisma } = strategicPrisma({ bots: [candidate], member: reason !== "owner" });
   const { jobs, enqueue } = publisher();
-  vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+  vi.mocked(memberHasModelAccess).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
   const reconcile = createStrategicInitiativeReconciler({
     prisma,
     jobs,
@@ -460,20 +493,20 @@ it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async
     now: () => now,
   });
   await reconcile();
-  await settle();
+  await flush();
   const calls = vi.mocked(prisma.bot.findMany).mock.calls.length;
   now = new Date(now.getTime() + 30_000);
   await reconcile();
   now = new Date("2026-11-02T12:59:59Z");
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls);
   now = new Date("2026-11-02T13:00:00Z");
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(calls * 2);
   expect(enqueue).not.toHaveBeenCalled();
-  vi.mocked(spaceHasModelAccess).mockReset().mockResolvedValue(true);
+  vi.mocked(memberHasModelAccess).mockReset().mockResolvedValue(true);
 });
 
 it("runs the sweep without holding up the reconciler pass", async () => {
@@ -492,9 +525,9 @@ it("retries a failed sweep on the next pass", async () => {
   const { jobs } = publisher();
   const reconcile = createStrategicInitiativeReconciler({ prisma, jobs, billingEnabled: false });
   await reconcile();
-  await settle();
+  await flush();
   await reconcile();
-  await settle();
+  await flush();
   expect(prisma.bot.findMany).toHaveBeenCalledTimes(2);
 });
 
@@ -503,10 +536,10 @@ it("reads the worker model-credit billing flag from deployment settings", async 
   Object.assign(prisma, {
     deploymentSettings: { findUnique: vi.fn(async () => ({ modelCreditsEnabled: true })) },
   });
-  vi.mocked(spaceHasModelAccess).mockResolvedValueOnce(false);
+  vi.mocked(memberHasModelAccess).mockResolvedValueOnce(false);
   const { jobs, enqueue } = publisher();
   await createStrategicInitiativeReconciler({ prisma, jobs })();
-  await settle();
+  await flush();
   expect(prisma.deploymentSettings.findUnique).toHaveBeenCalledWith({
     where: { id: "default" },
     select: { modelCreditsEnabled: true },

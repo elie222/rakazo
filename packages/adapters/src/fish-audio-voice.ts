@@ -10,15 +10,18 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
+  isSpeechModelId,
   readVoiceAudio,
   readVoiceJson,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
@@ -29,8 +32,6 @@ const PUBLIC_MODEL_CONCURRENCY = 2;
 const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
 const DEFAULT_TTS_MODEL = "s2.1-pro";
-/** Header-safe Fish model id. A connection override wins over `FISH_TTS_MODEL`. */
-const TTS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const UPSTREAM_DETAIL_LIMIT = 500;
 let invalidTtsModelWarned = false;
 /**
@@ -39,7 +40,6 @@ let invalidTtsModelWarned = false;
  */
 const DEFAULT_ASR_MODEL = "transcribe-1-pro";
 /** BCP-47 tag or ISO 639-1 code; Fish wants the lowercase primary subtag. */
-const ASR_LANGUAGE_PATTERN = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
 let invalidAsrModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
@@ -48,7 +48,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       id: "fish-audio",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { catalog: true, synthesize: true, transcribe: true },
+      capabilities: { catalog: true, synthesize: true, transcribe: true, languages: true },
     };
   }
 
@@ -62,17 +62,23 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 
   /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */
-  async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
+  async listVoices(
+    apiKey: string,
+    context: AdapterContext,
+    options: { language?: string } = {},
+  ): Promise<VoiceInfo[]> {
     const controller = new AbortController();
-    const signal = voiceDeadline(
-      AbortSignal.any([context.signal, controller.signal]),
+    const signal = deadlineSignal(
       LIST_VOICES_DEADLINE_MS,
+      AbortSignal.any([context.signal, controller.signal]),
     );
     const listContext = { ...context, signal };
+    // Fish's catalog filter matches the lowercase primary subtag ("de-DE" → "de").
+    const language = options.language?.split("-")[0]?.toLowerCase() || undefined;
     try {
       const [publicModels, ownModels] = await Promise.all([
-        fetchModels(apiKey, listContext, false),
-        fetchModels(apiKey, listContext, true),
+        fetchModels(apiKey, listContext, false, language),
+        fetchModels(apiKey, listContext, true, undefined),
       ]);
       const seen = new Set<string>();
       return [...ownModels, ...publicModels]
@@ -89,7 +95,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const model = resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
@@ -128,14 +134,14 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     form.set("ignore_timestamps", "true");
     // transcribe-1-pro otherwise leaves bracketed audio events ("[risas]") in the text.
     form.set("tag_audio_events", "false");
-    const language = asrLanguageHint(request.language);
+    const language = voiceLanguageHint(request.language);
     if (language) form.set("language", language);
     const model = resolveFishTranscriptionModel();
     const res = await fetch(`${API}/v1/asr`, {
       method: "POST",
       headers: { ...fishAudioHeaders(request.apiKey), model },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readFishResponse(res);
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
@@ -147,6 +153,7 @@ async function fetchModels(
   apiKey: string,
   context: AdapterContext,
   own: boolean,
+  language?: string,
 ): Promise<Array<Record<string, unknown>>> {
   const maxPages = own ? OWN_MODEL_PAGES : PUBLIC_MODEL_PAGES;
   const models: Array<Record<string, unknown>> = [];
@@ -155,7 +162,7 @@ async function fetchModels(
   while (pageNumber <= maxPages) {
     // Only prefetch public pages backed by a known total, within the existing cap.
     const pending = Array.from({ length: Math.min(batchSize, maxPages - pageNumber + 1) }, (_, i) =>
-      fetchModelPage(apiKey, context, own, pageNumber + i).then(
+      fetchModelPage(apiKey, context, own, pageNumber + i, language).then(
         (page) => ({ page }),
         (error: unknown) => ({ error }),
       ),
@@ -189,6 +196,7 @@ async function fetchModelPage(
   context: AdapterContext,
   own: boolean,
   pageNumber: number,
+  language?: string,
 ) {
   context.signal.throwIfAborted();
   const params = new URLSearchParams({
@@ -197,6 +205,7 @@ async function fetchModelPage(
     sort_by: "score",
   });
   if (own) params.set("self", "true");
+  else if (language) params.set("language", language);
   const res = await fetch(`${API}/model?${params}`, {
     headers: fishAudioHeaders(apiKey),
     signal: context.signal,
@@ -218,10 +227,6 @@ function fishAudioHeaders(apiKey: string): Record<string, string> {
   return { authorization: `Bearer ${apiKey}` };
 }
 
-export function isFishSpeechModelId(value: string): boolean {
-  return TTS_MODEL_PATTERN.test(value);
-}
-
 /**
  * `FISH_ASR_MODEL` when it is a model id, otherwise transcribe-1-pro. A deployment that
  * pins another speech model keeps it; anything unparseable falls back rather than
@@ -230,7 +235,7 @@ export function isFishSpeechModelId(value: string): boolean {
 function resolveFishTranscriptionModel(): string {
   const configured = process.env.FISH_ASR_MODEL?.trim() ?? "";
   if (!configured) return DEFAULT_ASR_MODEL;
-  if (isFishSpeechModelId(configured)) return configured;
+  if (isSpeechModelId(configured)) return configured;
   if (!invalidAsrModelWarned) {
     invalidAsrModelWarned = true;
     getLogger().warn("Ignoring FISH_ASR_MODEL because it is not a model id", {
@@ -238,15 +243,6 @@ function resolveFishTranscriptionModel(): string {
     });
   }
   return DEFAULT_ASR_MODEL;
-}
-
-/**
- * The lowercase ISO 639-1 code Fish expects in `language`, or undefined when the value is
- * not a tag we can honor ("es-ES" and "es" both ask for Spanish).
- */
-export function asrLanguageHint(language: string | undefined): string | undefined {
-  const match = ASR_LANGUAGE_PATTERN.exec(language?.trim() ?? "");
-  return match?.[1] ? match[1].toLowerCase() : undefined;
 }
 
 /**
@@ -263,7 +259,7 @@ export function stripFishAsrTags(text: string): string {
 /** Connection override, then `FISH_TTS_MODEL`, then s2.1-pro. */
 function resolveFishSpeechModel(override?: string | null): string {
   const requested = override?.trim() ?? "";
-  if (requested && isFishSpeechModelId(requested)) return requested;
+  if (requested && isSpeechModelId(requested)) return requested;
   return deploymentFishSpeechModel();
 }
 
@@ -271,7 +267,7 @@ function resolveFishSpeechModel(override?: string | null): string {
 function deploymentFishSpeechModel(): string {
   const configured = process.env.FISH_TTS_MODEL?.trim() ?? "";
   if (!configured) return DEFAULT_TTS_MODEL;
-  if (isFishSpeechModelId(configured)) return configured;
+  if (isSpeechModelId(configured)) return configured;
   if (!invalidTtsModelWarned) {
     invalidTtsModelWarned = true;
     getLogger().warn("Ignoring FISH_TTS_MODEL because it is not a model id", {
@@ -292,7 +288,7 @@ async function readFishResponse(res: Response): Promise<unknown> {
 }
 
 function fishUnreadBody(error: unknown): { message: string } {
-  if (error instanceof Error && error.message === "Voice response is too large.") {
+  if (error instanceof ResponseTooLargeError) {
     return { message: error.message };
   }
   return { message: "response body could not be read" };
@@ -393,3 +389,14 @@ function languageLabel(value: unknown): string {
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .join(", ");
 }
+
+export const fishAudioVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Fish Audio",
+    description: "Voice models, cloning, and expressive speech with optional transcription.",
+    transcribe: true,
+    speechModel: true,
+    languages: true,
+  },
+  create: () => new FishAudioVoiceProvider(),
+};

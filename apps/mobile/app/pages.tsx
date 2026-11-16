@@ -1,4 +1,5 @@
-import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { PageSummary } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
@@ -6,12 +7,12 @@ import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { LongPressMenu } from "../components/long-press-menu";
 import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { useTextEditDialog } from "../components/profile-edit-dialog";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { getLatestPage, removePage, renamePage } from "../lib/pages";
 import { usePagedPages } from "../lib/use-paged-pages";
@@ -20,12 +21,12 @@ import { usePagedPages } from "../lib/use-paged-pages";
 export default function PagesScreen() {
   const { botId, groupId } = useLocalSearchParams<{ botId?: string; groupId?: string }>();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
   const { listed, showMore, refresh } = usePagedPages({ botId, groupId });
   const [problem, setProblem] = useState<string | null>(null);
-  const rename = useTextEditDialog(t("Rename"), PAGE_TITLE_MAX_LENGTH);
+  const rename = useTextEditDialog(t`Rename`, PAGE_TITLE_MAX_LENGTH);
 
   if (listed.status !== "ready") {
     return (
@@ -35,7 +36,7 @@ export default function PagesScreen() {
         ) : (
           <PageLoadFailure
             error={listed.error}
-            fallback={t("Could not load pages.")}
+            fallback={t`Could not load pages.`}
             onRetry={refresh}
           />
         )}
@@ -47,8 +48,8 @@ export default function PagesScreen() {
       <View style={styles.center}>
         <Text style={[styles.message, { color: tokens.mutedForeground }]}>
           {groupId
-            ? t("Pages this group builds for you appear here.")
-            : t("Pages this bot builds for you appear here.")}
+            ? t`Pages this group builds for you appear here.`
+            : t`Pages this bot builds for you appear here.`}
         </Text>
       </View>
     );
@@ -66,7 +67,7 @@ export default function PagesScreen() {
     else if (action === "rename") {
       rename.ask(page.title, (title) => {
         if (!title || title === page.title) return;
-        void renamePage(page.id, title).then(refresh, failed(t("Could not rename the page.")));
+        void renamePage(page.id, title).then(refresh, failed(t`Could not rename the page.`));
       });
     } else if (action === "share")
       router.push({ pathname: "/page-share", params: { pageId: page.id } });
@@ -77,53 +78,55 @@ export default function PagesScreen() {
           if (detail.shareUrl) await Clipboard.setStringAsync(detail.shareUrl);
           else refresh();
         })
-        .catch(() => setProblem(t("Could not copy the link.")));
+        .catch(() => setProblem(t`Could not copy the link.`));
     } else if (action === "pin") {
       void rpc("pages/pin", { pageId: page.id, pinned: !page.pinned }).then(
         refresh,
-        failed(t("Could not pin the page.")),
+        failed(t`Could not pin the page.`),
       );
     } else if (action === "delete") {
       Alert.alert(
-        t("Delete {name}?", { name: page.title }),
-        t("Its link stops working. This cannot be undone."),
+        t`Delete ${ph({ name: page.title })}?`,
+        t`Its link stops working. This cannot be undone.`,
         [
-          { text: t("Cancel"), style: "cancel" },
+          { text: t`Cancel`, style: "cancel" },
           {
-            text: t("Delete"),
+            text: t`Delete`,
             style: "destructive",
             onPress: () =>
-              void removePage(page.id).then(refresh, failed(t("Could not delete the page."))),
+              void removePage(page.id).then(refresh, failed(t`Could not delete the page.`)),
           },
         ],
       );
     }
   };
   const row = (page: PageSummary) => (
-    <MenuView
+    <LongPressMenu
       key={page.id}
-      shouldOpenOnLongPress
       colorScheme={colorScheme}
       title={page.title}
       actions={[
-        { id: "open", title: t("Open") },
-        { id: "rename", title: t("Rename") },
-        { id: "share", title: t("Share") },
-        ...(page.visibility === "link" ? [{ id: "copy", title: t("Copy link") }] : []),
-        { id: "pin", title: page.pinned ? t("Unpin") : t("Pin") },
-        { id: "delete", title: t("Delete"), attributes: { destructive: true } },
+        { id: "open", title: t`Open` },
+        { id: "rename", title: t`Rename` },
+        { id: "share", title: t`Share` },
+        ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
+        { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
+        { id: "delete", title: t`Delete`, attributes: { destructive: true } },
       ]}
       onPressAction={(event) => act(page, event.nativeEvent.event)}
     >
-      <SettingsRow
-        accessibilityRole="button"
-        chevron="right"
-        title={page.title}
-        detail={`${page.visibility === "link" ? `${t("Shared")} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
-        leading={<PageIcon colors={tokens} width={26} />}
-        onPress={() => open(page)}
-      />
-    </MenuView>
+      {(onLongPress) => (
+        <SettingsRow
+          accessibilityRole="button"
+          chevron="right"
+          title={page.title}
+          detail={`${page.visibility === "link" ? `${t`Shared`} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
+          leading={<PageIcon colors={tokens} width={26} />}
+          onPress={() => open(page)}
+          onLongPress={onLongPress}
+        />
+      )}
+    </LongPressMenu>
   );
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);
@@ -134,7 +137,7 @@ export default function PagesScreen() {
           {problem}
         </Text>
       ) : null}
-      {pinned.length ? <SettingsGroup label={t("Pinned")}>{pinned.map(row)}</SettingsGroup> : null}
+      {pinned.length ? <SettingsGroup label={t`Pinned`}>{pinned.map(row)}</SettingsGroup> : null}
       {rest.length ? <SettingsGroup>{rest.map(row)}</SettingsGroup> : null}
       {rename.dialog}
       {listed.nextCursor ? (
@@ -142,8 +145,8 @@ export default function PagesScreen() {
           <SettingsRow
             key="more"
             accessibilityRole="button"
-            title={t("Show more")}
-            onPress={() => void showMore().catch(() => setProblem(t("Could not load pages.")))}
+            title={t`Show more`}
+            onPress={() => void showMore().catch(() => setProblem(t`Could not load pages.`))}
           />
         </SettingsGroup>
       ) : null}

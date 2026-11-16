@@ -32,6 +32,29 @@ const KIT_LIST = (PAGE_KIT_COMPONENTS as readonly string[]).join(", ");
 // Escapes JSX decodes in its own text, but that a JavaScript string shows as typed.
 const HTML_ENTITY = /&(?:lt|gt|amp|quot|apos|nbsp|#39|#x27);/;
 
+/** React hooks a page may call. A hook called while the file loads runs outside React's render. */
+const REACT_HOOKS: ReadonlySet<string> = new Set([
+  "useCallback",
+  "useContext",
+  "useDebugValue",
+  "useDeferredValue",
+  "useEffect",
+  "useId",
+  "useImperativeHandle",
+  "useInsertionEffect",
+  "useLayoutEffect",
+  "useMemo",
+  "useReducer",
+  "useRef",
+  "useSource",
+  "useState",
+  "useSyncExternalStore",
+  "useTheme",
+  "useTransition",
+]);
+// A hook React adds later still looks like this, so the shape catches it too.
+const HOOK_NAME = /^use[A-Z][A-Za-z0-9]*$/;
+
 const GIVEN: ReadonlySet<string> = new Set(PAGE_GLOBALS);
 const DECLARATION_ROLES: ReadonlySet<IdentifierRole | null> = new Set([
   IdentifierRole.TopLevelDeclaration,
@@ -58,12 +81,13 @@ export function checkPageSource(source: string): PageSourceCheck {
     };
   }
   const lineOf = lineLocator(source);
-  let tokens: ReturnType<typeof parse>["tokens"];
+  let parsed: ReturnType<typeof parse>;
   try {
-    tokens = parse(source, true, false, false).tokens;
+    parsed = parse(source, true, false, false);
   } catch (error) {
     return { ok: false, errors: [syntaxErrorText(error)] };
   }
+  const { tokens, scopes } = parsed;
   const errors: string[] = [];
   const warnings: string[] = [];
   const declared = new Set<string>();
@@ -163,6 +187,11 @@ export function checkPageSource(source: string): PageSourceCheck {
     if (GIVEN.has(name) || declared.has(name)) continue;
     errors.push(
       `line ${line}: <${name}> is not a kit component. Use ${KIT_LIST}, or define ${name} in this file.`,
+    );
+  }
+  for (const { name, start } of moduleScopeHookCalls(tokens, scopes, source, declared)) {
+    errors.push(
+      `line ${lineOf(start)}: ${name}() must be called inside a component, not at the top level of the file.`,
     );
   }
   if (defaults !== 1) {
@@ -277,4 +306,59 @@ function lineLocator(source: string): (offset: number) => number {
     }
     return low + 1;
   };
+}
+
+/**
+ * A hook called while the file is loading runs outside React's render, where the dispatcher is
+ * null, so the viewer crashes on it. Finds the calls that sit at the top level of the file.
+ */
+function moduleScopeHookCalls(
+  tokens: Tokens,
+  scopes: ReturnType<typeof parse>["scopes"],
+  source: string,
+  declared: ReadonlySet<string>,
+): { name: string; start: number }[] {
+  const found: { name: string; start: number }[] = [];
+  // Sucrase already records exact function ranges, including concise arrows and ASI.
+  // Range deltas make membership linear even for many nested or adjacent functions.
+  const boundaries = new Int32Array(tokens.length + 1);
+  // The parser appends the file's own scope last; it does not defer execution.
+  for (let index = 0; index < scopes.length - 1; index++) {
+    const scope = scopes[index]!;
+    if (!scope.isFunctionScope) continue;
+    boundaries[scope.startTokenIndex]! += 1;
+    boundaries[scope.endTokenIndex]! -= 1;
+  }
+  let functions = 0;
+  const text = (index: number) => source.slice(tokens[index]!.start, tokens[index]!.end);
+  for (let index = 0; index < tokens.length; index++) {
+    functions += boundaries[index]!;
+    const token = tokens[index]!;
+    if (token.type !== TokenType.name) continue;
+    const name = text(index);
+    if (!isHookName(name, declared)) continue;
+    // A hook that is only referenced is not a call.
+    if (tokens[index + 1]?.type !== TokenType.parenL) continue;
+    const before = tokens[index - 1];
+    // A property, a definition or a constructor is not a call either.
+    if (
+      before &&
+      (before.type === TokenType.dot ||
+        before.type === TokenType.questionDot ||
+        before.type === TokenType._function ||
+        before.type === TokenType._class ||
+        before.type === TokenType._new)
+    )
+      continue;
+    // Inside a function body or an arrow body the hook runs while React renders.
+    if (functions > 0) continue;
+    found.push({ name, start: token.start });
+  }
+  return found;
+}
+
+/** A hook React may add later still looks like this; a page's own name does not have to. */
+function isHookName(name: string, declared: ReadonlySet<string>): boolean {
+  if (declared.has(name)) return false;
+  return REACT_HOOKS.has(name) || HOOK_NAME.test(name);
 }

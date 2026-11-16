@@ -30,8 +30,8 @@ describe("referral", () => {
     status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
     captureReferral("?ref=friend42");
 
-    await loadBillingStatus();
-    await loadBillingStatus();
+    await loadBillingStatus(rpc);
+    await loadBillingStatus(rpc);
 
     expect(status).toHaveBeenNthCalledWith(1, { referralCode: "friend42" });
     expect(status).toHaveBeenNthCalledWith(2, undefined);
@@ -43,8 +43,8 @@ describe("referral", () => {
       .mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
     captureReferral("?ref=friend42");
 
-    await expect(loadBillingStatus()).rejects.toThrow("offline");
-    await loadBillingStatus();
+    await expect(loadBillingStatus(rpc)).rejects.toThrow("offline");
+    await loadBillingStatus(rpc);
 
     expect(status).toHaveBeenNthCalledWith(2, { referralCode: "friend42" });
   });
@@ -54,7 +54,7 @@ describe("referral", () => {
     captureReferral(`?ref=${"x".repeat(65)}`);
     storage.set("rakazo:referral", "bad code!");
 
-    await loadBillingStatus();
+    await loadBillingStatus(rpc);
 
     expect(status).toHaveBeenCalledWith(undefined);
     expect(storage.has("rakazo:referral")).toBe(false);
@@ -63,7 +63,7 @@ describe("referral", () => {
   it("asks for plain status without a code", async () => {
     status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
 
-    await loadBillingStatus();
+    await loadBillingStatus(rpc);
 
     expect(status).toHaveBeenCalledWith(undefined);
   });

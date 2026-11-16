@@ -1,11 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { signupPolicyFromEnv } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
-
-export interface SignupPolicyEnv {
-  signupsEnabled: string | undefined;
-  signupAllowlist: string | undefined;
-}
+import { isUniqueViolation } from "./prisma-errors.js";
 
 type OrganizationClient = Pick<
   PrismaClient,
@@ -14,10 +9,6 @@ type OrganizationClient = Pick<
 
 function newId(): string {
   return randomBytes(16).toString("hex");
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /**
@@ -106,7 +97,6 @@ export async function createOrganizationWithDefaultSpace(
 export async function bootstrapUserSpace(
   prisma: PrismaClient,
   user: { id: string },
-  env: SignupPolicyEnv,
 ): Promise<{ spaceId: string }> {
   // Concurrent bootstraps for the same user (e.g. overlapping first phone inbounds) share the slug.
   const spaceId = await createOrganizationWithDefaultSpace(prisma, {
@@ -115,16 +105,9 @@ export async function bootstrapUserSpace(
     name: "Personal",
     slug: `user-${user.id.slice(0, 12)}`,
   });
-  const policy = signupPolicyFromEnv(env);
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
-    create: {
-      id: "default",
-      ownerUserId: null,
-      signupsEnabled: policy.enabled,
-      signupAllowlist: policy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
+    create: { id: "default" },
     update: {},
   });
   return { spaceId };

@@ -1,0 +1,87 @@
+---
+import type { ArticleImage, ArticleSection } from "../provider-article/types";
+import ArticleText from "./ArticleText.astro";
+import CaptionedImage from "./CaptionedImage.astro";
+
+type Props = {
+  sections: readonly ArticleSection[];
+  /** Shown after any section with `image: true`. */
+  image?: ArticleImage;
+};
+
+const { sections, image } = Astro.props;
+---
+
+{
+  sections.map((section) => (
+    <section class="sandbox-section">
+      <h2 id={section.id}>{section.heading}</h2>
+      {section.paragraphs?.map((paragraph) => (
+        <p>
+          <ArticleText text={paragraph} />
+        </p>
+      ))}
+      {section.table && (
+        <div class="alt-table-wrap">
+          <table class="alt-table">
+            <caption>{section.table.caption}</caption>
+            <thead>
+              <tr>
+                {section.table.columns.map((column) => (
+                  <th scope="col">{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {section.table.rows.map((row) => (
+                <tr>
+                  <th scope="row">
+                    <ArticleText text={row.topic} />
+                  </th>
+                  {row.cells.map((value) => (
+                    <td>
+                      <ArticleText text={value} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {section.table?.note && (
+        <p class="table-note">
+          <ArticleText text={section.table.note} />
+        </p>
+      )}
+      {section.bullets && (
+        <ul>
+          {section.bullets.map((item) => (
+            <li>
+              <ArticleText text={item} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {section.steps && (
+        <ol class="sandbox-steps">
+          {section.steps.map((step) => (
+            <li>
+              <ArticleText text={step} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {section.image && image && (
+        <CaptionedImage
+          src={image.webp}
+          avif={image.avif}
+          alt={image.alt}
+          caption={image.caption}
+          width={image.width}
+          height={image.height}
+        />
+      )}
+    </section>
+  ))
+}

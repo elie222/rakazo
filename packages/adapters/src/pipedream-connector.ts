@@ -7,10 +7,11 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { collectPages, filterCatalog } from "./composio-connector.js";
 import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -143,6 +144,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       })),
       query ?? "",
     );
+  }
+
+  async needsReconnect(context: AdapterContext, externalId: string): Promise<boolean> {
+    return approvedAccounts(context, externalId).length === 0;
   }
 
   async warmDirectory(): Promise<void> {
@@ -597,14 +602,14 @@ async function readPipedreamBody(response: Response, signal: AbortSignal): Promi
       cancel.catch(() => undefined),
       signal,
     ).catch(() => undefined);
-    throw new Error("Pipedream response is too large.");
+    throw new ResponseTooLargeError("Pipedream response is too large.");
   }
   try {
     const bytes = await readBodyCapped(response, MAX_PIPEDREAM_RESPONSE_BYTES, signal);
     return new TextDecoder().decode(bytes);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error("Pipedream response is too large.");
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError("Pipedream response is too large.", { cause: error });
     }
     throw error;
   }

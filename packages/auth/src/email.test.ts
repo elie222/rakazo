@@ -14,6 +14,10 @@ import {
 } from "./email.js";
 import { homeDeletionEmail } from "./home-deletion-email.js";
 import {
+  organizationInvitationEmail,
+  spaceInvitationEmail,
+} from "./organization-invitation-email.js";
+import {
   integrationClaimConfirmEmail,
   pluginSubmissionAdminEmail,
   pluginSubmissionReceivedEmail,
@@ -64,6 +68,11 @@ it("shares the layout across account, product and marketplace emails", async () 
     homeDeletionEmail(user, new Date(), "plan-ended", url),
     homeDeletionEmail(user, new Date(), "unused", url),
     referralEmail(user, url, url),
+    organizationInvitationEmail(user.email, {
+      organizationName: "Acme",
+      inviterName: "Sam",
+      url,
+    }),
     pluginSubmissionReceivedEmail(user.email),
     integrationClaimConfirmEmail(user.email, url),
     pluginSubmissionAdminEmail(
@@ -108,6 +117,41 @@ describe("email languages", () => {
     expect(emailLocale(null, headers("pl-PL,pl;q=0.9,en;q=0.8"))).toBe("pl");
     expect(emailLocale(null, headers("it-IT,pl;q=0.9,en;q=0.8"))).toBe("pl");
     expect(emailLocale(null, headers("en-US,pl;q=0.9"))).toBe("en");
+  });
+
+  it("prefers the highest acceptable supported language in the request", () => {
+    expect(emailLocale(null, headers("en;q=0,fr;q=1"))).toBe("fr");
+    expect(emailLocale(null, headers("de;q=0.1,es;q=0.9"))).toBe("es");
+    expect(emailLocale(null, headers("de;q=0.5,fr"))).toBe("fr");
+    expect(emailLocale(null, headers("fr;q=0.8,de;q=0.8"))).toBe("fr");
+    expect(emailLocale(null, headers("it;q=1,ES-cl;Q=0.9,en;q=0.8"))).toBe("es");
+    expect(emailLocale(null, headers("zh-Hant-TW;q=0.9,pt-PT;q=0.8"))).toBe("zh-TW");
+    expect(emailLocale(null, headers("en-US;q=0.8,fr;q=0.7"))).toBe("en");
+    expect(emailLocale(null, headers("fr;q=0.,de;q=1."))).toBe("de");
+  });
+
+  it.each([
+    ["zh_Hans_CN", "zh-CN"],
+    ["zh_Hans_CN;q=0.9,en;q=0.8", "zh-CN"],
+    ["zh_Hant_TW;q=0.9,fr;q=0.8", "zh-TW"],
+    ["pt_BR;q=0.9,fr;q=0.8", "pt-BR"],
+    ["en_US;q=1,fr;q=0.5", "en"],
+    ["zh_Hans_CN;q=0,fr;q=0.5", "fr"],
+    ["zh_Hans_CN;q=bogus,fr;q=0.5", "fr"],
+    ["zh__Hans_CN;q=1,fr;q=0.5", "fr"],
+  ])("matches underscored request tags in %s to %s", (request, locale) => {
+    expect(emailLocale(null, headers(request))).toBe(locale);
+  });
+
+  it("ignores malformed weights and falls back when no supported language is acceptable", () => {
+    for (const invalid of ["-0.1", "1.1", "0.1234", "bogus", "0.5junk", ""]) {
+      expect(emailLocale(null, headers(`de;q=${invalid},fr;q=0.1`))).toBe("fr");
+    }
+    expect(emailLocale(null, headers("de;q=0,fr;q=0"))).toBe("en");
+    expect(emailLocale(null, headers("en;q=0"))).toBe("en");
+    expect(emailLocale(null, headers("*;q=1,fr;q=0.5"))).toBe("fr");
+    expect(emailLocale("es", headers("en;q=1,es;q=0"))).toBe("es");
+    expect(emailLocale("it", headers("fr;q=1"))).toBe("en");
   });
 
   it("renders Polish account emails with exact links, escaped codes and names", async () => {
@@ -198,7 +242,18 @@ describe("email languages", () => {
     const english = await welcomeEmail(user, "https://example.test/u");
     expect(english.subject).toBe("Welcome to Rakazo");
     expect(english.text).toContain("Hi Ana,");
-    expect(english.text).toContain("Rakazo also has apps for iPhone");
+    expect(english.text).toContain("Rakazo runs on iPhone");
+  });
+
+  it("names a Space invitation's Space, never an organization, in every language", async () => {
+    const invitation = { spaceName: "Clients", inviterName: "Ana", url: "https://example.test/i" };
+    const english = await spaceInvitationEmail("guest@example.test", invitation);
+    expect(english.subject).toBe("Ana invited you to Clients on Rakazo");
+    expect(english.text).toContain("This invitation expires in 7 days.");
+    expect(english.text).not.toContain("Sign in with this email address");
+    const turkish = await spaceInvitationEmail("guest@example.test", invitation, "tr");
+    expect(turkish.subject).toBe("Ana sizi Rakazo'da Clients alanına davet etti");
+    expect(turkish.text).not.toContain("kuruluş");
   });
 
   it.each(Object.entries(CATALOGS))(

@@ -84,23 +84,26 @@ describe("system browser authentication", () => {
       const localCallback = callback.replace("127.0.0.1", "localhost");
       authorization.searchParams.set("redirect_uri", localCallback);
       const listen = Server.prototype.listen;
+      const requested: unknown[] = [];
       vi.spyOn(Server.prototype, "listen").mockImplementation(function (
         this: Server,
         ...args: unknown[]
       ) {
+        requested.push(args[1]);
         if (args[1] === unavailable) {
           queueMicrotask(() =>
             this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
           );
           return this;
         }
-        return Reflect.apply(listen, this, args);
+        // The remaining family binds the IPv4 loopback, so the test does not need the host to
+        // have IPv6. The requested addresses are checked below; binding them is the kernel's job.
+        return Reflect.apply(listen, this, [args[0], "127.0.0.1", ...args.slice(2)]);
       });
       await openBrowserAuth(authorization.href, options);
-      const remaining = unavailable === "::1" ? "127.0.0.1" : "[::1]";
       const status = await new Promise<number | undefined>((resolve, reject) => {
         get(
-          `${callback.replace("127.0.0.1", remaining)}?code=x&state=test-state`,
+          `${callback}?code=x&state=test-state`,
           {
             headers: { Host: new URL(localCallback).host },
           },
@@ -110,6 +113,8 @@ describe("system browser authentication", () => {
           },
         ).on("error", reject);
       });
+      // Both families were asked for, so the one left is the real other family.
+      expect(requested.toSorted()).toEqual(["127.0.0.1", "::1"]);
       expect(status).toBe(200);
       expect(options.onCallback).toHaveBeenCalledOnce();
     },

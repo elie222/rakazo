@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { avatarPhotoDot } from "@rakazo/core";
 import { MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
@@ -77,11 +78,8 @@ export function ActivityMark({
     setArrived(true);
     scale.value = withSpring(1, MARK_SPRING);
   }, [arrived, atBottom, scale]);
-  useEffect(() => {
-    if (bots.length < 2 || reducedMotion || !onScreen) return;
-    const timer = setInterval(() => setIndex((current) => current + 1), CYCLE_MS);
-    return () => clearInterval(timer);
-  }, [bots.length, reducedMotion, onScreen]);
+  const cycling = bots.length >= 2 && !reducedMotion && onScreen;
+  useTimeout(() => setIndex((current) => current + 1), cycling ? CYCLE_MS : null, index);
 
   const rowStyle = useAnimatedStyle(() => ({ height: height.value }));
   const markStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));

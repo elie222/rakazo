@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import type { Bot } from "@rakazo/contracts";
+
+import type { IncomingBotCall } from "@rakazo/contracts";
 import type * as CoreModule from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -9,9 +12,8 @@ import { Link, MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  bots: [] as Bot[],
   me: vi.fn(),
-  listBots: vi.fn(),
+  subscribeCalls: vi.fn(),
   voiceStatus: vi.fn(),
   endCall: vi.fn(),
   declineIncomingCall: vi.fn(),
@@ -40,9 +42,16 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
 vi.mock("./lib/call-pickup.js", () => ({ pickUp: () => new Promise(() => undefined) }));
 vi.mock("./lib/dictation.js", () => ({
   dictation: { listen: vi.fn(), stop: vi.fn(), subscribe: () => () => undefined },
+  usesServerDictation: () => false,
 }));
 vi.mock("./lib/tts.js", () => ({
-  speaker: { speak: vi.fn(), stop: vi.fn(), isSpeaking: () => false, subscribe: () => () => {} },
+  speaker: {
+    speak: vi.fn(),
+    stop: vi.fn(),
+    unlock: vi.fn(),
+    isSpeaking: () => false,
+    subscribe: () => () => {},
+  },
 }));
 vi.mock("./lib/auth", () => ({
   authClient: {
@@ -55,13 +64,12 @@ vi.mock("./lib/auth", () => ({
   },
 }));
 vi.mock("./lib/bootstrap", () => ({
-  getTicketBoardEnabled: () => false,
-  subscribeTicketBoardEnabled: () => () => {},
+  getLabs: () => [],
+  subscribeLabs: () => () => {},
 }));
 vi.mock("./lib/rpc", () => {
   const client = {
     me: mocks.me,
-    bots: { list: mocks.listBots },
     voice: { status: mocks.voiceStatus },
   };
   return {
@@ -72,7 +80,10 @@ vi.mock("./lib/rpc", () => {
       ...client,
       analytics: { screen: vi.fn(async () => ({ ok: true })) },
       threads: { endCall: mocks.endCall },
-      notifications: { declineIncomingCall: mocks.declineIncomingCall },
+      notifications: {
+        declineIncomingCall: mocks.declineIncomingCall,
+        subscribeCalls: mocks.subscribeCalls,
+      },
     },
     rpcForSpace: () => client,
     selectedSpaceId: () => null,
@@ -107,9 +118,31 @@ function button(name: string): HTMLButtonElement | null {
 async function settle() {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   }
+}
+
+/** The server's call stream: each push replaces the ringing calls, as its frames do. */
+let pushCalls: (calls: IncomingBotCall[]) => void = () => {};
+function callStream(signal: AbortSignal) {
+  const frames: IncomingBotCall[][] = [];
+  let wake: Deferred | undefined;
+  pushCalls = (calls) => {
+    frames.push(calls);
+    wake?.resolve();
+  };
+  signal.addEventListener("abort", () => wake?.resolve());
+  return (async function* () {
+    while (!signal.aborted) {
+      const calls = frames.shift();
+      if (calls) yield { type: "incoming.calls" as const, payload: { calls } };
+      else {
+        wake = deferred();
+        await wake.promise;
+      }
+    }
+  })();
 }
 
 async function render(path: string) {
@@ -134,9 +167,8 @@ beforeEach(() => {
     removeEventListener: () => undefined,
   }));
   vi.clearAllMocks();
-  mocks.bots = [];
-  mocks.me.mockImplementation(async () => ({ phoneCallsEnabled: true }));
-  mocks.listBots.mockImplementation(async () => mocks.bots);
+  mocks.me.mockImplementation(async () => ({ phoneCallsEnabled: true, spaceId: "space-1" }));
+  mocks.subscribeCalls.mockImplementation(async (_input, { signal }) => callStream(signal));
   mocks.voiceStatus.mockImplementation(async () => ({ ready: true, transcribe: false }));
   mocks.endCall.mockResolvedValue(undefined);
   mocks.declineIncomingCall.mockResolvedValue({ ok: true });
@@ -172,21 +204,25 @@ it("keeps an ongoing call in reach after leaving the shell", async () => {
   expect(mocks.endCall).toHaveBeenCalledOnce();
 });
 
+const ringing = (callId: string, spaceId = "space-1") =>
+  ({
+    id: "bot-1",
+    spaceId,
+    name: "Test bot",
+    incomingCall: {
+      callId,
+      reason: "Review",
+      opening: "Ready?",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+  }) as IncomingBotCall;
+
 it("rings for an incoming call on a page outside the shell", async () => {
-  mocks.bots = [
-    {
-      id: "bot-1",
-      name: "Test bot",
-      incomingCall: {
-        callId: "call-1",
-        reason: "Review",
-        opening: "Ready?",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      },
-    } as Bot,
-  ];
   await render("/app/artifacts");
   expect(container.textContent).toContain("Artifacts page");
+  expect(find('[data-testid="incoming-call"]')).toBeNull();
+  await act(async () => pushCalls([ringing("call-1")]));
+  await settle();
   expect(find('[data-testid="incoming-call"]')?.getAttribute("aria-label")).toBe(
     "Test bot is calling you",
   );
@@ -198,4 +234,18 @@ it("rings for an incoming call on a page outside the shell", async () => {
   await settle();
   expect(mocks.declineIncomingCall).toHaveBeenCalledWith({ callId: "call-1" });
   expect(find('[data-testid="incoming-call"]')).toBeNull();
+});
+
+it("stops ringing when the call stream says the call ended, and ignores other Spaces", async () => {
+  await render("/app/artifacts");
+  await act(async () => pushCalls([ringing("call-1", "space-2")]));
+  await settle();
+  expect(find('[data-testid="incoming-call"]')).toBeNull();
+  await act(async () => pushCalls([ringing("call-2")]));
+  await settle();
+  expect(find('[data-testid="incoming-call"]')).not.toBeNull();
+  await act(async () => pushCalls([]));
+  await settle();
+  expect(find('[data-testid="incoming-call"]')).toBeNull();
+  expect(mocks.subscribeCalls).toHaveBeenCalledOnce();
 });

@@ -1,16 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Input,
-} from "@rakazo/ui-web";
+import { Button, Input } from "@rakazo/ui-web";
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "../lib/auth";
@@ -20,7 +9,9 @@ import {
   usePasskeysSupported,
   usePasskeysVersion,
 } from "../lib/passkeys";
+import { useSave } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SettingsRow } from "./SettingsRows";
 
 type PasskeyRow = {
@@ -43,8 +34,6 @@ export function PasskeySettings() {
 function PasskeyList({ onRetry }: { onRetry: () => void }) {
   const { t } = useLingui();
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([]);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<PasskeyRow | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -66,39 +55,34 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
     };
   }, []);
 
-  async function run(action: () => Promise<{ error?: unknown }>): Promise<boolean> {
-    setPending(true);
-    setError(null);
-    try {
-      const result = await action();
-      if (result.error) {
-        setError(passkeyErrorText(result.error, t`Could not continue`));
-        return false;
-      }
-      // Remounts this list with fresh data and closes the offer if it is open.
+  // Passkeys belong to the sign-in, not a space, so the change never needs the API client.
+  const change = useSave({
+    save: async (action: () => Promise<{ error?: unknown }>) => {
+      const result = await action().catch(() => {
+        throw new Error(t`Could not reach the server`);
+      });
+      // A cancelled prompt fails without a message, so nothing is shown.
+      if (result.error)
+        throw new Error(passkeyErrorText(result.error, t`Could not continue`) ?? "");
+      // Sent even after this list is gone: it remounts the list fresh and closes an open offer.
       passkeysChanged();
-      return true;
-    } catch {
-      setError(t`Could not reach the server`);
-      return false;
-    } finally {
-      setPending(false);
-    }
-  }
+    },
+  });
+  const pending = change.pending;
+  const error = change.error?.message || null;
 
-  async function rename() {
+  function rename() {
     if (!renaming) return;
     const name = renaming.name.trim();
     if (!name) return;
-    if (await run(() => authClient.passkey.updatePasskey({ id: renaming.id, name }))) {
-      setRenaming(null);
-    }
+    const { id } = renaming;
+    change.run(() => authClient.passkey.updatePasskey({ id, name }));
   }
 
-  async function remove() {
+  function remove() {
     if (!deleting) return;
     const { id } = deleting;
-    if (await run(() => authClient.passkey.deletePasskey({ id }))) setDeleting(null);
+    change.run(() => authClient.passkey.deletePasskey({ id }));
   }
 
   return (
@@ -110,14 +94,14 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
             variant="secondary"
             size="sm"
             disabled={pending}
-            onClick={() => void run(() => authClient.passkey.addPasskey())}
+            onClick={() => change.run(() => authClient.passkey.addPasskey())}
           >
             <Trans>Add passkey</Trans>
           </Button>
         }
       >
         {loadFailed ? (
-          <div role="alert" className="mt-2 flex items-center gap-2 text-[13.5px] text-destructive">
+          <div role="alert" className="mt-2 flex items-center gap-2 text-body text-destructive">
             <Trans>Could not load</Trans>
             <Button variant="outline" size="xs" onClick={onRetry}>
               <Trans>Retry</Trans>
@@ -125,7 +109,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
           </div>
         ) : null}
         {error && !deleting ? (
-          <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+          <p role="alert" className="mt-2 text-body-sm text-destructive">
             {error}
           </p>
         ) : null}
@@ -139,7 +123,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                   className="flex flex-1 items-center gap-2"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void rename();
+                    rename();
                   }}
                 >
                   <Input
@@ -166,9 +150,9 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                 </form>
               ) : (
                 <>
-                  <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[14px] text-foreground">
+                  <p className="flex min-w-0 flex-1 items-baseline gap-2 text-body text-foreground">
                     <span className="truncate">{passkeyLabel(passkey, t`Passkey`)}</span>
-                    <span className="shrink-0 text-[12.5px] text-muted-foreground">
+                    <span className="shrink-0 text-body-sm text-muted-foreground">
                       {formatRelativeTime(new Date(passkey.createdAt).toISOString())}
                     </span>
                   </p>
@@ -198,37 +182,18 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
         </ul>
       ) : null}
       {deleting ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) {
-              setDeleting(null);
-              setError(null);
-            }
+        <ConfirmDialog
+          onCancel={() => {
+            setDeleting(null);
+            change.reset();
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}</AlertDialogTitle>
-              <AlertDialogDescription>
-                <Trans>This can't be undone.</Trans>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending}
-                onClick={() => void remove()}
-              >
-                {pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title={t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}
+          description={<Trans>This can't be undone.</Trans>}
+          error={error}
+          busy={pending}
+          onConfirm={remove}
+          confirmLabel={pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

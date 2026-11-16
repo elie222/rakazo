@@ -74,6 +74,15 @@ describe("resolveSandboxProvider", () => {
     });
   });
 
+  it("keeps instabox when its API key is set", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "instabox" })).toBe("none");
+    const env = { SANDBOX_PROVIDER: "instabox", INSTABOX_API_KEY: "test-instabox-key" };
+    expect(resolveSandboxProvider(env)).toBe("instabox");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      instaboxApiKey: "test-instabox-key",
+    });
+  });
+
   it("keeps CreateOS when its API key is set", () => {
     expect(
       resolveSandboxProvider({

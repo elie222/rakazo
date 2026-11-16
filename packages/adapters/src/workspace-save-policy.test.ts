@@ -173,14 +173,14 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
     it("keeps the arguments bounded and saves the tagged directories past the cap", async () => {
       const home = await mkdtemp(path.join(tmpdir(), "rakazo-find-many-"));
       try {
-        // Long names put the uncapped argument list past Linux's 2 MiB limit.
-        const count = 10_000;
+        // Deep, long paths put the uncapped argument list past Linux's 2 MiB limit with few
+        // files. Each path starts with its index so the find's path matches fail fast.
+        const count = 3_000;
         const dirs = Array.from({ length: count }, (_, i) =>
-          path.join(home, `${i}${"d".repeat(250)}`),
+          path.join(home, `${i}${"a".repeat(250)}`, "b".repeat(250), "c".repeat(250)),
         );
-        await Promise.all(dirs.map((dir) => mkdir(dir)));
+        await Promise.all(dirs.map((dir) => mkdir(dir, { recursive: true })));
         await Promise.all(dirs.map((dir) => writeFile(path.join(dir, "CACHEDIR.TAG"), CACHE_TAG)));
-        await Promise.all(dirs.map((dir) => writeFile(path.join(dir, "data"), "")));
         const result = spawnSync(
           "bash",
           ["-c", `cd "$1" && ${workspaceSaveFindCommand()} -print`, "many-tags", home],
@@ -189,7 +189,8 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
         expect(result.stderr).toBe("");
         expect(result.status).toBe(0);
         const listed = result.stdout.trim().split("\n");
-        expect(listed.filter((name) => name.endsWith("/data"))).toHaveLength(count - 1000);
+        // A pruned directory lists nothing; a kept one lists its tag.
+        expect(listed.filter((name) => name.endsWith("/CACHEDIR.TAG"))).toHaveLength(count - 1000);
       } finally {
         await rm(home, { recursive: true, force: true });
       }

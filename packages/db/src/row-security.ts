@@ -50,6 +50,8 @@ export function asSystem<T extends object>(client: T, reason = "test fixture"): 
   return new Proxy(client, {
     get(target, key) {
       const value = Reflect.get(target, key);
+      // A synchronous accessor that reads no rows; wrapping it would hand back a promise.
+      if (key === "$contentEncryption") return value;
       if (typeof value === "function") {
         return (...args: unknown[]) =>
           runAsSystem(reason, () => Reflect.apply(value, target, args));
@@ -103,8 +105,11 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "BillingAuditEvent",
   "PushToken",
   "CallPushDevice",
+  "WorkActivityToken",
+  "WorkActivityStartToken",
   "EmailSend",
   "Thread",
+  "ThreadRead",
   "Message",
   "Event",
   "MemoryDocument",
@@ -113,6 +118,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Secret",
   "BotSecret",
   "VaultCredential",
+  "VaultCredentialBot",
+  "VaultCredentialLimit",
   "AgentSecret",
   "UserModelCredential",
   "UserVoiceCredential",
@@ -120,6 +127,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "FeedbackReport",
   "PaymentWallet",
   "Purchase",
+  "SpendingLimit",
+  "Payment",
   "TaughtSkill",
   "AgentSkill",
   "AgentSkillSpace",
@@ -150,6 +159,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "SteeringMessage",
   "UsageRecord",
   "ScratchpadItem",
+  "BotEmailMessage",
+  "BotEmailSend",
   "ActionApprovalRule",
   "SpaceModelRoleChoice",
   "SpaceSettingOverride",
@@ -204,7 +215,7 @@ function settingsFor(context: DbContext | undefined, bypassKey: string): Setting
 }
 
 const SET_SESSION =
-  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_bypass_key', $4, false)";
+  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_bypass_key', $4, false), set_config('app.vault_access_version', '1', false)";
 const applied = new WeakMap<PoolClient, string>();
 
 async function applySettings(client: PoolClient, settings: Settings): Promise<void> {
@@ -269,11 +280,11 @@ export function installDbContext(pool: Pool): void {
 }
 
 const LOCAL_SETTINGS = (settings: Settings) =>
-  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_bypass_key', ${settings[3]}, true)`;
+  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_bypass_key', ${settings[3]}, true), set_config('app.vault_access_version', '1', true)`;
 
 // A wrapped read keeps the pool's checkout timeout and no run limit it did not
 // have before, instead of Prisma's 2s/5s transaction defaults.
-const WRAPPED_OPERATION_OPTIONS = { maxWait: 10_000, timeout: 300_000 };
+export const WRAPPED_OPERATION_OPTIONS = { maxWait: 10_000, timeout: 300_000 };
 
 type InternalParams = { transaction?: { kind?: string }; dataPath?: unknown[] };
 type RuntimeDataModel = { models: Record<string, { fields: Array<{ name: string }> }> };

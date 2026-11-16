@@ -1,4 +1,5 @@
 ---
+import ArticleSections from "../../components/ArticleSections.astro";
 import ArticleText from "../../components/ArticleText.astro";
 import Button from "../../components/Button.astro";
 import ProviderCard from "../../components/ProviderCard.astro";
@@ -9,6 +10,7 @@ import {
   VOICE_DOCS_PATH,
   VOICE_PROVIDERS,
   VOICE_PROVIDERS_HUB,
+  VOICE_PROVIDERS_ARTICLE_HUB,
   VOICE_PROVIDERS_UPDATED,
   voiceProviderLink,
   voiceProviderPath,
@@ -20,6 +22,7 @@ import { GITHUB_URL } from "../../site";
   title={VOICE_PROVIDERS_HUB.title}
   description={VOICE_PROVIDERS_HUB.description}
   faq={VOICE_PROVIDERS_HUB.faq}
+  article={{ headline: VOICE_PROVIDERS_HUB.h1, crumb: VOICE_PROVIDERS_ARTICLE_HUB.label }}
   ogImage={ogPublicPath("voice-providers")}
   markdownAlternate="/voice-providers.md"
 >
@@ -59,10 +62,12 @@ import { GITHUB_URL } from "../../site";
     </table>
   </div>
 
-  <h2>Every option</h2>
+  <h2>Provider guides</h2>
   <ul class="sandbox-cards">
     {VOICE_PROVIDERS.map((provider) => <ProviderCard link={voiceProviderLink(provider)} />)}
   </ul>
+
+  <ArticleSections sections={VOICE_PROVIDERS_HUB.sections} />
 
   <h2>How to choose</h2>
   {
@@ -87,4 +92,17 @@ import { GITHUB_URL } from "../../site";
       </section>
     ))
   }
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      VOICE_PROVIDERS_HUB.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
 </SiteFrame>

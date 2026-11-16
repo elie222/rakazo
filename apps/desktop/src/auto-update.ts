@@ -1,5 +1,6 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { t } from "./i18n.js";
+import { SignatureUnreachableError } from "./linux-update-signature.js";
 import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
@@ -70,6 +71,11 @@ const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
 export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
+  // The Linux signature fetch keeps its download; a server it could not reach is transient,
+  // while an HTTP error answer stays a fault so a broken release URL is still reported.
+  if (error instanceof SignatureUnreachableError && error.status === undefined) {
+    return { kind: "offline", message: null };
+  }
   const text = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
@@ -292,6 +298,7 @@ function percentFrom(payload: unknown): number | null {
 export class DesktopUpdateController {
   private current: DesktopUpdateState;
   private lastCheck = 0;
+  private lastCheckWasOffline = false;
   private updaterPromise: Promise<ElectronAutoUpdater | null> | null = null;
   private loadedUpdater: ElectronAutoUpdater | null = null;
   private verification: Promise<void> | null = null;
@@ -319,8 +326,16 @@ export class DesktopUpdateController {
   private push(event: UpdaterEvent) {
     if (event.type === "failed") {
       const failure = classifyUpdaterFailure(event.error);
+      this.lastCheckWasOffline = failure.kind === "offline";
       if (failure.kind === "signature" || failure.kind === "other")
         reportDesktopError(event.error, "desktop.update", { "update.failure": failure.kind });
+    }
+    if (
+      event.type === "check-start" ||
+      event.type === "not-available" ||
+      event.type === "available"
+    ) {
+      this.lastCheckWasOffline = false;
     }
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
@@ -421,7 +436,13 @@ export class DesktopUpdateController {
       environmentSupportsUpdates: updaterSupport(this.environment).supported,
     };
     let now = this.clock.now();
-    if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
+    if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) {
+      if (userInitiated && this.current.phase === "idle" && this.lastCheckWasOffline) {
+        // Surface the last result to the requester without making background state noisy.
+        return { ...this.current, message: t("Could not reach the update server.") };
+      }
+      return this.current;
+    }
     this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {

@@ -53,3 +53,8 @@ export function lastSelectedText(range: Range): Node {
   }
   return endContainer;
 }
+
+/** A range the page no longer shows: collapsed by an edit, or left outside the document. */
+export function isDetachedRange(range: Range): boolean {
+  return range.collapsed || !document.contains(range.commonAncestorContainer);
+}
