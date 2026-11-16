@@ -19,7 +19,7 @@ import { ChevronRight, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { ModelCredential } from "../../lib/model-auth";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { useListSearch } from "../../lib/use-list-search";
 import { errorText } from "../../lib/user-error";
 import type { ConnectableProvider } from "./role-model-picker";
@@ -86,34 +86,24 @@ export function ProvidersSection({
 }
 
 /** A connection's editable name, saved on its own. */
-export function ConnectionNameField({
-  credential,
-  onRenamed,
-}: {
-  credential: ModelCredential;
-  onRenamed: () => void;
-}) {
-  const rpc = useSpaceRpc();
+export function ConnectionNameField({ credential }: { credential: ModelCredential }) {
   const { t } = useLingui();
+  const queries = useSpaceQueries();
   const nameId = useId();
   const [name, setName] = useState(credential.label);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const rename = useSave({
+    save: (label: string, rpc) => rpc.models.rename({ credentialId: credential.id, label }),
+    stale: [queries.models.credentials.key()],
+  });
+  const saving = rename.pending;
   const trimmed = name.trim();
   return (
     <form
       className="mb-6"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!trimmed || saving || trimmed === credential.label) return;
-        setSaving(true);
-        setError(null);
-        rpc.models
-          .rename({ credentialId: credential.id, label: trimmed })
-          .then(onRenamed, (err: unknown) =>
-            setError(errorText(err, t`Could not rename connection`)),
-          )
-          .finally(() => setSaving(false));
+        if (!trimmed || trimmed === credential.label) return;
+        rename.run(trimmed);
       }}
     >
       <label htmlFor={nameId} className="block text-body text-muted-foreground">
@@ -133,7 +123,11 @@ export function ConnectionNameField({
           </Button>
         ) : null}
       </div>
-      {error ? <p className="mt-2 text-body text-destructive">{error}</p> : null}
+      {rename.error ? (
+        <p className="mt-2 text-body text-destructive">
+          {errorText(rename.error, t`Could not rename connection`)}
+        </p>
+      ) : null}
     </form>
   );
 }

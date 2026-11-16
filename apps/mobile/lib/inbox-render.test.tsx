@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { act, cloneElement, useEffect, useMemo, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -240,6 +242,7 @@ const callbacks = {
   createBotInSpace: action,
   deleteSection: action,
   editSectionFromMenu: action,
+  promptRenameSection: action,
   groupAction: action,
   openBot: action,
   openGroup: action,
@@ -970,11 +973,11 @@ it("asks for a model instead of making the first bot when the account has none",
       },
     ];
     for (const leave of leaves) {
-      let land!: () => void;
-      me = new Promise<void>((resolve) => (land = resolve)).then(answer);
+      const land = deferred();
+      me = land.promise.then(answer);
       const moved = create();
       leave();
-      land();
+      land.resolve();
       await moved;
       ui.sameSession = true;
       select("space-a");
@@ -1150,26 +1153,25 @@ it.each([
 ])("does not confirm an inbox bot created in an obsolete session: %j", async (current) => {
   const askedIn = { generation: 7, apiBase: "http://api.test" };
   ui.searchInboxSession.mockReset().mockReturnValue(askedIn);
-  let finish!: (bot: { id: string; name: string }) => void;
-  ui.rpc.mockReset().mockImplementation(async (method: string) =>
-    method === "bots/create"
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : [],
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method !== "bots/create") return [];
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   const creating = createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() =>
     expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
   );
   ui.searchInboxSession.mockReturnValue(current);
-  finish({ id: "bot-new", name: "New Bot" });
+  finish.resolve({ id: "bot-new", name: "New Bot" });
   await creating;
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });
 
 it("lets screen readers reach a heading's long-press menu through the heading", () => {
   const deleteSection = vi.fn();
+  const promptRenameSection = vi.fn();
   const confirmDeleteSpace = vi.fn();
   render(
     <List
@@ -1191,14 +1193,18 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
         { type: "heading", key: "section:s1", title: "Ideas", sectionId: "s1" } as InboxItem,
       ]}
       spaceId="space-home"
-      options={{ deleteSection, confirmDeleteSpace }}
+      options={{ deleteSection, promptRenameSection, confirmDeleteSpace }}
     />,
   );
   const space = container.querySelector<HTMLElement>('button[aria-label="Work"]')!;
   // A disabled item is left out; here none is.
   expect(space.dataset.actions).toBe("new-bot members settings delete");
   const section = container.querySelector<HTMLElement>('button[aria-label="Collapse Ideas"]')!;
-  expect(section.dataset.actions).toBe("delete");
+  // Rename comes first, as in the chat rows' menu.
+  expect(section.dataset.actions).toBe("rename delete");
+  act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "rename" } }));
+  expect(promptRenameSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" }, "space-home");
+  expect(deleteSection).not.toHaveBeenCalled();
   act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
   expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
   act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));

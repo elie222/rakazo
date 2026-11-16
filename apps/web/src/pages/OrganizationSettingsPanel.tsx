@@ -8,7 +8,7 @@ import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
-import { queryClient, useQueryUserId } from "../lib/query";
+import { useQueryUserId, useSave } from "../lib/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -43,33 +43,28 @@ function OrganizationSettings({
   const userId = useQueryUserId();
   const nameId = useId();
   const [draft, setDraft] = useState(organization.name);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const rename = useSave({
+    save: (name: string, rpc) =>
+      rpc.organizations.rename({ organizationId: organization.id, name }),
+    stale: [organizationsQuery(userId).queryKey],
+    onSaved: (_renamed, name) => setDraft(name),
+  });
+  const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [creating, setCreating] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
 
-  async function save() {
+  function save() {
     const trimmed = draft.trim();
     if (pending) return;
     if (!trimmed || trimmed === organization.name) {
       setDraft(organization.name);
-      setError(null);
+      rename.reset();
       return;
     }
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.organizations.rename({ organizationId: organization.id, name: trimmed });
-      setDraft(trimmed);
-      await queryClient.invalidateQueries({ queryKey: organizationsQuery(userId).queryKey });
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setPending(false);
-    }
+    rename.run(trimmed);
   }
 
   return (
@@ -95,16 +90,16 @@ function OrganizationSettings({
                 disabled={pending}
                 onChange={(event) => {
                   setDraft(event.target.value);
-                  setError(null);
+                  rename.reset();
                 }}
-                onBlur={() => void save()}
+                onBlur={save}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") event.stopPropagation();
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                   if (event.key === "Escape") {
                     setDraft(organization.name);
-                    setError(null);
+                    rename.reset();
                   }
                 }}
               />
@@ -113,9 +108,9 @@ function OrganizationSettings({
             )
           }
         >
-          {error ? (
+          {rename.error ? (
             <p role="alert" className="pt-2 text-body-sm text-destructive">
-              {error}
+              {errorText(rename.error)}
             </p>
           ) : null}
         </SettingsRow>

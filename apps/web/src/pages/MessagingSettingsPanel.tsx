@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import { createMessagingLinkGuard, isRetryableError, messagingConnectOptions } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -15,12 +15,13 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
-import { useSpaceQueries } from "../lib/query";
+import { useQueryUserId, useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { useEventListener } from "../lib/use-event-listener";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
 const LINK_POLL_MS = 3_000;
@@ -43,6 +44,17 @@ export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
+  const queryClient = useQueryClient();
+  const userId = useQueryUserId();
+  const linkGuard = useMemo(
+    () => createMessagingLinkGuard(queryClient, userId ?? ""),
+    [queryClient, userId],
+  );
+  const issuingLink = useSyncExternalStore(
+    linkGuard.subscribe,
+    linkGuard.isPending,
+    linkGuard.isPending,
+  );
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
@@ -53,7 +65,6 @@ export function MessagingSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const statusOptions = queries.messaging.status.queryOptions();
   const channelsOptions = queries.messaging.channels.list.queryOptions();
   const connectionsOptions = queries.messaging.connections.list.queryOptions();
@@ -143,9 +154,8 @@ export function MessagingSettingsPanel() {
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
+    linkGuard.invalidate();
     setError(null);
-    // A displayed code must always match the current selection and link
-    // state; the link action re-sets it after issuing.
     setLinkRequest(null);
     try {
       await action();
@@ -155,15 +165,22 @@ export function MessagingSettingsPanel() {
     }
   }
 
-  useEffect(() => {
-    // A failed read shows through the queries' error.
-    const onFocus = () => void refresh().catch(() => undefined);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  // A failed read shows through the queries' error.
+  useEventListener(window, "focus", () => void refresh().catch(() => undefined));
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
+  useEffect(() => {
+    if (linkGuard.invalidate(true)) {
+      setLinkRequest(null);
+    }
+  }, [linkBotId, linkGuard]);
+  useEffect(
+    () => () => {
+      linkGuard.invalidate();
+    },
+    [linkGuard],
+  );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -209,11 +226,20 @@ export function MessagingSettingsPanel() {
   const linkApp = linkRequest ? providerLabel(linkRequest.provider) : "";
   const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
 
-  function startLink(provider: string, botId: string) {
-    void act(async () => {
+  async function startLink(provider: string, botId: string, fromPicker = true) {
+    const request = linkGuard.begin(fromPicker);
+    if (!request) return;
+    setError(null);
+    setLinkRequest(null);
+    try {
       const issued = await rpc.messaging.link.start({ botId });
+      if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
-    });
+    } catch {
+      if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
+    } finally {
+      request.finish();
+    }
   }
 
   function installSlack() {
@@ -237,8 +263,10 @@ export function MessagingSettingsPanel() {
         aria-label={t`Bot`}
         value={linkBotId}
         onChange={(event) => {
+          if (linkGuard.invalidate(true)) {
+            setLinkRequest(null);
+          }
           setSelectedBotId(event.target.value);
-          setLinkRequest(null);
         }}
       >
         {bots.map((bot) => (
@@ -255,7 +283,7 @@ export function MessagingSettingsPanel() {
       <Button
         size="sm"
         variant="ghost"
-        disabled={!linkBotId}
+        disabled={issuingLink || !linkBotId}
         onClick={() => startLink("slack", linkBotId)}
       >
         <Trans>Link DMs</Trans>
@@ -356,7 +384,10 @@ export function MessagingSettingsPanel() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => startLink(installation.provider, installation.botId)}
+                        disabled={issuingLink}
+                        onClick={() =>
+                          void startLink(installation.provider, installation.botId, false)
+                        }
                       >
                         <Trans>Link DMs</Trans>
                       </Button>
@@ -421,7 +452,10 @@ export function MessagingSettingsPanel() {
           <div className="flex flex-wrap items-center gap-2">
             {memberLink ? null : botPicker}
             <DropdownMenu>
-              <DropdownMenuTrigger disabled={!linkBotId} render={<Button variant="outline" />}>
+              <DropdownMenuTrigger
+                disabled={issuingLink || !linkBotId}
+                render={<Button variant="outline" />}
+              >
                 <Trans>Connect a chat app</Trans>
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>

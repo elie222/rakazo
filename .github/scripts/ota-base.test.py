@@ -13,6 +13,7 @@ WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 OTA_BASE = pathlib.Path(__file__).with_name("ota-base.sh").resolve()
 OTA_CLASSIFY = pathlib.Path(__file__).with_name("ota-classify.sh").resolve()
 DEPENDENCY_TREE = pathlib.Path(__file__).with_name("mobile-dependency-tree.mjs").resolve()
+MOBILE_OTA = REPO / "scripts" / "release" / "mobile-ota.mjs"
 
 OLD_RUNTIME = "1.0.11"
 RUNTIME = "1.0.12"
@@ -132,6 +133,9 @@ class OtaBaseTestCase(unittest.TestCase):
             # A checkout whose step classifies inline carries no classifier script.
             if script.exists():
                 shutil.copy(script, scripts / script.name)
+        release = directory / "scripts" / "release"
+        release.mkdir(parents=True)
+        shutil.copy(MOBILE_OTA, release / MOBILE_OTA.name)
         self.repo = FixtureRepository(directory, **kwargs)
         self.scripts = scripts
         return directory

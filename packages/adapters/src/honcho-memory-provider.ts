@@ -39,6 +39,7 @@ export const HONCHO_PROVIDER_ID = "honcho";
 
 // Shared peers are workspace-scoped; only an explicit workspace opts Spaces into sharing.
 const SHARED_PEER_ID = honchoResourceId("rakazo-shared");
+const BOT_PEER_PREFIX = "bot-";
 
 const DEFAULT_REASONING_LEVEL: HonchoReasoningLevel = "low";
 
@@ -65,13 +66,16 @@ export function honchoWorkspaceId(settings: Record<string, string>, spaceId: str
 }
 
 export function honchoBotPeerId(botId: string): string {
-  return honchoResourceId(`bot-${botId}`);
+  return honchoResourceId(`${BOT_PEER_PREFIX}${botId}`);
 }
 
 /** Peer IDs Rakazo creates and writes to: the shared Space peer and every bot peer. */
 export function isReservedHonchoPeerId(peerId: string): boolean {
-  return peerId === SHARED_PEER_ID || peerId.startsWith("bot-");
+  return peerId === SHARED_PEER_ID || peerId.startsWith(BOT_PEER_PREFIX);
 }
+
+/** The same rule as a pattern an unreserved ID matches, for the settings form. */
+export const UNRESERVED_HONCHO_PEER_PATTERN = `^(?!${SHARED_PEER_ID}$)(?!${BOT_PEER_PREFIX})`;
 
 function parseHonchoConnection(
   settings: Record<string, string>,

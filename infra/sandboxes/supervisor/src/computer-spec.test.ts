@@ -649,7 +649,7 @@ describe("graphical computer spec", () => {
       for (const [name, body] of [
         ["dpkg", 'printf "%s\\n" "$RAKAZO_TEST_ARCH"'],
         ["apt-security.sh", 'printf "apt-security\\n" >> "$RAKAZO_TEST_CALLS"'],
-        ["apt-get", 'printf "apt-get\\n" >> "$RAKAZO_TEST_CALLS"'],
+        ["apt-get", 'printf "apt-get %s\\n" "$*" >> "$RAKAZO_TEST_CALLS"'],
         ["curl", 'printf "curl\\n" >> "$RAKAZO_TEST_CALLS"; exit 7'],
         ["gpg", 'printf "gpg\\n" >> "$RAKAZO_TEST_CALLS"'],
       ] as const) {
@@ -697,7 +697,13 @@ describe("graphical computer spec", () => {
         expect(arm.stderr).toMatch(/amd64 only/);
         expect(build("chrome", "amd64")).toMatchObject({
           status: 7,
-          calls: ["apt-security", "apt-get", "apt-get", "curl"],
+          calls: [
+            "apt-security",
+            "apt-get update",
+            "apt-get upgrade -y --no-install-recommends",
+            "apt-get install -y --no-install-recommends ca-certificates curl gnupg",
+            "curl",
+          ],
         });
       } finally {
         rmSync(temp, { recursive: true, force: true });

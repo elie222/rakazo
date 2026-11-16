@@ -1,5 +1,7 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Deferred } from "./async.test-support.js";
+import { deferred } from "./async.test-support.js";
 import { RECONNECT_SPREAD_MS } from "./retry-policy.js";
 import type { LiveThreadSnapshot } from "./thread-snapshot-events.js";
 import { mergeThreadSnapshot, reduceThreadSnapshot } from "./thread-snapshot-events.js";
@@ -21,29 +23,22 @@ function event(seq: number): ProductEvent {
 function heartbeat(): ProductEvent {
   return { ...event(0), id: "heartbeat", type: "heartbeat" };
 }
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 function stream() {
-  let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+  let next: Deferred<IteratorResult<ProductEvent>> | undefined;
   const events: AsyncIterable<ProductEvent> = {
     [Symbol.asyncIterator]() {
       return {
-        next: () =>
-          new Promise((resolve) => {
-            deliver = resolve;
-          }),
+        next: () => {
+          next = deferred<IteratorResult<ProductEvent>>();
+          return next.promise;
+        },
       };
     },
   };
   return {
     events,
-    send: (value: ProductEvent) => deliver?.({ value, done: false }),
-    end: () => deliver?.({ value: undefined, done: true }),
+    send: (value: ProductEvent) => next?.resolve({ value, done: false }),
+    end: () => next?.resolve({ value: undefined, done: true }),
   };
 }
 function setup(committed: typeof head | null = head) {

@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
@@ -139,13 +141,11 @@ describe("MCP transport seam", () => {
     const clientClose = vi
       .spyOn(session.client, "close")
       .mockImplementation(() => new Promise(() => {}));
-    let rejectClose: ((error: Error) => void) | undefined;
-    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectClose = reject;
-        }),
-    );
+    let rejectClose: Deferred | undefined;
+    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(() => {
+      rejectClose = deferred();
+      return rejectClose.promise;
+    });
     try {
       const closing = session.close();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
@@ -153,7 +153,7 @@ describe("MCP transport seam", () => {
       expect(dispatcherClose).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
       await closing;
-      rejectClose!(new Error("late close failure"));
+      rejectClose!.reject(new Error("late close failure"));
       await vi.advanceTimersByTimeAsync(0);
       expect(vi.getTimerCount()).toBe(0);
     } finally {

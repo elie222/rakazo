@@ -1238,13 +1238,12 @@ msgstr "מה יתווסף"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
-#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
-#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "מתקדם"
 
@@ -1330,7 +1329,7 @@ msgid "Allow {name} on mobile"
 msgstr "לאפשר את {name} בנייד"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "לאפשר תקשורת בין בוטים ממרחבים שונים"
 
@@ -1362,7 +1361,7 @@ msgstr "יש לאפשר ל-Rakazo להשתמש בזיהוי דיבור ובמי�
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "יש לאפשר זיהוי דיבור בהגדרות, או לחבר ספק קול שמתמלל."
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Allow writing"
 msgstr "לאפשר כתיבה"
 
@@ -1533,11 +1532,10 @@ msgstr "כל מי שיש לו את הקישור"
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/lib/vault.ts
 #: apps/web/src/components/ComputerProviderSettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1803,6 +1801,10 @@ msgstr "זמין לפקודות shell בתור {commandVariable}"
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
+#: apps/web/src/pages/shell/computer-panel.tsx
+msgid "Awake"
+msgstr "פעיל"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -1825,6 +1827,7 @@ msgstr "Avatar Studio"
 #: apps/web/src/pages/RoutineEditor.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
 #: apps/web/src/pages/shell/agent-import.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Back"
 msgstr "חזרה"
 
@@ -1841,7 +1844,7 @@ msgstr "חזרה לצ'אט"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "Base URL"
 
@@ -1862,9 +1865,9 @@ msgstr "Bearer"
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
@@ -1972,10 +1975,6 @@ msgstr "מודלים של בוטים"
 msgid "Bot screen"
 msgstr "מסך הבוט"
 
-#: apps/web/src/pages/shell/computer-panel.tsx
-msgid "Bot screen preview"
-msgstr "תצוגה מקדימה של מסך הבוט"
-
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
@@ -2032,7 +2031,7 @@ msgstr "בוטים עם מחשב ודפדפן משלהם"
 msgid "Bots with their own model"
 msgstr "בוטים עם מודל משלהם"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Brain label"
 msgstr "תווית Brain"
 
@@ -2291,9 +2290,7 @@ msgstr "משנה…"
 msgid "Chart failed to render: {error}"
 msgstr "לא ניתן להציג את התרשים: {error}"
 
-#: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Chat"
 msgstr "צ׳אט"
 
@@ -2485,7 +2482,7 @@ msgstr "לנקות את השיחה של {0}?"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/web/src/pages/BotContextMenu.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Clear conversation"
 msgstr "ניקוי השיחה"
 
@@ -2577,6 +2574,7 @@ msgid "Close page"
 msgstr "סגירת הדף"
 
 #: apps/web/src/pages/GroupPanel.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "סגירת החלונית"
@@ -2602,7 +2600,7 @@ msgstr "סגירת הגדרות המשתמש"
 msgid "Close voice settings"
 msgstr "סגירת הגדרות הקול"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Cloud"
 msgstr "ענן"
 
@@ -2694,13 +2692,11 @@ msgstr "הושלם"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
-#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Computer"
 msgstr "מחשב"
 
@@ -2802,10 +2798,7 @@ msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הד�
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
@@ -2920,18 +2913,15 @@ msgstr "מחובר."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 #: apps/web/src/pages/shell/message-cards.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
 msgstr "מתחבר…"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Connection"
 msgstr "חיבור"
 
@@ -3231,7 +3221,7 @@ msgstr "לא ניתן להשלים את העדכון. אפשר לנסות שוב
 msgid "Could not connect"
 msgstr "לא ניתן להתחבר"
 
-#. placeholder {0}: registration.name
+#. placeholder {0}: nameOf(failed.provider)
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not connect {0}"
 msgstr "לא ניתן לחבר את {0}"
@@ -3864,7 +3854,7 @@ msgstr "לא ניתן להריץ את הרוטינה"
 msgid "Could not save"
 msgstr "השמירה נכשלה"
 
-#. placeholder {0}: registration.name
+#. placeholder {0}: nameOf(config?.provider)
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
 msgstr "לא ניתן לשמור את {0}"
@@ -4253,6 +4243,7 @@ msgid "Create organization"
 msgstr "יצירת ארגון"
 
 #: apps/web/src/pages/RoutineList.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Create routine"
 msgstr "יצירת רוטינה"
 
@@ -4388,7 +4379,7 @@ msgid "Daily"
 msgstr "יומי"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "מעקב יומי אחר עבודה שלא הושלמה"
 
@@ -5223,7 +5214,7 @@ msgstr "תוקף"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "ייצוא"
 
@@ -5712,8 +5703,8 @@ msgid "Hide transcript"
 msgstr "הסתרת התמליל"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/ticket-priority.ts
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "High"
 msgstr "גבוהה"
 
@@ -5893,10 +5884,6 @@ msgstr "לכלול מפתחות API"
 msgid "Incoming call"
 msgstr "שיחה נכנסת"
 
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Inherit default"
-msgstr "ירושה מברירת המחדל"
-
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Input"
 msgstr "קלט"
@@ -5913,7 +5900,7 @@ msgstr "התקנת עדכון"
 msgid "Installing…"
 msgstr "מתקין…"
 
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Instance API key"
 msgstr "מפתח API של המופע"
 
@@ -6009,7 +5996,6 @@ msgid "Invite link copied"
 msgstr "קישור ההזמנה הועתק"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Isolated"
 msgstr "מבודד"
 
@@ -6150,7 +6136,7 @@ msgstr "שימוש אחרון"
 msgid "Later"
 msgstr "מאוחר יותר"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Learn from conversations"
 msgstr "למידה משיחות"
 
@@ -6368,8 +6354,8 @@ msgid "Looks like it contains a key"
 msgstr "נראה שמכיל מפתח"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/lib/ticket-priority.ts
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Low"
 msgstr "נמוך"
 
@@ -6415,7 +6401,7 @@ msgid "Manage model"
 msgstr "ניהול מודל"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "ניהול בוטים אחרים"
 
@@ -6484,7 +6470,7 @@ msgstr "מספר טוקנים מרבי בפלט"
 msgid "Maximum output tokens must be below the context limit."
 msgstr "מספר הטוקנים המרבי בפלט חייב להיות נמוך ממגבלת ההקשר."
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "MCP endpoint"
 msgstr "נקודת קצה של MCP"
 
@@ -6500,7 +6486,7 @@ msgid "MCP servers"
 msgstr "שרתי MCP"
 
 #: apps/mobile/lib/thinking-level.ts
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Medium"
 msgstr "בינוני"
 
@@ -6549,10 +6535,6 @@ msgstr "זיכרון {position}"
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "זיכרון עבור {title}"
-
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Memory scope"
-msgstr "היקף הזיכרון"
 
 #: apps/web/src/pages/shell/composer-parts.tsx
 msgid "Mentions"
@@ -6622,11 +6604,6 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Messages"
-msgstr "הודעות"
-
 #: apps/mobile/lib/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
 msgstr "הודעות, היסטוריית צ׳אט, הוראות בוטים, זיכרונות, קבצים מצורפים, צילומי מסך ותוכן מאפליקציות מחוברות נשלחים כדי להפעיל את הבוטים שלך, כולל רוטינות."
@@ -6693,17 +6670,13 @@ msgstr "מצב"
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/agent-import-plan.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model"
 msgstr "מודל"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Model \"{modelId}\" was not listed."
 msgstr "המודל \"{modelId}\" לא הופיע ברשימה."
-
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Model connections"
-msgstr "חיבורים למודלים"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6789,6 +6762,10 @@ msgstr "ב-1 בכל חודש"
 #: apps/web/src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "עוד"
+
+#: apps/web/src/pages/shell/bot-panel.tsx
+msgid "More actions"
+msgstr "פעולות נוספות"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7025,6 +7002,7 @@ msgstr "מרחב פרטי חדש"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
+#: apps/web/src/pages/RoutineList.tsx
 msgid "New routine"
 msgstr "רוטינה חדשה"
 
@@ -7399,7 +7377,7 @@ msgstr "הגדרות התראות"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "התראות"
 
@@ -7669,7 +7647,7 @@ msgstr "או הדבקת מפתח API"
 msgid "Organization"
 msgstr "ארגון"
 
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
 
@@ -7702,6 +7680,11 @@ msgstr "מודל אחר…"
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Output"
 msgstr "פלט"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
+msgid "Own computer"
+msgstr "מחשב משלו"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7759,6 +7742,7 @@ msgstr "כותרת הדף"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/group-settings.tsx
+#: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/command-palette.tsx
@@ -7884,7 +7868,6 @@ msgid "Pending"
 msgstr "בהמתנה"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Permissions"
 msgstr "הרשאות"
 
@@ -8152,6 +8135,10 @@ msgstr "בתור"
 msgid "Quote"
 msgstr "ציטוט"
 
+#: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Quote selection"
+msgstr "ציטוט הבחירה"
+
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -8165,7 +8152,7 @@ msgstr "Rakazo"
 msgid "Rakazo credits"
 msgstr "קרדיטים של Rakazo"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
 msgstr "rakazo-shared ומזהים שמתחילים ב-bot- שמורים ל-Rakazo."
 
@@ -8184,7 +8171,7 @@ msgid "Read from the page, not checked"
 msgstr "נקרא מהדף, לא נבדק"
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "הקראת תשובות בקול"
 
@@ -8196,27 +8183,27 @@ msgstr "מוכן"
 msgid "Reason"
 msgstr "סיבה"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall and write"
 msgstr "שליפה וכתיבה"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall automatically"
 msgstr "שליפה אוטומטית"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall depth"
 msgstr "עומק שליפה"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall from banks"
 msgstr "שליפה ממאגרים"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "שליפה מהעמית הזה; שמירה בעמיתים של Rakazo."
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "שליפה בלבד"
 
@@ -8269,12 +8256,14 @@ msgstr "ההקלטה התחילה. יש לרענן את התצוגה כדי לה
 msgid "Recording: {0}"
 msgstr "הקלטה: {0}"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "שחזור המחשב"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "לשחזר את המחשב?"
@@ -8293,6 +8282,7 @@ msgstr "משחזר את המחשב של {name}"
 msgid "Recovering Team Computer"
 msgstr "משחזר את מחשב הצוות"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recovering…"
 msgstr "משחזר…"
@@ -8307,6 +8297,7 @@ msgstr "השחזור נכשל"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "השחזור אינו זמין עד שהפעולה הקודמת תיעצר."
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8596,11 +8587,6 @@ msgstr "מחליף את פרטי ההתחברות השמורים עבור {0}"
 msgid "Replaces the login saved for {site}"
 msgstr "מחליף את פרטי ההתחברות השמורים עבור {site}"
 
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
-msgid "Replies"
-msgstr "תשובות"
-
 #: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
 msgstr "תשובות ועבודה שהושלמה"
@@ -8786,6 +8772,7 @@ msgstr "חידוש ההתראות"
 #: apps/web/src/pages/AdminAccessPage.tsx
 #: apps/web/src/pages/Auth.tsx
 #: apps/web/src/pages/Invite.tsx
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -8990,6 +8977,7 @@ msgstr "שבת"
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 #: apps/web/src/components/ComputerProviderSettings.tsx
 #: apps/web/src/components/PasskeySettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
@@ -9000,16 +8988,11 @@ msgstr "שבת"
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/KnowledgeSection.tsx
 #: apps/web/src/pages/McpServerForm.tsx
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/RoutineEditor.tsx
-#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Save"
 msgstr "שמירה"
@@ -9033,13 +9016,10 @@ msgstr "שמירה בכספת"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/ComputerProviderSettings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Saved"
 msgstr "נשמר"
 
@@ -9097,15 +9077,12 @@ msgstr "שומר..."
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/McpServerForm.tsx
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-#: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -9273,7 +9250,7 @@ msgstr "בחירת בוט"
 msgid "Select text"
 msgstr "בחירת טקסט"
 
-#: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Self-hosted"
 msgstr "באירוח עצמי"
 
@@ -9338,10 +9315,6 @@ msgstr "שולח…"
 msgid "Sent"
 msgstr "נשלח"
 
-#: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
-msgid "Serenity endpoint is required."
-msgstr "נדרשת נקודת קצה של Serenity."
-
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
@@ -9385,6 +9358,7 @@ msgstr "הגדרה"
 #: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
+#: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
@@ -9473,7 +9447,6 @@ msgstr "שיתוף, כל מי שיש לו את הקישור יכול לצפות"
 #: apps/mobile/app/pages.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Shared"
 msgstr "משותף"
 
@@ -9723,7 +9696,7 @@ msgstr "דילוג"
 msgid "Skip or deploy key"
 msgstr "דילוג או מפתח התקנה"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Skip unrelated memories"
 msgstr "דילוג על זיכרונות לא רלוונטיים"
 
@@ -10079,11 +10052,11 @@ msgstr "הרשמה למנוי עם ה-AI שלך"
 msgid "Subscription required"
 msgstr "נדרש מנוי"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Summaries"
 msgstr "סיכומים"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Summaries and facts"
 msgstr "סיכומים ועובדות"
 
@@ -10264,6 +10237,10 @@ msgstr "הכתובת הזו לא נראית כמו שרת Rakazo"
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL is missing a host"
 msgstr "בכתובת הזו חסר מארח"
+
+#: apps/web/src/pages/VoiceSettingsOverlay.tsx
+msgid "That voice isn't offered by this server, so it used {served} instead."
+msgstr "השרת הזה לא מציע את הקול הזה, לכן נעשה שימוש ב־{served} במקום."
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -10961,6 +10938,11 @@ msgstr "אפשר לנסות את הבדיקה שוב."
 msgid "Tuesday"
 msgstr "יום שלישי"
 
+#. placeholder {0}: routine.name
+#: apps/web/src/pages/RoutineList.tsx
+msgid "Turn {0} on or off"
+msgstr "הפעלה או כיבוי של {0}"
+
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"
 msgstr "כיבוי"
@@ -11078,11 +11060,6 @@ msgstr "מעודכן"
 msgid "Update"
 msgstr "עדכון"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Update computer"
-msgstr "עדכון המחשב"
-
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Update failed"
@@ -11143,11 +11120,6 @@ msgstr "מעדכן את המחשב של {name}"
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Updating Team Computer"
 msgstr "מעדכן את מחשב הצוות"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Updating…"
-msgstr "מעדכן…"
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/lib/run-error-presentation.ts
@@ -11277,7 +11249,7 @@ msgstr "שימוש בקרדיטים של Rakazo"
 msgid "Use space default"
 msgstr "שימוש בברירת המחדל של המרחב"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
 msgstr "עד 512 אותיות, ספרות, _ או -."
 
@@ -11290,7 +11262,7 @@ msgstr "שימוש במפתח משלך"
 msgid "Used {when} by {bot}"
 msgstr "{bot} השתמש בזה {when}"
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "User peer"
 msgstr "עמית משתמש"
 
@@ -11536,7 +11508,7 @@ msgstr "מה הרוטינה הזו צריכה לעשות בכל הרצה?"
 msgid "What this bot is for"
 msgstr "למה הבוט הזה משמש"
 
-#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "What to recall"
 msgstr "מה לשלוף"
 
@@ -11568,7 +11540,6 @@ msgid "When bots check with you before acting."
 msgstr "מתי בוטים מתייעצים איתך לפני פעולה."
 
 #: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
 msgstr "כשהוא מסיים או זקוק לקלט"
 
@@ -11684,7 +11655,7 @@ msgstr "עובד עם תוכנית ChatGPT או Claude שלך, או עם מפת�
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "עובד עם המינוי שלך ל-ChatGPT או ל-Claude."
 
-#: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
+#: apps/web/src/components/ProviderSettingsForm.tsx
 msgid "Workspace"
 msgstr "סביבת עבודה"
 

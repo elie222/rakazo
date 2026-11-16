@@ -54,6 +54,9 @@ export class InstalledMessagingSurface implements MessagingSurface {
   initialize() {
     return this.fallback?.initialize?.() ?? Promise.resolve();
   }
+  stopReceiving() {
+    return this.fallback?.stopReceiving?.() ?? Promise.resolve();
+  }
   async shutdown() {
     const cached = [...this.surfaces.values()];
     this.surfaces.clear();

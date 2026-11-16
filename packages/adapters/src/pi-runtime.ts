@@ -83,11 +83,9 @@ import {
   thinkingLevelFor,
 } from "./pi-runtime-models.js";
 import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.js";
-import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
 import {
   agentToolDefinitions,
-  createGate,
   createQueue,
   describeToolActivity,
   redactAskUserDetailInMessage,
@@ -103,6 +101,7 @@ import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import { attachRejectedRequests, rejectedRequestsOf } from "./provider-request-shape.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { fallbackSystemPrompt } from "./runtime.prompt.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -115,7 +114,6 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const MAX_REJECTED_REQUESTS = 5;
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
@@ -246,7 +244,6 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         const { models, model, apiKey } = selectedModel;
         const toolDefs = request.tools;
-        const nestedAgents = new Set<Agent>();
         const completionModel = modelForCompletion(model, request.model.maxTokens);
         trackedBudget = toolCallBudgetFor(request.runId);
         const initialModelTarget: RuntimeModelTarget = {
@@ -284,14 +281,11 @@ export class PiAgentRuntime implements AgentRuntime {
           models,
           model: completionModel,
           apiKey,
-          nestedAgents,
-          subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           toolCallBudget: trackedBudget,
           toolCallSeq: { value: 0 },
           providerToolCallIds: new Map(),
           abortTurn: () => undefined,
           signal,
-          depth: 0,
           pausePending: false,
           pendingShells: [],
           modelResponses: 0,
@@ -777,7 +771,6 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const onAbort = () => {
           agent.abort();
-          for (const nested of nestedAgents) nested.abort();
         };
         host.abortTurn = onAbort;
         if (signal.aborted) {

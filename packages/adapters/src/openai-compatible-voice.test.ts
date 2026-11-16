@@ -1,3 +1,4 @@
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import {
@@ -68,6 +69,17 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
         sttApiKey: "test-key",
       }),
     ).toThrow(/^Transcription server URL:.*HTTPS/);
+  });
+
+  it("raises what is wrong with the form as a setup error", () => {
+    for (const input of [
+      { baseUrl: "not a url" },
+      { baseUrl: "http://127.0.0.1:8810", sttBaseUrl: "ftp://speech.example.com" },
+      { baseUrl: "http://127.0.0.1:8810", apiKey: "abc\r\nx-injected: 1" },
+      { baseUrl: "http://127.0.0.1:8810", ttsModel: "not a model id" },
+    ]) {
+      expect(() => serializeAsOwner(input)).toThrow(ConnectionSetupError);
+    }
   });
 
   it("refuses a private speech server unless private endpoints are allowed", async () => {

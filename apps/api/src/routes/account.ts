@@ -20,6 +20,7 @@ import {
   abortableDelay,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
+  ClientError,
   callRequestClientNonce,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -462,7 +463,8 @@ export function accountRoutes(ctx: RouterContext) {
           try {
             await deps.pushTokens.saveDevice?.(context.actor.userId, input, context.sessionId);
           } catch (error) {
-            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            if (error instanceof PushSessionEndedError)
+              throw new ClientError("UNAUTHORIZED", "Unauthorized");
             throw error;
           }
           return { ok: true as const };
@@ -479,7 +481,8 @@ export function accountRoutes(ctx: RouterContext) {
             input.presentation,
           );
         } catch (error) {
-          if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+          if (error instanceof PushSessionEndedError)
+            throw new ClientError("UNAUTHORIZED", "Unauthorized");
           throw error;
         }
         return { ok: true as const };

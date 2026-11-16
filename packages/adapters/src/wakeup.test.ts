@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
-import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
 import {
@@ -10,7 +12,6 @@ import {
   DEAD_JOB_RETENTION_DAYS,
   InMemoryJobQueue,
   JOB_DRAIN_TIMEOUT_MS,
-  reportExhaustedJob,
 } from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
@@ -312,14 +313,11 @@ describe("InMemoryJobQueue", () => {
     ["close", "stop"],
   ] as const)("waits for an active handler before %s/%s", async (first, second) => {
     const queue = new InMemoryJobQueue();
-    let releaseHandler: () => void = () => undefined;
-    let markStarted: () => void = () => undefined;
+    let releaseHandler: Deferred | undefined;
     let nestedEnqueueFailed = false;
     let delayedEnqueueFailed = false;
     let chainedEnqueueFailed = false;
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
+    const started = deferred();
     const target = handlers();
     target["computer.sleep"] = vi.fn(async () => {
       try {
@@ -329,10 +327,9 @@ describe("InMemoryJobQueue", () => {
       }
     });
     target["run.continue"] = vi.fn(async () => {
-      markStarted();
-      await new Promise<void>((resolve) => {
-        releaseHandler = resolve;
-      });
+      started.resolve();
+      releaseHandler = deferred();
+      await releaseHandler.promise;
       try {
         await queue.enqueue({
           name: "computer.sleep",
@@ -360,14 +357,14 @@ describe("InMemoryJobQueue", () => {
     });
     await queue.start(target);
     await queue.enqueue({ name: "run.continue", payload: { runId: "run-1" } });
-    await started;
+    await started.promise;
 
     const closing = Promise.all([queue[first](), queue[second]()] as const);
     const closeState = await Promise.race([
       closing.then(() => "closed" as const),
       new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 5)),
     ]);
-    releaseHandler();
+    releaseHandler?.resolve();
     await closing;
     expect(closeState).toBe("waiting");
     expect(nestedEnqueueFailed).toBe(false);
@@ -381,16 +378,12 @@ describe("InMemoryJobQueue", () => {
 
   it("rejects a keyed enqueue that resumes after close", async () => {
     const queue = new InMemoryJobQueue();
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -398,9 +391,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.close();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is closed");
   });
@@ -408,16 +401,12 @@ describe("InMemoryJobQueue", () => {
   it("rejects a keyed enqueue that resumes after stop", async () => {
     const queue = new InMemoryJobQueue();
     await queue.start(handlers());
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -425,9 +414,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.stop();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is stopped");
   });
@@ -515,10 +504,21 @@ describe("createDeadJobPruner", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const query = vi
       .fn()
+      // The first query fails abandoned last attempts; none here.
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rowCount: 1_000 })
-      .mockResolvedValueOnce({ rowCount: 3 })
-      .mockResolvedValue({ rows: [], rowCount: 0 });
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "computer.sleep", removed: 600 },
+          { identifier: "run.interactive", removed: 400 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "run.continue", removed: 1 },
+          { identifier: "computer.sleep", removed: 2 },
+        ],
+      })
+      .mockResolvedValue({ rows: [] });
     const prune = createDeadJobPruner({ query } as never);
 
     await prune();
@@ -532,49 +532,17 @@ describe("createDeadJobPruner", () => {
     expect(sql).toContain("jobs.attempts >= jobs.max_attempts and jobs.locked_at is null");
     expect(sql).toContain("tasks.identifier <> 'routine.retry'");
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ message: "jobs.dead_pruned", "jobs.removed": 1_003 }),
+      expect.objectContaining({
+        message: "jobs.dead_pruned",
+        "jobs.removed": 1_003,
+        "jobs.removed_by_type": "computer.sleep=602,run.continue=401",
+      }),
     );
 
     now += 60 * 60 * 1000;
     await prune();
     expect(query).toHaveBeenCalledTimes(5);
     expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
-  });
-});
-
-describe("reportExhaustedJob", () => {
-  afterEach(() => installLogger(createLogger({ service: "test", level: "off", sinks: [] })));
-
-  it("logs any task once with its key and redacted error, and leaves tasks with their own report to it", () => {
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const job = (task_identifier: string, payload: unknown) => ({
-      task_identifier,
-      key: `${task_identifier}:key-1`,
-      payload: wrapJobPayload(payload),
-      attempts: 4,
-      max_attempts: 4,
-    });
-
-    reportExhaustedJob(
-      job("computer.sleep", { computerId: "computer-1" }),
-      new Error("401 api_key=fake-secret-value"),
-    );
-    reportExhaustedJob(job("history.compact", { threadId: "thread-1" }), new Error("timeout"));
-
-    expect(sink.events).toEqual([
-      expect.objectContaining({
-        level: "error",
-        message: "jobs.attempts_exhausted",
-        "job.task": "computer.sleep",
-        "job.key": "computer.sleep:key-1",
-        "job.attempts": 4,
-        "job.max_attempts": 4,
-        error: expect.objectContaining({ message: expect.stringContaining("401") }),
-      }),
-      expect.objectContaining({ message: "history.compact failed permanently" }),
-    ]);
-    expect(JSON.stringify(sink.events)).not.toContain("fake-secret-value");
   });
 });
 

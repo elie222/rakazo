@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { MessagingSurface } from "@rakazo/adapter-kit";
 import { messagingReplyJobKey, messagingSendJobKey, RetryJobLaterError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -45,11 +46,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     system = asSystem(db.prisma);
     jobs = new GraphileJobPublisher(db.pool);
     const provisioned = await runAsSystem("delivery fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "telegram", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "telegram", address }),
     );
     identity = {
       userId: provisioned.userId,
@@ -312,13 +309,10 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
   it("sends each message once when two processes send one conversation at the same time", async () => {
     const target = lane();
     await record(target, ["a", "b", "c"]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const sent: string[] = [];
     const slow = surface(async (body) => {
-      if (body === "a") await gate;
+      if (body === "a") await gate.promise;
       sent.push(body);
       return { handle: `handle-${body}` };
     });
@@ -332,7 +326,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     );
     // The second process finds the head in flight and leaves the conversation to it.
     await delivery(fast.messaging).send([target]);
-    release();
+    gate.resolve();
     await first;
     expect(sent).toEqual(["a", "b", "c"]);
     expect(await statuses(target.threadId)).toEqual(["a:sent", "b:sent", "c:sent"]);
@@ -589,12 +583,9 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
   it("marks its own sends in flight the way the previous release recognises them", async () => {
     const target = lane();
     const [first, second] = await record(target, ["in flight", "behind it"]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const slow = surface(async () => {
-      await gate;
+      await gate.promise;
       return { handle: "h-1" };
     });
     const sending = delivery(slow.messaging).send([target]);
@@ -610,7 +601,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
       [target.threadId, second],
     );
     expect(rows.map((row) => row.id)).toEqual([first]);
-    release();
+    gate.resolve();
     await sending;
     expect(await statuses(target.threadId)).toEqual(["in flight:sent", "behind it:sent"]);
   });

@@ -20,6 +20,7 @@ import type {
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   WorkspaceTooLargeError,
@@ -431,7 +432,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       workspacePath(WORKSPACE, filePath),
       { length: maxBytes + 1 },
     );
-    if (content.byteLength > maxBytes) throw new Error(`computer file exceeds ${maxBytes} bytes`);
+    if (content.byteLength > maxBytes) throw new SandboxFileTooLargeError(maxBytes);
     return content;
   }
 

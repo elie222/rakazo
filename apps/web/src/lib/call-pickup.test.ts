@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, expect, it, vi } from "vitest";
 import { pickUp } from "./call-pickup.js";
 
@@ -24,13 +25,10 @@ it("stops ringing immediately on abort and releases a late microphone grant", as
       close = close;
     },
   );
-  let grant!: (stream: MediaStream) => void;
+  const grant = deferred<MediaStream>();
   vi.stubGlobal("navigator", {
     mediaDevices: {
-      getUserMedia: () =>
-        new Promise<MediaStream>((resolve) => {
-          grant = resolve;
-        }),
+      getUserMedia: () => grant.promise,
     },
   });
   const controller = new AbortController();
@@ -38,7 +36,7 @@ it("stops ringing immediately on abort and releases a late microphone grant", as
   controller.abort();
   expect(stopTone).toHaveBeenCalledOnce();
   const stopTrack = vi.fn();
-  grant({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream);
+  grant.resolve({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream);
   await pending;
   expect(stopTrack).toHaveBeenCalledOnce();
   expect(close).toHaveBeenCalledOnce();

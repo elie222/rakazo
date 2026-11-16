@@ -22,7 +22,8 @@ To rename the group or change who is in it, open **Group settings** from the gro
 ## Bots asking other bots
 
 A bot can message another of your bots directly, for example to ask your research bot a question.
-The chat shows **Messaged** or **Message from** with the other bot's name. Click it to read the
+The other bot does the work in its own chat and sends the answer back, and the bot that asked
+carries on with it. The chat shows **Messaged** or **Message from** with the other bot's name. Click it to read the
 exchange; it is view-only.
 
 Bots decide whom to ask from each bot's **How other bots see it** description in its settings

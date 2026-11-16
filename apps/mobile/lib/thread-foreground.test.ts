@@ -2,6 +2,7 @@
 
 import type * as CoreModule from "@rakazo/core";
 import { reduceThreadSnapshot } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,10 +54,7 @@ describe("thread foreground subscription", () => {
   it("retains a trailing snapshot after a burst and skips it if history opens", async () => {
     const snapshot = { cursor: 10 } as MobileSnapshot;
     let deliver: (event: LiveEvent) => void = () => {};
-    let finish!: (value: MobileSnapshot) => void;
-    const pending = new Promise<MobileSnapshot>((resolve) => {
-      finish = resolve;
-    });
+    const pending = deferred<MobileSnapshot>();
     vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
       deliver = onEvent as unknown as typeof deliver;
       await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
@@ -65,7 +63,7 @@ describe("thread foreground subscription", () => {
     const refresh = vi
       .fn()
       .mockResolvedValueOnce(snapshot)
-      .mockReturnValueOnce(pending)
+      .mockReturnValueOnce(pending.promise)
       .mockResolvedValue(snapshot);
     const expandedHistoryThread = ref<string | null>(null);
     const refreshMentionBots = vi.fn(async () => {});
@@ -101,7 +99,7 @@ describe("thread foreground subscription", () => {
     for (let i = 0; i < 100; i++) deliver({ type: "run.waiting_input", seq: 12 + i });
     await act(async () => {});
     expect(refresh).toHaveBeenCalledTimes(1);
-    finish(snapshot);
+    pending.resolve(snapshot);
     await act(async () => {});
     expect(refresh).toHaveBeenCalledTimes(2);
     // The guard is checked when the queued read starts, not just when it was requested.
@@ -271,16 +269,14 @@ describe("thread foreground subscription", () => {
     await render(false);
     expect(subscribeThread).toHaveBeenCalledTimes(1);
     deliver(event("run.completed", 18, "hidden-run"));
-    let finishHead!: (head: { cursor: number; threadId: string }) => void;
-    pendingHead = new Promise((resolve) => {
-      finishHead = resolve;
-    });
+    const finishHead = deferred<{ cursor: number; threadId: string }>();
+    pendingHead = finishHead.promise;
     await render(true);
     expect(subscribeThread).toHaveBeenCalledTimes(1);
     deliver(event("run.completed", 19, "pending-head-run"));
     deliver(event("run.completed", 19, "pending-head-run"));
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
-    await act(async () => finishHead({ cursor: 18, threadId: "thread-1" }));
+    await act(async () => finishHead.resolve({ cursor: 18, threadId: "thread-1" }));
     pendingHead = undefined;
     expect(hapticSuccess).toHaveBeenCalledTimes(2);
     deliver(event("run.completed", 20, "pending-head-run"));
@@ -313,20 +309,14 @@ describe("thread foreground subscription", () => {
         deliver = onEvent;
         await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
       });
-      let finishHead!: (head: { cursor: number; threadId: string }) => void;
-      const head = new Promise<{ cursor: number; threadId: string }>((resolve) => {
-        finishHead = resolve;
-      });
-      vi.mocked(rpc).mockImplementation(async () => head as never);
+      const head = deferred<{ cursor: number; threadId: string }>();
+      vi.mocked(rpc).mockImplementation(async () => head.promise as never);
       if (retryHead) {
         vi.mocked(rpc).mockRejectedValueOnce(
           Object.assign(new Error("Unavailable"), { status: 503 }),
         );
       }
-      let finishRefresh!: (snapshot: MobileSnapshot) => void;
-      const initial = new Promise<MobileSnapshot>((resolve) => {
-        finishRefresh = resolve;
-      });
+      const initial = deferred<MobileSnapshot>();
       const snapshot = {
         botId: "bot-1",
         threadId: "thread-1",
@@ -340,7 +330,7 @@ describe("thread foreground subscription", () => {
       const commitSnap = vi.fn((next: MobileSnapshot | null) => {
         snapRef.current = next;
       });
-      const refresh = vi.fn(() => initial);
+      const refresh = vi.fn(() => initial.promise);
       const refreshMentionBots = vi.fn(async () => {});
       const markReadIfVisible = vi.fn();
       const root = createRoot(document.createElement("div"));
@@ -372,9 +362,9 @@ describe("thread foreground subscription", () => {
       try {
         await act(async () => root.render(createElement(Probe, { foreground: true })));
         if (retryHead) await act(async () => vi.advanceTimersByTimeAsync(250));
-        await act(async () => finishHead({ cursor: 10, threadId: "thread-1" }));
+        await act(async () => head.resolve({ cursor: 10, threadId: "thread-1" }));
         expect(subscribeThread).not.toHaveBeenCalled();
-        await act(async () => finishRefresh(snapshot));
+        await act(async () => initial.resolve(snapshot));
         expect(cursors).toEqual([10]);
         const event = (type: string, seq: number, runId: string): Event => ({
           type,
@@ -505,18 +495,12 @@ describe("thread foreground subscription", () => {
         deliver = onEvent;
         await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
       });
-      let failFirst!: (error: Error) => void;
-      const first = new Promise<never>((_resolve, reject) => {
-        failFirst = reject;
-      });
-      let finishRetry!: (head: { cursor: number; threadId: string }) => void;
-      const retry = new Promise<{ cursor: number; threadId: string }>((resolve) => {
-        finishRetry = resolve;
-      });
+      const first = deferred<never>();
+      const retry = deferred<{ cursor: number; threadId: string }>();
       // The first request deliberately ignores timeoutMs so the bootstrap bound is independent.
       vi.mocked(rpc)
-        .mockImplementationOnce(async () => first)
-        .mockImplementation(async () => retry as never);
+        .mockImplementationOnce(async () => first.promise)
+        .mockImplementation(async () => retry.promise as never);
       const snapRef = ref<MobileSnapshot | null>({
         botId: "bot-1",
         threadId: "thread-1",
@@ -575,7 +559,7 @@ describe("thread foreground subscription", () => {
         deliver(complete(11, "failed-window"));
         expect(snapRef.current?.cursor).toBe(11);
         expect(hapticSuccess).not.toHaveBeenCalled();
-        await act(async () => failFirst(Object.assign(new Error("Unavailable"), { status })));
+        await act(async () => first.reject(Object.assign(new Error("Unavailable"), { status })));
         if (status === 403) {
           await act(async () => vi.advanceTimersByTimeAsync(10_000));
           expect(rpc).toHaveBeenCalledTimes(1);
@@ -588,7 +572,7 @@ describe("thread foreground subscription", () => {
         await act(async () => vi.advanceTimersByTimeAsync(1));
         expect(rpc).toHaveBeenCalledTimes(2);
         deliver(complete(12, "retry-catch-up"));
-        await act(async () => finishRetry({ cursor: 12, threadId: "thread-1" }));
+        await act(async () => retry.resolve({ cursor: 12, threadId: "thread-1" }));
         expect(hapticSuccess).not.toHaveBeenCalled();
         deliver(complete(12, "retry-catch-up"));
         deliver(complete(13, "live-after-retry"));

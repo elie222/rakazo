@@ -84,7 +84,7 @@ describe("health routes", () => {
       runtime: "pi",
       sandbox: "docker",
       revision: "abc123",
-      telemetry: { failures: 0, lastFailureAt: null, degraded: false },
+      telemetry: { failures: 0, lastFailureAt: null, degraded: false, droppedLines: 0 },
     });
   });
 

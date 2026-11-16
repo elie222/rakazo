@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { Alert } from "react-native";
 import { beforeEach, expect, it, vi } from "vitest";
 import { hasUnsentSends } from "./thread-feedback";
@@ -28,7 +29,7 @@ it("waits for the persisted queue to load before deciding nothing is unsent", as
   );
   vi.mocked(hasUnsentSends).mockReturnValue(false);
   const pending = confirmUnsentSendLoss("sign-out");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await flush();
   // The queue is still on disk; consulting the in-memory list now would look empty.
   expect(hasUnsentSends).not.toHaveBeenCalled();
   expect(Alert.alert).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import type { DesktopSetup } from "@rakazo/contracts";
 import type { BrowserWindow } from "electron";
+import type { AppTarget } from "./app-frame.js";
 import type { DesktopUpdateController } from "./auto-update.js";
 import type { prepareHostComputer } from "./host-computer.js";
 import type { StackController } from "./local-stack.js";
@@ -8,6 +9,7 @@ import type { UserDeviceAccess } from "./user-device.js";
 /** Window, setup, and service state shared by the main process modules. */
 export const desktop = {
   mainWindow: null,
+  replacedAppWindow: null,
   setupWindow: null,
   currentSetup: null,
   currentTargetUrl: null,
@@ -23,6 +25,12 @@ export const desktop = {
   userDevices: undefined,
 } as {
   mainWindow: BrowserWindow | null;
+  /**
+   * The app window a server switch is replacing, from the moment the next window takes its
+   * place until the switch is committed (this window is destroyed) or abandoned (it is the
+   * app window again).
+   */
+  replacedAppWindow: BrowserWindow | null;
   setupWindow: BrowserWindow | null;
   currentSetup: DesktopSetup | null;
   currentTargetUrl: string | null;
@@ -39,3 +47,19 @@ export const desktop = {
 };
 
 export const appWindowTargets = new WeakMap<BrowserWindow, string>();
+
+function appTarget(win: BrowserWindow | null): AppTarget | null {
+  if (win === null || win.isDestroyed()) return null;
+  const url = appWindowTargets.get(win);
+  return url === undefined ? null : { webContents: win.webContents, url };
+}
+
+/** The app window and the server it was opened for. */
+export function permissionTarget(): AppTarget | null {
+  return appTarget(desktop.mainWindow);
+}
+
+/** The window a server switch is replacing and the server it was opened for; null outside a switch. */
+export function replacedAppTarget(): AppTarget | null {
+  return appTarget(desktop.replacedAppWindow);
+}

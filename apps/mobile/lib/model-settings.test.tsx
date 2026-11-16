@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -21,7 +22,14 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const savedEndpoint = "https://models.example.test/v1";
-const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
+const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoisted(() => ({
+  focus: { on: true },
+  /** What a request pinned to a Space carries: its server, its session and the Space's header. */
+  pinnedTo: (spaceId: string) => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": spaceId },
+  }),
   push: vi.fn(),
   back: vi.fn(),
   replace: vi.fn(),
@@ -37,7 +45,9 @@ const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
-    failConnect: false,
+    failConnect: false as boolean | string,
+    failProbe: undefined as string | undefined,
+    showServerMessages: false,
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
@@ -52,6 +62,9 @@ const { push, back, replace, params, rpcCalls, saved } = vi.hoisted(() => ({
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
+    enabledModelIds: undefined as string[] | undefined,
+    /** Procedures that answer with a failure. */
+    failing: [] as string[],
   },
 }));
 const settingsRouter = { push, back, replace };
@@ -63,9 +76,7 @@ vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
-  captureApiRequestContext: async (spaceId = "space-fixture") => ({
-    headers: { "x-rakazo-space-id": spaceId },
-  }),
+  captureApiRequestContext: async (spaceId = "space-fixture") => pinnedTo(spaceId),
   selectedSpaceId: () => "space-fixture",
   rpc: async (
     procedure: string,
@@ -74,6 +85,7 @@ vi.mock("./api", () => ({
   ) => {
     rpcCalls.push([procedure, input, options]);
     if (saved.held) await saved.held;
+    if (saved.failing.includes(procedure)) throw new Error("offline");
     if (saved.failMe && procedure === "me") throw new Error("offline");
     if (procedure === "me")
       return {
@@ -83,6 +95,8 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
         needsModel: saved.needsModel,
       };
+    if (procedure === "models/probeOpenAiCompatible" && saved.failProbe)
+      throw new Error(saved.failProbe);
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
@@ -101,7 +115,10 @@ vi.mock("./api", () => ({
       return {};
     }
     if (procedure === "models/connect") {
-      if (saved.failConnect) throw new Error("connection refused");
+      if (saved.failConnect)
+        throw new Error(
+          typeof saved.failConnect === "string" ? saved.failConnect : "connection refused",
+        );
       const form = input as {
         provider: string;
         baseUrl?: string;
@@ -152,16 +169,19 @@ vi.mock("./api", () => ({
           ...(saved.reasoning ? { reasoning: true } : {}),
           ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
           ...(saved.modelSettings ? { modelSettings: saved.modelSettings } : {}),
+          ...(saved.enabledModelIds ? { enabledModelIds: saved.enabledModelIds } : {}),
         },
       ];
     return [];
   },
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params,
-  useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => (() => void) | undefined) =>
+    useEffect(() => (focus.on ? effect() : undefined), [effect, focus.on]),
 }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
@@ -202,7 +222,8 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./user-error", () => ({
-  errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
+  errorText: (error: unknown, fallback = "Something went wrong. Try again.") =>
+    saved.showServerMessages && error instanceof Error ? error.message : fallback,
 }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../components/native-switch", () => ({
@@ -450,7 +471,7 @@ it("hands a connected model back to the slot that asked for it", async () => {
 });
 
 describe("a Space's model override", () => {
-  const otherSpace = { headers: { "x-rakazo-space-id": "space-other" } };
+  const otherSpace = pinnedTo("space-other");
 
   it("edits that Space's lists in that Space and leaves connections to the account", async () => {
     params.spaceId = "space-other";
@@ -579,7 +600,7 @@ it("moves bots off their own model onto the main model, keeping failed ones list
       [
         "bots/update",
         { botId: "bot-inbox", modelProvider: null, modelId: null, thinkingLevel: null },
-        { requestContext: { headers: { "x-rakazo-space-id": "space-fixture" } } },
+        { requestContext: pinnedTo("space-fixture") },
       ],
     ]);
     expect(container.textContent).toContain("1 bot now uses the space default.");
@@ -769,6 +790,140 @@ it("resets a customized model to its defaults", async () => {
   }
 });
 
+describe("a model's own settings", () => {
+  const saves = () => rpcCalls.filter(([procedure]) => procedure === "models/saveModelSettings");
+  const reads = () => rpcCalls.filter(([procedure]) => procedure === "models/credentials").length;
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+  const show = () => act(async () => root.render(createElement(ModelSettingsScreen)));
+  function hold() {
+    const release = deferred();
+    saved.held = release.promise;
+    return async () => {
+      saved.held = null;
+      await act(async () => release.resolve());
+    };
+  }
+
+  beforeEach(async () => {
+    params.credentialId = "credential-fixture";
+    params.modelId = "model-fixture";
+    await remount(show);
+  });
+  afterEach(() => {
+    delete params.credentialId;
+    delete params.modelId;
+    saved.held = null;
+    saved.failing = [];
+    saved.enabledModelIds = undefined;
+    focus.on = true;
+  });
+
+  it("saves once for two taps in one tick, and holds Save until the settings are read again", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    const release = hold();
+    await act(async () => {
+      button("Save")!.click();
+      button("Save")!.click();
+    });
+    expect(saves()).toHaveLength(1);
+    expect(button("Saving…")?.disabled).toBe(true);
+    saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+    try {
+      await release();
+      expect(saves()).toHaveLength(1);
+      expect(reads()).toBe(readsBefore + 1);
+      expect(container.textContent).toContain("Saved.");
+      expect(field("Maximum output tokens")?.value).toBe("8192");
+      // Nothing is left to save once the form shows what was read back.
+      expect(button("Save")).toBeUndefined();
+    } finally {
+      saved.modelSettings = undefined;
+    }
+  });
+
+  it("says the settings could not be read after a save, not that the save failed", async () => {
+    await change("Maximum output tokens", "8192");
+    saved.failing = ["models/credentials"];
+    await saveConnection();
+    expect(saves()).toHaveLength(1);
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(container.textContent).not.toContain("Could not save model settings");
+    expect(container.textContent).not.toContain("Saved.");
+    // The edit stays, and Save is offered again.
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    expect(button("Save")?.disabled).toBe(false);
+  });
+
+  it("says so when the save fails, keeps the edit, and lets Save be tapped again", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    saved.failing = ["models/saveModelSettings"];
+    await saveConnection();
+    expect(container.textContent).toContain("Could not save model settings");
+    expect(reads()).toBe(readsBefore);
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    saved.failing = [];
+    await saveConnection();
+    expect(saves()).toHaveLength(2);
+    expect(container.textContent).toContain("Saved.");
+  });
+
+  it("starts another model from what is read for it, not from the last model's edits", async () => {
+    saved.enabledModelIds = ["model-fixture", "model-other"];
+    await remount(show);
+    await change("Maximum output tokens", "8192");
+    const release = hold();
+    params.modelId = "model-other";
+    await show();
+    // Nothing to edit or save until this model's own read is back.
+    expect(field("Maximum output tokens")).toBeNull();
+    expect(button("Save")).toBeUndefined();
+    await release();
+    expect(field("Maximum output tokens")?.value).toBe("");
+    expect(button("Save")).toBeUndefined();
+  });
+
+  it("does not carry one model's Saved notice over to the next model", async () => {
+    saved.enabledModelIds = ["model-fixture", "model-other"];
+    await remount(show);
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    expect(container.textContent).toContain("Saved.");
+    params.modelId = "model-other";
+    await show();
+    expect(field("Maximum output tokens")).not.toBeNull();
+    expect(container.textContent).not.toContain("Saved.");
+  });
+
+  it("reads the settings again on a later visit instead of showing the earlier copy", async () => {
+    const release = hold();
+    await remount(show);
+    expect(field("Maximum output tokens")).toBeNull();
+    saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+    try {
+      await release();
+      expect(field("Maximum output tokens")?.value).toBe("8192");
+    } finally {
+      saved.modelSettings = undefined;
+    }
+  });
+
+  it("reads the settings again on return to the screen, and starts again from what is saved", async () => {
+    await change("Maximum output tokens", "8192");
+    const readsBefore = reads();
+    focus.on = false;
+    await show();
+    expect(reads()).toBe(readsBefore);
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    focus.on = true;
+    await show();
+    expect(reads()).toBe(readsBefore + 1);
+    expect(field("Maximum output tokens")?.value).toBe("");
+  });
+});
+
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {
   const row = (name: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === name)!;
@@ -812,10 +967,8 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     await act(async () => root.render(createElement(Models)));
   });
   expect(container.textContent).toContain("Fixture");
-  let release!: () => void;
-  saved.held = new Promise((resolve) => {
-    release = resolve;
-  });
+  const release = deferred();
+  saved.held = release.promise;
   saved.label = "Renamed fixture";
   try {
     rpcCalls.length = 0;
@@ -826,7 +979,7 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     expect(container.textContent).not.toContain("Renamed fixture");
     expect(rpcCalls.map(([procedure]) => procedure)).toContain("models/credentials");
 
-    await act(async () => release());
+    await act(async () => release.resolve());
     expect(container.textContent).toContain("Renamed fixture");
   } finally {
     saved.held = null;
@@ -882,6 +1035,8 @@ describe("connection success with a failed refresh", () => {
   afterEach(() => {
     saved.failMe = false;
     saved.failConnect = false;
+    saved.failProbe = undefined;
+    saved.showServerMessages = false;
   });
 
   it("keeps a new saved connection and clears its key when refreshing fails", async () => {
@@ -936,5 +1091,30 @@ describe("connection success with a failed refresh", () => {
     expect(container.textContent).toContain("Could not connect this provider");
     expect(field("API key")?.value).toBe("synthetic-test-key");
     expect(field("API key")?.placeholder).not.toBe("Paste a replacement key");
+  });
+
+  it("hides the typed key when a failed connection's message repeats it", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failConnect = "The provider did not accept synthetic-test-key for this model.";
+    saved.showServerMessages = true;
+    await saveConnection();
+    expect(container.textContent).toContain("The provider did not accept ••• for this model.");
+    expect(container.textContent).not.toContain("synthetic-test-key");
+  });
+
+  it("hides the typed key when a failed model search's message repeats it", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    saved.failProbe = "The server refused the header value synthetic-test-key.";
+    saved.showServerMessages = true;
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Find models")!
+        .click(),
+    );
+    expect(container.textContent).toContain("The server refused the header value •••.");
+    expect(container.textContent).not.toContain("synthetic-test-key");
   });
 });

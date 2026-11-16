@@ -1,4 +1,5 @@
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
+import { flush } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -104,7 +105,7 @@ describe("startUnsentSends", () => {
     vi.mocked(hasUnsentSends).mockReturnValue(false);
     session.generation = session.ready = 3;
     session.listener();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(sendWaitingMessages).toHaveBeenCalledTimes(2);
     stop();
   });
@@ -145,7 +146,7 @@ describe("unsentSendsRestored", () => {
     const restored = unsentSendsRestored().then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(settled).toBe(false);
     expect(restoreUnsentSends).not.toHaveBeenCalled();
 
@@ -198,7 +199,7 @@ describe("unsentSendsRestored", () => {
       }),
     );
     const restored = unsentSendsRestored();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     // A reachability retry restores the queue while the session is still being read.
     await prepareUnsentSends();
     readSession({ ok: true, value: "fake-token" });
@@ -251,7 +252,7 @@ describe("unsentSendsRestored", () => {
     void prepareUnsentSends();
     scopeA.resolve();
     await first;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(settled).toBe(false);
 
     scopeB.resolve();

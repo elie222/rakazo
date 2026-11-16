@@ -21,6 +21,7 @@ import {
   refreshComputerProvider,
 } from "@rakazo/adapters";
 import type { Actor, ComputerProviderSettings, ComputerProviderUpdate } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -72,6 +73,8 @@ async function checkedSettings(
   previous: StoredComputerSettings | null,
   account = false,
 ): Promise<StoredComputerSettings> {
+  if (!computerProviderDescriptors().some((provider) => provider.id === input.provider))
+    throw new ClientError("BAD_REQUEST", "Unknown computer provider");
   try {
     const descriptor = computerProviderDescriptor(input.provider);
     if (account && !descriptor.capabilities.perAccount)

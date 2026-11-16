@@ -179,7 +179,7 @@ describe("builtin tools", () => {
     for (const name of FLEET_TOOL_NAMES) expect(DELEGATION_TOOL_NAMES.has(name), name).toBe(true);
   });
 
-  it("gives a background helper only tools that read, never the computer, memory, skills or routines", () => {
+  it("offers subagents action tools without further delegation or parent configuration", () => {
     const options = {
       graphicalToolsAllowed: true,
       pageBrowserAllowed: true,
@@ -196,19 +196,6 @@ describe("builtin tools", () => {
     const helper = selectBuiltinToolsForRun({ ...options, trigger: "helper" }).map(
       (tool) => tool.name,
     );
-    expect(helper.sort()).toEqual(
-      [
-        "board_tickets",
-        "cloud_agent_status",
-        "recall_memory",
-        "scratchpad_list",
-        "skill_read",
-        "task_catalog",
-        "ticket_get",
-        "web_fetch",
-        "web_search",
-      ].sort(),
-    );
     for (const name of [
       "shell",
       "computer_act",
@@ -218,16 +205,42 @@ describe("builtin tools", () => {
       "remember",
       "skill_create",
       "schedule_create",
-      "run_subagent",
       "ask_user",
-      "message_user",
       "search_history",
       "read_history",
     ]) {
       expect(owner, name).toContain(name);
+      expect(helper, name).toContain(name);
+    }
+    for (const name of [
+      "run_subagent",
+      "spawn_bot",
+      "update_bot",
+      "message_user",
+      "request_takeover",
+    ]) {
       expect(helper, name).not.toContain(name);
     }
   });
+
+  it.each([false, true])(
+    "keeps fleet reads out of helpers with channel privacy %s",
+    (messagingChannelRun) => {
+      const tools = selectBuiltinToolsForRun({
+        trigger: "helper",
+        fleetManagement: true,
+        messagingChannelRun,
+        graphicalToolsAllowed: false,
+        groupId: null,
+        semanticMemoryEnabled: false,
+      });
+      for (const name of FLEET_TOOL_NAMES)
+        expect(
+          tools.some((tool) => tool.name === name),
+          name,
+        ).toBe(false);
+    },
+  );
 
   it("offers agent connections to a chat-linked bot's turns, but not to its helpers", () => {
     const linked = { hasMessagingIdentity: true, crossSpaceCommunication: true };

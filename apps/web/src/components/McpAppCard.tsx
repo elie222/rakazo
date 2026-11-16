@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
 import { MCP_APP_VIEWER_PATH } from "@rakazo/contracts/content-security-policy";
@@ -152,11 +153,7 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: Artifac
     [host, hostContext],
   );
 
-  useEffect(() => {
-    if (!appDocument || started) return;
-    const timer = window.setTimeout(() => setFailed(true), START_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [appDocument, started]);
+  useTimeout(() => setFailed(true), !appDocument || started ? null : START_TIMEOUT_MS, appDocument);
 
   if (html.isError || failed) return null;
   const bordered = block.prefersBorder !== false;

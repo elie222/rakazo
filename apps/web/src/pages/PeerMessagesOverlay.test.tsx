@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -115,7 +116,7 @@ async function open(onClose = () => undefined) {
 }
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 async function scrollTo(transcript: HTMLElement, top: number) {

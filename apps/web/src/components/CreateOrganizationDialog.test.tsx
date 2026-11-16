@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -48,14 +49,6 @@ import { organizationsQuery } from "../lib/organizations";
 import { QueryUserProvider } from "../lib/query";
 import { CreateOrganizationDialog } from "./CreateOrganizationDialog";
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 /** The settings page behind the dialog, which shows the list. */
 function Page({ dialog }: { dialog: boolean }) {
   useQuery(organizationsQuery("user-a"));
@@ -101,7 +94,7 @@ async function type(value: string) {
   });
 }
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 it("creates once, re-reads the list, then opens the new organization and stays disabled", async () => {

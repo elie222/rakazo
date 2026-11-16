@@ -1,5 +1,6 @@
 import type { Routine } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "./async.test-support.js";
 import { createRoutineMentionBatcher } from "./routine-mention-batcher.js";
 
 const ids = Array.from({ length: 100 }, (_, index) => `bot-${index}`);
@@ -10,14 +11,6 @@ const rows = (botId: string) =>
   ] as Routine[];
 const lists = (ids: string[]) =>
   [...ids].reverse().map((botId) => ({ botId, routines: rows(botId) }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("routine mention cache-miss batching", () => {
   it("replaces 100 simultaneous reads with one batch and preserves every bot's routine order", async () => {

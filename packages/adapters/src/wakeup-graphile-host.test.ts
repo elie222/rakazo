@@ -5,6 +5,7 @@ import {
   messagingReplyJob,
   teamChatAmbientJob,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { DatabaseOutage, databaseCapacityBackoffMs } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
@@ -38,7 +39,6 @@ import {
   GraphileJobWorkerHost,
 } from "./wakeup.js";
 import {
-  deferred,
   handlers,
   helpers,
   mockRunner,
@@ -323,17 +323,13 @@ describe("reserved Graphile workloads", () => {
 
   it("does not start another workload after shutdown interrupts startup", async () => {
     const first = mockRunner();
-    let release!: (runner: Runner) => void;
-    run.mockReturnValueOnce(
-      new Promise<Runner>((resolve) => {
-        release = resolve;
-      }),
-    );
+    const release = deferred<Runner>();
+    run.mockReturnValueOnce(release.promise);
     const host = createReservedGraphileJobWorkerHost({} as Pool);
     const starting = host.start(handlers());
     await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
     await host.stop();
-    release(first.runner);
+    release.resolve(first.runner);
     await starting;
     expect(run).toHaveBeenCalledOnce();
     expect(first.runner.stop).toHaveBeenCalledOnce();
@@ -813,7 +809,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     await host.stop();
   });
 
-  it("logs every job that fails permanently, history compaction with its own report", async () => {
+  it("logs when history compaction fails permanently", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);
     const sink = createTestSink();
@@ -829,10 +825,10 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
         | ((event: {
             job: {
               task_identifier: string;
-              key: string | null;
               payload: unknown;
               attempts: number;
               max_attempts: number;
+              created_at: Date;
             };
             error: unknown;
           }) => void)
@@ -841,20 +837,20 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       failed?.({
         job: {
           task_identifier: "history.compact",
-          key: null,
           payload: wrapJobPayload({ threadId: "thread-9" }),
           attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
           max_attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+          created_at: new Date(),
         },
         error: new Error("The operation was aborted due to timeout"),
       });
       failed?.({
         job: {
           task_identifier: "run.continue",
-          key: "run:run-1",
           payload: wrapJobPayload({ runId: "run-1" }),
           attempts: 25,
           max_attempts: 25,
+          created_at: new Date(),
         },
         error: new Error("handler failed"),
       });
@@ -864,6 +860,12 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
 
     expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "error",
+        message: "job.gave_up",
+        "job.type": "history.compact",
+        "job.attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
+      }),
       expect.objectContaining({
         level: "error",
         message: "history.compact failed permanently",
@@ -876,14 +878,13 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       }),
       expect.objectContaining({
         level: "error",
-        message: "jobs.attempts_exhausted",
-        "job.task": "run.continue",
-        "job.key": "run:run-1",
+        message: "job.gave_up",
+        "job.type": "run.continue",
         "job.attempts": 25,
-        "job.max_attempts": 25,
         error: expect.objectContaining({ message: "handler failed" }),
       }),
     ]);
+    expect(JSON.stringify(sink.events.at(-1))).not.toContain("run-1");
   });
 
   it("wakes a pending restart delay when stop is called", async () => {
