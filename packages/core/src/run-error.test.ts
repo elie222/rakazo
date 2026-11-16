@@ -1000,3 +1000,16 @@ describe("the one action that fixes a failed run", () => {
     },
   );
 });
+
+it("reads a reset date after spacing and a separator, and stays fast on long spacing", () => {
+  expect(
+    normalizeRunError(
+      '403: {"message":"Key limit exceeded (weekly limit). Resets on : 2099-01-01"}',
+    ),
+  ).toMatchObject({
+    resetAt: Date.parse("2099-01-01"),
+  });
+  const started = performance.now();
+  normalizeRunError(`429: weekly limit reached, resets${" \t".repeat(50_000)}x`);
+  expect(performance.now() - started).toBeLessThan(500);
+});

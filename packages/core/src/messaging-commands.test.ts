@@ -12,6 +12,12 @@ describe("parseMessagingCommand", () => {
     expect(parseMessagingCommand("leave")).toBe("leave");
   });
 
+  it("stays fast on a long run of punctuation", () => {
+    const started = performance.now();
+    expect(parseMessagingCommand(`${"!".repeat(100_000)}a`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {
     for (const text of ["stop", "Stop now.", "STOP!", "  stop   now ", "stop…"])
       expect(parseMessagingCommand(text)).toBe("stop");

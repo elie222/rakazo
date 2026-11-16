@@ -40,6 +40,11 @@ describe("speakable", () => {
 
   it("says the file, not the path to it", () => {
     expect(speakable("I changed server/drivers/acp/core.ts today")).toBe("I changed core.ts today");
+    expect(speakable("open @scope/pkg/src/index.ts, ok")).toBe("open index.ts, ok");
+    const run = "a/".repeat(20_000);
+    const started = performance.now();
+    expect(speakable(run)).toBe(run);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it("keeps short inline code but not long snippets", () => {

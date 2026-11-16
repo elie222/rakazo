@@ -469,6 +469,14 @@ describe("skill prompt helpers", () => {
       rest: "",
     });
     expect(extractForcedSkillName("/Settings: General")).toBeNull();
+    expect(extractForcedSkillName("/")).toBeNull();
+    expect(extractForcedSkillName("Use skill:  Weekly review \nnow")).toEqual({
+      name: "Weekly review",
+      rest: "now",
+    });
+    const started = performance.now();
+    expect(extractForcedSkillName(`/${"\t".repeat(100_000)}`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it("extracts @skill mentions from routine prompts", () => {

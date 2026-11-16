@@ -57,6 +57,16 @@ describe("normalizedHttpUrl", () => {
 });
 
 describe("sitesInText", () => {
+  it("drops closing punctuation after a link", () => {
+    expect([...sitesInText("see https://example.com/a!!).")]).toEqual(["example.com"]);
+  });
+
+  it("stays fast on a link full of punctuation", () => {
+    const started = performance.now();
+    sitesInText(`https://example.com/${"!".repeat(100_000)}a`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("finds links and bare domains the person wrote", () => {
     expect(
       [

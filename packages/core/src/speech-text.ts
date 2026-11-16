@@ -29,9 +29,16 @@ function describeCodeBlock(fence: string): string {
   return name ? `. (a ${name} code block) ` : ". (a code block) ";
 }
 
+const PATH_LIKE = /[\w.@/-]+/g;
+const FILE_PATH = /(?:[\w.@-]+\/)+([\w.-]+\.\w{1,6})\b/g;
+/** Longer than any path worth shortening, and short enough that FILE_PATH's backtracking stays cheap. */
+const MAX_PATH_LENGTH = 512;
+
 /** `a/b/c/file.ts` → `file.ts`. A path's directories are for the eye. */
 function shortenPaths(text: string): string {
-  return text.replace(/(?:[\w.@-]+\/){1,}([\w.-]+\.\w{1,6})\b/g, "$1");
+  return text.replace(PATH_LIKE, (run) =>
+    run.length > MAX_PATH_LENGTH ? run : run.replace(FILE_PATH, "$1"),
+  );
 }
 
 const ENDS_SENTENCE = /[.!?:;]\s*$/;

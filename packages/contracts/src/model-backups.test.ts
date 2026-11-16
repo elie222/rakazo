@@ -391,5 +391,14 @@ describe("withConnectionName", () => {
     expect(withConnectionName("Claude Sonnet", "OpenRouter (Work)")).toBe(
       "Claude Sonnet (OpenRouter, Work)",
     );
+    expect(withConnectionName("M", "A (B) (C)")).toBe("M (A (B), C)");
+    expect(withConnectionName("M", "A ()")).toBe("M (A ())");
+    expect(withConnectionName("M", " (B)")).toBe("M ( (B))");
+  });
+
+  it("stays fast on a long name full of brackets", () => {
+    const started = performance.now();
+    withConnectionName("M", `a (${"a (".repeat(50_000)}`);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

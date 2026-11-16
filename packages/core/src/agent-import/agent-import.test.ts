@@ -15,6 +15,7 @@ import {
   parseDotEnv,
   readAgentImportConfig,
   readAgentImportFolder,
+  renameSkillMd,
   resolveAgentImportNames,
   stripAgentImportSecrets,
 } from "./index.js";
@@ -999,8 +1000,38 @@ describe("dotenv parsing", () => {
     ["'placeholder-key'", "placeholder-key"],
     ["placeholder-key # comment", "placeholder-key"],
     ["placeholder#key", "placeholder#key"],
+    ['"a"b" # comment', 'a"b'],
+    ['"a\\" # b" # comment', 'a\\" # b'],
+    ["'a' b # comment", "'a' b"],
+    ["  placeholder-key  \t# comment", "placeholder-key"],
   ])("reads OPENAI_API_KEY=%s", (value, expected) => {
     expect(parseDotEnv(`OPENAI_API_KEY=${value}`)).toEqual({ OPENAI_API_KEY: expected });
+  });
+
+  it.each([
+    `A=${"\t".repeat(50_000)}x`,
+    `A='${"'#".repeat(50_000)}x`,
+    `A="${'"#'.repeat(50_000)}x`,
+    `A=x${"\t".repeat(50_000)}x`,
+  ])("reads a long adversarial line quickly", (line) => {
+    const started = performance.now();
+    parseDotEnv(line);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe("renameSkillMd", () => {
+  it("replaces a block scalar name and its indented lines only", () => {
+    expect(renameSkillMd("---\nname: |\n  Old\n  name\n\ndescription: d\n---\nBody", "New")).toBe(
+      "---\nname: New\ndescription: d\n---\nBody",
+    );
+  });
+
+  it("stays fast on a long indented block", () => {
+    const content = `---\nname: >\n${"\t".repeat(100_000)}\u2028\n---\n`;
+    const started = performance.now();
+    renameSkillMd(content, "New");
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });
 
