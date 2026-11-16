@@ -664,7 +664,7 @@ async function inspectSafeRemoteUrl(
   if (url.protocol === "http:" && isLocalhostOrLoopbackIp(hostname)) {
     return { url, addresses: literal ?? [] };
   }
-  const addresses = literal ?? (await resolveConnectorHost(hostname, resolve));
+  const addresses = literal ?? (await resolve(hostname));
   try {
     assertAllowedAddresses(addresses, policy);
   } catch (error) {
@@ -674,21 +674,6 @@ async function inspectSafeRemoteUrl(
     throw new Error("Connector URL must use HTTPS");
   }
   return { url, addresses };
-}
-
-async function resolveConnectorHost(
-  hostname: string,
-  resolve: ResolveHostname,
-): Promise<ResolvedAddress[]> {
-  try {
-    return await resolve(hostname);
-  } catch (error) {
-    const code = (error as { code?: unknown } | null)?.code;
-    if (code === "ENOTFOUND" || code === "ENODATA") {
-      throw new Error("Connector URL host could not be found", { cause: error });
-    }
-    throw error;
-  }
 }
 
 function requestInitWithHost(url: URL, init: RequestInit): RequestInit {

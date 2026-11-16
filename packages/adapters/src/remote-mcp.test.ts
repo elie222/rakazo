@@ -20,18 +20,6 @@ import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
 describe("remote MCP URL policy", () => {
-  it("says when a connector's host does not exist, and keeps other lookup failures", async () => {
-    const lookupFailure = (code: string) => async () => {
-      throw Object.assign(new Error(`getaddrinfo ${code} connectors.example.test`), { code });
-    };
-    await expect(
-      assertSafeRemoteUrl("https://connectors.example.test/mcp", lookupFailure("ENOTFOUND")),
-    ).rejects.toThrow("Connector URL host could not be found");
-    await expect(
-      assertSafeRemoteUrl("https://connectors.example.test/mcp", lookupFailure("EAI_AGAIN")),
-    ).rejects.toThrow("getaddrinfo EAI_AGAIN");
-  });
-
   it("accepts public HTTPS endpoints", async () => {
     await expect(
       assertSafeRemoteUrl("https://connectors.example.test/mcp", publicResolver),
