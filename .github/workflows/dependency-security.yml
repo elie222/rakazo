@@ -44,15 +44,16 @@ jobs:
     outputs:
       tags: ${{ steps.tags.outputs.tags }}
     steps:
-      - name: Select main and current stable release
+      - name: Select main and latest published version release
         id: tags
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tags=$(gh api graphql \
-            -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName } } }' \
-            -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
-            --jq '["edge", .data.repository.latestRelease.tagName] | map(select(. != null)) | unique')
+          set -euo pipefail
+          tags=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -c '[.[][] | select(.draft == false and (.tag_name | test("^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$")))]
+              | max_by(.published_at)
+              | ["edge", .tag_name] | map(select(. != null)) | unique')
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
   published-images:

@@ -57,8 +57,8 @@ assertion rejects incomplete audits, including scans of only the package-manager
 multi-document lockfile, and audits that omit its package-manager dependencies.
 
 Image validation scans the app, computer and updater built for a pull request. Daily scans also
-inspect both published Linux architectures for main and the current stable release, using
-read-only registry access for private packages. Artifacts retain the full vulnerability inventory,
+inspect both published Linux architectures for main and the latest published version release
+(including betas), using read-only registry access for private packages. Artifacts retain the full vulnerability inventory,
 image identity, scanner/database versions and a CycloneDX SBOM. Image scans are reporting checks:
 OS advisories and bundled tools still require applicability review, including findings without
 available fixes. A passing build or dependency audit is not a clean image-security verdict.
