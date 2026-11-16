@@ -656,6 +656,7 @@ export async function hasReadyModelCredential(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
+  resolution: ConnectedModelResolution = {},
 ): Promise<boolean> {
   const credential = await findConnectedModelCredential(
     prisma,
@@ -663,10 +664,23 @@ export async function hasReadyModelCredential(
     actor,
     provider,
     modelId,
+    resolution,
   );
   if (!credential) return false;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
-  return Boolean(secret && !(secret.kind === "oauth" && secret.reconnectRequired));
+  if (!secret || (secret.kind === "oauth" && secret.reconnectRequired)) return false;
+  if (await validateConnectedModelChoice(prisma, secretStore, actor, provider, modelId, resolution))
+    return false;
+  const auth = await readStoredModelAuth(
+    prisma,
+    secretStore,
+    actor.userId,
+    credential.secretId,
+    provider,
+    modelId,
+    resolution.codexCatalog,
+  );
+  return auth.status === "ready";
 }
 
 export type BotModelChangeDeps = {

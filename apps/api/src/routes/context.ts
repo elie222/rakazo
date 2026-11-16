@@ -1,4 +1,5 @@
 import { implement, ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
@@ -224,14 +225,21 @@ export function createRouterContext(deps: RouterDeps) {
         : { env: process.env };
     let deploymentPrimary = deploymentModelRole(role, defaults).primary;
     if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
-      const ready = await hasReadyModelCredential(
-        deps.prisma,
-        deps.secrets,
-        actor,
-        deploymentPrimary.provider,
-        deploymentPrimary.modelId,
-      );
-      if (!ready) deploymentPrimary = null;
+      try {
+        const ready = await hasReadyModelCredential(
+          deps.prisma,
+          deps.secrets,
+          actor,
+          deploymentPrimary.provider,
+          deploymentPrimary.modelId,
+          { codexCatalog },
+        );
+        if (!ready) deploymentPrimary = null;
+      } catch (error) {
+        if (!(error instanceof SecretStoreUnavailableError)) throw error;
+        // This view is advisory; a temporary outage must not fail an already committed save.
+        deploymentPrimary = null;
+      }
     }
     return { ...settings, deploymentPrimary };
   };

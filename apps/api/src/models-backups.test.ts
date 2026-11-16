@@ -1,4 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -18,6 +19,7 @@ function setup(
   options: {
     actor?: Actor;
     credentialProvider?: string;
+    codexCatalog?: RouterDeps["codexCatalog"];
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
     /** An openai-compatible connection with this stored list and own model. */
@@ -155,6 +157,7 @@ function setup(
     userModelCredential: prisma.userModelCredential,
   });
   const deps = {
+    codexCatalog: options.codexCatalog,
     billing: options.credits ? { modelCreditsEnabled: true } : undefined,
     prisma,
     secrets: {
@@ -588,6 +591,78 @@ describe("role-based model settings API", () => {
         expect((await response.json()).json.deploymentPrimary).toBeNull();
       },
     );
+
+    it.each([true, false])(
+      "checks whether a compatible connection enables the approval model: %s",
+      async (enabled) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        const { call } = setup({
+          compatible: { enabledModelIds: enabled ? ["judge"] : ["other"], defaultModel: "other" },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          enabled ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([true, false])(
+      "checks subscription access to an approval model against the live catalog: %s",
+      async (listed) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-codex");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "gpt-5.3-codex-spark");
+        const { call, deps } = setup({
+          credentialProvider: "openai-codex",
+          codexCatalog: {
+            read: vi.fn(async () =>
+              listed
+                ? [{ slug: "gpt-5.3-codex-spark", reasoningEfforts: [], supportsFastTier: false }]
+                : [],
+            ),
+          },
+        });
+        vi.mocked(deps.secrets.load).mockResolvedValue(
+          serializeModelSecret({
+            kind: "oauth",
+            credential: {
+              type: "oauth",
+              access: "fake-access",
+              refresh: "fake-refresh",
+              expires: Date.now() + 60_000,
+              accountId: "fixture-account",
+            },
+          }),
+        );
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          listed ? { provider: "openai-codex", modelId: "gpt-5.3-codex-spark" } : null,
+        );
+      },
+    );
+
+    it("keeps reads and committed saves successful during a secret-store outage", async () => {
+      clearApprovalEnvironment();
+      const { call, deps, roles } = setup();
+      const primary = { provider: availableModel.provider, modelId: availableModel.id };
+      expect((await call("models/setRole", { role: "approval", primary })).response.status).toBe(
+        200,
+      );
+      vi.mocked(deps.secrets.load).mockRejectedValue(new SecretStoreUnavailableError());
+      for (const procedure of ["models/role", "models/setRole"]) {
+        const { response } = await call(procedure, {
+          role: "approval",
+          ...(procedure === "models/setRole" ? { primary: null, backups: [] } : {}),
+        });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toBeNull();
+      }
+      expect(roles().filter((row) => row.role === "approval")).toEqual([]);
+    });
   });
 
   it("saves a computer-use model only when it can see images", async () => {
