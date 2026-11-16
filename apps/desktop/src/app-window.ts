@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
@@ -24,6 +24,7 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
+import { readPrivateFile, writePrivateFileSync } from "./setup-store.js";
 import {
   mcpOAuthPartition,
   mcpOAuthPopupServerId,
@@ -59,16 +60,12 @@ export function developmentIcon() {
 function savedWindowFile() {
   return path.join(app.getPath("userData"), "window-bounds.json");
 }
-function readSavedWindow(): SavedWindow | null {
-  try {
-    return parseSavedWindow(readFileSync(savedWindowFile(), "utf8"));
-  } catch {
-    return null;
-  }
+async function readSavedWindow(): Promise<SavedWindow | null> {
+  const raw = await readPrivateFile(savedWindowFile(), 1024);
+  return raw === null ? null : parseSavedWindow(raw);
 }
 /** Windows reports a minimized window as not maximized, so its last state is kept here. */
 const maximizedWindows = new WeakSet<BrowserWindow>();
-/** Written synchronously: on quit the process can exit before an async write finishes. */
 function saveWindow(win: BrowserWindow) {
   if (win.isDestroyed()) return;
   const saved: SavedWindow = {
@@ -76,7 +73,7 @@ function saveWindow(win: BrowserWindow) {
     maximized: win.isMinimized() ? maximizedWindows.has(win) : win.isMaximized(),
   };
   try {
-    writeFileSync(savedWindowFile(), JSON.stringify(saved), { mode: 0o600 });
+    writePrivateFileSync(savedWindowFile(), JSON.stringify(saved));
   } catch {
     // Losing the size only means the next launch opens at the default.
   }
@@ -175,12 +172,12 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
-export function createWindow(url: string, partition: string | null) {
+export async function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
   // A server switch destroys the window it replaces without a close, so save it first.
   if (desktop.mainWindow !== null) saveWindow(desktop.mainWindow);
-  const saved = restorableWindow(readSavedWindow(), screen.getAllDisplays());
+  const saved = restorableWindow(await readSavedWindow(), screen.getAllDisplays());
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height } : {}),

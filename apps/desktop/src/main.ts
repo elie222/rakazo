@@ -350,7 +350,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
       target.partition,
       desktop.currentSetup?.mode === "new",
     );
-    const created = createWindow(targetUrl, target.partition);
+    const created = await createWindow(targetUrl, target.partition);
     win = created.win;
     // Kept until the caller commits (after setup.json is written) or the switch is abandoned.
     desktop.replacedAppWindow =
