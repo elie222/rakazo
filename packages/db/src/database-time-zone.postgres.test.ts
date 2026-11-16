@@ -13,8 +13,8 @@ const MIGRATION = "20261221120000_database_time_zone_utc";
 
 dbTests("database time zone", () => {
   const database = `time_zone_${process.pid}_${Date.now()}`;
-  const dir = mkdtempSync(path.join(tmpdir(), "time-zone-migrations-"));
-  const admin = new Client({ connectionString: urlFor("postgres") });
+  let dir: string;
+  let admin: Client;
 
   function urlFor(name: string) {
     const url = new URL(ownerUrl!);
@@ -34,6 +34,9 @@ dbTests("database time zone", () => {
   }
 
   beforeAll(async () => {
+    // Set up here, not while collecting: a skipped suite has no database URL to read.
+    dir = mkdtempSync(path.join(tmpdir(), "time-zone-migrations-"));
+    admin = new Client({ connectionString: urlFor("postgres") });
     cpSync(path.join(dbPackageDir, "prisma/migrations", MIGRATION), path.join(dir, MIGRATION), {
       recursive: true,
     });
