@@ -223,15 +223,19 @@ describe("shared role editor", () => {
     saved = { primary: chat, backups: [jev, mini] };
     await render();
     const row = (n: number) => container.querySelector(`[data-testid="model-role-row-${n}"]`)!;
-    const dragEvent = async (target: Element, type: string) => {
+    // jsdom has no layout, so every row reads as zero height and the pointer as below its middle.
+    const dragEvent = async (target: Element, type: string, clientY = 0) => {
       const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
         dataTransfer: { setDragImage: () => undefined },
+        clientY,
       });
       await act(async () => target.dispatchEvent(event));
     };
     await dragEvent(row(3), "dragstart");
-    await dragEvent(row(2), "dragover");
-    await dragEvent(row(1), "dragover");
+    await dragEvent(row(2), "dragover", -1);
+    await dragEvent(row(1), "dragover", -1);
+    await dragEvent(row(2), "dragover", -1);
+    await dragEvent(row(2), "dragover", -1);
     const names = () => rows().map((name) => name?.replace(/OpenRouter$/, ""));
     expect(names()).toEqual(["Mini", "Chat", "Jev 1.14"]);
     expect(api.setRole).not.toHaveBeenCalled();

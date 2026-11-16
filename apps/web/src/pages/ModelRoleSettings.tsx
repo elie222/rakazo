@@ -169,7 +169,11 @@ export function ModelRoleSettings({
   }, [queryClient, rpc, userId, spaceId, scope, role]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   // The list as it reads mid-drag: the dragged row moves through it, and the order saves on drop.
-  const [drag, setDrag] = useState<{ key: string; order: ModelRoleChoice[] } | null>(null);
+  const [drag, setDrag] = useState<{
+    key: string;
+    from: ModelRoleChoice[];
+    order: ModelRoleChoice[];
+  } | null>(null);
   // After a connection the slot's picker reopens on that provider's models.
   const [reopen, setReopen] = useState<{
     slot: "primary" | number | "add";
@@ -264,15 +268,19 @@ export function ModelRoleSettings({
     next.splice(target, 0, item!);
     void commit(next);
   };
-  const dragOver = (target: ModelRoleChoice) => {
+  // The pointer's half of the hovered row decides the side, so repeated events settle.
+  const dragOver = (target: ModelRoleChoice, after: boolean) => {
     if (!drag || modelRoleChoiceKey(target) === drag.key) return;
     const order = drag.order.filter((item) => modelRoleChoiceKey(item) !== drag.key);
     const dragged = drag.order.find((item) => modelRoleChoiceKey(item) === drag.key)!;
-    order.splice(drag.order.indexOf(target), 0, dragged);
-    setDrag({ key: drag.key, order });
+    order.splice(order.indexOf(target) + (after ? 1 : 0), 0, dragged);
+    if (order.some((item, index) => item !== drag.order[index])) setDrag({ ...drag, order });
   };
+  // A drop over a list that reloaded mid-drag is dropped rather than saving the old rows.
   const drop = () => {
-    if (drag?.order.some((item, index) => !sameChoice(item, rows[index]!))) void commit(drag.order);
+    const unchanged = (list: ModelRoleChoice[]) =>
+      list.length === rows.length && list.every((item, index) => sameChoice(item, rows[index]!));
+    if (drag && unchanged(drag.from) && !unchanged(drag.order)) void commit(drag.order);
     setDrag(null);
   };
   const remove = (index: number) => void commit(rows.filter((_, item) => item !== index));
@@ -371,14 +379,15 @@ export function ModelRoleSettings({
                 event.dataTransfer.effectAllowed = "move";
                 // The row itself moves through the list, so the browser's translucent copy is hidden.
                 event.dataTransfer.setDragImage(emptyDragImage(), 0, 0);
-                setDrag({ key: modelRoleChoiceKey(choice), order: rows });
+                setDrag({ key: modelRoleChoiceKey(choice), from: rows, order: rows });
               }}
               onDragEnd={() => setDrag(null)}
               onDragOver={(event) => {
                 if (!drag) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
-                dragOver(choice);
+                const box = event.currentTarget.getBoundingClientRect();
+                dragOver(choice, event.clientY > box.top + box.height / 2);
               }}
               onDrop={(event) => {
                 event.preventDefault();
