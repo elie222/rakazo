@@ -107,6 +107,8 @@ type SetupIpcDeps = {
     previousSetup: DesktopSetup | null,
     previousUrl: string | null,
   ) => Promise<string>;
+  /** Picks the stack This computer runs on, if launch left that open. */
+  settleLocalStack: () => Promise<void>;
 };
 
 /** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
@@ -119,6 +121,7 @@ export function registerSetupIpc({
   commitPendingAppSwitch,
   abandonPendingAppSwitch,
   recoverFromCrashedSave,
+  settleLocalStack,
 }: SetupIpcDeps) {
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
@@ -238,7 +241,8 @@ export function registerSetupIpc({
     await shell.openExternal(dockerDownloadUrl(process.platform, arch));
   });
   handleIpc("desktop.setup.stack.state", () => desktop.localStack.state());
-  handleIpc("desktop.setup.stack.start", () => {
+  handleIpc("desktop.setup.stack.start", async () => {
+    await settleLocalStack();
     // Respond right away; the setup window polls `stack.state` until a terminal phase.
     void desktop.localStack.start();
     return desktop.localStack.state();
