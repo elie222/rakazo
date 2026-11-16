@@ -63,12 +63,12 @@ export const SELF_HOST_DEFINITION =
   "A self-hosted AI agent is an AI agent whose app, data, and tools run on a machine you control, such as a laptop, a home server, or a VPS, instead of on a vendor's cloud. It still needs a model: a hosted one through your own API key, or a local one on your hardware.";
 
 export const SELF_HOST_MODEL_PARAGRAPHS = [
-  "Self-hosting the agent does not self-host the model. With a hosted provider, the prompts and context a bot sends go to that provider. To keep them on your hardware, point the bot at a local model server such as Ollama, LM Studio, llama.cpp, or MLX, and keep the default local Docker computer.",
+  "Self-hosting the agent does not self-host the model. With a hosted provider, the prompts and context a bot sends go to that provider. To keep them on your hardware, point the bot at a local model server such as Ollama, LM Studio, llama.cpp, or MLX, use a local approval model too, and keep the default local Docker computer.",
   "A model server answers prompts. It is not an agent on its own. The agent is the part that keeps conversations, memory, and schedules, uses a browser and a shell, and asks before crossing a boundary you set.",
 ] as const;
 
 export const SELF_HOST_HARDWARE =
-  "A machine that runs Docker, on amd64 or arm64. Each bot computer is capped at 2 GB of memory and 2 CPU cores by default (`RAKAZO_COMPUTER_MEMORY`, `RAKAZO_COMPUTER_CPUS`). The production Compose file sizes Postgres for an 8 GB host. A GPU only matters if you run the model locally.";
+  "A machine that runs Docker, on amd64 or arm64. Each bot computer is capped at 2 GB of memory and 2 CPU cores by default (`RAKAZO_COMPUTER_MEMORY`, `RAKAZO_COMPUTER_CPUS`). The production Compose file sizes Postgres for an 8 GB host. You need a GPU only for a local model or for GPU work inside a bot computer.";
 
 export const SELF_HOST_OPTIONS_CHECKED = "November 16, 2026";
 
@@ -174,7 +174,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   {
     question: "Can a self-hosted AI agent run entirely on my own hardware?",
     answer:
-      "Yes, with a local model. Rakazo with a local model server and the default local Docker computer keeps prompts, data, and tool work on your machines. Tools that browse the web or call an integration still reach those sites.",
+      "Yes, when every model it uses is local. Rakazo with local models, including the approval model, and the default local Docker computer keeps prompts, data, and tool work on your machines. Tools that browse the web or call an integration still reach those sites.",
   },
   {
     question: "Should I self-host or use a hosted AI agent?",
