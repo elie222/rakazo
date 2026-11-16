@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundLogEvent, MAX_LOG_EVENT_CHARS } from "./bounded-event.js";
+import { boundLogEvent, MAX_LOG_EVENT_CHARS, MAX_LOG_STRING_CHARS } from "./bounded-event.js";
 import type { LogEvent } from "./types.js";
 
 function event(fields: Record<string, unknown> = {}): LogEvent {
@@ -27,6 +27,37 @@ const unserializable = {
 };
 
 describe("boundLogEvent", () => {
+  it("sends what it measured, so a field that answers differently later cannot change it", () => {
+    let reads = 0;
+    const changing = { toJSON: () => (++reads === 1 ? "safe" : "secret-value") };
+    const bounded = boundLogEvent(event({ changing }));
+    expect(JSON.stringify(bounded)).toContain("safe");
+    expect(JSON.stringify(bounded)).not.toContain("secret-value");
+  });
+
+  it("keeps a shortened string within its limit, note included", () => {
+    const bounded = boundLogEvent(event({ note: "x".repeat(MAX_LOG_STRING_CHARS * 2) }));
+    expect((bounded.note as string).length).toBeLessThanOrEqual(MAX_LOG_STRING_CHARS);
+    expect(bounded["log.truncated"]).toBe(true);
+  });
+
+  it("stays within the line limit once the shortened marker is added", () => {
+    const fields: Record<string, unknown> = { long: "y".repeat(MAX_LOG_STRING_CHARS * 2) };
+    // Fill to just under the limit, so only the marker would push the line over it.
+    const base = JSON.stringify(boundLogEvent(event(fields))).length;
+    fields.fill = "z".repeat(Math.max(0, MAX_LOG_EVENT_CHARS - base - 40));
+    const bounded = boundLogEvent(event(fields));
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(MAX_LOG_EVENT_CHARS);
+  });
+
+  it("stands in for a line with a very large number of fields instead of dropping it", () => {
+    const fields: Record<string, unknown> = {};
+    for (let i = 0; i < 200_000; i++) fields[`f${i}`] = i;
+    const bounded = boundLogEvent(event(fields));
+    expect(bounded["log.oversized"]).toBe(true);
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(MAX_LOG_EVENT_CHARS);
+  });
+
   it("returns a line that serializes when a field is a BigInt", () => {
     const bounded = boundLogEvent(event({ "run.steps": 12345678901234567890n }));
 

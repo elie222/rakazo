@@ -14,16 +14,19 @@ const SMALLEST_STAND_IN = {
   include: (key: string) => ESSENTIAL_FIELDS.has(key) || key.endsWith(".id"),
 };
 
+// Room left for the marker added to a shortened line, so adding it cannot cross the limit.
+const TRUNCATED_MARKER_CHARS = 32;
+
+/**
+ * The line as plain data, serialized once: what the store receives is exactly what was measured,
+ * so a field that answers differently each time it is read cannot change it afterwards.
+ */
 export function boundLogEvent(event: LogEvent): Record<string, unknown> {
-  let normalized = false;
   let truncated = false;
   let json: unknown;
   try {
     json = JSON.stringify(event, (_key, value: unknown) => {
-      if (typeof value === "bigint") {
-        normalized = true;
-        return value.toString();
-      }
+      if (typeof value === "bigint") return value.toString();
       if (typeof value !== "string" || value.length <= MAX_LOG_STRING_CHARS) return value;
       truncated = true;
       return cap(value, MAX_LOG_STRING_CHARS);
@@ -32,16 +35,19 @@ export function boundLogEvent(event: LogEvent): Record<string, unknown> {
     return standIn(event, "log.unserializable");
   }
   if (typeof json !== "string") return standIn(event, "log.unserializable");
-  if (json.length > MAX_LOG_EVENT_CHARS) return standIn(event, "log.oversized");
-  if (!normalized && !truncated) return event;
+  if (json.length > MAX_LOG_EVENT_CHARS - TRUNCATED_MARKER_CHARS) {
+    return standIn(event, "log.oversized");
+  }
   const bounded: Record<string, unknown> = JSON.parse(json);
   if (truncated) bounded["log.truncated"] = true;
   return bounded;
 }
 
+/** At most `limit` characters, the note saying how much was cut included. */
 function cap(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  return `${value.slice(0, limit)}… [${value.length - limit} more characters]`;
+  const note = `… [${value.length} characters]`;
+  return `${value.slice(0, Math.max(0, limit - note.length))}${note}`;
 }
 
 /**
@@ -53,7 +59,8 @@ function standIn(event: LogEvent, flag: string): Record<string, unknown> {
   if (event.error) {
     fields.push(["error.name", event.error.name], ["error.message", event.error.message]);
   }
-  fields.push(...Object.entries(event));
+  // Appended one by one: spreading a very large set of fields into one call can throw.
+  for (const entry of Object.entries(event)) fields.push(entry);
   // The flag goes last so no field of the same name can overwrite it.
   const kept = { ...plainFields(fields, STAND_IN), [flag]: true };
   if (JSON.stringify(kept).length <= MAX_LOG_EVENT_CHARS) return kept;
