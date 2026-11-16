@@ -1,14 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DeploymentVoiceSettings as Settings, VoiceInfo } from "@rakazo/contracts";
-import {
-  Button,
-  Field,
-  FieldLabel,
-  Input,
-  NativeSelect,
-  NativeSelectOption,
-  SectionHeading,
-} from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave } from "../lib/query";
 import { rpc } from "../lib/rpc";
@@ -127,28 +119,24 @@ export function DeploymentVoiceSettings({
           <FieldLabel htmlFor={providerId}>
             <Trans>Provider</Trans>
           </FieldLabel>
-          <NativeSelect
+          <OptionSelect
             id={providerId}
-            className="w-full"
             value={draft.provider}
-            onChange={(event) =>
+            onValueChange={(provider) =>
               set({
-                provider: event.target.value,
+                provider,
                 apiKey: "",
-                voiceId: event.target.value === savedProvider ? settings.voiceId : "",
+                voiceId: provider === savedProvider ? settings.voiceId : "",
               })
             }
-          >
-            <NativeSelectOption value="">
-              {t`Default`}
-              {environment ? ` (${environment.name})` : ""}
-            </NativeSelectOption>
-            {settings.providers.map((entry) => (
-              <NativeSelectOption key={entry.id} value={entry.id}>
-                {entry.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={[
+              {
+                value: "",
+                label: environment ? `${t`Default`} (${environment.name})` : t`Default`,
+              },
+              ...settings.providers.map((entry) => ({ value: entry.id, label: entry.name })),
+            ]}
+          />
         </Field>
         {draft.provider ? (
           <Field>
@@ -172,19 +160,15 @@ export function DeploymentVoiceSettings({
             <FieldLabel htmlFor={voiceSelectId}>
               <Trans>Voice</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect
               id={voiceSelectId}
-              className="w-full"
-              value={draft.voiceId}
-              onChange={(event) => set({ voiceId: event.target.value })}
-            >
-              {voiceOptions.map((voice) => (
-                <NativeSelectOption key={voice.id} value={voice.id}>
-                  {voice.label}
-                  {voice.description ? ` (${voice.description})` : ""}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              value={draft.voiceId || null}
+              onValueChange={(voiceId) => set({ voiceId })}
+              options={voiceOptions.map((voice) => ({
+                value: voice.id,
+                label: voice.description ? `${voice.label} (${voice.description})` : voice.label,
+              }))}
+            />
           </Field>
         ) : null}
       </fieldset>

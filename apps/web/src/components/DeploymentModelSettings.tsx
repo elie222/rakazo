@@ -6,9 +6,7 @@ import {
   FieldLabel,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOptGroup,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Switch,
 } from "@rakazo/ui-web";
@@ -154,40 +152,38 @@ export function DeploymentModelSettings() {
             <FieldLabel htmlFor={defaultId} className="sr-only">
               <Trans>Model</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect
               id={defaultId}
-              className="w-full"
               value={
                 settings.defaultModel
                   ? choiceKey(settings.defaultModel.provider, settings.defaultModel.modelId)
                   : ""
               }
-              onChange={(event) => {
-                const [provider, modelId] = event.target.value.split("\n");
+              onValueChange={(choice) => {
+                const [provider, modelId] = choice.split("\n");
                 run((client) =>
                   client.models.deployment.update({
                     defaultModel: provider && modelId ? { provider, modelId } : null,
                   }),
                 );
               }}
-            >
-              <NativeSelectOption value="">
-                {t`Default`}
-                {environmentLabel ? ` (${environmentLabel})` : ""}
-              </NativeSelectOption>
-              {settings.connections.map((connection) => (
-                <NativeSelectOptGroup key={connection.provider} label={connection.name}>
-                  {connection.models.map((model) => (
-                    <NativeSelectOption
-                      key={model.id}
-                      value={choiceKey(connection.provider, model.id)}
-                    >
-                      {model.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelectOptGroup>
-              ))}
-            </NativeSelect>
+              options={[
+                {
+                  value: "",
+                  label: environmentLabel ? `${t`Default`} (${environmentLabel})` : t`Default`,
+                },
+                // One list for every provider; with more than one, each model names its own.
+                ...settings.connections.flatMap((connection) =>
+                  connection.models.map((model) => ({
+                    value: choiceKey(connection.provider, model.id),
+                    label:
+                      settings.connections.length > 1
+                        ? `${model.label} (${connection.name})`
+                        : model.label,
+                  })),
+                ),
+              ]}
+            />
           </Field>
         ) : null}
         {settings.connections.length ? (
@@ -287,33 +283,29 @@ export function DeploymentModelSettings() {
               <FieldLabel htmlFor={providerId}>
                 <Trans>Provider</Trans>
               </FieldLabel>
-              <NativeSelect
+              <OptionSelect
                 id={providerId}
-                className="w-full"
-                value={draft.provider}
+                value={draft.provider || null}
                 required
-                onChange={(event) => {
+                onValueChange={(provider) => {
                   // A saved endpoint opens with its URL, models and limits; never its key.
                   const saved = settings.connections.find(
-                    (connection) => connection.saved && connection.provider === event.target.value,
+                    (connection) => connection.saved && connection.provider === provider,
                   );
                   setDraft({
                     ...EMPTY_DRAFT,
-                    provider: event.target.value,
+                    provider,
                     baseUrl: saved?.baseUrl ?? "",
                     models: saved?.baseUrl ? saved.models.map((model) => model.id).join(", ") : "",
                     contextWindow: saved?.contextWindow ? String(saved.contextWindow) : "",
                     maxTokens: saved?.maxTokens ? String(saved.maxTokens) : "",
                   });
                 }}
-              >
-                <NativeSelectOption value="" />
-                {settings.providers.map((provider) => (
-                  <NativeSelectOption key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                options={settings.providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.name,
+                }))}
+              />
             </Field>
             {adding?.endpoint ? (
               <Field>

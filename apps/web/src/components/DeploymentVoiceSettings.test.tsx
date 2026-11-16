@@ -24,8 +24,26 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  // The app's dropdown, as a plain select under the same id, so tests pick a value directly.
+  OptionSelect: ({
+    id,
+    value,
+    options,
+    onValueChange,
+  }: {
+    id?: string;
+    value: string | null;
+    options: readonly { value: string; label: string }[];
+    onValueChange: (value: string) => void;
+  }) => (
+    <select id={id} value={value ?? ""} onChange={(event) => onValueChange(event.target.value)}>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
   SectionHeading: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
 }));
 vi.mock("./ai/primitives", () => ({ SuccessPop: () => null }));

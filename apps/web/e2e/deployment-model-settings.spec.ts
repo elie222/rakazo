@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import type { DeploymentModelSettings, ModelCatalogEntry } from "@rakazo/contracts";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   makeAdmin,
   openUserSettings,
@@ -79,13 +80,12 @@ test("an admin adds a provider for everyone without their own", async ({ page },
   const modelSettings = await openUserSettings(page, "models");
   const block = modelSettings.getByTestId("deployment-model-settings");
   await expect(block.getByRole("heading", { name: "Default for everyone" })).toBeVisible();
-  await expect(block.getByLabel("Model", { exact: true })).toHaveValue("");
-  await expect(block.getByLabel("Model", { exact: true }).locator("option").first()).toHaveText(
+  await expect(block.getByLabel("Model", { exact: true })).toHaveText(
     `Default (${environmentDefault.label})`,
   );
   const addedName = providerName(addedModel);
   await block.getByRole("button", { name: "Add provider", exact: true }).click();
-  await block.getByLabel("Provider", { exact: true }).selectOption(addedModel.provider);
+  await chooseOption(block.getByLabel("Provider", { exact: true }), addedName);
   await block.getByLabel("API key", { exact: true }).fill("test-deployment-model-key");
   await block.getByRole("button", { name: "Save", exact: true }).click();
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   makeAdmin,
   openUserSettings,
@@ -56,13 +57,13 @@ test("an admin sets the voice for everyone without their own", async ({ page }, 
   const voiceSettings = await openUserSettings(page, "voice");
   const block = voiceSettings.getByTestId("deployment-voice-settings");
   await expect(block.getByRole("heading", { name: "Default for everyone" })).toBeVisible();
-  await block.getByLabel("Provider").selectOption(provider.id);
+  await chooseOption(block.getByLabel("Provider"), provider.name);
   await block.getByLabel("API key").fill("test-deployment-voice-key");
   await block.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect(block.getByLabel("API key")).toHaveAttribute("placeholder", "Saved");
   await expect(block.getByLabel("API key")).toHaveValue("");
-  await expect(block.getByLabel("Voice")).toHaveValue("voice-a");
+  await expect(block.getByLabel("Voice")).toHaveText("Aria");
   expect(updates).toEqual([{ provider: provider.id, apiKey: "test-deployment-voice-key" }]);
   await captureScreenshot(page, testInfo, "deployment-voice-settings");
 });
