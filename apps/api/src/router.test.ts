@@ -3354,6 +3354,31 @@ describe("private API connectors", () => {
     expect(response.status).toBe(400);
     expect(create).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["a line break", "fake-graphql-key\r\nx-injected: 1"],
+    ["a character a header cannot carry", "fake-graphql-key-\u201Cquoted\u201D"],
+  ])("refuses a GraphQL credential with %s without repeating it", async (_label, credential) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const { create, handler } = privateDeps();
+    const response = await handle(
+      handler,
+      rpc("capabilities/install", {
+        kind: "graphql",
+        name: "GraphQL",
+        source: "https://graphql.example.test/graphql",
+        config: { auth: { type: "bearer" } },
+        credential,
+      }),
+      { prefix: "/rpc", context: { actor: actor(false) } },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain("fake-graphql-key");
+    expect(JSON.stringify(sink.events)).not.toContain("fake-graphql-key");
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe("connections.begin", () => {

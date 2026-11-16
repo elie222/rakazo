@@ -1,16 +1,17 @@
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { z } from "zod";
 import {
   AuthSchema,
   applyCredential,
   asRecord,
   assertNoSensitiveQuery,
-  checkConnectorSource,
   PublicHeadersSchema,
   parseConnectorSetting,
   readBoundedText,
   requireCredential,
 } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
+import { checkConnectorSource } from "./connector-source.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "./remote-mcp.js";
 import { assertSafeRemoteUrl, createSafeRemoteFetch } from "./remote-mcp.js";
 
@@ -179,7 +180,7 @@ export async function prepareGraphqlInstall(input: {
 export function importGraphqlSchema(document: Record<string, unknown>): GraphqlOperation[] {
   const data = asRecord(document.data) ?? document;
   const schema = asRecord(data.__schema);
-  if (!schema) throw new Error("GraphQL introspection returned no schema");
+  if (!schema) throw new ConnectionSetupError("GraphQL introspection returned no schema");
 
   const types = Array.isArray(schema.types) ? (schema.types as GqlType[]) : [];
   const typeMap = new Map<string, GqlType>();
@@ -249,7 +250,7 @@ export function importGraphqlSchema(document: Record<string, unknown>): GraphqlO
 
   const operations = boundGraphqlOperations(queries, mutations, 100);
   if (operations.length === 0) {
-    throw new Error("GraphQL schema has no query or mutation fields");
+    throw new ConnectionSetupError("GraphQL schema has no query or mutation fields");
   }
   return operations;
 }
@@ -368,24 +369,41 @@ async function introspectGraphqlEndpoint(
       body: JSON.stringify({ query: INTROSPECTION_QUERY, operationName: "RakazoIntrospection" }),
       signal: combineSignals(signal, AbortSignal.timeout(15_000)),
     });
-    if (!response.ok) throw new Error(`GraphQL introspection returned HTTP ${response.status}`);
+    if (!response.ok)
+      throw new ConnectionSetupError(`GraphQL introspection returned HTTP ${response.status}`);
     const size = Number(response.headers.get("content-length") ?? 0);
-    if (size > 2_000_000) throw new Error("GraphQL introspection response is too large");
+    if (size > 2_000_000)
+      throw new ConnectionSetupError("GraphQL introspection response is too large");
     const { text, truncated } = await readBoundedText(response, 2_000_000);
-    if (truncated) throw new Error("GraphQL introspection response is too large");
-    const payload = JSON.parse(text) as Record<string, unknown>;
+    if (truncated) throw new ConnectionSetupError("GraphQL introspection response is too large");
+    const payload = parseIntrospection(text);
     const errors = Array.isArray(payload.errors) ? payload.errors : [];
     if (errors.length > 0) {
       const message =
         typeof asRecord(errors[0])?.message === "string"
           ? String(asRecord(errors[0])?.message)
           : "GraphQL introspection failed";
-      throw new Error(message);
+      throw new ConnectionSetupError(message);
     }
     return payload;
   } finally {
     await safeFetch.close().catch(() => undefined);
   }
+}
+
+function parseIntrospection(text: string): Record<string, unknown> {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    throw new ConnectionSetupError("GraphQL introspection response was not valid JSON", {
+      cause: error,
+    });
+  }
+  const record = asRecord(payload);
+  if (!record)
+    throw new ConnectionSetupError("GraphQL introspection response was not a JSON object");
+  return record;
 }
 
 function buildSelection(

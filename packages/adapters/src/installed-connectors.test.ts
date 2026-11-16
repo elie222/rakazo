@@ -2037,6 +2037,33 @@ describe("OpenAPI connector import", () => {
     await expect(failed).rejects.not.toThrow("fake-credential-1");
   });
 
+  it("lets a failure of our own propagate instead of blaming the source", async () => {
+    const fault = new Error("lookup store unavailable");
+    const failed = prepareApiInstall({
+      source: "https://connectors.example.test/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: { fetch: vi.fn(), resolveHostname: vi.fn().mockRejectedValue(fault) },
+    });
+    await expect(failed).rejects.toBe(fault);
+  });
+
+  it.each([
+    ["a host name that does not resolve", { code: "ENOTFOUND", syscall: "getaddrinfo" }],
+    ["a dropped connection", { code: "ECONNRESET" }],
+  ])("answers %s at the source as a setup error", async (_label, fields) => {
+    const failed = prepareApiInstall({
+      source: "https://connectors.example.test/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: {
+        fetch: vi.fn(),
+        resolveHostname: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error("lookup failed"), fields)),
+      },
+    });
+    await expect(failed).rejects.toMatchObject({ name: "ConnectionSetupError" });
+  });
+
   it("refuses credentials embedded in a persisted MCP URL", async () => {
     await expect(
       verifyMcpInstall({

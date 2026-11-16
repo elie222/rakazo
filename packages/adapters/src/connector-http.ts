@@ -1,9 +1,10 @@
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { z } from "zod";
-import { sanitizeIntegrationError } from "./composio-connector.js";
-import { sanitizeConnectorError } from "./connector-safety.js";
 
-const HeaderValue = z.string().max(2_048);
+/** Tab and printable Latin-1: what `Headers` accepts, without other control characters. */
+const HEADER_VALUE = /^[\t\x20-\x7E\x80-\xFF]*$/;
+
+const HeaderValue = z.string().max(2_048).regex(HEADER_VALUE, "Invalid HTTP header value");
 export const HeaderName = z
   .string()
   .min(1)
@@ -47,29 +48,11 @@ export function parseConnectorSetting<Schema extends z.ZodType>(
   return parsed.data;
 }
 
-/**
- * Runs the check of a connector source against the person's server. However that server answers
- * is theirs to fix, so a failure reaches them as a setup error with the credential redacted.
- */
-export async function checkConnectorSource<T>(
-  check: () => Promise<T>,
-  input: { credential?: string; signal?: AbortSignal },
-): Promise<T> {
-  try {
-    return await check();
-  } catch (error) {
-    if (error instanceof ConnectionSetupError || input.signal?.aborted) throw error;
-    const secrets = input.credential ? [input.credential] : [];
-    throw new ConnectionSetupError(
-      sanitizeConnectorError(sanitizeIntegrationError(error), secrets),
-      { cause: error },
-    );
-  }
-}
-
 export function requireCredential(auth: z.infer<typeof AuthSchema>, credential?: string): void {
   if (auth.type !== "none" && !credential)
     throw new ConnectionSetupError("This connector requires a credential");
+  if ((auth.type === "bearer" || auth.type === "header") && !HEADER_VALUE.test(credential ?? ""))
+    throw new ConnectionSetupError("The credential contains characters a header cannot carry");
 }
 
 export function applyCredential(

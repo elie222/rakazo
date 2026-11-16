@@ -19,7 +19,6 @@ import {
   applyCredential,
   asRecord,
   assertNoSensitiveQuery,
-  checkConnectorSource,
   HeaderName,
   isSensitiveHeader,
   isTransportHeader,
@@ -33,6 +32,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "./connector-safety.js";
+import { checkConnectorSource } from "./connector-source.js";
 import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
 import {
   CATALOG_EXECUTE,
@@ -513,15 +513,15 @@ async function loadOpenApiDocument(
     });
     if (!response.ok) {
       cancelResponseBody(response);
-      throw new Error(`OpenAPI document returned HTTP ${response.status}`);
+      throw new ConnectionSetupError(`OpenAPI document returned HTTP ${response.status}`);
     }
     const size = Number(response.headers.get("content-length") ?? 0);
     if (size > 2_000_000) {
       cancelResponseBody(response);
-      throw new Error("OpenAPI document is too large");
+      throw new ConnectionSetupError("OpenAPI document is too large");
     }
     const { text, truncated } = await readBoundedText(response, 2_000_000);
-    if (truncated) throw new Error("OpenAPI document is too large");
+    if (truncated) throw new ConnectionSetupError("OpenAPI document is too large");
     return parseOpenApiText(text);
   } finally {
     await safeFetch.close().catch(() => undefined);
@@ -545,7 +545,7 @@ function parseOpenApiText(text: string): Record<string, unknown> {
     }
   }
   if (!document || typeof document !== "object" || Array.isArray(document)) {
-    throw new Error("OpenAPI document is not valid JSON or YAML");
+    throw new ConnectionSetupError("OpenAPI document is not valid JSON or YAML");
   }
   return document as Record<string, unknown>;
 }
@@ -586,13 +586,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
 } {
   const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
   if (typeof server?.url !== "string" || !server.url) {
-    throw new Error("OpenAPI document must define servers[0].url");
+    throw new ConnectionSetupError("OpenAPI document must define servers[0].url");
   }
   const variables = asRecord(server.variables);
   const serverDefault = (name: string) => {
     const variable = asRecord(variables?.[name]);
     if (typeof variable?.default !== "string") {
-      throw new Error("OpenAPI server variable must define a string default");
+      throw new ConnectionSetupError("OpenAPI server variable must define a string default");
     }
     return variable.default;
   };
@@ -603,7 +603,9 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     length += serverDefault(name!).length - placeholder.length;
   }
   if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
-    throw new Error(`OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`);
+    throw new ConnectionSetupError(
+      `OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`,
+    );
   }
   const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
     serverDefault(name),
@@ -611,7 +613,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
-    throw new Error("OpenAPI document has no paths");
+    throw new ConnectionSetupError("OpenAPI document has no paths");
   }
   const refs: OpenApiRefs = { document, size: 0, literalSizes: new Map() };
   const operations: ApiOperation[] = [];
@@ -659,7 +661,9 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         }
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
-            throw new Error(`OpenAPI operation ${id} contains unsafe header ${parameter.name}`);
+            throw new ConnectionSetupError(
+              `OpenAPI operation ${id} contains unsafe header ${parameter.name}`,
+            );
           }
           headerParameters.push(parameter.name);
         }
@@ -700,7 +704,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     if (operations.length >= 100) break;
   }
   if (operations.length === 0) {
-    throw new Error("OpenAPI document has no operations with operationId");
+    throw new ConnectionSetupError("OpenAPI document has no operations with operationId");
   }
   return { baseUrl, operations };
 }
@@ -993,7 +997,7 @@ function connectorHeaders(
   const headers = { ...config.headers };
   if (!credential || config.auth.type === "none") return headers;
   const name = config.auth.type === "header" ? config.auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
+  if (!name) throw new ConnectionSetupError("Authentication header name is required");
   headers[name] = config.auth.type === "bearer" ? `Bearer ${credential}` : credential;
   return headers;
 }
