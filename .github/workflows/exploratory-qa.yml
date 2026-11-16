@@ -103,8 +103,11 @@ jobs:
           QA_KNOWN_ISSUES: ${{ runner.temp }}/known.json
           QA_OUT_DIR: exploratory-qa-out
         run: |
-          node scripts/exploratory-qa/explore.mjs
-          cat "$QA_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          node scripts/exploratory-qa/explore.mjs || status=$?
+          # The summary explains a failed run too, so it is written before failing the step.
+          if [[ -f "$QA_OUT_DIR/summary.md" ]]; then cat "$QA_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$status"
       - name: Upload findings and screenshots
         id: upload
         if: ${{ always() && hashFiles('exploratory-qa-out/findings.json') != '' }}

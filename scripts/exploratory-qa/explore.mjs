@@ -202,7 +202,8 @@ async function exploreFeature(browser, feature, index) {
       if (stopped) break;
       trimHistory(messages);
       const message = await callModel(messages);
-      messages.push(message);
+      // Some compatible endpoints refuse an assistant message whose content is null.
+      messages.push({ ...message, content: message.content ?? "" });
       const calls = message.tool_calls ?? [];
       if (calls.length === 0) {
         steps += 1;
