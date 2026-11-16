@@ -41,15 +41,28 @@ export function primaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey"
  * The desktop app has no address bar, so it answers the plain chord. Neither consumes the key on its
  * own: the shell only takes it while a transcript selection is armed.
  */
+function quoteChord(host: ShortcutHost) {
+  return { key: "L", shift: !host.desktop };
+}
+
+export function quoteShortcutKeys(host: ShortcutHost) {
+  const chord = quoteChord(host);
+  return [
+    host.apple ? "⌘" : "Ctrl",
+    ...(chord.shift ? [host.apple ? "⇧" : "Shift"] : []),
+    chord.key,
+  ];
+}
+
 export function isQuoteShortcut(event: KeyboardEvent, host: ShortcutHost) {
   if (!primaryModifier(event, host.apple) || event.altKey || event.repeat) return false;
-  return event.shiftKey === !host.desktop;
+  const chord = quoteChord(host);
+  return event.key.toUpperCase() === chord.key && event.shiftKey === chord.shift;
 }
 
 /** The chord `isQuoteShortcut` answers, written the way the pill shows it. */
 export function quoteShortcutLabel(host: ShortcutHost) {
-  if (host.desktop) return host.apple ? "⌘L" : "Ctrl+L";
-  return host.apple ? "⌘⇧L" : "Ctrl+Shift+L";
+  return quoteShortcutKeys(host).join(host.apple ? "" : "+");
 }
 
 /**
