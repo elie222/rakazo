@@ -94,13 +94,14 @@ describe("system browser authentication", () => {
           );
           return this;
         }
-        return Reflect.apply(listen, this, args);
+        // The remaining family binds the IPv4 loopback, so the test does not need the host to
+        // have IPv6: what it checks is that sign-in carries on with one family refused.
+        return Reflect.apply(listen, this, [args[0], "127.0.0.1", ...args.slice(2)]);
       });
       await openBrowserAuth(authorization.href, options);
-      const remaining = unavailable === "::1" ? "127.0.0.1" : "[::1]";
       const status = await new Promise<number | undefined>((resolve, reject) => {
         get(
-          `${callback.replace("127.0.0.1", remaining)}?code=x&state=test-state`,
+          `${callback}?code=x&state=test-state`,
           {
             headers: { Host: new URL(localCallback).host },
           },
