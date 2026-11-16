@@ -14,8 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -258,22 +257,18 @@ export function MessagingSettingsPanel() {
 
   const botPicker =
     bots.length > 1 ? (
-      <NativeSelect
+      <OptionSelect
         aria-label={t`Bot`}
         value={linkBotId}
-        onChange={(event) => {
+        onValueChange={(botId) => {
           if (linkGuard.invalidate(true)) {
             setLinkRequest(null);
           }
-          setSelectedBotId(event.target.value);
+          setSelectedBotId(botId);
         }}
-      >
-        {bots.map((bot) => (
-          <NativeSelectOption key={bot.id} value={bot.id}>
-            {bot.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        className="w-fit"
+        options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+      />
     ) : null;
 
   const memberLinkControls = (

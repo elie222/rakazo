@@ -143,18 +143,14 @@ it("connects the provider picked from the ones the server describes", async () =
   memory.connectProvider.mockResolvedValue(saved);
   const { onConfigChange, onBusyChange } = await render(null);
   await click(button("Connect memory provider"));
-  const select = host.querySelector("select")!;
-  expect([...select.options].map((option) => [option.value, option.text])).toEqual([
-    ["notes", "Notes"],
-    ["journal", "Journal"],
-  ]);
-  expect(select.value).toBe("notes");
+  const select = host.querySelector<HTMLElement>('[role="combobox"]')!;
+  expect(select.textContent).toBe("Notes");
   expect(input("API key")).toBeDefined();
 
-  await act(async () => {
-    select.value = "journal";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () => select.click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options.map((option) => option.textContent)).toEqual(["Notes", "Journal"]);
+  await act(async () => options[1]?.click());
   expect(() => input("API key")).toThrow();
   await type("Token", "token_12345678");
   await click(button("Advanced"));

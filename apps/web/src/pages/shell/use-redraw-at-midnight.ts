@@ -1,20 +1,15 @@
-import { useEffect, useState } from "react";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useMemo, useState } from "react";
 
 /** Rerenders at each local midnight, for labels that read today's date as they render ("Yesterday"). */
 export function useRedrawAtMidnight() {
   const [day, setDay] = useState(() => new Date());
-  useEffect(() => {
-    let timer: number | undefined;
-    const schedule = () => {
-      const midnight = new Date();
-      midnight.setHours(24, 0, 0, 0);
-      timer = window.setTimeout(() => {
-        setDay(new Date());
-        schedule();
-      }, midnight.getTime() - Date.now());
-    };
-    schedule();
-    return () => window.clearTimeout(timer);
-  }, []);
+  const untilMidnight = useMemo(() => {
+    const midnight = new Date(day);
+    midnight.setHours(24, 0, 0, 0);
+    return midnight.getTime() - Date.now();
+  }, [day]);
+  // Keyed on the day: two nights can leave the same delay, which alone would not restart it.
+  useTimeout(() => setDay(new Date()), untilMidnight, day);
   return day;
 }

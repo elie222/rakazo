@@ -360,8 +360,8 @@ export async function createNamedBot(
 }
 
 /**
- * Picks an option from one of the kit's dropdowns. They open a menu of options rather than a
- * native select, so selectOption() does not apply; options are matched by their visible name.
+ * Picks an option from one of the app's dropdowns, matched by its visible name. The menu opens
+ * at the page body, so options are looked up on the page rather than inside the trigger.
  */
 export async function chooseOption(trigger: Locator, option: string | { index: number }) {
   await trigger.click();
