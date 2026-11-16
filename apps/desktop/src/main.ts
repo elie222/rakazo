@@ -238,14 +238,20 @@ async function offerDockerMove(userStackDir: string): Promise<StackChoice> {
     }))
   )
     return "docker";
-  const { response } = await dialog.showMessageBox({
+  const options: Electron.MessageBoxOptions = {
     type: "question",
     message: t("Run Rakazo without Docker?"),
     detail: t("Your bots and data move over. Docker is stopped, not removed."),
     buttons: [t("Move"), t("Keep Docker")],
     defaultId: 0,
     cancelId: 1,
-  });
+  };
+  // Asked from setup, the sheet keeps setup from moving on until it is answered.
+  const setup =
+    desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed() ? desktop.setupWindow : null;
+  const { response } = await (setup
+    ? dialog.showMessageBox(setup, options)
+    : dialog.showMessageBox(options));
   const choice = response === 0 ? "native" : "docker";
   try {
     await writeStackChoice(userStackDir, choice);
