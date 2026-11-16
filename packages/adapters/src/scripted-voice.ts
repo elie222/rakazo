@@ -9,6 +9,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 export const SCRIPTED_VOICE_ID = "alloy-test";
 export const SCRIPTED_TRANSCRIPT = "hello from the test microphone";
@@ -17,13 +18,6 @@ export const SCRIPTED_TRANSCRIPT = "hello from the test microphone";
 export const SCRIPTED_MPEG = Uint8Array.from([
   0xff, 0xfb, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]);
-
-export const SCRIPTED_VOICE_CATALOG_ENTRY = {
-  id: "scripted",
-  name: "Scripted",
-  description: "Deterministic fixture for tests. No billed speech.",
-  transcribe: true,
-} as const;
 
 export class ScriptedVoiceProvider implements VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities> {
@@ -60,3 +54,17 @@ export class ScriptedVoiceProvider implements VoiceProvider {
     return { text: SCRIPTED_TRANSCRIPT };
   }
 }
+
+export function scriptedVoiceEnabled() {
+  return process.env.AGENT_RUNTIME === "scripted";
+}
+
+export const scriptedVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Scripted",
+    description: "Deterministic fixture for tests. No billed speech.",
+    transcribe: true,
+  },
+  available: scriptedVoiceEnabled,
+  create: () => new ScriptedVoiceProvider(),
+};

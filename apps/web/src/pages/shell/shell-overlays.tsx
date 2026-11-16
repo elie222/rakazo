@@ -16,7 +16,7 @@ import type { connectedAppMarks } from "../../lib/connected-apps";
 import { localTimezone } from "../../lib/local-timezone";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
 import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
 
@@ -136,7 +136,7 @@ export function SettingsOverlays({
   settingsSpace: Space | null;
   showSettings: boolean;
   spaces: Space[];
-  renameSpace: (spaceId: string, name: string) => Promise<void>;
+  renameSpace: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   removeSpace: (spaceId: string) => Promise<void>;
   leftSpace: (spaceId: string, activeSpaceId: string) => Promise<void>;
   refreshSpaces: () => Promise<void>;
@@ -188,26 +188,22 @@ export function SettingsOverlays({
           messagingEnabled={messagingEnabled}
           paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
-          onTimezoneChange={async (timezone) => {
-            const nextMe = await rpc.preferences.update({ timezone });
+          onTimezoneChange={async (timezone, client) => {
+            const nextMe = await client.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
-            void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           quietHours={bootstrapMe?.quietHours}
-          onQuietHoursChange={async (quietHours) => {
+          onQuietHoursChange={async (quietHours, client) => {
             // Settings shows this device's timezone while none is saved, so the save keeps it.
             const save = quietHoursSave(quietHours, bootstrapMe?.timezone, localTimezone());
             if (!save) throw new Error("No timezone to read quiet hours in");
-            const nextMe = await rpc.preferences.update(save);
+            const nextMe = await client.preferences.update(save);
             // A server without quiet hours leaves them out, which hides the switch again.
             setBootstrapMe((prev) =>
               prev
                 ? { ...prev, quietHours: nextMe.quietHours, timezone: nextMe.timezone ?? null }
                 : nextMe,
             );
-            // Saving the device's timezone too moves the usage days, as a timezone save does.
-            if (save.timezone)
-              void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
@@ -221,7 +217,7 @@ export function SettingsOverlays({
           }}
           labs={parseLabs(bootstrapMe?.labs)}
           labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
-          onLabsChange={async (labs) => {
+          onLabsChange={async (labs, client) => {
             const previous = parseLabs(bootstrapMe?.labs);
             const apply = (next: LabFeature[]) => {
               setLabs(next);
@@ -229,7 +225,7 @@ export function SettingsOverlays({
             };
             apply(labs);
             try {
-              apply((await rpc.preferences.update({ labs })).labs);
+              apply((await client.preferences.update({ labs })).labs);
             } catch (error) {
               apply(previous);
               throw error;

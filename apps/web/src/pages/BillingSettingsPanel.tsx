@@ -4,6 +4,7 @@ import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
 import { billingDateLabel, formatBillingPrice } from "../lib/billing";
+import { useSave } from "../lib/query";
 import type { RpcClient } from "../lib/rpc";
 
 /** `client` is the window's space: another tab can select another organization at any time. */
@@ -12,7 +13,11 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const locale = i18n.locale || "en";
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // Desktop opens the URL in the system browser and this page stays, so the button comes back.
+  const portal = useSave({
+    save: (_: void, rpc) => rpc.billing.portal(),
+    onSaved: ({ url }) => window.location.assign(url),
+  });
 
   useEffect(() => {
     let active = true;
@@ -28,21 +33,6 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
       active = false;
     };
   }, [client, t]);
-
-  async function openPortal() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const { url } = await client.billing.portal();
-      window.location.assign(url);
-    } catch {
-      setError(t`Could not open billing`);
-    } finally {
-      // Desktop opens the URL in the system browser and this page stays, so re-enable.
-      setPending(false);
-    }
-  }
 
   const stateLabel = status
     ? status.state === "trialing"
@@ -97,16 +87,19 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
           <Button
             variant="secondary"
             size="sm"
-            disabled={pending}
-            onClick={() => void openPortal()}
+            disabled={portal.pending}
+            onClick={() => {
+              setError(null);
+              portal.run();
+            }}
           >
             <Trans>Manage</Trans>
           </Button>
         ) : null}
       </div>
-      {error ? (
+      {portal.error || error ? (
         <p role="alert" className="mt-3 text-body text-destructive">
-          {error}
+          {portal.error ? t`Could not open billing` : error}
         </p>
       ) : null}
     </div>

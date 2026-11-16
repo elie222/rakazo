@@ -80,7 +80,7 @@ export function SettingsOverlay({
   space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   onOpenSpace?: (spaceId: string) => void;
-  onRenameSpace?: (spaceId: string, name: string) => Promise<void>;
+  onRenameSpace?: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
@@ -88,10 +88,10 @@ export function SettingsOverlay({
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
-  onTimezoneChange: (timezone: string) => Promise<void>;
+  onTimezoneChange: (timezone: string, client: RpcClient) => Promise<void>;
   /** Absent from servers that predate quiet hours, which then offer none. */
   quietHours?: QuietHours | null;
-  onQuietHoursChange?: (quietHours: QuietHours | null) => Promise<void>;
+  onQuietHoursChange?: (quietHours: QuietHours | null, client: RpcClient) => Promise<void>;
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
@@ -99,7 +99,7 @@ export function SettingsOverlay({
   labs: readonly LabFeature[];
   /** The Labs features this account can switch; Labs is hidden when there are none. */
   labsAvailable: readonly LabFeature[];
-  onLabsChange: (labs: LabFeature[]) => Promise<void>;
+  onLabsChange: (labs: LabFeature[], client: RpcClient) => Promise<void>;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -422,7 +422,9 @@ export function SettingsOverlay({
                     <SpaceSettingsPanel
                       key={space.id}
                       space={space}
-                      onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
+                      onRename={(name, client) =>
+                        onRenameSpace?.(space.id, name, client) ?? Promise.resolve()
+                      }
                       onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
                       onLeft={(activeSpaceId) => onLeftSpace?.(space.id, activeSpaceId)}
                       onClose={requestClose}

@@ -1,6 +1,5 @@
 {
   "apps/api/src/artifacts.ts": 2,
-  "apps/api/src/billing.ts": 1,
   "apps/api/src/cli/home-storage.ts": 2,
   "apps/api/src/client-ip.ts": 1,
   "apps/api/src/computer-control.ts": 3,

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const transport = vi.hoisted(() => ({
@@ -122,17 +123,12 @@ describe("desktop monitoring", () => {
       config({ dsn: "https://key@errors.example.com/8", userId: "a".repeat(64) }),
       options,
     );
-    let release!: (response: Response) => void;
-    const pending = monitor.refreshDesktopMonitoringUser(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+    const reply = deferred<Response>();
+    const pending = monitor.refreshDesktopMonitoringUser(() => reply.promise);
     await monitor.refreshDesktopMonitoringUser(
       config({ dsn: "https://key@errors.example.com/8", userId: "b".repeat(64) }),
     );
-    release(
+    reply.resolve(
       new Response(
         JSON.stringify({ dsn: "https://key@errors.example.com/8", userId: "a".repeat(64) }),
       ),
@@ -146,19 +142,14 @@ describe("desktop monitoring", () => {
   });
   it("does not restore an initial identity after cookies changed during startup", async () => {
     const monitor = await import("./monitoring.js");
-    let release!: (response: Response) => void;
-    const initial = monitor.configureDesktopMonitoring(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-      options,
-    );
-    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const reply = deferred<Response>();
+    const fetchConfig = vi.fn(() => reply.promise);
+    const initial = monitor.configureDesktopMonitoring(fetchConfig, options);
+    await vi.waitFor(() => expect(fetchConfig).toHaveBeenCalled());
     await monitor.refreshDesktopMonitoringUser(
       config({ dsn: "https://key@errors.example.com/8", userId: null }),
     );
-    release(
+    reply.resolve(
       new Response(
         JSON.stringify({ dsn: "https://key@errors.example.com/8", userId: "a".repeat(64) }),
       ),

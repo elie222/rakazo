@@ -149,18 +149,29 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** Computer providers declare their settings as env bindings, read by name through the registry. */
-const { computerProviders } = (await import(
-  pathToFileURL(path.join(repoRoot, "packages/adapters/src/computer-providers.ts")).href
-)) as { computerProviders: Record<string, { env?: Record<string, { name: string }> }> };
-const COMPUTER_PROVIDER_ENV = Object.values(computerProviders).flatMap(({ env = {} }) =>
-  Object.values(env).map((binding) => binding.name),
-);
+type EnvRegistry = Record<string, { env?: Record<string, { name?: string }> }>;
+
+async function registryEnv(file: string, exportName: string): Promise<string[]> {
+  const module = (await import(pathToFileURL(path.join(repoRoot, file)).href)) as Record<
+    string,
+    EnvRegistry
+  >;
+  return Object.values(module[exportName] ?? {}).flatMap(({ env = {} }) =>
+    Object.values(env).flatMap((binding) => (binding.name ? [binding.name] : [])),
+  );
+}
+
+/**
+ * Computer providers and messaging platforms declare their settings as env bindings, read by
+ * name through their registries. Bindings that gather a prefix family have no single name.
+ */
+const REGISTRY_ENV = [
+  ...(await registryEnv("packages/adapters/src/computer-providers.ts", "computerProviders")),
+  ...(await registryEnv("packages/adapters/src/messaging-platforms.ts", "messagingPlatforms")),
+];
 
 function scanEnvReads(dirs: readonly string[]): Set<string> {
-  const names = new Set<string>(
-    dirs.includes("packages/adapters/src") ? COMPUTER_PROVIDER_ENV : [],
-  );
+  const names = new Set<string>(dirs.includes("packages/adapters/src") ? REGISTRY_ENV : []);
   for (const dir of dirs) {
     for (const file of sourceFiles(path.join(repoRoot, dir))) {
       const text = readFileSync(file, "utf8");
