@@ -3,7 +3,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversation } from "@rakazo/core";
 import { displayName, loadPeerHistory, newestPageCards, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useQuery } from "@tanstack/react-query";
+import type { DataTag, QueryKey } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useRef } from "react";
 import type { ScrollViewInstance } from "react-native";
@@ -27,6 +27,7 @@ import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useChatOnScreen } from "../lib/page-card-detail";
 import { queryClient, rpcQuery } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -52,27 +53,35 @@ export default function PeerChat() {
   const botName = displayName(params.botName, t`Bot`);
   const pageRead = (before?: number) =>
     rpcQuery("threads/messages", { botId, before, includePeerRuns: true });
-  const history = useQuery(
-    {
-      queryKey: [...pageRead().queryKey, "peer", peerBotId],
-      queryFn: async ({ signal }) => {
-        const messages = await loadPeerHistory({
-          signal,
-          // A page is only kept for the history it builds.
-          loadPage: (before) =>
-            queryClient.fetchQuery({ ...pageRead(before), staleTime: 0, gcTime: 0 }),
-        });
-        const sources = messages.map((message) => ({
-          ...message,
-          createdAt: message.createdAt ?? "",
-        }));
-        return peerConversations(sources).find((entry) => entry.peerBotId === peerBotId) ?? null;
-      },
-      enabled: Boolean(botId && peerBotId),
-      gcTime: 0,
+  const historyRead = {
+    queryKey: [...pageRead().queryKey, "peer", peerBotId] as unknown as DataTag<
+      QueryKey,
+      PeerConversation | null,
+      Error
+    >,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const messages = await loadPeerHistory({
+        signal,
+        // Each page is its own request, cancelled with the page: a retry never joins one given up.
+        loadPage: async (before, pageSignal) => {
+          const page = pageRead(before);
+          return await page.queryFn({
+            client: queryClient,
+            queryKey: page.queryKey,
+            signal: pageSignal,
+            meta: undefined,
+          });
+        },
+      });
+      const sources = messages.map((message) => ({
+        ...message,
+        createdAt: message.createdAt ?? "",
+      }));
+      return peerConversations(sources).find((entry) => entry.peerBotId === peerBotId) ?? null;
     },
-    queryClient,
-  );
+    gcTime: 0,
+  };
+  const history = useScreenQuery(historyRead, { enabled: Boolean(botId && peerBotId) });
   const { refetch } = history;
   const retry = () => void refetch();
   const state:

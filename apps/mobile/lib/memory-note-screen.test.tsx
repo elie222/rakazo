@@ -3,7 +3,7 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -42,8 +42,12 @@ vi.mock("./api", () => ({
     headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
   }),
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => (() => void) | undefined) => {
+    useEffect(effect, [effect]);
+  },
   useLocalSearchParams: () => mocks.params,
   useRouter: () => ({ back: mocks.back }),
   useNavigation: () => ({
@@ -420,4 +424,45 @@ it("saves once when Save is tapped twice before the first answer", async () => {
   await act(async () => answer.resolve({ ...note, content: "Twice\n", revision: 4 }));
   expect(mocks.rpc.mock.calls.filter(([proc]) => proc === "memory/update")).toHaveLength(1);
   expect(mocks.back).toHaveBeenCalledTimes(1);
+});
+
+it("reads a note afresh when the screen switches to another note of the same bot", async () => {
+  const other = { ...note, id: "note-2", path: "sources.md", content: "Old copy.\n" };
+  const current = { ...other, content: "Current copy.\n", revision: 7 };
+  let lists = 0;
+  mocks.rpc.mockImplementation(async (proc: string, body: Record<string, unknown>) => {
+    if (proc === "memory/list") return lists++ === 0 ? [note, other] : [note, current];
+    if (proc === "memory/update") return { ...current, content: body.content, revision: 8 };
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await render();
+  mocks.params = { id: other.id, botId: note.botId };
+  await render();
+  expect(editor()?.value).toBe(current.content);
+  await type("Edited\n");
+  await headerSave();
+  expect(mocks.rpc).toHaveBeenLastCalledWith(
+    "memory/update",
+    { documentId: other.id, content: "Edited\n", expectedRevision: 7 },
+    expect.anything(),
+  );
+});
+
+it("shows the delete's failure, not an earlier save's", async () => {
+  const removing = deferred<never>();
+  mocks.rpc.mockImplementation((proc: string) => {
+    if (proc === "memory/list") return Promise.resolve([note]);
+    if (proc === "memory/update") return Promise.reject(new Error("Save failed"));
+    return removing.promise;
+  });
+  await render();
+  await type("Unsaved\n");
+  await headerSave();
+  expect(container.textContent).toContain("Save failed");
+  await act(async () => button("Delete")?.click());
+  await act(async () => lastAlert().press("Delete"));
+  expect(container.textContent).not.toContain("Save failed");
+  await act(async () => removing.reject(new Error("Delete failed")));
+  expect(container.textContent).toContain("Delete failed");
+  expect(container.textContent).not.toContain("Save failed");
 });

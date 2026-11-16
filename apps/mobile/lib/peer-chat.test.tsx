@@ -2,7 +2,7 @@
 
 import { flush } from "@rakazo/core/test-async";
 import type { ReactNode, Ref } from "react";
-import { act, createElement, useImperativeHandle } from "react";
+import { act, createElement, useEffect, useImperativeHandle } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -62,6 +62,7 @@ vi.mock("./api", () => ({
     headers: { "x-rakazo-space-id": "space-1" },
   }),
 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
@@ -91,6 +92,9 @@ vi.mock("expo-router", () => ({
         options.headerTitle(),
         options.headerLeft(),
       ),
+  },
+  useFocusEffect: (effect: () => (() => void) | undefined) => {
+    useEffect(effect, [effect]);
   },
   useRouter: () => ({ back }),
   useLocalSearchParams: () => ({ botId: "chief", botName: "Chief", peerBotId: "peer" }),
@@ -257,4 +261,28 @@ it("keeps rich replies visible using native pages and the chart text fallback", 
     ["Old page", "true"],
     ["New page", "false"],
   ]);
+});
+
+it("cancels the page request once the history read is given up", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const signals: AbortSignal[] = [];
+  rpc.mockImplementation(
+    (_proc: string, _input: unknown, options: { signal: AbortSignal }) =>
+      new Promise(() => {
+        signals.push(options.signal);
+      }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(createElement(PeerChat)));
+  await act(flush);
+  expect(signals).toHaveLength(1);
+  expect(signals[0]?.aborted).toBe(false);
+
+  act(() => root?.unmount());
+  root = undefined;
+  await act(flush);
+
+  expect(signals[0]?.aborted).toBe(true);
 });

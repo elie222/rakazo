@@ -3,7 +3,6 @@ import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
-import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput } from "react-native";
@@ -13,6 +12,7 @@ import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useScreenHeader } from "../../lib/screen-header";
+import { useScreenQuery } from "../../lib/screen-query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -35,10 +35,15 @@ export default function MemoryNoteScreen() {
   const { id, botId } = params;
 
   // There is no single-note read, so find the note in its bot's or the space's list.
-  const listRead = formRead(
+  const botList = formRead(
     rpcQuery("memory/list", botId ? { botId, scope: "bot" } : { scope: "user" }),
   );
-  const listQuery = useQuery(listRead, queryClient);
+  // Each note reads the list afresh: another note's read is not this one as it is now.
+  const listRead = {
+    ...botList,
+    queryKey: [...botList.queryKey, id] as unknown as typeof botList.queryKey,
+  };
+  const listQuery = useScreenQuery(listRead, { onForeground: false });
   const { refetch } = listQuery;
   // Only what this visit read: a copy an earlier one left is not the note as it is now.
   const listed =
@@ -152,14 +157,23 @@ export default function MemoryNoteScreen() {
   }
 
   function save(expectedRevision = note?.revision) {
-    if (note) saving.run({ documentId: note.id, content: draft, expectedRevision });
+    if (!note) return;
+    removal.reset();
+    saving.run({ documentId: note.id, content: draft, expectedRevision });
   }
 
   function confirmDelete() {
     if (!note) return;
     Alert.alert(t`Delete ${ph({ name: note.path })}?`, undefined, [
       { text: t`Cancel`, style: "cancel" },
-      { text: t`Delete`, style: "destructive", onPress: () => removal.run(note.id) },
+      {
+        text: t`Delete`,
+        style: "destructive",
+        onPress: () => {
+          saving.reset();
+          removal.run(note.id);
+        },
+      },
     ]);
   }
 
