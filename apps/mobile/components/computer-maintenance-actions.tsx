@@ -1,12 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { selectedSpaceId } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
+import { rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
@@ -16,16 +15,11 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   // The bot's own Space, the one selected when its settings opened, whatever is selected later.
   const [spaceId] = useState(() => selectedSpaceId() ?? undefined);
   const statusRead = rpcQuery("computer/status", { botId: botId ?? "" }, spaceId);
-  const status = useQuery({ ...statusRead, enabled: Boolean(botId) }, queryClient);
+  const status = useScreenQuery(statusRead, { enabled: Boolean(botId), onForeground: false });
   const { refetch } = status;
   // A stale status could offer an action the computer can no longer take.
   const computer = status.error ? null : status.data;
 
-  useFocusEffect(
-    useCallback(() => {
-      if (botId) void refetch({ cancelRefetch: false });
-    }, [botId, refetch]),
-  );
   // A queued update or recovery reports progress here; its status changes with it.
   useEffect(
     () =>
@@ -38,6 +32,9 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
     target: spaceId ? { scope: "space", spaceId } : undefined,
     save: async ({ botId, action }: { botId: string; action: "reset" | "recover" }, send) => {
       if (action === "reset") await send("computer/reset", { botId });
+      // Progress is shown for the selected Space only; another Space's repair is sent on its own.
+      else if (spaceId !== (selectedSpaceId() ?? undefined))
+        await send("computer/recover", { botId });
       else
         await computerUpdates.start(botId, action, (id, step) =>
           send(`computer/${step}`, { botId: id }),

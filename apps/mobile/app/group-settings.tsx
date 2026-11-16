@@ -65,14 +65,20 @@ export default function GroupSettingsScreen() {
     if (!groups || !nextBots) return;
     const nextGroup = groups.find((row) => row.id === groupId);
     setMissing(!nextGroup);
-    if (!nextGroup) return;
+    if (!nextGroup) {
+      baseline.current = null;
+      setGroup(null);
+      return;
+    }
     const ids = new Set([
       ...nextBots.map((bot) => bot.id),
       ...nextGroup.members.map((member) => member.botId),
     ]);
     const previous = baseline.current;
     const previousMembers = new Set(previous?.members.map((member) => member.botId));
-    const initial = previous === null;
+    // Another group opened in place starts from its own read, not the previous group's edits.
+    const initial = previous?.id !== nextGroup.id;
+    if (initial) deselected.current.clear();
     const previousName = previous?.name;
     baseline.current = nextGroup;
     setGroup(nextGroup);

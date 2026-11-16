@@ -37,7 +37,10 @@ vi.mock("./computer-updates", () => ({
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
-vi.mock("react-native", () => ({ Alert: { alert } }));
+vi.mock("react-native", () => ({
+  Alert: { alert },
+  AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
+}));
 vi.mock("../components/settings-group", () => ({
   SettingsRow: ({
     title,
@@ -173,6 +176,25 @@ describe("computer maintenance rows", () => {
     await act(async () => reset.onPress());
     expect(rpc).toHaveBeenCalledWith(
       "computer/reset",
+      { botId: "bot-fixture" },
+      { requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }) },
+    );
+  });
+
+  it("recovers another Space's computer without showing its progress in the selected one", async () => {
+    rpc.mockImplementation(async (procedure: string) =>
+      procedure === "computer/status" ? status({}) : undefined,
+    );
+    await act(async () => root.render(createElement(Rows)));
+    selection.space = "space-2";
+    await act(async () => button("Recover computer")!.click());
+    const recover = alert.mock.lastCall![2].find(
+      (action: { text: string }) => action.text === "Recover computer",
+    );
+    await act(async () => recover.onPress());
+    expect(start).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "computer/recover",
       { botId: "bot-fixture" },
       { requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }) },
     );
