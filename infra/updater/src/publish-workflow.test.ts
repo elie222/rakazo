@@ -7,6 +7,10 @@ const workflowsDir = path.resolve(import.meta.dirname, "../../../.github/workflo
 const workflowText = readFileSync(path.join(workflowsDir, "publish-server-image.yml"), "utf8");
 const publisherDir = path.resolve(workflowsDir, "../actions/publish-image");
 const publisherText = readFileSync(path.join(publisherDir, "action.yml"), "utf8");
+const scannerText = readFileSync(
+  path.resolve(workflowsDir, "../actions/setup-trivy/action.yml"),
+  "utf8",
+);
 interface WorkflowStep {
   id?: string;
   if?: string;
@@ -184,7 +188,7 @@ describe("server image publish workflow", () => {
     }
   });
 
-  it("keeps pull requests read-only and every action pinned to a commit", () => {
+  it("keeps pull requests read-only and external actions pinned to a commit", () => {
     const validate = workflow.jobs.validate;
     expect(validate.if).toBe("github.event_name == 'pull_request'");
     expect(validate.permissions).toEqual({ contents: "read" });
@@ -195,9 +199,10 @@ describe("server image publish workflow", () => {
     const cacheScope = "scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}";
     expect(build?.with?.["cache-from"]).toContain(cacheScope);
     expect(build?.with?.["cache-to"]).toContain(cacheScope);
-    for (const text of [workflowText, publisherText]) {
+    for (const text of [workflowText, publisherText, scannerText]) {
       for (const match of text.matchAll(/uses:\s+([^\s#]+)/g)) {
-        if (match[1] === publicationAction) continue;
+        if (match[1] === publicationAction || match[1] === "./.github/actions/setup-trivy")
+          continue;
         expect(match[1], match[1]).toMatch(/@[0-9a-f]{40}$/);
       }
     }
