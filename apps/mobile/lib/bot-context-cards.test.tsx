@@ -9,7 +9,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BotContextCards } from "../components/bot-context-cards";
-import { queryClient } from "./query";
+import { queryClient, rpcQuery } from "./query";
 
 const { rpc, push, focus } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -212,6 +212,27 @@ describe("bot context cards", () => {
     await act(async () => complete());
     expect(container.textContent).toContain("Already done");
     expect(container.textContent).toContain("Review draft");
+  });
+
+  it("keeps a saved item when a read started before the save answers after it", async () => {
+    const staleRead = deferred<typeof work>();
+    let reads = 0;
+    rpc.mockImplementation((method: string) => {
+      if (method === "scratchpad/list")
+        return reads++ === 0 ? Promise.resolve(work) : staleRead.promise;
+      return Promise.resolve({});
+    });
+    await render();
+    await act(async () => {
+      void queryClient.refetchQueries({
+        queryKey: rpcQuery("scratchpad/list", { botId: "bot-a" }).queryKey,
+      });
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    await act(async () => staleRead.resolve(work));
+    expect(container.textContent).not.toContain("Review draft");
   });
 
   it("clears a failed complete when the screen is shown again", async () => {

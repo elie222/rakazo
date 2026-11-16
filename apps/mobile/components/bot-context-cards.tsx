@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { isEmptyBotMemory } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -41,11 +42,11 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
     ) => {
       if (action.kind === "create") {
         const item = await send("scratchpad/create", { botId, title: action.title });
-        queryClient.setQueryData(workRead.queryKey, (items) => [item, ...(items ?? [])]);
+        await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
-        queryClient.setQueryData(workRead.queryKey, (items) =>
-          items?.filter((entry) => entry.id !== action.itemId),
+        await writeSaved(queryClient, workRead.queryKey, (items) =>
+          (items ?? []).filter((entry) => entry.id !== action.itemId),
         );
       }
     },
