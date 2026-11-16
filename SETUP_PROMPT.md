@@ -59,7 +59,10 @@ Setup:
    `docs/self-host-restricted-network.md#digest-verified-hub-mirror-startup`; use that section's
    explicit pull, digest-check, and no-repull start sequence instead of Setup step 5.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
-6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
+6. Wait until api, web, and supervisor are healthy. New installs default to `latest`, which follows
+   stable releases only (amd64 + arm64). A stable release must exist; do not fall back to `edge`
+   or another main build. Preserve existing image pins. Automatic updates remain disabled unless
+   I explicitly ask to enable them.
 
 Verification:
 

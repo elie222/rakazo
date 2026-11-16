@@ -13,7 +13,8 @@
 bash install-images.sh
 ```
 
-默认的 `edge` 随主分支移动，不是固定版本。镜像下载受限时，见[受限网络](./self-host-restricted-network.md)。
+新安装默认使用 `latest`，仅跟随稳定发布，不是固定版本；必须已有稳定发布版本，安装器不会回退到主分支构建。
+安装器会保留已有 `.env` 中的标签。镜像下载受限时，见[受限网络](./self-host-restricted-network.md)。
 桌面端托管的本地实例由桌面应用管理，不要将生产 Compose 命令直接套到桌面端的数据目录。
 
 ## 生产 Compose

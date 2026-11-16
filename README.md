@@ -116,7 +116,8 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
+New installs default to `latest` (stable releases, `linux/amd64` + `linux/arm64`). A stable
+release must exist; setup does not fall back to main builds. Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
