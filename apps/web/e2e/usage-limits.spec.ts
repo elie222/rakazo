@@ -183,6 +183,8 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
+  await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-limits-chart");
 
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();

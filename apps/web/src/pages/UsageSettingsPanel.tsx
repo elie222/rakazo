@@ -190,7 +190,10 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
               );
               const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
               return (
-                <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                <div
+                  key={point.date}
+                  className="flex h-full min-w-0 flex-1 flex-col items-center gap-1"
+                >
                   <div className="flex w-full flex-1 items-end">
                     <div
                       className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
