@@ -116,7 +116,6 @@ async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizatio
   await lockKey(tx, `organization-members:${organizationId}`);
 }
 
-/** Holds a transaction-scoped lock on `key` until the transaction ends. */
 async function memberRole(
   db: Pick<PrismaClient, "member">,
   organizationId: string,
@@ -212,6 +211,7 @@ export async function listOrganizationMembers(
   return { members, invitations, canManage };
 }
 
+/** Holds a transaction-scoped lock on `key` until the transaction ends. */
 async function lockKey(tx: Prisma.TransactionClient, key: string) {
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text AS "lock"

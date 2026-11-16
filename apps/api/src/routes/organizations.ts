@@ -8,6 +8,7 @@ import {
   createOrganizationInvitation,
   firstOrganizationSpace,
   forgetRevokedMember,
+  GUEST_ROLE,
   InvalidSpaceNameError,
   leaveOrganizationSpaces,
   listMemberOrganizations,
@@ -147,12 +148,22 @@ export function organizationsRoutes(ctx: RouterContext) {
               },
             );
             await forgetRevokedMember(deps.prisma, ref);
-            await recordAuditEvent({
-              action: "organization.member.removed",
-              actor: { type: "user", id: context.actor.userId },
-              organizationId: input.organizationId,
-              target: { type: "user", id: input.userId },
+            // Someone who accepted a new invitation meanwhile stays, and is not recorded as removed.
+            const rejoined = await deps.prisma.member.findFirst({
+              where: {
+                organizationId: input.organizationId,
+                userId: input.userId,
+                role: { not: GUEST_ROLE },
+              },
+              select: { id: true },
             });
+            if (!rejoined)
+              await recordAuditEvent({
+                action: "organization.member.removed",
+                actor: { type: "user", id: context.actor.userId },
+                organizationId: input.organizationId,
+                target: { type: "user", id: input.userId },
+              });
             return { ok: true as const };
           }),
         ),
