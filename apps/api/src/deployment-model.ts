@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { isTransientModelError } from "@rakazo/adapter-kit";
 import type { DeploymentModels, SavedDeploymentModels } from "@rakazo/adapters";
@@ -197,9 +196,7 @@ export async function updateDeploymentModelSettings(
                   canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
               );
               if (!connection || !deploymentConnectionModels(connection).includes(choice.modelId))
-                throw new ORPCError("BAD_REQUEST", {
-                  message: "Connect that model provider first",
-                });
+                throw new ClientError("BAD_REQUEST", "Connect that model provider first");
             }
             if (open) {
               // A switch opens or closes one connection; the list it edits is the one in effect.
