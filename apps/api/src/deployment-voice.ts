@@ -16,6 +16,7 @@ import type {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { requireAdmin } from "./admins.js";
 import { forgetDeploymentSecret } from "./deployment-secrets.js";
 import type { RouterDeps } from "./router.js";
@@ -132,7 +133,10 @@ export async function updateDeploymentVoiceSettings(
   // among the key's voices: a voice kept from another key or provider gives way to its first one.
   // A provider that cannot list its voices keeps the one asked for.
   const asked = input.voiceId?.trim() || "";
-  const listed = await voices.listVoices(apiKey, context).catch(() => undefined);
+  const listed = await bestEffort(
+    "list the deployment voice's voices",
+    voices.listVoices(apiKey, context),
+  );
   // An account with no voices yet could not speak for anyone, whatever voice was asked for.
   if (listed?.length === 0)
     throw new ORPCError("BAD_REQUEST", {

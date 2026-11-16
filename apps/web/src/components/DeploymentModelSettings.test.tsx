@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -56,8 +57,8 @@ const { deployment } = vi.hoisted(() => ({
   },
 }));
 // Like the real client, every property read returns a new object.
-vi.mock("../lib/rpc", () => ({
-  rpc: {
+vi.mock("../lib/rpc", () => {
+  const rpc = {
     get models() {
       return {
         get deployment() {
@@ -65,8 +66,19 @@ vi.mock("../lib/rpc", () => ({
         },
       };
     },
-  },
-}));
+  };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
+
+function withQueries(ui: ReactNode) {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {ui}
+    </QueryClientProvider>
+  );
+}
 
 const settings = {
   defaultModel: null,
@@ -119,7 +131,7 @@ afterEach(() => {
 
 async function render() {
   await act(async () => {
-    root.render(<DeploymentModelSettings />);
+    root.render(withQueries(<DeploymentModelSettings />));
   });
 }
 

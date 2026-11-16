@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -31,8 +33,8 @@ const { deployment } = vi.hoisted(() => ({
   deployment: { get: vi.fn(), update: vi.fn(), voices: vi.fn() },
 }));
 // Like the real client, every property read returns a new object.
-vi.mock("../lib/rpc", () => ({
-  rpc: {
+vi.mock("../lib/rpc", () => {
+  const rpc = {
     get voice() {
       return {
         get deployment() {
@@ -40,8 +42,19 @@ vi.mock("../lib/rpc", () => ({
         },
       };
     },
-  },
-}));
+  };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
+
+function withQueries(ui: ReactNode) {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {ui}
+    </QueryClientProvider>
+  );
+}
 
 const providers = [
   { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
@@ -101,7 +114,7 @@ function enter(label: string, value: string) {
 
 it("names the environment's provider while nothing is saved and offers catalog providers", async () => {
   deployment.get.mockResolvedValue(unset);
-  await act(async () => root.render(<DeploymentVoiceSettings />));
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings />)));
 
   const options = [...(field("Provider")?.options ?? [])].map((option) => option.textContent);
   expect(options).toEqual(["Default (Cartesia)", "ElevenLabs", "Cartesia"]);
@@ -112,7 +125,7 @@ it("names the environment's provider while nothing is saved and offers catalog p
 it("saves a provider with its key, then offers its voices without showing the key", async () => {
   deployment.get.mockResolvedValue(unset);
   deployment.update.mockResolvedValue(saved);
-  await act(async () => root.render(<DeploymentVoiceSettings />));
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings />)));
 
   await act(async () => enter("Provider", "elevenlabs"));
   expect(field("API key")?.required).toBe(true);
@@ -135,7 +148,7 @@ it("changes the voice keeping the saved key, and clears back to the default", as
   deployment.update.mockResolvedValueOnce({ ...saved, voiceId: "voice-b" });
   deployment.update.mockResolvedValueOnce(unset);
   const onSaved = vi.fn();
-  await act(async () => root.render(<DeploymentVoiceSettings onSaved={onSaved} />));
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings onSaved={onSaved} />)));
 
   await act(async () => enter("Voice", "voice-b"));
   await act(async () => host.querySelector("form")?.requestSubmit());
@@ -155,12 +168,8 @@ it("changes the voice keeping the saved key, and clears back to the default", as
 });
 
 it("keeps a slow listing of the replaced provider's voices off the new one", async () => {
-  let finishOld: (voices: { id: string; label: string }[]) => void = () => undefined;
-  deployment.voices.mockReturnValueOnce(
-    new Promise((resolve) => {
-      finishOld = resolve;
-    }),
-  );
+  const oldListing = deferred<{ id: string; label: string }[]>();
+  deployment.voices.mockReturnValueOnce(oldListing.promise);
   deployment.voices.mockResolvedValueOnce([{ id: "cartesia-voice", label: "Cartesia voice" }]);
   deployment.get.mockResolvedValue(saved);
   deployment.update.mockResolvedValue({
@@ -168,12 +177,12 @@ it("keeps a slow listing of the replaced provider's voices off the new one", asy
     provider: "cartesia",
     voiceId: "cartesia-voice",
   });
-  await act(async () => root.render(<DeploymentVoiceSettings />));
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings />)));
 
   await act(async () => enter("Provider", "cartesia"));
   await act(async () => enter("API key", "test-cartesia-key"));
   await act(async () => host.querySelector("form")?.requestSubmit());
-  await act(async () => finishOld([{ id: "voice-a", label: "Voice A" }]));
+  await act(async () => oldListing.resolve([{ id: "voice-a", label: "Voice A" }]));
 
   const options = [...(field("Voice")?.options ?? [])].map((option) => option.value);
   expect(options).toEqual(["cartesia-voice"]);
@@ -182,7 +191,7 @@ it("keeps a slow listing of the replaced provider's voices off the new one", asy
 it("shows why a save failed", async () => {
   deployment.get.mockResolvedValue(unset);
   deployment.update.mockRejectedValue(new Error("That key was rejected."));
-  await act(async () => root.render(<DeploymentVoiceSettings />));
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings />)));
   await act(async () => enter("Provider", "cartesia"));
   await act(async () => enter("API key", "test-voice-key"));
   await act(async () => host.querySelector("form")?.requestSubmit());

@@ -27,9 +27,10 @@ import type {
   DeploymentModelUpdate,
 } from "@rakazo/contracts";
 import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { requireAdmin } from "./admins.js";
 import { forgetDeploymentSecret } from "./deployment-secrets.js";
 import type { RouterDeps } from "./router.js";
@@ -283,9 +284,10 @@ async function checkedConnection(
       "user.id": actor.userId,
       "error.name": error instanceof Error ? error.name : typeof error,
     });
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "Invalid model connection",
-    });
+    throw new ClientError(
+      "BAD_REQUEST",
+      error instanceof Error ? error.message : "Invalid model connection",
+    );
   }
 }
 
@@ -305,12 +307,12 @@ export async function connectDeploymentModel(
   // A blank key keeps a saved provider key as it is.
   if (existing && provider !== OPENAI_COMPATIBLE_PROVIDER_ID && !input.apiKey) return view(deps);
   const previous = existing
-    ? await deps.secrets.load(existing.ciphertext, record).catch(() => undefined)
+    ? await bestEffort(
+        "read the saved deployment model key",
+        deps.secrets.load(existing.ciphertext, record),
+      )
     : undefined;
-  const checkSignal = AbortSignal.any([
-    AbortSignal.timeout(VERIFY_TIMEOUT_MS),
-    ...(signal ? [signal] : []),
-  ]);
+  const checkSignal = deadlineSignal(VERIFY_TIMEOUT_MS, signal);
   const { plaintext, models } = await checkedConnection(
     deps,
     actor,
@@ -432,9 +434,13 @@ export async function probeDeploymentModels(
     if (saved)
       apiKey = storedOpenAiCompatibleProbeKey(
         input.baseUrl,
-        await deps.secrets
-          .load(saved.ciphertext, deploymentConnectionRecord(OPENAI_COMPATIBLE_PROVIDER_ID))
-          .catch(() => undefined),
+        await bestEffort(
+          "read the saved deployment endpoint key",
+          deps.secrets.load(
+            saved.ciphertext,
+            deploymentConnectionRecord(OPENAI_COMPATIBLE_PROVIDER_ID),
+          ),
+        ),
       );
   }
   try {
@@ -446,8 +452,9 @@ export async function probeDeploymentModels(
     );
     return { models };
   } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "Could not list models",
-    });
+    throw new ClientError(
+      "BAD_REQUEST",
+      error instanceof Error ? error.message : "Could not list models",
+    );
   }
 }

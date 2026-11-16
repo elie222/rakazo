@@ -10,6 +10,7 @@ import {
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
+import { useSave } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
@@ -34,9 +35,8 @@ export function DeploymentVoiceSettings({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const alive = useRef(true);
   // Only the newest listing is shown, so a slow one for a provider since replaced cannot offer its
   // voices for the new one.
@@ -55,15 +55,34 @@ export function DeploymentVoiceSettings({
         if (current()) setVoices(listed);
       },
       (caught: unknown) => {
-        if (current()) setError(errorText(caught, t`Could not load voice settings`));
+        if (current()) setLoadError(errorText(caught, t`Could not load voice settings`));
       },
     );
   }
 
+  const save = useSave({
+    save: (next: Draft, client) =>
+      client.voice.deployment.update({
+        provider: next.provider || null,
+        // Blank keeps the saved key.
+        apiKey: next.apiKey.trim(),
+        ...(next.voiceId ? { voiceId: next.voiceId } : {}),
+      }),
+    onSaved: (next) => {
+      show(next);
+      setSaved(true);
+      onSaved?.();
+    },
+  });
+  const pending = save.pending;
+  const error = save.error
+    ? errorText(save.error, t`Could not connect this voice provider`)
+    : loadError;
+
   useEffect(() => {
     alive.current = true;
     rpc.voice.deployment.get().then(show, (caught: unknown) => {
-      if (alive.current) setError(errorText(caught, t`Could not load voice settings`));
+      if (alive.current) setLoadError(errorText(caught, t`Could not load voice settings`));
     });
     return () => {
       alive.current = false;
@@ -82,28 +101,6 @@ export function DeploymentVoiceSettings({
     setSaved(false);
     setDraft({ ...draft, ...patch });
   };
-  async function save() {
-    if (!draft || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const next = await rpc.voice.deployment.update({
-        provider: draft.provider || null,
-        // Blank keeps the saved key.
-        apiKey: draft.apiKey.trim(),
-        ...(draft.voiceId ? { voiceId: draft.voiceId } : {}),
-      });
-      if (!alive.current) return;
-      show(next);
-      setSaved(true);
-      onSaved?.();
-    } catch (caught) {
-      if (alive.current) setError(errorText(caught, t`Could not connect this voice provider`));
-    } finally {
-      if (alive.current) setPending(false);
-    }
-  }
-
   const savedProvider = settings.provider ?? "";
   const keySaved = settings.keySaved && draft.provider === savedProvider;
   const environment = settings.providers.find((entry) => entry.id === settings.environmentProvider);
@@ -117,7 +114,8 @@ export function DeploymentVoiceSettings({
       data-testid="deployment-voice-settings"
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        setLoadError(null);
+        save.run(draft);
       }}
     >
       <SectionHeading variant="heading">

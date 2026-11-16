@@ -95,7 +95,7 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
     }),
     appliedMigrations(prisma),
     // An admin's settings apply over the environment's.
-    loadDeploymentModels(prisma, env.deploymentModels).catch(() => undefined),
+    bestEffort("load the deployment models", loadDeploymentModels(prisma, env.deploymentModels)),
   ]);
   const flatten = <T extends { availableIn: { spaceId: string }[] }>(server: T) => ({
     ...server,

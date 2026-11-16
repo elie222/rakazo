@@ -13,6 +13,8 @@ import {
   Switch,
 } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
+import { useSave } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
@@ -34,6 +36,9 @@ const EMPTY_DRAFT: Draft = {
   contextWindow: "",
   maxTokens: "",
 };
+
+/** One change an admin makes, sent through the client the save receives. */
+type Change = { send: (client: RpcClient) => Promise<Settings>; done?: () => void };
 
 const choiceKey = (provider: string, modelId: string) => `${provider}\n${modelId}`;
 
@@ -57,14 +62,38 @@ export function DeploymentModelSettings() {
   const maxTokensId = useId();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const alive = useRef(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Counts saves, so a load still in flight never replaces what a save returned.
   const saves = useRef(0);
+  const save = useSave({
+    save: (change: Change, client) => change.send(client),
+    onSaved: (next, change) => {
+      saves.current += 1;
+      setSettings(next);
+      change.done?.();
+    },
+  });
+  const probe = useSave({
+    save: (input: { baseUrl: string; apiKey: string }, client) =>
+      client.models.deployment.probe(input),
+    onSaved: ({ models }) =>
+      setDraft((current) => ({ ...EMPTY_DRAFT, ...current, models: models.join(", ") })),
+  });
+  const pending = save.pending || probe.pending;
+  // Each failure holds until the next request, which forgets the other's.
+  const error =
+    loadError ??
+    (save.error
+      ? errorText(save.error, t`Could not save model settings`)
+      : probe.error
+        ? errorText(probe.error, t`Could not list models`)
+        : null);
+  function run(send: Change["send"], done?: () => void) {
+    probe.reset();
+    save.run({ send, done });
+  }
 
   useEffect(() => {
-    alive.current = true;
     // Each load answers only its own run of the effect: one started before a locale switch is
     // dropped, as is one that a save overtook.
     let current = true;
@@ -75,12 +104,11 @@ export function DeploymentModelSettings() {
         if (current && saves.current === savesAtStart) setSettings(next);
       },
       (caught: unknown) => {
-        if (current) setError(errorText(caught, t`Could not load model settings`));
+        if (current) setLoadError(errorText(caught, t`Could not load model settings`));
       },
     );
     return () => {
       current = false;
-      alive.current = false;
     };
   }, [t]);
 
@@ -90,23 +118,6 @@ export function DeploymentModelSettings() {
         {error}
       </p>
     ) : null;
-  }
-
-  async function run(action: () => Promise<Settings>, done?: () => void) {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const next = await action();
-      if (!alive.current) return;
-      saves.current += 1;
-      setSettings(next);
-      done?.();
-    } catch (caught) {
-      if (alive.current) setError(errorText(caught, t`Could not save model settings`));
-    } finally {
-      if (alive.current) setPending(false);
-    }
   }
 
   const effective = settings.effectiveDefault;
@@ -124,21 +135,10 @@ export function DeploymentModelSettings() {
   const set = (patch: Partial<Draft>) =>
     setDraft((current) => ({ ...EMPTY_DRAFT, ...current, ...patch }));
 
-  async function findModels() {
-    if (!draft || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const { models } = await rpc.models.deployment.probe({
-        baseUrl: draft.baseUrl,
-        apiKey: draft.apiKey,
-      });
-      if (alive.current) set({ models: models.join(", ") });
-    } catch (caught) {
-      if (alive.current) setError(errorText(caught, t`Could not list models`));
-    } finally {
-      if (alive.current) setPending(false);
-    }
+  function findModels() {
+    if (!draft) return;
+    save.reset();
+    probe.run({ baseUrl: draft.baseUrl, apiKey: draft.apiKey });
   }
 
   return (
@@ -164,8 +164,8 @@ export function DeploymentModelSettings() {
               }
               onChange={(event) => {
                 const [provider, modelId] = event.target.value.split("\n");
-                void run(() =>
-                  rpc.models.deployment.update({
+                run((client) =>
+                  client.models.deployment.update({
                     defaultModel: provider && modelId ? { provider, modelId } : null,
                   }),
                 );
@@ -202,7 +202,7 @@ export function DeploymentModelSettings() {
                   size="sm"
                   className="text-muted-foreground"
                   onClick={() =>
-                    void run(() => rpc.models.deployment.update({ allowedModels: null }))
+                    run((client) => client.models.deployment.update({ allowedModels: null }))
                   }
                 >
                   <Trans>Reset</Trans>
@@ -231,8 +231,8 @@ export function DeploymentModelSettings() {
                         className="text-muted-foreground"
                         aria-label={t`Remove ${connection.name}`}
                         onClick={() =>
-                          void run(() =>
-                            rpc.models.deployment.disconnect({ provider: connection.provider }),
+                          run((client) =>
+                            client.models.deployment.disconnect({ provider: connection.provider }),
                           )
                         }
                       >
@@ -243,8 +243,8 @@ export function DeploymentModelSettings() {
                       id={`${defaultId}-${connection.provider}`}
                       checked={connection.open}
                       onCheckedChange={(open) =>
-                        void run(() =>
-                          rpc.models.deployment.update({
+                        run((client) =>
+                          client.models.deployment.update({
                             open: { provider: connection.provider, open },
                           }),
                         )
@@ -265,9 +265,9 @@ export function DeploymentModelSettings() {
                 .split(/[\s,]+/)
                 .map((id) => id.trim())
                 .filter(Boolean);
-              void run(
-                () =>
-                  rpc.models.deployment.connect({
+              run(
+                (client) =>
+                  client.models.deployment.connect({
                     provider: draft.provider,
                     apiKey: draft.apiKey.trim(),
                     ...(adding?.endpoint
@@ -367,7 +367,7 @@ export function DeploymentModelSettings() {
                       variant="secondary"
                       size="sm"
                       disabled={!draft.baseUrl.trim()}
-                      onClick={() => void findModels()}
+                      onClick={findModels}
                     >
                       <Trans>Find models</Trans>
                     </Button>
