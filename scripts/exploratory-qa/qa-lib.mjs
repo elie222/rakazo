@@ -197,9 +197,9 @@ export function planIssues(findings, openIssues, maxIssues = LIMITS.issuesPerRun
 
 /** Spend from token usage at the prices the run was given; stops before the next call once reached. A response without usable token counts stops the whole run, since its cost is unknown. */
 export function createBudget({ limitUsd, inputUsdPerMTok, outputUsdPerMTok }) {
+  // A zero price would leave spend at zero and the cap unenforced.
   for (const [name, value] of Object.entries({ limitUsd, inputUsdPerMTok, outputUsdPerMTok })) {
-    if (!Number.isFinite(value) || value < 0)
-      throw new Error(`${name} must be a non-negative number`);
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number`);
   }
   if (limitUsd > LIMITS.budgetUsd) throw new Error(`The budget is capped at $${LIMITS.budgetUsd}`);
   let spentUsd = 0;

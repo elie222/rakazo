@@ -172,6 +172,10 @@ test("the budget prices token usage and stops once reached", () => {
     () => createBudget({ limitUsd: 1, inputUsdPerMTok: Number.NaN, outputUsdPerMTok: 1 }),
     /inputUsdPerMTok/,
   );
+  assert.throws(
+    () => createBudget({ limitUsd: 1, inputUsdPerMTok: 1, outputUsdPerMTok: 0 }),
+    /outputUsdPerMTok must be a positive number/,
+  );
 });
 
 test("a response without usable token usage stops the run", () => {
