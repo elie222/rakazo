@@ -290,6 +290,62 @@ describe("withRejectedRequestCapture", () => {
     for (const secret of SECRETS) expect(serialized).not.toContain(secret);
   });
 
+  it("reports the transport asked for and how the body went over the wire", async () => {
+    let rejection: RejectedProviderRequest | undefined;
+    const fetched: unknown[] = [];
+    const base: SimpleStreamOptions = {
+      transport: "sse",
+      fetch: (async (_input, init) => {
+        fetched.push(init?.body);
+        return new Response(null, { status: 400 });
+      }) as typeof fetch,
+    };
+    const options = withRejectedRequestCapture(base, (value) => {
+      rejection = value;
+    });
+    await options.onPayload?.(responsesBody, model);
+    const compressed = new Uint8Array(1234);
+    await options.fetch?.("https://provider.test/v1", {
+      method: "POST",
+      headers: {
+        "Content-Encoding": "zstd",
+        Authorization: "Bearer TOKEN-secret",
+        "chatgpt-account-id": "ACCOUNT-ID-secret",
+      },
+      body: compressed,
+    });
+    await options.onResponse?.({ status: 400, headers: { "x-request-id": "req_9" } }, model);
+    expect(fetched).toEqual([compressed]);
+    expect(rejection).toMatchObject({
+      model: "test-model",
+      requestId: "req_9",
+      transport: "sse",
+      sent: { bytes: 1234, contentEncoding: "zstd" },
+      body: {
+        bytes: Buffer.byteLength(JSON.stringify(responsesBody)),
+        messages: { count: responsesBody.input.length },
+        tools: { count: responsesBody.tools.length },
+      },
+    });
+    const serialized = JSON.stringify(rejection);
+    for (const secret of SECRETS) expect(serialized).not.toContain(secret);
+
+    await options.fetch?.("https://provider.test/v1", { method: "POST", body: "{}" });
+    await options.onResponse?.({ status: 400, headers: {} }, model);
+    expect(rejection?.sent).toEqual({ bytes: 2, contentEncoding: "identity" });
+  });
+
+  it("leaves fetch alone and the wire unknown when none was given", async () => {
+    let rejection: RejectedProviderRequest | undefined;
+    const options = withRejectedRequestCapture({} as SimpleStreamOptions, (value) => {
+      rejection = value;
+    });
+    expect(options.fetch).toBeUndefined();
+    await options.onResponse?.({ status: 400, headers: {} }, model);
+    expect(rejection?.transport).toBe("auto");
+    expect(rejection).not.toHaveProperty("sent");
+  });
+
   it("reports a success, so recovered rejections drop, but not a server error", async () => {
     const reported: unknown[] = [];
     const options = withRejectedRequestCapture({} as SimpleStreamOptions, (value) =>
@@ -305,8 +361,8 @@ describe("withRejectedRequestCapture", () => {
 
 describe("attachRejectedRequests", () => {
   it("carries every attempt's rejection on the error it is attached to only", () => {
-    const primary = { provider: "p", model: "m", status: 400 };
-    const backup = { provider: "b", model: "n", status: 404 };
+    const primary = { provider: "p", model: "m", status: 400, transport: "auto" };
+    const backup = { provider: "b", model: "n", status: 404, transport: "auto" };
     const error = attachRejectedRequests(new Error("Bad Request"), [primary, backup]);
     expect(rejectedRequestsOf(error)).toEqual([primary, backup]);
     expect(rejectedRequestsOf(new Error("Bad Request"))).toBeUndefined();

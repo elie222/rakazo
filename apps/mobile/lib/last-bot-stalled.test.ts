@@ -10,9 +10,6 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async () => ({

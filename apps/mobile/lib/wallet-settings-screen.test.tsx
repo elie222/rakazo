@@ -28,9 +28,6 @@ vi.mock("expo-router", () => ({
     useEffect(() => (mocks.focused ? callback() : undefined), [callback, mocks.focused]);
   },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => mocks.selectedSpace,

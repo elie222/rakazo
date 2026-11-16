@@ -34,9 +34,6 @@ vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./mobile-types", () => ({
   blockText: vi.fn(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(async () => ({
     apiBase: "https://api.example.test",

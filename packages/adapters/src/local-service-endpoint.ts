@@ -10,13 +10,13 @@ import {
 } from "@rakazo/contracts";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./providers/memory/serenity/serenity-memory-provider.js";
 import type { SafeRemoteFetch } from "./remote-mcp.js";
 import {
   createPrivateNetworkFetch,
   createSafeRemoteFetch,
   isPrivateRemoteMcpHostname,
 } from "./remote-mcp.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { withAbort } from "./web-ssrf.js";
 
 /**

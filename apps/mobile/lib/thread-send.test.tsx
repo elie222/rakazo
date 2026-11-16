@@ -22,9 +22,6 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   useNavigation: () => navigation,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example",
   rpc: vi.fn(),

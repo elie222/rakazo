@@ -23,9 +23,6 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 const space = vi.hoisted(() => ({ id: "space-a" }));
 vi.mock("./api", () => ({
   rpc,

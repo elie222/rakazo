@@ -1,7 +1,7 @@
 import { webDarkTokens } from "@rakazo/ui-tokens";
 import type { Rolldown } from "vite";
 import { describe, expect, it } from "vitest";
-import { injectShell, shellFiles, webManifest } from "./plugin.js";
+import { injectShell, shellFiles, webManifest } from "./pwa-plugin.js";
 
 function chunk(fileName: string, imports: string[], css: string[] = [], isEntry = false) {
   return {

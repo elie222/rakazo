@@ -43,9 +43,6 @@ vi.mock("./call-sounds", () => ({
   saveWaitSoundEnabled: mocks.saveWaiting,
   playCallCue: mocks.cue,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
