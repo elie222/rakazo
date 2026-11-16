@@ -247,7 +247,8 @@ export const GroupDetailSchema = GroupSchema.extend({
   messages: z.array(ThreadMessageSchema).optional(),
 });
 
-export const BotSectionName = z.string().trim().min(1).max(60);
+export const BOT_SECTION_NAME_MAX_LENGTH = 60;
+export const BotSectionName = z.string().trim().min(1).max(BOT_SECTION_NAME_MAX_LENGTH);
 
 export const BotSectionSchema = z.object({
   id: Id,
@@ -403,8 +404,47 @@ export const SpaceMembersSchema = z.object({
   canManage: z.boolean(),
   /** For the owner: links created but not yet used or expired. */
   openInvites: z.number().int().nonnegative().optional(),
+  /** For the owner: people in the Space's organization who are not in it yet. */
+  addable: z.array(SpaceMemberSchema.omit({ role: true })).optional(),
 });
 export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+/** The organization's one owner, admins who manage its members with them, and everyone else. */
+export const OrganizationRoleSchema = z.enum(["owner", "admin", "member"]);
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>;
+
+export const OrganizationMemberSchema = SpaceMemberSchema.extend({
+  role: OrganizationRoleSchema,
+  /** Whether the viewer may remove them: never the owner or themselves. */
+  manageable: z.boolean(),
+  /** Whether the viewer may make them an admin or a member: not while their removal is unfinished. */
+  roleChangeable: z.boolean(),
+});
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
+
+export const OrganizationInvitationSchema = z.object({
+  id: Id,
+  email: z.string(),
+  /** The link to accept it, for sharing by hand when no email arrives. */
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>;
+
+export const OrganizationMembersSchema = z.object({
+  members: z.array(OrganizationMemberSchema),
+  /** Pending invitations; empty for someone who cannot manage members. */
+  invitations: z.array(OrganizationInvitationSchema),
+  /** True for the owner and admins: they invite, change roles and remove people. */
+  canManage: z.boolean(),
+});
+export type OrganizationMembers = z.infer<typeof OrganizationMembersSchema>;
+
+export const OrganizationInvitationPreviewSchema = z.object({
+  organizationName: z.string(),
+  inviterName: z.string(),
+});
+export type OrganizationInvitationPreview = z.infer<typeof OrganizationInvitationPreviewSchema>;
 
 export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),
@@ -1167,6 +1207,58 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
     .optional(),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
+
+export const UsageDateRangeSchema = z.enum(["today", "7d", "30d", "all"]);
+export type UsageDateRange = z.infer<typeof UsageDateRangeSchema>;
+
+export const UsageBreakdownInputSchema = z.object({
+  /** Omit or null to include every bot. */
+  botId: Id.nullish(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  range: UsageDateRangeSchema.default("30d"),
+});
+export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
+
+export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
+  provider: z.string(),
+  model: z.string(),
+});
+export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
+
+export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
+  /** The bucket's first day in the member's timezone, YYYY-MM-DD. */
+  date: z.string(),
+});
+export type UsageBreakdownPoint = z.infer<typeof UsageBreakdownPointSchema>;
+
+export const UsageBreakdownBotSchema = z.object({
+  id: Id,
+  /** Null for a bot removed without a record of its name. */
+  name: z.string().nullable(),
+  deleted: z.boolean(),
+  runs: z.number(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable(),
+  costUsd: z.number().nullable(),
+  modelCalls: z.number(),
+});
+export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
+
+export const UsageBreakdownSchema = z.object({
+  range: UsageDateRangeSchema,
+  /** Each bot with usage in the range, for the bot selector. */
+  bots: z.array(UsageBreakdownBotSchema),
+  /** Every model used in the range, for the model selector. */
+  modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
+  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  models: z.array(UsageBreakdownModelSchema),
+  /** One point per day, or per month for an all-time history longer than two months. */
+  overTimeUnit: z.enum(["day", "month"]),
+  overTime: z.array(UsageBreakdownPointSchema),
+});
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
 
 /** One rolling allowance of a model subscription the member signed in with. */
 export const PlanLimitWindowSchema = z.object({

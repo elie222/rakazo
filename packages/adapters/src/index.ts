@@ -34,11 +34,13 @@ export {
   defaultVaultItemTitle,
   forgetBotSecret,
   getBotSecretMetadata,
+  importedLoginValue,
   isSecretAlreadySaved,
   LOGIN_ALREADY_SAVED,
   LOGIN_CODE_REPEAT_WINDOW_MS,
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
+  LoginAlreadySavedError,
   listBotSecretMetadata,
   listBotSecrets,
   listVaultItems,
@@ -51,10 +53,14 @@ export {
   revealBotSecret,
   SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
+  SpaceVaultNotInUseError,
   storeBotSecret,
   UNKNOWN_BOTS,
   UNSUPPORTED_ACCESS,
   VAULT_CHANGED,
+  VaultFullError,
+  VaultItemRefusedError,
+  VaultRetryError,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
@@ -81,7 +87,11 @@ export * from "./computer-control.js";
 export * from "./computer-disk.js";
 export * from "./computer-idle.js";
 export * from "./computer-lifecycle.js";
-export * from "./computer-provider-descriptor.js";
+export type {
+  ComputerProviderDefinition,
+  SandboxProviderOptions,
+  SettingsComputerProvider,
+} from "./computer-provider-descriptor.js";
 export * from "./computer-provider-registry.js";
 export * from "./computer-screens.js";
 export * from "./computer-support.js";
@@ -218,8 +228,10 @@ export * from "./resend-email.js";
 export { finishRoutineHandover } from "./routine-handover.js";
 export * from "./routine-watch.js";
 export { notifyMemberMessage } from "./run-notifications.js";
+export { loadRunOrigin } from "./run-origin.js";
 export * from "./run-runtime.js";
 export * from "./run-secret.js";
+export { createRunTrustLoaders } from "./run-trust.js";
 export * from "./run-wakeup.js";
 export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";

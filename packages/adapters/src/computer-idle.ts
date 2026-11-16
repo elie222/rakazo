@@ -15,7 +15,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
-import { COMPUTER_USING_RUNS, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
+import { computerUsingRuns, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -827,7 +827,7 @@ async function announceSuspended(
 }
 
 /** System notes reach users and the bot through the existing thread history. */
-async function announceUnsavedHome(
+export async function announceUnsavedHome(
   deps: { prisma: PrismaClient; events: ThreadEvents },
   computer: { id: string; spaceId: string; homeRevisionAt: Date | null; runningSince: Date | null },
   error: WorkspaceTooLargeError,
@@ -1030,7 +1030,7 @@ function findActiveRun(
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       status: { in: statuses as (typeof QUEUE_HOLDING_RUN_STATUSES)[number][] },
       ...(liveLeaseOnly ? { leaseExpiresAt: { gt: new Date(Date.now()) } } : {}),
     },

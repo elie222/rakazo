@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
@@ -34,7 +41,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await expect(editor.getByTestId("vault-card-brand")).toHaveText("Visa");
   await editor.getByLabel("Expiry", { exact: true }).fill("0830");
   await editor.getByLabel("Security code", { exact: true }).fill("123");
-  await editor.getByLabel("Billing address", { exact: true }).selectOption({ label: "Home" });
+  await chooseOption(editor.getByLabel("Billing address", { exact: true }), "Home");
   await editor.getByRole("button", { name: "Add a note", exact: true }).click();
   await editor.getByLabel("When to use", { exact: true }).fill("For travel");
   await captureScreenshot(page, testInfo, "vault-new-card");
@@ -334,6 +341,8 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await page.reload();
   const own = (await openUserSettings(page, "vault")).getByTestId("vault");
   await loaded;
+  await expect(own.getByTestId("vault-own-space-note")).toBeVisible();
+  await captureScreenshot(page, testInfo, "vault-own-space-note");
   await own.getByText("scoped.example.test", { exact: true }).click();
   await page.getByTestId("vault-item-edit").click();
   await expect(

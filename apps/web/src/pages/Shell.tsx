@@ -59,6 +59,7 @@ import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routine-draft";
+import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
@@ -606,7 +607,10 @@ function SpaceShell() {
       ? snapshot
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(activeSnapshot), [activeSnapshot]);
+  const answerableAskIds = useMemo(
+    () => answerableAskMessageIds(activeSnapshot, userId),
+    [activeSnapshot, userId],
+  );
   const dismissableAskIds = useMemo(
     () => dismissableAskMessageIds(activeSnapshot, userId),
     [activeSnapshot, userId],
@@ -910,9 +914,9 @@ function SpaceShell() {
     setPanel(null);
   }
 
-  async function createBot(input: CreateBotDialogInput) {
+  async function createBot(input: CreateBotDialogInput, client: RpcClient) {
     const isFirstBot = botsRef.current.length === 0;
-    const bot = await rpc.bots.create({ ...input, notifyOnFinish: true });
+    const bot = await client.bots.create({ ...input, notifyOnFinish: true });
     openCreatedBot(bot);
     dialogs.setCreateBotOpen(false);
     await composer.startFocusPrompt(bot.id, isFirstBot);

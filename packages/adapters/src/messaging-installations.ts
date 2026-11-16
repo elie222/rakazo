@@ -5,9 +5,10 @@ import type {
   MessagingInstallProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, runAsSystem } from "@rakazo/db";
+import { IsolationError, isUniqueViolation, runAsSystem } from "@rakazo/db";
 import { credentialDigest } from "./credential-digest.js";
 import { installationSenderAddress } from "./installed-messaging-surface.js";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
@@ -71,7 +72,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
   /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
   async complete(actor: Actor, state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
-      throw new Error("Invalid authorization");
+      throw new MessagingInstallRefusedError("Invalid authorization");
     await runAsSystem("complete messaging workspace installation", async () => {
       const session = await this.prisma.messagingInstallSession.findUnique({
         where: { id: credentialDigest(state) },
@@ -82,11 +83,11 @@ export class MessagingInstallations implements MessagingInstallationStore {
         session.provider !== this.provider.provider ||
         session.expiresAt <= new Date()
       )
-        throw new Error("Authorization expired");
+        throw new MessagingInstallRefusedError("Authorization expired");
       const claimed = await this.prisma.messagingInstallSession.deleteMany({
         where: { id: session.id, expiresAt: { gt: new Date() } },
       });
-      if (claimed.count !== 1) throw new Error("Authorization expired");
+      if (claimed.count !== 1) throw new MessagingInstallRefusedError("Authorization expired");
       // Membership and bot ownership can change while Slack is authorizing.
       const bot = await this.prisma.bot.findFirst({
         where: {
@@ -99,7 +100,8 @@ export class MessagingInstallations implements MessagingInstallationStore {
       const member = await this.prisma.spaceMember.findFirst({
         where: { spaceId: session.spaceId, userId: session.userId },
       });
-      if (!bot || !member) throw new Error("Installation owner is no longer available");
+      if (!bot || !member)
+        throw new MessagingInstallRefusedError("Installation owner is no longer available");
       const external = await this.provider.exchange(code);
       const where = {
         provider_workspaceId: { provider: session.provider, workspaceId: external.workspaceId },
@@ -111,7 +113,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
           existing.userId !== session.userId ||
           existing.botId !== session.botId)
       ) {
-        throw new Error("Workspace is already connected");
+        throw new MessagingInstallRefusedError("Workspace is already connected");
       }
       const id = existing?.id ?? randomBytes(16).toString("hex");
       const ownerAddress = external.ownerId
@@ -151,7 +153,8 @@ export class MessagingInstallations implements MessagingInstallationStore {
                 ownerAddress,
               },
             });
-            if (updated.count !== 1) throw new Error("Workspace connection changed; try again");
+            if (updated.count !== 1)
+              throw new MessagingInstallRefusedError("Workspace connection changed; try again");
             if (replaced) await recordSecretCleanup(this.cleanup, tx, replaced);
           });
         } else {
@@ -174,6 +177,9 @@ export class MessagingInstallations implements MessagingInstallationStore {
         // A transport error may happen after a committed write; the cleanup spares a credential
         // the installation holds after all.
         await cleanUpUnsavedSecret(this.cleanup, credential(id, sealed.ciphertext));
+        // Another space installed the same workspace first.
+        if (!existing && isUniqueViolation(error))
+          throw new MessagingInstallRefusedError("Workspace is already connected");
         throw error;
       }
       if (replaced) await finishSecretCleanup(this.cleanup, replaced);

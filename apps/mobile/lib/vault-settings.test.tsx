@@ -1458,9 +1458,13 @@ it.each([
   expect(failList).toBe(false);
   if (after === "an import fails")
     expect(container.textContent).toContain("Importing the file again skips them.");
+  state.overrides = ["credentials"];
+  state.rpc.mockClear();
   await act(async () => button("Something went wrong. Try again. Retry")!.click());
   await settle();
-  expect(state.rpc).toHaveBeenLastCalledWith("vault/list", { scope: "account" }, expect.anything());
+  expect(state.rpc).toHaveBeenCalledWith("vault/list", { scope: "account" }, expect.anything());
+  expect(state.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, expect.anything());
+  expect(container.textContent).toContain("This Space keeps its own vault.");
   expect(container.textContent).not.toContain("Something went wrong.");
   expect(button("Import CSV", menu("New item"))?.disabled).toBe(false);
 });

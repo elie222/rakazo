@@ -34,18 +34,38 @@ import {
   databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
+  JsonColumnMismatchError,
+  readJsonColumn,
   readMessageBlocks,
+  reportJsonColumnOnce,
   runAsSystem,
   SpaceDeletionInProgressError,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
+import { loadRunOrigin } from "./run-origin.js";
 import { resolveMessagingThreadId } from "./team-chat-messaging.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 import { wakeRun } from "./wake-run.js";
+
+const SteeringDeliveryProof = z.object({ externalSafe: z.boolean().optional() });
+
+function steeringAllowsExternalDelivery(event: { id: string; payload: unknown }): boolean {
+  const row = { table: "events", column: "payload", id: event.id };
+  try {
+    return (
+      readJsonColumn(SteeringDeliveryProof, event.payload, row, "reject").externalSafe === true
+    );
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce("delegated reply has unreadable steering provenance", row);
+    return false;
+  }
+}
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -292,7 +312,63 @@ export class MessagingDelivery {
       if (!run) return;
       const terminal = TERMINAL_RUN.includes(run.status);
       const lanes: OutboundLane[] = [];
-      if (run.externalMessage) {
+      if (run.trigger === "helper_result") {
+        const origin = await loadRunOrigin(this.deps.prisma, run);
+        // Consumed steering rows may already be deleted after the reply. Older claim events
+        // carry no privacy provenance, so a result influenced by them stays in the app.
+        const steering = origin
+          ? await this.deps.prisma.event.findMany({
+              where: { runId: run.id, type: "run.steering.claimed" },
+              select: { id: true, payload: true },
+            })
+          : [];
+        if (origin && !options.progress && steering.every(steeringAllowsExternalDelivery)) {
+          if (origin.thread.externalConversationId) {
+            if (terminal) {
+              const external = await this.deps.prisma.externalMessage.findUnique({
+                where: { runId: origin.id },
+                select: {
+                  replyThreadId: true,
+                  externalConversation: { select: { conversationId: true } },
+                },
+              });
+              if (external) {
+                const lane = await this.recordDelegatedReply(run, external);
+                if (lane) lanes.push(lane);
+              }
+            }
+          } else if (origin.trigger === "messaging") {
+            const source = origin.sourceMessage
+              ? readMessageBlocks(origin.sourceMessage)
+              : undefined;
+            const channel = source?.blocks.find(
+              (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
+                block.kind === "channel_message",
+            );
+            if (source?.intact !== false) {
+              const privateMessages = channel
+                ? await this.deps.prisma.message.findMany({
+                    where: { runId: { in: [origin.id, run.delegatedFromRunId!] } },
+                    select: { id: true, blocks: true },
+                  })
+                : [];
+              const privateAnswer = privateMessages.some((message) => {
+                const { blocks, intact } = readMessageBlocks(message);
+                return (
+                  !intact ||
+                  blocks.some((block) => block.kind === "ask" && block.status === "answered")
+                );
+              });
+              if (!privateAnswer) {
+                const lane = channel
+                  ? await this.recordChannelRun(run, channel)
+                  : await this.recordDirectRun(run, false);
+                if (lane) lanes.push(lane);
+              }
+            }
+          }
+        }
+      } else if (run.externalMessage) {
         // Team chat answers once, when the run ends; nothing of it goes to a linked 1:1 chat.
         if (!options.progress && terminal) {
           const lane = await this.recordTeamChatReply({
@@ -334,14 +410,19 @@ export class MessagingDelivery {
         }
       }
       if (!options.progress) {
-        if (run.trigger === "messaging") {
+        if (run.trigger === "messaging" || run.trigger === "helper_result") {
           await this.deps.prisma.run.updateMany({
             where: { id: runId },
             data: { messagingMirroredAt: new Date() },
           });
         }
         // Recorded: the rows carry their own backups now. Only chat runs get a reply job.
-        if (terminal && (run.trigger === "messaging" || run.trigger === "bot_message"))
+        if (
+          terminal &&
+          (run.trigger === "messaging" ||
+            run.trigger === "bot_message" ||
+            run.trigger === "helper_result")
+        )
           await this.deps.jobs.cancel(messagingReplyJobKey(runId));
       }
       await this.send(lanes);
@@ -349,8 +430,9 @@ export class MessagingDelivery {
   }
 
   /**
-   * The previous release's whole-outbox drain: sends every conversation that has unsent rows,
-   * so its queued jobs finish under this release.
+   * The previous release's whole-outbox drain. Sends every conversation that has unsent rows,
+   * so its queued jobs finish under this release. Those jobs can stay queued across releases,
+   * so this goes only once none are left.
    */
   async drainAll(): Promise<void> {
     const rows = await runAsSystem("find conversations with unsent chat messages", () =>
@@ -1176,13 +1258,19 @@ export class MessagingDelivery {
    * A bot another bot delegated to answers in the team-chat thread the chain started in, found by
    * walking the delegation back to a run a team-chat message started.
    */
-  private async recordDelegatedReply(run: {
-    id: string;
-    status: string;
-    sourceMessageId: string | null;
-    bot: { name: string };
-  }): Promise<OutboundLane | undefined> {
-    const origin = await this.findExternalOrigin(run.sourceMessageId);
+  private async recordDelegatedReply(
+    run: {
+      id: string;
+      status: string;
+      sourceMessageId: string | null;
+      bot: { name: string };
+    },
+    externalOrigin?: {
+      replyThreadId: string | null;
+      externalConversation: { conversationId: string };
+    },
+  ): Promise<OutboundLane | undefined> {
+    const origin = externalOrigin ?? (await this.findExternalOrigin(run.sourceMessageId));
     if (!origin) return undefined;
     const reply =
       run.status === "completed"

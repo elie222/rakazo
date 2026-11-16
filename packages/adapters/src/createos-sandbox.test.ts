@@ -690,6 +690,25 @@ describe("CreateOSSandboxProvider", () => {
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
   });
 
+  it("names a streamed success response over the cap, and only that, too large", async () => {
+    const provision = (body: BodyInit) =>
+      new CreateOSSandboxProvider({
+        apiKey: "test-key",
+        fetch: (async () => new Response(body)) as typeof fetch,
+      }).provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    await expect(
+      provision(new Uint8Array(MAX_CREATEOS_SUCCESS_RESPONSE_BYTES + 1)),
+    ).rejects.toThrow(`CreateOS response exceeds ${MAX_CREATEOS_SUCCESS_RESPONSE_BYTES} bytes`);
+    await expect(
+      provision(
+        new ReadableStream({
+          pull: (controller) => controller.error(new Error("Response is too large")),
+        }),
+      ),
+    ).rejects.toThrow(/^Response is too large$/);
+  });
+
   it("does not buffer an oversized error body", async () => {
     const cancel = vi.fn();
     const fetchImpl = (async () =>

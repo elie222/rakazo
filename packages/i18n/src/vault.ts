@@ -36,6 +36,14 @@ export function vaultPolicyLabels(): Record<VaultPolicy, string> {
   };
 }
 
+export function vaultOwnSpaceNote(): string {
+  return i18n._({
+    id: "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+    message:
+      "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+  });
+}
+
 /**
  * Said under an account item's bots: that this Space can't use it, or, where there are other
  * Spaces, that a choice covers only this one's bots.

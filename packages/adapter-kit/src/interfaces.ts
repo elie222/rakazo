@@ -453,6 +453,7 @@ export interface AgentHomeStore {
     context: AdapterContext,
     options?: { directory?: string; skipHidden?: boolean },
   ): AsyncIterable<PortableFile>;
+  /** Throws `SandboxFileTooLargeError` for a file over `maxBytes`. */
   readFile(
     botId: string,
     path: string,
@@ -683,6 +684,11 @@ export interface MessagingSurface {
    * webhook URL is reachable) otherwise never start until a webhook or send touches them.
    */
   initialize?(): Promise<void>;
+  /**
+   * Stop pulling inbound updates so a replacement process can claim them, while sends keep
+   * working. No-op for surfaces that only receive webhooks.
+   */
+  stopReceiving?(): Promise<void>;
   /**
    * Release long-lived inbound resources (Telegram getUpdates polling) so a
    * replacement process can claim them. No-op when the surface never started.

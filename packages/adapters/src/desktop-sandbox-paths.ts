@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizeWorkspacePath } from "./computer-support.js";
+import { normalizeWorkspacePath, WorkspacePathError } from "./computer-support.js";
 
 type PathOperations = Pick<typeof path, "isAbsolute" | "relative" | "resolve" | "sep">;
 
@@ -29,7 +29,8 @@ export function isAllowedDesktopPath(
 
 function assertPortableWindowsPath(value: string) {
   const portable = value.replace(/\\/g, "/");
-  if (portable.startsWith("//")) throw new Error("Path escapes the computer workspace");
+  if (portable.startsWith("//"))
+    throw new WorkspacePathError("Path escapes the computer workspace");
   const withoutVirtualRoot = portable.replace(/^\/+/, "");
   for (const segment of withoutVirtualRoot.split("/").filter(Boolean)) {
     const deviceName = segment.split(".", 1)[0] ?? "";
@@ -38,7 +39,7 @@ function assertPortableWindowsPath(value: string) {
       /[ .]$/u.test(segment) ||
       WINDOWS_RESERVED_NAME.test(deviceName)
     ) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
   }
 }

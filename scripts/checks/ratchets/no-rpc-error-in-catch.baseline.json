@@ -1,13 +1,7 @@
 {
   "apps/api/src/billing.ts": 6,
   "apps/api/src/computer-provider-config.ts": 1,
-  "apps/api/src/connection-flows.ts": 6,
-  "apps/api/src/mcp-servers.ts": 1,
   "apps/api/src/memory-provider-config.ts": 3,
   "apps/api/src/model-credentials.ts": 1,
-  "apps/api/src/routes/capabilities.ts": 3,
-  "apps/api/src/routes/mcp.ts": 4,
-  "apps/api/src/routes/memory.ts": 1,
-  "apps/api/src/routes/messaging.ts": 2,
   "apps/api/src/routes/payment-wallet.ts": 1
 }

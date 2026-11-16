@@ -1,22 +1,22 @@
 import {
   BOAT_RAKAZO,
+  boatMonthly,
+  count,
   E2B_PRO_FEE,
+  hourly,
   METHOD_NOTE,
   MONTH_HOURS,
+  monthly,
   NOVITA_CREDIT,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
+  perSecondUsd,
   RATES,
   RUNTIME_DOC,
-  WORKDAY_HOURS,
-  boatMonthly,
-  count,
-  hourly,
-  monthly,
-  perSecondUsd,
   rateUsd,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -74,13 +74,29 @@ export const novita: Sandbox = {
         caption: "Novita Agent Sandbox rates as of November 2026",
         columns: ["What", "Price or limit"],
         rows: [
-          { topic: "CPU", cells: [`${perSecondUsd(RATES.novita.vcpuHour)} per vCPU-second, about ${rateUsd(RATES.novita.vcpuHour)} an hour`] },
-          { topic: "Memory", cells: [`${perSecondUsd(RATES.novita.gbHour)} per GiB-second, about ${rateUsd(RATES.novita.gbHour)} an hour`] },
+          {
+            topic: "CPU",
+            cells: [
+              `${perSecondUsd(RATES.novita.vcpuHour)} per vCPU-second, about ${rateUsd(RATES.novita.vcpuHour)} an hour`,
+            ],
+          },
+          {
+            topic: "Memory",
+            cells: [
+              `${perSecondUsd(RATES.novita.gbHour)} per GiB-second, about ${rateUsd(RATES.novita.gbHour)} an hour`,
+            ],
+          },
           { topic: "Disk while running", cells: ["20 GB per sandbox, free"] },
           { topic: "Stored data", cells: ["60 GB free per account, then $0.00009 per GB-hour"] },
           { topic: "Free credit", cells: [`$${NOVITA_CREDIT} after a setup survey`] },
-          { topic: "Free tier limits", cells: ["5 sandboxes at once, 1-hour sessions, up to 2 vCPU / 4 GB"] },
-          { topic: "Paid limits", cells: ["100 sandboxes at once, 24-hour sessions, up to 8 vCPU / 8 GB"] },
+          {
+            topic: "Free tier limits",
+            cells: ["5 sandboxes at once, 1-hour sessions, up to 2 vCPU / 4 GB"],
+          },
+          {
+            topic: "Paid limits",
+            cells: ["100 sandboxes at once, 24-hour sessions, up to 8 vCPU / 8 GB"],
+          },
         ],
         note: `${PRICES_NOTE} Sources: [Novita sandbox pricing](https://docs.novita.ai/guides/sandbox-pricing) and the [sandbox overview](https://docs.novita.ai/guides/sandbox-overview).`,
       },
@@ -104,7 +120,10 @@ export const novita: Sandbox = {
           },
           {
             topic: "[Daytona](/sandboxes/daytona/)",
-            cells: [usd(monthly(RATES.daytona, WORKDAY_HOURS)), usd(monthly(RATES.daytona, MONTH_HOURS))],
+            cells: [
+              usd(monthly(RATES.daytona, WORKDAY_HOURS)),
+              usd(monthly(RATES.daytona, MONTH_HOURS)),
+            ],
           },
           {
             topic: "[Boat](/sandboxes/boat/)",

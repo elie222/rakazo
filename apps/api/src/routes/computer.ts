@@ -4,15 +4,14 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   applyTeachingDesktopInput,
+  ComputerScreenUnavailableError,
   checkpointAndStopComputer,
-  computerScreenUnavailableMessage,
   computerUpdateView,
   controlLeaseExpiresAt,
   diskUsedPercent,
   displayBotWorkspacePath,
   endTeachingWithLease,
   ensureComputerWorkspaceLayout,
-  isComputerScreenUnavailable,
   isSandboxGoneError,
   provisionComputer,
   queueComputerUpdate,
@@ -35,12 +34,7 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import {
-  ACTIVE_RUN_STATUSES,
-  ClientError,
-  COMPUTER_USING_RUNS,
-  scrollDirection,
-} from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, scrollDirection } from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd } from "@rakazo/db";
 import {
@@ -169,7 +163,7 @@ export function computerRoutes(ctx: RouterContext) {
             botId: { not: bot.id },
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId: bot.computer.id },
-            ...COMPUTER_USING_RUNS,
+            ...computerUsingRuns(),
           },
           select: { id: true },
         });
@@ -502,7 +496,7 @@ export function computerRoutes(ctx: RouterContext) {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             });
           } catch (error) {
-            if (error instanceof Error && error.message.startsWith("agent home file exceeds ")) {
+            if (error instanceof SandboxFileTooLargeError) {
               throw new ClientError("BAD_REQUEST", "file is too large to preview");
             }
             // The file browser can ask for a file deleted since it last listed.
@@ -683,8 +677,8 @@ export function computerRoutes(ctx: RouterContext) {
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
-            if (isComputerScreenUnavailable(error)) {
-              throw new ClientError("CONFLICT", computerScreenUnavailableMessage(error));
+            if (error instanceof ComputerScreenUnavailableError) {
+              throw new ClientError("CONFLICT", error.message);
             }
             return clearGoneSandbox(deps, computer, error);
           });

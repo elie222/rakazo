@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -47,6 +48,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  drainRuns,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -62,6 +64,7 @@ import {
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
   piSessionsRoot,
+  RUN_DRAIN_MS,
   RunJobPublisher,
   RunStarter,
   removePiUserSessions,
@@ -69,7 +72,6 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
-  sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   UserDeviceHub,
   UserDevices,
@@ -108,12 +110,14 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  joinedOrganizationIds,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -150,7 +154,7 @@ import { cspReportRoutes } from "./csp-report.js";
 import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
-import { loadEnv } from "./env.js";
+import { loadEnv, withEnvOverrides } from "./env.js";
 import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
@@ -197,7 +201,7 @@ export const MOBILE_AUTH_ORIGINS = [
   "http://127.0.0.1:19006",
 ];
 
-// Deploys give the old API 30 seconds to stop before killing it.
+// A stop that hands runs back is allowed 30 seconds before the process is killed.
 const REQUEST_DRAIN_MS = 20_000;
 
 export interface AppHandles {
@@ -216,7 +220,13 @@ export interface AppHandles {
   backgroundFailures?: () => Array<{ name: string; count: number }>;
   /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
   handleUpgrade?: UserDeviceHub["handleUpgrade"];
-  stop: () => Promise<void>;
+  /**
+   * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
+   * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
+   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
+   * for `connectionsClosed`, which settles once the server has stopped taking requests.
+   */
+  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -274,7 +284,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     now,
     ...envOverrides
   } = overrides;
-  const env = { ...loadEnv(process.env), ...envOverrides };
+  const env = withEnvOverrides(loadEnv(process.env), envOverrides);
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
@@ -298,6 +308,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
   // Set once push delivery is configured below; thread changes before then have no cards.
@@ -347,6 +359,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   }
   const jobPool = created.pool ?? ownedJobPool;
   const shutdown = new AbortController();
+  const runDrain = drainRuns(shutdown.signal, RUN_DRAIN_MS);
   // Chat starts in the process that receives it; the worker only takes what this one can't.
   const runs = inMemoryJobs ? undefined : new RunStarter(realtime, { signal: shutdown.signal });
   const jobs =
@@ -369,21 +382,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     deploymentLabs: env.deploymentLabs,
   });
-  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...hostComputer,
+      ...env.sandboxOptions,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
-      e2bApiKey: env.e2bApiKey,
-      novitaApiKey: env.novitaApiKey,
-      sandboxTemplate: env.sandboxTemplate,
-      daytonaApiKey: env.daytonaApiKey,
-      daytonaApiUrl: env.daytonaApiUrl,
-      daytonaTarget: env.daytonaTarget,
-      boatApiKey: env.boatApiKey,
-      boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
       secrets,
@@ -519,6 +523,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         onAccountChange: (change) => directoryChanges.getStore()?.push(change),
       })
     : undefined;
+  // Organizations an account being deleted joined, kept until it is gone to count their seats again.
+  const seatsAfterDeletion = new Map<string, string[]>();
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
@@ -580,6 +586,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await workActivities
         ?.endUser(userId)
         .catch((error) => getLogger().error("live status card removal failed", error));
+      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
+    },
+    // Its memberships went with it, so the organizations it joined stop paying for its seat.
+    afterDeleteUser: async (userId) => {
+      const organizationIds = seatsAfterDeletion.get(userId) ?? [];
+      seatsAfterDeletion.delete(userId);
+      for (const organizationId of organizationIds)
+        await bestEffort(
+          "seat count after an account deletion",
+          billing?.syncSeats(organizationId),
+        );
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
@@ -662,11 +679,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         withHostComputerScreen(userDevices, {
           prisma,
           sandboxKind: env.sandboxProvider,
-          url: hostComputer.hostComputerUrl,
-          token: hostComputer.hostComputerToken,
+          url: env.sandboxOptions.hostComputerUrl,
+          token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
-      shutdownSignal: shutdown.signal,
+      stoppingSignal: shutdown.signal,
+      shutdownSignal: runDrain.signal,
       now,
     },
   );
@@ -817,6 +835,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       webOrigin: env.webOrigin,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,
+      invitationRecipientKey: createHmac("sha256", env.authSecret)
+        .update("organization-invitation-recipient")
+        .digest("hex"),
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       integrationsCatalogUrl: env.integrationsCatalogUrl,
@@ -849,6 +870,34 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       exposeHeaders: [SERVER_BUILD_HEADER, "x-voice-id"],
     }),
   );
+  // Reading a session here can renew it. The browser must get the renewed cookie too,
+  // or it keeps the one from sign-in and is signed out when that one expires.
+  const renewedSessionCookies = new WeakMap<Request, string[]>();
+  const readSession = async (request: Request, disableRefresh = false) => {
+    const { headers, response } = await auth.api.getSession({
+      headers: request.headers,
+      returnHeaders: true,
+      query: { disableRefresh },
+    });
+    // A native client signs in with a bearer token and keeps no cookie.
+    const incomingCookieNames = new Set(
+      (request.headers.get("cookie") ?? "").split(";").map((cookie) => cookie.trim().split("=")[0]),
+    );
+    const cookies = headers
+      .getSetCookie()
+      .filter((cookie) => incomingCookieNames.has(cookie.split("=")[0]));
+    if (cookies.length > 0) renewedSessionCookies.set(request, cookies);
+    return response;
+  };
+  app.use("*", async (c, next) => {
+    const request = c.req.raw;
+    await next();
+    for (const cookie of renewedSessionCookies.get(request) ??
+      renewedSessionCookies.get(c.req.raw) ??
+      []) {
+      c.header("set-cookie", cookie, { append: true });
+    }
+  });
   // Session and account replies must never be stored by a client or an HTTP cache.
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
@@ -888,7 +937,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     monitoringRoutes(
       env.browserMonitoring,
       fetch,
-      async (request) => (await auth.api.getSession({ headers: request.headers }))?.user.id,
+      async (request) => (await readSession(request))?.user.id,
     ),
   );
   app.route("/", cspReportRoutes(requestClientIp));
@@ -974,9 +1023,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     sandboxProvider: env.sandboxProvider,
     prisma,
   });
-  const requestSession = async (request: Request) => {
+  const requestSession = async (request: Request, disableRefresh = false) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await readSession(request, disableRefresh);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(
@@ -996,7 +1045,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       devices: userDevices,
       forwardSecret: userDeviceSecret,
       session: async (request) => {
-        const found = await auth.api.getSession({ headers: request.headers });
+        const found = await readSession(request);
         return found ? { userId: found.user.id, sessionId: found.session.id } : null;
       },
       trustedOrigin: (origin) => isTrustedOrigin(origin, env),
@@ -1035,7 +1084,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         // Same user in the same space, so leaving the space also ends a stream.
         // A database failure rejects this check; only a missing membership is unauthorized.
         stillAuthorized: async () => {
-          const current = await sessionActor(c.req.raw);
+          const current = (await requestSession(c.req.raw, true))?.actor;
           return Boolean(
             actor && current?.userId === actor.userId && current.spaceId === actor.spaceId,
           );
@@ -1140,6 +1189,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ),
   );
 
+  let stopped: Promise<void> | undefined;
   return {
     app,
     prisma,
@@ -1155,38 +1205,46 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
     handleUpgrade: userDeviceHub?.handleUpgrade,
-    stop: async () => {
-      // Handlers still running would otherwise query the pool after it ends.
-      const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
-      // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
-      // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
-      auth.disposeOidcDiscovery();
-      shutdown.abort();
-      // Aborted runs hand themselves back while realtime is still open to announce them.
-      const runsStopped = runs?.stop();
-      await userDeviceHub?.close();
-      await oauthLogins.abortAll();
-      await messagingRuntime?.stop();
-      await stopReferralEmails?.();
-      await stopHomeRetention?.();
-      await stopOrganizationDeletions();
-      await reconciler?.stop();
-      await oauthTokenUpgrade;
-      await mcpArgsMove;
-      await runsStopped;
-      await requestsSettled;
-      await botEmail?.drain?.();
-      await email?.drain?.();
-      await jobs.close();
-      await secrets.close();
-      await realtime.close();
-      await mcp.close();
-      await installed.close();
-      await bestEffort("disconnect database client", prisma.$disconnect());
-      await bestEffort("close database pool", created.pool?.end());
-      await bestEffort("close job database pool", ownedJobPool?.end());
-      await analytics?.flush();
-      await logger.flush({ timeoutMs: 2_000 });
+    stop: (options = {}) => {
+      if (!options.letRunsFinish) runDrain.end();
+      stopped ??= (async () => {
+        // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
+        // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
+        // It also ends run claims at once, while ordinary requests still finish.
+        shutdown.abort();
+        // Aborted runs hand themselves back while realtime is still open to announce them.
+        const runsStopped = runs?.stop();
+        // The next release polls for chat messages now; replies from turns still running send.
+        await messagingRuntime?.stopReceiving();
+        await options.connectionsClosed;
+        // Handlers still running would otherwise query the pool after it ends.
+        const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
+        auth.disposeOidcDiscovery();
+        await userDeviceHub?.close();
+        await oauthLogins.abortAll();
+        await stopReferralEmails?.();
+        await stopHomeRetention?.();
+        await stopOrganizationDeletions();
+        await reconciler?.stop();
+        await oauthTokenUpgrade;
+        await mcpArgsMove;
+        await runsStopped;
+        await messagingRuntime?.stop();
+        await requestsSettled;
+        await botEmail?.drain?.();
+        await email?.drain?.();
+        await jobs.close();
+        await secrets.close();
+        await realtime.close();
+        await mcp.close();
+        await installed.close();
+        await bestEffort("disconnect database client", prisma.$disconnect());
+        await bestEffort("close database pool", created.pool?.end());
+        await bestEffort("close job database pool", ownedJobPool?.end());
+        await analytics?.flush();
+        await logger.flush({ timeoutMs: 2_000 });
+      })();
+      return stopped;
     },
   };
 }

@@ -6,6 +6,7 @@ import {
   vaultBotsNote,
   vaultImportProblemLines,
   vaultImportText,
+  vaultOwnSpaceNote,
   vaultPolicyLabels,
   vaultSaveNotice,
 } from "./vault";
@@ -38,6 +39,13 @@ it("says what an older server dropped from a save, in one place for both apps", 
 it("names each policy the same in both apps", () => {
   i18n.activate("en");
   expect(vaultPolicyLabels()).toEqual({ allow: "Allow", ask: "Ask first", off: "Block" });
+});
+
+it("points from the account vault to this Space's own vault", () => {
+  i18n.activate("en");
+  expect(vaultOwnSpaceNote()).toBe(
+    "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+  );
 });
 
 it.each([

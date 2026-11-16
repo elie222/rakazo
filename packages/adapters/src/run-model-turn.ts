@@ -160,6 +160,7 @@ function modelTurnRequest(
     verbatimMcpServers,
     threadId: thread.id,
     runId,
+    usageOperationKind: run.trigger === BACKGROUND_HELPER_TRIGGER ? "subagent" : "answer",
     routineId: run.routineId,
     sourceMessageId: run.sourceMessageId,
     onUsage: async (event) => {
@@ -229,8 +230,6 @@ function modelTurnRequest(
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
       followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
-        threadBotId: thread.botId,
-        botId: bot.id,
         trigger: run.trigger,
       }),
       userComputer,
@@ -305,6 +304,7 @@ function modelTurnRequest(
     },
     resumeFromCheckpoint: takeoverResume?.checkpoint,
     turnCheckpoint,
+    yieldSignal: deps.stoppingSignal,
     onCheckpoint: async (capture, executionId) => {
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },

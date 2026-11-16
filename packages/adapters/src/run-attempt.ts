@@ -13,7 +13,7 @@ import {
   retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
 } from "@rakazo/db";
-import { enrichLogContext, getLogger } from "@rakazo/logging";
+import { bestEffort, enrichLogContext, getLogger } from "@rakazo/logging";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
   acquireComputerExecutionLease,
@@ -124,7 +124,19 @@ export async function claimRunAttempt(deps: ExecutorDeps, run: ContinuableRun, w
       firstLateSince: undefined,
     };
   }
-  return { ...claim, ...started, setupFailure };
+  const helperConversation =
+    run.trigger === BACKGROUND_HELPER_TRIGGER && run.sourceMessageId
+      ? await deps.prisma.message.findFirst({
+          where: { id: run.sourceMessageId, botId: run.botId, thread: { spaceId: run.spaceId } },
+          select: { threadId: true },
+        })
+      : null;
+  return {
+    ...claim,
+    ...started,
+    setupFailure,
+    helperConversationThreadId: helperConversation?.threadId,
+  };
 }
 
 type ClaimedRun = NonNullable<Awaited<ReturnType<typeof claimRun>>> & {
@@ -150,10 +162,9 @@ async function startClaimedAttempt(
     },
   });
   if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-  // A background helper never uses the computer, so it neither waits for a switch nor holds
-  // the bot's next turn.
-  const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
-  if (leaseTarget.computerSwitching && !backgroundHelper) {
+  // Only takeover resumes need the computer before model work starts.
+  const needsComputerNow = heldForTakeover || Boolean(takeoverResume);
+  if (leaseTarget.computerSwitching) {
     await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
     return;
   }
@@ -179,7 +190,7 @@ async function startClaimedAttempt(
   }
   let computerLease: ComputerExecutionLease | null = null;
   try {
-    computerLease = backgroundHelper
+    computerLease = !needsComputerNow
       ? null
       : await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
@@ -188,7 +199,7 @@ async function startClaimedAttempt(
           workerId,
           runFence: fence,
         });
-    if (!computerLease && !backgroundHelper && leaseTarget.computer?.scope === "dedicated") {
+    if (!computerLease && needsComputerNow && leaseTarget.computer?.scope === "dedicated") {
       computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
         computerId: leaseTarget.computerId,
         runId,
@@ -237,14 +248,16 @@ async function startClaimedAttempt(
     }
   }
   try {
-    // Acquiring the computer can requeue a busy run. Count that wait as queue
-    // time, and only stamp execution once this attempt can use its computer.
+    // Ordinary turns start now and claim their computer when a tool first needs it.
     const executionStarted = await deps.prisma.run.updateMany({
       where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
       data: { startedAt: executionStartedAt, lateSince: firstLateSince },
     });
     if (executionStarted.count !== 1) {
-      await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+      await bestEffort(
+        "release computer execution lease",
+        releaseComputerExecutionLease(deps.prisma, computerLease),
+      );
       return;
     }
     getLogger().info("run.execution_started", {
@@ -254,7 +267,10 @@ async function startClaimedAttempt(
       data: { runId, fence, status: "running" },
     });
   } catch (error) {
-    await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+    await bestEffort(
+      "release computer execution lease",
+      releaseComputerExecutionLease(deps.prisma, computerLease),
+    );
     throw error;
   }
   return { computerLease, attempt, executionStartedAt, firstLateSince };
@@ -286,9 +302,14 @@ export interface RunHold extends RunClaim {
 }
 
 export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
-  const { run, runId, workerId, fence, computerLease } = claim;
+  const { run, runId, workerId, fence } = claim;
   // A newer claim of this run now rejects this attempt's history writes.
-  const deps = withRunLease(baseDeps, runId, { owner: workerId, fence });
+  const deps = withRunLease(
+    baseDeps,
+    runId,
+    { owner: workerId, fence },
+    claim.helperConversationThreadId,
+  );
   const lease: RunLeaseState = {
     valid: true,
     completed: false,
@@ -310,7 +331,7 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
     if (lease.completed) return;
     void Promise.all([
       renewRunLease(deps, runId, workerId, fence),
-      renewComputerExecutionLease(deps.prisma, computerLease),
+      renewComputerExecutionLease(deps.prisma, hold.computerLease),
     ])
       .then(([runRenewed, computerRenewed]) => {
         if (lease.completed) return;
@@ -341,7 +362,7 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
   };
 
   const runSecrets = [...deps.secrets];
-  return {
+  const hold: RunHold = {
     ...claim,
     deps,
     lease,
@@ -355,6 +376,7 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
     detachShutdown: undefined,
     dispatchHandedOff: false,
   };
+  return hold;
 }
 
 export async function releaseRunHold(hold: RunHold, endRunConnectorState: (runId: string) => void) {

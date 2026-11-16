@@ -24,7 +24,13 @@ export default function NewOrganization() {
     target: ACCOUNT_SETTINGS,
     save: async (ask: { name: string; organizations: readonly Organization[] }, send) => {
       const created = await send("organizations/create", { name: ask.name });
-      const target = { ...created, spaceIds: [created.defaultSpaceId], canManage: true };
+      const target = {
+        ...created,
+        spaceIds: [created.defaultSpaceId],
+        canManage: true,
+        role: "owner" as const,
+        memberCount: 1,
+      };
       // It exists by now, so it is opened even when this sheet has been closed meanwhile.
       if (!(await switchOrganization(target, ask.organizations))) {
         void refreshOrganizations();

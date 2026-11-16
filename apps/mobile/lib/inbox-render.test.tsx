@@ -242,6 +242,7 @@ const callbacks = {
   createBotInSpace: action,
   deleteSection: action,
   editSectionFromMenu: action,
+  promptRenameSection: action,
   groupAction: action,
   openBot: action,
   openGroup: action,
@@ -825,22 +826,22 @@ it("pins a bot made for a space to that space while another is selected", async 
 it.each(["session", "space"])(
   "abandons pinned creation if the %s changes while listing bots",
   async (change) => {
-    let complete!: (value: unknown[]) => void;
-    ui.rpc
-      .mockReset()
-      .mockImplementation(async (method: string) =>
-        method === "bots/list" ? new Promise<unknown[]>((resolve) => (complete = resolve)) : {},
-      );
+    let listing: Deferred<unknown[]> | undefined;
+    ui.rpc.mockReset().mockImplementation(async (method: string) => {
+      if (method !== "bots/list") return {};
+      listing = deferred();
+      return listing.promise;
+    });
     const openChat = vi.fn();
     const creating = createInboxBot({
       input: { name: "Scout" },
       openChat,
       spaceId: "space-work",
     });
-    await vi.waitFor(() => expect(complete).toBeDefined());
+    await vi.waitFor(() => expect(listing).toBeDefined());
     if (change === "session") ui.sameSession = false;
     else ui.spaceSeq += 2;
-    complete([]);
+    listing!.resolve([]);
     await creating;
     ui.sameSession = true;
     expect(ui.rpc.mock.calls.map(([method]) => method)).not.toContain("bots/create");
@@ -849,23 +850,21 @@ it.each(["session", "space"])(
 );
 
 it("does not open a created bot after its account or server changes", async () => {
-  let complete!: (value: { id: string; name: string }) => void;
-  ui.rpc
-    .mockReset()
-    .mockImplementation(async (method: string) =>
-      method === "bots/create"
-        ? new Promise<{ id: string; name: string }>((resolve) => (complete = resolve))
-        : [{ id: "bot-existing" }],
-    );
+  let creation: Deferred<{ id: string; name: string }> | undefined;
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method !== "bots/create") return [{ id: "bot-existing" }];
+    creation = deferred();
+    return creation.promise;
+  });
   const openChat = vi.fn();
   const creating = createInboxBot({
     input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
-  await vi.waitFor(() => expect(complete).toBeDefined());
+  await vi.waitFor(() => expect(creation).toBeDefined());
   ui.sameSession = false;
-  complete({ id: "bot-new", name: "New Bot" });
+  creation!.resolve({ id: "bot-new", name: "New Bot" });
   await creating;
   ui.sameSession = true;
   expect(openChat).not.toHaveBeenCalled();
@@ -873,9 +872,12 @@ it("does not open a created bot after its account or server changes", async () =
 
 it("opens a heading-created bot in its space after the selection changes during creation", async () => {
   const bot = { id: "bot-new", name: "New Bot", spaceId: "space-work" };
-  let complete!: (value: typeof bot) => void;
+  let creation: Deferred<typeof bot> | undefined;
   ui.rpc.mockReset().mockImplementation(async (method: string) => {
-    if (method === "bots/create") return new Promise<typeof bot>((resolve) => (complete = resolve));
+    if (method === "bots/create") {
+      creation = deferred();
+      return creation.promise;
+    }
     return method === "bots/list" ? [{ id: "bot-existing" }] : {};
   });
   const openChat = vi.fn();
@@ -884,10 +886,10 @@ it("opens a heading-created bot in its space after the selection changes during 
     openChat,
     spaceId: "space-work",
   });
-  await vi.waitFor(() => expect(complete).toBeDefined());
+  await vi.waitFor(() => expect(creation).toBeDefined());
   ui.spaceId = "space-other";
   ui.spaceSeq++;
-  complete(bot);
+  creation!.resolve(bot);
   await creating;
   expect(openChat).toHaveBeenCalledWith({
     pathname: "/thread",
@@ -1170,6 +1172,7 @@ it.each([
 
 it("lets screen readers reach a heading's long-press menu through the heading", () => {
   const deleteSection = vi.fn();
+  const promptRenameSection = vi.fn();
   const confirmDeleteSpace = vi.fn();
   render(
     <List
@@ -1191,14 +1194,18 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
         { type: "heading", key: "section:s1", title: "Ideas", sectionId: "s1" } as InboxItem,
       ]}
       spaceId="space-home"
-      options={{ deleteSection, confirmDeleteSpace }}
+      options={{ deleteSection, promptRenameSection, confirmDeleteSpace }}
     />,
   );
   const space = container.querySelector<HTMLElement>('button[aria-label="Work"]')!;
   // A disabled item is left out; here none is.
   expect(space.dataset.actions).toBe("new-bot members settings delete");
   const section = container.querySelector<HTMLElement>('button[aria-label="Collapse Ideas"]')!;
-  expect(section.dataset.actions).toBe("delete");
+  // Rename comes first, as in the chat rows' menu.
+  expect(section.dataset.actions).toBe("rename delete");
+  act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "rename" } }));
+  expect(promptRenameSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" }, "space-home");
+  expect(deleteSection).not.toHaveBeenCalled();
   act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
   expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
   act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));
