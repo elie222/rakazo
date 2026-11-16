@@ -30,6 +30,7 @@ import {
   SpaceDeletionInProgressError,
   setOrganizationDeletionLease,
   withLease,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
@@ -215,14 +216,20 @@ export async function deleteOrganization(
       lease,
     });
     // The organization went with its last Space; only one left without any is deleted here.
-    await deps.prisma.$transaction(async (tx) => {
-      if (
-        !(await tx.organization.findUnique({ where: { id: organizationId }, select: { id: true } }))
-      )
-        return;
-      await assertLeaseHeld(tx, lease);
-      await deleteEmptyOrganization(tx, organizationId);
-    });
+    // A deadlock on the cascade is tried again rather than leaving an empty organization behind.
+    await withTransactionRetry(() =>
+      deps.prisma.$transaction(async (tx) => {
+        if (
+          !(await tx.organization.findUnique({
+            where: { id: organizationId },
+            select: { id: true },
+          }))
+        )
+          return;
+        await assertLeaseHeld(tx, lease);
+        await deleteEmptyOrganization(tx, organizationId);
+      }),
+    );
     await recordAuditEvent({
       action: "organization.deleted",
       actor: { type: "user", id: userId },

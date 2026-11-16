@@ -316,6 +316,31 @@ describePostgres("withLease (PostgreSQL)", () => {
     expect(work).not.toHaveBeenCalled();
   });
 
+  it("gives a slow take back when confirming it fails", async () => {
+    const key = nextKey();
+    const taking = deferred();
+    const proceed = deferred();
+    const client = intercepting(async (sql) => {
+      if (sql.includes("INSERT INTO")) {
+        taking.resolve();
+        await proceed.promise;
+      } else if (sql.trimStart().startsWith("UPDATE")) {
+        throw new Error("database unavailable");
+      }
+    });
+    const work = vi.fn(async () => undefined);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const running = withLease(client, key, { ttlMs: TTL_MS }, work);
+    running.catch(() => undefined);
+    await taking.promise;
+    vi.setSystemTime(Date.now() + TTL_MS * 0.5);
+    proceed.resolve();
+    await expect(running).rejects.toThrow("database unavailable");
+    expect(work).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    expect(await fenceOf(key)).toBeUndefined();
+  });
+
   it("stops renewing only once a renewal in flight lands, and runs no hook after the work", async () => {
     const key = nextKey();
     const renewing = deferred();

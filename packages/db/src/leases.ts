@@ -67,7 +67,12 @@ export async function withLease<T>(
   // and counts from now, and a lease that lapsed meanwhile starts no work.
   if (Date.now() - takenAt > options.ttlMs / 5) {
     const confirmedAt = Date.now();
-    if (!(await renewLease(prisma, key, fence, options.ttlMs))) throw new LeaseLostError(key);
+    const confirmed = await renewLease(prisma, key, fence, options.ttlMs).catch(async (error) => {
+      // Not knowing is not holding: give it back so a retry is not turned away until it lapses.
+      await bestEffort(`release lease ${key}`, releaseLease(prisma, key, fence));
+      throw error;
+    });
+    if (!confirmed) throw new LeaseLostError(key);
     takenAt = confirmedAt;
   }
   const lost = new AbortController();
