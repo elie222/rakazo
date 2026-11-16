@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
@@ -17,7 +17,7 @@ export function useTextEditDialog(
   ask: (value: string, onCommit: (next: string) => void) => void;
   dialog: ReactNode;
 } {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [asked, setAsked] = useState<{
     draft: string;
@@ -34,8 +34,8 @@ export function useTextEditDialog(
         label,
         undefined,
         [
-          { text: t("Cancel"), style: "cancel" },
-          { text: t("Save"), onPress: (next?: string) => commit(next ?? value, onCommit) },
+          { text: t`Cancel`, style: "cancel" },
+          { text: t`Save`, onPress: (next?: string) => commit(next ?? value, onCommit) },
         ],
         "plain-text",
         value,
@@ -63,11 +63,11 @@ export function useTextEditDialog(
               style={{ minHeight: 44, color: tokens.foreground }}
             />
             <NativeActionButton
-              label={t("Save")}
+              label={t`Save`}
               onPress={() => commit(asked.draft, asked.onCommit)}
             />
             <NativeActionButton
-              label={t("Cancel")}
+              label={t`Cancel`}
               prominence="plain"
               onPress={() => setAsked(null)}
             />

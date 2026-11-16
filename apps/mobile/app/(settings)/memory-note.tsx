@@ -1,16 +1,16 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, usePreventRemove, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocalSearchParams, usePreventRemove, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -21,11 +21,10 @@ function errorCode(error: unknown): unknown {
 /** One memory note: a bot's when opened with its id, otherwise one shared by the space's bots. */
 export default function MemoryNoteScreen() {
   const params = useLocalSearchParams<{ id: string; botId?: string }>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [note, setNote] = useState<MemoryDocument | null>(null);
   const [draft, setDraft] = useState("");
   const [state, setState] = useState<"loading" | "ready" | "failed" | "gone">("loading");
@@ -63,7 +62,7 @@ export default function MemoryNoteScreen() {
       })
       .catch((reason) => {
         if (!live.current) return;
-        setError(errorText(reason, t("Could not load memory")));
+        setError(errorText(reason, t`Could not load memory`));
         setState("failed");
       });
     return () => {
@@ -82,10 +81,10 @@ export default function MemoryNoteScreen() {
   usePreventRemove(dirty && !closing && !discarding, ({ repeat }) => {
     // A save in flight decides the outcome; discarding now could not stop it.
     if (busy) return;
-    Alert.alert(t("Discard changes?"), undefined, [
-      { text: t("Cancel"), style: "cancel" },
+    Alert.alert(t`Discard changes?`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
       {
-        text: t("Discard"),
+        text: t`Discard`,
         style: "destructive",
         onPress: () => {
           setDiscarding(true);
@@ -98,20 +97,20 @@ export default function MemoryNoteScreen() {
   async function offerLatest() {
     const found = await latestRef.current().catch(() => null);
     if (!live.current) return;
-    if (found === null) return setError(t("Could not save"));
+    if (found === null) return setError(t`Could not save`);
     if (!found) return setState("gone");
     // The edit stays in the editor until its author picks which version wins.
-    Alert.alert(t("This note changed"), undefined, [
-      { text: t("Cancel"), style: "cancel" },
+    Alert.alert(t`This note changed`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
       {
-        text: t("Use latest"),
+        text: t`Use latest`,
         onPress: () => {
           setNote(found);
           setDraft(found.content);
         },
       },
       {
-        text: t("Save mine"),
+        text: t`Save mine`,
         style: "destructive",
         onPress: () => void saveRef.current(found.revision),
       },
@@ -131,7 +130,7 @@ export default function MemoryNoteScreen() {
       if (!live.current) return;
       if (errorCode(reason) === "CONFLICT") await offerLatest();
       else if (errorCode(reason) === "NOT_FOUND") setState("gone");
-      else setError(errorText(reason, t("Could not save")));
+      else setError(errorText(reason, t`Could not save`));
     } finally {
       if (live.current) setBusy(false);
     }
@@ -141,10 +140,10 @@ export default function MemoryNoteScreen() {
 
   function confirmDelete() {
     if (!note) return;
-    Alert.alert(t("Delete {name}?", { name: note.path }), undefined, [
-      { text: t("Cancel"), style: "cancel" },
+    Alert.alert(t`Delete ${ph({ name: note.path })}?`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
       {
-        text: t("Delete"),
+        text: t`Delete`,
         style: "destructive",
         onPress: () => {
           setBusy(true);
@@ -157,7 +156,7 @@ export default function MemoryNoteScreen() {
               if (!live.current) return;
               // Already deleted elsewhere: the outcome asked for.
               if (errorCode(reason) === "NOT_FOUND") return setClosing(true);
-              setError(errorText(reason, t("Could not delete note")));
+              setError(errorText(reason, t`Could not delete note`));
               setBusy(false);
             });
         },
@@ -165,37 +164,13 @@ export default function MemoryNoteScreen() {
     ]);
   }
 
-  const canSave = dirty && writable;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: note?.path ?? "",
-      ...(!note || state === "gone"
-        ? { headerRight: undefined, unstable_headerRightItems: undefined }
-        : iosAtLeast(26)
-          ? {
-              unstable_headerRightItems: () => [
-                {
-                  type: "button" as const,
-                  label: t("Save"),
-                  variant: "prominent" as const,
-                  tintColor: mobileTokens().primary,
-                  disabled: !canSave,
-                  onPress: () => void saveRef.current(),
-                },
-              ],
-            }
-          : {
-              headerRight: () => (
-                <NativeActionButton
-                  disabled={!canSave}
-                  fill={false}
-                  label={t("Save")}
-                  onPress={() => void saveRef.current()}
-                />
-              ),
-            }),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, note, state, canSave, t]);
+  useScreenHeader({
+    title: note?.path ?? "",
+    action:
+      !note || state === "gone"
+        ? null
+        : { label: t`Save`, disabled: !(dirty && writable), onPress: () => void save() },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -206,7 +181,7 @@ export default function MemoryNoteScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {state === "loading" ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         {note ? (
           <TextInput
@@ -220,7 +195,7 @@ export default function MemoryNoteScreen() {
           />
         ) : null}
         {state === "gone" ? (
-          <Text style={styles.secondary}>{t("This note no longer exists")}</Text>
+          <Text style={styles.secondary}>{t`This note no longer exists`}</Text>
         ) : null}
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -230,7 +205,7 @@ export default function MemoryNoteScreen() {
         {state === "failed" ? (
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
+            label={t`Retry`}
             onPress={() => setAttempt((count) => count + 1)}
             prominence="secondary"
           />
@@ -239,7 +214,7 @@ export default function MemoryNoteScreen() {
           <NativeActionButton
             disabled={busy || closing}
             fill={false}
-            label={t("Delete")}
+            label={t`Delete`}
             onPress={confirmDelete}
             prominence="destructive"
           />

@@ -3,6 +3,11 @@ const { resolveTypeScriptSource } = require("./metro-resolver");
 
 const projectRoot = __dirname;
 const config = getSentryExpoConfig(projectRoot);
+// Translation catalogs are `.po` files that Lingui compiles as they load; every other file goes
+// through Sentry's transformer as before.
+process.env.RAKAZO_UPSTREAM_BABEL_TRANSFORMER = config.transformer.babelTransformerPath;
+config.transformer.babelTransformerPath = require.resolve("./metro-transformer");
+config.resolver.sourceExts = [...config.resolver.sourceExts, "po"];
 const defaultResolveRequest = config.resolver.resolveRequest;
 const pinned = new Set(["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-native"]);
 

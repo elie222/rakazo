@@ -29,10 +29,13 @@ import type {
   ScreenSession,
   StreamedPortableFile,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
@@ -40,7 +43,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   BoatApiError,
@@ -69,6 +72,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -148,7 +152,7 @@ const BOAT_API_METHODS = [
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<BoatApi, (typeof BOAT_API_METHODS)[number]> & {
   /** Resolves once the sandbox no longer exists, including when it never did. */
-  deleteSandbox(sandboxId: string): Promise<void>;
+  deleteSandbox(sandboxId: string, init?: { signal?: AbortSignal }): Promise<void>;
 };
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
@@ -252,7 +256,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     warnMissingOnce: true,
   });
 
-  constructor(config: { apiKey: string; apiUrl?: string }, api?: BoatSandboxSdk) {
+  private readonly machines: UnreferencedMachineRecords | undefined;
+
+  constructor(
+    config: { apiKey: string; apiUrl?: string; unreferencedMachines?: UnreferencedMachineRecords },
+    api?: BoatSandboxSdk,
+  ) {
+    this.machines = config.unreferencedMachines;
     const gate = new BoatRequestGate();
     this.client = boatClient(api ?? createBoatSdk(config, gate), config.apiKey, gate);
   }
@@ -370,6 +380,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       { createSandboxRequest: { ttlSeconds: BOAT_SNAPSHOT_BUILD_TTL_SECONDS, noEnv: true } },
       { signal },
     );
+    const machine = { provider: "boat", machineId: sandbox.id };
+    await recordUnreferencedMachine(this.machines, machine, BASE_SNAPSHOT_BUILD_TIMEOUT_MS);
     try {
       await this.ensureRunnable(sandbox.id, signal);
       for (const command of BOAT_COMPUTER_SETUP) {
@@ -392,7 +404,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await this.client.deleteSandbox(sandbox.id).catch(() => undefined);
+      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
+        this.deleteMachine(machine, signal),
+      );
     }
   }
 
@@ -817,6 +831,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.client.deleteSandbox(machine.machineId, { signal });
+  }
+
   /**
    * Waits until the sandbox can run commands, resuming or recovering it on the way. Throws a
    * gone error when Boat cannot bring it back, so the caller replaces it from its checkpoint.
@@ -1125,7 +1143,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     let size = 0;
     try {
       if (maxBytes !== undefined && Number(response.headers.get("content-length")) > maxBytes) {
-        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(maxBytes);
       }
       if (!reader) {
         finished = true;
@@ -1136,7 +1154,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         if (done) break;
         size += value.byteLength;
         if (maxBytes !== undefined && size > maxBytes) {
-          throw new Error(`computer file exceeds ${maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(maxBytes);
         }
         yield value;
       }
@@ -1172,7 +1190,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       } catch (error) {
         if (isArtifactTooLarge(error)) {
           if (maxBytes !== undefined && maxBytes < BOAT_ARTIFACT_MAX_BYTES) {
-            throw new Error(`computer file exceeds ${maxBytes} bytes`);
+            throw new SandboxFileTooLargeError(maxBytes);
           }
         } else if (!(error instanceof SandboxUnresponsiveError)) throw error;
       }
@@ -1442,7 +1460,21 @@ function systemDamaged(stderr: string): boolean {
 function commandStatus(result: BoatCommandResult): string {
   if (result.timedOut) return "timed out";
   if (result.exitCode === BOAT_LISTING_UNREADABLE) return "an entry could not be read";
-  return `exit ${result.exitCode}`;
+  const reasons = errorReasons(result.stderr);
+  return reasons ? `exit ${result.exitCode}: ${reasons}` : `exit ${result.exitCode}`;
+}
+
+/**
+ * The system errors find and tar ended with, such as `No space left on device`, without the
+ * workspace paths they name.
+ */
+function errorReasons(stderr: string): string {
+  const reasons = new Set<string>();
+  for (const line of stderr.split("\n")) {
+    const reason = line.slice(line.lastIndexOf(": ") + 2).trim();
+    if (line.includes(": ") && /^[A-Za-z][A-Za-z /]{0,79}$/.test(reason)) reasons.add(reason);
+  }
+  return [...reasons].slice(0, 3).join("; ");
 }
 
 /** Each step of bringing back a sandbox that stopped answering; none is a failure by itself. */
@@ -1517,11 +1549,22 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
         });
         return result;
       } catch (error) {
+        const durationMs = Math.round(performance.now() - started);
+        // Another caller's resume is already waking it; the caller waits for it to be ready.
+        if (error instanceof BoatApiError && error.code === "sandbox_resuming") {
+          getLogger().info("sandbox.start", {
+            provider: "boat",
+            operation,
+            outcome: "in_progress",
+            durationMs,
+          });
+          throw error;
+        }
         getLogger().warn("sandbox.start", {
           provider: "boat",
           operation,
           outcome: error instanceof SandboxRateLimitError ? "rate_limited" : "failed",
-          durationMs: Math.round(performance.now() - started),
+          durationMs,
           error,
         });
         throw error;
@@ -1578,10 +1621,10 @@ function createBoatSdk(
     ]),
   ) as Pick<BoatApi, (typeof BOAT_API_METHODS)[number]>;
   return Object.assign(methods, {
-    deleteSandbox: async (sandboxId: string) => {
+    deleteSandbox: async (sandboxId: string, init?: { signal?: AbortSignal }) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
-      const signal = AbortSignal.timeout(BOAT_DELETE_TIMEOUT_MS);
+      const signal = deadlineSignal(BOAT_DELETE_TIMEOUT_MS, init?.signal);
       try {
         await withAbort(gate.wait(signal), signal);
         const response = await fetch(url, {
@@ -1608,6 +1651,7 @@ function createBoatSdk(
       } catch (error) {
         if (!signal.aborted || error !== signal.reason) throw error;
       }
+      init?.signal?.throwIfAborted();
       throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
   });
@@ -1743,6 +1787,7 @@ function boatListingWalk(
     `  if ! printf '%s\\n' "$errors" | grep -qv ${tolerated}; then status=0;`,
     `  elif printf '%s\\n' "$errors" | grep -q 'Permission denied$'; then status=${BOAT_LISTING_UNREADABLE}; fi`,
     "fi",
+    'if [ "$status" -ne 0 ]; then printf \'%s\\n\' "$errors" >&2; fi',
     'exit "$status"',
   ].join("\n");
 }
@@ -1825,6 +1870,7 @@ export function archiveBoatWorkspaceCommand(
     'if [ "$status" -eq 1 ]; then status=0;',
     `elif [ "$status" -eq 2 ] && ! grep -qv ${tolerated} "$archive.errors"; then status=0;`,
     `elif grep -q 'Permission denied$' "$archive.errors"; then status=${BOAT_LISTING_UNREADABLE}; fi`,
+    'if [ "$status" -ne 0 ]; then cat "$archive.errors" >&2; fi',
     cleanup,
     'exit "$status"',
   ].join("\n");

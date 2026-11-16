@@ -10,7 +10,15 @@ import { PageCard } from "./PageCard";
  * A page saved in this chat. The newest card for a page draws its current version and title;
  * an older one keeps the version it was saved with and opens the latest.
  */
-export function PageBlockCard({ block, updated }: { block: PageBlock; updated: boolean }) {
+export function PageBlockCard({
+  block,
+  updated,
+  onOpen,
+}: {
+  block: PageBlock;
+  updated: boolean;
+  onOpen?: () => void;
+}) {
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const openPage = useOpenPage();
@@ -42,7 +50,14 @@ export function PageBlockCard({ block, updated }: { block: PageBlock; updated: b
       updated={updated}
       updatedAt={current.data?.updatedAt}
       shared={current.data?.visibility === "link"}
-      onOpen={deleted ? undefined : () => openPage(block.pageId)}
+      onOpen={
+        deleted
+          ? undefined
+          : () => {
+              onOpen?.();
+              openPage(block.pageId);
+            }
+      }
     />
   );
 }

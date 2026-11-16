@@ -1,5 +1,6 @@
 import "./zod-config";
 import "./monitoring-bootstrap";
+import { rememberSignupAttribution } from "@rakazo/core/signup-attribution";
 import { BotAvatarActivityProvider, Toaster, TooltipProvider } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect, useLayoutEffect, useRef } from "react";
@@ -51,6 +52,14 @@ function ClientUpdateOnNavigate() {
   return null;
 }
 
+function SignupAttributionOnNavigate() {
+  const { pathname, search } = useLocation();
+  useLayoutEffect(() => {
+    rememberSignupAttribution(window);
+  }, [pathname, search]);
+  return null;
+}
+
 function AppearanceSync() {
   useEffect(() => watchSystemAppearance(), []);
   return null;
@@ -67,6 +76,7 @@ createRoot(document.getElementById("root")!, { onCaughtError: reportCaughtReactE
           the stale location, so deep links (?m=) and thread switches never
           land while the URL already moved. */}
       <BrowserRouter useTransitions={false}>
+        <SignupAttributionOnNavigate />
         <ClientUpdateOnNavigate />
         <QueryClientProvider client={queryClient}>
           <DesktopUpdatesProvider>

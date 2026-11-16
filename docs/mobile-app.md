@@ -4,7 +4,7 @@ Chat with your bots, answer their questions, watch their computers and take call
 
 ## Install
 
-- iPhone: [App Store](https://apps.apple.com/app/rakazo/id6801531099).
+- iPhone, iPhone Duo and iPad: [App Store](https://apps.apple.com/app/rakazo/id6801531099).
 - Android: [Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
 
 You can also choose **Get the mobile app** from the account menu in the web or desktop app.
@@ -27,6 +27,8 @@ the sign-in screen and enter its address. For a server on your local network, fo
 The first time you send something, the app asks permission to share it with the AI services your
 server uses. Review or withdraw it later in **AI data sharing** in Settings.
 
+On an iPad, an unfolded iPhone Duo or an Android tablet, the chat list stays beside the open chat.
+
 Turn off **Haptics** in Settings if you don't want touch feedback.
 
 ## What stays on web and desktop
@@ -40,6 +42,10 @@ Turn off **Haptics** in Settings if you don't want touch feedback.
 
 Bots notify you when they finish or need input, controlled per bot with
 **When it finishes or needs input** in its settings.
+
+On iOS, Live Activities show bots at work on the Lock Screen and in the Dynamic Island.
+They are unavailable with the App Store build connected to a self-hosted server; see
+[the APNs requirements](./self-host-clients.md#mobile-incoming-calls).
 
 On Android, **Notifications** in Settings also lets you choose which kinds you get, including a live
 working status while a bot runs.

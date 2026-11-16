@@ -133,15 +133,6 @@ vi.mock("./native", () => {
 });
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
-vi.mock("./i18n", () => ({
-  getActiveUiLocale: () => "en",
-  t: (text: string, values: Record<string, string> = {}) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match),
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string> = {}) =>
-      text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match),
-  }),
-}));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}): Routine => ({
   id,

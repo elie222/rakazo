@@ -1,8 +1,8 @@
+import { t } from "@lingui/core/macro";
 import type { Connection, ConnectionCatalogItem, Me } from "@rakazo/contracts";
 import { ConnectionCatalogItemSchema, ConnectionSchema } from "@rakazo/contracts";
 import { Directory, File, Paths } from "expo-file-system";
 import { currentApiBase, rpc, selectedSpaceId } from "./api";
-import { t } from "./i18n";
 import {
   currentSessionGeneration,
   loadVerifiedIntegrationsScope,
@@ -62,8 +62,8 @@ export async function integrationsCacheScope(): Promise<IntegrationsCacheScope> 
     generation !== currentSessionGeneration() ||
     spaceId !== selectedSpaceId()
   )
-    throw new Error(t("Could not load integrations"));
-  if (!me.userId || !(spaceId || me.spaceId)) throw new Error(t("Could not load integrations"));
+    throw new Error(t`Could not load integrations`);
+  if (!me.userId || !(spaceId || me.spaceId)) throw new Error(t`Could not load integrations`);
   const scope = {
     apiBase,
     userId: me.userId,

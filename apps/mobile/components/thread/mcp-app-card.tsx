@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
@@ -8,7 +9,7 @@ import { currentApiBase } from "../../lib/api";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { textMobileArtifact } from "../../lib/artifact-open";
 import { offerComposerText } from "../../lib/composer-offer";
-import { useI18n } from "../../lib/i18n";
+import { useUiLocale } from "../../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages";
 import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
@@ -37,7 +38,7 @@ function apiHost(): string[] {
 export function McpAppCard({ block, target }: { block: AppBlock; target: MobileArtifactTarget }) {
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
-  const { locale } = useI18n();
+  const locale = useUiLocale();
   const openLink = useNativeLinkConfirm();
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -59,11 +60,7 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: MobileA
     // The artifact is immutable; the target only names where it is read from.
   }, [block.artifactId]);
 
-  useEffect(() => {
-    if (!html || started) return;
-    const timer = setTimeout(() => setFailed(true), START_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [html, started]);
+  useTimeout(() => setFailed(true), !html || started ? null : START_TIMEOUT_MS, html);
 
   const excludeHosts = useMemo(apiHost, []);
   // A refetched message is a new object with the same values; the app's session must outlive it.

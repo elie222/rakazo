@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,6 @@ vi.mock("./api", () => ({
 vi.mock("./mobile-types", () => ({
   prependMobileMessagePage: vi.fn(),
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 vi.mock("./response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => false,
@@ -32,14 +32,6 @@ const snapshot: MobileSnapshot = {
   run: null,
   messages: [],
 };
-
-function deferred() {
-  let reject!: (error: Error) => void;
-  const promise = new Promise<never>((_resolve, rejectPromise) => {
-    reject = rejectPromise;
-  });
-  return { promise, reject };
-}
 
 function mount() {
   const probe = {} as {
@@ -91,8 +83,8 @@ describe("mobile older message paging", () => {
     vi.mocked(rpc).mockReset();
   });
   it("ignores a failure after clearing and still reports a later current failure", async () => {
-    const first = deferred();
-    const second = deferred();
+    const first = deferred<never>();
+    const second = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const { probe, setError, unmount } = mount();
     try {
@@ -126,7 +118,7 @@ describe("mobile older message paging", () => {
   });
 
   it("ignores a failure after switching threads", async () => {
-    const request = deferred();
+    const request = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(request.promise);
     const { probe, setError, switchThread, unmount } = mount();
     try {
@@ -149,7 +141,7 @@ describe("mobile older message paging", () => {
   });
 
   it("ignores a failure after the pinned window changes", async () => {
-    const request = deferred();
+    const request = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(request.promise);
     const { probe, setError, unmount } = mount();
     try {

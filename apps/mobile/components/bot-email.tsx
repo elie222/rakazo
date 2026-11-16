@@ -1,3 +1,6 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotEmailAddress, BotEmailAddresses } from "@rakazo/contracts";
 import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
@@ -6,7 +9,6 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
@@ -80,7 +82,7 @@ export function useBotEmailRows({
   botName: string;
   email: BotEmail;
 }): ReactElement[] {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [name, setName] = useState(() => suggestedEmailName(botName));
   const [edited, setEdited] = useState(false);
@@ -91,6 +93,7 @@ export function useBotEmailRows({
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  useTimeout(() => setCopied(false), copied ? 1500 : null);
   const domain = email.address?.domain;
   const address = email.address?.address ?? null;
 
@@ -100,9 +103,9 @@ export function useBotEmailRows({
     if (parsed.problem) {
       setClaimError(
         {
-          length: t("Use 2 to 64 characters"),
-          taken: t("That address isn't available"),
-          characters: t("Use letters, numbers, dots, dashes or underscores"),
+          length: t`Use 2 to 64 characters`,
+          taken: t`That address isn't available`,
+          characters: t`Use letters, numbers, dots, dashes or underscores`,
         }[parsed.problem],
       );
       return;
@@ -112,7 +115,7 @@ export function useBotEmailRows({
     try {
       email.setAddress((await rpc("bots/claimEmailAddress", { botId, name: parsed.name })).address);
     } catch (cause) {
-      setClaimError(errorText(cause, t("That address isn't available")));
+      setClaimError(errorText(cause, t`That address isn't available`));
     } finally {
       setClaiming(false);
     }
@@ -124,7 +127,7 @@ export function useBotEmailRows({
       <SettingsRow
         key="address"
         accessibilityRole="button"
-        accessibilityLabel={t("Copy {address}", { address })}
+        accessibilityLabel={t`Copy ${address}`}
         title={address}
         trailing={
           <NativeSymbol
@@ -137,7 +140,6 @@ export function useBotEmailRows({
         onPress={() =>
           void Clipboard.setStringAsync(address).then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
           })
         }
       />,
@@ -146,7 +148,7 @@ export function useBotEmailRows({
   return [
     <SettingsInputRow
       key="name"
-      accessibilityLabel={t("Email address")}
+      accessibilityLabel={t`Email address`}
       autoCapitalize="none"
       autoCorrect={false}
       keyboardType="email-address"
@@ -163,7 +165,7 @@ export function useBotEmailRows({
       accessibilityRole="button"
       tinted
       dimmed={claiming || !name}
-      title={t("Claim {address}", { address: `${name.trim().toLowerCase()}@${domain}` })}
+      title={t`Claim ${ph({ address: `${name.trim().toLowerCase()}@${domain}` })}`}
       onPress={() => void claim()}
     />,
     ...(claimError
@@ -182,9 +184,10 @@ export function useBotEmailRows({
 
 /** The bots' addresses in the Vault, beside the logins they use; nothing until one is claimed. */
 export function BotEmailAddressesGroup() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [email, setEmail] = useState<BotEmailAddresses>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  useTimeout(() => setCopied(null), copied ? 1500 : null);
   // Read on each visit, so an address claimed elsewhere meanwhile shows up.
   useFocusEffect(
     useCallback(() => {
@@ -204,12 +207,12 @@ export function BotEmailAddressesGroup() {
   );
   if (!email?.addresses.length) return null;
   return (
-    <SettingsGroup label={t("Bot email addresses")}>
+    <SettingsGroup label={t`Bot email addresses`}>
       {email.addresses.map((row) => (
         <SettingsRow
           key={row.botId}
           accessibilityRole="button"
-          accessibilityLabel={t("Copy {address}", { address: row.address })}
+          accessibilityLabel={t`Copy ${ph({ address: row.address })}`}
           title={row.botName}
           detail={row.address}
           trailing={
@@ -223,7 +226,6 @@ export function BotEmailAddressesGroup() {
           onPress={() =>
             void Clipboard.setStringAsync(row.address).then(() => {
               setCopied(row.address);
-              setTimeout(() => setCopied(null), 1500);
             })
           }
         />

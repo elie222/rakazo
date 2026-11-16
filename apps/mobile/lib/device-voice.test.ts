@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,15 +80,13 @@ describe("device voice preference", () => {
     );
     const { rpc } = await import("./api");
     const asked = vi.mocked(rpc).mock.calls.length;
-    let answer!: () => void;
-    status.gate = new Promise((resolve) => {
-      answer = resolve;
-    });
+    const answer = deferred();
+    status.gate = answer.promise;
     status.ready = true;
     const loading = loadDeviceVoiceEnabled();
     await vi.waitFor(() => expect(vi.mocked(rpc).mock.calls.length).toBe(asked + 1));
     await saveDeviceVoiceEnabled(true);
-    answer();
+    answer.resolve();
     expect(await loading).toBe(true);
     expect(store.get(DEVICE_VOICE_KEY)).toBe("1");
   });

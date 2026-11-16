@@ -1,8 +1,9 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AskReceipt } from "@rakazo/contracts";
 import { receiptItems } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 
 function ReceiptRow({ name, amount, strong }: { name: string; amount: string; strong?: boolean }) {
@@ -22,10 +23,10 @@ function ReceiptRow({ name, amount, strong }: { name: string; amount: string; st
 
 /** A payment's order as the page shows it: its lines, then what is paid, then where it came from. */
 export function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const { button, more, amount, total } = receipt;
-  const items = receiptItems(receipt.items, [t("Total"), t("On the button")]);
+  const items = receiptItems(receipt.items, [t`Total`, t`On the button`]);
   const lines = items.length > 0 || Boolean(more) || Boolean(total);
   return (
     <View style={{ marginTop: 10, gap: 10 }}>
@@ -44,23 +45,23 @@ export function AskReceiptView({ receipt }: { receipt: AskReceipt }) {
           ))}
           {more ? (
             <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
-              {t("{count} more", { count: `${more.count}${more.atLeast ? "+" : ""}` })}
+              {t`${ph({ count: `${more.count}${more.atLeast ? "+" : ""}` })} more`}
             </Text>
           ) : null}
-          {total ? <ReceiptRow name={t("Total")} amount={total} /> : null}
+          {total ? <ReceiptRow name={t`Total`} amount={total} /> : null}
         </View>
       ) : null}
       {amount ? (
         <ReceiptRow
           strong
-          name={receipt.amountSource === "button" ? t("On the button") : t("Total")}
+          name={receipt.amountSource === "button" ? t`On the button` : t`Total`}
           amount={amount}
         />
       ) : null}
       <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
         {button
-          ? t("Button “{button}” · read from the page, not checked", { button })
-          : t("Read from the page, not checked")}
+          ? t`Button “${button}” · read from the page, not checked`
+          : t`Read from the page, not checked`}
       </Text>
     </View>
   );

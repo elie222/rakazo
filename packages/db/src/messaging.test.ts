@@ -23,11 +23,10 @@ describe("provisionMessagingIdentity", () => {
       thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
       user: { create: vi.fn() },
     };
-    const result = await provisionMessagingIdentity(
-      prisma as unknown as PrismaClient,
-      { provider: "sendblue", address: "+15551234567" },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+15551234567",
+    });
 
     expect(result).toEqual({
       provider: "sendblue",
@@ -48,11 +47,10 @@ describe("provisionMessagingIdentity", () => {
     const prisma = { messagingIdentity: { findUnique: vi.fn() } };
     for (const bad of ["", "+1 (555) 123-4567", "has space", "a".repeat(129)]) {
       await expect(
-        provisionMessagingIdentity(
-          prisma as unknown as PrismaClient,
-          { provider: "sendblue", address: bad },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+          provider: "sendblue",
+          address: bad,
+        }),
       ).rejects.toThrow(/Invalid messaging address/);
     }
     expect(prisma.messagingIdentity.findUnique).not.toHaveBeenCalled();
@@ -78,11 +76,10 @@ describe("provisionMessagingIdentity", () => {
       thread: { findFirst: vi.fn(async () => null) },
     };
     await expect(
-      provisionMessagingIdentity(
-        prisma as unknown as PrismaClient,
-        { provider: "sendblue", address: "+15551234567" },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+        provider: "sendblue",
+        address: "+15551234567",
+      }),
     ).rejects.toThrow(/thread/i);
   });
 });
@@ -104,7 +101,10 @@ describe("provisionMessagingIdentity create race", () => {
           .mockImplementationOnce(async () => null)
           .mockImplementationOnce(async () => winner),
         create: vi.fn(async () => {
-          throw new Error("Unique constraint failed on the fields: (`provider`,`address`)");
+          throw Object.assign(
+            new Error("Unique constraint failed on the fields: (`provider`,`address`)"),
+            { code: "P2002" },
+          );
         }),
       },
       user: {
@@ -121,11 +121,10 @@ describe("provisionMessagingIdentity create race", () => {
         ),
       },
     };
-    const result = await provisionMessagingIdentity(
-      prisma as unknown as PrismaClient,
-      { provider: "sendblue", address: "+15551234567" },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+15551234567",
+    });
 
     expect(result).toEqual({
       provider: "sendblue",
@@ -214,11 +213,7 @@ describe("messaging identity isolation", () => {
       },
     };
     const provision = (provider: string, address: string) =>
-      provisionMessagingIdentity(
-        prisma as unknown as PrismaClient,
-        { provider, address },
-        { signupsEnabled: "true", signupAllowlist: "" },
-      );
+      provisionMessagingIdentity(prisma as unknown as PrismaClient, { provider, address });
     return { prisma, users, provision };
   }
 
@@ -266,6 +261,14 @@ describe("messaging identity isolation", () => {
     f.prisma.user.create.mockRejectedValueOnce(new Error("database unavailable"));
     await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("database unavailable");
     expect(f.prisma.messagingIdentity.create).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failed identity write instead of looking for a race winner", async () => {
+    const f = fixture();
+    f.prisma.messagingIdentity.create.mockRejectedValueOnce(new Error("connection reset"));
+    await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("connection reset");
+    // Only the lookup before the write: no second read for a winner that does not exist.
+    expect(f.prisma.messagingIdentity.findUnique).toHaveBeenCalledTimes(1);
   });
 });
 

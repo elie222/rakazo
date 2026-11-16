@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -23,7 +24,6 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: state.rpc }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./live-notifications", () => ({ dismissThreadNotifications: vi.fn(async () => {}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
@@ -42,14 +42,6 @@ function Probe(props: Props) {
 
 const render = (props: Props) => act(() => root.render(createElement(Probe, props)));
 const flush = () => act(async () => {});
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 const message = { id: "message-1" } as MobileMessage;
 const calls = (method: string) => state.rpc.mock.calls.filter(([name]) => name === method).length;

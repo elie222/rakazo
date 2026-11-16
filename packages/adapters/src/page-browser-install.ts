@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -78,4 +78,20 @@ export function installPageBrowserCommand(): string {
   return [installAgentBrowserCommand(), installPageBrowserFilesCommand()]
     .map((script) => `( ${script}\n)`)
     .join(" && ");
+}
+
+/**
+ * A page request's stdin on a hosted computer. It can carry saved logins and cards, so it waits in
+ * a folder only the computer user can read, and the command removes it before the helper starts.
+ */
+export function privatePageInput() {
+  const directory = `/tmp/rakazo-page-input-${randomUUID()}`;
+  const file = `${directory}/request`;
+  return {
+    file,
+    create: `mkdir -m 700 -- ${shellQuote(directory)}`,
+    run: (command: string) =>
+      `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
+    cleanup: `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
+  };
 }

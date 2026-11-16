@@ -663,6 +663,175 @@ describe("OpenAPI connector import", () => {
     });
   });
 
+  it("expands server variable defaults without mutating the document", () => {
+    const document = {
+      servers: [
+        {
+          url: "https://{host}:{port}/{version}/{version}{suffix}",
+          variables: {
+            host: { default: "api.example.test" },
+            port: { default: "8443" },
+            version: { default: "v1" },
+            suffix: { default: "" },
+          },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    };
+    expect(importOpenApiDocument(document).baseUrl).toBe("https://api.example.test:8443/v1/v1");
+    expect(document.servers[0]!.url).toContain("{version}");
+  });
+
+  it("treats replacement defaults literally", () => {
+    expect(
+      importOpenApiDocument({
+        servers: [
+          { url: "https://api.example.test/{value}", variables: { value: { default: "$&" } } },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }).baseUrl,
+    ).toBe("https://api.example.test/$&");
+  });
+
+  it.each([undefined, {}, { default: 1 }, { default: null }])(
+    "rejects server variables without string defaults: %j",
+    (variable) => {
+      expect(() =>
+        importOpenApiDocument({
+          servers: [
+            { url: "https://api.example.test/{version}", variables: { version: variable } },
+          ],
+          paths: { "/items": { get: { operationId: "listItems" } } },
+        }),
+      ).toThrow("OpenAPI server variable must define a string default");
+    },
+  );
+
+  it("rejects server URLs that expand past the length limit before building them", () => {
+    const document = {
+      servers: [
+        {
+          url: `https://api.example.test/${"{big}".repeat(1_000)}`,
+          variables: { big: { default: "a".repeat(400_000) } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    };
+    expect(() => importOpenApiDocument(document)).toThrow(
+      "OpenAPI server URL exceeds 2048 characters",
+    );
+  });
+
+  it("measures the whole server URL when later defaults are shorter than their placeholders", () => {
+    const baseUrl = importOpenApiDocument({
+      servers: [
+        {
+          url: `https://api.example.test/{long}${"{empty}".repeat(400)}`,
+          variables: { long: { default: "a".repeat(1_500) }, empty: { default: "" } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    }).baseUrl;
+    expect(baseUrl).toBe(`https://api.example.test/${"a".repeat(1_500)}`);
+  });
+
+  it("accepts server URLs at the length limit", () => {
+    const prefix = "https://api.example.test/";
+    const baseUrl = importOpenApiDocument({
+      servers: [
+        {
+          url: `${prefix}{path}`,
+          variables: { path: { default: "a".repeat(2_048 - prefix.length) } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    }).baseUrl;
+    expect(baseUrl).toHaveLength(2_048);
+  });
+
+  it("checks credentials after expanding server defaults", () => {
+    expect(() =>
+      importOpenApiDocument({
+        servers: [
+          {
+            url: "https://api.example.test/{version}",
+            variables: { version: { default: "v1?token=fake-secret" } },
+          },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }),
+    ).toThrow("encrypted credential field");
+  });
+
+  it.each([
+    ["http://93.184.216.34", "must use HTTPS"],
+    ["https://127.0.0.1", "private"],
+    ["https://user:password@93.184.216.34", "credentials"],
+  ])(
+    "checks expanded server destinations with the existing URL policy: %s",
+    async (destination, error) => {
+      const fetch = vi.fn().mockResolvedValue(
+        Response.json({
+          servers: [
+            { url: "{destination}/v1", variables: { destination: { default: destination } } },
+          ],
+          paths: { "/items": { get: { operationId: "listItems" } } },
+        }),
+      );
+      await expect(
+        prepareApiInstall({
+          source: "https://93.184.216.34/openapi.json",
+          config: { openApi: true, auth: { type: "none" } },
+          remote: { fetch },
+        }),
+      ).rejects.toThrow(error);
+      expect(fetch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("persists the expanded server URL and uses it for installed requests", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      Response.json({
+        servers: [
+          { url: "https://93.184.216.34/{version}", variables: { version: { default: "v1" } } },
+        ],
+        paths: { "/items": { get: { operationId: "listItems" } } },
+      }),
+    );
+    const prepared = await prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: { fetch },
+    });
+    expect(prepared.source).toBe("https://93.184.216.34/v1");
+    const install = {
+      id: "api-server-defaults",
+      kind: "api",
+      source: prepared.source,
+      secretId: null,
+      createdAt: new Date(0),
+      config: JSON.parse(JSON.stringify(prepared.config)),
+    };
+    const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+    fetch.mockReset();
+    fetch.mockImplementation(async () => Response.json({ ok: true }));
+    const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+    const events = [];
+    for await (const event of provider.execute(
+      {
+        tool: "listItems",
+        args: {},
+        executionId: "listItems",
+        route: { connectorId: "installed", resourceId: install.id, toolName: "listItems" },
+      },
+      { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+    )) {
+      events.push(event);
+    }
+    expect(events).toContainEqual({ type: "result", data: { status: 200, data: { ok: true } } });
+    expect(String(fetch.mock.calls[0]![0])).toBe("https://93.184.216.34/v1/items");
+  });
+
   it("refuses ambiguous specs without stable operation ids", () => {
     expect(() =>
       importOpenApiDocument({
@@ -994,6 +1163,239 @@ describe("OpenAPI connector import", () => {
       }),
     ).toThrow("unsafe header Authorization");
   });
+
+  it.each(["get", "delete", "post", "put", "patch"])(
+    "honors form query array explode settings for %s requests after import",
+    async (method) => {
+      const arraySchema = { type: "array", items: { type: "string" } };
+      const document = {
+        openapi: "3.1.0",
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        components: {
+          parameters: {
+            tags: { name: "tags", in: "query", explode: false, schema: arraySchema },
+          },
+        },
+        paths: {
+          "/items": {
+            parameters: [{ $ref: "#/components/parameters/tags" }],
+            [method]: {
+              operationId: "items",
+              parameters: [
+                {
+                  name: "explicit",
+                  in: "query",
+                  style: "form",
+                  explode: false,
+                  schema: arraySchema,
+                },
+                { name: "defaults", in: "query", schema: arraySchema },
+                { name: "expanded", in: "query", explode: true, schema: arraySchema },
+                { name: "empty", in: "query", explode: false, schema: arraySchema },
+                { name: "scalar", in: "query", explode: false, schema: { type: "string" } },
+              ],
+            },
+          },
+        },
+      };
+      const fetch = vi.fn().mockResolvedValue(Response.json(document));
+      const prepared = await prepareApiInstall({
+        source: "https://93.184.216.34/openapi.json",
+        config: { openApi: true, auth: { type: "none" } },
+        remote: { fetch },
+      });
+      const install = {
+        id: "api-query-arrays",
+        kind: "api",
+        source: prepared.source,
+        secretId: null,
+        createdAt: new Date(0),
+        config: JSON.parse(JSON.stringify(prepared.config)),
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      fetch.mockReset();
+      fetch.mockImplementation(async () => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const values = ["alpha", "two words", "a&b"];
+      const args = {
+        tags: values,
+        explicit: values,
+        defaults: values,
+        expanded: values,
+        empty: [],
+        scalar: "one",
+      };
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "items",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // Inspect the actual request after persisted config has been parsed again.
+      }
+      expect(fetch).toHaveBeenCalledOnce();
+      const [url, init] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(url.searchParams.getAll("tags")).toEqual([values.join(",")]);
+      expect(url.searchParams.getAll("explicit")).toEqual([values.join(",")]);
+      expect(url.searchParams.getAll("defaults")).toEqual(values);
+      expect(url.searchParams.getAll("expanded")).toEqual(values);
+      expect(url.searchParams.getAll("empty")).toEqual([""]);
+      expect(url.searchParams.getAll("scalar")).toEqual(["one"]);
+      expect(init.body).toBe(["get", "delete"].includes(method) ? undefined : "{}");
+
+      // Previously installed connectors have no serialization metadata.
+      delete install.config.operations[0].commaSeparatedQueryParameters;
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "legacy-items",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // Retain the historical repeated-key format until the source is reimported.
+      }
+      const [legacyUrl] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(legacyUrl.searchParams.getAll("tags")).toEqual(values);
+    },
+  );
+
+  it.each(["get", "delete", "post", "put", "patch"])(
+    "serializes flat form query objects for %s after import",
+    async (method) => {
+      const objectSchema = { type: "object", additionalProperties: true };
+      const document = {
+        openapi: "3.1.0",
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        components: {
+          parameters: {
+            filter: { name: "filter", in: "query", schema: objectSchema },
+          },
+        },
+        paths: {
+          "/items": {
+            [method]: {
+              operationId: "items",
+              parameters: [
+                { $ref: "#/components/parameters/filter" },
+                {
+                  name: "compact",
+                  in: "query",
+                  style: "form",
+                  explode: false,
+                  schema: objectSchema,
+                },
+                {
+                  name: "expanded",
+                  in: "query",
+                  style: "form",
+                  explode: true,
+                  schema: objectSchema,
+                },
+                { name: "empty", in: "query", schema: objectSchema },
+                { name: "tags", in: "query", schema: { type: "array", items: { type: "string" } } },
+                { name: "limit", in: "query", schema: { type: "integer" } },
+              ],
+              ...(!["get", "delete"].includes(method)
+                ? {
+                    requestBody: {
+                      content: {
+                        "application/json": { schema: { type: "object" } },
+                      },
+                    },
+                  }
+                : {}),
+            },
+          },
+        },
+      };
+      const fetch = vi.fn().mockResolvedValue(Response.json(document));
+      const prepared = await prepareApiInstall({
+        source: "https://93.184.216.34/openapi.json",
+        config: { openApi: true, auth: { type: "none" } },
+        remote: { fetch },
+      });
+      const install = {
+        id: "api-query-objects",
+        kind: "api",
+        source: prepared.source,
+        secretId: null,
+        createdAt: new Date(0),
+        config: JSON.parse(JSON.stringify(prepared.config)),
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      fetch.mockReset();
+      fetch.mockImplementation(async () => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const args = {
+        filter: { name: "two words & /", active: false, count: 0 },
+        compact: { role: "admin", firstName: "Alex" },
+        expanded: { enabled: true },
+        empty: {},
+        tags: ["a", "b"],
+        limit: 2,
+        ...(!["get", "delete"].includes(method) ? { body: { nested: { keep: true } } } : {}),
+      };
+      for await (const _event of provider.execute(
+        {
+          tool: "items",
+          args,
+          executionId: "objects",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+      }
+      expect(fetch).toHaveBeenCalledOnce();
+      const [url, init] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        name: "two words & /",
+        active: "false",
+        count: "0",
+        compact: "role,admin,firstName,Alex",
+        enabled: "true",
+        tags: "b",
+        limit: "2",
+      });
+      expect(url.searchParams.getAll("tags")).toEqual(["a", "b"]);
+      expect(init.body).toBe(
+        ["get", "delete"].includes(method) ? undefined : JSON.stringify(args.body),
+      );
+      const execute = async (nextArgs: Record<string, unknown>) => {
+        const events = [];
+        for await (const event of provider.execute(
+          {
+            tool: "items",
+            args: nextArgs,
+            executionId: "object-check",
+            route: { connectorId: "installed", resourceId: install.id, toolName: "items" },
+          },
+          { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+        )) {
+          events.push(event);
+        }
+        return events;
+      };
+      for (const field of [{ nested: true }, ["nested"]]) {
+        fetch.mockClear();
+        expect(await execute({ filter: { field } })).toContainEqual({
+          type: "error",
+          message: "Query parameter filter must be a flat object",
+        });
+        expect(fetch).not.toHaveBeenCalled();
+      }
+      delete install.config.operations[0].formObjectQueryParameters;
+      await execute({ filter: { name: "legacy" } });
+      const [legacyUrl] = fetch.mock.lastCall as [URL, RequestInit];
+      expect(legacyUrl.searchParams.get("filter")).toBe(
+        ["get", "delete"].includes(method) ? null : "[object Object]",
+      );
+    },
+  );
 
   it("sends shared $ref parameters where the spec declares them", async () => {
     const document = {

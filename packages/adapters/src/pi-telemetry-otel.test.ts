@@ -35,7 +35,7 @@ it("exports OTLP/HTTP with standard endpoint, headers and service name on shutdo
   );
   vi.stubEnv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer%20fake-fixture-token");
   vi.stubEnv("OTEL_SERVICE_NAME", "fixture-worker");
-  const exporter = createPiTelemetryExporter();
+  const exporter = await createPiTelemetryExporter();
   try {
     await exporter.context.startSpan(
       {

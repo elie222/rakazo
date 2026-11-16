@@ -1,12 +1,103 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, ComputerMode } from "@rakazo/contracts";
-import { AGENT_IMPORT_PROMPT } from "@rakazo/core";
+import { AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
 import { Button, CopyTextFallback, Textarea, useCopyText } from "@rakazo/ui-web";
 import { ArrowLeft, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { AgentImportPlanReview, headingClass, sectionClass } from "./agent-import-plan";
 import { useAgentImportSource } from "./use-agent-import-source";
+
+/**
+ * An assistant with no export: copy a prompt to send it, then paste its reply or choose the
+ * file it made. The reply is held by the form so it survives a trip to the preview and back.
+ */
+function PromptReplySection({
+  testId,
+  fileTestId,
+  title,
+  prompt,
+  reply,
+  onReplyChange,
+  accept,
+  multiple = false,
+  busy,
+  onContinue,
+  onFiles,
+  onCancelRead,
+  children,
+}: {
+  testId: string;
+  fileTestId: string;
+  title: ReactNode;
+  prompt: string;
+  reply: string;
+  onReplyChange: (reply: string) => void;
+  accept: string;
+  multiple?: boolean;
+  busy: boolean;
+  onContinue: () => void;
+  onFiles: (files: FileList | null) => void;
+  onCancelRead: () => void;
+  children?: ReactNode;
+}) {
+  const { t } = useLingui();
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Unmounted while the preview is open, so a copy that fails then never greets the return.
+  const [copied, copy, copyFailed, resetCopy] = useCopyText();
+  return (
+    <section className={sectionClass} data-testid={testId}>
+      <h3 className={headingClass}>{title}</h3>
+      <Button variant="outline" className="mt-2" onClick={() => copy(prompt)}>
+        {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
+      </Button>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={prompt}
+        label={t`Copy prompt`}
+      />
+      <Textarea
+        aria-label={t`Paste the reply`}
+        value={reply}
+        onChange={(event) => onReplyChange(event.target.value)}
+        placeholder={t`Paste the reply`}
+        rows={5}
+        className="mt-3"
+      />
+      <input
+        ref={(node) => {
+          fileInput.current = node;
+          if (!node) return;
+          node.addEventListener("cancel", onCancelRead);
+          return () => {
+            node.removeEventListener("cancel", onCancelRead);
+            fileInput.current = null;
+          };
+        }}
+        type="file"
+        multiple={multiple}
+        accept={accept}
+        data-testid={fileTestId}
+        className="hidden"
+        onChange={(event) => {
+          onFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <div className="mt-3 flex gap-2">
+        <Button disabled={!reply.trim() || busy} onClick={onContinue}>
+          <Trans>Continue</Trans>
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+          <Trans>Choose file</Trans>
+        </Button>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function AgentImportForm({
   onClose,
@@ -18,7 +109,6 @@ export function AgentImportForm({
   const { t } = useLingui();
   const ids = useId();
   const folderInput = useRef<HTMLInputElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const source = useAgentImportSource();
   const {
     files,
@@ -40,6 +130,10 @@ export function AgentImportForm({
     pickArchive,
     previewDocument,
     pickDocument,
+    grokBots,
+    previewGrokReply,
+    previewGrokBot,
+    pickGrokFiles,
     stopReading,
     selectedInstructions,
     chosen,
@@ -49,7 +143,7 @@ export function AgentImportForm({
   const archiveInput = useRef<HTMLInputElement>(null);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
-  const [copied, copy, copyFailed, resetCopy] = useCopyText();
+  const [grokReply, setGrokReply] = useState("");
   const [creating, setCreating] = useState(false);
 
   async function create() {
@@ -101,11 +195,8 @@ export function AgentImportForm({
             disabled={creating}
             onClick={() => {
               stopReading();
-              if (plan) {
-                // A copy that failed while the preview was open must not greet the return.
-                resetCopy();
-                setPlan(null);
-              } else onClose();
+              if (plan) setPlan(null);
+              else onClose();
             }}
           >
             <ArrowLeft size={16} strokeWidth={1.8} />
@@ -205,55 +296,59 @@ export function AgentImportForm({
               </Button>
             </div>
           </section>
-          <section className={sectionClass}>
-            <h3 className={headingClass}>
-              <Trans>Another assistant</Trans>
-            </h3>
-            <Button variant="outline" className="mt-2" onClick={() => copy(AGENT_IMPORT_PROMPT)}>
-              {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
-            </Button>
-            <CopyTextFallback
-              open={copyFailed}
-              onOpenChange={resetCopy}
-              text={AGENT_IMPORT_PROMPT}
-              label={t`Copy prompt`}
-            />
-            <Textarea
-              aria-label={t`Paste the reply`}
-              value={reply}
-              onChange={(event) => setReply(event.target.value)}
-              placeholder={t`Paste the reply`}
-              rows={5}
-              className="mt-3"
-            />
-            <input
-              ref={(node) => {
-                fileInput.current = node;
-                if (!node) return;
-                node.addEventListener("cancel", stopReading);
-                return () => {
-                  node.removeEventListener("cancel", stopReading);
-                  fileInput.current = null;
-                };
-              }}
-              type="file"
-              accept=".md,text/markdown"
-              data-testid="agent-import-document"
-              className="hidden"
-              onChange={(event) => {
-                void pickDocument(event.target.files);
-                event.target.value = "";
-              }}
-            />
-            <div className="mt-3 flex gap-2">
-              <Button disabled={!reply.trim() || busy} onClick={() => void previewDocument(reply)}>
-                <Trans>Continue</Trans>
-              </Button>
-              <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
-                <Trans>Choose file</Trans>
-              </Button>
-            </div>
-          </section>
+          <PromptReplySection
+            testId="agent-import-grok"
+            fileTestId="agent-import-grok-file"
+            title={<Trans>Grok Bot</Trans>}
+            prompt={GROK_BOT_EXPORT_PROMPT}
+            reply={grokReply}
+            onReplyChange={(reply) => {
+              stopReading();
+              setGrokReply(reply);
+            }}
+            accept=".json,.md,.txt,application/json,text/plain,text/markdown"
+            multiple
+            busy={busy}
+            onContinue={() => void previewGrokReply(grokReply)}
+            onFiles={(list) => void pickGrokFiles(list)}
+            onCancelRead={stopReading}
+          >
+            {grokBots.length > 1 ? (
+              <>
+                <p className="mt-3 text-body-sm text-muted-foreground">
+                  <Trans>Which Bot?</Trans>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {grokBots.map((bot, index) => (
+                    <Button
+                      key={`${bot.exportId ?? bot.name}:${index}`}
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void previewGrokBot(bot)}
+                    >
+                      {bot.name}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </PromptReplySection>
+          <PromptReplySection
+            testId="agent-import-another"
+            fileTestId="agent-import-document"
+            title={<Trans>Another assistant</Trans>}
+            prompt={AGENT_IMPORT_PROMPT}
+            reply={reply}
+            onReplyChange={(reply) => {
+              stopReading();
+              setReply(reply);
+            }}
+            accept=".md,text/markdown"
+            busy={busy}
+            onContinue={() => void previewDocument(reply)}
+            onFiles={(list) => void pickDocument(list)}
+            onCancelRead={stopReading}
+          />
         </div>
       )}
     </div>

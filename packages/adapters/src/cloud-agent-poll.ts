@@ -4,20 +4,21 @@ import type {
   BackgroundJobPayloads,
   CloudAgentSnapshot,
 } from "@rakazo/adapter-kit";
-import {
-  CloudAgentRequestRejected,
-  CloudAgentRetryLater,
-  runContinueJob,
-} from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { cloudAgentHttpsUrl } from "@rakazo/core";
 import type { CloudAgent } from "@rakazo/db";
-import { appendEventInTransaction, Prisma } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  changeMessageBlocks,
+  Prisma,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
-import { cloudAgentBlock, enqueueCloudAgent } from "./cloud-agent-service.js";
+import { cloudAgentBlock, cloudAgentFor, enqueueCloudAgent } from "./cloud-agent-service.js";
 import { cloudAgentLaunchSchema, cloudAgentPromptSchema } from "./cloud-agent-tools.js";
+import { wakeRun } from "./wake-run.js";
+import { cloudAgentWakePrompt } from "./wakes.prompt.js";
 
 const FOLLOWUP_SETTLE_MS = 5 * 60_000;
 
@@ -26,12 +27,10 @@ export async function pollCloudAgent(
   deps: CloudAgentDeps,
   payload: BackgroundJobPayloads["cloud_agent.poll"],
 ) {
-  const connection = deps.cloudAgent;
+  const stored = await deps.prisma.cloudAgent.findUnique({ where: { id: payload.agentId } });
+  if (!stored?.nextPollAt) return;
+  const connection = await cloudAgentFor(deps, stored);
   if (!connection) return;
-  const stored = await deps.prisma.cloudAgent.findFirst({
-    where: { id: payload.agentId, providerKey: connection.key },
-  });
-  if (!stored?.nextPollAt || !cloudAgentsEnabled(connection, stored.spaceId)) return;
   const token = randomUUID();
   const claimed = await deps.prisma.cloudAgent.updateMany({
     where: {
@@ -77,6 +76,11 @@ export async function pollCloudAgent(
       return;
     }
     if (!agent.remoteId) {
+      // A refused launch created nothing remote, so a later cancel has nothing to stop.
+      if (agent.status !== "running") {
+        await finishPoll(deps, agent, {}, abandoned);
+        return;
+      }
       // Write dispatch intent before I/O; a crash replays the same idempotent create.
       const marked = await deps.prisma.cloudAgent.updateMany({
         where: fence(agent),
@@ -331,11 +335,15 @@ async function finishPoll(
     let wakeRunId: string | undefined;
     if (message && !detached) {
       const nextBlock = cloudAgentBlock(saved);
-      const blocks = (message.blocks as MessageBlock[]).map((block) =>
-        block.kind === "cloud_agent" && block.agentId === agent.id ? nextBlock : block,
+      const next = changeMessageBlocks(message, (block) =>
+        block.kind === "cloud_agent" &&
+        block.agentId === agent.id &&
+        JSON.stringify(block) !== JSON.stringify(nextBlock)
+          ? nextBlock
+          : block,
       );
-      if (JSON.stringify(blocks) !== JSON.stringify(message.blocks)) {
-        await tx.message.update({ where: { id: message.id }, data: { blocks } });
+      if (next) {
+        await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
         const event = await appendEventInTransaction(tx, {
           spaceId: agent.spaceId,
           threadId: agent.threadId,
@@ -347,14 +355,13 @@ async function finishPoll(
       }
       if (terminal && saved.wakeGeneration < saved.generation) {
         // Provider text is untrusted. Wake with local identity and status only.
-        const summary = `Cloud agent ${agent.id} is ${status}. Use cloud_agent_status to inspect its result.`;
         const task = await tx.task.create({
           data: {
             spaceId: agent.spaceId,
             botId: agent.botId,
             threadId: agent.threadId,
             userId: agent.userId,
-            prompt: summary,
+            prompt: cloudAgentWakePrompt(agent.id, status),
             status: "queued",
           },
         });
@@ -378,15 +385,10 @@ async function finishPoll(
       }
     }
     return { seq, wakeRunId, nextPollAt };
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
   if (committed.seq !== undefined)
     await deps.events.notify(agent.threadId, committed.seq).catch(() => undefined);
-  if (committed.wakeRunId) {
-    // The existing run reconciler recovers a queued wake after an enqueue failure.
-    await deps.jobs.enqueue(runContinueJob(committed.wakeRunId)).catch(() => {
-      getLogger().warn("cloud agent wake deferred to reconciliation");
-    });
-  }
+  if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
   if (committed.nextPollAt) await enqueueCloudAgent(deps, agent.id, committed.nextPollAt);
 }

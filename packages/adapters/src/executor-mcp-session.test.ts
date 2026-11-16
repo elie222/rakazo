@@ -1,4 +1,5 @@
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -10,6 +11,7 @@ import { InstalledConnectorProvider } from "./installed-connectors.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 
@@ -417,15 +419,12 @@ describe("run-scoped MCP sessions across attempts", () => {
     const server = statefulMcpServer();
     const { executor, run, attempts, toolResults, finalizeRun } = await executorHarness(server);
 
-    let releaseStale: (() => void) | undefined;
-    const stalled = new Promise<void>((resolve) => {
-      releaseStale = resolve;
-    });
+    const stalled = deferred();
     attempts.push(async function* staleAttempt(request: AgentRunRequest) {
       yield { type: "tool", name: "get_pause", args: {}, executionId: "call-1" };
       toolResults.push(await request.executeTool?.("get_pause", {}, "call-1"));
       // The lease expires under this attempt; it learns that only after unwinding.
-      await stalled;
+      await stalled.promise;
       throw new Error("stale attempt unwinds");
     });
     const stale = executor.continueRun(run.id, "worker-1");
@@ -436,19 +435,16 @@ describe("run-scoped MCP sessions across attempts", () => {
     // The same process recovered the run under a newer fence while the stale
     // attempt hung; the recovered attempt owns the run and its session now.
     run.leaseFence += 1;
-    let openResume: (() => void) | undefined;
-    const resumeGate = new Promise<void>((resolve) => {
-      openResume = resolve;
-    });
+    const resumeGate = deferred();
     attempts.push(async function* recoveredAttempt(request: AgentRunRequest) {
       yield { type: "tool", name: "get_resume", args: { executionId }, executionId: "call-2" };
-      await resumeGate;
+      await resumeGate.promise;
       toolResults.push(await request.executeTool?.("get_resume", { executionId }, "call-2"));
       yield { type: "done", text: "Recovered." };
     });
     const recovered = executor.continueRun(run.id, "worker-1");
 
-    releaseStale?.();
+    stalled.resolve();
     await stale;
     // The stale attempt's fenced-out finalisation returned false and must not
     // close the session the recovered attempt is about to use.
@@ -457,7 +453,7 @@ describe("run-scoped MCP sessions across attempts", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(server.deletes).toEqual([]);
 
-    openResume?.();
+    resumeGate.resolve();
     await recovered;
     expect(toolResults[1]).toMatchObject({ content: [{ text: "resumed" }] });
     expect(server.initializations()).toBe(1);
@@ -470,14 +466,11 @@ describe("run-scoped MCP sessions across attempts", () => {
     const server = statefulMcpServer();
     const { executor, run, attempts, toolResults } = await executorHarness(server);
 
-    let releaseStale: (() => void) | undefined;
-    const stalled = new Promise<void>((resolve) => {
-      releaseStale = resolve;
-    });
+    const stalled = deferred();
     attempts.push(async function* staleAttempt(request: AgentRunRequest) {
       yield { type: "tool", name: "get_pause", args: {}, executionId: "call-1" };
       toolResults.push(await request.executeTool?.("get_pause", {}, "call-1"));
-      await stalled;
+      await stalled.promise;
       // Wait out the consumer's once-a-second lease check, so the next event
       // observes the recovered attempt's pause instead of skipping the check.
       await new Promise((resolve) => setTimeout(resolve, 1_100));
@@ -498,7 +491,7 @@ describe("run-scoped MCP sessions across attempts", () => {
     expect(run.status).toBe("waiting_input");
     expect(run.leaseOwner).toBeNull();
 
-    releaseStale?.();
+    stalled.resolve();
     await stale;
     // The stale attempt saw a run it no longer owns; the paused, ownerless row
     // must keep the session for the resume.
@@ -523,25 +516,19 @@ describe("run-scoped MCP sessions across attempts", () => {
       const server = statefulMcpServer();
       const { executor, run, attempts, finalizeRun, prisma } = await executorHarness(server);
 
-      let sessionReady: (() => void) | undefined;
-      const opened = new Promise<void>((resolve) => {
-        sessionReady = resolve;
-      });
-      let releaseStream: (() => void) | undefined;
-      const gated = new Promise<void>((resolve) => {
-        releaseStream = resolve;
-      });
+      const opened = deferred();
+      const gated = deferred();
       attempts.push(async function* workingAttempt(request: AgentRunRequest) {
         yield { type: "tool", name: "get_pause", args: {}, executionId: "call-1" };
         await request.executeTool?.("get_pause", {}, "call-1");
-        sessionReady?.();
+        opened.resolve();
         // No further events flow, so the consumer cannot observe the
         // cancellation itself; only the heartbeat can.
-        await gated;
+        await gated.promise;
         yield { type: "progress", text: "working" };
       });
       const attempt = executor.continueRun(run.id, "worker-1");
-      await opened;
+      await opened.promise;
 
       // The run is cancelled elsewhere. The heartbeat's next renewal must fail,
       // so let it see the row the way the real database would.
@@ -556,7 +543,7 @@ describe("run-scoped MCP sessions across attempts", () => {
       );
 
       await vi.advanceTimersByTimeAsync(60_000);
-      releaseStream?.();
+      gated.resolve();
       await attempt;
       // The consumer exits on the invalidated lease before its own check marks
       // anything; the row the attempt leaves behind must still end the session.

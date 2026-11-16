@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { isRetryableError, reportUiLocale } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import type { RefObject } from "react";
@@ -6,7 +7,7 @@ import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { selectInitialSpace } from "./api-server";
 import { appBadgeGeneration } from "./app-badge";
 import { isPaywallShown } from "./billing";
-import { getActiveUiLocale, useI18n } from "./i18n";
+import { getActiveUiLocale } from "./i18n";
 import { retainInboxValue } from "./inbox-retention";
 import type {
   MobileBot,
@@ -29,7 +30,7 @@ let localeReportedFor: string | null = null;
 export function useHomeInbox(
   spaceActionRef: RefObject<{ busy: boolean; recoveryId: string | null }>,
 ) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [groups, setGroups] = useState<MobileGroup[]>([]);
@@ -67,7 +68,7 @@ export function useHomeInbox(
       )
         return;
       if (!(await selectInitialSpace(nextMe.spaceId))) {
-        throw new Error(t("Could not save the default space"));
+        throw new Error(t`Could not save the default space`);
       }
       if (
         requestId !== inboxRequestId.current ||
@@ -134,7 +135,7 @@ export function useHomeInbox(
         return;
       setLoadFailure({
         kind: loadFailureKind(err),
-        message: errorText(err, t("Could not load bots")),
+        message: errorText(err, t`Could not load bots`),
       });
       // False when the server refused rather than failed: asking again only polls it.
       return isRetryableError(err);

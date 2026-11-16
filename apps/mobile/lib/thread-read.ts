@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ReadBoundary } from "@rakazo/core";
 import { createChatQueues, settleReadBoundary } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
 import { rpc } from "./api";
-import { useI18n } from "./i18n";
 import { dismissThreadNotifications } from "./live-notifications";
 import type { MobileMessage } from "./mobile-types";
 import { errorText } from "./user-error";
@@ -24,7 +24,7 @@ export function useThreadRead({
   focused: boolean;
   readOnly: boolean;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const navigation = useNavigation();
   const activeThreadId = useRef<string | undefined>(undefined);
   const readVisibleTarget = useRef<string | null>(null);
@@ -72,7 +72,7 @@ export function useThreadRead({
       })
       .catch((err) => {
         if (heldUnread.current === visit) heldUnread.current = null;
-        Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
+        Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`));
       });
   };
 

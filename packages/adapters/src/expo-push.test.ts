@@ -1,4 +1,5 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { credentialDigest } from "./credential-digest.js";
@@ -234,17 +235,14 @@ describe("expo push", () => {
     const tokens = new MemoryPushTokenStore();
     const token = "ExponentPushToken[device]";
     await tokens.save("user-1", token, "session-1");
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     let waiting = false;
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const push = new ExpoPushProvider(tokens, {
       sessionExpiresAt: async () => {
         waiting = true;
-        await gate;
+        await gate.promise;
         return new Date(Date.now() + 60_000);
       },
     });
@@ -255,7 +253,7 @@ describe("expo push", () => {
     );
     await vi.waitFor(() => expect(waiting).toBe(true));
     await tokens.save("user-2", token, "session-2");
-    release();
+    gate.resolve();
 
     await expect(delivering).resolves.toBe("undeliverable");
     expect(fetchMock).not.toHaveBeenCalled();
@@ -569,6 +567,8 @@ function recordingJobs() {
     enqueue: async (job) => {
       enqueued.push(job);
     },
+    enqueueIn: async () => undefined,
+    cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
   };
@@ -773,6 +773,24 @@ describe("expo push receipts", () => {
     );
   });
 
+  it.each([
+    { code: "ProviderError", level: "warn" },
+    { code: "MessageRateExceeded", level: "warn" },
+    { code: "InvalidCredentials", level: "error" },
+    { code: "MessageTooBig", level: "error" },
+  ])("logs a $code receipt at $level", async ({ code, level }) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { push, receipt } = await deliveredTicket();
+    fakeExpo([], { "ticket-1": { status: "error", message: code, details: { error: code } } });
+
+    await push.checkReceipt(receipt);
+
+    expect(
+      sink.events.filter((event) => event.message === `expo push receipt error: ${code}`),
+    ).toEqual([expect.objectContaining({ level })]);
+  });
+
   it("keeps a token the device registered after the unregistered send", async () => {
     const { tokens, push, receipt } = await deliveredTicket();
     await tokens.save("user-1", "ExponentPushToken[new]");
@@ -915,6 +933,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
   );
   expect(request).not.toHaveProperty("title");
   expect(request).not.toHaveProperty("body");
+  expect(request).not.toHaveProperty("tag");
   expect(request.data).toMatchObject({
     notificationTitle: "Marketing",
     notificationBody: "Draft ready",

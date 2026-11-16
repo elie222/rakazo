@@ -48,27 +48,32 @@ export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
   };
 }
 
+/** `defaultConnectorId` is the connector a card that names none belongs to. */
 export function matchesAppConnection(
   block: MessageBlock,
   connectorId: string,
   provider: string,
+  defaultConnectorId: string,
 ): block is AppConnectBlock {
   return (
     block.kind === "app_connect" &&
-    (block.connectorId ?? "composio") === connectorId &&
+    (block.connectorId ?? defaultConnectorId) === connectorId &&
     (block.provider.toLowerCase() === provider.toLowerCase() ||
       featuredConnectorProvidersMatch(block.provider, provider))
   );
 }
 
-export function connectedAppBlocks(
-  blocks: MessageBlock[],
+/** The block as connecting the app leaves it: the same block unless it is that app's open card. */
+export function connectedAppBlock(
+  block: MessageBlock,
   connectorId: string,
   provider: string,
-): MessageBlock[] {
-  return blocks.map((block) =>
-    matchesAppConnection(block, connectorId, provider) ? { ...block, status: "connected" } : block,
-  );
+  defaultConnectorId: string,
+): MessageBlock {
+  return matchesAppConnection(block, connectorId, provider, defaultConnectorId) &&
+    block.status !== "connected"
+    ? { ...block, status: "connected" }
+    : block;
 }
 
 /** Shared completion input for inline cards on every client. */

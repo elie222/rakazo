@@ -1,15 +1,14 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  computerScreenSize,
   displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
-  teamWorkspaceInstruction,
   workspaceCwd,
 } from "./computer-support.js";
+import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 
 describe("workspaceCwd", () => {
   const root = "/home/user/rakazo-home";
@@ -56,6 +55,24 @@ describe("Team Computer bot folders", () => {
       "bots/bot-1/projects/site",
     );
     expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project")).toBe("/Users/me/project");
+  });
+
+  it("reads a leading ~ in a dedicated computer's shell cwd as the workspace root", () => {
+    const root = "/workspace";
+    const cwd = (requested: string | undefined) =>
+      workspaceCwd(root, resolveBotWorkspaceCwd("dedicated", "bot-1", requested));
+    expect(cwd("~")).toBe(root);
+    expect(cwd("~/src")).toBe(`${root}/src`);
+    expect(cwd("src")).toBe(`${root}/src`);
+    expect(cwd(undefined)).toBe(root);
+    expect(cwd("~user/src")).toBe(`${root}/~user/src`);
+  });
+
+  it("hands a dedicated computer's provider a relative cwd for a home alias", () => {
+    const requested = (cwd: string) => resolveBotWorkspaceCwd("dedicated", "bot-1", cwd);
+    expect(requested("~")).toBeUndefined();
+    expect(requested("~/")).toBeUndefined();
+    expect(requested("~/src")).toBe("src");
   });
 
   it("tells the bot how its shell reaches the same shared folder as the file tools", () => {
@@ -163,15 +180,5 @@ describe("resolveBotUploadPath", () => {
     expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt")).toThrow(
       /escapes the bot workspace/,
     );
-  });
-});
-
-describe("computerScreenSize", () => {
-  it("uses boat geometry and the 1280x800 default for other sandboxes", () => {
-    expect(computerScreenSize("boat")).toEqual({ width: 1920, height: 1080 });
-    expect(computerScreenSize("e2b")).toEqual({ width: 1280, height: 800 });
-    expect(computerScreenSize("daytona")).toEqual({ width: 1280, height: 800 });
-    expect(computerScreenSize(null)).toEqual({ width: 1280, height: 800 });
-    expect(computerScreenSize(undefined)).toEqual({ width: 1280, height: 800 });
   });
 });

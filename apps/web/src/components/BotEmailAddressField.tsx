@@ -6,7 +6,7 @@ import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { useCopyText } from "../lib/copy-text";
 import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
 /** A bot's email address with a copy button, or the form that claims it for good. */
@@ -30,6 +30,7 @@ function AddressField({
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
+  const rpc = useSpaceRpc();
   const queryClient = useQueryClient();
   const [copied, copy] = useCopyText();
   const [name, setName] = useState(() => suggestedEmailName(bot.name));

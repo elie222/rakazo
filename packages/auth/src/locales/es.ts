@@ -24,26 +24,25 @@ export const ES_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Introduce este código en Rakazo para confirmar que eres tú:",
   "Welcome to Rakazo": "Te damos la bienvenida a Rakazo",
-  "Thanks for signing up for Rakazo.": "Gracias por registrarte en Rakazo.",
-  "Rakazo also has apps for": "Rakazo también tiene apps para",
-  "Questions or ideas?": "¿Tienes preguntas o ideas?",
-  "Join us on Discord": "Únete a nosotros en Discord",
-  "Rakazo is open source. If you like it,": "Rakazo es de código abierto. Si te gusta,",
-  "a star on GitHub": "una estrella en GitHub",
-  "helps others find it.": "ayuda a que otros lo encuentren.",
-  "Want to run it on your own servers?": "¿Quieres usarlo en tus propios servidores?",
-  "Self-host Rakazo": "Aloja Rakazo por tu cuenta",
-  "Have any questions? Reply to this email.": "¿Tienes alguna pregunta? Responde a este correo.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Te damos la bienvenida a Rakazo. Quienes más partido le sacan hacen tres cosas:",
+  "Get the apps": "Descarga las apps",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo funciona en {platforms}, para que tus bots puedan contactarte estés donde estés.",
+  "Join the community": "Únete a la comunidad",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Mira lo que crean otros, consigue ayuda rápido y cuéntanos qué crear después en {discord}.",
+  "Star us on GitHub": "Danos una estrella en GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo es de código abierto. {star} ayuda a que más gente lo encuentre.",
+  "A star on GitHub": "Una estrella en GitHub",
+  "Questions? Just reply. I read every one.": "¿Preguntas? Responde a este correo. Leo todos.",
   Unsubscribe: "Cancelar suscripción",
   "Invite a friend": "Invita a un amigo",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "Invita a un amigo a Rakazo: recibe {weeks} semanas gratis y tú ganas un mes gratis cuando empiece una suscripción válida con una tarjeta nueva.",
   "Open Rakazo": "Abre Rakazo",
   "and choose Invite friends for your link.": "y elige Invitar amigos para obtener tu enlace.",
-  "Have any questions? Just reply to this email.":
-    "¿Tienes alguna pregunta? Responde a este correo.",
-  "If you're enjoying Rakazo,": "Si te está gustando Rakazo,",
-  "give us a star on GitHub": "danos una estrella en GitHub",
   "We received your Rakazo plugin": "Recibimos tu plugin de Rakazo",
   "Confirm your Rakazo page claim": "Confirma tu solicitud de página en Rakazo",
   "Confirm claim": "Confirmar solicitud",

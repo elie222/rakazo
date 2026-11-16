@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -21,13 +22,6 @@ let hook: ReturnType<typeof usePagedPages>;
 function Probe() {
   hook = usePagedPages({ botId: "b1" });
   return null;
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 const items = () => (hook.listed.status === "ready" ? hook.listed.items.map((p) => p.id) : []);
 

@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -14,7 +16,6 @@ import { scheduleOnRN } from "react-native-worklets";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactPreview, imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
-import { useI18n } from "../lib/i18n";
 import { imageDismissBackdropOpacity, shouldDismissImage } from "../lib/image-dismiss";
 import type { ImageSize } from "../lib/inline-image";
 import { fitImageSize } from "../lib/inline-image";
@@ -226,7 +227,7 @@ export function ImageArtifactViewer({
   target: ImageArtifactPreviewTarget;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = mobileTokens();
   const insets = useSafeAreaInsets();
   const dismissY = useSharedValue(0);
@@ -256,7 +257,7 @@ export function ImageArtifactViewer({
   const fail = (error: unknown) =>
     setState({
       status: "error",
-      message: errorText(error, t("Could not load image")),
+      message: errorText(error, t`Could not load image`),
     });
 
   useEffect(() => {
@@ -278,7 +279,7 @@ export function ImageArtifactViewer({
   const share = () =>
     void imageArtifactUri(requestTarget(), target.artifactId, target.mimeType)
       .then((uri) => shareLocalFile(uri, target.mimeType, target.name))
-      .catch((error) => Alert.alert(t("Could not share image"), errorText(error, t("Try again."))));
+      .catch((error) => Alert.alert(t`Could not share image`, errorText(error, t`Try again.`)));
 
   return (
     // Insets come from the SafeAreaProvider mounted by app/image.tsx, seeded with the window
@@ -303,14 +304,14 @@ export function ImageArtifactViewer({
         ]}
       >
         <GlassIconButton
-          accessibilityLabel={t("Close image")}
+          accessibilityLabel={t`Close image`}
           ios="xmark"
           android="close"
           iconSize={18}
           onPress={close}
         />
         <GlassIconButton
-          accessibilityLabel={t("Share {name}", { name: target.name })}
+          accessibilityLabel={t`Share ${ph({ name: target.name })}`}
           ios="square.and.arrow.up"
           android="share-social-outline"
           iconSize={18}
@@ -334,14 +335,14 @@ export function ImageArtifactViewer({
             box={box}
             onClose={close}
             dismissY={dismissY}
-            onError={() => fail(new Error(t("Could not load image")))}
+            onError={() => fail(new Error(t`Could not load image`))}
           />
         ) : state.status === "error" ? (
           <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
         ) : (
           <ActivityIndicator
             color={tokens.mutedForeground}
-            accessibilityLabel={t("Loading image…")}
+            accessibilityLabel={t`Loading image…`}
           />
         )}
       </View>

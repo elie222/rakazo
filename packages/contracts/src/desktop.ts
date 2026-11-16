@@ -36,6 +36,20 @@ export interface RakazoDesktopOAuthCallback {
   state?: string;
 }
 
+/**
+ * A per-server MCP sign-in window is named this prefix plus its server id, so
+ * the desktop shell can give it that server's own browser session.
+ */
+export const MCP_SIGNIN_WINDOW_PREFIX = "rakazo-mcp-signin:";
+
+/** A code the app's own MCP callback page carried, captured before that page loads. */
+export interface RakazoDesktopMcpOAuthCallback {
+  serverId: string;
+  /** Null when the provider refused or the user declined. */
+  code: string | null;
+  state: string;
+}
+
 export interface RakazoDesktopDevice {
   /** Null until paired. */
   deviceId: string | null;
@@ -77,6 +91,10 @@ export function isDesktopMenuCommand(value: unknown): value is DesktopMenuComman
 }
 
 export interface RakazoDesktop {
+  /** Optional for older desktop releases. Returns false when the native write is refused. */
+  clipboard?: {
+    writeText: (text: string) => Promise<boolean>;
+  };
   /** Optional for compatibility with older desktop releases. */
   badge?: {
     set: (count: number) => Promise<boolean>;
@@ -134,6 +152,20 @@ export interface RakazoDesktop {
     stop: (session: number) => Promise<void>;
     abort: (session: number) => Promise<void>;
     onEvent: (listener: (event: RakazoDesktopSpeechEvent) => void) => () => void;
+  };
+  /**
+   * The browser each MCP server signs in through. Every server gets its own
+   * cookie jar, so one provider account never leaks into another server's
+   * sign-in. Absent on older desktop releases, which share the app's session.
+   */
+  mcpBrowser?: {
+    /** Empties that jar, cache included, so the next sign-in looks like a first visit. */
+    clear: (serverId: string) => Promise<void>;
+    /**
+     * Codes captured from that browser's redirect to the app callback, which has
+     * no app session of its own. Returns an unsubscribe function.
+     */
+    onOAuthCallback: (listener: (callback: RakazoDesktopMcpOAuthCallback) => void) => () => void;
   };
   platform: string;
   /** Absent on older frameless releases, which still need in-app controls. */
@@ -225,7 +257,8 @@ export interface DesktopLocalStackState {
   imageTag: string;
 }
 
-export type DesktopSetupLink = "docker-desktop" | "orbstack" | "docker-engine";
+/** The official Docker download for this platform (an installer, or Linux install docs). */
+export type DesktopSetupLink = "docker-download";
 
 /**
  * Bridge exposed only to the first-run setup window. The app window keeps the
@@ -240,7 +273,7 @@ export interface RakazoSetup {
   test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
-  /** Opens one of the Docker install pages in the system browser. */
+  /** Opens the Docker download in the system browser; the person runs the installer. */
   openLink: (link: DesktopSetupLink) => Promise<void>;
   /** The Docker Compose stack this app installs and runs for mode `new`. */
   stack: {

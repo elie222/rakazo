@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_COLORS } from "@rakazo/contracts";
 import {
@@ -8,7 +10,6 @@ import {
 } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
@@ -33,7 +34,7 @@ export function BotLookPicker({
   disabled?: boolean;
   onChange: (value: string, identity?: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const { photo, shapeIndex: shape, color, defaultLook } = botLookState(value);
   const labeled = !organicIdentities;
@@ -42,14 +43,14 @@ export function BotLookPicker({
     <View style={{ gap: 20 }}>
       {avatarSet === "organic" ? (
         <View>
-          {labeled ? <Label>{t("Shape")}</Label> : null}
+          {labeled ? <Label>{t`Shape`}</Label> : null}
           <View accessibilityRole="radiogroup" style={grid}>
             {organicIdentities ? (
               organicIdentities.map((organic, index) => (
                 <Choice
                   disabled={disabled}
                   key={organic}
-                  label={t("Shape {number}", { number: index + 1 })}
+                  label={t`Shape ${ph({ number: index + 1 })}`}
                   selected={defaultLook && identity === organic}
                   onPress={() => onChange(color, organic)}
                 >
@@ -59,7 +60,7 @@ export function BotLookPicker({
             ) : (
               <Choice
                 disabled={disabled}
-                label={t("Default")}
+                label={t`Default`}
                 selected={defaultLook}
                 onPress={() => onChange(color)}
               >
@@ -70,9 +71,7 @@ export function BotLookPicker({
               <Choice
                 disabled={disabled}
                 key={key}
-                label={t("Shape {number}", {
-                  number: index + 1 + (organicIdentities?.length ?? 0),
-                })}
+                label={t`Shape ${ph({ number: index + 1 + (organicIdentities?.length ?? 0) })}`}
                 selected={shape === index}
                 onPress={() => onChange(botLookWithShape(color, index))}
               >
@@ -83,7 +82,7 @@ export function BotLookPicker({
         </View>
       ) : null}
       <View>
-        {labeled ? <Label>{t("Color")}</Label> : null}
+        {labeled ? <Label>{t`Color`}</Label> : null}
         <View accessibilityRole="radiogroup" style={grid}>
           {BOT_COLORS.map((option, index) => {
             const selected = !photo && color.toLowerCase() === option.toLowerCase();
@@ -91,7 +90,7 @@ export function BotLookPicker({
               <Pressable
                 key={option}
                 accessibilityRole="radio"
-                accessibilityLabel={t("Color {number}", { number: index + 1 })}
+                accessibilityLabel={t`Color ${ph({ number: index + 1 })}`}
                 accessibilityState={{ checked: selected, disabled }}
                 disabled={disabled}
                 onPress={() => onChange(botLookWithColor(value, option))}

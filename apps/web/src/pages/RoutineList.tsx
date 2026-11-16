@@ -2,20 +2,10 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import type { CronLabels } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, formatCron } from "@rakazo/core";
-import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@rakazo/ui-web";
+import { ENGLISH_CRON_LABELS, formatCron, isOneShotRoutineCrons } from "@rakazo/core";
+import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle, Switch } from "@rakazo/ui-web";
 import type { LucideIcon } from "lucide-react";
-import {
-  Clock,
-  Eye,
-  GitBranch,
-  Globe,
-  Mail,
-  MessageSquare,
-  Pause,
-  Plus,
-  Repeat,
-} from "lucide-react";
+import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus, Repeat } from "lucide-react";
 import { cronLabels } from "../lib/cron";
 
 export function routineTriggerSummary(
@@ -46,6 +36,26 @@ function routineTriggerIcon(routine: Routine): LucideIcon {
   return Clock;
 }
 
+/** How many routines a preview shows before it leaves the rest to the whole list. */
+export const ROUTINE_PREVIEW_COUNT = 3;
+
+/** On routines first, soonest next run first; the rest keep their order. */
+function upcomingRoutines(routines: Routine[]): Routine[] {
+  const next = (routine: Routine) =>
+    routine.active && routine.nextRunAt ? Date.parse(routine.nextRunAt) : Number.POSITIVE_INFINITY;
+  return [...routines].sort((a, b) => next(a) - next(b));
+}
+
+/** A one-shot that already ran cannot run again, so it has no switch to turn back on. */
+function finishedOneShot(routine: Routine): boolean {
+  return (
+    !routine.active &&
+    isOneShotRoutineCrons(routine.crons) &&
+    !routine.nextRunAt &&
+    Boolean(routine.lastRunAt)
+  );
+}
+
 export function RoutineList({
   routines,
   loaded,
@@ -53,7 +63,11 @@ export function RoutineList({
   onCreate,
   onEdit,
   onStop,
+  onToggle,
+  preview = false,
 }: {
+  /** The first few routines only, for a panel that links to the whole list. */
+  preview?: boolean;
   routines: Routine[];
   /** False while a bot's routines are still loading for the first time. */
   loaded: boolean;
@@ -61,9 +75,43 @@ export function RoutineList({
   onCreate: () => void;
   onEdit: (routine: Routine) => void;
   onStop: () => void;
+  /** Turns a routine on or off from its row. */
+  onToggle: (routine: Routine, active: boolean) => void;
 }) {
   // An empty list is only "no routines" once the bot's routines have loaded. Until then, or
   // when that read fails, the plain list still offers Create routine.
+  if (preview) {
+    if (routines.length === 0) {
+      // Offered even when the list could not load, so a routine can still be made.
+      return (
+        <button
+          type="button"
+          data-testid="routine-create-button"
+          onClick={onCreate}
+          className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 text-start text-body text-foreground hover:bg-muted"
+        >
+          <Trans>New routine</Trans>
+          <Plus size={16} strokeWidth={1.6} aria-hidden className="text-muted-foreground" />
+        </button>
+      );
+    }
+    return (
+      <div>
+        {upcomingRoutines(routines)
+          .slice(0, ROUTINE_PREVIEW_COUNT)
+          .map((routine) => (
+            <RoutineListRow
+              key={routine.id}
+              routine={routine}
+              running={runningRoutineId === routine.id}
+              onOpen={() => onEdit(routine)}
+              onStop={onStop}
+              onToggle={(active) => onToggle(routine, active)}
+            />
+          ))}
+      </div>
+    );
+  }
   if (routines.length === 0 && loaded) {
     return (
       <Empty>
@@ -91,6 +139,7 @@ export function RoutineList({
           running={runningRoutineId === routine.id}
           onOpen={() => onEdit(routine)}
           onStop={onStop}
+          onToggle={(active) => onToggle(routine, active)}
         />
       ))}
       <button
@@ -113,13 +162,15 @@ function RoutineListRow({
   running,
   onOpen,
   onStop,
+  onToggle,
 }: {
   routine: Routine;
   running: boolean;
   onOpen: () => void;
   onStop: () => void;
+  onToggle: (active: boolean) => void;
 }) {
-  const { i18n } = useLingui();
+  const { t, i18n } = useLingui();
   const scheduleLabels = cronLabels(i18n.locale);
   const TriggerIcon = routineTriggerIcon(routine);
   return (
@@ -130,11 +181,7 @@ function RoutineListRow({
         className="flex min-w-0 flex-1 items-center gap-3 text-start"
       >
         <span className="grid h-5 w-5 place-items-center">
-          {routine.active ? (
-            <TriggerIcon size={16} strokeWidth={1.6} className="text-success" aria-hidden />
-          ) : (
-            <Pause size={14} className="text-muted-foreground" />
-          )}
+          <TriggerIcon size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
@@ -162,6 +209,12 @@ function RoutineListRow({
           </Button>
         </>
       ) : null}
+      <Switch
+        checked={routine.active}
+        disabled={finishedOneShot(routine)}
+        aria-label={t`Turn ${routine.name} on or off`}
+        onCheckedChange={onToggle}
+      />
     </div>
   );
 }

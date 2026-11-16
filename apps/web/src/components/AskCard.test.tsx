@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
+import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -27,7 +30,12 @@ const { rpc, spaceRpc } = vi.hoisted(() => {
   });
   return { rpc: client(), spaceRpc: client() };
 });
-vi.mock("../lib/rpc", () => ({ rpc }));
+vi.mock("../lib/rpc", () => ({
+  rpc,
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+  selectedSpaceId: () => null,
+}));
 // A card's editor lists the vault's saved contacts; these cards need none.
 vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
 
@@ -39,6 +47,9 @@ let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  // The app renders only once I18nBootstrap has activated a locale; the refusal text is shared.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -68,10 +79,18 @@ async function render(
     fields?: LoginFieldInput[],
     remember?: false,
   ) => Promise<void> = async () => undefined,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
-      <AskCard block={block} canAnswer canDismiss onAnswer={onAnswer} onDismiss={onDismiss} />,
+      <AskCard
+        block={block}
+        answerIsSeparate={answerIsSeparate}
+        canAnswer
+        canDismiss
+        onAnswer={onAnswer}
+        onDismiss={onDismiss}
+      />,
     ),
   );
 }
@@ -500,18 +519,44 @@ it("shows a question's detail as plain text above its options", async () => {
   expect(button("ASend it")).toBeDefined();
 });
 
+it("shows what a sign-in approval types besides the login, above its two answers", async () => {
+  // The card as the server builds it for a login that asks first and types its code.
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Sign in to login.example.test with Work login?",
+    detail: "This types the login's authenticator code.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(container.textContent).toContain("Sign in to login.example.test with Work login?");
+  expect(container.querySelector('[data-testid="ask-detail"]')?.textContent).toBe(
+    "This types the login's authenticator code.",
+  );
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Allow once",
+    "Deny",
+  ]);
+});
+
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
-      <ChoiceCard
-        botId="bot"
-        block={{
-          kind: "choice",
-          question: "Which city?",
-          options: [{ id: "paris", letter: "A", label: "Paris" }],
-        }}
-        onBotChanged={async () => {}}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <ChoiceCard
+          botId="bot"
+          block={{
+            kind: "choice",
+            question: "Which city?",
+            options: [{ id: "paris", letter: "A", label: "Paris" }],
+          }}
+          onBotChanged={async () => {}}
+        />
+      </QueryClientProvider>,
     ),
   );
   const option = button("AParis")!;
@@ -657,6 +702,31 @@ it("keeps the form open with a generic error when a login fails to save", async 
   expect(loginInput("PIN").value).toBe("");
 });
 
+it.each([
+  [
+    BLOCKED_ITEM_ANSWER,
+    "This item is blocked for bots. Allow it in the Vault, or dismiss the request.",
+  ],
+  [
+    UNCHOSEN_ITEM_ANSWER,
+    "This bot can't use this item. Change it in the Vault, or dismiss the request.",
+  ],
+])(
+  "says why a login wasn't saved only when bots can't use that item (%s)",
+  async (answer, shown) => {
+    await render(loginCard, undefined, async () => {
+      throw new Error(answer);
+    });
+    await openEditor();
+    await typeIn(loginInput("ID number"), "fake-id-123");
+    await typeIn(loginInput("Phone number"), "+1 555 0100");
+    await typeIn(loginInput("PIN"), "1234");
+    await act(async () => dialogButton("Save")!.click());
+    expect(dialog()?.textContent).toContain(shown);
+    expect(dialog()?.textContent).not.toContain("Could not submit this answer");
+  },
+);
+
 const cardAsk: AskBlock = {
   kind: "ask",
   text: "Your card",
@@ -722,10 +792,12 @@ it("offers Save to Vault only on login cards", async () => {
   expect(container.textContent).not.toContain("Save to Vault");
 });
 
-it("quotes an edited reply and marks a sent draft", async () => {
+it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
-  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).toContain("Tuesday");
+  await render(block, undefined, undefined, true);
+  expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 
   await render({ ...block, answer: "approved" });
@@ -964,4 +1036,19 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
     [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
   ).toEqual(["Total$20.00"]);
   expect(container.textContent).toContain("Read from the page, not checked");
+});
+
+it("leaves plain questions to the composer and dims the question after answering", async () => {
+  const block: AskBlock = { kind: "ask", text: "Which city?", status: "pending" };
+  await render(block);
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.querySelector("input")).toBeNull();
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(false);
+  await render({ ...block, status: "answered", answer: "Paris" }, undefined, undefined, true);
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(true);
+  expect(container.textContent).not.toContain("Paris");
 });
