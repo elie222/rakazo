@@ -1203,6 +1203,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         shutdown.abort();
         // Aborted runs hand themselves back while realtime is still open to announce them.
         const runsStopped = runs?.stop();
+        // The next release polls for chat messages now; replies from turns still running send.
+        await messagingRuntime?.stopReceiving();
         await options.connectionsClosed;
         // Handlers still running would otherwise query the pool after it ends.
         const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
@@ -1216,7 +1218,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await oauthTokenUpgrade;
         await mcpArgsMove;
         await runsStopped;
-        // After the runs: a draining turn's reply would start the chat surfaces again.
         await messagingRuntime?.stop();
         await requestsSettled;
         await botEmail?.drain?.();
