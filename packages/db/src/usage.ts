@@ -1,6 +1,10 @@
 import type { AgentRuntimeEvent, UsageOperationKind } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "./generated/prisma/client.js";
-import { hasFinalModelCost, settleModelCreditsTx } from "./model-credits.js";
+import {
+  hasFinalModelCost,
+  RECONCILED_ESTIMATE_COST_SOURCE,
+  settleModelCreditsTx,
+} from "./model-credits.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
@@ -66,16 +70,41 @@ export async function recordUsage(
         entry.model !== event.model
       )
         throw new Error("Usage attribution does not match its credit reservation");
-      if (!entry.pending && entry.reconciliationState === "complete" && !reconcile) return;
       let usage = await tx.usageRecord.findUniqueOrThrow({ where: { callId: event.callId! } });
-      if (reconcile) {
+      // A call that outlived the reconciler's patience replaces its fallback with real usage.
+      const correctsEstimate =
+        !reconcile &&
+        usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
+        event.costUsd != null &&
+        event.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
+      // Real usage recorded before the reconciler's fallback beats it: a final cost stands, and a
+      // measured estimate is finalized as recorded rather than replaced.
+      const keepsRecordedCost =
+        reconcile &&
+        event.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
+        usage.costUsd != null &&
+        usage.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
+      if (
+        (keepsRecordedCost && hasFinalModelCost(usage)) ||
+        (!entry.pending &&
+          entry.reconciliationState === "complete" &&
+          !reconcile &&
+          !correctsEstimate)
+      )
+        return;
+      if (keepsRecordedCost) {
+        usage = await tx.usageRecord.update({
+          where: { id: usage.id },
+          data: { costSource: RECONCILED_ESTIMATE_COST_SOURCE },
+        });
+      } else if (reconcile || correctsEstimate) {
         usage = await tx.usageRecord.update({
           where: { id: usage.id },
           data: observation,
         });
       }
-      await settleModelCreditsTx(tx, entry.id, usage.costUsd, reconcile);
-      const complete = hasFinalModelCost(usage);
+      await settleModelCreditsTx(tx, entry.id, usage.costUsd, reconcile || correctsEstimate);
+      const complete = correctsEstimate || hasFinalModelCost(usage);
       await tx.modelCreditEntry.update({
         where: { id: entry.id },
         data: {

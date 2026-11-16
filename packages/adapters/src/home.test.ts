@@ -156,9 +156,9 @@ describe("LocalAgentHomeStore path containment", () => {
     const { store, home } = await fixture();
     await writeFile(path.join(home, "large.txt"), "12345");
 
-    await expect(store.readFile("bot-1", "large.txt", context, { maxBytes: 4 })).rejects.toThrow(
-      /exceeds 4 bytes/,
-    );
+    await expect(
+      store.readFile("bot-1", "large.txt", context, { maxBytes: 4 }),
+    ).rejects.toMatchObject({ name: "SandboxFileTooLargeError", maxBytes: 4 });
   });
 
   it("allows symlinks whose resolved target stays inside the bot home", async () => {
@@ -169,6 +169,33 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await store.readFile("bot-1", "link.txt", context)).toBe("before");
     await store.writeFile("bot-1", "link.txt", "after", context);
     expect(await readFile(path.join(home, "target.txt"), "utf8")).toBe("after");
+  });
+
+  it("rejects an opened file reached through a swapped parent even after the parent is restored", async () => {
+    const { root, store, home } = await fixture();
+    const directory = path.join(await realpath(home), "notes");
+    const parked = path.join(await realpath(home), "parked-notes");
+    const outside = path.join(await realpath(root), "outside");
+    const target = path.join(directory, "result.txt");
+    await mkdir(directory);
+    await mkdir(outside);
+    await writeFile(target, "inside");
+    await writeFile(path.join(outside, "result.txt"), "outside");
+    hooks.beforeOpen = async (file) => {
+      if (file !== target) return;
+      hooks.beforeOpen = undefined;
+      await rename(directory, parked);
+      await symlink(outside, directory, "junction");
+    };
+    hooks.afterOpen = async (file) => {
+      if (file !== target) return;
+      hooks.afterOpen = undefined;
+      await rm(directory);
+      await rename(parked, directory);
+    };
+
+    await expect(store.readFile("bot-1", "notes/result.txt", context)).rejects.toThrow(/escapes/i);
+    expect(await store.readFile("bot-1", "notes/result.txt", context)).toBe("inside");
   });
 
   it("allows directory symlinks that remain inside the bot home", async () => {

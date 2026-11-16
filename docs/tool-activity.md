@@ -24,11 +24,11 @@ API responses are the same with it on or off.
 
 ## Platform scope
 
-| Surface | Status |
-| --- | --- |
-| Web | Supported |
-| Electron desktop | Supported (hosts the web UI, stores the choice in its own local storage) |
-| Expo mobile | Not included. Mobile keeps hiding tool activity, which is the previous behavior, so nothing changes there. |
+| Surface          | Status                                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Web              | Supported                                                                                                  |
+| Electron desktop | Supported (hosts the web UI, stores the choice in its own local storage)                                   |
+| Expo mobile      | Not included. Mobile keeps hiding tool activity, which is the previous behavior, so nothing changes there. |
 
 ## Tests
 

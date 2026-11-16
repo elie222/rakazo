@@ -1,0 +1,19 @@
+{
+  "apps/mobile/app/(settings)/wallet.tsx": 1,
+  "apps/mobile/app/computer.tsx": 2,
+  "apps/mobile/app/thread.tsx": 1,
+  "apps/mobile/components/CallCard.tsx": 1,
+  "apps/mobile/lib/avatar-life.tsx": 1,
+  "apps/mobile/lib/composer-dictation.ts": 1,
+  "apps/mobile/lib/foreground-poll.ts": 1,
+  "apps/mobile/lib/thread-list-scroll.ts": 1,
+  "apps/mobile/lib/thread-sync.ts": 2,
+  "apps/web/src/components/call/IncomingCall.tsx": 1,
+  "apps/web/src/components/teach/TeachCaptureOverlay.tsx": 7,
+  "apps/web/src/lib/preload-recovery.ts": 1,
+  "apps/web/src/pages/shell/chat-context.tsx": 1,
+  "apps/web/src/pages/shell/composer-error.tsx": 2,
+  "apps/web/src/pages/shell/use-computer-controls.tsx": 2,
+  "apps/web/src/pages/shell/use-computer.tsx": 5,
+  "apps/web/src/pages/shell/use-space-roster.ts": 1
+}

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  appendComposerDraftText,
   beginComposerDraftSubmission,
+  clearComposerDrafts,
   composerDraftBindingsKey,
   composerDraftStorageKey,
   readComposerDraft,
@@ -96,6 +98,91 @@ describe("composer drafts", () => {
       settleComposerDraftSubmission("thread", accepted, true);
       expect(readComposerDraft("thread", storage)).toBe("");
       expect(storage.getItem(composerDraftBindingsKey("thread"))).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a newer same-text binding from another tab when late words join an in-flight send", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    try {
+      const group = [
+        { start: 0, end: 4, mention: { kind: "group" as const, id: "group", name: "Bob" } },
+      ];
+      const bot = [{ start: 0, end: 4, mention: { kind: "bot" as const, id: "bot", name: "Bob" } }];
+      writeComposerDraft("thread", "@Bob", storage, group);
+      const submitted = beginComposerDraftSubmission("thread", "@Bob");
+      // Another tab binds the same text to another mention while the send is in flight.
+      storage.setItem(
+        composerDraftBindingsKey("thread"),
+        JSON.stringify({ version: 1, text: "@Bob", bindings: bot }),
+      );
+      appendComposerDraftText("thread", "new words");
+      settleComposerDraftSubmission("thread", submitted, true);
+      expect(readComposerDraft("thread", storage)).toBe("@Bob new words");
+      expect(readComposerDraftBindings("thread", storage)).toEqual(bot);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("legacy send envelope cleanup", () => {
+  function browserStorage() {
+    const map = new Map<string, string>();
+    return {
+      get length() {
+        return map.size;
+      },
+      key: (index: number) => [...map.keys()][index] ?? null,
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
+    };
+  }
+
+  it("removes envelopes for unopened chats on upgrade while preserving drafts and nonces", async () => {
+    const storage = browserStorage();
+    storage.setItem("rakazo.composerSend.bot:old", "private payload");
+    storage.setItem("rakazo.composerSend.group:old", "private reply");
+    storage.setItem("rakazo.composerDraft.bot:old", "draft");
+    storage.setItem("rakazo.composerNonce.bot:old", "nonce");
+    storage.setItem("unrelated", "keep");
+    vi.stubGlobal("localStorage", storage);
+    try {
+      vi.resetModules();
+      await import("./composer-draft.js");
+      expect(storage.length).toBe(3);
+      expect(storage.getItem("rakazo.composerDraft.bot:old")).toBe("draft");
+      expect(storage.getItem("rakazo.composerNonce.bot:old")).toBe("nonce");
+      expect(storage.getItem("unrelated")).toBe("keep");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("removes legacy and current composer records on sign out or account deletion", () => {
+    const storage = browserStorage();
+    for (const namespace of [
+      "composerSend",
+      "composerDraft",
+      "composerNonce",
+      "composerBindings",
+    ]) {
+      storage.setItem(`rakazo.${namespace}.bot:old`, "private");
+      storage.setItem(`rakazo.${namespace}.group:old`, "private");
+    }
+    storage.setItem("unrelated", "keep");
+    vi.stubGlobal("localStorage", storage);
+    try {
+      clearComposerDrafts();
+      expect(storage.length).toBe(1);
+      expect(storage.getItem("unrelated")).toBe("keep");
     } finally {
       vi.unstubAllGlobals();
     }

@@ -26,14 +26,16 @@ export type NativeActionButtonProps = {
   /** Disables the control. Android shows a spinner; iOS keeps the label on a disabled native button. */
   busy?: boolean;
   prominence?: ActionProminence;
-  /** Flat recovery controls and text actions, without native glass styling. */
-  variant?: "rectangular" | "text";
+  /** Text actions, without native glass styling. */
+  variant?: "text";
   /** Small native control, without the default filled button minimum height. */
   size?: "default" | "compact";
   /** Optional latched state; false is regular, true is prominent. */
   selected?: boolean;
   /** Stretch to the container width. Defaults to true for primary and destructive. */
   fill?: boolean;
+  /** Label placement on Android; iOS keeps the system layout. Defaults to center. */
+  align?: "start" | "center";
   style?: StyleProp<ViewStyle>;
 } & (
   | { label: string; accessibilityLabel?: string; icon?: ComponentProps<typeof NativeSymbol> }

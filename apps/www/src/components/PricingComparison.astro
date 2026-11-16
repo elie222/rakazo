@@ -1,0 +1,78 @@
+---
+import { PRICING_COMPARISON } from "../pricing";
+import Button from "./Button.astro";
+import PricingHint from "./PricingHint.astro";
+---
+
+<section class="pricing-compare" aria-labelledby="compare-heading">
+  <h2 id="compare-heading" class="section-heading">Compare plans</h2>
+  <div class="pricing-compare__wrap">
+    <table class="pricing-compare__table">
+      <thead>
+        <tr>
+          <td></td>
+          {
+            PRICING_COMPARISON.columns.map((column) => (
+              <th scope="col">
+                <span class="pricing-compare__plan">{column.name}</span>
+                <span class="pricing-compare__price">{column.price}</span>
+              </th>
+            ))
+          }
+        </tr>
+      </thead>
+      <tbody>
+        {
+          PRICING_COMPARISON.rows.map((row) => (
+            <tr>
+              <th scope="row">
+                {"hint" in row && row.hint ? (
+                  <PricingHint label={row.feature} detail={row.hint} />
+                ) : (
+                  row.feature
+                )}
+              </th>
+              {row.cells.map((cell) => (
+                <td>
+                  {cell === true ? (
+                    <svg class="pricing-compare__yes" viewBox="0 0 24 24" role="img" aria-label="Included">
+                      <path d="m5 12.5 4.5 4.5L19 7.5" />
+                    </svg>
+                  ) : cell === false ? (
+                    <svg class="pricing-compare__no" viewBox="0 0 24 24" role="img" aria-label="Not included">
+                      <path d="M7 12h10" />
+                    </svg>
+                  ) : typeof cell === "string" ? (
+                    cell
+                  ) : (
+                    <PricingHint label={cell.label} detail={cell.detail} />
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))
+        }
+      </tbody>
+      <tfoot>
+        <tr>
+          <td></td>
+          {
+            PRICING_COMPARISON.columns.map((column, index) => (
+              <td>
+                <Button
+                  href={column.action.href}
+                  variant={index === 0 || index === PRICING_COMPARISON.columns.length - 1 ? "secondary" : "primary"}
+                  size="sm"
+                  data-attr={`pricing-compare-${column.name.toLowerCase().replaceAll(" ", "-")}`}
+                  aria-label={"ariaLabel" in column.action ? column.action.ariaLabel : undefined}
+                >
+                  {column.action.label}
+                </Button>
+              </td>
+            ))
+          }
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</section>

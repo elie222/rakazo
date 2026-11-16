@@ -3,13 +3,18 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
-import { filterBuiltinToolsForRun, filterBuiltinToolsForThread } from "./schedule-tools.js";
+import {
+  filterBuiltinToolsForRun,
+  filterBuiltinToolsForThread,
+  SCHEDULE_TOOL_NAMES,
+} from "./schedule-tools.js";
+import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
@@ -17,11 +22,13 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "list_fleet",
   "read_file",
   "read_history",
+  "read_email",
   "search_history",
   "request_takeover",
   "run_subagent",
   "task_catalog",
   "recall_memory",
+  "reflect_memory",
   "schedule_list",
   "scratchpad_list",
   "board_tickets",
@@ -29,11 +36,16 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "service_search",
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
   "purchase_status",
 ]);
+
+/** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
+const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
+const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
@@ -52,6 +64,34 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
+/** Delegation stays one level deep; account settings and direct replies remain the parent's. */
+export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
+  "run_subagent",
+  "spawn_bot",
+  "message_user",
+  "call_user",
+  "end_call",
+  "request_takeover",
+  "update_bot",
+  "update_preferences",
+  "feedback",
+]);
+
+/** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
+export function offersAgentConnectionTools(options: {
+  hasMessagingIdentity: boolean;
+  crossSpaceCommunication: boolean;
+  trigger: string;
+}): boolean {
+  return (
+    options.hasMessagingIdentity &&
+    options.crossSpaceCommunication &&
+    !isBackgroundRunTrigger(options.trigger) &&
+    options.trigger !== "created" &&
+    options.trigger !== BACKGROUND_HELPER_TRIGGER
+  );
+}
+
 export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
@@ -64,11 +104,16 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryEnabled: boolean;
   /** The configured provider can forget individual facts. */
   semanticMemoryForgets?: boolean;
+  /** The configured provider can answer a question from many memories. */
+  semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
+  cloudAgentCleanupEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
+  /** The deployment configured paid data services. */
+  paidServicesEnabled?: boolean;
   messagingChannelRun: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
@@ -79,11 +124,25 @@ export function selectBuiltinToolsForRun(options: {
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
   userComputer?: boolean;
-  /** That desktop can look at and drive its apps. */
+  /** Their connected desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
+  /** The bot has an email address and this run is its owner's own, outside any group or channel. */
+  emailInbox?: boolean;
+  /** This server receives email and the bot has no address yet. */
+  emailClaimable?: boolean;
+  /** The inbox may be read and this server can send email. */
+  emailSend?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  // Claiming is offered only in the owner's own chat, so once the bot claims an address there it
+  // can read the mail that follows, such as a sign-up code, in the same run.
+  const emailClaimOffered =
+    Boolean(options.emailClaimable) &&
+    ownerStartedRun &&
+    !options.groupId &&
+    !options.messagingChannelRun;
+  const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -98,18 +157,22 @@ export function selectBuiltinToolsForRun(options: {
       ),
       options.semanticMemoryEnabled,
       Boolean(options.semanticMemoryForgets),
+      Boolean(options.semanticMemoryReflects),
     ),
     Boolean(options.cloudAgentEnabled),
+    Boolean(options.cloudAgentCleanupEnabled),
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
+      (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && ownerStartedRun)) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
+      (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||
@@ -122,9 +185,11 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
+      (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
+      (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
-      ((options.userComputer && options.userComputerScreen) ||
-        !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
+      (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&
         !options.groupId &&
@@ -135,15 +200,18 @@ export function selectBuiltinToolsForRun(options: {
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
       (!options.messagingChannelRun ||
-        (![
-          "remember",
-          "save_shared_memory",
-          "save_memory",
-          "recall_memory",
-          "forget_memory",
-          "task_catalog",
-          "board_tickets",
-        ].includes(tool.name) &&
+        (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
+          !SKILL_TOOL_NAMES.has(tool.name) &&
+          ![
+            "remember",
+            "save_shared_memory",
+            "save_memory",
+            "recall_memory",
+            "forget_memory",
+            "reflect_memory",
+            "task_catalog",
+            "board_tickets",
+          ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),
   );
@@ -166,4 +234,26 @@ export function filterPageBrowserTools<T extends { name: string }>(
 /** The fleet tools this run was offered, the same decision as tool selection. */
 export function offeredFleetTools(tools: readonly { name: string }[]): string[] {
   return tools.map((tool) => tool.name).filter((name) => FLEET_TOOL_NAMES_SET.has(name));
+}
+
+const FOLLOW_UP_TOOL_NAMES = [
+  "scratchpad_add",
+  "scratchpad_complete",
+  "schedule_create",
+  "schedule_cancel",
+];
+
+/**
+ * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
+ * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
+ * are not, and some of them would need approval for every schedule.
+ */
+export function followUpsOffered(
+  tools: readonly { name: string }[],
+  ownerStartedRun: boolean,
+): boolean {
+  return (
+    ownerStartedRun &&
+    FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
+  );
 }

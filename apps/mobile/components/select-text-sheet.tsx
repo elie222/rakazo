@@ -1,14 +1,14 @@
+import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { NativeActionButton } from "./native-action-button";
 
 /** A message as one block of plain text, so a selection can span paragraphs. */
 export function SelectTextSheet({ text, onClose }: { text: string | null; onClose: () => void }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   return (
@@ -30,12 +30,7 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
         ]}
       >
         <View style={styles.header}>
-          <NativeActionButton
-            fill={false}
-            label={t("Done")}
-            onPress={onClose}
-            prominence="primary"
-          />
+          <NativeActionButton fill={false} label={t`Done`} onPress={onClose} prominence="primary" />
         </View>
         <ScrollView contentContainerStyle={styles.content}>
           {Platform.OS === "ios" ? (

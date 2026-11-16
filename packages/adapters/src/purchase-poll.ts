@@ -1,9 +1,5 @@
 import type { AdapterContext, PurchaseSnapshot, PurchaseStatus } from "@rakazo/adapter-kit";
-import {
-  PaymentWalletDisconnected,
-  PaymentWalletRequestRejected,
-  runContinueJob,
-} from "@rakazo/adapter-kit";
+import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
 import type { Purchase } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PurchaseDeps } from "./purchase-service.js";
@@ -13,6 +9,9 @@ import {
   PENDING_PURCHASE_STATUSES,
   PURCHASE_POLL_MS,
 } from "./purchase-service.js";
+import { releaseUnpaidPurchase } from "./spending-gate.js";
+import { wakeRun } from "./wake-run.js";
+import { purchaseWakePrompt } from "./wakes.prompt.js";
 
 /** Providers expire approval requests after 30 minutes; stop asking a little later. */
 export const PURCHASE_POLL_DEADLINE_MS = 35 * 60_000;
@@ -113,8 +112,10 @@ async function settle(
     ]);
     const attached = thread.count > 0 && Boolean(member) && Boolean(bot);
     const pending = PENDING_PURCHASE_STATUSES.has(next.status);
-    // Nobody is left to tell once the bot, its chat or its owner is gone, or the chat was cleared.
-    const nextPollAt = pending && attached ? new Date(Date.now() + PURCHASE_POLL_MS) : null;
+    // Nobody is left to tell once the bot, its chat or its owner is gone, or the chat was cleared, so
+    // nothing is woken; the purchase is still polled until it settles or expires, so a purchase that
+    // never went through stops counting against the spending limit.
+    const nextPollAt = pending ? new Date(Date.now() + PURCHASE_POLL_MS) : null;
     const wake = attached && WAKE_STATUSES.has(next.status) && next.status !== purchase.wokenStatus;
     // The updatedAt fence makes a concurrent poll or purchase_status write win once.
     const updated = await tx.purchase.updateMany({
@@ -127,6 +128,7 @@ async function settle(
       },
     });
     if (!updated.count) return null;
+    await releaseUnpaidPurchase(tx, purchase.operationKey, next.status);
     if (!wake) return { nextPollAt };
     const clientNonce = `purchase-wake:${purchase.id}:${next.status}`;
     // A status that comes back (approved, needs_action, approved) already woke the bot once.
@@ -142,7 +144,7 @@ async function settle(
         botId: purchase.botId,
         threadId: purchase.threadId,
         userId: purchase.userId,
-        prompt: `Purchase ${purchase.id} is ${next.status}. Use purchase_status to continue.`,
+        prompt: purchaseWakePrompt(purchase.id, next.status),
         status: "queued",
       },
     });
@@ -161,12 +163,7 @@ async function settle(
     return { nextPollAt, wakeRunId: run.id };
   });
   if (!committed) return;
-  if (committed.wakeRunId) {
-    // The run reconciler recovers a queued wake after an enqueue failure.
-    await deps.jobs.enqueue(runContinueJob(committed.wakeRunId)).catch(() => {
-      getLogger().warn("purchase wake deferred to reconciliation");
-    });
-  }
+  if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
   if (committed.nextPollAt) await enqueuePurchasePoll(deps, purchase.id, committed.nextPollAt);
 }
 

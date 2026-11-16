@@ -2,7 +2,8 @@ import { createRouterClient } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { BUILTIN_AGENT_SKILLS, previewPluginInstall } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPlugin, setPluginParts } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -37,6 +38,26 @@ const fetcher = async () => ({
     },
   ],
 });
+function failingFetcher(error: Error): typeof fetcher {
+  return async () => {
+    throw error;
+  };
+}
+// The shapes the network stack gives these failures.
+const unreachable = {
+  "the host does not resolve": Object.assign(new Error("getaddrinfo ENOTFOUND example.invalid"), {
+    code: "ENOTFOUND",
+  }),
+  "the connection is refused": new TypeError("fetch failed", {
+    cause: Object.assign(new Error("connect ECONNREFUSED 203.0.113.10:443"), {
+      code: "ECONNREFUSED",
+    }),
+  }),
+  "the host times out": new DOMException(
+    "The operation was aborted due to timeout",
+    "TimeoutError",
+  ),
+};
 function setup() {
   const prisma = {
     $executeRaw: vi.fn(),
@@ -96,6 +117,10 @@ async function input() {
     pluginDigest: (await previewPluginInstall({ source, fetcher })).digest,
   };
 }
+
+afterEach(() => {
+  installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+});
 
 describe("confirmed plugin installation", () => {
   it("persists read-only skills and native MCP rows atomically, not credentials in config", async () => {
@@ -168,9 +193,58 @@ describe("confirmed plugin installation", () => {
     ] as never);
     await expect(installPlugin(deps, actor, await input())).rejects.toMatchObject({
       code: "CONFLICT",
+      message: "A plugin skill name is already in use",
     });
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
     expect(prisma.agentSkill.create).not.toHaveBeenCalled();
+  });
+  it("reports a failed skill name check as the failure, not as a name clash", async () => {
+    const { deps, prisma } = setup();
+    prisma.agentSkill.findMany.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(installPlugin(deps, actor, await input())).rejects.toThrow("database unavailable");
+    expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
+  });
+  it("tells the user when the repository holds no plugin it can load", async () => {
+    const { deps, prisma } = setup();
+    const unreadable = failingFetcher(new Error("No plugin manifest found"));
+    await expect(
+      installPlugin({ ...deps, fetcher: unreadable }, actor, await input()),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not load a supported plugin from this repository",
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it.each(Object.entries(unreachable))(
+    "tells the user when %s, without an error report",
+    async (_case, error) => {
+      const { deps, prisma } = setup();
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+      await expect(
+        installPlugin({ ...deps, fetcher: failingFetcher(error) }, actor, await input()),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Could not load a supported plugin from this repository",
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(sink.events).toMatchObject([{ level: "warn", message: "plugin source not loaded" }]);
+    },
+  );
+  it("lets a cancelled request and a fault in the loader propagate", async () => {
+    const { deps } = setup();
+    const args = await input();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const dropped = failingFetcher(new Error("socket closed"));
+    await expect(
+      installPlugin({ ...deps, fetcher: dropped }, actor, args, AbortSignal.abort()),
+    ).rejects.toThrow("socket closed");
+    const fault = failingFetcher(new TypeError("Cannot read properties of undefined"));
+    await expect(installPlugin({ ...deps, fetcher: fault }, actor, args)).rejects.toThrow(
+      "Cannot read properties of undefined",
+    );
+    expect(sink.events).toEqual([]);
   });
   it("installs the other skills when one repeats a built-in skill", async () => {
     const { deps, prisma } = setup();
@@ -245,7 +319,10 @@ describe("confirmed plugin installation", () => {
     await expect(
       installPlugin(deps, actor, { source, name: "Example", config: {}, pluginDigest: digest }),
     ).rejects.toThrow("store unavailable");
-    expect(secrets.delete).toHaveBeenCalledWith("encrypted-header-material", "secret-test");
+    expect(secrets.delete).toHaveBeenCalledWith(
+      "encrypted-header-material",
+      expect.objectContaining({ recordId: "secret-test" }),
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -258,12 +335,12 @@ describe("confirmed plugin installation", () => {
 });
 
 describe("plugin RPC boundary", () => {
-  function client(currentActor: Actor | null = actor) {
+  function client(currentActor: Actor | null = actor, pluginRepoFetcher = fetcher) {
     const { deps, prisma } = setup();
     const router = createRouter({
       prisma: deps.prisma,
       secrets: deps.secrets,
-      pluginRepoFetcher: deps.fetcher,
+      pluginRepoFetcher,
       remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
       env: { webOrigin: "http://localhost:5173", defaultProvider: "fake", defaultModel: "fake" },
       dataDir: "/tmp/plugin-rpc-test",
@@ -285,6 +362,21 @@ describe("plugin RPC boundary", () => {
       rpc.capabilities.install({ kind: "plugin", source, name: "Example", config: {} }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
+  });
+  it("previews an unreadable plugin or an unreachable host as a bad request", async () => {
+    for (const error of [new Error("No plugin manifest found"), ...Object.values(unreachable)]) {
+      const failing = client(actor, failingFetcher(error));
+      await expect(failing.rpc.capabilities.pluginPreview({ source })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Could not preview a supported plugin from this repository",
+      });
+    }
+  });
+  it("lets a fault in the loader fail the preview as a server error", async () => {
+    const fault = client(actor, failingFetcher(new TypeError("Cannot read properties of null")));
+    await expect(fault.rpc.capabilities.pluginPreview({ source })).rejects.toThrow(
+      "Cannot read properties of null",
+    );
   });
   it("adds only the chosen parts and records them", async () => {
     const { deps, prisma, secrets } = setup();
@@ -390,5 +482,24 @@ describe("plugin RPC boundary", () => {
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it("refuses to change parts when the stored settings are not an object, and writes nothing", async () => {
+    const { deps, prisma } = setup();
+    prisma.capabilityInstall.findFirst.mockResolvedValue({
+      id: "install-test",
+      kind: "plugin",
+      source,
+      version: sha,
+      digest: `sha256:${"0".repeat(64)}`,
+      config: ["skills"],
+    } as never);
+    await expect(
+      setPluginParts({ ...deps, removeServer: vi.fn() }, actor, {
+        id: "install-test",
+        parts: ["skills"],
+      }),
+    ).rejects.toMatchObject({ row: { table: "capability_installs", column: "config" } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.capabilityInstall.update).not.toHaveBeenCalled();
   });
 });

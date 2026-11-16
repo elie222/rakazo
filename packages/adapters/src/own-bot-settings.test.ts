@@ -66,9 +66,16 @@ beforeEach(() => {
   }));
 });
 
+/** A settings read that must succeed. */
+async function readSettings(bot: Parameters<typeof readOwnBotSettings>[2], offset?: number) {
+  const settings = await readOwnBotSettings(deps(), scope, bot, offset);
+  if ("error" in settings) throw new Error(settings.error);
+  return settings;
+}
+
 describe("readOwnBotSettings", () => {
   it("returns the current settings and the values the bot can pick", async () => {
-    const settings = await readOwnBotSettings(deps(), scope, bot);
+    const settings = await readSettings(bot);
     expect(settings).toMatchObject({
       name: "Scout",
       instructions: "Cite sources.",
@@ -88,6 +95,85 @@ describe("readOwnBotSettings", () => {
       }),
     ]);
     expect(settings.models[0]!.ids.length).toBeLessThanOrEqual(15);
+  });
+
+  it("pages long instructions, naming the window and the next offset", async () => {
+    const long = { ...bot, instructions: "x".repeat(19_000) };
+    const first = await readSettings(long);
+    const second = await readSettings(long, 8_000);
+    const last = await readSettings(long, 16_000);
+    expect(first.instructions).toBe("x".repeat(8_000));
+    expect(first.instructionsLength).toBe(19_000);
+    expect(first.instructionsOffset).toBe(0);
+    expect(first.instructionsNextOffset).toBe(8_000);
+    expect(second.instructionsOffset).toBe(8_000);
+    expect(second.instructionsNextOffset).toBe(16_000);
+    expect(last.instructions).toBe("x".repeat(3_000));
+    expect(last.instructionsNextOffset).toBeNull();
+    expect([first, second, last].map((page) => page.instructions).join("")).toBe(long.instructions);
+    for (const page of [first, second, last]) {
+      expect(JSON.stringify(page).length).toBeLessThan(12_000);
+    }
+  });
+
+  it("shrinks pages until the whole serialized result fits, whole characters only", async () => {
+    const long = {
+      ...bot,
+      description: '"\\\n\t'.repeat(1_000),
+      instructions: 'x"\n\\😀'.repeat(3_300),
+    };
+    type Page = Awaited<ReturnType<typeof readSettings>>;
+    const pages: Page[] = [];
+    let offset = 0;
+    for (;;) {
+      const page = await readSettings(long, offset);
+      pages.push(page);
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(10_000);
+      const last = page.instructions!.charCodeAt(page.instructions!.length - 1);
+      expect(last < 0xd800 || last > 0xdbff).toBe(true);
+      const next = page.instructionsNextOffset;
+      if (next === null || next === undefined) break;
+      offset = next;
+    }
+    expect(pages.length).toBeGreaterThan(2);
+    expect(pages.map((page) => page.instructions).join("")).toBe(long.instructions);
+  });
+
+  it("pages short instructions when escaping and the description overflow the result", async () => {
+    const heavy = { ...bot, description: "d".repeat(4_000), instructions: '"\n'.repeat(2_500) };
+    let text = "";
+    let offset: number | null | undefined = 0;
+    while (typeof offset === "number") {
+      const page = await readSettings(heavy, offset);
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(10_000);
+      expect(page.instructionsLength).toBe(5_000);
+      text += page.instructions;
+      offset = page.instructionsNextOffset;
+    }
+    expect(text).toBe(heavy.instructions);
+  });
+
+  it("refuses a read when the rest of the settings leave no room for instructions", async () => {
+    const crowded = { ...bot, description: '"'.repeat(6_000), instructions: "x".repeat(19_000) };
+    const settings = await readOwnBotSettings(deps(), scope, crowded);
+    expect(settings).toEqual({
+      error: "Your settings are too large to read your instructions: shorten your description.",
+    });
+  });
+
+  it("returns longer instructions whole while the result still fits", async () => {
+    const mid = { ...bot, instructions: "x".repeat(9_000) };
+    const settings = await readSettings(mid);
+    expect(settings.instructions).toBe(mid.instructions);
+    expect(settings).not.toHaveProperty("instructionsLength");
+  });
+
+  it("keeps short instructions in one page with no paging fields", async () => {
+    const settings = await readSettings(bot, 5);
+    expect(settings.instructions).toBe("Cite sources.");
+    expect(settings).not.toHaveProperty("instructionsLength");
+    expect(settings).not.toHaveProperty("instructionsOffset");
+    expect(settings).not.toHaveProperty("instructionsNextOffset");
   });
 });
 
@@ -191,6 +277,13 @@ describe("resolveVoiceChoice", () => {
         'No voice matches "Bella". Voices: Rachel, Adam - Deep Narrator, Adam - Calm, 菫 清楚.',
     });
   });
+
+  it("bounds the echoed query in errors", () => {
+    const huge = "b".repeat(60_000);
+    const result = resolveVoiceChoice(voices, huge);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.length).toBeLessThan(500);
+  });
 });
 
 describe("prepareOwnBotSettings voice", () => {
@@ -246,7 +339,5 @@ it("update_bot persists a daily check-in opt-out and returns the saved value", a
   );
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns: false } }));
   expect(result).toMatchObject({ ok: true, dailyCheckIns: false });
-  expect(
-    (await readOwnBotSettings(deps(), scope, { ...bot, dailyCheckIns: false })).dailyCheckIns,
-  ).toBe(false);
+  expect((await readSettings({ ...bot, dailyCheckIns: false })).dailyCheckIns).toBe(false);
 });

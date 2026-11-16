@@ -4,6 +4,7 @@ import type { RunContext } from "./run-context.js";
 import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import { isSubagentToolExecution } from "./run-effects.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { changeUserTimezone } from "./schedule-tools.js";
 
 const PreferencesPatchSchema = z
   .object({ timezone: TimeZoneSchema.optional(), marketingEmails: z.boolean().optional() })
@@ -38,18 +39,28 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
       ),
     );
   const select = { timezone: true, marketingEmailOptOutAt: true } as const;
-  const user = !write
-    ? await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select })
-    : await deps.prisma.user.update({
-        where: { id: run.userId },
-        data: {
-          timezone,
-          ...(marketingEmails === undefined
-            ? {}
-            : { marketingEmailOptOutAt: marketingEmails ? null : new Date() }),
-        },
-        select,
-      });
+  let user: { timezone: string | null; marketingEmailOptOutAt: Date | null };
+  if (!write) {
+    user = await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select });
+  } else if (timezone !== undefined) {
+    // The routines that took the account zone keep their local schedule in the new zone,
+    // and the email preference commits in the same save.
+    await changeUserTimezone(
+      deps,
+      run.userId,
+      timezone,
+      marketingEmails === undefined
+        ? undefined
+        : { marketingEmailOptOutAt: marketingEmails ? null : new Date() },
+    );
+    user = await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select });
+  } else {
+    user = await deps.prisma.user.update({
+      where: { id: run.userId },
+      data: { marketingEmailOptOutAt: marketingEmails ? null : new Date() },
+      select,
+    });
+  }
   return call.finish({
     timezone: user.timezone,
     marketingEmails: user.marketingEmailOptOutAt === null,

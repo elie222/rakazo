@@ -60,6 +60,7 @@ describe("attachment contracts", () => {
     expect(artifactPreviewKind("application/json")).toBe("text");
     expect(artifactPreviewKind("text/markdown")).toBe("markdown");
     expect(artifactPreviewKind("text/html")).toBe("html");
+    expect(artifactPreviewKind("video/mp4")).toBe("video");
     expect(artifactPreviewKind("application/pdf")).toBe("pdf");
     expect(artifactPreviewKind("image/png")).toBe("image");
     expect(artifactPreviewKind("application/zip")).toBe("none");

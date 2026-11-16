@@ -13,6 +13,14 @@ name: Compose
     timeout: 3000
 - takeScreenshot: 02-new-space
 - tapOn: "Cancel"
+- openLink: "rakazo:///new-bot"
+- extendedWaitUntil:
+    visible: "Name your Bot"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02b-new-bot
+- tapOn: "Cancel"
 - openLink: "rakazo:///new-group"
 - extendedWaitUntil:
     visible: "Search bots"

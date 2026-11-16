@@ -5,8 +5,8 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CHAT_TITLE_AVATAR_SIZE, ChatTitleAvatar } from "../components/chat-title-avatar";
-import type { MobileBot } from "./api";
 import type { InboxSpace } from "./inbox-spaces";
+import type { MobileBot } from "./mobile-types";
 import {
   addToSearchInbox,
   getSearchInbox,

@@ -31,6 +31,11 @@ Run some sections only:
 pnpm ios:screenshots -- --section settings --section billing
 ```
 
+Add `--publish` to a full run to upload the gallery page and its screenshots to the
+screenshot bucket and print its address. It reads the same settings as CI's publisher
+(`S3_BUCKET`, an HTTPS `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
+`PLAYWRIGHT_PUBLIC_BASE_URL`) and checks them before capturing. Logs are never uploaded.
+
 A failed section prints the Maestro step that failed and the path of the last
 screenshot it took.
 

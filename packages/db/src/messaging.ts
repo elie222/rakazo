@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { displayName } from "@rakazo/core";
-import type { SignupPolicyEnv } from "./bootstrap-user.js";
 import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { createRepos } from "./repos.js";
 
 export interface MessagingIdentityRequest {
@@ -50,7 +50,6 @@ function messagingUserId(provider: string, address: string): string {
 export async function provisionMessagingIdentity(
   prisma: PrismaClient,
   request: MessagingIdentityRequest,
-  env: SignupPolicyEnv,
 ): Promise<ProvisionedMessagingIdentity> {
   const { provider, address } = request;
   if (!ADDRESS_PATTERN.test(address)) {
@@ -86,14 +85,17 @@ export async function provisionMessagingIdentity(
         },
       })
       .catch((error: unknown) => {
-        if (!isUniqueViolationError(error)) throw error;
+        if (!isUniqueViolation(error)) throw error;
         // Only join the internal identity key, never an email someone supplied.
         return prisma.user.findUniqueOrThrow({ where: { id } });
       });
   }
 
-  const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
-  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
+  const membership = await prisma.spaceMember.findFirst({
+    where: { userId: user.id, space: { deletingAt: null } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;
   // messaging users only ever get bots here, so an existing bot is theirs.
@@ -139,7 +141,8 @@ export async function provisionMessagingIdentity(
         botId,
       },
     });
-  } catch {
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
@@ -297,13 +300,9 @@ export async function redeemMessagingLinkCode(
     // botId is unique (one chat app per bot) and (provider, address) can race
     // a concurrent inbound; either way the code is spent and the sender can
     // request a fresh one.
-    if (isUniqueViolationError(error)) return null;
+    if (isUniqueViolation(error)) return null;
     throw error;
   }
-}
-
-function isUniqueViolationError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** Run nonce of a team-chat message: `teamchat:<provider>:<provider event id>`. */

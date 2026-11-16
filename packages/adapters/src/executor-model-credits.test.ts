@@ -5,7 +5,14 @@ import { listPiCatalog } from "./pi-models.js";
 describe("funding selects credentials without deleting saved connections", () => {
   describe.each([false, true])("with stored-secret requirement=%s", (requireStoredSecret) => {
     it.each([
-      { billingEnabled: true, mode: "credits", provider: "openrouter", hosted: true },
+      { billingEnabled: true, mode: "credits", provider: "openrouter", hosted: false },
+      {
+        billingEnabled: true,
+        mode: "credits",
+        balanceMicros: 1_000_000n,
+        provider: "openrouter",
+        hosted: false,
+      },
       {
         billingEnabled: true,
         mode: "credits",
@@ -37,7 +44,6 @@ describe("funding selects credentials without deleting saved connections", () =>
         balanceMicros: 1n,
         provider: "openrouter",
         hosted: false,
-        ownConnection: true,
       },
       { billingEnabled: false, mode: "credits", provider: "openrouter", hosted: false },
       { billingEnabled: true, mode: "credits", provider: "openai", hosted: false },
@@ -51,7 +57,6 @@ describe("funding selects credentials without deleting saved connections", () =>
         hosted,
         personal = true,
         rejected = false,
-        ownConnection = false,
       }) => {
         vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
         vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
@@ -76,7 +81,7 @@ describe("funding selects credentials without deleting saved connections", () =>
                     : null,
               },
               userModelCredential: {
-                findFirst: async () => (ownConnection ? { id: "personal" } : null),
+                findFirst: async () => (personal ? { id: "personal" } : null),
               },
               secret: {
                 findFirst: async () => ({

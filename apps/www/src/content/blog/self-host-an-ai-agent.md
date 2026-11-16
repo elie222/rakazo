@@ -1,8 +1,9 @@
 ---
-title: "How to self-host an AI agent in 10 minutes"
+title: "How to self-host an AI agent with Docker"
+ogTitle: "How to self-host an AI agent"
 description: "Install Rakazo with the published Docker images, create an account, connect a model, and keep the database on your machine. Image pulls vary, and a public server takes longer."
 published: "2026-10-07"
-updated: "2026-10-07"
+updated: "2026-11-15"
 author: "Elie Steinbock"
 category: "guides"
 tldr: "The published-image installer is a short script: Docker, Compose, curl, and OpenSSL, then an account and a model. Pull time depends on your connection. A public hostname, TLS, and a secrets review are a longer job than the first local chat."
@@ -30,7 +31,7 @@ related:
     title: "Open source alternatives"
     description: "The rest of the comparison pages."
 faq:
-  - question: "Does the installer take ten minutes?"
+  - question: "How long does the install take?"
     answer: "The commands are short. Docker has to pull the app image, the computer image, and Postgres, and that wait depends on the machine and the network. This guide does not report a measured time."
   - question: "Do I need Node.js for the published images?"
     answer: "No. The published-image path needs Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. Node.js is for a source checkout."
@@ -48,7 +49,7 @@ comparison:
     - topic: "Published images"
       cells:
         - "One installer in an empty directory, then an account and a model."
-        - "A measured ten-minute promise. Image pulls vary."
+        - "A promise of a fixed install time. Image pulls vary."
     - topic: "This computer"
       cells:
         - "The desktop app can start the same published images locally."
@@ -84,7 +85,7 @@ The software is Apache-2.0. This install runs the same product as Rakazo Cloud, 
 
 For published images, the guide asks for Docker Engine 26 or newer, because bot home volumes use API 1.45 subpaths. You also need the Compose plugin, curl, and OpenSSL. You do not install Node.js for this path.
 
-A source checkout is different. It wants Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported. Use that path when you are developing Rakazo. It is not required to run the published images.
+A source checkout is different. It wants Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 25.x is not supported. Use that path when you are developing Rakazo. It is not required to run the published images.
 
 ## Install the published images
 
@@ -104,7 +105,7 @@ If you want to set the public URL, the image tag, or an optional provider before
 
 Open `http://127.0.0.1:5173`. The first registered user becomes the deployment owner. Connect a model in the app, or set `OPENROUTER_API_KEY` before startup. Local Docker computers are on by default.
 
-The image pull is the variable part. A fast link and a warm cache finish sooner than a laptop on a slow network pulling the app, the computer image, and Postgres for the first time. Treat "10 minutes" as a description of how small the installer is, then look at your own pull.
+The image pull is the variable part. A fast link and a warm cache finish sooner than a laptop on a slow network pulling the app, the computer image, and Postgres for the first time.
 
 ## Create a bot
 

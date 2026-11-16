@@ -1,3 +1,19 @@
+import { MCP_OAUTH_REDIRECT_MISMATCH } from "@rakazo/contracts";
+
+/** Only reviewed, public documentation links belong here; never use URLs from an error body. */
+const ERROR_GUIDES: Readonly<Record<string, string>> = {
+  [MCP_OAUTH_REDIRECT_MISMATCH]:
+    "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+};
+
+/** A stable error code opts into troubleshooting without depending on message wording. */
+export function errorHelpUrl(error: unknown): string | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string" && Object.hasOwn(ERROR_GUIDES, code)
+    ? ERROR_GUIDES[code]
+    : undefined;
+}
+
 /** Copy each client supplies in its own language. */
 export type UserErrorCopy = { fallback: string; offline: string };
 

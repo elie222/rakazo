@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 import type { PressableProps } from "react-native";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
@@ -8,7 +9,6 @@ import {
   createAttachmentAudioPlayer,
   INITIAL_ATTACHMENT_AUDIO_STATE,
 } from "../lib/attachment-audio";
-import { useI18n } from "../lib/i18n";
 import { errorText } from "../lib/user-error";
 import { GlassIconButton } from "./glass-icon-button";
 
@@ -28,7 +28,7 @@ export function AudioAttachment({
   labelColor?: string;
   pressableProps?: Omit<PressableProps, "onPress" | "children" | "style">;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = mobileTokens();
   const [state, setState] = useState(INITIAL_ATTACHMENT_AUDIO_STATE);
   const player = useRef<ReturnType<typeof createAttachmentAudioPlayer> | null>(null);
@@ -76,7 +76,7 @@ export function AudioAttachment({
           <ActivityIndicator color={labelColor ?? tokens.mutedForeground} />
         ) : (
           <GlassIconButton
-            accessibilityLabel={state.playing ? t("Pause") : t("Play")}
+            accessibilityLabel={state.playing ? t`Pause` : t`Play`}
             ios={state.playing ? "pause.fill" : "play.fill"}
             android={state.playing ? "pause" : "play"}
             color={labelColor}
@@ -87,13 +87,13 @@ export function AudioAttachment({
           {playbackTime(state.currentTime)} / {playbackTime(state.duration)}
         </Text>
         <GlassIconButton
-          accessibilityLabel={t("Share {name}", { name })}
+          accessibilityLabel={t`Share ${name}`}
           ios="square.and.arrow.up"
           android="share-social-outline"
           color={labelColor}
           onPress={() =>
             void openMobileArtifact(target, artifactId, name, mimeType).catch((error) =>
-              Alert.alert(t("Could not share file"), errorText(error, t("Try again."))),
+              Alert.alert(t`Could not share file`, errorText(error, t`Try again.`)),
             )
           }
         />
@@ -103,7 +103,7 @@ export function AudioAttachment({
           accessibilityRole="alert"
           style={{ color: labelColor ?? tokens.destructive, fontSize: 13 }}
         >
-          {t("Could not play that clip.")}
+          {t`Could not play that clip.`}
         </Text>
       ) : null}
     </Pressable>

@@ -1,0 +1,27 @@
+---
+import type { ArticleLink } from "../provider-article/types";
+
+type Props = {
+  link: ArticleLink;
+};
+
+const { link } = Astro.props;
+---
+
+<li>
+  <a class="sandbox-card" href={link.href}>
+    <picture>
+      {link.image.avif && <source type="image/avif" srcset={link.image.avif} />}
+      <img
+        src={link.image.webp}
+        alt=""
+        width={link.image.width}
+        height={link.image.height}
+        loading="lazy"
+        decoding="async"
+      />
+    </picture>
+    <span class="sandbox-card__name">{link.name}</span>
+    <span class="sandbox-card__meta">{link.meta}</span>
+  </a>
+</li>

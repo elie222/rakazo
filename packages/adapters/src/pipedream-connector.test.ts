@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isPipedreamEnabled,
@@ -30,24 +31,11 @@ const TEST_NETWORK = { resolveHostname: async () => [{ address: "203.0.113.10", 
 function pipedreamMcpFetch(
   toolsByApp: Record<string, string[]>,
   calls: Array<{ app: string | null; name: string; args: unknown }> = [],
-  remoteAccountIds: string[] = [],
 ) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
-    const url = new URL(request.url);
-    if (url.pathname === "/v1/oauth/token") {
+    if (new URL(request.url).pathname === "/v1/oauth/token") {
       return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
-    }
-    if (url.pathname.endsWith("/accounts")) {
-      const slug = url.searchParams.get("app") ?? "";
-      return Response.json({
-        data: remoteAccountIds.map((id) => ({
-          id,
-          healthy: true,
-          app: { id: `app-${slug}`, name_slug: slug, name: slug },
-        })),
-        page_info: {},
-      });
     }
     const app = request.headers.get("x-pd-app-slug");
     const message = JSON.parse(await request.text()) as {
@@ -147,6 +135,28 @@ describe("pipedreamConfigFromEnv", () => {
 });
 
 describe("PipedreamConnector", () => {
+  describe("needsReconnect", () => {
+    const row = (providerRef?: string, externalId = "gmail") => ({
+      id: "row",
+      connectorId: "pipedream",
+      externalId,
+      displayName: "Gmail",
+      providerRef,
+    });
+    it.each([
+      ["a row names the account", [row("apn_1")], false],
+      ["a row holds only the app slug", [row("gmail")], true],
+      ["a row has no reference", [row()], true],
+      ["no row at all", [], true],
+      ["only another app has an account", [row("apn_2", "slack")], true],
+    ])("%s", async (_name, connectedConnections, expected) => {
+      const connector = new PipedreamConnector(FAKE_CONFIG);
+      expect(await connector.needsReconnect({ ...context, connectedConnections }, "gmail")).toBe(
+        expected,
+      );
+    });
+  });
+
   afterEach(() => vi.unstubAllGlobals());
 
   it.each([
@@ -832,35 +842,6 @@ describe("PipedreamConnector", () => {
     expect(accounts).toEqual([]);
   });
 
-  it("runs a connection that stores only the app on its one remote account", async () => {
-    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
-    const { tools, events, accounts } = await runGmail(
-      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_legacy"]),
-      gmailContext("gmail"),
-      { text: "hello" },
-    );
-
-    expect(tools).toHaveLength(1);
-    expect(tools[0]?.inputSchema).not.toHaveProperty("properties.connected_account");
-    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
-    expect(calls).toHaveLength(1);
-    expect(new Set(accounts)).toEqual(new Set(["apn_legacy"]));
-  });
-
-  it("refuses a connection that stores only the app when several remote accounts exist", async () => {
-    const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
-    const { tools, events, accounts } = await runGmail(
-      pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_work", "apn_home"]),
-      gmailContext("gmail"),
-      { text: "hello" },
-    );
-
-    expect(tools).toEqual([]);
-    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
-    expect(calls).toEqual([]);
-    expect(accounts).toEqual([]);
-  });
-
   it("leaves a direct app route to the normal execute path", async () => {
     const connector = new PipedreamConnector(FAKE_CONFIG, TEST_NETWORK);
 
@@ -951,5 +932,34 @@ describe("PipedreamConnector", () => {
 
     await connector.revoke("linear", context);
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(false);
+  });
+});
+
+describe("oversized Pipedream answers", () => {
+  const begin = (response: Response) =>
+    new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch: vi.fn().mockResolvedValue(response) },
+    ).begin({ provider: "gmail", redirectUrl: "https://rakazo.example.test/app" }, context);
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = begin(new Response(new Uint8Array(MAX_PIPEDREAM_RESPONSE_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Pipedream response is too large.");
+  });
+
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Response is too large")),
+    });
+    const failure = begin(new Response(body));
+    await expect(failure).rejects.toThrow("Response is too large");
+    await expect(failure).rejects.not.toBeInstanceOf(ResponseTooLargeError);
   });
 });

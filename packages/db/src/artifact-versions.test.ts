@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveNextArtifactVersion, withResolvedArtifactVersion } from "./artifact-versions.js";
+import {
+  LISTED_ARTIFACT,
+  resolveNextArtifactVersion,
+  withResolvedArtifactVersion,
+} from "./artifact-versions.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -12,7 +16,6 @@ function versionConflict(): Prisma.PrismaClientKnownRequestError {
 
 const params = {
   spaceId: "space-1",
-  userId: "user-1",
   botId: "bot-1",
   name: "Q3 Content Calendar",
 };
@@ -29,7 +32,6 @@ describe("resolveNextArtifactVersion", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           spaceId: "space-1",
-          userId: "user-1",
           botId: "bot-1",
           groupId: null,
           name: { equals: "Q3 Content Calendar", mode: "insensitive" },
@@ -116,7 +118,7 @@ describe("withResolvedArtifactVersion", () => {
     const lockSql = client.queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
     expect(lockSql.strings.join(" ")).toContain("pg_advisory_xact_lock");
     expect(lockSql.values).toContain(
-      ["space-1", "user-1", "bot-1", "", "q3 content calendar"].join("\u001f"),
+      ["space-1", "bot-1", "", "q3 content calendar"].join("\u001f"),
     );
   });
 
@@ -163,5 +165,13 @@ describe("withResolvedArtifactVersion", () => {
       "Unique constraint failed",
     );
     expect(attempt).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("listed artifacts", () => {
+  it("leave out a reply's kept screenshots and MCP app documents", () => {
+    for (const hidden of ["image/png;profile=step-screenshot", "text/html;profile=mcp-app"])
+      expect(LISTED_ARTIFACT.mimeType.notIn).toContain(hidden);
+    expect(LISTED_ARTIFACT.mimeType.notIn).not.toContain("image/png");
   });
 });

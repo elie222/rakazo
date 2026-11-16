@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
@@ -547,20 +548,14 @@ describe("ObjectAgentHomeStore", () => {
     await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
     await store.hydrate("bot-1");
     const load = records.load.bind(records);
-    let resume = () => {};
-    let reading = () => {};
-    const started = new Promise<void>((resolve) => {
-      reading = resolve;
-    });
-    const delayed = new Promise<void>((resolve) => {
-      resume = resolve;
-    });
+    const started = deferred();
+    const delayed = deferred();
     let paused = false;
     records.load = async (key) => {
       if (!paused) {
         paused = true;
-        reading();
-        await delayed;
+        started.resolve();
+        await delayed.promise;
       }
       return load(key);
     };
@@ -575,12 +570,12 @@ describe("ObjectAgentHomeStore", () => {
     }
     const otherProcess = new ReadingStore(root, storage, records);
     const hydrating = otherProcess.hydrate("bot-1");
-    await started;
+    await started.promise;
     await store.revise("bot-1");
     marker = await readFile(markerFile, "utf8");
     const recent = path.join(store.pathFor("bot-1"), "recent.txt");
     await writeFile(recent, "after the checkpoint");
-    resume();
+    delayed.resolve();
     await hydrating;
     expect(await readFile(recent, "utf8")).toBe("after the checkpoint");
   });
@@ -592,27 +587,21 @@ describe("ObjectAgentHomeStore", () => {
       await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
       await store.hydrate("bot-1");
       const advance = records.advance.bind(records);
-      let reply = () => {};
-      let updated = () => {};
-      const waiting = new Promise<void>((resolve) => {
-        updated = resolve;
-      });
-      const delayed = new Promise<void>((resolve) => {
-        reply = resolve;
-      });
+      const waiting = deferred();
+      const delayed = deferred();
       records.advance = async (...args) => {
         const result = advanced ? await advance(...args) : undefined;
-        updated();
-        await delayed;
+        waiting.resolve();
+        await delayed.promise;
         return result ?? advance(...args);
       };
       const saving = store.revise("bot-1");
-      await waiting;
+      await waiting.promise;
       records.advance = advance;
       const otherProcess = new ObjectAgentHomeStore(root, storage, records);
       await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "newer checkpoint");
       await otherProcess.revise("bot-1");
-      reply();
+      delayed.resolve();
       if (advanced) await saving;
       else await expect(saving).rejects.toThrow(HomeSaveConflictError);
       const recent = path.join(store.pathFor("bot-1"), "recent.txt");
@@ -734,6 +723,44 @@ describe("ObjectAgentHomeStore", () => {
     });
   });
 
+  it("removes folders from a remote computer's copy saved elsewhere during removal", async () => {
+    const { store, otherHost } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    let saved = false;
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      if (saved) return;
+      saved = true;
+      await worker.commit(
+        "team-1",
+        await staged({ "bots/gone/notes.txt": "deleted bot", "shared/plan.txt": "new work" }),
+        context,
+      );
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({ "shared/plan.txt": "new work" });
+  });
+
+  it("never replaces a Docker computer's copy saved elsewhere during removal", async () => {
+    const { store, rows, otherHost } = await setup(["team-1"]);
+    rows[0]!.kind = "docker";
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      await worker.commit("team-1", await staged({ "shared/plan.txt": "new work" }), context);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "The cached home is older than its stored revision",
+    );
+  });
+
   it("leaves the folders to a retry when the stored copy cannot be saved", async () => {
     const { store, storage, otherHost } = await setup(["team-1"]);
     await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
@@ -783,6 +810,18 @@ describe("ObjectAgentHomeStore", () => {
       expect(await exported(await otherHost(), "team-1")).toEqual({ "recent.txt": "local work" });
     },
   );
+
+  it("finishes removing folders when the computer is deleted during the save", async () => {
+    const { store, rows, records } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const create = records.create.bind(records);
+    records.create = async (homeKey) => {
+      rows.splice(0, 1);
+      return create(homeKey);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+  });
 
   it("keeps the rest of a home never stored when its first save fails", async () => {
     const { store, storage } = await setup(["team-1"]);
@@ -1002,6 +1041,36 @@ describe("the local cache of object-backed homes", () => {
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("local only");
   });
 
+  it("never restores a cached copy into a fresh computer once its stored copy is deleted", async () => {
+    const { root, rows, store } = await setup(["bot-1", "bot-2"]);
+    await store.commit("bot-1", await staged({ "a.txt": "deleted" }), context);
+    await store.commit("bot-2", await staged({ "a.txt": "deleted too" }), context);
+    await store.hydrate("bot-1");
+    await store.hydrate("bot-2");
+    // The marker keeps the bare revision a previous release reads, during a rollout or rollback.
+    expect(await readFile(path.join(root, "home-revisions", "bot-1.txt"), "utf8")).toBe(
+      rows[0]!.homeStorageRevision,
+    );
+    // A copy an older release downloaded has no download record until it is next read.
+    await rm(path.join(root, "home-downloads", "bot-2"));
+    expect(await store.readFile("bot-2", "a.txt", context)).toBe("deleted too");
+    for (const row of rows)
+      Object.assign(row, { homeStorageId: null, homeStorageKey: null, homeStorageRevision: null });
+
+    for (const homeKey of ["bot-1", "bot-2"]) {
+      const { sandbox, restored } = remoteSandbox(async function* () {});
+      await restoreComputerWorkspace(
+        store,
+        sandbox,
+        homeKey,
+        { ...boatComputer, botId: homeKey },
+        context,
+      );
+      expect(restored).toEqual([]);
+    }
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
+  });
+
   it("evicts idle copies of remote computers' homes, never a Docker computer's", async () => {
     const { root, rows, store } = await setup(["remote-idle", "remote-recent", "docker-idle"]);
     rows[2]!.kind = "docker";
@@ -1020,6 +1089,25 @@ describe("the local cache of object-backed homes", () => {
       "remote-recent",
     ]);
     expect(await store.readFile("remote-idle", "a.txt", context)).toBe("remote-idle");
+  });
+
+  it("evicts a downloaded copy once retention has cleared the stored home", async () => {
+    const { root, rows, store } = await setup(["retention-cleared"]);
+    await store.commit("retention-cleared", await staged({ "a.txt": "secret" }), context);
+    await store.hydrate("retention-cleared");
+    // Retention deleted the stored home: the record names no revision, so only this
+    // host's downloaded copy is left, and nobody will read it again to clear it.
+    Object.assign(rows[0]!, {
+      homeStorageId: null,
+      homeStorageKey: null,
+      homeStorageRevision: null,
+    });
+    const now = Date.now();
+    const hoursAgo = new Date(now - 2 * 60 * 60_000);
+    await utimes(path.join(root, "home-revisions", "retention-cleared.txt"), hoursAgo, hoursAgo);
+
+    expect(await store.evictIdleCaches(now)).toBe(1);
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
   });
 
   it("saves a large file streamed to disk and storage one chunk at a time", async () => {

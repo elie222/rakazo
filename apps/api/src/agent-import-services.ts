@@ -3,7 +3,7 @@ import { mcpStdioRefusal, providerCatalogCache, validateBotModelChange } from "@
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId, ModelConnectInputSchema } from "@rakazo/contracts";
 import type { createRepos } from "@rakazo/db";
-import { findModelCredential, Prisma } from "@rakazo/db";
+import { findModelCredential, Prisma, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isAdmin } from "./admins.js";
 import type { AgentImportServices } from "./agent-import.js";
@@ -14,7 +14,6 @@ import { createImportedModelCredential, prepareModelCredential } from "./model-c
 import type { RouterDeps } from "./router.js";
 import type { createRoutineAnnouncer } from "./routines.js";
 import { assertRoutineSchedule, routineNextRunAt, routineRowData } from "./routines.js";
-import { withSerializableRetry } from "./serializable-retry.js";
 
 export function createAgentImportServices({
   deps,
@@ -43,7 +42,7 @@ export function createAgentImportServices({
     prisma: deps.prisma,
     // Serializable so the create-only key check cannot race a connection saved meanwhile.
     createBot: (actor, input) =>
-      withSerializableRetry(() =>
+      withTransactionRetry(() =>
         repos.createBot(actor, {
           ...input,
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,

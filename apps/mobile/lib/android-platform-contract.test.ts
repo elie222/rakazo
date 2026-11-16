@@ -7,6 +7,20 @@ import { normalizeApiBase } from "./endpoint.js";
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Android mobile platform contract", () => {
+  it("keeps Server Save in an Android card header and preserves the iOS sheet", () => {
+    const layout = readFileSync(resolve(mobileRoot, "app/_layout.tsx"), "utf8");
+    const server = readFileSync(resolve(mobileRoot, "app/server.tsx"), "utf8");
+    const serverOptions = layout.match(/name="server"\s+options=\{\{([\s\S]*?)\}\}/)?.[1];
+
+    expect(serverOptions).toBeDefined();
+    expect(serverOptions).toContain('presentation: Platform.OS === "ios" ? "formSheet" : "card"');
+    expect(serverOptions).toContain("sheetAllowedDetents: [0.6, 1]");
+    expect(serverOptions).toContain("sheetGrabberVisible: true");
+    expect(server).toContain(
+      "...trailingHeaderOptions(pending ? t`Checking…` : t`Save`, () => void save(), pending)",
+    );
+  });
+
   it("shares its notification endpoint cases with the app's server URL check", () => {
     const cases: [string, boolean][] = JSON.parse(
       readFileSync(
@@ -70,7 +84,7 @@ describe("Android mobile platform contract", () => {
       /waiting_input[\s\S]*filter \{ it\.notificationsEnabled \}[\s\S]*alertedAttention\.add/,
     );
     expect(service).toContain(
-      "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
+      "if (openThreadId != null) openThreadId == threadId else openBotId == botId",
     );
     expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, expect, it, vi } from "vitest";
 import { completeSsoCallback, runSsoFlow, SSO_CALLBACK_PATH } from "./sso-flow";
 
@@ -169,6 +170,34 @@ it("only broadcasts well-formed same-origin callback landings", () => {
   expect(channels).toHaveLength(0);
 });
 
+it("completes desktop SSO without crypto.randomUUID, as on a plain-HTTP server", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("crypto", {
+    getRandomValues: (bytes: Uint8Array) => {
+      bytes.fill(5);
+      return bytes;
+    },
+  });
+  const desktop = desktopWindow();
+  let landing = "";
+  const flow = runSsoFlow(
+    async (_disableRedirect: boolean, callbackURL: (url: string) => string) => {
+      landing = callbackURL("/app");
+      return result;
+    },
+    ["/app"],
+  );
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(landing).toMatch(/[?&]nonce=/);
+  expect(new URL(landing).searchParams.get("nonce")).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(desktop.popup.location.href).toBe(result.data.url);
+  desktop.land(landing);
+  await expect(flow).resolves.toBe(result);
+  expect(desktop.location.assign).toHaveBeenCalledWith("https://rakazo.example.test/app");
+});
+
 it("opens synchronously before beginning authorization", async () => {
   const { open, popup } = desktopWindow();
   await expect(
@@ -185,22 +214,15 @@ it.each([false, true])(
   async (pending) => {
     vi.useFakeTimers();
     const { begin, popup, channels, land, location } = desktopWindow();
-    let finish!: (value: typeof result) => void;
-    const first = runSsoFlow(
-      pending
-        ? () =>
-            new Promise((resolve) => {
-              finish = resolve;
-            })
-        : begin,
-      ["/app"],
-    );
+    const finish = deferred<typeof result>();
+    const first = runSsoFlow(pending ? () => finish.promise : begin, ["/app"]);
     await vi.advanceTimersByTimeAsync(0);
     const second = runSsoFlow(begin, ["/app"]);
     await expect(first).resolves.toEqual({ data: null, error: null });
     expect(popup.close).toHaveBeenCalledTimes(1);
     expect(channels[0]?.close).toHaveBeenCalled();
-    if (pending) finish({ data: { url: "https://stale.example.test/authorize" }, error: null });
+    if (pending)
+      finish.resolve({ data: { url: "https://stale.example.test/authorize" }, error: null });
     await vi.advanceTimersByTimeAsync(0);
     expect(popup.location.href).toBe(result.data.url);
     channels[0]?.onmessage?.({

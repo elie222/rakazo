@@ -69,7 +69,7 @@ function Stepper({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-sm font-medium",
+                  "relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-body font-medium",
                   step.status === "upcoming"
                     ? "border border-border text-muted-foreground"
                     : "border-2 border-primary text-foreground",
@@ -101,7 +101,7 @@ function Stepper({
                 <span
                   id={titleId}
                   className={cn(
-                    "text-sm font-medium",
+                    "text-body font-medium",
                     selectable && "group-hover/step:underline",
                     step.status === "upcoming" ? "text-muted-foreground" : "text-foreground",
                   )}
@@ -115,7 +115,7 @@ function Stepper({
                 ) : null}
                 {step.description ? (
                   <span
-                    className={cn("text-sm text-muted-foreground", step.busy && "text-shimmer")}
+                    className={cn("text-body text-muted-foreground", step.busy && "text-shimmer")}
                   >
                     {step.description}
                   </span>

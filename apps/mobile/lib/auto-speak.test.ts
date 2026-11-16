@@ -13,6 +13,7 @@ describe("nextAutoSpeakAction", () => {
   const base = {
     botId: "bot-1",
     autoSpeak: true,
+    callActive: false,
     focused: true,
     snapshotReady: true,
     lastSpokenBotId: "bot-1",
@@ -50,6 +51,17 @@ describe("nextAutoSpeakAction", () => {
     expect(nextAutoSpeakAction({ ...base, runStatus: "running" })).toEqual({ action: "wait" });
     expect(nextAutoSpeakAction({ ...base, runStatus: "queued" })).toEqual({ action: "wait" });
     expect(nextAutoSpeakAction({ ...base, runStatus: "leased" })).toEqual({ action: "wait" });
+  });
+
+  it("seeds while a call is active, before the run gate, so a streamed reply stays unspoken", () => {
+    expect(nextAutoSpeakAction({ ...base, callActive: true })).toEqual({
+      action: "seed",
+      messageId: "msg-2",
+    });
+    expect(nextAutoSpeakAction({ ...base, callActive: true, runStatus: "running" })).toEqual({
+      action: "seed",
+      messageId: "msg-2",
+    });
   });
 
   it("speaks a finished reply that has not been spoken yet", () => {

@@ -4,7 +4,9 @@ import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
+import { serializeModelSecret } from "./model-secret.js";
 import {
+  connectedModelSeesImages,
   connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
@@ -24,9 +26,8 @@ import {
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
-import { providerCatalogCache } from "./pi-live-catalog.js";
+import { liveCatalogEntry, providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
-import { serializeModelSecret } from "./pi-oauth.js";
 
 function credential(provider: string, defaultModel: string | null) {
   return {
@@ -43,6 +44,35 @@ function credential(provider: string, defaultModel: string | null) {
 }
 
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
+
+it.each([
+  { bundled: true, catalogImages: undefined, expected: true },
+  { bundled: false, catalogImages: true, expected: true },
+  { bundled: false, catalogImages: false, expected: false },
+])(
+  "uses known image capabilities without decrypting, bundled: $bundled, answer: $catalogImages",
+  async ({ bundled, catalogImages, expected }) => {
+    const entry = bundled
+      ? listPiCatalog().find((model) => model.provider === "anthropic" && model.images)!
+      : { provider: "zai", id: "listed-model-fixture" };
+    const findFirst = vi.fn(async () => ({ ciphertext: "sealed-fixture" }));
+    const load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    await expect(
+      connectedModelSeesImages(
+        { prisma: { secret: { findFirst } } as never, secretStore: { load } },
+        "user-1",
+        entry.provider,
+        entry.id,
+        credential(entry.provider, entry.id),
+        catalogImages,
+      ),
+    ).resolves.toBe(expected);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+  },
+);
 
 describe("routine model pin", () => {
   const routine = {
@@ -217,7 +247,10 @@ describe("space catalog auth", () => {
     const preferenceFindMany = vi.fn().mockResolvedValue(options.preferences);
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
-      userModelCredential: { findMany: credentialFindMany },
+      userModelCredential: {
+        findMany: credentialFindMany,
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
@@ -244,7 +277,7 @@ describe("space catalog auth", () => {
         preferences: [],
         secrets: [{ id: "personal-secret", ciphertext: "fixture-ciphertext" }],
       });
-      // A balance does not replace a key the member connected outside credits mode.
+      // Funding never replaces a key the member connected.
       Object.assign(prisma.userModelCredential, {
         findFirst: vi.fn().mockResolvedValue({ id: "personal" }),
       });
@@ -258,15 +291,9 @@ describe("space catalog auth", () => {
       const load = vi.fn().mockResolvedValue("fixture-personal-key");
       const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope, "openrouter");
       expect(auth.byProvider.openrouter).toBe("api_key");
-      if (mode === "credits") {
-        expect(auth.managedProvider).toBe("openrouter");
-        expect(auth.secretIdByProvider?.openrouter).toBeUndefined();
-        expect(load).not.toHaveBeenCalled();
-      } else {
-        expect(auth.managedProvider).toBeUndefined();
-        expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
-        expect(load).toHaveBeenCalledOnce();
-      }
+      expect(auth.managedProvider).toBeUndefined();
+      expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
+      expect(load).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllEnvs();
     }
@@ -335,7 +362,7 @@ describe("space catalog auth", () => {
     expect(load).not.toHaveBeenCalledWith("cipher-api", "secret-api");
   });
 
-  it("shows Spark from the preference that owns that model when the default is ChatGPT sign-in", async () => {
+  it("keeps a model's API-key preference when the default is ChatGPT sign-in", async () => {
     const { prisma } = authPrisma({
       credentials: [
         storedCredential("cred-api", "secret-api", "2026-02-01T00:00:00.000Z"),
@@ -372,7 +399,8 @@ describe("space catalog auth", () => {
     expect(auth.byProvider["openai-codex"]).toBe("oauth");
     expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBe("secret-api");
     expect(auth.secretIdByProvider["openai-codex"]).toBe("secret-oauth");
-    expect(listsSpark(auth)).toBe(true);
+    // Pi no longer bundles Spark for Codex; an API key reaches it on the openai provider.
+    expect(listsSpark(auth)).toBe(false);
     expect(
       listAvailablePiCatalog(auth.byProvider, auth.byModel).some(
         (entry) => entry.provider === "openai-codex" && entry.id === luna,
@@ -527,7 +555,7 @@ describe("default credential selection", () => {
     ).toBe("older");
   });
 
-  it("moves the default off an auth-restricted model when another credential can call it", () => {
+  it("treats Spark as unrestricted now that Pi no longer bundles it for Codex", () => {
     expect(
       selectDefaultCredentialId({
         provider: "openai-codex",
@@ -536,7 +564,7 @@ describe("default credential selection", () => {
         readyIds: ["api", "oauth"],
         savedModelId: (id) => (id === "api" ? spark : null),
       }),
-    ).toBe("oauth");
+    ).toBe("api");
   });
 
   it("keeps the restricted binding when no other credential is ready", () => {
@@ -1284,17 +1312,14 @@ describe("bot model change validation", () => {
     ).resolves.toEqual({ ok: true, provider: "xai", model: "saved-model", thinkingLevel: null });
   });
 
-  it("rejects a model the stored credential cannot call", async () => {
+  it("rejects Spark on Codex, which Pi no longer bundles", async () => {
     const deps = changeDeps({ "openai-codex": credential("openai-codex", null) });
     const result = await validateBotModelChange(deps, {
       ...scope,
       provider: "openai-codex",
       model: "gpt-5.3-codex-spark",
     });
-    expect(result).toEqual({
-      ok: false,
-      error: expect.stringMatching(/not available with your current sign-in/i),
-    });
+    expect(result).toEqual({ ok: false, error: "Unknown model for that provider" });
   });
 
   it("rejects a thinking level the model does not offer, including the default model", async () => {
@@ -1499,5 +1524,26 @@ describe("connectionServesModel", () => {
     deps.secretStore.load.mockClear();
     await expect(serves("secret-plus", shared.id)).resolves.toBe(true);
     expect(deps.secretStore.load).not.toHaveBeenCalled();
+  });
+
+  it("reads each account's secret once for every model one request checks", async () => {
+    // Spark and models only an account's own catalog lists.
+    const liveOnly = ["gpt-5.9-codex", "gpt-5.9-codex-mini", "gpt-6.0-codex"];
+    for (const id of liveOnly) expect(liveCatalogEntry("openai-codex", id)).toBeDefined();
+    const reads = new Map();
+    const findFirst = vi.mocked(deps.prisma.secret.findFirst);
+    findFirst.mockClear();
+    deps.secretStore.load.mockClear();
+    for (const secretId of ["secret-pro", "secret-plus"])
+      for (const modelId of ["gpt-5.3-codex-spark", ...liveOnly])
+        await connectionServesModel(
+          { ...deps, reads },
+          "user-1",
+          { secretId },
+          "openai-codex",
+          modelId,
+        );
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(deps.secretStore.load).toHaveBeenCalledTimes(2);
   });
 });

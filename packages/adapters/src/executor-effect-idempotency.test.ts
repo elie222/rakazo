@@ -1,10 +1,11 @@
 import type {
   AgentRunRequest,
+  BackgroundJob,
   MemoryCommitRequest,
   MemoryReadRequest,
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -18,6 +19,7 @@ import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -151,7 +153,10 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -178,6 +183,10 @@ function fixture(runId = "run-1") {
       create: vi.fn(async () => ({ id: "attempt-1" })),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
+      count: vi.fn(async () => 1),
+    },
+    steeringMessage: {
+      findFirst: vi.fn(async () => null),
     },
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),
@@ -245,6 +254,7 @@ function fixture(runId = "run-1") {
     return true;
   });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   let calls: ToolCall[] = [];
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     for (const call of calls) {
@@ -285,12 +295,13 @@ function fixture(runId = "run-1") {
       pauseRunForInput,
       finalizeRun,
     },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs: { enqueue },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   return {
     effects,
+    enqueue,
     media,
     artifactRows,
     artifactPut,
@@ -391,6 +402,27 @@ describe("mutating tool effect idempotency keys", () => {
       f.effects.find((effect) => effect.kind === "media_generation_job")?.request,
     ).toMatchObject({ executionId: "wrapper" });
     expect(f.results[0]).toMatchObject({ status: "queued" });
+  });
+  it("leaves a queued video to background delivery when the run ends before it finishes", async () => {
+    const f = fixture("run-video-handoff");
+    const args = { prompt: "a landscape" };
+    f.effects.push({
+      id: "approved-video",
+      spaceId: "space-1",
+      runId: "run-video-handoff",
+      kind: "generate_video",
+      idempotencyKey: toolEffectIdempotencyKey("run-video-handoff", "generate_video", args),
+      status: "approved",
+      request: args,
+    });
+    f.setCalls([{ name: "generate_video", args, executionId: "call-1" }]);
+    await f.run();
+    const job = f.effects.find((effect) => effect.kind === "media_generation_job");
+    expect(f.results[0]).toEqual({ jobId: job?.id, status: "queued", progress: 0 });
+    // The run is over, so only durable work can still bring the finished video to the chat.
+    expect(f.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "media.poll", payload: { jobId: job?.id } }),
+    );
   });
   it("keeps interrupted media with no saved result uncertain instead of submitting again", async () => {
     const f = fixture("run-unknown-media");
@@ -532,7 +564,7 @@ describe("mutating tool effect idempotency keys", () => {
         revision: 1,
         updatedAt: new Date(0).toISOString(),
       });
-      throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+      throw new MemoryRevisionConflictError();
     });
     f.setCalls([
       {

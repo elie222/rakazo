@@ -4,6 +4,9 @@ import {
   applyJudgeDecision,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
+  approvalRuleApplies,
+  approvalRuleChoices,
+  approvalRuleEffectChoices,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -12,9 +15,12 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
+  outsideRunToolRequiresApproval,
   planActionGate,
+  receiptItems,
   repeatsDeniedAction,
   resolveActionApproval,
   resolveActionApprovalDetail,
@@ -22,7 +28,6 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
-  unattendedTriggerToolRequiresApproval,
   watchToolRefusal,
 } from "./action-approval.js";
 
@@ -60,7 +65,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
-    expect(toolRequiresApproval("delete_bot", false)).toBe(true);
+    expect(toolRequiresApproval("delete_bot", false)).toBe(false);
+    expect(toolRequiresApproval("delete_bot", true, true)).toBe(true);
+    expect(toolRequiresApproval("delete_bot", true, false)).toBe(true);
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);
@@ -153,6 +160,10 @@ describe("connectorToolRequiresApproval", () => {
     expect(connectorToolRequiresApproval("get_or_create_contact", true)).toBe(true);
     expect(connectorToolRequiresApproval("profile_card", true)).toBe(true);
   });
+
+  it("still requires approval for a declared read whose name says load", () => {
+    expect(connectorToolRequiresApproval("warehouse-load-rows", true)).toBe(true);
+  });
 });
 
 describe("resolveActionApprovalDetail", () => {
@@ -163,6 +174,33 @@ describe("resolveActionApprovalDetail", () => {
     const base = { toolName: "gmail_read_thread", connectorKind: "gmail", rules };
     expect(resolveActionApprovalDetail(base).decision).toBe("allow");
     expect(resolveActionApprovalDetail({ ...base, readOnly: false }).decision).toBe("ask");
+  });
+
+  it("pipedream-connector-rule", () => {
+    const deny = (matchValue: string) => [
+      { effect: "deny" as const, matchKind: "connector" as const, matchValue },
+    ];
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "gmail-delete-email",
+        readOnly: false,
+        rules: deny("gmail"),
+      }).decision,
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "google_calendar-delete-event",
+        readOnly: false,
+        rules: deny("google_calendar"),
+      }).decision,
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "gmail-delete-email",
+        readOnly: false,
+        rules: [{ effect: "require_approval", matchKind: "category", matchValue: "email" }],
+      }).decision,
+    ).toBe("ask");
   });
 });
 
@@ -185,51 +223,22 @@ describe("isOwnerStartedRun", () => {
   });
 });
 
-describe("unattendedTriggerToolRequiresApproval", () => {
-  it("forces approval for webhook-triggered local side effects", () => {
-    for (const name of ["shell", "write_file", "browser_act", "computer_act", "request_purchase"]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
-    }
-  });
+it("gates built-ins that change something only in runs outside text started", () => {
+  for (const name of ["shell", "write_file", "computer_act", "remember", "render_plot"]) {
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
+    expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
+  }
+  expect(outsideRunToolRequiresApproval("webhook", "save_shared_memory")).toBe(true);
+  expect(outsideRunToolRequiresApproval("webhook", "add_mcp_server")).toBe(true);
+  for (const name of ["read_file", "computer_observe", "message_user", "ask_user"]) {
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
+  }
+});
 
-  it("allows webhook-triggered reads to stay unattended", () => {
-    for (const name of [
-      "computer_observe",
-      "read_file",
-      "web_search",
-      "browser_snapshot",
-      "request_takeover",
-      "run_subagent",
-      "list_fleet",
-      "purchase_status",
-    ]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
-    }
-    expect(unattendedTriggerToolRequiresApproval("webhook", "github_get_issue", true)).toBe(false);
-  });
-
-  it("forces approval for webhook-triggered connector writes regardless of normal rules", () => {
-    expect(unattendedTriggerToolRequiresApproval("webhook", "github_create_issue", true)).toBe(
-      true,
-    );
-    expect(unattendedTriggerToolRequiresApproval("user", "shell", false)).toBe(false);
-  });
-
-  it("forces approval for webhook-triggered declared writes with read-looking names", () => {
-    for (const name of ["read_profile_card", "find_validator_record", "get_status"]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, true, false)).toBe(true);
-      expect(toolRequiresApproval(name, true, false)).toBe(true);
-    }
-    expect(unattendedTriggerToolRequiresApproval("webhook", "read_profile_card", true, true)).toBe(
-      false,
-    );
-    expect(unattendedTriggerToolRequiresApproval("webhook", "delete_record", true, true)).toBe(
-      true,
-    );
-    expect(unattendedTriggerToolRequiresApproval("user", "read_profile_card", true, false)).toBe(
-      false,
-    );
-  });
+it("treats a declared write with a read-looking name as a write", () => {
+  for (const name of ["read_profile_card", "find_validator_record", "get_status"]) {
+    expect(toolRequiresApproval(name, true, false)).toBe(true);
+  }
 });
 
 describe("isApprovalAskBlock", () => {
@@ -288,6 +297,30 @@ describe("connectorKindFromToolName", () => {
     expect(
       connectorKindFromToolName("microsoft_outlook_send_email", ["microsoft", "microsoft_outlook"]),
     ).toBe("microsoft_outlook");
+  });
+
+  it("matches a known kind before a hyphen and keeps the longest slug", () => {
+    const kinds = ["gmail", "google_calendar", "github"];
+    expect(connectorKindFromToolName("gmail-find-email", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("gmail-delete-email", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("gmail-bulk-archive-emails", kinds)).toBe("gmail");
+    expect(connectorKindFromToolName("google_calendar-list-events", kinds)).toBe("google_calendar");
+    expect(connectorKindFromToolName("google_calendar-delete-event", kinds)).toBe(
+      "google_calendar",
+    );
+    expect(connectorKindFromToolName("gmail_send_email", kinds)).toBe("gmail");
+    expect(
+      connectorKindFromToolName("microsoft_outlook_send_email", ["microsoft", "microsoft_outlook"]),
+    ).toBe("microsoft_outlook");
+  });
+
+  it("reads a plain slug before the first hyphen when no kind is known", () => {
+    expect(connectorKindFromToolName("gmail-find-email")).toBe("gmail");
+    expect(connectorKindFromToolName("google_calendar-list-events")).toBe("google_calendar");
+    expect(connectorKindFromToolName("gmail_send_email")).toBe("gmail");
+    expect(connectorKindFromToolName("COMPOSIO_MULTI_EXECUTE_TOOL")).toBe("composio");
+    expect(connectorKindFromToolName("mcp__server__tool")).toBe("mcp");
+    expect(connectorKindFromToolName("mcp__server-tool")).toBe("mcp");
   });
 });
 
@@ -914,6 +947,31 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
+describe("memoryWriteNeedsApproval", () => {
+  const readOutside = async () => true;
+  const readNothing = async () => false;
+
+  it.each(["remember", "save_memory", "save_shared_memory"])(
+    "gates %s only once outside content entered the run",
+    async (name) => {
+      await expect(memoryWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
+      await expect(memoryWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+    },
+  );
+
+  it("leaves other tools alone and does not check the run for them", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const name of ["recall_memory", "forget_memory", "write_file", "send_email"]) {
+      await expect(memoryWriteNeedsApproval(name, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
 describe("toolResultTaintsRun", () => {
   it("treats outside content as taint, including connector tools and new tools", () => {
     for (const tool of [
@@ -943,7 +1001,6 @@ it("classifies schedule_update like schedule_create", () => {
     expect(toolRequiresApproval(name, false)).toBe(false);
     expect(toolRequiresExplicitApproval(name)).toBe(false);
     expect(toolResultTaintsRun(name)).toBe(false);
-    expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
   }
 });
 
@@ -980,5 +1037,66 @@ describe("repeatsDeniedAction", () => {
       repeatsDeniedAction({ toolName: WRAPPER, args: args("GMAIL_SEND_DRAFT"), denied: [sent] }),
     ).toBe(false);
     expect(repeatsDeniedAction({ toolName: WRAPPER, args: {}, denied: [sent] })).toBe(false);
+  });
+});
+
+describe("receiptItems", () => {
+  it("leaves out page lines named like the card's own rows, in the app's words", () => {
+    const items = [
+      { name: "Bananas", amount: "$3.00" },
+      { name: " gesamt ", amount: "$1.00" },
+      { name: "Gesamt: fällig", amount: "$1.00" },
+      { name: "Gesamtpaket Socken", amount: "$9.00" },
+      { name: "Auf der Schaltfläche", amount: "$1.00" },
+    ];
+    expect(receiptItems(items, ["Gesamt", "Auf der Schaltfläche"])).toEqual([
+      { name: "Bananas", amount: "$3.00" },
+      { name: "Gesamtpaket Socken", amount: "$9.00" },
+    ]);
+  });
+});
+
+describe("approvalRuleChoices", () => {
+  it("lists built-in tools by name and skips any that has a rule", () => {
+    const choices = approvalRuleChoices([
+      { effect: "require_approval", matchKind: "tool", matchValue: "Web_Search" },
+      { effect: "deny", matchKind: "connector", matchValue: "shell" },
+    ]);
+    expect(choices).toContainEqual({ matchKind: "tool", matchValue: "shell", label: "Shell" });
+    expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
+    // Always approved by a person, but still worth blocking.
+    expect(choices.some((choice) => choice.matchValue === "create_space")).toBe(true);
+    const labels = choices.map((choice) => choice.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+describe("approvalRuleApplies", () => {
+  it("keeps only blocks in Never ask and every rule otherwise", () => {
+    expect(approvalRuleApplies("never", "deny")).toBe(true);
+    expect(approvalRuleApplies("never", "require_approval")).toBe(false);
+    expect(approvalRuleApplies("never", "always_allow")).toBe(false);
+    expect(approvalRuleApplies("ask", "always_allow")).toBe(true);
+    expect(approvalRuleApplies(null, "require_approval")).toBe(true);
+  });
+});
+
+describe("approvalRuleEffectChoices", () => {
+  it("never offers Allow for a tool a person approves every time", () => {
+    const rule = (matchKind: "tool" | "category", matchValue: string) => ({
+      effect: "require_approval" as const,
+      matchKind,
+      matchValue,
+    });
+    expect(approvalRuleEffectChoices(rule("tool", "create_space"))).toEqual([
+      "require_approval",
+      "deny",
+    ]);
+    expect(approvalRuleEffectChoices(rule("tool", "shell"))).toEqual([
+      "always_allow",
+      "require_approval",
+      "deny",
+    ]);
+    expect(approvalRuleEffectChoices(rule("category", "email"))).toEqual([]);
   });
 });

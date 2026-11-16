@@ -45,8 +45,9 @@ Bump `expo.version` in `apps/mobile/app.json` when native code changes (see
 Over-the-air updates below), then run the `release-mobile` workflow from `main`
 with the App Store "What's New" text. It builds iOS on EAS, uploads it to App
 Store Connect, puts the build on that App Store version with the notes, and
-submits it for review; Apple releases it once approved. The same run publishes
-the Android APK below.
+submits it for review; Apple releases it once approved. The same run submits a
+production Android App Bundle to Google Play for review and publishes the
+Android APK below. The stores review independently, so publication times differ.
 
 It needs these repository secrets:
 
@@ -60,9 +61,38 @@ It needs these repository secrets:
 Re-running it for a version that is already in review leaves that submission
 alone.
 
+If the iOS upload succeeded but App Review submission failed, run `release-mobile`
+with `ios_build_id` set to that finished EAS build's ID and the release notes.
+This retries only App Review: it skips both Android jobs, the iOS build, and the
+upload. The workflow verifies that the reused build belongs to this app and was
+built with the production iOS profile. Review failures include Apple's associated
+validation errors so missing metadata can be corrected before retrying.
+
+## Google Play
+
+Run `release-google-play` from `main` for an Android-only store release, or
+`release-mobile` for both stores. The production EAS profile increments the
+Android version code automatically and retains the production update channel
+and managed upload key. The workflow checks native dependency compatibility,
+builds an AAB, and requires its R8 report to show at least 25% optimization,
+obfuscation, and shrinking, with a crash deobfuscation mapping included.
+
+Configure a Google service account with access to publish this app in Play
+Console, then assign its key under Android submissions in `eas credentials`.
+EAS stores the key; do not commit it or add it to `eas.json`. The workflow uses
+the existing `EXPO_TOKEN` secret to build and submit non-interactively. The
+`GOOGLE_SERVICES_JSON` production file variable is also required for push.
+
+The submit profile targets production with a completed rollout and sends the
+changes for review. Submission success means Google accepted the upload, not
+that it approved or published the app. Check Publishing overview and Production
+in Play Console after submission, and inspect the new bundle's optimization
+scores once processed. Managed publishing can delay release after approval.
+
 ## Android APK
 
-Until Rakazo is on Google Play, Android users can install an APK.
+Android users should install [Rakazo from Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
+For manual installation, an APK remains available.
 `release-mobile` publishes it, or run the `release-android-apk` workflow from
 `main` on its own. It builds the `android-apk` EAS profile, signed with the
 project's managed keystore, and replaces the rolling `android` GitHub release,

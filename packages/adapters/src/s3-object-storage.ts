@@ -1,54 +1,97 @@
-import type { Readable } from "node:stream";
+import { Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
+import type { Socket } from "node:net";
+import type { Duplex, Readable } from "node:stream";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
+import type { ObjectStorageConnection } from "./object-storage-common.js";
+import { objectStorageConnectionFromEnv, PART_BYTES, parts } from "./object-storage-common.js";
 
-/** Upload part size: large enough that most homes are one request, small enough to hold in memory. */
-const PART_BYTES = 16 * 1024 * 1024;
 const DELETE_BATCH = 1000;
+/**
+ * The SDK waits forever by default, and its own socket limit stops once response headers arrive,
+ * so a store that stops answering, before or during a body, would keep each computer's sleep job,
+ * and the maintenance slot it holds, waiting for good. Sockets therefore fail after this long
+ * without traffic, from connect to the end of the body. It counts inactivity, not duration: a
+ * large transfer keeps its socket busy.
+ */
+const IDLE_SOCKET_TIMEOUT_MS = 60_000;
+/** The SDK's own default per origin. */
+const MAX_SOCKETS = 50;
 
-export interface S3ObjectStorageConfig {
-  bucket: string;
-  /** Service URL; empty uses the SDK's default endpoint for the region. */
-  endpoint?: string;
+/**
+ * Makes this the only owner of the socket's inactivity timer. The SDK and Node's agent call
+ * `setTimeout` on sockets to re-arm the timer, turn it off, or attach a callback that destroys the
+ * socket even while its reader has paused it; those calls do nothing here, and the timeout event
+ * reaches only this handler.
+ */
+function failWhenIdle<T extends Duplex | null | undefined>(socket: T, idleMs: number): T {
+  if (!socket) return socket;
+  const tcp = socket as unknown as Socket;
+  const arm = tcp.setTimeout.bind(tcp);
+  let waitedOnReader = false;
+  const onIdle = () => {
+    // A reader that stopped pulling (backpressure) paused the socket; the store is not stalled.
+    // Once it pulls again, the store gets a full period before silence counts, so a stall is
+    // caught within twice the limit.
+    if (tcp.isPaused() || waitedOnReader) {
+      waitedOnReader = tcp.isPaused();
+      arm(idleMs);
+      return;
+    }
+    tcp.destroy(
+      Object.assign(new Error(`Object storage sent nothing for ${idleMs} ms`), {
+        code: "ETIMEDOUT",
+      }),
+    );
+  };
+  arm(idleMs);
+  tcp.setTimeout = () => tcp;
+  const emit = tcp.emit.bind(tcp);
+  tcp.emit = ((event: string | symbol, ...args: unknown[]) => {
+    if (event !== "timeout") return emit(event, ...args);
+    onIdle();
+    return true;
+  }) as typeof tcp.emit;
+  return socket;
+}
+
+/**
+ * Connection options for the S3 client. The idle limit starts when a socket exists, so a request
+ * waiting for one of the pooled sockets is never failed for the wait, and it also bounds connecting.
+ */
+export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
+  const options = { keepAlive: true, maxSockets: MAX_SOCKETS };
+  class IdleHttpAgent extends HttpAgent {
+    override createConnection(...args: Parameters<HttpAgent["createConnection"]>) {
+      return failWhenIdle(super.createConnection(...args), idleMs);
+    }
+  }
+  class IdleHttpsAgent extends HttpsAgent {
+    override createConnection(...args: Parameters<HttpsAgent["createConnection"]>) {
+      return failWhenIdle(super.createConnection(...args), idleMs);
+    }
+  }
+  return { httpAgent: new IdleHttpAgent(options), httpsAgent: new IdleHttpsAgent(options) };
+}
+
+export interface S3ObjectStorageConfig extends ObjectStorageConnection {
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  /** Prepended to every key, so one bucket can hold several deployments. */
-  prefix: string;
   /** Address the bucket in the path instead of the host name. */
   pathStyle: boolean;
 }
 
-/**
- * `OBJECT_STORAGE_BUCKET` turns object storage on; the other settings describe the connection.
- * Credentials are required rather than taken from the SDK's default chain, so object storage
- * never borrows credentials configured for something else.
- */
 export function objectStorageConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): S3ObjectStorageConfig | undefined {
-  const bucket = env.OBJECT_STORAGE_BUCKET?.trim();
-  if (!bucket) return undefined;
-  const accessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
-  const secretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim();
-  if (!accessKeyId || !secretAccessKey)
-    throw new Error(
-      "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY are required with OBJECT_STORAGE_BUCKET",
-    );
-  const endpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
-  if (endpoint && !/^https?:\/\//.test(endpoint))
-    throw new Error("OBJECT_STORAGE_ENDPOINT must be an http(s) URL");
+  const connection = objectStorageConnectionFromEnv(env);
+  if (!connection) return undefined;
   const pathStyle = env.OBJECT_STORAGE_PATH_STYLE?.trim().toLowerCase();
   if (pathStyle && pathStyle !== "true" && pathStyle !== "false")
     throw new Error('OBJECT_STORAGE_PATH_STYLE must be "true" or "false"');
-  const prefix = (env.OBJECT_STORAGE_PREFIX?.trim() ?? "").replace(/^\/+|\/+$/g, "");
   return {
-    bucket,
-    endpoint,
+    ...connection,
     region: env.OBJECT_STORAGE_REGION?.trim() || "us-east-1",
-    accessKeyId,
-    secretAccessKey,
-    prefix: prefix ? `${prefix}/` : "",
     pathStyle: pathStyle === "true",
   };
 }
@@ -79,6 +122,7 @@ export class S3ObjectStorage implements ObjectStorage {
           // accepts the newer optional ones.
           requestChecksumCalculation: "WHEN_REQUIRED",
           responseChecksumValidation: "WHEN_REQUIRED",
+          requestHandler: objectStorageRequestHandler(),
         }),
     }));
     return this.s3;
@@ -193,27 +237,4 @@ export class S3ObjectStorage implements ObjectStorage {
         throw new Error(`Object storage could not delete ${Errors.length} objects`);
     }
   }
-}
-
-/** Regroups a stream into buffers of exactly `size` bytes, except a shorter last one. */
-async function* parts(source: AsyncIterable<Uint8Array>, size: number): AsyncGenerator<Buffer> {
-  let held: Buffer[] = [];
-  let length = 0;
-  for await (const chunk of source) {
-    let rest = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    while (length + rest.length >= size) {
-      const take = size - length;
-      held.push(rest.subarray(0, take));
-      yield Buffer.concat(held);
-      held = [];
-      length = 0;
-      rest = rest.subarray(take);
-    }
-    if (rest.length) {
-      // Copy: callers may reuse the buffers they yield.
-      held.push(Buffer.from(rest));
-      length += rest.length;
-    }
-  }
-  if (length) yield Buffer.concat(held);
 }

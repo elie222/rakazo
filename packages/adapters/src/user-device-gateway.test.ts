@@ -102,6 +102,11 @@ function fakePrisma() {
         return { ...row, device: { name: device.name, platform: device.platform } };
       },
     },
+    // Every test user is signed in.
+    session: {
+      findMany: async ({ where }: { where: { userId: { in: string[] } } }) =>
+        where.userId.in.map((userId) => ({ userId })),
+    },
     $transaction: (run: (tx: unknown) => Promise<unknown>) => run(prisma),
   };
   return { prisma: prisma as unknown as PrismaClient, deviceRows: devices, connections };

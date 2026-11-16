@@ -1,5 +1,6 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it } from "vitest";
+import { egressRefused, isEgressRefused } from "./network-address.js";
 import { assertSafeRemoteUrl, createSafeLookup } from "./remote-mcp.js";
 import { assertSafeWebUrl } from "./web-ssrf.js";
 
@@ -27,9 +28,10 @@ describe("egress refusals", () => {
   });
 
   it("records a connector URL aimed at the cloud metadata endpoint", async () => {
-    await expect(assertSafeRemoteUrl("https://169.254.169.254/latest/meta-data")).rejects.toThrow(
-      "private host",
-    );
+    const refusal = assertSafeRemoteUrl("https://169.254.169.254/latest/meta-data");
+    // Metadata hosts stay blocked even with the private-endpoint setting, so the refusal must not offer it.
+    await expect(refusal).rejects.toThrow("private host");
+    await expect(refusal).rejects.not.toThrow("MCP_ALLOW_PRIVATE_ENDPOINT");
     expect(refusals()).toEqual([
       { host: "169.254.169.254", reason: "Connector URL targets a private host" },
     ]);
@@ -51,4 +53,18 @@ describe("egress refusals", () => {
     await assertSafeWebUrl("https://public.example.test/", resolve);
     expect(refusals()).toEqual([]);
   });
+});
+
+it("preserves typed refusal errors and recognizes them through transport causes", () => {
+  class PrivateEndpointRequiredError extends Error {}
+  const original = new PrivateEndpointRequiredError("private endpoint requires permission");
+  const marked = egressRefused("private.example.test", original);
+  expect(marked).toBe(original);
+  expect(marked).toBeInstanceOf(PrivateEndpointRequiredError);
+  expect(isEgressRefused(marked)).toBe(true);
+  expect(isEgressRefused(new TypeError("fetch failed", { cause: marked }))).toBe(true);
+  expect(isEgressRefused(new Error("temporary DNS failure"))).toBe(false);
+  const circular = new Error("circular");
+  circular.cause = circular;
+  expect(isEgressRefused(circular)).toBe(false);
 });

@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import type { VoiceChatGroup } from "@rakazo/core";
 import { speechFromBlocks, voiceChatDuration, voiceChatSummary } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { MobileMessage } from "../lib/api";
-import { useI18n } from "../lib/i18n";
+import type { MobileMessage } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
@@ -14,7 +14,7 @@ function clock(seconds: number): string {
 
 /** One call's exchange, collapsed to a card; expanding it shows the transcript. */
 export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [open, setOpen] = useState(false);
   const summary = voiceChatSummary(group);
@@ -22,13 +22,13 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
     <View style={[styles.card, { backgroundColor: native.fill }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={open ? t("Hide transcript") : t("Show transcript")}
+        accessibilityLabel={open ? t`Hide transcript` : t`Show transcript`}
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((wasOpen) => !wasOpen)}
         style={styles.header}
       >
         <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={tokens.foreground} />
-        <Text style={[styles.title, { color: tokens.foreground }]}>{t("Voice chat")}</Text>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{t`Voice chat`}</Text>
         <Text style={[styles.duration, { color: tokens.mutedForeground }]}>
           {clock(voiceChatDuration(group))}
         </Text>

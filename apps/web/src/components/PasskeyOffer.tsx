@@ -10,6 +10,7 @@ import {
   usePasskeysSupported,
   usePasskeysVersion,
 } from "../lib/passkeys";
+import { useSave } from "../lib/query";
 
 function readDismissed(key: string): boolean {
   try {
@@ -35,8 +36,22 @@ export function PasskeyOffer() {
   // A passkey added in settings must close the offer too.
   const passkeysVersion = usePasskeysVersion();
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const offer = useSave({
+    save: async () => {
+      const result = await authClient.passkey.addPasskey().catch(() => {
+        throw new Error(t`Could not reach the server`);
+      });
+      // A cancelled prompt fails without a message, so nothing is shown.
+      if (result.error)
+        throw new Error(passkeyErrorText(result.error, t`Could not continue`) ?? "");
+    },
+    onSaved: () => {
+      close();
+      passkeysChanged();
+    },
+  });
+  const pending = offer.pending;
+  const error = offer.error?.message || null;
   const userId = session?.user.id;
   // Timestamps, so a session refetch with equal dates does not re-check.
   const userCreatedAt = session ? new Date(session.user.createdAt).getTime() : Number.NaN;
@@ -74,31 +89,13 @@ export function PasskeyOffer() {
     setOpen(false);
   }
 
-  async function add() {
-    setPending(true);
-    setError(null);
-    try {
-      const result = await authClient.passkey.addPasskey();
-      if (result.error) {
-        setError(passkeyErrorText(result.error, t`Could not continue`));
-        return;
-      }
-      close();
-      passkeysChanged();
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <section
       data-testid="passkey-offer"
       className="mx-3 mb-2 rounded-xl border border-border bg-card px-3 py-3 text-card-foreground"
     >
       <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 text-[13.5px]">
+        <p className="min-w-0 flex-1 text-body">
           <Trans>Add a passkey for faster sign-in?</Trans>
         </p>
         <Button
@@ -112,11 +109,11 @@ export function PasskeyOffer() {
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
-      <Button size="sm" className="mt-2" disabled={pending} onClick={() => void add()}>
+      <Button size="sm" className="mt-2" disabled={pending} onClick={() => offer.run()}>
         <Trans>Add passkey</Trans>
       </Button>
     </section>

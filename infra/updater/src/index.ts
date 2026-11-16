@@ -804,8 +804,8 @@ export function createUpdaterApp(
   }
 }
 
-function startUpdater() {
-  const logger = createRootLogger(SERVICE_NAMES.updater);
+async function startUpdater() {
+  const logger = await createRootLogger(SERVICE_NAMES.updater);
   const config = resolveUpdaterConfig(process.env);
   const app = createUpdaterApp(config, { logger });
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => {
@@ -853,5 +853,6 @@ export function restoreCheckoutArgv(fromBranch: string | null, fromCommit: strin
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  startUpdater();
+  // A rejected startup keeps Node's default: the error is printed and the process exits.
+  void startUpdater();
 }

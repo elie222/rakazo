@@ -51,15 +51,17 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
   };
 }
 
-async function render(status: ComputerStatus | null, onOpen = vi.fn()) {
+async function render(
+  status: ComputerStatus | null,
+  onOpen = vi.fn(),
+  disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
+) {
   await act(async () => {
     root.render(
       <ComputerPanel
         bot={bot}
         computer={status}
         computerOpen={false}
-        embeddedScreenUrl="https://screen.example.test/"
-        screenFrameRef={() => undefined}
         computerScreenError={null}
         computerBooting={null}
         booting={false}
@@ -68,6 +70,7 @@ async function render(status: ComputerStatus | null, onOpen = vi.fn()) {
         onRecovered={() => undefined}
         onRecoveryDismissed={() => undefined}
         onOpen={onOpen}
+        {...disk}
       />,
     );
   });
@@ -102,8 +105,67 @@ it.each([null, computer("stopped"), computer("suspended")])(
   },
 );
 
-it("previews a running computer's screen", async () => {
-  await render(computer("running"));
+it("shows a running computer awake with an Open button and no live screen", async () => {
+  const onOpen = await render(computer("running"));
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
+  );
+  expect(onOpen).toHaveBeenCalledOnce();
+});
+
+it("shows the person's own machine from what the server says", async () => {
+  await render({ ...computer("running"), kind: "desktop", runsOnUserMachine: false });
+  expect(container.querySelector('[data-state="running"]')).not.toBeNull();
+  await render({ ...computer("running"), kind: "any-kind", runsOnUserMachine: true });
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
+  expect(container.textContent).toContain("This bot runs on this computer");
+  await render({ ...computer("stopped"), kind: "any-kind", runsOnUserMachine: true });
   expect(container.querySelector('[data-state="idle"]')).toBeNull();
-  expect(container.querySelector("iframe")).not.toBeNull();
+});
+
+it("still shows the person's own machine when an older server names it only by kind", async () => {
+  await render({ ...computer("running"), kind: "desktop" });
+  expect(container.querySelector('[data-state="running"]')).toBeNull();
+  expect(container.textContent).toContain("This bot runs on this computer");
+});
+
+it("shows a computer of a kind this build does not know like any other", async () => {
+  await render({ ...computer("stopped"), kind: "a-provider-since-removed" });
+  expect(container.querySelector('[data-state="idle"]')?.textContent).toContain("Asleep");
+  await render({ ...computer("running"), kind: "a-provider-since-removed" });
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+});
+
+it.each([computer("running"), computer("suspended")])(
+  "warns that the disk is nearly full and offers a clean up",
+  async (status) => {
+    const disk = { onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+    await render({ ...status, diskFullPercent: 93 }, vi.fn(), disk);
+    const warning = container.querySelector('[data-testid="computer-disk-warning"]');
+    expect(warning?.textContent).toContain("Clean up");
+    const [cleanUp, dismiss] = warning?.querySelectorAll("button") ?? [];
+    await act(async () => cleanUp?.click());
+    await act(async () => dismiss?.click());
+    expect(disk.onCleanUpDisk).toHaveBeenCalledOnce();
+    expect(disk.onDismissDiskWarning).toHaveBeenCalledOnce();
+  },
+);
+
+it("holds Clean up while a clean up is being sent", async () => {
+  const disk = { cleaningUpDisk: true, onCleanUpDisk: vi.fn(), onDismissDiskWarning: vi.fn() };
+  await render({ ...computer("running"), diskFullPercent: 93 }, vi.fn(), disk);
+  const [cleanUp] =
+    container.querySelector('[data-testid="computer-disk-warning"]')?.querySelectorAll("button") ??
+    [];
+  expect(cleanUp?.hasAttribute("disabled")).toBe(true);
+});
+
+it("shows no disk warning while the disk has room", async () => {
+  await render(computer("running"), vi.fn(), {
+    onCleanUpDisk: vi.fn(),
+    onDismissDiskWarning: vi.fn(),
+  });
+  expect(container.querySelector('[data-testid="computer-disk-warning"]')).toBeNull();
 });

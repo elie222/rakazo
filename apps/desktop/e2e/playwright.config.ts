@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
+  globalSetup: "./electron-binary.ts",
   fullyParallel: false,
   workers: 1,
   timeout: 30_000,

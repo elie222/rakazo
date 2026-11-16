@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import { useListSearch } from "../../lib/use-list-search";
 
-/** `baseUrl` presets an OpenAI-compatible server, such as Ollama Cloud. */
+/** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
 
 /** A model on one connection; `providerName` is that connection's name. */
@@ -170,7 +170,7 @@ export function RoleModelPicker({
                   }}
                 >
                   <span className="min-w-0 truncate">{defaultOption}</span>
-                  <CommandShortcut className="text-[13px] tracking-normal">
+                  <CommandShortcut className="text-body-sm tracking-normal">
                     <Trans>Default</Trans>
                   </CommandShortcut>
                 </CommandItem>
@@ -205,7 +205,7 @@ export function RoleModelPicker({
                     }}
                   >
                     <span className="min-w-0 truncate">{provider.name}</span>
-                    <CommandShortcut className="text-[13px] tracking-normal">
+                    <CommandShortcut className="text-body-sm tracking-normal">
                       <Trans>Connect</Trans>
                     </CommandShortcut>
                   </CommandItem>

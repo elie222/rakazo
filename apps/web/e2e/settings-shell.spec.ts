@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 test("changing language updates settings overflow without resizing", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -9,7 +15,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   // Below the desktop breakpoint, where the section list scrolls sideways.
   await page.setViewportSize({ width: 640, height: 700 });
   const nav = settings.getByTestId("settings-nav");
-  const next = settings.getByRole("button", { name: "Next settings sections" });
+  const next = settings.getByRole("button", { name: "Nächste Einstellungsbereiche" });
   const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);
   const english = await overflow();
 
@@ -35,20 +41,21 @@ test("narrow settings reveals the active section and offers scroll controls", as
   const stamp = Date.now();
   await signup(page, `settings-narrow-${stamp}@rakazo.test`, "password12", "Settings");
   await completeOnboarding(page);
-  const settings = await openUserSettings(page, "usage");
+  const settings = await openUserSettings(page, "organization");
   const nav = settings.getByTestId("settings-nav");
-  const usage = settings.getByTestId("settings-nav-usage");
+  // The last section, so the nav has nothing further to scroll to.
+  const last = settings.getByTestId("settings-nav-organization");
   const previous = settings.getByRole("button", { name: "Previous settings sections" });
   const next = settings.getByRole("button", { name: "Next settings sections" });
 
   for (const width of [640, 390]) {
     await page.setViewportSize({ width, height: 700 });
-    await expect(usage).toHaveAttribute("aria-current", "page");
+    await expect(last).toHaveAttribute("aria-current", "page");
     // Deep links and resizing must reveal the whole selected section.
     await expect
       .poll(async () => {
         const viewport = await nav.boundingBox();
-        const active = await usage.boundingBox();
+        const active = await last.boundingBox();
         return Boolean(
           viewport &&
             active &&
@@ -78,14 +85,14 @@ test("narrow settings reveals the active section and offers scroll controls", as
     expect(await settings.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
     await expect(settings.getByRole("button", { name: "Close user settings" })).toBeVisible();
     await captureScreenshot(page, testInfo, `settings-narrow-scrolled-${width}`);
-    await usage.click();
-    await expect(settings).toHaveAttribute("data-settings-section", "usage");
+    await last.click();
+    await expect(settings).toHaveAttribute("data-settings-section", "organization");
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(previous).toBeHidden();
   await expect(next).toBeHidden();
-  await expect(usage).toBeVisible();
-  await expect(usage).toHaveAttribute("aria-current", "page");
+  await expect(last).toBeVisible();
+  await expect(last).toHaveAttribute("aria-current", "page");
 });
 
 test("settings shell is two-pane and deep-links Models Memory Voice Usage", async ({
@@ -99,7 +106,7 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await page.getByTestId("user-menu-trigger").click();
   const menu = page.locator('[data-slot="popover-content"]');
   await expect(menu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await expect(menu.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(menu.getByRole("button", { name: "Log out", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-account-menu-lean");
   await page.keyboard.press("Escape");
@@ -144,6 +151,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await deleteAccount.scrollIntoViewIfNeeded();
   await expect(deleteAccount).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-general-delete-account");
+  await deleteAccount.click();
+  await expect(settings.getByLabel("Current password", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-general-delete-confirmation");
+  await deleteAccount.click();
 
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");
@@ -158,16 +169,23 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   const memory = settings.getByTestId("memory-settings");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await expect(memory.getByLabel("Provider")).toBeVisible();
-  await memory.getByLabel("Provider").selectOption("serenity");
+  await chooseOption(memory.getByLabel("Provider"), "Serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
   await expect(memory.getByLabel("Bearer token")).toBeVisible();
-  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await expect(memory.getByRole("button", { name: "Recall only" })).not.toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-memory-serenity-advanced");
 
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
+  const voice = settings.getByTestId("voice-settings");
+  await chooseOption(voice.getByLabel("Provider", { exact: true }), "xAI");
+  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);
@@ -188,8 +206,11 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByLabel("Provider")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "memory-default");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
-  await memory.getByLabel("Provider").selectOption("honcho");
+  await chooseOption(memory.getByLabel("Provider"), "Honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Workspace", { exact: true })).not.toBeVisible();
+  await captureScreenshot(page, testInfo, "memory-honcho-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("User peer", { exact: true })).toHaveCount(0);
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
@@ -206,7 +227,13 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "memory-honcho-user-peer-reserved");
   await userPeer.fill("user-alex");
+  await expect(
+    memory.getByText("Recall from this peer; save to Rakazo’s own peers."),
+  ).toBeVisible();
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await memory
+    .getByText("Recall from this peer; save to Rakazo’s own peers.")
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
@@ -229,19 +256,69 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
     memory.locator(".rk-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
-  await memory.getByLabel("Provider").selectOption("supermemory");
+  await chooseOption(memory.getByLabel("Provider"), "Supermemory");
   await scrollToTop();
   await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
   await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-local");
 
+  await chooseOption(memory.getByLabel("Provider"), "Hindsight");
+  await scrollToTop();
+  await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Recall from banks", { exact: true })).not.toBeVisible();
+  await expect(memory.getByRole("button", { name: "Self-hosted", exact: true })).not.toBeVisible();
+  await memory.getByLabel("API key", { exact: true }).fill("hindsight-test-key");
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "memory-hindsight-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  const learn = memory.getByRole("switch", { name: "Learn from conversations" });
+  await expect(learn).toBeChecked();
+  await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app");
+  await learn.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-hindsight-cloud");
+  await memory.getByLabel("API key", { exact: true }).fill("");
+  await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
+  await memory.getByLabel("Base URL", { exact: true }).fill("http://hindsight.example.test:8888");
+  const connect = memory.getByRole("button", { name: "Connect", exact: true });
+  await expect(connect).toBeEnabled();
+  await connect.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-hindsight-local");
+  await expect(memory.getByRole("switch", { name: "Recall automatically" })).toBeChecked();
+  await expect(memory.getByRole("button", { name: "Medium", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(memory.getByRole("button", { name: "Summaries", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const skipUnrelated = memory.getByRole("switch", { name: "Skip unrelated memories" });
+  await expect(skipUnrelated).not.toBeChecked();
+  // The section opens with an animation, so scroll again until it has reached its full height.
+  await expect(async () => {
+    await memory.locator(".rk-scroll").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(skipUnrelated).toBeInViewport({ timeout: 300 });
+  }).toPass();
+  await captureScreenshot(page, testInfo, "memory-hindsight-advanced");
+  await skipUnrelated.click();
+  await memory.getByRole("button", { name: "High", exact: true }).click();
+  await expect(skipUnrelated).toBeChecked();
+  await expect(memory.getByRole("button", { name: "High", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await memory.getByLabel("Provider").selectOption("honcho");
+  await chooseOption(memory.getByLabel("Provider"), "Honcho");
   await scrollToTop();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -251,4 +328,47 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await documents.scrollIntoViewIfNeeded();
   await expect(documents).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-dark-bottom");
+});
+
+test("a connected memory provider edits with its saved settings", async ({ page }, testInfo) => {
+  // The connection is served by the route below; nothing is saved or sent to Hindsight.
+  const stamp = Date.now();
+  await signup(page, `memory-edit-${stamp}@rakazo.test`, "password12", "Memory settings");
+  await completeOnboarding(page);
+  await page.route(/\/rpc\/memory\/providerConfig(\?|$)/, (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          provider: "hindsight",
+          settings: { recallBanks: "other-app", retainConversations: "false" },
+          defaultMemoryScope: "isolated",
+          updatedAt: "2026-11-01T00:00:00.000Z",
+          connectionLabel: "Hindsight Cloud",
+        },
+      },
+    }),
+  );
+  await page.reload();
+  const settings = await openUserSettings(page, "memory");
+  const memory = settings.getByTestId("memory-settings");
+  await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(memory.getByLabel("API key", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "Saved",
+  );
+  await expect(memory.getByLabel("Recall from banks", { exact: true })).toHaveValue("other-app");
+  await expect(memory.getByRole("switch", { name: "Learn from conversations" })).not.toBeChecked();
+  const save = memory.getByRole("button", { name: "Save", exact: true });
+  // Nothing the stored key can reach has changed, so it saves without the key.
+  await expect(save).toBeEnabled();
+  await save.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await captureScreenshot(page, testInfo, "memory-provider-edit");
+  // Another bank is something more the key could read, so it is asked for again.
+  await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app,journal");
+  await expect(save).toBeDisabled();
 });

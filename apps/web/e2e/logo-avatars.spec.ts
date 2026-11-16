@@ -1,9 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { BOT_AVATAR_COLORS } from "@rakazo/core";
+import { BOT_COLORS } from "@rakazo/contracts";
 import { captureScreenshot } from "./helpers";
 
 test.use({ viewport: { width: 1260, height: 1000 } });
+
+/** What these tests stash on the page between evaluate calls. */
+type AvatarWindow = Window & {
+  avatarRerenderProof?: { animations: Animation[]; style: string | null; color: string | null };
+  avatarStats?: { observers: number; frames: number; intervals: number };
+};
 
 test("renders the real logo in every requested pose in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -143,7 +149,7 @@ test("same-state bots keep independent clocks and survive parent rerenders", asy
   expect(new Set(clocks.map((clock) => clock.color)).size).toBe(6);
   const first = fleet.first();
   await first.evaluate((avatar) => {
-    (window as any).avatarRerenderProof = {
+    (window as AvatarWindow).avatarRerenderProof = {
       animations: avatar.getAnimations({ subtree: true }),
       style: avatar.getAttribute("style"),
       color: avatar.getAttribute("data-color"),
@@ -155,7 +161,7 @@ test("same-state bots keep independent clocks and survive parent rerenders", asy
   await expect(page.locator("main")).toHaveAttribute("data-rerenders", "1");
   expect(
     await first.evaluate((avatar) => {
-      const before = (window as any).avatarRerenderProof;
+      const before = (window as AvatarWindow).avatarRerenderProof!;
       const after = avatar.getAnimations({ subtree: true });
       return (
         before.style === avatar.getAttribute("style") &&
@@ -189,7 +195,7 @@ test("one observer pauses offscreen avatars without a JavaScript animation clock
 }) => {
   await page.addInitScript(() => {
     const stats = { observers: 0, frames: 0, intervals: 0 };
-    (window as any).avatarStats = stats;
+    (window as AvatarWindow).avatarStats = stats;
     const NativeObserver = window.IntersectionObserver;
     window.IntersectionObserver = class extends NativeObserver {
       constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
@@ -203,7 +209,7 @@ test("one observer pauses offscreen avatars without a JavaScript animation clock
       return frame(callback);
     };
     const interval = window.setInterval.bind(window);
-    window.setInterval = ((handler: TimerHandler, delay?: number, ...args: any[]) => {
+    window.setInterval = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
       stats.intervals++;
       return interval(handler, delay, ...args);
     }) as typeof window.setInterval;
@@ -212,9 +218,9 @@ test("one observer pauses offscreen avatars without a JavaScript animation clock
   const avatar = page.getByRole("img", { name: "Inbox reading", exact: true });
   await expect(avatar).toHaveAttribute("data-paused", "false");
   await page.waitForTimeout(500);
-  const before = await page.evaluate(() => ({ ...(window as any).avatarStats }));
+  const before = await page.evaluate(() => ({ ...(window as AvatarWindow).avatarStats! }));
   await page.waitForTimeout(800);
-  const after = await page.evaluate(() => ({ ...(window as any).avatarStats }));
+  const after = await page.evaluate(() => ({ ...(window as AvatarWindow).avatarStats! }));
   expect(before.observers).toBe(1);
   expect(after).toEqual(before);
   await avatar.evaluate((element) => {
@@ -801,7 +807,7 @@ test("seed colours persist through rerenders and reloads at actual avatar sizes"
       nodes.map((node) => node.getAttribute("data-color")),
     );
     // Seeds pick from the shared palette, so 18 bots can share colours but never all one.
-    for (const color of before) expect(BOT_AVATAR_COLORS).toContain(color);
+    for (const color of before) expect(BOT_COLORS).toContain(color);
     expect(new Set(before).size).toBeGreaterThan(1);
     for (let index = 0; index < 18; index++)
       expect(new Set(before.slice(index * 4, index * 4 + 4)).size).toBe(1);

@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { IpcMainInvokeEvent, WebContents } from "electron";
+import type { WebContents } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import { createSystemSpeech, SPEECH_EVENT_CHANNEL } from "./system-speech.js";
 
@@ -16,20 +16,15 @@ function fakeChild() {
 
 type FakeChild = ReturnType<typeof fakeChild>;
 
-function setup() {
-  const frame = { url: "https://app.example.com/app/bot" };
+function setup(url = "https://app.example.com") {
   const contents = Object.assign(new EventEmitter(), {
-    mainFrame: frame,
     isDestroyed: () => false,
     send: vi.fn(),
   });
-  const event = {
-    sender: contents as unknown as WebContents,
-    senderFrame: frame,
-  } as IpcMainInvokeEvent;
+  const event = { sender: contents as unknown as WebContents };
   const target = {
     webContents: contents as unknown as WebContents,
-    url: "https://app.example.com",
+    url,
   };
   const children: FakeChild[] = [];
   const spawn = vi.fn((_language: string) => {
@@ -42,12 +37,34 @@ function setup() {
     contents.send.mock.calls
       .filter(([channel]) => channel === SPEECH_EVENT_CHANNEL)
       .map(([, message]) => message);
-  return { contents, event, frame, speech, spawn, children, sent };
+  return { contents, event, speech, spawn, children, sent };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("desktop system speech", () => {
+  it.each([
+    "http://192.168.1.20:3100",
+    "http://10.0.0.20:3100",
+    "http://[fd00::20]:3100",
+    "http://server.local:3100",
+  ])("refuses native recognition for an insecure remote page: %s", (url) => {
+    const { event, speech, spawn } = setup(url);
+    expect(speech.start(event, "en-US", 1)).toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://app.example.com", "http://127.0.0.1:5173", "http://localhost:5173"])(
+    "preserves native recognition for a secure page: %s",
+    (url) => {
+      const { event, speech, spawn, children } = setup(url);
+      expect(speech.start(event, "en-US", 1)).toBe(true);
+      expect(spawn).toHaveBeenCalledOnce();
+      speech.abort(event, 1);
+      expect(children[0]!.kill).toHaveBeenCalledOnce();
+    },
+  );
+
   it("forwards the recognizer's results, known errors and end for the page's session", async () => {
     const { event, speech, spawn, children, sent } = setup();
     expect(speech.start(event, "es-CL", 7)).toBe(true);
@@ -69,13 +86,8 @@ describe("desktop system speech", () => {
     ]);
   });
 
-  it("refuses other windows, subframes, other origins, odd languages and sessions", () => {
-    const { event, frame, speech, spawn } = setup();
-    expect(speech.start({ ...event, sender: {} as WebContents }, "en-US", 1)).toBe(false);
-    expect(speech.start({ ...event, senderFrame: null }, "en-US", 1)).toBe(false);
-    expect(
-      speech.start({ ...event, senderFrame: { ...frame } } as IpcMainInvokeEvent, "en-US", 1),
-    ).toBe(false);
+  it("refuses odd languages and sessions", () => {
+    const { event, speech, spawn } = setup();
     for (const language of [
       "",
       "e",
@@ -93,8 +105,6 @@ describe("desktop system speech", () => {
     for (const session of [0, -1, 1.5, Number.NaN, "1", null]) {
       expect(speech.start(event, "en-US", session)).toBe(false);
     }
-    Object.assign(frame, { url: "https://other.example.com" });
-    expect(speech.start(event, "en-US", 1)).toBe(false);
     expect(spawn).not.toHaveBeenCalled();
   });
 
@@ -132,7 +142,8 @@ describe("desktop system speech", () => {
     const child = children[0]!;
     speech.stop(event, 2);
     speech.abort(event, 2);
-    speech.stop({ ...event, senderFrame: null }, 1);
+    speech.stop({ sender: {} as WebContents }, 1);
+    speech.abort({ sender: {} as WebContents }, 1);
     expect(child.stdin.write).not.toHaveBeenCalled();
     expect(child.kill).not.toHaveBeenCalled();
 

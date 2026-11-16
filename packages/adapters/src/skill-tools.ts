@@ -8,7 +8,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 
 export const SKILL_TOOL_NAMES = new Set([
   "skill_read",
@@ -52,7 +52,7 @@ function toRecord(row: AgentSkillRow): SkillRecord & { id: string } {
   };
 }
 
-function builtinRecords(): Array<SkillRecord & { id: string }> {
+export function builtinAgentSkillRecords(): Array<SkillRecord & { id: string }> {
   return BUILTIN_AGENT_SKILLS.map((skill) => ({
     id: `builtin:${skill.name}`,
     name: skill.name,
@@ -108,7 +108,7 @@ export async function listAgentSkillRecords(
     omit: { files: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
-  return mergeBuiltinSkills(builtinRecords(), rows.map(toRecord));
+  return mergeBuiltinSkills(builtinAgentSkillRecords(), rows.map(toRecord));
 }
 
 async function findOwnedSkill(

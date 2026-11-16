@@ -12,6 +12,7 @@ export const BOT_SETTINGS_SECTIONS = {
     "dailyCheckIns",
     "crossSpaceCommunication",
     "fleetManagement",
+    "replyMode",
     "instructions",
     "description",
     "disabledTools",
@@ -21,8 +22,6 @@ export const BOT_SETTINGS_SECTIONS = {
     "clear",
   ],
 } as const;
-
-export const BOT_SETTINGS_ADVANCED_ORDER = BOT_SETTINGS_SECTIONS.advanced;
 
 /** Labels stay literal in each platform's translation calls. */
 export const BOT_COMPUTER_MODES = ["team", "dedicated"] as const;

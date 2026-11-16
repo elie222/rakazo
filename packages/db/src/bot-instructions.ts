@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, InstructionVersionSchema } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { Prisma } from "./client.js";
 
-export class InstructionConflictError extends Error {
+export class InstructionConflictError extends ClientError {
   constructor(message: string) {
-    super(message);
+    super("CONFLICT", message);
     this.name = "InstructionConflictError";
   }
 }

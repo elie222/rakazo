@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
@@ -13,16 +13,18 @@ async function main() {
     !process.env.E2B_API_KEY &&
     !process.env.BOAT_API_KEY &&
     !process.env.BOXD_API_KEY &&
+    !process.env.INSTABOX_API_KEY &&
     !process.env.NOVITA_API_KEY &&
+    !process.env.CREATEOS_SANDBOX_API_KEY &&
     !runOpenRouter
   ) {
     throw new Error(
-      "E2B_API_KEY, BOAT_API_KEY, BOXD_API_KEY, NOVITA_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
+      "E2B_API_KEY, BOAT_API_KEY, BOXD_API_KEY, INSTABOX_API_KEY, NOVITA_API_KEY, CREATEOS_SANDBOX_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
     );
   }
 
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
-  let postgres: StartedPostgreSqlContainer | undefined;
+  let postgres: DisposablePostgres | undefined;
   try {
     if (runOpenRouter) postgres = await startPostgres();
     const env = {

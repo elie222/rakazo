@@ -6,7 +6,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { ConnectorRegistry, createConnectorStack } from "./composio-connector.js";
+import { ConnectorRegistry, createConnectorStack } from "./connector-registry.js";
 
 class StubConnector implements ConnectorProvider {
   calls: ConnectorCall[] = [];

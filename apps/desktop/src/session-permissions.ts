@@ -1,23 +1,10 @@
-import { isLoopbackHost } from "@rakazo/contracts/network-host";
+import { secureHttpOrigin as httpOrigin } from "@rakazo/contracts/network-host";
 import type { Session, WebContents } from "electron";
 
 type AppPermissionTarget = {
   webContents: WebContents;
   url: string;
 };
-
-function httpOrigin(value: string | undefined): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    // LAN HTTP remains a supported server target, but cannot safely receive host permissions.
-    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))
-      ? url.origin
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Install before loading any content, including setup, storage probes and OAuth popups. */
 export function installSessionPermissions(

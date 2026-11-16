@@ -1,11 +1,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { MessagingInstallProvider } from "@rakazo/adapter-kit";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
+import { readBoundedJsonResponse } from "@rakazo/core";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
   readBoundedText,
 } from "./chat-sdk-surface.js";
 import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
+
+const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
+/** What Slack answers for a code the person can get again by starting over. */
+const SLACK_REFUSED_CODES = new Set(["invalid_code", "code_already_used"]);
 
 const SCOPES = [
   "app_mentions:read",
@@ -60,21 +66,26 @@ export class SlackInstallProvider implements MessagingInstallProvider {
       }),
       signal: AbortSignal.timeout(15_000),
     });
-    const result = (await response.json()) as {
+    const result = await readBoundedJsonResponse<{
       ok?: boolean;
       access_token?: string;
       team?: { id?: string; name?: string };
       authed_user?: { id?: string };
       is_enterprise_install?: boolean;
       refresh_token?: string;
-    };
-    // Org-wide installs and rotating tokens need distinct lifecycle support.
+      error?: string;
+    }>(response, MAX_OAUTH_RESPONSE_BYTES).catch(() => undefined);
+    if (response.ok && result?.ok === false && SLACK_REFUSED_CODES.has(result.error ?? ""))
+      throw new MessagingInstallRefusedError("Slack workspace authorization failed");
+    // Org-wide installs need distinct lifecycle support.
+    if (response.ok && result?.ok && result.is_enterprise_install)
+      throw new MessagingInstallRefusedError("Slack workspace authorization failed");
+    // Rotating tokens are an app setting this does not support, so they are a fault too.
     if (
       !response.ok ||
-      !result.ok ||
+      !result?.ok ||
       !result.access_token ||
       !result.team?.id ||
-      result.is_enterprise_install ||
       result.refresh_token
     )
       throw new Error("Slack workspace authorization failed");

@@ -9,7 +9,7 @@ import {
   recordMcpServerHealth,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
-import { mcpOAuthEnvReferences } from "@rakazo/contracts";
+import { ConnectionSetupError, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
 import { itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -51,7 +51,7 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null },
+  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
 ): McpServer {
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
@@ -71,7 +71,8 @@ export function mcpServerDto(
     fileKeys: keysOf(row.files),
     headerKeys,
     installId: row.installId ?? null,
-    hasSecret: row.secretId !== null,
+    // A lone OAuth generation marker keeps a secret row without holding a credential.
+    hasSecret: row.secretId !== null && oauth.credential,
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
@@ -128,12 +129,11 @@ export async function assertMcpRemoteEndpoint(
     await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
       allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
     });
-    assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "MCP endpoint is invalid",
-    });
+    if (!isHostNotFound(error)) throw error;
+    throw new ConnectionSetupError("Connector URL host could not be found", { cause: error });
   }
+  assertNoMcpEndpointCredential(endpoint);
 }
 
 /** A stdio server gets its OAuth grant through `{{oauth.*}}` references in env
@@ -242,10 +242,12 @@ export function createMcpServers(
       await deps.mcp.probe(server, { spaceId: actor.spaceId, userId: actor.userId });
     } catch {
       getLogger().error("mcp server probe failed", { "mcp.server.id": server.id });
-      await recordMcpServerHealth(deps.prisma, server.id, {
-        status: "error",
-        message: "Could not check this MCP server",
-      });
+      await recordMcpServerHealth(
+        deps.prisma,
+        server.id,
+        { status: "error", message: "Could not check this MCP server" },
+        server.revision,
+      );
     }
   };
   /**
@@ -262,7 +264,7 @@ export function createMcpServers(
       status: "unknown" | "installing",
       message: string | null,
     ): Promise<McpServerRow> => {
-      await recordMcpServerHealth(deps.prisma, row.id, { status, message });
+      await recordMcpServerHealth(deps.prisma, row.id, { status, message }, row.revision);
       return {
         ...row,
         healthStatus: status,
@@ -368,4 +370,9 @@ export function createMcpServers(
     insertMcpServer,
     announceMcpServer,
   };
+}
+
+function isHostNotFound(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "ENOTFOUND" || code === "ENODATA";
 }

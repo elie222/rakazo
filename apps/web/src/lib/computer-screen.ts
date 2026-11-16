@@ -1,16 +1,18 @@
 import { t } from "@lingui/core/macro";
 import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
-import { WUYING_SCREEN_PATH } from "@rakazo/contracts/content-security-policy";
+import { COMPUTER_SCREEN_PATH } from "@rakazo/contracts/content-security-policy";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
   url: string | null;
+  /** The server's word that this URL signs in once; absent for a URL that can be loaded again. */
+  singleUseSignIn?: { screen: string };
   error: string | null;
 }
 
 /** Only the latest request for the visible computer may replace its screen or error. */
 export async function loadComputerScreen(options: {
-  load: () => Promise<{ url: string | null }>;
+  load: () => Promise<Pick<ComputerScreenResult, "url" | "singleUseSignIn">>;
   isCurrent: () => boolean;
   commit: (result: ComputerScreenResult) => void;
   fallbackError: string;
@@ -18,7 +20,7 @@ export async function loadComputerScreen(options: {
   let result: ComputerScreenResult;
   try {
     const screen = await options.load();
-    result = { url: screen.url, error: null };
+    result = { url: screen.url, singleUseSignIn: screen.singleUseSignIn, error: null };
   } catch (error) {
     result = {
       url: null,
@@ -35,10 +37,10 @@ export function embeddableScreenUrl(url: string | null): string | null {
   try {
     const parsed = new URL(url, window.location.href);
     const page = new URL(window.location.href);
-    // A Wuying desktop is drawn by its Web SDK in a page this server serves. Its one-time login
+    // An embedded desktop is drawn by its Web SDK in a page this server serves. Its one-time login
     // code rides in the fragment so it never reaches a server log.
-    if (parsed.protocol === "wuying:") {
-      return `${page.origin}${WUYING_SCREEN_PATH}#${parsed.searchParams.toString()}`;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return `${page.origin}${COMPUTER_SCREEN_PATH}#${parsed.searchParams.toString()}`;
     }
     // The server that served this page proxies /novnc/. Keep the frame on this origin even when the
     // API's WEB_ORIGIN names another host for it (localhost vs 127.0.0.1), as the CSP frames 'self'.
@@ -56,30 +58,11 @@ export function embeddableScreenUrl(url: string | null): string | null {
   }
 }
 
-/**
- * A Wuying screen URL carries a one-time login code, so every read of it differs. Reloading the
- * frame for a new code would open a second session that signs the first one out; the screen keeps
- * the URL it connected with until the desktop or the view changes.
- */
-export function sameWuyingScreen(current: string | null, next: string | null): boolean {
-  if (!current || !next) return false;
-  try {
-    const a = new URL(current);
-    const b = new URL(next);
-    if (a.protocol !== "wuying:" || b.protocol !== "wuying:") return false;
-    return ["desktop_id", "region_id", "view_only"].every(
-      (name) => a.searchParams.get(name) === b.searchParams.get(name),
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function screenIframeSandbox(url: string | null) {
   if (!url) return undefined;
   try {
     const pathname = new URL(url, window.location.href).pathname;
-    return pathname.startsWith("/novnc/") || pathname === WUYING_SCREEN_PATH
+    return pathname.startsWith("/novnc/") || pathname === COMPUTER_SCREEN_PATH
       ? "allow-scripts allow-pointer-lock"
       : undefined;
   } catch {
@@ -101,6 +84,27 @@ export async function bootComputerOnce<T>(
   } finally {
     if (inFlight.get(botId) === token) inFlight.delete(botId);
   }
+}
+
+/** A proxied screen's policy and expiry, which its capability path carries in the clear. */
+export function proxiedScreenCapability(
+  url: string | null,
+): { policy: "view" | "control"; expiresAt: number } | null {
+  const match = url ? /\/novnc\/session\/(view|control)\/(\d+)\./.exec(url) : null;
+  return match ? { policy: match[1] as "view" | "control", expiresAt: Number(match[2]) } : null;
+}
+
+/**
+ * The frames a screen draws. A held predecessor comes first, so React keeps its element in place
+ * (a moved iframe reloads), then the live frame.
+ */
+export function screenFrames(
+  key: string | undefined,
+  url: string,
+  held: { url: string; key: string } | null | undefined,
+): Array<{ key: string; url: string; held: boolean }> {
+  const live = { key: key ?? "screen", url, held: false };
+  return held ? [{ ...held, held: true }, live] : [live];
 }
 
 /** Only pages the web proxy serves carry the shim that reports their state to the app. */
@@ -151,7 +155,7 @@ export function screenFrameError(message: ScreenFrameMessage, fallback: string):
  * that is not this page never receives the session cookie. A same-origin http(s) probe includes
  * it: an identity-aware proxy in front of this app answers a cookie-less request with a redirect,
  * and `redirect: "manual"` hides that as an opaque redirect the probe would treat as a failed
- * screen. Other schemes, such as a Wuying login URL, stay cookie-less.
+ * screen. Other schemes, such as an embedded screen ticket, stay cookie-less.
  */
 function screenProbeCredentials(url: string): RequestCredentials {
   const pageHref = pageLocationHref();

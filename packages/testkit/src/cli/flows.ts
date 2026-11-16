@@ -9,6 +9,7 @@ import { serve } from "@hono/node-server";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { computerTestSandbox } from "../computer-test-config.js";
 import { FLOWS } from "../flows/index.js";
+import { validateFlowLimits } from "../flows/limits.js";
 import type { FlowResult } from "../flows/runner.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
@@ -43,6 +44,12 @@ async function main() {
   for (const key of [sandbox.apiKeyEnv, "OPENROUTER_API_KEY"].filter(Boolean) as string[]) {
     if (!process.env[key]) throw new Error(`${key} is required for pnpm test:flows`);
   }
+  // Checked before the database, computer and models start: a limit the CLI cannot parse must
+  // stop the run, not silently disable the deadline, turn and spend caps as NaN.
+  const deadlineMin = Number(values["deadline-min"]);
+  const maxUserTurns = Number(values["max-turns"]);
+  const spendCapUsd = Number(values["spend-cap-usd"]);
+  validateFlowLimits({ deadlineMin, maxUserTurns, spendCapUsd });
   const startedAt = new Date();
   const outputDir = path.resolve(
     values.output,
@@ -137,11 +144,6 @@ async function main() {
       dataDir,
       sandboxProvider: sandbox.provider,
       agentRuntime: "pi",
-      e2bApiKey: process.env.E2B_API_KEY,
-      novitaApiKey: process.env.NOVITA_API_KEY,
-      sandboxTemplate: process.env.SANDBOX_TEMPLATE,
-      boatApiKey: process.env.BOAT_API_KEY,
-      boatApiUrl: process.env.BOAT_API_URL,
       wakeupDriver: "memory",
     });
     stop = handles.stop;
@@ -162,9 +164,9 @@ async function main() {
       sandboxKind: sandbox.provider,
       userModel: harnessModel(values["user-model"]!),
       judgeModel: harnessModel(values["judge-model"]!),
-      deadlineMs: Number(values["deadline-min"]) * 60_000,
-      maxUserTurns: Number(values["max-turns"]),
-      spendCapUsd: Number(values["spend-cap-usd"]),
+      deadlineMs: deadlineMin * 60_000,
+      maxUserTurns,
+      spendCapUsd,
       log,
       framesDir: path.join(outputDir, "frames"),
     });

@@ -78,18 +78,16 @@ test("A change asks without an approval model, and approvals settings shape what
     "aria-pressed",
     "true",
   );
-  const rules = settings.getByTestId("approval-rules");
-  await expect(rules.getByText("Destination.write", { exact: true })).toBeVisible();
-  await expect(rules.getByRole("button", { name: "Allow", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  const allowed = settings.getByTestId("approval-rules-always_allow");
+  await expect(allowed.getByText("Destination.write", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "52-approvals-settings");
-  await rules.getByRole("button", { name: "Block", exact: true }).click();
-  await expect(rules.getByRole("button", { name: "Block", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await settings
+    .getByRole("group", { name: "Destination.write", exact: true })
+    .getByRole("button", { name: "Block", exact: true })
+    .click();
+  await expect(
+    settings.getByTestId("approval-rules-deny").getByText("Destination.write", { exact: true }),
+  ).toBeVisible();
   await mode.getByRole("button", { name: "Never ask", exact: true }).click();
   await expect(mode.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -101,6 +99,47 @@ test("A change asks without an approval model, and approvals settings shape what
   // A blocked tool is refused without a card, even in Never ask.
   await sendDestinationWrite(page, "write this to the destination crm while it is blocked");
   await waitForRunIdle(page);
+  await expectComposerReady(page);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+});
+
+test("A webhook run follows Always allow without asking", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `webhook-approval-${stamp}@rakazo.test`, "password12", "Webhook Approval");
+  await completeOnboarding(page);
+
+  await requestDestinationWrite(page, "write this to the destination crm as a note");
+  await page.getByRole("button", { name: "Always allow this tool", exact: true }).click();
+  await expect(page.getByText("Always allowed", { exact: true })).toBeVisible();
+  await waitForRunIdle(page);
+
+  const botId = activeBotId(page);
+  // A delivery with no active webhook routine is ignored.
+  await rpc(page, "routines/create", {
+    botId,
+    name: "Relay",
+    prompt: "Handle the relay's request.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const delivered = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: { text: "write this to the destination crm from the relay" },
+  });
+  expect(delivered.ok()).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? null,
+      { timeout: 30_000 },
+    )
+    .toBeNull();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
 });

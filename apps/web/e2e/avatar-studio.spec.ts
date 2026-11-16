@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "./helpers";
 
 test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -40,7 +40,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-organic-avatar")).toHaveCount(1);
   await expect(studio.locator(".rakazo-organic-avatar-eyes").first()).toBeVisible();
 
-  await studio.getByRole("button", { name: "Color #EAB308" }).click();
+  await studio.getByRole("button", { name: "Color #FFAF38" }).click();
   await expect(defaultLook).toHaveAttribute("aria-pressed", "true");
   await expect(wedge).toHaveAttribute("aria-pressed", "false");
 
@@ -55,7 +55,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-logo-avatar").first()).toBeVisible();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
-  await openBotPanelTab(page, "Computer");
+  await openBotPanel(page);
   await page.getByTestId("bot-settings").getByTestId("avatar-studio-trigger").click();
   await expect(
     page.getByTestId("avatar-studio").getByRole("tab", { name: "Rakazo", exact: true }),

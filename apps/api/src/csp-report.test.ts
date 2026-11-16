@@ -83,6 +83,23 @@ describe("CSP report parsing", () => {
     expect(JSON.stringify(parseCspReports(LEGACY))).not.toMatch(/secret|private|frag|v=1/);
   });
 
+  it("never logs the link token of a shared page the report came from", () => {
+    const token = "a".repeat(43);
+    const [violation] = parseCspReports([
+      {
+        type: "csp-violation",
+        body: {
+          documentURL: `https://app.example.com/p/q3-plan-${token}`,
+          blockedURL: "inline",
+          sourceFile: `https://app.example.com/p/q3-plan-${token}?x=1`,
+          effectiveDirective: "script-src-elem",
+        },
+      },
+    ]);
+    expect(violation?.page).toBe("/p/[Redacted]");
+    expect(JSON.stringify(violation)).not.toContain(token);
+  });
+
   it("falls back to violated-directive when an older browser omits the effective one", () => {
     const report = { "csp-report": { ...LEGACY["csp-report"], "effective-directive": undefined } };
     expect(parseCspReports(report)[0]?.directive).toBe("script-src-elem");

@@ -1,13 +1,22 @@
 // @vitest-environment jsdom
 
 import type { LoginFieldInput } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
+import { AskActions } from "../components/AskActions";
 import { messageRowLayout } from "./message-row-layout";
+import type { MobileMessage } from "./mobile-types";
 import { answerThreadMessage } from "./thread-answer";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 type SheetProps = {
   destination: string;
@@ -17,6 +26,14 @@ type SheetProps = {
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 };
 let sheet: SheetProps;
+type EditorProps = {
+  kind: string;
+  ask?: boolean;
+  title?: string;
+  onClose: () => void;
+  onSave: (save: { value?: string }) => Promise<void>;
+};
+let editor: EditorProps;
 
 vi.mock("react-native", async () => {
   const { createElement } = await import("react");
@@ -66,13 +83,11 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("./native", () => ({
+  native: { fill: "fill" },
   useMobileTokens: () => ({ success: "success", mutedForeground: "muted" }),
 }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
 vi.mock("../components/native-action-button", async () => {
   const { createElement } = await import("react");
@@ -82,6 +97,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress,
       disabled,
       prominence = "primary",
+      selected,
       fill,
       style,
     }: {
@@ -89,6 +105,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress: () => void;
       disabled?: boolean;
       prominence?: string;
+      selected?: boolean;
       fill?: boolean;
       style?: CSSProperties;
     }) =>
@@ -99,11 +116,27 @@ vi.mock("../components/native-action-button", async () => {
           onClick: onPress,
           disabled,
           "data-prominence": prominence,
+          "data-selected": selected?.toString(),
           "data-fill": fill,
           style,
         },
         label,
       ),
+  };
+});
+
+vi.mock("../components/vault-tile", () => ({
+  VaultTile: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+
+vi.mock("../components/vault-item-editor", async () => {
+  const { createElement } = await import("react");
+  return {
+    VaultItemEditor: (props: EditorProps) => {
+      editor = props;
+      return createElement("div", { "data-editor": props.kind });
+    },
   };
 });
 
@@ -141,12 +174,14 @@ async function render(
   ask: Record<string, unknown>,
   onAnswer: () => Promise<void> = async () => undefined,
   onDismiss: () => Promise<void> = async () => undefined,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
       <AskBlock
         ask={{ kind: "ask", text: longTitle, status: "pending", ...ask } as Ask}
         canAnswer
+        answerIsSeparate={answerIsSeparate}
         canDismiss
         onAnswer={onAnswer}
         onDismiss={onDismiss}
@@ -156,6 +191,16 @@ async function render(
   );
   return container.querySelector("span")!;
 }
+
+it("keeps an answered question without repeating the user's reply or leaving answer controls", async () => {
+  await render({ status: "answered", answer: "Help with my project" });
+  expect(container.textContent).toContain("Help with my project");
+  await render({ status: "answered", answer: "Help with my project" }, undefined, undefined, true);
+  expect(container.textContent).toBe(longTitle);
+  expect(container.querySelector("span")?.dataset.color).toBe("muted");
+  expect(container.querySelector("input")).toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+});
 
 it("caps a secret card's title at two lines and leaves question titles whole", async () => {
   const login = await render({
@@ -172,7 +217,7 @@ it("caps a secret card's title at two lines and leaves question titles whole", a
   expect(container.textContent).toContain("login.example.test");
   expect(container.textContent).not.toContain("https://");
   expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")?.textContent).toBe("Continue");
+  expect(container.querySelector("button")?.textContent).toBe("Add");
 
   expect((await render({ input: "secret", purpose: "otp" })).dataset.lines).toBe("2");
   expect((await render({})).dataset.lines).toBeUndefined();
@@ -216,7 +261,7 @@ it("answers a login with Save to Vault off for this run only and reads Sent", as
 
   await act(async () => sheet.onSave(loginAnswer, false));
   expect(onAnswer).toHaveBeenCalledWith("", loginAnswer, false);
-  expect(state("Sent")?.dataset.color).toBe("success");
+  expect(state("Sent")?.dataset.color).toBe("muted");
   expect(container.textContent).not.toContain("Saved");
 });
 
@@ -257,14 +302,11 @@ it("closes an open login sheet once the viewer is no longer the run's user", asy
 });
 
 it("keeps a reopened sheet open when an earlier save completes", async () => {
-  let complete!: () => void;
-  await render(
-    loginAsk,
-    () =>
-      new Promise<void>((resolve) => {
-        complete = resolve;
-      }),
-  );
+  let complete!: Deferred;
+  await render(loginAsk, () => {
+    complete = deferred();
+    return complete.promise;
+  });
   await openSheet();
   const first = sheet;
   let saving!: Promise<void>;
@@ -274,7 +316,7 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
   await act(async () => first.onClose());
   await openSheet();
   await act(async () => {
-    complete();
+    complete.resolve();
     await saving;
   });
   // The earlier save does not close the reopened sheet itself; it tells it the card is answered,
@@ -300,6 +342,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
         readOnly: false,
         rpc,
         isCurrentTarget: () => true,
+        isFocused: () => true,
         refresh,
         markRead: vi.fn(),
       },
@@ -316,6 +359,33 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
   expect(container.textContent).not.toContain("Could not send answer");
   expect(container.querySelector("button")).toBeNull();
 });
+
+for (const [type, destination] of [
+  ["card", "Card"],
+  ["contact", "Contact"],
+] as const) {
+  it(`fills a ${type} in the vault editor and answers with its encoded value`, async () => {
+    const onAnswer = vi.fn(async () => undefined);
+    await render(
+      {
+        input: "secret",
+        purpose: "password",
+        credential: { name: "home", origin: "", auth: { type } },
+      },
+      onAnswer,
+    );
+    expect(container.textContent).toContain(destination);
+    expect(container.querySelector("input")).toBeNull();
+    await act(async () => button("Add").click());
+    expect(editor).toMatchObject({ kind: type, ask: true, title: longTitle });
+
+    await act(async () => editor.onSave({ value: '{"city":"Paris"}' }));
+    expect(onAnswer).toHaveBeenCalledWith('{"city":"Paris"}');
+    expect(container.textContent).toContain("Saved");
+    expect(container.querySelector("[data-editor]")).toBeNull();
+    expect(buttons()).toEqual([]);
+  });
+}
 
 function buttons() {
   return [...container.querySelectorAll("button")].map((item) => item.textContent);
@@ -373,18 +443,19 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   expect(state("Sent")?.dataset.color).toBe("success");
 });
 
-it("offers Dismiss only on secret cards", async () => {
+it("leaves ordinary question answers to the composer", async () => {
   await render({});
-  expect(buttons()).toEqual(["Send answer"]);
+  expect(buttons()).toEqual([]);
+  expect(container.querySelector("input")).toBeNull();
 });
 
 it("dismisses a login card directly without opening the sheet", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render(loginAsk, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Continue", "Dismiss"]);
-  expect(button("Continue").dataset.prominence).toBe("primary");
-  expect(button("Dismiss").dataset.prominence).toBe("secondary");
+  expect(buttons()).toEqual(["Add", "Dismiss"]);
+  expect(button("Add").dataset.prominence).toBe("secondary");
+  expect(button("Dismiss").dataset.prominence).toBe("plain");
   await act(async () => button("Dismiss").click());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
@@ -434,12 +505,15 @@ for (const input of ["secret", "login"]) {
     const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
     expect(labels.includes("Dismiss")).toBe(canDismiss);
     // A login is filled in only by the run's user; see the credential card test below.
-    if (input === "login" && !canDismiss) return;
-    const primary = button(input === "login" ? "Continue" : "Save");
+    if (input === "login") {
+      expect(labels.includes("Add")).toBe(canDismiss);
+      return;
+    }
+    const primary = button("Save");
     expect(primary.style.flex).toBe("1 1 0%");
     expect(primary.dataset.fill).toBe("true");
     if (canDismiss) expect(button("Dismiss").style.flex).toBe(primary.style.flex);
-    expect(labels.includes(input === "login" ? "Continue" : "Save")).toBe(true);
+    expect(labels.includes("Save")).toBe(true);
   });
 }
 
@@ -498,6 +572,15 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
       },
     ],
     mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
+    page: [{ kind: "page", pageId: "page-1", version: 1, title: "Plan" }],
+    options: [
+      {
+        kind: "ask",
+        text: "Which one?",
+        status: "pending",
+        actions: [{ id: "choice-1", label: "A longer option than the question" }],
+      },
+    ],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -519,13 +602,27 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  // Connect cards take the full bubble width rather than shrinking to their button.
-  for (const kind of ["appConnect", "mcpApproval"] as const) {
+  for (const kind of ["appConnect", "mcpApproval", "options", "page"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");
     expect(card.menuMaxWidth).toBe(324);
     expect(card.menuFullWidth).toBe(true);
+  }
+  const allow = [
+    { id: "allow", label: "Allow" },
+    { id: "deny", label: "Deny" },
+  ];
+  for (const ask of [
+    { approvalEffectId: "approval-1" },
+    { instructionUpdate: { botId: "bot-1", before: "", after: "Be brief", reason: "" } },
+  ]) {
+    const layout = messageRowLayout(
+      [{ kind: "ask", text: "Allow?", status: "pending", actions: allow, ...ask }],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.menuFullWidth).toBe(false);
+    expect(layout.width).toBeUndefined();
   }
 });
 
@@ -564,3 +661,90 @@ it.each([
     expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
   },
 );
+
+it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+  const actions = [
+    { id: "choice-1", label: "Plan a trip" },
+    { id: "choice-2", label: "Write something" },
+  ];
+  for (const approval of [false, true]) {
+    await act(async () =>
+      root.render(
+        <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    const row = buttons[0]!.parentElement!;
+    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+      approval ? ["false", "false"] : ["true", "true"],
+    );
+    expect(row.style.flexDirection).toBe(approval ? "row" : "column");
+    expect(row.style.flexWrap).toBe(approval ? "wrap" : "nowrap");
+  }
+});
+
+it.each([undefined, "pending", "answered"] as const)(
+  "only widens option questions while their buttons are displayed (status: %s)",
+  (status) => {
+    const layout = messageRowLayout(
+      [
+        {
+          kind: "ask",
+          text: "Which one?",
+          status,
+          actions: [{ id: "choice-1", label: "Plan a trip" }],
+        },
+      ],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.width).toBe(status === "answered" ? undefined : "90%");
+    expect(layout.menuFullWidth).toBe(status !== "answered");
+  },
+);
+
+it("keeps pending approvals primary without adding a selection state", async () => {
+  await act(async () =>
+    root.render(
+      <AskActions
+        approval
+        actions={[
+          { id: "allow", label: "Allow once" },
+          { id: "always", label: "Always allow" },
+          { id: "deny", label: "Deny" },
+        ]}
+        onAnswer={async () => undefined}
+      />,
+    ),
+  );
+  const actions = [...container.querySelectorAll("button")];
+  expect(actions.map((button) => button.getAttribute("data-prominence"))).toEqual([
+    "primary",
+    "primary",
+    "secondary",
+  ]);
+  expect(actions.map((button) => button.getAttribute("data-selected"))).toEqual([null, null, null]);
+});
+
+it("only marks question options selected after an answer exists", async () => {
+  const actions = [
+    { id: "first", label: "First" },
+    { id: "second", label: "Second" },
+  ];
+  for (const selectedAnswer of [undefined, "first"]) {
+    await act(async () =>
+      root.render(
+        <AskActions
+          approval={false}
+          actions={actions}
+          selectedAnswer={selectedAnswer}
+          onAnswer={async () => undefined}
+        />,
+      ),
+    );
+    expect(
+      [...container.querySelectorAll("button")].map((button) =>
+        button.getAttribute("data-selected"),
+      ),
+    ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);
+  }
+});

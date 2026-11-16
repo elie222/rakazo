@@ -2,19 +2,18 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import {
   formatRoutineRunAt,
-  isRetryableError,
   mergeRoutineRunPages,
   normalizeRunError,
   routineHistoryPage,
   routineRunAt,
   routineRunLateness,
 } from "@rakazo/core";
+import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSpaceQueries } from "../lib/query";
-import { translateRunError } from "../lib/run-error";
 import { statusLabel, statusTone } from "./ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
@@ -25,33 +24,29 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
       input: (before: RoutineRunCursor | null) => routineHistoryPage(routineId, before),
       initialPageParam: null as RoutineRunCursor | null,
       getNextPageParam: (page) => page.nextCursor,
-      // Polls every loaded page together so they stay one coherent list; a refused request stops.
-      refetchInterval: (query) =>
-        query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
+      refetchOnWindowFocus: "always",
     }),
   );
   const runs = history.data ? mergeRoutineRunPages(history.data.pages) : null;
+  // A routine that has never run has no history to show.
+  if (runs?.length === 0 && !history.isError) return null;
 
   return (
-    <section data-testid="routine-run-history" className="mt-10 text-sm text-muted-foreground">
+    <section data-testid="routine-run-history" className="mt-10 text-body text-muted-foreground">
       <SectionHeading>
         <Trans>Run history</Trans>
       </SectionHeading>
       {history.isError ? (
-        <p role="alert" className="mt-2 text-[13.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body text-destructive">
           <Trans>Could not load run history</Trans>
         </p>
       ) : null}
       {runs === null ? (
         history.isPending ? (
-          <p className="mt-2 text-[13.5px]">
+          <p className="mt-2 text-body">
             <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null
-      ) : runs.length === 0 ? (
-        <p className="mt-2 text-[13.5px]">
-          <Trans>No runs yet</Trans>
-        </p>
       ) : (
         <ul className="mt-2 divide-y divide-border">
           {runs.map((run) => (
@@ -112,7 +107,7 @@ function RunRow({ run }: { run: RoutineRun }) {
   );
   const lineClass = "-mx-2 flex items-center gap-3 rounded-md px-2 py-2";
   return (
-    <li data-testid="routine-run-row" className="text-[13px]">
+    <li data-testid="routine-run-row" className="text-body-sm">
       {chatTo ? (
         <Link to={chatTo} className={`${lineClass} hover:bg-accent`}>
           {line}
@@ -125,7 +120,7 @@ function RunRow({ run }: { run: RoutineRun }) {
           <p>{normalizeRunError(run.error, translateRunError, locale).summary}</p>
           <details key={run.error} className="mt-1">
             <summary className="w-fit cursor-pointer">{t`Details`}</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{run.error}</pre>
+            <pre className="mt-2 whitespace-pre-wrap break-words text-label">{run.error}</pre>
           </details>
         </div>
       ) : null}

@@ -1,10 +1,15 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { Menu, Phone } from "lucide-react";
+import { Gift, Menu, Phone } from "lucide-react";
+import { useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
+import { InviteDialog } from "../../components/InviteDialog";
+import { useBilling } from "../../components/SubscriptionGate";
+import { desktopBridge, windowChromeKind } from "../../lib/desktop";
+import { WindowChrome } from "../WindowChrome";
 
-/** The floating header over the transcript: navigation, the chat's name and call. */
+/** The floating header over the transcript: navigation, the chat's name, call and invite. */
 export function ChatHeader({
   inGroup,
   active,
@@ -32,9 +37,13 @@ export function ChatHeader({
   onCall: (bot: Bot) => void;
 }) {
   const { t } = useLingui();
+  const referral = useBilling().status?.referral;
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const macChrome = windowChromeKind(desktopBridge()) === "darwin";
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
       <div className="flex items-center">
+        {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
           size="icon-lg"
@@ -64,7 +73,7 @@ export function ChatHeader({
           />
         ) : null}
         <span className="min-w-0">
-          <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
+          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
             {inGroup
               ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
               : (active?.name ?? t`Select a bot`)}
@@ -88,7 +97,23 @@ export function ChatHeader({
             </Button>
           </IconTooltip>
         ) : null}
+        {referral && !inGroup && active ? (
+          <IconTooltip label={t`Invite a friend`}>
+            <Button
+              variant="floating"
+              size="icon-lg"
+              aria-label={t`Invite a friend`}
+              onClick={() => setInviteOpen(true)}
+              className="app-no-drag"
+            >
+              <Gift strokeWidth={1.6} className="size-[17px]" />
+            </Button>
+          </IconTooltip>
+        ) : null}
       </div>
+      {referral ? (
+        <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
+      ) : null}
     </div>
   );
 }

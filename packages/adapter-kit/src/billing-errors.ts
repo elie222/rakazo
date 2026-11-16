@@ -7,6 +7,15 @@ export class BillingCustomerNotFoundError extends Error {
   }
 }
 
+/** The card was declined or needs the cardholder to confirm, so nothing was charged. */
+export class BillingPaymentNotCompletedError extends Error {
+  readonly code = "BILLING_PAYMENT_NOT_COMPLETED";
+  constructor(options?: { cause?: unknown }) {
+    super("The card was not charged", options);
+    this.name = "BillingPaymentNotCompletedError";
+  }
+}
+
 /** An earlier checkout completed while a new one was being opened; another would bill twice. */
 export class BillingCheckoutCompletedError extends Error {
   readonly code = "BILLING_CHECKOUT_COMPLETED";

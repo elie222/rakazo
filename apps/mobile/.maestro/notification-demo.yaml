@@ -8,7 +8,7 @@ name: Android live working status demonstration
 # A cold API 34 emulator can show a launcher ANR over the healthy app.
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"
@@ -31,7 +31,7 @@ name: Android live working status demonstration
 
 # Only the public demo is recorded; sign-in uses disposable fixture credentials.
 - startRecording: ${RAKAZO_NOTIFICATION_VIDEO}
-- openLink: "rakazo:///account"
+- openLink: "rakazo:///general"
 - scrollUntilVisible:
     element: "Live working status"
     direction: DOWN
@@ -70,7 +70,7 @@ name: Android live working status demonstration
 - extendedWaitUntil:
     notVisible: "Stop"
     timeout: 30000
-- openLink: "rakazo:///account"
+- openLink: "rakazo:///general"
 - scrollUntilVisible:
     element: "Live working status"
     direction: DOWN

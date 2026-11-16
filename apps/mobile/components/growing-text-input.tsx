@@ -21,6 +21,7 @@ export function GrowingTextInput({
   placeholder,
   backgroundColor,
   inset = 16,
+  fontSize = 14,
   editable,
 }: {
   label: string;
@@ -30,6 +31,7 @@ export function GrowingTextInput({
   placeholder?: string;
   backgroundColor?: ColorValue;
   inset?: number;
+  fontSize?: number;
   editable?: boolean;
 }) {
   const tokens = useMobileTokens();
@@ -39,7 +41,7 @@ export function GrowingTextInput({
         accessible={false}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        style={[styles.multilineField, { padding: inset, opacity: 0 }]}
+        style={[styles.multilineField, { fontSize, padding: inset, opacity: 0 }]}
       >
         {`${value || placeholder || ""}\u200b`}
       </Text>
@@ -57,6 +59,7 @@ export function GrowingTextInput({
           styles.multilineField,
           {
             color: tokens.foreground,
+            fontSize,
             padding: inset,
             position: "absolute",
             top: 0,

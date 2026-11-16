@@ -7,10 +7,11 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { collectPages, filterCatalog } from "./composio-connector.js";
 import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -145,6 +146,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  async needsReconnect(context: AdapterContext, externalId: string): Promise<boolean> {
+    return approvedAccounts(context, externalId).length === 0;
+  }
+
   async warmDirectory(): Promise<void> {
     await this.apps();
   }
@@ -171,7 +176,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
-          const accounts = await this.approvedAccounts(context, app);
+          const accounts = approvedAccounts(context, app);
           return (
             await Promise.all(
               accounts.map(async (account) => {
@@ -255,7 +260,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
-      const accounts = await this.approvedAccounts(context, app);
+      const accounts = approvedAccounts(context, app);
       const selected = call.route?.connectionId ?? call.connectionId;
       const account = selected
         ? accounts.find(({ connectionId }) => connectionId === selected)
@@ -423,29 +428,6 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         ),
       ),
     );
-  }
-
-  /**
-   * Connections made before account pinning store only the app slug. Such a row can still stand
-   * for the user's one remote account for that app; with several it stays unusable until reconnected.
-   */
-  private async approvedAccounts(context: AdapterContext, app: string): Promise<ApprovedAccount[]> {
-    const approved = approvedAccounts(context, app);
-    if (approved.length > 0) return approved;
-    const legacy = context.connectedConnections?.find(
-      (connection) =>
-        connection.connectorId === "pipedream" &&
-        connection.externalId === app &&
-        connection.providerRef?.trim() === app,
-    );
-    if (!legacy) return [];
-    const remote = (await this.accounts(context, app)).filter(
-      (account) =>
-        account.app?.name_slug === app && account.healthy !== false && account.dead !== true,
-    );
-    return remote.length === 1 && remote[0]
-      ? [{ id: remote[0].id, label: legacy.displayName, connectionId: legacy.id }]
-      : [];
   }
 
   /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
@@ -620,14 +602,14 @@ async function readPipedreamBody(response: Response, signal: AbortSignal): Promi
       cancel.catch(() => undefined),
       signal,
     ).catch(() => undefined);
-    throw new Error("Pipedream response is too large.");
+    throw new ResponseTooLargeError("Pipedream response is too large.");
   }
   try {
     const bytes = await readBodyCapped(response, MAX_PIPEDREAM_RESPONSE_BYTES, signal);
     return new TextDecoder().decode(bytes);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error("Pipedream response is too large.");
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError("Pipedream response is too large.", { cause: error });
     }
     throw error;
   }

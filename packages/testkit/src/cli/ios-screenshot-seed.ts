@@ -1,4 +1,8 @@
+import { readFile } from "node:fs/promises";
+import type { BotSecretDestination, MessageBlock } from "@rakazo/contracts";
+import { encodeCardSecret, encodeContactSecret, encodeLoginSecret } from "@rakazo/contracts";
 import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from "@rakazo/db";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { PNG } from "pngjs";
 import { sessionCookieHeader } from "../index.js";
 
@@ -6,6 +10,15 @@ const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
 const GROUP_READY = "The fixture launch plan is ready.";
 const FILE_NAME = "launch-notes.txt";
+const PAGE_TITLE = "Launch dashboard";
+const PAGE_SOURCE = [
+  "const App = () => (",
+  '  <Page title="Launch dashboard" summary="Fixture figures for the screenshot catalog.">',
+  '    <Metrics metrics={[{ value: "128", label: "Signups" }, { value: "4.2%", label: "Trial to paid" }]} />',
+  "  </Page>",
+  ");",
+  "export default App;",
+].join("\n");
 const IMAGE_NAME = "launch-chart.png";
 const NOTES = [
   "Launch notes",
@@ -25,8 +38,11 @@ export interface IosScreenshotFixture {
   imageId: string;
   pdfId: string;
   archiveId: string;
+  videoId: string;
   teamSpaceId: string;
   conversationId: string;
+  /** A bot whose thread shows the cards a bot sends when it needs something. */
+  cardsBotId: string;
 }
 
 interface BotRow {
@@ -115,6 +131,12 @@ export async function seedIosScreenshotFixture(input: {
       botIds: [researcher.id, writer.id, support.id],
     });
   }
+  if (!groups.some((item) => item.name === "Review pair")) {
+    await rpc<GroupRow>(input.apiUrl, populated.headers, "groups/create", {
+      name: "Review pair",
+      botIds: [researcher.id, writer.id],
+    });
+  }
   const routines = await rpc<RoutineRow[]>(input.apiUrl, populated.headers, "routines/list", {
     botId: researcher.id,
   });
@@ -148,6 +170,24 @@ export async function seedIosScreenshotFixture(input: {
     });
     await rpc(input.apiUrl, populated.headers, "models/setDefault", model);
   }
+  // Most people who reach the wallet have connected one; the emulator connects on the first poll.
+  const wallet = await rpc<{ status: string }>(
+    input.apiUrl,
+    populated.headers,
+    "paymentWallet/status",
+  );
+  if (wallet.status !== "connected") {
+    await rpc(input.apiUrl, populated.headers, "paymentWallet/connect");
+    // The first sign-in check waits out the provider's poll interval.
+    const deadline = Date.now() + 15_000;
+    while (
+      (await rpc<{ status: string }>(input.apiUrl, populated.headers, "paymentWallet/status"))
+        .status !== "connected"
+    ) {
+      if (Date.now() > deadline) throw new Error("The wallet emulator never connected");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
   const rules = await rpc<{ matchValue: string }[]>(
     input.apiUrl,
     populated.headers,
@@ -160,12 +200,68 @@ export async function seedIosScreenshotFixture(input: {
       matchValue: "example.com",
     });
   }
+  // One of each kind people save: a website sign-in, a card, a contact, an API token, and a
+  // command variable. The card number is a well-known test number, not a real card.
   const vault = await rpc<{ name: string }[]>(input.apiUrl, populated.headers, "vault/list");
-  if (!vault.some((secret) => secret.name === "fixture-token")) {
-    await rpc(input.apiUrl, populated.headers, "vault/put", {
-      destination: { name: "fixture-token", auth: { type: "command" } },
-      value: "fixture-value-not-a-secret",
-    });
+  const vaultEntries: {
+    destination: BotSecretDestination;
+    value: string;
+    title?: string;
+    alsoOn?: string[];
+  }[] = [
+    {
+      title: "Help desk",
+      destination: {
+        name: "help-desk",
+        origin: "https://help.example.com",
+        auth: { type: "login" },
+      },
+      // Also on another site, with an authenticator key (RFC 6238's test key), so the item and
+      // its editor show both.
+      alsoOn: ["https://support.example.com"],
+      value: encodeLoginSecret({
+        fields: [
+          { label: "Email", value: "support@example.com", hidden: false },
+          { label: "Password", value: "fixture-password", hidden: true },
+        ],
+        otp: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      }),
+    },
+    {
+      destination: {
+        name: "status-api",
+        origin: "https://api.example.com",
+        auth: { type: "bearer" },
+      },
+      value: "fixture-status-token",
+    },
+    {
+      title: "Home",
+      destination: { name: "home", origin: "", auth: { type: "contact" } },
+      value: encodeContactSecret({
+        name: "Sam Fixture",
+        line1: "1 Example Street",
+        city: "Springfield",
+        postalCode: "12345",
+      }),
+    },
+    {
+      destination: { name: "visa-4242", origin: "", auth: { type: "card" } },
+      value: encodeCardSecret({
+        number: "4242424242424242",
+        expMonth: 8,
+        expYear: 2030,
+        billing: "home",
+      }),
+    },
+    {
+      destination: { name: "deploy_token", origin: "", auth: { type: "command" } },
+      value: "fixture-deploy-token",
+    },
+  ];
+  for (const credential of vaultEntries) {
+    if (vault.some((secret) => secret.name === credential.destination.name)) continue;
+    await rpc(input.apiUrl, populated.headers, "vault/put", credential);
   }
 
   const stored = await rpc<ArtifactRow[]>(input.apiUrl, populated.headers, "artifacts/list", {
@@ -194,6 +290,13 @@ export async function seedIosScreenshotFixture(input: {
     "launch-assets.zip",
     "application/zip",
     Buffer.from([0x50, 0x4b, 0x05, 0x06, ...new Array(18).fill(0)]),
+  );
+
+  // The product demo already in the repository, so the video viewer has something real to play.
+  const video = await upload(
+    "launch-demo.mp4",
+    "video/mp4",
+    await readFile(new URL("../../../../docs/screenshots/demo.mp4", import.meta.url)),
   );
 
   const spaces = await rpc<{ spaces: { id: string; name: string }[] }>(
@@ -229,10 +332,30 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
     });
     await ensureText(db.prisma, group.threadId, "bot", writer.id, GROUP_READY);
+    await ensurePage(db.prisma, {
+      threadId: researcher.threadId,
+      botId: researcher.id,
+      spaceId: me.spaceId,
+      userId: me.userId,
+    });
     await ensureTickets(db.prisma, me.spaceId, me.userId, [researcher.id, writer.id]);
+    await ensureMemoryNotes(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      botId: researcher.id,
+    });
+    await ensureRequestCards(db.prisma, { threadId: support.threadId, botId: support.id });
+    await ensurePayments(db.prisma, {
+      spaceId: me.spaceId,
+      userId: me.userId,
+      researcher,
+      writer,
+    });
     const billing = { apiUrl: input.apiUrl, prisma: db.prisma, complete: input.completeCheckout };
     await ensurePlan({ ...billing, headers: populated.headers, userId: me.userId, trial: false });
     await ensurePlan({ ...billing, headers: empty.headers, userId: emptyMe.userId, trial: true });
+    // After the plan, since a bot only runs for an account with billing access.
+    await ensureWaitingKeyRequest(input.apiUrl, populated.headers, support.id);
     for (const userId of [me.userId, emptyMe.userId]) {
       // Hosted sign-ups answer a survey first; the free user's flow shows it.
       await db.prisma.signupSurvey.upsert({
@@ -251,13 +374,85 @@ export async function seedIosScreenshotFixture(input: {
       imageId: image.id,
       pdfId: pdf.id,
       archiveId: archive.id,
+      videoId: video.id,
       teamSpaceId: teamSpace.id,
       conversationId: conversation.id,
+      cardsBotId: support.id,
     };
   } finally {
     await db.prisma.$disconnect();
     await db.pool.end();
   }
+}
+
+/** A note the bot remembered and one every bot in the space shares, for the memory screens. */
+async function ensureMemoryNotes(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; botId: string },
+) {
+  const notes = [
+    {
+      scope: "bot",
+      botId: input.botId,
+      path: "preferences.md",
+      content:
+        "# Preferences\n\n- Cite a source for every claim.\n- Keep summaries under five bullets.\n",
+    },
+    {
+      scope: "user",
+      botId: null,
+      path: "team.md",
+      content:
+        "# Launch team\n\n- Dana owns the announcement.\n- Lee reviews every customer quote.\n",
+    },
+  ];
+  for (const note of notes) {
+    const existing = await prisma.memoryDocument.findFirst({
+      where: { spaceId: input.spaceId, scope: note.scope, botId: note.botId, path: note.path },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.memoryDocument.create({
+      data: { ...note, spaceId: input.spaceId, userId: input.userId },
+    });
+  }
+}
+
+/** A page the bot built, named in its reply with the card under it, for the page screens. */
+async function ensurePage(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { threadId: string; botId: string; spaceId: string; userId: string },
+) {
+  const existing = await prisma.page.findFirst({
+    where: { userId: input.userId, spaceId: input.spaceId, title: PAGE_TITLE },
+    select: { id: true },
+  });
+  if (existing) return;
+  const page = await prisma.page.create({
+    data: {
+      spaceId: input.spaceId,
+      userId: input.userId,
+      botId: input.botId,
+      title: PAGE_TITLE,
+      versions: {
+        create: {
+          version: 1,
+          title: PAGE_TITLE,
+          source: PAGE_SOURCE,
+          code: pageViewerCode(PAGE_SOURCE),
+        },
+      },
+    },
+  });
+  await createThreadMessage(prisma, {
+    threadId: input.threadId,
+    role: "bot",
+    botId: input.botId,
+    blocks: [
+      { kind: "text", text: `I made a [${PAGE_TITLE}](page:${page.id}) from the launch notes.` },
+      { kind: "page", pageId: page.id, version: 1, title: PAGE_TITLE },
+    ],
+  });
 }
 
 async function ensureBot(
@@ -481,13 +676,49 @@ const TICKETS = [
   { title: "Publish the changelog", status: "done" },
 ] as const;
 
-/** Board cards in several columns. Only an API with the board enabled shows them. */
+/** Two payments bots made with the wallet, as the spending limit lists them. */
+async function ensurePayments(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { spaceId: string; userId: string; researcher: BotRow; writer: BotRow },
+) {
+  const payments = [
+    {
+      key: "groceries",
+      bot: input.researcher,
+      site: "groceries.example.com",
+      amount: 2_340,
+      hours: 2,
+    },
+    { key: "books", bot: input.writer, site: "books.example.com", amount: 1_299, hours: 30 },
+  ];
+  for (const payment of payments) {
+    const operationKey = `ios-screenshot-payment-${payment.key}`;
+    const data = {
+      userId: input.userId,
+      spaceId: input.spaceId,
+      botId: payment.bot.id,
+      threadId: payment.bot.threadId,
+      site: payment.site,
+      amount: payment.amount,
+      currency: "usd",
+      createdAt: new Date(Date.now() - payment.hours * 3_600_000),
+    };
+    await prisma.payment.upsert({
+      where: { operationKey },
+      create: { operationKey, ...data },
+      update: data,
+    });
+  }
+}
+
+/** Board cards in several columns, with the board turned on in Labs so it shows. */
 async function ensureTickets(
   prisma: ReturnType<typeof createDb>["prisma"],
   spaceId: string,
   userId: string,
   botIds: string[],
 ) {
+  await prisma.user.update({ where: { id: userId }, data: { labs: ["board"] } });
   const board = await ensureBoard(prisma, spaceId);
   if (await prisma.ticket.count({ where: { boardId: board.id } })) return;
   for (const [index, ticket] of TICKETS.entries()) {
@@ -531,6 +762,132 @@ async function ensurePlan(input: {
   input.complete(account.customerId);
   await rpc(input.apiUrl, input.headers, "billing/refresh");
   if (!input.trial) await rpc(input.apiUrl, input.headers, "billing/endTrial");
+}
+
+const CARDS_READY = "Set up the weekly support digest.";
+
+/** The cards a bot shows when it needs something: a key, a sign-in, a site, an app, a choice. */
+async function ensureRequestCards(
+  prisma: ReturnType<typeof createDb>["prisma"],
+  input: { threadId: string; botId: string },
+) {
+  const messages = await prisma.message.findMany({
+    where: { threadId: input.threadId },
+    select: { blocks: true },
+  });
+  if (messages.some((message) => JSON.stringify(message.blocks).includes(CARDS_READY))) return;
+  const bot = (blocks: MessageBlock[]) =>
+    createThreadMessage(prisma, {
+      threadId: input.threadId,
+      role: "bot",
+      botId: input.botId,
+      blocks,
+    });
+  await createThreadMessage(prisma, {
+    threadId: input.threadId,
+    role: "user",
+    blocks: [{ kind: "text", text: CARDS_READY }],
+  });
+  await bot([
+    { kind: "text", text: "I'll read new tickets from the help desk and draft replies." },
+    {
+      kind: "app_connect",
+      provider: "gmail",
+      name: "Gmail",
+      description: "Search, read, and draft emails",
+      logo: null,
+      status: "pending",
+    },
+  ]);
+  await bot([
+    {
+      kind: "ask",
+      text: "Sign in to the help desk so I can see the ticket queue.",
+      input: "secret",
+      purpose: "password",
+      credential: {
+        name: "help-desk",
+        origin: "https://help.example.com",
+        auth: { type: "login" },
+      },
+      status: "answered",
+    },
+  ]);
+  await bot([
+    {
+      kind: "ask",
+      text: "Can I open status.example.com to check for outages?",
+      site: "status.example.com",
+      status: "answered",
+      answer: "Allow",
+    },
+  ]);
+  await bot([
+    {
+      kind: "choice",
+      question: "Which tone should replies use?",
+      options: [
+        { id: "warm", letter: "A", label: "Warm and casual" },
+        { id: "brief", letter: "B", label: "Brief and direct" },
+        { id: "formal", letter: "C", label: "Formal" },
+      ],
+    },
+  ]);
+  await bot([
+    { kind: "computer", state: "Needs you", text: "Approve the sign-in code on your phone." },
+  ]);
+  await bot([
+    {
+      kind: "ask",
+      approvalEffectId: "ios-screenshot-pay",
+      text: "Pay on freshcart.test?",
+      detailFormat: "text",
+      receipt: {
+        button: "Place order",
+        items: [
+          { name: "Bananas × 6", amount: "$3.00" },
+          { name: "Oat milk 1L × 2", amount: "$8.40" },
+          { name: "Delivery", amount: "$6.00" },
+        ],
+        amount: "$17.40",
+        amountSource: "page",
+      },
+      status: "answered",
+      answer: "allow",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
+  ]);
+}
+
+/**
+ * A live request for a key: its card only offers a field while the bot's run waits for the
+ * answer, so the offline scripted bot asks for real, as the web tests have it do.
+ */
+async function ensureWaitingKeyRequest(
+  apiUrl: string,
+  headers: Record<string, string>,
+  botId: string,
+) {
+  type Snapshot = { run?: { status: string; error?: string | null } | null };
+  let last: Snapshot["run"] = null;
+  const waiting = async () => {
+    last = (await rpc<Snapshot>(apiUrl, headers, "threads/get", { botId })).run;
+    return last?.status === "waiting_input";
+  };
+  if (await waiting()) return;
+  await rpc(apiUrl, headers, "threads/send", {
+    botId,
+    text: "Check the status API too, and request a masked api key if you need one.",
+  });
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (await waiting()) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`The scripted bot never asked for a key; its run: ${JSON.stringify(last)}`);
 }
 
 async function ensureText(

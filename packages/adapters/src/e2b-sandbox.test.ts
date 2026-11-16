@@ -9,9 +9,12 @@ import {
   Sandbox,
   SandboxError,
   SandboxNotFoundError,
+  SandboxNotRunningError,
+  SandboxUnreachableError,
   TimeoutError,
 } from "@e2b/desktop";
 import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
@@ -20,6 +23,7 @@ import { E2BSandboxProvider, e2bCreateOptions, keepingAwake } from "./e2b-sandbo
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "e2b-test",
@@ -132,6 +136,59 @@ describe("E2B computer backend", () => {
     expect(globalStream).not.toHaveBeenCalled();
   });
 
+  it("e2b-screen-traffic-token sends the traffic token for screen and terminal", async () => {
+    const computer = {
+      id: "existing",
+      providerRef: "existing",
+      kind: "e2b" as const,
+      botId: "bot",
+    };
+    const provider = (trafficAccessToken?: string) => {
+      const desktop = {
+        sandboxId: "existing",
+        getHost: (port: number) => `${port}-desktop.test`,
+        setTimeout: async () => undefined,
+        commands: {
+          run: async () => ({
+            stdout: "RAKAZO_DESKTOP=0:savedkey\n",
+            stderr: "",
+            exitCode: 0,
+          }),
+        },
+        files: {
+          makeDir: async () => true,
+          list: async () => [],
+          getInfo: async () => ({ name: "x", size: 0, mode: 0 }),
+          read: async () => new Uint8Array(),
+          write: async () => undefined,
+        },
+        ...(trafficAccessToken !== undefined ? { trafficAccessToken } : {}),
+      } satisfies E2BDesktop;
+      const sdk = {
+        create: async () => desktop,
+        connect: async () => desktop,
+        pause: async () => undefined,
+        kill: async () => true,
+      } satisfies E2BSandboxSdk;
+      return new E2BSandboxProvider("test-key", sdk);
+    };
+
+    const restricted = provider("tok");
+    const screen = await restricted.connectScreen(computer, { view: "stream" }, context);
+    expect(screen.headers?.["e2b-traffic-access-token"]).toBe("tok");
+    const terminal = await restricted.connectTerminal(
+      computer,
+      { controlToken: "lease-1" },
+      context,
+    );
+    expect(terminal.headers?.["e2b-traffic-access-token"]).toBe("tok");
+
+    const open = await provider().connectScreen(computer, { view: "stream" }, context);
+    expect(open.headers).toBeUndefined();
+    const blank = await provider("").connectScreen(computer, { view: "stream" }, context);
+    expect(blank.headers).toBeUndefined();
+  });
+
   it("only filters transient cache files inside portable browser profiles", () => {
     expect(shouldSkipPortableWorkspaceFile("project/Cache/important.txt")).toBe(false);
     expect(shouldSkipPortableWorkspaceFile("project/lock")).toBe(false);
@@ -231,6 +288,7 @@ describe("E2B computer backend", () => {
       expect(getInfo).toHaveBeenCalledWith("existing", {
         apiKey: "test-key",
         signal: context.signal,
+        retries: 0,
       });
     } finally {
       getInfo.mockRestore();
@@ -320,6 +378,17 @@ describe("E2B computer backend", () => {
     expect(sdk.create).toHaveBeenCalledOnce();
   });
 
+  it("creates once when the real SDK answers 503, leaving retries to the lifecycle", async () => {
+    const requests = await withApiAnswering(503, async () => {
+      const provider = new E2BSandboxProvider("e2b_test");
+      await expect(
+        provider.provision({ botId: "bot-1", homePath: "/unused" }, context),
+      ).rejects.toMatchObject({ statusCode: 503 });
+    });
+    // A replayed create could start a second sandbox if the first 503 came after it started.
+    expect(requests).toEqual(["POST /v2/sandboxes"]);
+  });
+
   it.each([
     { method: "destroy", status: 404, outcome: "resolves" },
     { method: "destroy", status: 503, outcome: "rejects" },
@@ -329,22 +398,7 @@ describe("E2B computer backend", () => {
   ] as const)(
     "$method maps a real SDK $status without resuming the sandbox",
     async ({ method, status, outcome }) => {
-      const requests: string[] = [];
-      const server = createServer((request, response) => {
-        // Local tools can probe any listening loopback port; the SDK never calls the root.
-        if (request.url === "/") {
-          response.writeHead(404).end();
-          return;
-        }
-        requests.push(`${request.method} ${request.url}`);
-        response.writeHead(status, { "content-type": "application/json" });
-        response.end(JSON.stringify({ code: status, message: "sandbox unavailable" }));
-      });
-      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-      try {
-        const address = server.address();
-        if (!address || typeof address === "string") throw new Error("Missing test server address");
-        vi.stubEnv("E2B_API_URL", `http://127.0.0.1:${address.port}`);
+      const requests = await withApiAnswering(status, async () => {
         const provider = new E2BSandboxProvider("e2b_test");
         const computer = {
           id: "paused",
@@ -357,14 +411,11 @@ describe("E2B computer backend", () => {
         else if (outcome === "rejects")
           await expect(result).rejects.toMatchObject({ statusCode: status });
         else await expect(result).rejects.toSatisfy(isSandboxGoneError);
-        expect(requests).toEqual([
-          method === "destroy" ? "DELETE /sandboxes/paused" : "POST /sandboxes/paused/pause",
-        ]);
-      } finally {
-        vi.unstubAllEnvs();
-        server.closeAllConnections();
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-      }
+      });
+      // One request: the lifecycle owns retries, and a stop or destroy never resumes the sandbox.
+      expect(requests).toEqual([
+        method === "destroy" ? "DELETE /sandboxes/paused" : "POST /sandboxes/paused/pause",
+      ]);
     },
   );
 
@@ -605,6 +656,7 @@ describe("E2B computer backend", () => {
       commands: { run: command },
       files: {
         makeDir: vi.fn(async () => undefined),
+        getInfo: vi.fn(async (file: string) => ({ size: files.get(file)?.byteLength ?? 0 })),
         write: vi.fn(async (entries: Array<{ path: string; data: ArrayBuffer }>) => {
           for (const entry of entries) files.set(entry.path, new Uint8Array(entry.data));
         }),
@@ -692,17 +744,12 @@ describe("E2B computer backend", () => {
       expect.objectContaining({ timeoutMs: 42, signal: context.signal }),
     );
 
-    await provider.writeFile(
-      computer,
-      {
-        path: "notes/result.txt",
-        content: new TextEncoder().encode("portable"),
-      },
-      context,
-    );
+    const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
+    await provider.writeFile(computer, note, context);
     expect(
       new TextDecoder().decode(await provider.readFile(computer, "notes/result.txt", context)),
     ).toBe("portable");
+    await assertSandboxReadLimit(provider, computer, context, note);
     expect(await provider.listFiles(computer, "notes", context)).toEqual([
       { path: "notes/result.txt", kind: "file", size: 8 },
     ]);
@@ -887,7 +934,7 @@ describe("E2B computer backend", () => {
 });
 
 describe("sandbox-gone detection", () => {
-  // Wordings verified against @e2b/desktop 2.4.0 (e2b 2.49.1 dist).
+  // Wordings verified against e2b 2.49.1 and 2.63.0 dist; newer SDKs name not-running errors.
   const gone = [
     new SandboxNotFoundError("Sandbox is probably not running anymore"),
     new SandboxNotFoundError("Paused sandbox sandbox-ref-1 not found"),
@@ -919,6 +966,33 @@ describe("sandbox-gone detection", () => {
     expect(isSandboxGoneError(error)).toBe(false);
   });
 });
+
+/** Runs `work` against a local API that answers every request with `status`; returns the requests. */
+async function withApiAnswering(status: number, work: () => Promise<void>): Promise<string[]> {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    // Local tools can probe any listening loopback port; the SDK never calls the root.
+    if (request.url === "/") {
+      response.writeHead(404).end();
+      return;
+    }
+    requests.push(`${request.method} ${request.url}`);
+    response.writeHead(status, { "content-type": "application/json" });
+    response.end(JSON.stringify({ code: status, message: "sandbox unavailable" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test server address");
+    vi.stubEnv("E2B_API_URL", `http://127.0.0.1:${address.port}`);
+    await work();
+    return requests;
+  } finally {
+    vi.unstubAllEnvs();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
 
 type FakeState = "running" | "paused" | "killing" | "killed";
 
@@ -979,7 +1053,10 @@ class FakeE2B {
     const envd = async <T>(work: () => T | Promise<T>): Promise<T> => {
       this.settle();
       if (this.state !== "running") {
-        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
+        // What the SDK throws when the proxy no longer finds the sandbox, paused or deleted.
+        throw new SandboxNotRunningError(
+          `The sandbox ${this.id} was not found: The sandbox was killed or reached its timeout.`,
+        );
       }
       return work();
     };
@@ -1256,15 +1333,17 @@ describe("E2B sandbox lifecycle", () => {
 
   it("does not resume a sandbox that stop paused while a request was in flight", async () => {
     const { fake, provider, computer } = await started();
-    let finish!: () => void;
+    const command = deferred();
+    let commandStarted = false;
     fake.command = async () => {
-      await new Promise<void>((resolve) => (finish = resolve));
+      commandStarted = true;
+      await command.promise;
       return ok();
     };
     const events = runCommand(provider, computer).catch((failure: unknown) => failure);
-    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitUntil(() => commandStarted);
     await provider.stop(computer, context);
-    finish();
+    command.resolve();
     const error = await events;
     expect(error).toBeInstanceOf(Error);
     expect(isSandboxGoneError(error)).toBe(false);
@@ -1302,6 +1381,20 @@ describe("E2B sandbox lifecycle", () => {
     expect(error).toBeInstanceOf(Error);
     expect(isSandboxGoneError(error)).toBe(false);
     expect(fake.state).toBe("running");
+  });
+
+  it("resumes a sandbox the SDK could not reach to check", async () => {
+    const { fake, provider, computer } = await started();
+    fake.command = async () => {
+      fake.state = "paused";
+      throw new SandboxUnreachableError(
+        "fetch failed: The sandbox could not be reached and its health probe failed too.",
+      );
+    };
+    const error = await runCommand(provider, computer).catch((failure: unknown) => failure);
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(fake.state).toBe("running");
+    expect(fake.calls.connect).toBe(1);
   });
 
   it("reports a non-zero exit as the command's result", async () => {
@@ -1375,10 +1468,10 @@ describe("keepingAwake", () => {
     vi.stubEnv("SANDBOX_IDLE_MS", "180000");
     try {
       const desktop = { setTimeout: vi.fn(async () => undefined) };
-      let finish!: () => void;
+      const finish = deferred();
       const slow = (async function* () {
         yield "first";
-        await new Promise<void>((resolve) => (finish = resolve));
+        await finish.promise;
         yield "last";
       })();
       const read: string[] = [];
@@ -1393,7 +1486,7 @@ describe("keepingAwake", () => {
       expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
       expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-      finish();
+      finish.resolve();
       await done;
       const calls = desktop.setTimeout.mock.calls.length;
       await vi.advanceTimersByTimeAsync(600_000);

@@ -66,7 +66,7 @@ describe("app version footer helpers", () => {
     const info = getAppVersionInfo();
     expect(info.nativeLabel).toBe("1.0.3 (12)");
     expect(info.update).toEqual({ kind: "embedded" });
-    expect(formatUpdateLabel(info.update, (message) => message)).toBe("Embedded");
+    expect(formatUpdateLabel(info.update)).toBe("Embedded");
   });
 
   it("falls back to Constants when Application is empty", async () => {
@@ -90,14 +90,7 @@ describe("app version footer helpers", () => {
       channel: "production",
       createdAt: "2026-09-10",
     });
-    expect(
-      formatUpdateLabel(info.update, (message, values) => {
-        if (!values) return message;
-        return message.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
-          Object.hasOwn(values, key) ? String(values[key]) : match,
-        );
-      }),
-    ).toBe("production a1b2c3d4, 2026-09-10");
+    expect(formatUpdateLabel(info.update)).toBe("production a1b2c3d4, 2026-09-10");
   });
 
   it("treats disabled updates as embedded", async () => {

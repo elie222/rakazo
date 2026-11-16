@@ -3,6 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM"],
     "module": "ESNext",

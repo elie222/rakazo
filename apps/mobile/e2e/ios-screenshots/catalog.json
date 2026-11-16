@@ -21,12 +21,18 @@
     "id": "thread",
     "title": "Thread",
     "flow": "flows/thread.yaml",
-    "screens": ["thread", "group-thread", "artifact"]
+    "screens": ["thread", "group-thread", "artifact", "invite"]
   },
   {
     "id": "thread-errors",
     "title": "Thread error recovery",
     "flow": "flows/thread-errors.yaml",
+    "screens": ["thread"]
+  },
+  {
+    "id": "cards",
+    "title": "Request cards",
+    "flow": "flows/cards.yaml",
     "screens": ["thread"]
   },
   {
@@ -39,7 +45,7 @@
     "id": "compose",
     "title": "Compose",
     "flow": "flows/compose.yaml",
-    "screens": ["new-space", "new-group"]
+    "screens": ["new-space", "new-bot", "new-group"]
   },
   {
     "id": "split-view",
@@ -53,12 +59,17 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "computers",
+      "general",
+      "profile",
       "change-password",
       "models",
       "integrations",
       "voice",
       "ai-data-sharing",
+      "labs",
       "routine",
+      "routine-runs",
       "bot-settings",
       "group-settings",
       "computer",
@@ -70,13 +81,13 @@
     "id": "models",
     "title": "Models",
     "flow": "flows/models.yaml",
-    "screens": ["models", "model-picker", "model-connection"]
+    "screens": ["models", "model-picker", "model-settings", "model-connection"]
   },
   {
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat"]
+    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -88,13 +99,33 @@
     "id": "skills",
     "title": "Skills",
     "flow": "flows/skills.yaml",
-    "screens": ["skills", "skill", "plugin"]
+    "screens": ["skills", "skill", "plugin", "bot-templates", "bot-template"]
+  },
+  {
+    "id": "memory",
+    "title": "Memory",
+    "flow": "flows/memory.yaml",
+    "screens": ["memory", "memory-note"]
   },
   {
     "id": "workspace",
     "title": "Workspace",
     "flow": "flows/workspace.yaml",
-    "screens": ["board", "approvals", "vault", "archived-bots", "space"]
+    "screens": [
+      "board",
+      "approvals",
+      "approval-rule-add",
+      "vault",
+      "archived-bots",
+      "space",
+      "space-members"
+    ]
+  },
+  {
+    "id": "vault",
+    "title": "Vault logins",
+    "flow": "flows/vault.yaml",
+    "screens": ["vault"]
   },
   {
     "id": "messaging",
@@ -106,12 +137,31 @@
     "id": "billing",
     "title": "Billing",
     "flow": "flows/billing.yaml",
-    "screens": ["billing", "wallet"]
+    "screens": ["billing", "wallet", "spending-limit"]
   },
   {
     "id": "new-account",
     "title": "New account",
     "flow": "flows/new-account.yaml",
     "screens": ["signup-survey", "paywall"]
+  },
+  {
+    "id": "pages",
+    "title": "Pages",
+    "flow": "flows/pages.yaml",
+    "screens": ["page", "page-share", "pages"]
+  },
+  {
+    "id": "organizations",
+    "title": "Organizations",
+    "flow": "flows/organizations.yaml",
+    "screens": [
+      "account",
+      "new-organization",
+      "paywall",
+      "index",
+      "organization",
+      "organization-members"
+    ]
   }
 ]

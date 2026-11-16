@@ -149,3 +149,10 @@ it("uses the configured drop count and releases excess cached files", async () =
   expect(state.base64).toHaveBeenCalledTimes(8);
   expect(state.deleted).toHaveLength(9);
 });
+
+it("reports a file the native side could not copy", async () => {
+  const result = await readDroppedFiles([{ name: "image", mimeType: "image/jpeg", size: 0 }]);
+  expect(result.attachments).toEqual([]);
+  expect(result.skipped).toEqual([{ name: "image", reason: "permission denied" }]);
+  expect(state.base64).not.toHaveBeenCalled();
+});

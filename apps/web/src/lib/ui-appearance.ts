@@ -28,7 +28,9 @@ export function applyResolvedAppearance(
   if (typeof document === "undefined") return;
   const meta = document.querySelector(THEME_COLOR_META);
   if (meta) {
-    meta.setAttribute("content", webTokensForAppearance(appearance).background);
+    // The applied background, so an instance theme's color reaches the browser chrome too.
+    const applied = getComputedStyle(root).getPropertyValue("--background").trim();
+    meta.setAttribute("content", applied || webTokensForAppearance(appearance).background);
   }
 }
 
