@@ -28,12 +28,15 @@ const EXISTING = new Set([
   "Computer.executionFence",
   "HomeDeletionNotice.claimId",
   "HomeDeletionNotice.claimExpiresAt",
-  "ComputerExecutionLease.fence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
   // The primitive's own table.
   "Lease.fence",
+  // Not long work in one process, so not for `withLease`: a computer's execution lease outlives the
+  // process that took it (a takeover keeps it for hours and a later worker takes it back by run id),
+  // it is taken inside other transactions, and those transactions end it by run id.
+  "ComputerExecutionLease.fence",
 ]);
 
 const LEASE_LIKE = /(?<!re)lease|claim|attempt|fence|lockedAt/i;
