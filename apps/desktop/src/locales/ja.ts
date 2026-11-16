@@ -4,11 +4,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "Computer Access…": "コンピュータへのアクセス…",
   "Revoke Local Computer Access": "ローカルコンピュータへのアクセスを取り消す",
   "Change Rakazo Server…": "Rakazoサーバを変更…",
-  "Stop Local Stack": "ローカルスタックを停止",
   "Hide {name}": "{name}を非表示",
   "Hide Others": "ほかを非表示",
   "Show All": "すべてを表示",
   "Quit {name}": "{name}を終了",
+  "Quit and Stop Bots": "終了してボットを停止",
   File: "ファイル",
   Exit: "終了",
   Quit: "終了",
@@ -224,8 +224,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Dockerはインストールされていますが、実行されていません。開くと続行します。",
   "Starting {app}…": "{app}を起動しています…",
-  "Waiting for Docker Desktop…": "Docker Desktopを待っています…",
-  "Waiting for Docker…": "Dockerを待っています…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
 };

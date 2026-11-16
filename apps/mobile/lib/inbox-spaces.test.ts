@@ -68,6 +68,15 @@ const bot: MobileBot = {
 };
 
 describe("spaceInboxItems", () => {
+  it("keeps the heading that marks guests on a lone default Space", () => {
+    const lone = space({ isDefault: true, bots: [bot] });
+    expect(spaceInboxItems([lone]).some((item) => item.type === "heading")).toBe(false);
+    expect(spaceInboxItems([{ ...lone, hasGuests: true }])[0]).toMatchObject({
+      type: "heading",
+      title: "Work",
+    });
+  });
+
   it("updates built-in headings with the locale without translating custom names", () => {
     const input = space({
       isDefault: true,

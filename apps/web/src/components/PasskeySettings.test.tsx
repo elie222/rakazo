@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
+
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type * as Passkeys from "../lib/passkeys";
+import { usePasskeysVersion } from "../lib/passkeys";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { PasskeySettings } from "./PasskeySettings";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -94,6 +98,36 @@ it("reloads after adding a passkey", async () => {
   expect(host.querySelectorAll("li")).toHaveLength(0);
   await act(async () => buttonNamed("Add passkey")?.click());
   expect(host.querySelectorAll("li")).toHaveLength(1);
+});
+
+it("tells other passkey views about a passkey added after leaving the list", async () => {
+  vi.mocked(authClient.passkey.listUserPasskeys).mockResolvedValue({
+    data: [],
+    error: null,
+  } as never);
+  let added!: Deferred<{ data: { id: string }; error: null }>;
+  vi.mocked(authClient.passkey.addPasskey).mockImplementation(() => {
+    added = deferred();
+    return added.promise as never;
+  });
+  const versions: number[] = [];
+  function Offer() {
+    versions.push(usePasskeysVersion());
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Offer />
+        <PasskeySettings />
+      </>,
+    ),
+  );
+  await act(async () => buttonNamed("Add passkey")?.click());
+  await act(async () => root.render(<Offer />));
+  const before = versions.at(-1);
+  await act(async () => added.resolve({ data: { id: "passkey-1" }, error: null }));
+  expect(versions.at(-1)).toBe((before ?? 0) + 1);
 });
 
 it.each([{ isComposing: true }, { keyCode: 229 }])(

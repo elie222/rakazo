@@ -14,6 +14,8 @@ const work = {
   defaultSpaceId: "space-1",
   spaceIds: ["space-1"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const home = {
   id: "org-home",
@@ -21,6 +23,8 @@ const home = {
   defaultSpaceId: "space-2",
   spaceIds: ["space-2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const state = vi.hoisted(() => ({
   selectedSpace: "space-1",
@@ -56,7 +60,9 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
+vi.mock("./roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => true,
   useRouter: () => ({}),
   useLocalSearchParams: () => ({ delete: "1" }),
 }));

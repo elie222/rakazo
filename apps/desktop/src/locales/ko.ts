@@ -4,11 +4,11 @@ export const KO_MESSAGES: Record<string, string> = {
   "Computer Access…": "컴퓨터 접근…",
   "Revoke Local Computer Access": "로컬 컴퓨터 접근 취소",
   "Change Rakazo Server…": "Rakazo 서버 변경…",
-  "Stop Local Stack": "로컬 스택 중지",
   "Hide {name}": "{name} 가리기",
   "Hide Others": "기타 가리기",
   "Show All": "모두 보기",
   "Quit {name}": "{name} 종료",
+  "Quit and Stop Bots": "종료 및 Bot 중지",
   File: "파일",
   Exit: "끝내기",
   Quit: "종료",
@@ -218,8 +218,6 @@ export const KO_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 여세요.",
   "Starting {app}…": "{app} 시작 중…",
-  "Waiting for Docker Desktop…": "Docker Desktop 기다리는 중…",
-  "Waiting for Docker…": "Docker 기다리는 중…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 Docker 서비스를 시작하세요.",
 };

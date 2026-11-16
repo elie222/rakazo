@@ -75,7 +75,10 @@ describe("repoIdentity", () => {
 
   it("only calls the real upstream official", () => {
     expect(isOfficialRepoUrl("git@github.com:elie222/rakazo.git")).toBe(true);
+    expect(isOfficialRepoUrl("https://github.com/rakazobot/rakazo.git")).toBe(true);
+    expect(isOfficialRepoUrl("git@github.com:rakazobot/rakazo.git")).toBe(true);
     expect(isOfficialRepoUrl("https://github.com/attacker/rakazo")).toBe(false);
+    expect(isOfficialRepoUrl("https://github.com/rakazobot/rakazo-fork")).toBe(false);
     expect(isOfficialRepoUrl("https://githubb.com/elie222/rakazo")).toBe(false);
   });
 });

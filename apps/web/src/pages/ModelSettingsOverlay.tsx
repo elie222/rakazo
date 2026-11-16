@@ -506,7 +506,6 @@ export function ModelSettingsOverlay({
               credential={pageCredential}
               modelId={page.modelId}
               entry={catalogEntry(pageCredential.provider, page.modelId)}
-              onSaved={() => refresh({ keepForm: true })}
             />
           </div>
         )}

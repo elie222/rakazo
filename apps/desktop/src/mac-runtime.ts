@@ -338,6 +338,7 @@ export interface ResolveRuntimeDeps extends RuntimeDeps {
 interface RunningSystem {
   cli: string;
   installRoot: string;
+  appRoot: string;
   version: string | undefined;
 }
 
@@ -369,7 +370,7 @@ async function runningSystem(
     let parsed: {
       status?: string;
       server?: { version?: string };
-      paths?: { installRoot?: string };
+      paths?: { installRoot?: string; appRoot?: string };
     };
     try {
       parsed = JSON.parse(status.stdout);
@@ -383,6 +384,7 @@ async function runningSystem(
     return {
       cli: installRoot && deps.exists(ownCli) ? ownCli : cli,
       installRoot: installRoot ?? "",
+      appRoot: parsed.paths?.appRoot ?? "",
       version: parsed.server?.version,
     };
   }
@@ -409,6 +411,23 @@ export async function isInside(dir: string, file: string): Promise<boolean> {
 }
 
 /**
+ * `system start` installs the default kernel, but a system that is already running is not started
+ * again, so one left without a kernel (a start cut short, or an install that never had one) would
+ * fail every `container create` until it is installed.
+ */
+async function ensureDefaultKernel(deps: ResolveRuntimeDeps, system: RunningSystem) {
+  if (system.appRoot === "") return;
+  if (deps.exists(path.join(system.appRoot, "kernels", "default.kernel-arm64"))) return;
+  deps.onLine("Installing the computer kernel");
+  await runChecked(
+    deps,
+    system.cli,
+    ["system", "kernel", "set", "--recommended", "--force"],
+    RUNTIME_TIMEOUT_MS,
+  );
+}
+
+/**
  * Only one computer runtime can run per macOS session. Use the one already running, else the
  * person's own install, else our copy (downloaded on first use). A system we started gives way to
  * the person's own install once they have one, unless it holds the database (`keepOurs`), and an
@@ -430,7 +449,10 @@ export async function resolveContainerRuntime(
       throw new RuntimeTooOldError(
         `The running computer runtime is ${running.version ?? "of an unknown version"}; computers need ${MIN_CONTAINER_RUNTIME} or newer`,
       );
-    if (current && (!ours || !userUsable || deps.keepOurs)) return { cli: running.cli, ours };
+    if (current && (!ours || !userUsable || deps.keepOurs)) {
+      await ensureDefaultKernel(deps, running);
+      return { cli: running.cli, ours };
+    }
     deps.onLine(
       current
         ? "Handing computers over to the installed runtime"

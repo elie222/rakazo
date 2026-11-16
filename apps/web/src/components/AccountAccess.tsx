@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { clearComposerDrafts } from "../lib/composer-draft";
+import { useSave } from "../lib/query";
 import { forgetSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
@@ -58,7 +59,8 @@ export function DeleteAccountForm({
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
-  const [pending, setPending] = useState(false);
+  const step = useSave({ save: (run: () => Promise<unknown>) => run() });
+  const pending = step.pending;
   const [error, setError] = useState<string | null>(() => {
     const code = redirectError("delete");
     return code ? authErrorText({ code }, t`Could not continue`) : null;
@@ -80,17 +82,21 @@ export function DeleteAccountForm({
       active = false;
     };
   }, [attempt, onSecurity]);
-  async function action(run: () => Promise<unknown>, sso = false) {
-    if (!sso) setPending(true);
+  function action(run: () => Promise<unknown>) {
     setError(null);
+    step.run(run);
+  }
+  // Signing in again leaves the page, so it never holds the controls.
+  async function reauthenticate(run: () => Promise<unknown>) {
+    setError(null);
+    step.reset();
     try {
       await run();
     } catch (error) {
       setError(error instanceof Error ? error.message : t`Could not continue`);
-    } finally {
-      if (!sso) setPending(false);
     }
   }
+  const shownError = step.error?.message ?? error;
   return (
     <>
       {open ? (
@@ -123,7 +129,7 @@ export function DeleteAccountForm({
                   variant="outline"
                   disabled={pending}
                   onClick={() =>
-                    void action(async () => {
+                    void reauthenticate(async () => {
                       const returnTo = ssoReturnURL(false);
                       const result = await runSsoFlow(
                         (disableRedirect, callbackURL) =>
@@ -138,7 +144,7 @@ export function DeleteAccountForm({
                       );
                       if (result.error)
                         throw new Error(authErrorText(result.error, t`Could not continue`));
-                    }, true)
+                    })
                   }
                 >
                   <Trans>Sign in again</Trans>
@@ -149,7 +155,7 @@ export function DeleteAccountForm({
                   variant="outline"
                   disabled={pending}
                   onClick={() =>
-                    void action(async () => {
+                    action(async () => {
                       await requestAccountDeletionCode();
                       setSent(true);
                     })
@@ -182,7 +188,7 @@ export function DeleteAccountForm({
               (!security.hasPassword && !security.freshOidcAuth && !code.trim())
             }
             onClick={() =>
-              void action(async () => {
+              action(async () => {
                 const current = await fetchAccountSecurity();
                 setSecurity(current);
                 onSecurity?.(current);
@@ -203,9 +209,9 @@ export function DeleteAccountForm({
           </Button>
         </div>
       ) : null}
-      {error ? (
+      {shownError ? (
         <p role="alert" className="mt-2 text-body-sm text-destructive">
-          {error}
+          {shownError}
         </p>
       ) : null}
     </>

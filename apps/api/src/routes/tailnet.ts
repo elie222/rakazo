@@ -9,6 +9,7 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor, TailnetStatus } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
@@ -145,7 +146,7 @@ export async function tailnetCheckRoute(
         select: { id: true },
       })
     : null;
-  if (!bot) throw new Error(TAILNET_CHECK_NEEDS_BOT);
+  if (!bot) throw new ClientError("BAD_REQUEST", TAILNET_CHECK_NEEDS_BOT);
   return botTailnetRoute(
     deps.tailnet.service,
     deps.prisma,

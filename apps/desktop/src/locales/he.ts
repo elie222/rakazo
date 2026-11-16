@@ -4,11 +4,11 @@ export const HE_MESSAGES: Record<string, string> = {
   "Computer Access…": "גישה למחשב…",
   "Revoke Local Computer Access": "ביטול הגישה למחשב המקומי",
   "Change Rakazo Server…": "החלפת שרת Rakazo…",
-  "Stop Local Stack": "עצירת ה-Stack המקומי",
   "Hide {name}": "הסתרת {name}",
   "Hide Others": "הסתרת אחרים",
   "Show All": "הצגת הכל",
   "Quit {name}": "יציאה מ-{name}",
+  "Quit and Stop Bots": "יציאה ועצירת הבוטים",
   File: "קובץ",
   Exit: "יציאה",
   Quit: "יציאה",
@@ -215,8 +215,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker מותקן אבל לא פועל. פותחים אותו כדי להמשיך.",
   "Starting {app}…": "{app} מופעל…",
-  "Waiting for Docker Desktop…": "ממתין ל-Docker Desktop…",
-  "Waiting for Docker…": "ממתין ל-Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker מותקן אבל לא פועל. יש להפעיל את שירות Docker כדי להמשיך.",
 };

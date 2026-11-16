@@ -4,11 +4,11 @@ export const HI_MESSAGES: Record<string, string> = {
   "Computer Access…": "कंप्यूटर एक्सेस…",
   "Revoke Local Computer Access": "लोकल कंप्यूटर एक्सेस वापस लें",
   "Change Rakazo Server…": "Rakazo सर्वर बदलें…",
-  "Stop Local Stack": "लोकल स्टैक रोकें",
   "Hide {name}": "{name} छिपाएँ",
   "Hide Others": "अन्य छिपाएँ",
   "Show All": "सभी दिखाएँ",
   "Quit {name}": "{name} बंद करें",
+  "Quit and Stop Bots": "बंद करें और बॉट रोकें",
   File: "फ़ाइल",
   Exit: "बाहर निकलें",
   Quit: "बंद करें",
@@ -214,8 +214,6 @@ export const HI_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker इंस्टॉल है लेकिन चल नहीं रहा। जारी रखने के लिए इसे खोलें।",
   "Starting {app}…": "{app} शुरू हो रहा है…",
-  "Waiting for Docker Desktop…": "Docker Desktop का इंतज़ार…",
-  "Waiting for Docker…": "Docker का इंतज़ार…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker इंस्टॉल है लेकिन चल नहीं रहा। जारी रखने के लिए Docker सेवा शुरू करें।",
 };

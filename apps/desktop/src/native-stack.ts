@@ -374,15 +374,17 @@ export class NativeStackController extends StackLifecycle {
 
   /** Only processes this app started count: an orphan from a crashed launch is replaced. */
   async matchesDesiredStack(): Promise<boolean> {
-    if (this.current.phase !== "ready" || !this.services.every((service) => service.alive))
-      return false;
+    const live = () =>
+      !this.stopInFlight() &&
+      this.current.phase === "ready" &&
+      this.services.every((service) => service.alive);
+    if (!live()) return false;
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     try {
-      return (
-        (await this.deps.probe(this.currentWebUrl, AbortSignal.timeout(2_000), token)) ===
-        this.deps.imageTag
-      );
+      const probed = await this.deps.probe(this.currentWebUrl, AbortSignal.timeout(2_000), token);
+      // A stop that began during the probe will end the server it answered from.
+      return probed === this.deps.imageTag && live();
     } catch {
       return false;
     }

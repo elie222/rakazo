@@ -3,7 +3,7 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
 import { computerUpdates } from "../lib/computer-updates";
-import { rpc } from "../lib/rpc";
+import { useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -22,10 +22,18 @@ export function ComputerMaintenanceActions({
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
 }) {
-  const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { t } = useLingui();
+  const repair = useSave({
+    save: async (action: Action, rpc) => {
+      if (action === "recover")
+        await computerUpdates.start(botId, "recover", (id) => rpc.computer.recover({ botId: id }));
+      else await rpc.computer.reset({ botId });
+      setConfirming(false);
+      await onChanged();
+    },
+  });
+  const pending = repair.pending;
 
   // The shared status can belong to another bot's open computer; acting on this bot needs its own.
   if (computer?.botId !== botId) return null;
@@ -40,21 +48,6 @@ export function ComputerMaintenanceActions({
   const busy = Boolean(computer.busyBotName);
   const action: Action = computer.canUpdate ? "recover" : "reset";
 
-  async function run() {
-    setPending(true);
-    setError(null);
-    try {
-      if (action === "recover") await computerUpdates.start(botId, "recover");
-      else await rpc.computer.reset({ botId });
-      setConfirming(false);
-      await onChanged();
-    } catch (err) {
-      setError(errorText(err, t`Could not update computer`));
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <>
       <Button
@@ -62,7 +55,7 @@ export function ComputerMaintenanceActions({
         size="sm"
         disabled={busy || pending}
         onClick={() => {
-          setError(null);
+          repair.reset();
           setConfirming(true);
         }}
       >
@@ -81,9 +74,9 @@ export function ComputerMaintenanceActions({
             <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
           )
         }
-        error={error}
+        error={repair.error ? errorText(repair.error, t`Could not update computer`) : null}
         confirmDisabled={pending}
-        onConfirm={() => void run()}
+        onConfirm={() => repair.run(action)}
         confirmLabel={
           action === "recover" ? (
             pending ? (

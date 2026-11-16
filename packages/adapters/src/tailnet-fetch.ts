@@ -5,6 +5,7 @@ import type { TLSSocket } from "node:tls";
 import { connect as tlsConnect } from "node:tls";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import type { SafeRemoteFetch } from "./remote-mcp.js";
@@ -36,10 +37,12 @@ export function tailnetEndpoint(value: string): URL | undefined {
   }
   if (!isTailnetUrl(url)) return undefined;
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Connector URL must use HTTP or HTTPS");
+    throw new ConnectionSetupError("Connector URL must use HTTP or HTTPS");
   }
-  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
-  if (url.hash) throw new Error("Connector URL must not contain a fragment");
+  if (url.username || url.password) {
+    throw new ConnectionSetupError("Connector URL must not contain credentials");
+  }
+  if (url.hash) throw new ConnectionSetupError("Connector URL must not contain a fragment");
   return url;
 }
 
@@ -89,7 +92,7 @@ export function createTailnetFetch(route: TailnetRoute): SafeRemoteFetch {
       } as RequestInit & { dispatcher: Agent });
     } catch (error) {
       const refusal = privateNetworkRefusal(error);
-      throw new Error(`Could not reach ${url.host}: ${refusal ?? reason(error)}`, {
+      throw new ConnectionSetupError(`Could not reach ${url.host}: ${refusal ?? reason(error)}`, {
         cause: error,
       });
     }

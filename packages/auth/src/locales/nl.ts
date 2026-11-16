@@ -72,4 +72,17 @@ export const NL_MESSAGES: Record<string, string> = {
     "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je opnieuw een abonnement neemt.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je een abonnement kiest.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} heeft je uitgenodigd voor {organization} op Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} heeft je uitgenodigd om lid te worden van {organization} op Rakazo.",
+  "Join {organization}": "Word lid van {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Deze uitnodiging verloopt over 7 dagen. Log in met dit e-mailadres om haar te accepteren.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} heeft je uitgenodigd voor {space} op Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} heeft je uitgenodigd om lid te worden van {space} op Rakazo.",
+  "Join {space}": "Word lid van {space}",
+  "This invitation expires in 7 days.": "Deze uitnodiging verloopt over 7 dagen.",
 };
