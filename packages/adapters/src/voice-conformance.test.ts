@@ -293,6 +293,9 @@ describe.each(kinds)("%s voice conformance", (kind) => {
     expect(VoiceCatalogEntrySchema.safeParse({ id: kind, ...definition.catalog }).success).toBe(
       true,
     );
+    // Every provider lists voices and speaks; the tests below call both.
+    expect(described.capabilities.catalog).toBe(true);
+    expect(described.capabilities.synthesize).toBe(true);
     expect(described.capabilities.transcribe).toBe(definition.catalog.transcribe);
     expect(typeof provider.transcribe === "function").toBe(definition.catalog.transcribe);
     expect(Boolean(described.capabilities.languages)).toBe(Boolean(definition.catalog.languages));
