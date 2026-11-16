@@ -1029,7 +1029,10 @@ export async function recordClip(
     const file = new File(uri);
     const base64 = await file.base64();
     deleteQuietly(uri);
-    return { base64, mimeType: "audio/m4a" };
+    return {
+      base64,
+      mimeType: Platform.OS === "web" ? (preset.web.mimeType ?? "audio/webm") : "audio/m4a",
+    };
   } finally {
     recorder?.release();
     if (recordingTurn === signal) {

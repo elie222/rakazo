@@ -2326,13 +2326,15 @@ describe("mobile call recording without metering", () => {
     { os: "web", dictating: false },
   ])("passes speech encoding options on $os (dictating=$dictating)", async ({ os, dictating }) => {
     device.os = os;
+    audio.status = { metering: -10 };
     const stopped = new AbortController();
     const clip = recordClip(new AbortController().signal, dictating ? stopped.signal : undefined);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(200);
     // Stop first, so a failed assertion leaves no recorder running.
+    audio.status = { metering: -60 };
     stopped.abort();
-    await vi.advanceTimersByTimeAsync(1_000);
-    await clip;
+    await vi.advanceTimersByTimeAsync(2_000);
+    const result = await clip;
     expect(audio.options).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         extension: ".m4a",
@@ -2347,6 +2349,10 @@ describe("mobile call recording without metering", () => {
             : { mimeType: "audio/webm", bitsPerSecond: 48_000 }),
       }),
     );
+    expect(result).toEqual({
+      base64: "c2lsZW5jZQ==",
+      mimeType: os === "web" ? "audio/webm" : "audio/m4a",
+    });
     expect(audio.release).toHaveBeenCalledOnce();
   });
 
