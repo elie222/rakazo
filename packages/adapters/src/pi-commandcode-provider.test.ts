@@ -96,6 +96,12 @@ describe("commandcode catalogue", () => {
       (candidate) => candidate.provider === COMMANDCODE_PROVIDER_ID,
     );
     expect(entry?.providerName).toBe("CommandCode");
+    // The Chat Completions models do share one https root, so the probe is refused by the trait the
+    // adapter declares, not by the URL shapes the shared probe happens to reject.
+    const chatRoots = new Set(
+      models.filter((m) => m.api === "openai-completions").map((m) => m.baseUrl),
+    );
+    expect([...chatRoots]).toEqual(["https://api.commandcode.ai/provider/v1"]);
     expect(catalogProviderProbeBaseUrl(COMMANDCODE_PROVIDER_ID)).toBeNull();
   });
 });

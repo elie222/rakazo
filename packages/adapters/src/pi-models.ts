@@ -15,7 +15,6 @@ import {
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { piBaseRegistry } from "./pi-base-registry.js";
-import { COMMANDCODE_PROVIDER_ID } from "./pi-commandcode-provider.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
@@ -25,6 +24,7 @@ import {
 } from "./pi-openai-compatible-provider.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { maximumModelCallCost } from "./pi-usage.js";
+import { isCatalogProbeDisabled } from "./provider-traits.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -256,9 +256,7 @@ function pinnedCatalogProbeBaseUrl(
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID || providerId === LOCAL_PROVIDER_ID) {
     return null;
   }
-  // CommandCode serves Claude on Messages and everything else on Chat Completions: a probed
-  // overlay would register new Claude ids as Chat Completions models and reject every request.
-  if (providerId === COMMANDCODE_PROVIDER_ID) return null;
+  if (isCatalogProbeDisabled(providerId)) return null;
   const urls = new Set<string>();
   for (const model of models) {
     if (!CATALOG_PROBE_APIS.has(model.api) || !model.baseUrl) continue;
@@ -287,7 +285,6 @@ let cachedCatalog: PiCatalogEntry[] | undefined;
 
 // Keep existing display names across pi 1.3's provider renames.
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  commandcode: "CommandCode",
   "openai-codex": "OpenAI Codex",
   azure: "Azure OpenAI",
 };

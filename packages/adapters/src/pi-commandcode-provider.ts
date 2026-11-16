@@ -15,6 +15,7 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
+import { disableCatalogProbe } from "./provider-traits.js";
 
 export const COMMANDCODE_PROVIDER_ID = "commandcode";
 
@@ -244,6 +245,11 @@ export function commandCodeCatalogProvider(base: MutableModels): Provider {
 }
 
 export function registerCommandCodeProvider(base: MutableModels): MutableModels {
+  // The catalogue spans two endpoints, so a model list probed from the Chat Completions one would
+  // record Claude ids as Chat Completions models and every request to them would be rejected. The
+  // trait is declared here, where the endpoints are known, instead of the shared catalogue code
+  // comparing a provider id.
+  disableCatalogProbe(COMMANDCODE_PROVIDER_ID);
   // Several runtime tests replace Pi's bundled catalogue with a stub that only answers getModel, and
   // this provider's traits are read from the other providers, so registration has to accept a base
   // that cannot hold providers instead of failing the run it is building.
