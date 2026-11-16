@@ -2426,8 +2426,8 @@ export function loginCodeClaim(input: {
       try {
         return await take();
       } catch (error) {
-        // compat-shim(after v0.11.0): the same code's row, written by a previous release's claim
-        // that takes no lock.
+        // The same code's row, written by a previous release's claim that takes no lock. Rows it
+        // left stay in the database, so this goes only with a migration that settles them.
         if ((error as { code?: unknown } | null)?.code === "P2002") return CODE_ALREADY_TYPED;
         throw error;
       }
