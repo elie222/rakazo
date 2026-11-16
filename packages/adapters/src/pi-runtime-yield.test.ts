@@ -1,6 +1,7 @@
 import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
 
@@ -30,6 +31,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { releaseToolCallBudget } from "./pi-runtime-tools.js";
 
 /** Each model call answers with the next step: a call to list_files at `path`, or the reply. */
 function script(steps: Array<string | undefined>) {
@@ -129,16 +131,11 @@ describe("a turn whose process starts stopping", () => {
   it("hands back after a step during which an earlier shell command finished", async () => {
     const stopping = new AbortController();
     const input = request(stopping);
-    let finishShell: () => void = () => undefined;
+    const shell = deferred<{ stdout: string; stderr: string; code: number }>();
     input.executeTool = vi.fn(async (_name, args, _id, _route, observer) => {
-      if (args.path === "a")
-        observer?.onShellStillRunning?.(
-          new Promise((resolve) => {
-            finishShell = () => resolve({ stdout: "built", stderr: "", code: 0 });
-          }),
-        );
+      if (args.path === "a") observer?.onShellStillRunning?.(shell.promise);
       if (args.path === "b") {
-        finishShell();
+        shell.resolve({ stdout: "built", stderr: "", code: 0 });
         stopping.abort();
       }
       return { entries: [`${args.path}/file.txt`] };
@@ -189,6 +186,33 @@ describe("a turn whose process starts stopping", () => {
       JSON.stringify(message.content).includes("Also check c"),
     );
     expect(mentions).toHaveLength(1);
+  });
+
+  it("counts the saved turn's tool calls toward the per-turn limit on another process", async () => {
+    vi.stubEnv("MAX_TOOL_CALLS_PER_TURN", "3");
+    try {
+      const input = request(new AbortController(), "b");
+      script(["a", "b", "c", "d", undefined]);
+      const events = await run(input);
+      const yielded = events.find((event) => event.type === "yielded");
+      expect(yielded).toBeDefined();
+      // Another process holds no in-memory budget for the run.
+      releaseToolCallBudget(input.runId, false);
+
+      const resumed = { ...request(new AbortController()), runId: input.runId };
+      const resumedEvents = await run({
+        ...resumed,
+        turnCheckpoint: yielded?.type === "yielded" ? yielded.checkpoint : undefined,
+      });
+
+      expect(calledPaths(resumed)).toEqual(["c"]);
+      expect(resumedEvents).toContainEqual({
+        type: "progress",
+        text: "Stopped: more than 3 tool calls in one turn.",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("finishes a turn whose last step is in flight instead of handing it back", async () => {

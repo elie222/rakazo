@@ -226,9 +226,10 @@ export class PiAgentRuntime implements AgentRuntime {
       let yielded: string | undefined;
       let resumeHost: ToolHost | undefined;
       try {
-        const savedMode = request.turnCheckpoint
-          ? restoreTurnCheckpoint(request.turnCheckpoint, request.model).computerMode
+        const saved = request.turnCheckpoint
+          ? restoreTurnCheckpoint(request.turnCheckpoint, request.model)
           : undefined;
+        const savedMode = saved?.computerMode;
         // An executor that resolved the pinned models already passes them in.
         if (savedMode && !request.computerModel) {
           const pinned = await restoreComputerModels(request, savedMode);
@@ -246,7 +247,10 @@ export class PiAgentRuntime implements AgentRuntime {
         const { models, model, apiKey } = selectedModel;
         const toolDefs = request.tools;
         const completionModel = modelForCompletion(model, request.model.maxTokens);
-        trackedBudget = toolCallBudgetFor(request.runId);
+        trackedBudget = toolCallBudgetFor(
+          request.runId,
+          typeof saved?.toolCallCount === "number" ? saved.toolCallCount : 0,
+        );
         const initialModelTarget: RuntimeModelTarget = {
           config: request.model,
           models,
@@ -766,6 +770,7 @@ export class PiAgentRuntime implements AgentRuntime {
             model: activeStreamTarget.model.id,
             systemPrompt,
             pendingToolCallId,
+            ...(host.toolCallBudget.count > 0 && { toolCallCount: host.toolCallBudget.count }),
             executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
             messages: messages as Message[],
             historyMessageIds: [...representedHistoryIds],

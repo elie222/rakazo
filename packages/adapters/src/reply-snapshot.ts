@@ -28,6 +28,12 @@ const ReplySnapshotSchema = z.object({
   computerTaskStarted: z.boolean(),
   assistantTurnBreakPending: z.boolean(),
   progressBudgetStart: z.number(),
+  // Added after the first release of this snapshot, so a saved reply without them keeps the
+  // fresh attempt's values. Times are wall-clock milliseconds, the same on any process.
+  steeringReplyPending: z.boolean().optional(),
+  steeringResets: z.number().optional(),
+  lastSteeringResetAt: z.number().optional(),
+  turnStartedAtMs: z.number().optional(),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshotSchema>;
 
@@ -64,6 +70,13 @@ export function snapshotReply(reply: ReplyState): ReplySnapshot {
     computerTaskStarted: reply.computerTaskStarted,
     assistantTurnBreakPending: reply.assistantTurnBreakPending,
     progressBudgetStart: reply.progressBudgetStart,
+    steeringReplyPending: reply.steeringReplyPending,
+    steeringResets: reply.steeringResets,
+    // Never reset is -Infinity, which JSON cannot hold.
+    ...(Number.isFinite(reply.lastSteeringResetAt) && {
+      lastSteeringResetAt: reply.lastSteeringResetAt,
+    }),
+    turnStartedAtMs: reply.turnStartedAtMs,
   };
 }
 

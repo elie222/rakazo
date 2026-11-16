@@ -7,7 +7,7 @@ import { createReplyState } from "./run-progress.js";
 const freshReply = () =>
   createReplyState(
     { prisma: { message: { findMany: async () => [] } } } as unknown as ExecutorDeps,
-    { id: "run-1", startedAt: null } as unknown as Run,
+    { id: "run-1", startedAt: new Date("2026-01-01T00:00:00Z") } as unknown as Run,
     [],
   );
 
@@ -40,6 +40,40 @@ describe("a reply saved with a handed-back turn", () => {
     expect(after.narrationSoFar).toBe("Looking at the files.");
     expect(after.assistantTurnBreakPending).toBe(true);
     expect(after.latestScreenshot).toEqual(before.latestScreenshot);
+  });
+
+  it("keeps the answer allowance, steering limits and turn clock of the saved turn", async () => {
+    const before = await freshReply();
+    before.steeringReplyPending = true;
+    before.steeringResets = 2;
+    before.lastSteeringResetAt = 1_700_000_060_000;
+    before.turnStartedAtMs = 1_700_000_000_000;
+
+    const after = await freshReply();
+    restoreReply(after, JSON.parse(JSON.stringify(snapshotReply(before))));
+
+    expect(after.steeringReplyPending).toBe(true);
+    expect(after.steeringResets).toBe(2);
+    expect(after.lastSteeringResetAt).toBe(1_700_000_060_000);
+    expect(after.turnStartedAtMs).toBe(1_700_000_000_000);
+  });
+
+  it("keeps the fresh attempt's allowance, limits and clock for a reply saved without them", async () => {
+    const before = await freshReply();
+    const {
+      steeringReplyPending: _pending,
+      steeringResets: _resets,
+      lastSteeringResetAt: _lastReset,
+      turnStartedAtMs: _started,
+      ...older
+    } = snapshotReply(before);
+    const after = await freshReply();
+    restoreReply(after, JSON.parse(JSON.stringify(older)));
+
+    expect(after.steeringReplyPending).toBe(false);
+    expect(after.steeringResets).toBe(0);
+    expect(after.lastSteeringResetAt).toBe(Number.NEGATIVE_INFINITY);
+    expect(after.turnStartedAtMs).toBe(Date.parse("2026-01-01T00:00:00Z"));
   });
 
   it("starts the reply empty when the saved turn has none or one it cannot read", async () => {
