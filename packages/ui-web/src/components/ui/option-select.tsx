@@ -25,9 +25,11 @@ function OptionSelect<T extends string>({
   options,
   onValueChange,
   disabled = false,
+  required = false,
   size = "default",
   className,
   "aria-label": ariaLabel,
+  "aria-labelledby": labelledBy,
   "data-testid": testId,
 }: {
   id?: string;
@@ -36,9 +38,11 @@ function OptionSelect<T extends string>({
   options: readonly SelectOption<T>[];
   onValueChange: (value: T) => void;
   disabled?: boolean;
+  required?: boolean;
   size?: "sm" | "default";
   className?: string;
   "aria-label"?: string;
+  "aria-labelledby"?: string;
   "data-testid"?: string;
 }) {
   return (
@@ -46,6 +50,7 @@ function OptionSelect<T extends string>({
       value={value}
       items={options}
       disabled={disabled}
+      required={required}
       onValueChange={(next) => {
         const option = options.find((entry) => entry.value === next);
         if (option) onValueChange(option.value);
@@ -55,8 +60,9 @@ function OptionSelect<T extends string>({
         id={id}
         size={size}
         aria-label={ariaLabel}
+        aria-labelledby={labelledBy}
         data-testid={testId}
-        className={cn("w-full", className)}
+        className={cn("w-full data-[size=default]:h-9", className)}
       >
         <SelectValue />
       </SelectTrigger>

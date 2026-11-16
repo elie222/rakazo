@@ -15,8 +15,6 @@ import {
   EmptyMedia,
   EmptyTitle,
   ListSearchInput,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   Select,
   SelectContent,
@@ -927,18 +925,16 @@ function PreviewPane({
           ) : null}
         </div>
         {versions && versions.length > 1 && selectedVersionId ? (
-          <NativeSelect
+          <OptionSelect
             aria-label={t`Version`}
             className="w-auto shrink-0 text-body-sm"
             value={selectedVersionId}
-            onChange={(event) => setSelectedVersionId(event.target.value)}
-          >
-            {versions.map((entry) => (
-              <NativeSelectOption key={entry.id} value={entry.id}>
-                {`v${entry.version} (${formatRelativeTime(entry.createdAt)})`}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={versions.map((entry) => ({
+              value: entry.id,
+              label: `v${entry.version} (${formatRelativeTime(entry.createdAt)})`,
+            }))}
+            onValueChange={setSelectedVersionId}
+          />
         ) : null}
         {state.status === "ready" ? (
           <>
