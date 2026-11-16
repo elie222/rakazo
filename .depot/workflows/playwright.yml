@@ -70,8 +70,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
       - name: Start Postgres
-        uses: ./.github/actions/start-postgres
-      - uses: ./.github/actions/setup-workspace
+        uses: ./.depot/actions/start-postgres
+      - uses: ./.depot/actions/setup-workspace
         with:
           playwright: "true"
       - name: Install Chromium
@@ -130,7 +130,7 @@ jobs:
           path: ${{ runner.temp }}/fonts-noto-cjk
           key: ${{ steps.cjk-key.outputs.key }}
       - name: Wait for Postgres
-        run: bash .github/actions/start-postgres/wait.sh
+        run: bash .depot/actions/start-postgres/wait.sh
       - name: Run Playwright tests
         id: playwright_tests
         env:
@@ -170,8 +170,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Start Postgres
-        uses: ./.github/actions/start-postgres
-      - uses: ./.github/actions/setup-workspace
+        uses: ./.depot/actions/start-postgres
+      - uses: ./.depot/actions/setup-workspace
         with:
           playwright: "true"
       - name: Install Chromium
@@ -184,7 +184,7 @@ jobs:
           infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
       - name: Wait for Postgres
-        run: bash .github/actions/start-postgres/wait.sh
+        run: bash .depot/actions/start-postgres/wait.sh
       - name: Run Playwright tests
         id: playwright_tests
         env:
@@ -211,7 +211,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: ./.github/actions/setup-workspace
+      - uses: ./.depot/actions/setup-workspace
         with:
           playwright: "true"
       - name: Install Chromium
@@ -251,7 +251,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
-      - uses: ./.github/actions/setup-workspace
+      - uses: ./.depot/actions/setup-workspace
         if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: ${{ !inputs.publish_report }}

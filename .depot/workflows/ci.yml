@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-workspace
+      - uses: ./.depot/actions/setup-workspace
         with:
           electron: ${{ env.WEB }}
           turbo: build
@@ -121,7 +121,7 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup-workspace
+      - uses: ./.depot/actions/setup-workspace
         with:
           turbo: ${{ github.event_name == 'pull_request' && 'check' || 'none' }}
       - name: Lint
@@ -202,7 +202,7 @@ jobs:
           echo "run=$(jq --argjson shard "$SHARD" 'index($shard) != null' <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
           # A single selected shard runs every test itself rather than a quarter of them.
           echo "whole=$(jq 'length == 1' <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup-workspace
+      - uses: ./.depot/actions/setup-workspace
         if: steps.unit.outputs.run == 'true'
       - run: pnpm db:generate
         if: steps.unit.outputs.run == 'true'
@@ -276,12 +276,12 @@ jobs:
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - name: Start Postgres
         if: steps.areas.outputs.server != 'false'
-        uses: ./.github/actions/start-postgres
-      - uses: ./.github/actions/setup-workspace
+        uses: ./.depot/actions/start-postgres
+      - uses: ./.depot/actions/setup-workspace
         if: steps.areas.outputs.server != 'false'
       - name: Wait for Postgres
         if: steps.areas.outputs.server != 'false'
-        run: bash .github/actions/start-postgres/wait.sh
+        run: bash .depot/actions/start-postgres/wait.sh
       - run: pnpm test:integration --shard=${{ matrix.shard }}/4
         if: steps.areas.outputs.server != 'false'
   # The required check and the deploy gate, under one stable name.
