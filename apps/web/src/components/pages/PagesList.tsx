@@ -243,6 +243,15 @@ function OwnerPages({
       }}
     />
   ) : null;
+  const actionError = rename.isError ? (
+    <p role="alert" className="px-2 text-label text-destructive">
+      <Trans>Could not rename this page. Try again.</Trans>
+    </p>
+  ) : pin.isError ? (
+    <p role="alert" className="px-2 text-label text-destructive">
+      <Trans>Could not pin this page. Try again.</Trans>
+    </p>
+  ) : null;
   if (preview) {
     const more = items.length > PREVIEW_COUNT || pages.hasNextPage;
     return (
@@ -261,6 +270,7 @@ function OwnerPages({
             <Trans>Pages</Trans>
           )}
         </SectionHeading>
+        {actionError}
         <ul className="flex flex-col">{[...pinned, ...rest].slice(0, PREVIEW_COUNT).map(row)}</ul>
         {deleteDialog}
       </section>
@@ -281,15 +291,7 @@ function OwnerPages({
           />
         </label>
       ) : null}
-      {rename.isError ? (
-        <p role="alert" className="px-2 text-label text-destructive">
-          <Trans>Could not rename this page. Try again.</Trans>
-        </p>
-      ) : pin.isError ? (
-        <p role="alert" className="px-2 text-label text-destructive">
-          <Trans>Could not pin this page. Try again.</Trans>
-        </p>
-      ) : null}
+      {actionError}
       {items.length === 0 ? (
         <p className="px-2 py-1 text-body-sm text-muted-foreground">
           <Trans>No pages match “{query}”.</Trans>

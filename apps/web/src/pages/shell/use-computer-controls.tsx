@@ -476,7 +476,9 @@ export function useComputerControls({
         </Button>
       )}
       {computerBot &&
-      ((screenFailure && computer?.state === "running") ||
+      // A screen that will not load on a running computer offers Recover, never a Reset that
+      // wipes unsaved work; a failed computer offers whichever repair it has.
+      ((screenFailure && computer?.state === "running" && computer.canUpdate) ||
         (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
           botId={computerBot.id}
