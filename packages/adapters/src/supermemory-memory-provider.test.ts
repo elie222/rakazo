@@ -366,6 +366,24 @@ describe("Supermemory local base URL", () => {
     expect(resolveHostname).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each(["http://127.0.0.1:6767", "http://localhost:6767", "http://[::1]:6767"])(
+    "rejects loopback %s for a non-owner before any probe",
+    async (baseUrl) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        prepareSupermemoryConnection({ mode: "local", baseUrl }, credentials, {
+          allowPrivateEndpoint: false,
+        }),
+      ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
+      await expect(
+        prepareSupermemoryConnection({ mode: "local", baseUrl }, credentials),
+      ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("Supermemory private host reuse", () => {

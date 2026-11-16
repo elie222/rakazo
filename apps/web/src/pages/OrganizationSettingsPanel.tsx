@@ -1,10 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
 import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import { OrganizationMembersSettings } from "../components/OrganizationMembersSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
@@ -52,7 +51,6 @@ function OrganizationSettings({
   });
   const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [showingMembers, setShowingMembers] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
@@ -140,22 +138,15 @@ function OrganizationSettings({
           </span>
         </button>
       </SettingsGroup>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="rounded-full" onClick={() => setCreating(true)}>
-          <Plus aria-hidden="true" />
-          <Trans>Create organization</Trans>
+      {canDelete ? (
+        <Button
+          variant="destructive"
+          className="rounded-full"
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trans>Delete organization</Trans>
         </Button>
-        {canDelete ? (
-          <Button
-            variant="destructive"
-            className="rounded-full"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trans>Delete organization</Trans>
-          </Button>
-        ) : null}
-      </div>
-      <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
+      ) : null}
       {confirmingDelete ? (
         <DeleteOrganizationDialog
           organization={organization}

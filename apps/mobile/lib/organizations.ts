@@ -76,6 +76,12 @@ export function refreshOrganizations(): Promise<void> {
 /** Organization rows with a check on the active one; none until there is a second. */
 export function organizationSwitchActions(list: OrganizationList | undefined): MenuAction[] {
   if (!list || list.organizations.length < 2) return [];
+  return organizationActions(list);
+}
+
+/** Every organization row, the active one checked, even when it is the only one. */
+export function organizationActions(list: OrganizationList | undefined): MenuAction[] {
+  if (!list) return [];
   const active = activeOrganization(list);
   return list.organizations.map((organization) => ({
     id: `${ORGANIZATION_ACTION_PREFIX}${organization.id}`,

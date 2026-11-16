@@ -1,5 +1,5 @@
-import { blogOgPages } from "./blog/og";
 import { ALTERNATIVES, ALTERNATIVES_HUB } from "./alternatives";
+import { blogOgPages } from "./blog/og";
 import { ENTERPRISE_H1 } from "./enterprise";
 import { GROK_ALTERNATIVE_H1 } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";

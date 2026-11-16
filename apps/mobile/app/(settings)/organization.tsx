@@ -17,7 +17,6 @@ import {
   useOrganizations,
 } from "../../lib/organizations";
 import { useSave } from "../../lib/query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -130,15 +129,6 @@ export default function OrganizationSettings() {
                 params: { organizationId: current.id },
               })
             }
-          />
-        </SettingsGroup>
-        <SettingsGroup>
-          <SettingsRow
-            key="create"
-            accessibilityRole="button"
-            disabled={pending}
-            title={t`Create organization`}
-            onPress={() => openFromSettingsSheet(router, "/new-organization")}
           />
         </SettingsGroup>
         {canDelete ? (
