@@ -639,9 +639,9 @@ describe("projectMessages", () => {
     expect(messages).toHaveLength(0);
   });
 
-  it("stops showing the run as working while it waits for input", () => {
+  it("stops showing the run as working while it waits for input, and again once it resumes", () => {
     const at = "2026-01-01T00:00:00.000Z";
-    const messages = projectMessages([
+    const paused: Parameters<typeof projectMessages>[0] = [
       {
         id: "e1",
         threadId: "t1",
@@ -682,8 +682,25 @@ describe("projectMessages", () => {
         payload: {},
         createdAt: at,
       },
+    ];
+    expect(projectMessages(paused).map((message) => message.id)).toEqual(["m1"]);
+
+    const resumed = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
     ]);
-    expect(messages.map((message) => message.id)).toEqual(["m1"]);
+    expect(resumed.map((message) => message.id)).toEqual([
+      "m1",
+      expect.stringMatching(/^progress:/),
+    ]);
   });
 });
 
