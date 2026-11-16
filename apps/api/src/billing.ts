@@ -458,8 +458,15 @@ export function createBillingService(deps: {
           ttlMs: CHECKOUT_LEASE_MS,
           // A provider operation can outlast one lease period, so the claim is kept fresh with the
           // lease; a deletion's cancellation then waits for the operation instead of taking over.
-          onRenew: async () =>
-            !claimId || renewCheckoutLease(prisma, organizationId, claimId, CHECKOUT_LEASE_MS),
+          // A renewal racing the release below finds the claim already given back: not a loss.
+          onRenew: async () => {
+            const held = claimId;
+            if (!held) return true;
+            return (
+              (await renewCheckoutLease(prisma, organizationId, held, CHECKOUT_LEASE_MS)) ||
+              claimId !== held
+            );
+          },
         },
         async (lease) => {
           claimId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
@@ -473,9 +480,11 @@ export function createBillingService(deps: {
             await prisma.$transaction((tx) => assertLeaseHeld(tx, lease));
             return result;
           } finally {
+            const held = claimId;
+            claimId = null;
             await bestEffort(
               "release checkout claim",
-              releaseCheckoutLease(prisma, organizationId, claimId),
+              releaseCheckoutLease(prisma, organizationId, held),
             );
           }
         },
