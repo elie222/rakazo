@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { routineRunReplyText } from "./routine-runs";
 
-vi.mock("expo-router", () => ({ useFocusEffect: vi.fn() }));
+vi.mock("expo-router", () => ({ useFocusEffect: vi.fn(), useIsFocused: vi.fn() }));
 vi.mock("./query", () => ({ queryClient: {}, rpcQuery: {} }));
+vi.mock("./roster-signals", () => ({ useSpaceChanges: vi.fn() }));
 
 const steps = (label: string, count = 1) => ({
   kind: "steps" as const,

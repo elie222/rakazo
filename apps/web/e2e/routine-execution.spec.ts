@@ -126,8 +126,8 @@ test("a silent routine runs without posting to the chat and keeps its reply in t
   await completeOnboarding(page);
   const botId = activeBotId(page);
 
-  await openBotPanelTab(page, "Routines");
-  await page.getByRole("button", { name: "Create Routine" }).click();
+  await openBotPanel(page);
+  await page.getByTestId("routine-create-button").click();
   await page.locator("label:has-text('Name') input").fill("Board tidy");
   await page
     .locator("label:has-text('Instruction') textarea")

@@ -1599,7 +1599,7 @@ describe("threadSnapshot", () => {
       where: {
         botId: { in: ["bot-a", "bot-b"] },
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
-        trigger: { notIn: ["tickets", "helper"] },
+        trigger: { notIn: ["tickets", "silent_routine", "helper"] },
       },
       orderBy: { createdAt: "desc" },
       select: { botId: true, status: true },
