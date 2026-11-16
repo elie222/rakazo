@@ -103,6 +103,12 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   );
   const listQuery = useQuery(listRead, queryClient);
   const { refetch: refetchList } = listQuery;
+  const overrides = useQuery(
+    { ...rpcQuery("spaceSettings/overrides"), enabled: scope === "account" },
+    queryClient,
+  );
+  const { refetch: refetchOverrides } = overrides;
+  const ownVault = scope === "account" && Boolean(overrides.data?.includes("credentials"));
   // Null until the first read lands.
   const items = listQuery.data ?? null;
   const loadError = listQuery.error
@@ -143,7 +149,8 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     useCallback(() => {
       setError(null);
       void refetchList();
-    }, [refetchList]),
+      if (scope === "account") void refetchOverrides();
+    }, [refetchList, refetchOverrides, scope]),
   );
 
   useEffect(() => {
@@ -160,21 +167,6 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       current = false;
     };
   }, [opened, rpc, scope]);
-
-  const [ownVault, setOwnVault] = useState(false);
-  useEffect(() => {
-    setOwnVault(false);
-    if (scope !== "account") return;
-    let current = true;
-    void rpc("spaceSettings/overrides")
-      .then((overrides) => {
-        if (current) setOwnVault(overrides.includes("credentials"));
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [rpc, scope]);
 
   const canChooseBots = vaultBotsChoosable(items);
   // Read for each edit, so bots added or a Space's vault changed since are what it offers.
@@ -476,6 +468,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             onRetry={() => {
               setError(null);
               void refetchList();
+              if (scope === "account") void refetchOverrides();
             }}
           />
         ) : null}
