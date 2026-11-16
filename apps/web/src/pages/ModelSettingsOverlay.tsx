@@ -6,7 +6,12 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { catalogEntryFor, connectionModels, popularModelProvidersFirst } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  connectionModels,
+  connectionServesModel,
+  popularModelProvidersFirst,
+} from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -210,7 +215,7 @@ export function ModelSettingsOverlay({
   const connectionFooter =
     connected && credential ? (
       <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        <ConnectionNameField key={credential.id} credential={credential} />
+        <ConnectionNameField key={credential.id} credential={credential} disabled={busy} />
         <Button
           type="button"
           variant="ghost"
@@ -477,7 +482,7 @@ export function ModelSettingsOverlay({
     page?.kind === "model" &&
     pageCredential &&
     !loading &&
-    !providerModels(pageCredential).some((entry) => entry.id === page.modelId);
+    !connectionServesModel(pageCredential, catalog, page.modelId);
   useEffect(() => {
     if (modelRemoved && page) setPage({ kind: "provider", credentialId: page.credentialId });
   }, [modelRemoved, page]);

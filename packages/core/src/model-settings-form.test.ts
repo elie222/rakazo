@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   catalogEntryFor,
   connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelSettingsDefaults,
@@ -207,6 +208,18 @@ describe("connectionModels", () => {
     ]);
   });
 
+  it("lists every catalog model while older connection-wide limits apply", () => {
+    expect(
+      connectionModels(credential({ maxTokens: 4096 }), catalog).map((model) => model.id),
+    ).toEqual(["a", "c"]);
+  });
+
+  it("still serves a catalog model once it has no settings to show", () => {
+    expect(connectionModels(credential(), catalog)).toEqual([]);
+    expect(connectionServesModel(credential(), catalog, "a")).toBe(true);
+    expect(connectionServesModel(credential(), catalog, "b")).toBe(false);
+  });
+
   it("lists an OpenAI-compatible connection's enabled models", () => {
     expect(
       connectionModels(
@@ -272,6 +285,8 @@ describe("newestModelsFirst", () => {
       "claude-opus-5-5",
       "gpt-4o-2024-08-06",
       "gpt-4.1",
+      "llama-3-8b",
+      "llama-3.1-8b",
       "unversioned",
     ].map((id) => ({ id }));
     expect(newestModelsFirst(ids).map((model) => model.id)).toEqual([
@@ -283,6 +298,8 @@ describe("newestModelsFirst", () => {
       "gpt-4.1",
       "claude-sonnet-4-20250514",
       "gpt-4o-2024-08-06",
+      "llama-3.1-8b",
+      "llama-3-8b",
       "unversioned",
     ]);
   });
@@ -291,6 +308,8 @@ describe("newestModelsFirst", () => {
 describe("modelSettingsEditable", () => {
   it("opens settings only where the catalog cannot describe the model or it has its own", () => {
     expect(modelSettingsEditable(credential(), { live: undefined }, "a")).toBe(false);
+    expect(modelSettingsEditable(credential(), undefined, "a")).toBe(false);
+    expect(modelSettingsEditable(credential({ maxTokens: 4096 }), {}, "a")).toBe(true);
     expect(modelSettingsEditable(credential(), { live: true }, "a")).toBe(true);
     expect(modelSettingsEditable(credential({ provider: COMPATIBLE }), undefined, "a")).toBe(true);
     expect(

@@ -248,6 +248,7 @@ vi.mock("./api", () => ({
               isDefault: true,
               thinkingLevel: "high",
               reconnectRequired: mocks.reconnectRequired,
+              ...(mocks.subscriptionSignIn ? { authKind: "oauth" } : {}),
             },
             ...(mocks.secondConnection
               ? [

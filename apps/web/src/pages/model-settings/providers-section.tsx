@@ -81,7 +81,14 @@ export function ProvidersSection({
 }
 
 /** Renames a connection: a button that opens its name field, saved on its own. */
-export function ConnectionNameField({ credential }: { credential: ModelCredential }) {
+export function ConnectionNameField({
+  credential,
+  disabled,
+}: {
+  credential: ModelCredential;
+  /** Another save on the connection is in flight. */
+  disabled?: boolean;
+}) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const [name, setName] = useState<string | null>(null);
@@ -98,6 +105,7 @@ export function ConnectionNameField({ credential }: { credential: ModelCredentia
         variant="ghost"
         size="sm"
         className="-ms-2.5 text-muted-foreground"
+        disabled={disabled}
         onClick={() => setName(credential.label)}
       >
         <Trans>Rename</Trans>
@@ -127,7 +135,12 @@ export function ConnectionNameField({ credential }: { credential: ModelCredentia
           }}
           className="h-10 text-foreground"
         />
-        <Button type="submit" variant="secondary" className="h-10" disabled={saving || !trimmed}>
+        <Button
+          type="submit"
+          variant="secondary"
+          className="h-10"
+          disabled={saving || disabled || !trimmed}
+        >
           {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </Button>
       </div>

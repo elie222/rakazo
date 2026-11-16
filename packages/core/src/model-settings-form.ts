@@ -79,42 +79,80 @@ export function modelHasOwnSettings(
 /** One model a connection runs, with the settings saved for it. */
 export type ConnectionModel = { id: string; label: string; settings?: ModelSettings };
 
+type ListedCredential = Pick<
+  ModelCredential,
+  | "id"
+  | "provider"
+  | "modelId"
+  | "enabledModelIds"
+  | "modelSettings"
+  | "maxTokens"
+  | "contextWindow"
+>;
+type ListedEntry = Pick<
+  ModelCatalogEntry,
+  "provider" | "id" | "label" | "placeholder" | "credentialIds" | "live"
+>;
+
+/** Every model a connection can run: a compatible connection's enabled ones, else its catalog's. */
+function servedModels(credential: ListedCredential, catalog: readonly ListedEntry[]) {
+  return credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+    ? (credential.enabledModelIds ?? (credential.modelId ? [credential.modelId] : [])).map(
+        (id) => ({ id, label: id, entry: undefined }),
+      )
+    : catalog
+        .filter(
+          (entry) =>
+            canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
+            !entry.placeholder &&
+            (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
+        )
+        .map((entry) => ({ id: entry.id, label: entry.label, entry }));
+}
+
+/** Whether the connection can still run the model, whether or not it has settings to show. */
+export function connectionServesModel(
+  credential: ListedCredential,
+  catalog: readonly ListedEntry[],
+  modelId: string,
+): boolean {
+  return servedModels(credential, catalog).some((model) => model.id === modelId);
+}
+
 /**
- * The models on a connection whose settings someone may need to set: an OpenAI-compatible
- * connection's enabled models, otherwise the models its provider lists that the catalog cannot
- * describe, plus any already given settings of their own so they can be reset. Models with their
- * own settings come first, then newest first.
+ * Whether a model on this connection has settings someone may need: any model on a compatible
+ * server, one its provider lists that the catalog cannot describe, or one already carrying its
+ * own limits or the connection-wide ones saved before models had their own.
+ */
+export function modelSettingsEditable(
+  credential: Pick<ModelCredential, "provider" | "modelSettings" | "maxTokens" | "contextWindow">,
+  entry: Pick<ModelCatalogEntry, "live"> | undefined,
+  modelId: string,
+): boolean {
+  return (
+    credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+    entry?.live === true ||
+    modelHasOwnSettings(credential, modelId) ||
+    credential.maxTokens !== undefined ||
+    credential.contextWindow !== undefined
+  );
+}
+
+/**
+ * The models on a connection whose settings someone may need to set (`modelSettingsEditable`).
+ * Models with their own settings come first, then a catalog's newest first.
  */
 export function connectionModels(
-  credential: Pick<
-    ModelCredential,
-    "id" | "provider" | "modelId" | "enabledModelIds" | "modelSettings"
-  >,
-  catalog: readonly Pick<
-    ModelCatalogEntry,
-    "provider" | "id" | "label" | "placeholder" | "credentialIds" | "live"
-  >[],
+  credential: ListedCredential,
+  catalog: readonly ListedEntry[],
 ): ConnectionModel[] {
-  const withSettings = (id: string, label: string) => ({
-    id,
-    label,
-    ...(modelHasOwnSettings(credential, id) ? { settings: credential.modelSettings?.[id] } : {}),
-  });
-  const models =
-    credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? (credential.enabledModelIds ?? (credential.modelId ? [credential.modelId] : [])).map((id) =>
-          withSettings(id, id),
-        )
-      : catalog
-          .filter(
-            (entry) =>
-              canonicalPiProviderId(entry.provider) ===
-                canonicalPiProviderId(credential.provider) &&
-              !entry.placeholder &&
-              (!entry.credentialIds || entry.credentialIds.includes(credential.id)) &&
-              (entry.live === true || modelHasOwnSettings(credential, entry.id)),
-          )
-          .map((entry) => withSettings(entry.id, entry.label));
+  const models = servedModels(credential, catalog)
+    .filter((model) => modelSettingsEditable(credential, model.entry, model.id))
+    .map(({ id, label }) => ({
+      id,
+      label,
+      ...(modelHasOwnSettings(credential, id) ? { settings: credential.modelSettings?.[id] } : {}),
+    }));
   const ordered =
     credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? models : newestModelsFirst(models);
   return [
@@ -123,21 +161,12 @@ export function connectionModels(
   ];
 }
 
-/** Whether a model on this connection has a settings page: only where `connectionModels` lists it. */
-export function modelSettingsEditable(
-  credential: Pick<ModelCredential, "provider" | "modelSettings">,
-  entry: Pick<ModelCatalogEntry, "live"> | undefined,
-  modelId: string,
-): boolean {
-  return (
-    modelCapabilitiesConfigurable(credential.provider, entry) ||
-    modelHasOwnSettings(credential, modelId)
-  );
-}
-
-/** The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for `x-4-5`. */
+/**
+ * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
+ * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
+ */
 function modelVersion(id: string): number[] {
-  const match = /\d+(?:[.-]\d{1,2}(?!\d))*/.exec(id);
+  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
   return match ? match[0].split(/[.-]/).map(Number) : [];
 }
 

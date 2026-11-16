@@ -70,7 +70,6 @@ export function RoleModelPicker({
   const { query, setQuery, showSearch, visible } = useListSearch(rows, {
     text: (row) => (row.option ? modelCatalogSearchText(row.option) : row.provider!.name),
   });
-  const searching = query.trim().length > 0;
   const groups = useMemo(() => {
     const grouped = new Map<string, RoleModelOption[]>();
     for (const row of visible) {
@@ -79,11 +78,8 @@ export function RoleModelPicker({
       const name = option.providerName ?? option.provider;
       grouped.set(name, [...(grouped.get(name) ?? []), option]);
     }
-    // A search keeps its best matches first.
-    return [...grouped].map(
-      ([name, entries]) => [name, searching ? entries : newestModelsFirst(entries)] as const,
-    );
-  }, [visible, searching]);
+    return [...grouped].map(([name, entries]) => [name, newestModelsFirst(entries)] as const);
+  }, [visible]);
   const needle = query.trim();
   const matchingProviders = visible.flatMap((row) => (row.provider ? [row.provider] : []));
   const values = [

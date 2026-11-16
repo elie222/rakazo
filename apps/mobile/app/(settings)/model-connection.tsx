@@ -631,14 +631,14 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : !credential || credential.reconnectRequired ? (
+          ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
               fill
               label={
                 oauthPending
                   ? t`Starting…`
-                  : credential
+                  : credential?.authKind === "oauth"
                     ? t`Sign in again`
                     : (selected.oauthLabel ?? t`Sign in`)
               }
