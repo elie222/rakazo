@@ -1,6 +1,6 @@
-import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
-import { Domain } from "./lark/thread-id.js";
-import { defineMessagingPlatform } from "./messaging-platform-descriptor.js";
+import { defineMessagingPlatform } from "../../../messaging-platform-descriptor.js";
+import { LazyLarkAdapter } from "./lazy-adapter.js";
+import { Domain } from "./thread-id.js";
 
 /**
  * App ID, secret, and verification token are all required: without the token the adapter

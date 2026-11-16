@@ -5,7 +5,7 @@ import { build } from "esbuild";
 import { expect, it } from "vitest";
 
 it("keeps the Lark SDK dynamic in a production server bundle", async () => {
-  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const root = fileURLToPath(new URL("../../../../../../", import.meta.url));
   const outfile = path.join(root, "apps/api/dist/index.js");
   const builtins = new Set(builtinModules);
   // Mirror scripts/build-server.mjs: one ESM bundle, workspace sources bundled,

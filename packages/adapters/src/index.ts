@@ -213,6 +213,8 @@ export { HindsightMemoryProvider } from "./providers/memory/hindsight/hindsight-
 export { HonchoMemoryProvider } from "./providers/memory/honcho/honcho-memory-provider.js";
 export { SerenityMemoryProvider } from "./providers/memory/serenity/serenity-memory-provider.js";
 export { SupermemoryMemoryProvider } from "./providers/memory/supermemory/supermemory-memory-provider.js";
+export * from "./providers/messaging/sendblue/sendblue-emulator.js";
+export * from "./providers/messaging/slack/slack-install-provider.js";
 export * from "./providers/voice/cartesia/cartesia-voice.js";
 export * from "./providers/voice/elevenlabs/elevenlabs-voice.js";
 export * from "./providers/voice/fish-audio/fish-audio-voice.js";
@@ -252,9 +254,7 @@ export * from "./secret-migration.js";
 export * from "./secret-persistence.js";
 export * from "./secret-store-factory.js";
 export * from "./secrets.js";
-export * from "./sendblue-emulator.js";
 export * from "./skill-tools.js";
-export * from "./slack-install-provider.js";
 export * from "./smtp-email.js";
 export * from "./storage-migration.js";
 export * from "./strategic-initiative.js";
