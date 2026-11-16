@@ -116,11 +116,13 @@ export class TailscaledNodeHost implements TailnetNodeHost {
         rm(dir, { recursive: true, force: true }),
       );
     });
+    let joining = false;
     try {
       await waitForSocket(socketPath, deadline, signal, exited, diagnostics);
       const keyFile = join(dir, "auth-key");
       await writeFile(keyFile, node.authKey, { mode: 0o600 });
       try {
+        joining = true;
         await this.cli(
           socketPath,
           [
@@ -141,6 +143,18 @@ export class TailscaledNodeHost implements TailnetNodeHost {
       // Stopped while joining: the device must not stay on the tailnet untracked.
       signal.throwIfAborted();
     } catch (error) {
+      // A join stopped during or just after `up` may have registered the device: log it out.
+      if (joining && signal.aborted) {
+        await bestEffort(
+          "log out a tailnet node whose join was stopped",
+          this.cli(
+            socketPath,
+            ["logout"],
+            LOGOUT_TIMEOUT_MS,
+            AbortSignal.timeout(LOGOUT_TIMEOUT_MS),
+          ),
+        );
+      }
       await this.terminate(node.nodeId, running);
       if (signal.aborted) throw error;
       const detail = error instanceof Error ? redact(error.message, node.authKey) : "";

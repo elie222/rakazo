@@ -269,10 +269,8 @@ export async function prepareRunComputer(
       computerUse.screenRelease = { computer, context, keepWarm: false };
       recordComputerDisk(deps, storedComputer.id, computer, context);
       scheduleComputerSleep(deps.jobs, storedComputer.id);
-      // The browsers' tailnet proxy, in the background: tools never wait for it. A native shell
-      // has no launcher to run it, so tailnet access stays off there.
-      const tailnetComputer = !sandboxKindCapabilities(computer.kind).nativeShell;
-      void (tailnetComputer ? deps.tailnet : undefined)
+      // The browsers' tailnet proxy, in the background: tools never wait for it.
+      void deps.tailnet
         ?.prepareComputer({
           sandbox: deps.sandbox,
           computerId: storedComputer.id,

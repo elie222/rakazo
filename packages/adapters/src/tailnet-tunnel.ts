@@ -14,6 +14,7 @@ import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { tailnetHelper } from "./page-browser-install.js";
 import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { parseTailnetDestination } from "./tailnet-host.js";
 import type { TailnetRun } from "./tailnet-service.js";
 
@@ -533,6 +534,8 @@ export function createTailnetCommandAccess(deps: {
   };
   return {
     async prepareComputer({ sandbox, computerId, computer, member, context }) {
+      // A native shell has no launcher to install rakazo-net, so its browsers stay off the tailnet.
+      if (sandboxKindCapabilities(computer.kind).nativeShell) return;
       if (!url || !(await allowed(member))) return;
       const row = await deps.prisma.computer.findUnique({
         where: { id: computerId },

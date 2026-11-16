@@ -28,7 +28,6 @@ import {
   touchRunningComputer,
   WorkspacePathError,
 } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
 import {
   attachmentMaxBytes,
   attachmentSizeLabel,
@@ -66,6 +65,7 @@ import {
 import { scrollPoint } from "../computer-input.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
+import { prepareTailnetBrowser } from "./tailnet.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -75,19 +75,6 @@ const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
   /** Gives the screen's browser its tailnet proxy once the member holds control of it. */
-  const prepareTailnetBrowser = async (actor: Actor, botId: string) => {
-    if (!deps.tailnet?.computers) return;
-    const bot = await repos.getBot(actor, botId);
-    const computer = bot.computer;
-    if (!computer?.providerRef || computer.state !== "running") return;
-    await deps.tailnet.computers.prepareComputer({
-      sandbox: deps.sandbox,
-      computerId: computer.id,
-      computer: toComputerRef(computer),
-      member: { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
-      context: computerContext(actor, bot.id, "takeover"),
-    });
-  };
   return {
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -355,11 +342,7 @@ export function computerRoutes(ctx: RouterContext) {
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
         const granted = await takeComputerControl(deps, context.actor, input.botId);
         // Browsing the member's tailnet from this screen, in the background: control never waits.
-        void prepareTailnetBrowser(context.actor, input.botId).catch((error: unknown) =>
-          getLogger().warn("tailnet browser proxy not prepared", {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        prepareTailnetBrowser(ctx, context.actor, input.botId);
         return granted;
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {

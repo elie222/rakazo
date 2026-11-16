@@ -6,10 +6,13 @@ import {
   removeTailnetConnection,
   saveTailnetConnection,
   setTailnetBotAccess,
+  toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor, TailnetStatus } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
+import { computerContext } from "./shared.js";
 
 /** Tailnet access as the router needs it; absent turns the procedures into a refusal. */
 export type TailnetRouteDeps = {
@@ -64,10 +67,42 @@ export function tailnetRoutes(ctx: RouterContext) {
         if (!updated)
           throw new ORPCError("BAD_REQUEST", { message: "Connect your tailnet first." });
         if (!input.enabled) await tailnet?.service.disconnect(scope(context.actor), input.botId);
+        // A screen the member already controls can browse the tailnet from now on.
+        else prepareTailnetBrowser(ctx, context.actor, input.botId);
         return status(context.actor);
       }),
     },
   };
+}
+
+/**
+ * Starts the browsers' tailnet proxy on a bot's running computer, in the background: neither
+ * taking control nor turning access on waits for it.
+ */
+export function prepareTailnetBrowser(
+  ctx: Pick<RouterContext, "deps" | "repos">,
+  actor: Actor,
+  botId: string,
+): void {
+  const { deps, repos } = ctx;
+  const computers = deps.tailnet?.computers;
+  if (!computers) return;
+  void (async () => {
+    const bot = await repos.getBot(actor, botId);
+    const computer = bot.computer;
+    if (!computer?.providerRef || computer.state !== "running") return;
+    await computers.prepareComputer({
+      sandbox: deps.sandbox,
+      computerId: computer.id,
+      computer: toComputerRef(computer),
+      member: { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
+      context: computerContext(actor, bot.id, "takeover"),
+    });
+  })().catch((error: unknown) =>
+    getLogger().warn("tailnet browser proxy not prepared", {
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
 }
 
 async function unavailable(

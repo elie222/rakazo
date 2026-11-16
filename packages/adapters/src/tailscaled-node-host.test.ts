@@ -33,6 +33,9 @@ createServer((sock) => {
       if (msg.key !== config.validKey) return sock.end(JSON.stringify({ error: "invalid key " + msg.key }) + "\\n");
       up = true;
       log({ event: "up", hostname: msg.hostname, flags: msg.flags });
+      if (config.upReplyDelayMs) {
+        return setTimeout(() => sock.end(JSON.stringify({ ok: true }) + "\\n"), config.upReplyDelayMs);
+      }
     } else if (msg.cmd === "logout") {
       up = false;
       log({ event: "logout" });
@@ -99,7 +102,7 @@ let runDir: string;
 let echo: Server;
 let host: TailscaledNodeHost;
 
-async function configure(config: { failStart?: boolean } = {}) {
+async function configure(config: { failStart?: boolean; upReplyDelayMs?: number } = {}) {
   const address = echo.address();
   const port = typeof address === "object" && address ? address.port : 0;
   await writeFile(
@@ -240,6 +243,24 @@ describe("TailscaledNodeHost", () => {
     process.kill(pid ?? 0, "SIGKILL");
     await vi.waitFor(async () => expect(await host.running(NODE.nodeId)).toBe(false));
     await vi.waitFor(async () => expect(await readdir(runDir)).toEqual([]));
+  });
+
+  it("logs out a device that registered just as its join was cancelled", async () => {
+    await configure({ upReplyDelayMs: 2_000 });
+    const cancel = new AbortController();
+    const starting = host.start(NODE, cancel.signal).catch((caught: unknown) => caught);
+    await vi.waitFor(async () =>
+      expect((await events()).map((entry) => entry.event)).toContain("up"),
+    );
+    cancel.abort();
+    expect(await starting).toBeInstanceOf(Error);
+    expect(await host.running(NODE.nodeId)).toBe(false);
+    expect((await events()).map((entry) => entry.event)).toEqual([
+      "start",
+      "up",
+      "logout",
+      "sigterm",
+    ]);
   });
 
   it("stops a node still joining, which then never joins", async () => {

@@ -345,6 +345,9 @@ class ProxyHandler(socketserver.BaseRequestHandler):
             return self.reply(403, "Forbidden", str(error))
         except OSError as error:
             return self.reply(502, "Bad Gateway", str(error.strerror or error))
+        except (ValueError, OverflowError):
+            # A port that isn't a number, or is out of range.
+            return self.reply(400, "Bad Request", "Invalid target.")
         if isinstance(remote, Tunnel):
             if first:
                 remote.send(first)

@@ -74,7 +74,17 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     bot: {
       findFirst: async ({ where }: { where: { id: string; spaceId: string } }) =>
         [
-          { id: "helper", spaceId: "home" },
+          {
+            id: "helper",
+            spaceId: "home",
+            computer: {
+              id: "computer-1",
+              kind: "docker",
+              homeKey: "helper",
+              providerRef: "box-1",
+              state: "running",
+            },
+          },
           { id: "elsewhere", spaceId: "work" },
         ].find((bot) => bot.id === where.id && bot.spaceId === where.spaceId) ?? null,
     },
@@ -86,6 +96,7 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     $queryRaw: async () => [],
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
   };
+  const computers = { prepareComputer: vi.fn(async (_input: unknown) => undefined) };
   const service = {
     available: options.available ?? true,
     verify: vi.fn(async (_config: unknown, _signal: AbortSignal) => undefined),
@@ -94,8 +105,10 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
   const deps = {
     prisma: prisma as unknown as PrismaClient,
     secrets: new EncryptedSecretStore("test-only-encryption-key"),
+    sandbox: {},
     tailnet: {
       service,
+      computers,
       serverOrigin:
         "serverOrigin" in options ? options.serverOrigin : "https://rakazo.example.test",
     },
@@ -119,7 +132,7 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
     const text = await response.text();
     return { status: response.status, text, json: (JSON.parse(text) as { json: unknown }).json };
   }
-  return { rows, service, call };
+  return { rows, service, computers, call };
 }
 
 describe("tailnet router", () => {
@@ -163,6 +176,23 @@ describe("tailnet router", () => {
     });
     expect((await call("setBotAccess", { botId: "helper", enabled: true }, BOB)).status).toBe(400);
     expect((await call("status")).json).toMatchObject({ connection: { botIds: ["helper"] } });
+  });
+
+  it("starts the browsers' proxy on the computer of a bot just let on", async () => {
+    const { call, computers } = harness();
+    await call("connect", CLIENT);
+    await call("setBotAccess", { botId: "helper", enabled: true });
+    await vi.waitFor(() =>
+      expect(computers.prepareComputer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          computerId: "computer-1",
+          member: { userId: "alice", spaceId: "home", botId: "helper" },
+        }),
+      ),
+    );
+    computers.prepareComputer.mockClear();
+    await call("setBotAccess", { botId: "helper", enabled: false });
+    expect(computers.prepareComputer).not.toHaveBeenCalled();
   });
 
   it("lets only this Space's bots on, and takes a bot off at once", async () => {
