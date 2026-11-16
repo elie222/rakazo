@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,8 +31,10 @@ import {
 import {
   caseFingerprint,
   caseKey,
+  codeRevision,
   firstRequestFetch,
   runFingerprint,
+  workingDiffHash,
 } from "../evals/fingerprint.js";
 import { regradeTrial } from "../evals/grading.js";
 import {
@@ -79,6 +80,12 @@ import {
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
+import {
+  SUBAGENT_EVAL_CASES,
+  SUBAGENT_FIXTURE_VERSION,
+  SUBAGENT_JUDGE_CALIBRATION,
+  SUBAGENT_JUDGE_VERSION,
+} from "../evals/subagents.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
@@ -161,6 +168,11 @@ async function main() {
       fixtureVersion: "product-v2",
       judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
     },
+    subagents: {
+      cases: SUBAGENT_EVAL_CASES,
+      fixtureVersion: SUBAGENT_FIXTURE_VERSION,
+      judge: { version: SUBAGENT_JUDGE_VERSION, calibration: SUBAGENT_JUDGE_CALIBRATION },
+    },
     history: {
       cases: HISTORY_EVAL_CASES,
       fixtureVersion: HISTORY_FIXTURE_VERSION,
@@ -210,7 +222,7 @@ async function main() {
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
+      "Unknown suite; use product, subagents, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -934,43 +946,6 @@ async function main() {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
-  }
-}
-
-function workingDiffHash(): string | null {
-  try {
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const options = {
-      cwd: root,
-      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
-      maxBuffer: 64 * 1024 * 1024,
-    };
-    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
-    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-      ...options,
-      encoding: "utf8",
-    })
-      .split("\0")
-      .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
-      .sort();
-    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
-    return hash.digest("hex");
-  } catch {
-    return null;
-  }
-}
-
-function codeRevision(): string | null {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return null;
   }
 }
 

@@ -112,6 +112,7 @@ postgres("attach_file (PostgreSQL)", () => {
         runId: run.id,
         signal: new AbortController().signal,
       },
+      source: {},
       secrets: [],
       computer: {
         mode: "personal",
