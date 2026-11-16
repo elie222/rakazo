@@ -45,11 +45,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     system = asSystem(db.prisma);
     jobs = new GraphileJobPublisher(db.pool);
     const provisioned = await runAsSystem("delivery fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "telegram", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "telegram", address }),
     );
     identity = {
       userId: provisioned.userId,
