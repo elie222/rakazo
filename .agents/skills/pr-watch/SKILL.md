@@ -92,6 +92,10 @@ rerun as infrastructure when the evidence establishes a setup/infrastructure
 failure, rather than a test assertion — `gh run rerun <run-id> --failed` and go
 back to 1.
 
+A `FAIL workflow` line is a run that ended without a failed job of its own, so
+there is no job log; `gh run view <run-id>` shows why it did not run, such as an
+invalid workflow file.
+
 The logs flag returns the assertion and code frame. Raw CI
 logs prefix every line with job name, step name, and a timestamp, and a
 Playwright job can exceed two megabytes; the flag strips all of that.
