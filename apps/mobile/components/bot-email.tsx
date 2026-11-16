@@ -70,11 +70,12 @@ export function useBotEmailRows({
     save: async (parsedName: string, send) => {
       const claimed = await send("bots/claimEmailAddress", { botId, name: parsedName });
       // Kept in the saved read too, so returning to the screen never offers the claim again.
-      await writeSaved(
-        queryClient,
-        rpcQuery("bots/emailAddress", { botId }).queryKey,
-        (prior) => prior && { ...prior, address: claimed.address },
-      );
+      const read = rpcQuery("bots/emailAddress", { botId }).queryKey;
+      if (queryClient.getQueryData(read)) {
+        await writeSaved(queryClient, read, (prior) =>
+          prior ? { ...prior, address: claimed.address } : null,
+        );
+      }
       return claimed;
     },
     onSaved: (claimed) => email.setAddress(claimed.address),
