@@ -18,18 +18,15 @@ export function ListSearchInput({
   inputRef?: Ref<HTMLInputElement>;
   command?: boolean;
 }) {
-  if (command) {
-    return (
-      <CommandInput
-        ref={inputRef}
-        value={query}
-        onValueChange={setQuery}
-        aria-label={label}
-        placeholder={placeholder}
-        autoComplete="off"
-      />
-    );
-  }
+  const shared = {
+    ref: inputRef,
+    value: query,
+    "aria-label": label,
+    placeholder,
+    autoComplete: "off",
+  };
+
+  if (command) return <CommandInput {...shared} onValueChange={setQuery} />;
 
   return (
     <InputGroup className="shrink-0 h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
@@ -37,11 +34,7 @@ export function ListSearchInput({
         <Search className="size-4 shrink-0 opacity-50" aria-hidden="true" />
       </InputGroupAddon>
       <input
-        ref={inputRef}
-        value={query}
-        aria-label={label}
-        placeholder={placeholder}
-        autoComplete="off"
+        {...shared}
         data-slot="input-group-control"
         className="min-w-0 flex-1 bg-transparent py-1 pr-2 text-body outline-none disabled:cursor-not-allowed disabled:opacity-50"
         onChange={(event) => setQuery(event.target.value)}
