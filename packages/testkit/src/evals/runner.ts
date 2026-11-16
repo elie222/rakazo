@@ -1392,7 +1392,7 @@ async function deliverPeerMessage(
     { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
     peer,
     { bot_id: targetBotId, message: text, intent: "request" },
-    { allowTerminalSource: true },
+    { returnFrom: "ended" },
   );
   if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
 }

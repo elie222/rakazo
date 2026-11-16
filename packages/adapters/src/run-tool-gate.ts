@@ -49,6 +49,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { reportBotMessageWait } from "./bot-messages.js";
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
@@ -793,6 +794,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     throw new Error("Could not pause this run for approval; try sending again.");
   }
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
+  await reportBotMessageWait(deps, run, bot, `approve ${name}`, ctx.attempt.id);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

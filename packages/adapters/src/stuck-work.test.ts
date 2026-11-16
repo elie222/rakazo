@@ -18,7 +18,7 @@ function age(hours: number) {
   return new Date(now.getTime() - hours * 60 * 60 * 1000);
 }
 
-function candidate(status: "queued" | "waiting_input" | "waiting_takeover", hours: number) {
+function candidate(status: "queued" | "waiting_takeover", hours: number) {
   return {
     id: `run-${status}`,
     status,
@@ -70,8 +70,8 @@ describe("reconcileStuckWork", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("reminds once for a question that has been waiting for hours", async () => {
-    const run = candidate("waiting_input", 5);
+  it("reminds once for a run that has been queued for hours", async () => {
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -99,8 +99,8 @@ describe("reconcileStuckWork", () => {
     expect(publishChatAlert).toHaveBeenCalledTimes(1);
     expect(publishChatAlert).toHaveBeenCalledWith("user-1", {
       kind: "help",
-      title: "Ada still needs an answer",
-      body: "This has been waiting on you.",
+      title: "Ada is still queued",
+      body: "It has been waiting to start.",
       spaceId: "space-1",
       botId: "bot-1",
       threadId: "thread-1",
@@ -109,8 +109,8 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledWith(
       {
         kind: "help",
-        title: "Ada still needs an answer",
-        body: "This has been waiting on you.",
+        title: "Ada is still queued",
+        body: "It has been waiting to start.",
         botId: "bot-1",
         threadId: "thread-1",
         sender: expect.objectContaining({ botId: "bot-1", name: "Ada" }),
@@ -132,7 +132,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not send again when this episode was already reminded", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps = [
       {
         runId: run.id,
@@ -172,7 +172,7 @@ describe("reconcileStuckWork", () => {
 
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -203,7 +203,7 @@ describe("reconcileStuckWork", () => {
 
   it("drops the claim when the token is removed before Expo accepts the push", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ id?: string; runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -237,7 +237,7 @@ describe("reconcileStuckWork", () => {
 
   it("stops reminding once Expo reports the device unregistered", async () => {
     const tokens = new MemoryPushTokenStore();
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -259,7 +259,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("retries a pending reminder left behind when the worker stops", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const otherEpisode = {
       id: "event-other-episode",
       runId: run.id,
@@ -303,7 +303,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not send a second reminder while a claim is still in flight", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const pending = {
       runId: run.id,
       payload: {
@@ -325,7 +325,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("retries the four-hour reminder when the push fails", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
@@ -387,7 +387,7 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not record a reminder when nothing can deliver it", async () => {
-    const run = candidate("waiting_input", 5);
+    const run = candidate("queued", 5);
     const prisma = noticePrisma(run, []);
     const { jobs } = publisher();
 
@@ -512,7 +512,6 @@ describe("reconcileStuckWork", () => {
             {
               OR: [
                 { status: "queued", updatedAt: { lte: age(4) } },
-                { status: "waiting_input", updatedAt: { lte: age(4) } },
                 { status: "waiting_takeover", updatedAt: { lte: age(0.5) } },
               ],
             },
@@ -542,7 +541,7 @@ describe("reconcileStuckWork", () => {
 
   it("keeps scanning past an already reminded row", async () => {
     const first = candidate("queued", 6);
-    const second = { ...candidate("waiting_input", 5), id: "run-next-page" };
+    const second = { ...candidate("queued", 5), id: "run-next-page" };
     const seen: unknown[] = [];
     const prisma = {
       run: {

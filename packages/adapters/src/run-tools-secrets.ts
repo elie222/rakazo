@@ -1,5 +1,5 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
-import { createStreamingRedactor, displayName } from "@rakazo/core";
+import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
 import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
@@ -8,6 +8,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
+import { reportBotMessageWait } from "./bot-messages.js";
 import {
   allowPrivateHttpSecretOrigins,
   botSecretToolView,
@@ -415,6 +416,7 @@ export const secretTools: ToolHandlers = {
       throw new Error("Could not pause this run for protected input; try sending again.");
     }
     await enqueueSteeringContinuation(deps, paused.continuationRunId);
+    await reportBotMessageWait(deps, run, bot, redactSecrets(askText, ctx.secrets), ctx.attempt.id);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),

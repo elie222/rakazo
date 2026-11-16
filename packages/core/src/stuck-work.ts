@@ -1,12 +1,11 @@
 import { displayName } from "./display-name.js";
-/** Remind once a queued run or a human wait has been sitting this long.
+/** Remind once a queued run has been sitting this long.
  *  Long enough that a short queue or stepping away stays quiet; short enough
  *  that forgotten work is not silent until the next day.
  *  The worker's STUCK_WORK_NOTIFY_AFTER_MS setting overrides it; the activity list keeps this value. */
 export const STUCK_WORK_NOTIFY_AFTER_MS = 4 * 60 * 60 * 1000;
 
 /** Cancel once that same work has been sitting this long.
- *  Leaves the hours after the reminder for someone to answer before the thread is freed.
  *  The worker's STUCK_WORK_EXPIRE_AFTER_MS setting overrides it. */
 export const STUCK_WORK_EXPIRE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -34,7 +33,8 @@ export const TAKEOVER_WAIT_EXPIRE_AFTER_MS = 30 * 60 * 1000;
 /** Marker on a thread.meta event so a reminder is sent once per waiting episode. */
 export const STUCK_WORK_NOTICE = "stuck";
 
-export const STUCK_WORK_STATUSES = ["queued", "waiting_input", "waiting_takeover"] as const;
+/** A question holds nothing, so it stays open until someone answers it. */
+export const STUCK_WORK_STATUSES = ["queued", "waiting_takeover"] as const;
 export type StuckWorkStatus = (typeof STUCK_WORK_STATUSES)[number];
 
 export type StuckWorkAction = "notify" | "expire" | "none";
@@ -65,7 +65,7 @@ export function stuckWorkAction(input: {
   return "none";
 }
 
-/** True once a queued or human-waiting run is old enough to call out in the activity list. */
+/** True once a queued or takeover-waiting run is old enough to call out in the activity list. */
 export function isAgedStuckWork(
   status: string,
   updatedAt: Date | string,
@@ -84,15 +84,19 @@ export function stuckWorkStatusMessage(status: StuckWorkStatus): string {
   switch (status) {
     case "queued":
       return "Stopped. This stayed queued without starting.";
-    case "waiting_input":
-      return "Stopped. This was still waiting for an answer.";
     case "waiting_takeover":
       return "Stopped. This was still waiting for you on the screen.";
   }
 }
 
+/** Questions cancelled before they stopped expiring still carry this line. */
+const RETIRED_STUCK_WORK_MESSAGES = ["Stopped. This was still waiting for an answer."];
+
 export function stuckWorkStatusMessages(): readonly string[] {
-  return STUCK_WORK_STATUSES.map((status) => stuckWorkStatusMessage(status));
+  return [
+    ...STUCK_WORK_STATUSES.map((status) => stuckWorkStatusMessage(status)),
+    ...RETIRED_STUCK_WORK_MESSAGES,
+  ];
 }
 
 export type StuckAttentionKind = "help" | "takeover" | "failure";
@@ -108,12 +112,6 @@ export function stuckWorkReminder(
         kind: "help",
         title: `${name} is still queued`,
         body: "It has been waiting to start.",
-      };
-    case "waiting_input":
-      return {
-        kind: "help",
-        title: `${name} still needs an answer`,
-        body: "This has been waiting on you.",
       };
     case "waiting_takeover":
       return {

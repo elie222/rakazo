@@ -35,7 +35,7 @@ import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
 import { returnHelperOutcome } from "./background-helpers.js";
-import { returnBotMessageOutcome } from "./bot-messages.js";
+import { reportBotMessageWait, returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
@@ -455,6 +455,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   });
   if (!paused) return;
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
+  await reportBotMessageWait(deps, run, bot, safeText, ctx.attempt.id);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,

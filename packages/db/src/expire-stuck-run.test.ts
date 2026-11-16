@@ -11,7 +11,7 @@ function tx(options?: {
   sibling?: boolean;
   steering?: boolean;
   openCardEffectId?: string;
-  status?: "queued" | "waiting_input" | "waiting_takeover";
+  status?: "queued" | "waiting_takeover";
 }) {
   let reads = 0;
   const messages: Array<Record<string, unknown>> = [];
@@ -217,21 +217,6 @@ describe("expireStuckRun", () => {
     });
   });
 
-  it("denies the effect behind an unanswered approval card", async () => {
-    const client = tx({ status: "waiting_input", openCardEffectId: "effect-1" });
-    await expireStuckRun(client as unknown as Prisma.TransactionClient, {
-      runId: "run-1",
-      threadId: "thread-1",
-      status: "waiting_input",
-      updatedAt,
-      now,
-    });
-    expect(client.externalEffect.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["effect-1"] }, runId: { in: ["run-1"] }, status: "intended" },
-      data: { status: "denied" },
-    });
-  });
-
   it("does nothing when the run already moved on", async () => {
     const client = tx({ cancelled: 0, status: "waiting_takeover" });
     const result = await expireStuckRun(client as unknown as Prisma.TransactionClient, {
@@ -247,18 +232,18 @@ describe("expireStuckRun", () => {
   });
 
   it("leaves the task running when a sibling attempt is still active", async () => {
-    const client = tx({ sibling: true, status: "waiting_input" });
+    const client = tx({ sibling: true, status: "queued" });
     await expireStuckRun(client as unknown as Prisma.TransactionClient, {
       runId: "run-1",
       threadId: "thread-1",
-      status: "waiting_input",
+      status: "queued",
       updatedAt,
       now,
     });
     expect(client.task.updateMany).not.toHaveBeenCalled();
     expect(client.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        blocks: [{ kind: "meta", text: stuckWorkStatusMessage("waiting_input") }],
+        blocks: [{ kind: "meta", text: stuckWorkStatusMessage("queued") }],
       }),
     });
   });
