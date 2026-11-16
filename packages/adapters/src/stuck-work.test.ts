@@ -100,6 +100,38 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("still sends a takeover reminder in quiet hours, and treats unreadable ones as off", async () => {
+    const hour = now.getUTCHours();
+    const quietAllDay = [
+      {
+        id: "user-1",
+        timezone: "UTC",
+        quietHoursStart: (hour + 23) % 24,
+        quietHoursEnd: (hour + 1) % 24,
+      },
+    ];
+    // A deployment that reminds within a takeover's 30-minute wait.
+    vi.stubEnv("STUCK_WORK_NOTIFY_AFTER_MS", String(10 * 60 * 1000));
+    for (const [status, hours, lookup] of [
+      ["waiting_takeover", 0.25, async () => quietAllDay],
+      ["queued", 5, async () => Promise.reject(new Error("database unavailable"))],
+    ] as const) {
+      const run = candidate(status, hours);
+      const prisma = noticePrisma(run, []);
+      vi.mocked(prisma.user.findMany).mockImplementation(lookup as never);
+      const { provider, send } = notifications();
+      await reconcileStuckWork({
+        prisma,
+        jobs: publisher().jobs,
+        notifications: provider,
+        now,
+        batchSize: 100,
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+    }
+    vi.unstubAllEnvs();
+  });
+
   it("reminds once for a run that has been queued for hours", async () => {
     const run = candidate("queued", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];

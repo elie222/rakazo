@@ -20,7 +20,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
 import { notificationIdentity } from "./notification-identity.js";
 import { publishChatAlert } from "./run-notifications.js";
@@ -219,8 +219,18 @@ async function remindStuckRun(
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   // A run still waiting to start asks nothing of its owner, so it waits out their quiet hours;
-  // left unmarked, a sweep after them reminds.
-  if ((await membersInQuietHours(deps.prisma, [run.userId], deps.now)).has(run.userId)) return;
+  // left unmarked, a sweep after them reminds. A takeover needs them and is never held, and
+  // quiet hours that can't be read hold nothing.
+  if (
+    run.status === "queued" &&
+    (
+      await bestEffort(
+        "stuck work quiet hours",
+        membersInQuietHours(deps.prisma, [run.userId], deps.now),
+      )
+    )?.has(run.userId)
+  )
+    return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) => claimStuckReminder(tx, run, deps.now),
