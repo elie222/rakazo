@@ -26,12 +26,13 @@ const EXISTING = new Set([
   "Computer.controlFence",
   "Computer.executionLeaseExpiresAt",
   "Computer.executionFence",
-  "HomeDeletionNotice.claimId",
-  "HomeDeletionNotice.claimExpiresAt",
   "ComputerExecutionLease.fence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
+  // Moved onto `withLease`; kept only while the previous release still claims them.
+  "HomeDeletionNotice.claimId",
+  "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
   "Lease.fence",
 ]);
