@@ -140,6 +140,7 @@ OIDC_NAME=SSO
 OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
+OIDC_TRUST_XMS_EDOV=false
 ```
 
 The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
@@ -163,9 +164,20 @@ and a native auth browser session. The `rakazo` app scheme is trusted by the aut
 never register a client secret in the mobile app. Mobile stores the resulting session with
 SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
 
-Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
-claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
-the account's email. Sign-in never links accounts by email, except to claim an account
+Provider emails are verified when `email_verified` is the boolean `true` or the string `true`
+in any capitalization. Any other value, including `false` and a missing claim, stays unverified
+on every sign-in, and an unverified claim never changes the account's email.
+
+Microsoft Entra ID does not send `email_verified`. In the app registration, open **Token
+configuration**, add the optional ID token claims `email` and `xms_edov` (email domain owner
+verified; `xms_edov` is returned only together with `email`), and set `OIDC_TRUST_XMS_EDOV=true`.
+That claim then counts when it is boolean `true` or the string `true`, and only when
+`email_verified` itself is absent. Leave the setting off for any other provider. A claims-mapping
+policy that emits `email_verified` as the string `true` needs no extra setting. See
+[optional claims](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims)
+and the [`xms_edov` reference](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference).
+
+Sign-in never links accounts by email, except to claim an account
 [directory provisioning](#directory-provisioning-scim) created.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
