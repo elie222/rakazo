@@ -1,3 +1,4 @@
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { CLAUDE_CODE_PROVIDER_ID } from "./cli-models/claude-code/provider-id.js";
@@ -37,6 +38,17 @@ function catalogIds(provider: string) {
   return catalog.filter((entry) => entry.provider === provider).map((entry) => entry.id);
 }
 
+/** Hosts the bundled model registry sends this provider's requests to, read apart from Rakazo's own entry. */
+function catalogHosts(provider: string) {
+  const models = builtinModels()
+    .getProviders()
+    .find((entry) => entry.id === provider)
+    ?.getModels();
+  return new Set(
+    (models ?? []).flatMap((model) => (model.baseUrl ? [new URL(model.baseUrl).host] : [])),
+  );
+}
+
 describe.each(entries)("%s model provider", (id, definition) => {
   it("is a provider the model registry lists, or one Rakazo runs itself", () => {
     expect(catalogIds(id).length > 0 || outsideCatalog.includes(id)).toBe(true);
@@ -74,6 +86,11 @@ describe.each(entries)("%s model provider", (id, definition) => {
 
   if (definition.deployment) {
     const { keyEnv, defaultModel } = definition.deployment;
+    it("runs a catalog model agents can run as the deployment default", () => {
+      expect(catalogIds(id)).toContain(defaultModel);
+      expect(catalogModelServesAgents({ provider: id, id: defaultModel })).toBe(true);
+    });
+
     it("runs the deployment default from its own key alone", () => {
       const model = resolveDeploymentModel({ PI_DEFAULT_PROVIDER: id, [keyEnv]: "test-key" });
       expect(model).toMatchObject({ provider: id, model: defaultModel, key: "test-key" });
@@ -102,6 +119,11 @@ describe.each(entries)("%s model provider", (id, definition) => {
         result: verifyCatalogProviderApiKey({ provider: id, apiKey: " test-key " }, fetchImpl),
       };
     };
+
+    it("checks keys on a host the catalog sends this provider's requests to", () => {
+      expect(new URL(check.url).protocol).toBe("https:");
+      expect([...catalogHosts(id)]).toContain(new URL(check.url).host);
+    });
 
     it("refuses a key the provider rejects, sending it only to its own endpoint", async () => {
       const { sent, result } = verify(async () => rejection());

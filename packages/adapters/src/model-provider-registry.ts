@@ -14,7 +14,7 @@ export interface ModelProviderDefinition {
   displayName?: string;
   /** The model a new connection preselects; only an exact catalog id. */
   recommendedModel?: string;
-  /** Bundled ids the provider refuses agent runs for every new account. */
+  /** Bundled or live-listed ids the provider refuses agent runs for every new account. */
   unservedModels?: readonly string[];
   /** A read-only authenticated endpoint that tells a rejected key from a valid one. */
   keyCheck?: {
