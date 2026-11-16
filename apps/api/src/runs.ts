@@ -13,7 +13,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { membersInQuietHours, Prisma } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -86,13 +86,7 @@ export async function listSpaceRuns(
   filter: "active" | "recent",
 ): Promise<RunActivityRow[]> {
   // Read alongside the runs. Quiet hours that can't be read leave the list as it was.
-  const quietLookup = membersInQuietHours(prisma, [actor.userId]).then(
-    (members) => members.has(actor.userId),
-    (error: unknown) => {
-      getLogger().error("quiet hours lookup", error);
-      return false;
-    },
-  );
+  const quietLookup = bestEffort("quiet hours lookup", membersInQuietHours(prisma, [actor.userId]));
   const rows = await prisma.run.findMany({
     where:
       filter === "active"
@@ -120,7 +114,7 @@ export async function listSpaceRuns(
         : [{ completedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
   });
 
-  const quiet = await quietLookup;
+  const quiet = (await quietLookup)?.has(actor.userId) ?? false;
   return rows.map((row) => ({
     runId: row.id,
     botId: row.botId,
