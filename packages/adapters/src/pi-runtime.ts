@@ -630,6 +630,15 @@ export class PiAgentRuntime implements AgentRuntime {
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
+            let finishedShells: string | undefined;
+            await deliverFinishedShells(
+              (text) => {
+                finishedShells = text;
+              },
+              host.pendingShells,
+              turn,
+              turnSignal,
+            );
             // Between steps a stopping process hands the turn back, so the next process resumes
             // here instead of repeating a step cut off at the drain limit. A running shell's
             // output would only reach this process, so the turn keeps going until it is read.
@@ -641,23 +650,20 @@ export class PiAgentRuntime implements AgentRuntime {
               !terminatedReply &&
               host.pendingShells.length === 0
             ) {
-              yielded = serializeTurnCheckpoint(turnCheckpointAt(""));
-              return { action: "end" };
-            }
-            await deliverFinishedShells(
-              // Steered, so the output reaches the next model request like a tool result. A
-              // follow-up waits until the model stops and then costs one model turn each.
-              (text) => {
-                agent.steer({
+              const checkpoint = turnCheckpointAt("");
+              if (finishedShells)
+                checkpoint.messages.push({
                   role: "user",
-                  content: text,
+                  content: finishedShells,
                   timestamp: Date.now(),
                 });
-              },
-              host.pendingShells,
-              turn,
-              turnSignal,
-            );
+              yielded = serializeTurnCheckpoint(checkpoint);
+              return { action: "end" };
+            }
+            // Steered, so the output reaches the next model request like a tool result. A
+            // follow-up waits until the model stops and then costs one model turn each.
+            if (finishedShells)
+              agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn) => {
             const update = computer
@@ -1115,6 +1121,9 @@ export class PiAgentRuntime implements AgentRuntime {
               for (const message of addedHistory)
                 if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
+                // Messages this run took up mid-turn stay its steering until it ends, and the
+                // saved turn may already hold them.
+                if (representedHistoryIds.has(item.messageId)) continue;
                 representedHistoryIds.add(item.messageId);
                 const images = toPiImages(item.images);
                 agent.state.messages.push({

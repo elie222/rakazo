@@ -126,6 +126,71 @@ describe("a turn whose process starts stopping", () => {
     expect(resumedEvents.at(-1)).toEqual({ type: "done", text: "Done." });
   });
 
+  it("hands back after a step during which an earlier shell command finished", async () => {
+    const stopping = new AbortController();
+    const input = request(stopping);
+    let finishShell: () => void = () => undefined;
+    input.executeTool = vi.fn(async (_name, args, _id, _route, observer) => {
+      if (args.path === "a")
+        observer?.onShellStillRunning?.(
+          new Promise((resolve) => {
+            finishShell = () => resolve({ stdout: "built", stderr: "", code: 0 });
+          }),
+        );
+      if (args.path === "b") {
+        finishShell();
+        stopping.abort();
+      }
+      return { entries: [`${args.path}/file.txt`] };
+    });
+    script(["a", "b", undefined]);
+
+    const events = await run(input);
+    const yielded = events.find((event) => event.type === "yielded");
+    expect(yielded).toBeDefined();
+    expect(fake.stream).toHaveBeenCalledTimes(2);
+
+    // The shell's output was read here, so it travels with the saved turn.
+    await run({
+      ...request(new AbortController()),
+      runId: input.runId,
+      turnCheckpoint: yielded?.type === "yielded" ? yielded.checkpoint : undefined,
+    });
+    const nextCall = fake.stream.mock.calls[2]![1] as Context;
+    expect(JSON.stringify(nextCall.messages.at(-1))).toContain("stdout:\\nbuilt");
+  });
+
+  it("does not repeat a mid-turn message the saved turn already holds", async () => {
+    const stopping = new AbortController();
+    const input = request(stopping, "b");
+    const steering = {
+      id: "steer-1",
+      messageId: "message-1",
+      text: "Also check c",
+      origin: "user",
+    };
+    // Claimed rows stay tied to the run, so every later claim of a fresh attempt returns them.
+    let claims = 0;
+    input.claimSteering = vi.fn(async () => (++claims === 2 ? [steering as never] : []));
+    script(["a", "b", undefined]);
+
+    const events = await run(input);
+    const yielded = events.find((event) => event.type === "yielded");
+    expect(yielded).toBeDefined();
+
+    await run({
+      ...request(new AbortController()),
+      runId: input.runId,
+      turnCheckpoint: yielded?.type === "yielded" ? yielded.checkpoint : undefined,
+      claimSteering: vi.fn(async (seen: string[]) => (seen.length ? [] : [steering as never])),
+    });
+    const nextCall = fake.stream.mock.calls[2]![1] as Context;
+    const mentions = nextCall.messages.filter((message) =>
+      JSON.stringify(message.content).includes("Also check c"),
+    );
+    expect(mentions).toHaveLength(1);
+  });
+
   it("finishes a turn whose last step is in flight instead of handing it back", async () => {
     const stopping = new AbortController();
     stopping.abort();
