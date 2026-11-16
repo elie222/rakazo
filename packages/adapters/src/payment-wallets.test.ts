@@ -5,6 +5,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { PaymentWalletDisconnected } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PaymentWallet, PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaymentWalletDeps } from "./payment-wallets.js";
@@ -282,32 +283,22 @@ describe("payment wallet connection", () => {
 
   it("polls once when two readers race", async () => {
     const env = setup();
-    let release!: () => void;
-    env.provider!.pollConnect.mockImplementationOnce(
-      () =>
-        new Promise<PaymentWalletConnectResult>((resolve) => {
-          release = () => resolve({ status: "pending" });
-        }),
-    );
+    const poll = deferred<PaymentWalletConnectResult>();
+    env.provider!.pollConnect.mockImplementationOnce(() => poll.promise);
     await connectPaymentWallet(env.deps, actor);
     vi.setSystemTime(new Date(Date.now() + 5_000));
     const first = paymentWalletStatus(env.deps, actor);
     await vi.waitFor(() => expect(env.provider?.pollConnect).toHaveBeenCalledTimes(1));
     expect((await paymentWalletStatus(env.deps, actor)).status).toBe("connecting");
-    release();
+    poll.resolve({ status: "pending" });
     expect((await first).status).toBe("connecting");
     expect(env.provider?.pollConnect).toHaveBeenCalledTimes(1);
   });
 
   it("does not start another check while a slow one is still running", async () => {
     const env = setup();
-    let release!: () => void;
-    env.provider!.pollConnect.mockImplementationOnce(
-      () =>
-        new Promise<PaymentWalletConnectResult>((resolve) => {
-          release = () => resolve({ status: "pending" });
-        }),
-    );
+    const poll = deferred<PaymentWalletConnectResult>();
+    env.provider!.pollConnect.mockImplementationOnce(() => poll.promise);
     await connectPaymentWallet(env.deps, actor);
     vi.setSystemTime(new Date(Date.now() + 5_000));
     const first = paymentWalletStatus(env.deps, actor);
@@ -316,7 +307,7 @@ describe("payment wallet connection", () => {
     vi.setSystemTime(new Date(Date.now() + 20_000));
     await paymentWalletStatus(env.deps, actor);
     expect(env.provider?.pollConnect).toHaveBeenCalledTimes(1);
-    release();
+    poll.resolve({ status: "pending" });
     await first;
     expect(env.rows[0]?.nextPollAt).toEqual(new Date(Date.now() + 5_000));
   });

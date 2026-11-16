@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
-import { flush } from "./async.test-support.js";
+import { deferred, flush } from "./async.test-support.js";
 import { messageUnreadFor } from "./message-replies.js";
 import type { ReadBoundary } from "./unread-divider.js";
 import {
@@ -104,14 +104,12 @@ describe("createSerialQueue", () => {
   it("answers in the order tasks were queued, even when a later one is faster", async () => {
     const inOrder = createSerialQueue();
     const answered: string[] = [];
-    let releaseOpening!: () => void;
-    const opening = inOrder(
-      () => new Promise<string>((resolve) => (releaseOpening = () => resolve("opening"))),
-    ).then((value) => answered.push(value));
+    const releaseOpening = deferred<string>();
+    const opening = inOrder(() => releaseOpening.promise).then((value) => answered.push(value));
     const live = inOrder(async () => "live").then((value) => answered.push(value));
     await Promise.resolve();
     expect(answered).toEqual([]);
-    releaseOpening();
+    releaseOpening.resolve("opening");
     await Promise.all([opening, live]);
     expect(answered).toEqual(["opening", "live"]);
   });
@@ -162,15 +160,12 @@ describe("createChatQueues", () => {
   it("keeps one chat's reads in order without holding up another chat", async () => {
     const inOrder = createChatQueues();
     const answered: string[] = [];
-    let releaseA!: () => void;
-    const openingA = inOrder(
-      "bot:a",
-      () => new Promise<string>((resolve) => (releaseA = () => resolve("a1"))),
-    ).then((value) => answered.push(value));
+    const releaseA = deferred<string>();
+    const openingA = inOrder("bot:a", () => releaseA.promise).then((value) => answered.push(value));
     const liveA = inOrder("bot:a", async () => "a2").then((value) => answered.push(value));
     await inOrder("bot:b", async () => "b1").then((value) => answered.push(value));
     expect(answered).toEqual(["b1"]);
-    releaseA();
+    releaseA.resolve("a1");
     await Promise.all([openingA, liveA]);
     expect(answered).toEqual(["b1", "a1", "a2"]);
   });

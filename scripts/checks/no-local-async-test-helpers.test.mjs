@@ -33,6 +33,35 @@ const refused = new Promise<never>((_resolve, fail) => {
   ]);
 });
 
+test("counts a resolver captured inside a closure that only calls it", () => {
+  const text = `let abort = () => {};
+const ready = new Promise<void>((_resolve, reject) => {
+  abort = () => reject(new DOMException("Document hidden", "InvalidStateError"));
+});
+const answer = new Promise<ScreenAnswer>((resolve) => {
+  release = () => resolve(screenAnswer());
+});
+send.mockReturnValue(new Promise((resolve) => (finish = (value) => resolve(value))));
+const lost = new Promise((_, fail) => {
+  state.fail = (error) => fail(error);
+});`;
+  assert.deepEqual(lines(text), [2, 5, 8, 9]);
+});
+
+test("ignores an event handler that settles the promise and a closure that does more", () => {
+  const text = `await new Promise<void>((resolve) => {
+  socket.onclose = () => resolve();
+});
+const gone = new Promise((_resolve, reject) => {
+  pending = () => reject(signal.reason);
+  signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+});
+const read = new Promise((resolve) => {
+  release = () => resolve(value) || log("released");
+});`;
+  assert.deepEqual(lines(text), []);
+});
+
 test("ignores a promise whose executor does more than capture", () => {
   const text = `await new Promise<void>((resolve) => server.listen(0, resolve));
 const closed = new Promise((resolve) => client.on("close", resolve));

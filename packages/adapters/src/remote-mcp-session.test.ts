@@ -368,7 +368,7 @@ describe("run-scoped remote MCP sessions", () => {
   });
 
   it("keeps the session working after one call is aborted", async () => {
-    let release: (() => void) | undefined;
+    const release = deferred();
     let hangNext = true;
     const server = mcpServer(({ message, respond }) => {
       if (message.method === "tools/call") {
@@ -376,10 +376,9 @@ describe("run-scoped remote MCP sessions", () => {
           return respond({ result: { content: [{ type: "text", text: "done" }] } });
         }
         hangNext = false;
-        return new Promise<Response>((resolve) => {
-          release = () =>
-            resolve(respond({ result: { content: [{ type: "text", text: "late" }] } }));
-        }) as unknown as Response;
+        return release.promise.then(() =>
+          respond({ result: { content: [{ type: "text", text: "late" }] } }),
+        ) as unknown as Response;
       }
       return undefined;
     });
@@ -390,7 +389,7 @@ describe("run-scoped remote MCP sessions", () => {
     controller.abort();
     await expect(hanging).rejects.toThrow();
     // Let the late response for the cancelled request arrive before continuing.
-    release?.();
+    release.resolve();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({

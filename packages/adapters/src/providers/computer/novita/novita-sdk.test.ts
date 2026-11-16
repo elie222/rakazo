@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import type { DesktopSandbox, Novita } from "novita-sandbox";
 import { SandboxNotFoundError, TimeoutError } from "novita-sandbox";
 import { describe, expect, it, vi } from "vitest";
@@ -73,19 +74,14 @@ describe("Novita SDK translation", () => {
   it("kills a command when canceled during execution and reports exit 130", async () => {
     const { desktop, handle } = fixture();
     const controller = new AbortController();
-    let finish!: () => void;
-    handle.wait.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = () => resolve({ exitCode: 0, stdout: "done", stderr: "" });
-        }),
-    );
+    const finish = deferred<{ exitCode: number; stdout: string; stderr: string }>();
+    handle.wait.mockImplementation(() => finish.promise);
     handle.kill.mockImplementation(async () => {
-      finish();
+      finish.resolve({ exitCode: 0, stdout: "done", stderr: "" });
       return true;
     });
     const pending = desktop.commands.run("long-command", { signal: controller.signal });
-    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitFor(() => expect(handle.wait).toHaveBeenCalled());
     controller.abort();
     await expect(pending).resolves.toEqual({
       exitCode: 130,

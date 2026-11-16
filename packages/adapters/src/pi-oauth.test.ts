@@ -1744,7 +1744,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("saves the credential when the provider sign-in finishes", async () => {
-    let finish!: (credential: OAuthCredential) => void;
+    const signIn = deferred<Credential>();
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
@@ -1757,9 +1757,7 @@ describe("PiOAuthLogins", () => {
         verificationUri: "https://auth.openai.com/codex/device",
         expiresInSeconds: 60,
       });
-      return new Promise<Credential>((resolve) => {
-        finish = (credential) => resolve(credential);
-      });
+      return signIn.promise;
     });
     const saved: PiOAuthConnected[] = [];
     const actor = { userId: "u", spaceId: "w" };
@@ -1773,7 +1771,7 @@ describe("PiOAuthLogins", () => {
       },
     });
     expect(await logins.finish(started.loginId, actor)).toEqual({ status: "pending" });
-    finish(oauthCred({ access: "live-access" }));
+    signIn.resolve(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
     expect(saved).toEqual([
       expect.objectContaining({
