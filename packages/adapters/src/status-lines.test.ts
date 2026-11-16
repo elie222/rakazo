@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { flush } from "@rakazo/core/test-async";
+import { describe, expect, it, vi } from "vitest";
 import { startStatusLines } from "./run-status-lines.js";
 import type { StatusLineWriter } from "./status-lines.js";
 import { statusLinesFrom } from "./status-lines.js";
@@ -20,13 +21,6 @@ describe("statusLinesFrom", () => {
 });
 
 describe("startStatusLines", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   function target(writer: StatusLineWriter | undefined, show?: (text: string) => Promise<void>) {
     const shown: string[] = [];
     let held = false;
@@ -53,12 +47,13 @@ describe("startStatusLines", () => {
       step: async () => "Opening the pricing page",
     });
     const live = startStatusLines(t.target);
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(t.shown).toEqual(["Looking into the plan pricing"]);
-    await vi.advanceTimersByTimeAsync(10_000);
+    // It does not rotate: nothing else shows while the run sets up.
+    await flush();
     expect(t.shown).toEqual(["Looking into the plan pricing"]);
     live.step("Reading page: https://example.com/pricing");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(t.shown).toEqual(["Looking into the plan pricing", "Opening the pricing page"]);
     live.close();
   });
@@ -73,7 +68,7 @@ describe("startStatusLines", () => {
     const live = startStatusLines(t.target);
     live.supersede();
     resolveWriter({ opening, step: async () => undefined });
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(opening).not.toHaveBeenCalled();
     live.close();
   });
@@ -87,11 +82,11 @@ describe("startStatusLines", () => {
     );
     const live = startStatusLines(t.target);
     live.step("Running: ls");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     live.step("Reading ledger.json");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     release();
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     // The first step's write finishes first; the newer step then shows over it.
     expect(t.shown).toEqual(["Listing files", "Reading the ledger"]);
     live.close();
@@ -101,9 +96,9 @@ describe("startStatusLines", () => {
     const t = target({ opening: async () => undefined, step: async () => undefined });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     live.step("I found two sources and will compare them now.", { fallback: false });
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(t.shown).toEqual(["Running: ls"]);
     live.close();
   });
@@ -116,10 +111,10 @@ describe("startStatusLines", () => {
     });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     live.supersede();
     finish("Listing files");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(t.shown).toEqual([]);
     live.close();
   });
@@ -134,7 +129,7 @@ describe("startStatusLines", () => {
       step: async () => undefined,
     });
     const live = startStatusLines(t.target);
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(openingSignal?.aborted).toBe(false);
     live.close();
     expect(openingSignal?.aborted).toBe(true);
@@ -147,10 +142,10 @@ describe("startStatusLines", () => {
     const ready = new Promise<void>((resolve) => (markReady = resolve));
     const t = target({ opening, step: async () => undefined });
     startStatusLines({ ...t.target, ready });
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(opening).not.toHaveBeenCalled();
     markReady();
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(opening).toHaveBeenCalledOnce();
     expect(t.shown).toEqual(["Reading your question"]);
   });
@@ -166,9 +161,9 @@ describe("startStatusLines", () => {
     });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     live.step("Reading ledger.json");
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
     live.supersede();
     expect(signals[1]?.aborted).toBe(true);
@@ -186,7 +181,7 @@ describe("startStatusLines", () => {
       step: async () => undefined,
     });
     const live = startStatusLines({ ...t.target, signal: run.signal });
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     run.abort();
     expect(openingSignal?.aborted).toBe(true);
     expect(live.active()).toBe(false);
@@ -199,7 +194,7 @@ describe("startStatusLines", () => {
     });
     t.hold();
     startStatusLines(t.target);
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(t.shown).toEqual([]);
   });
 
@@ -211,7 +206,7 @@ describe("startStatusLines", () => {
     const live = startStatusLines({ writer, request: "", held: () => false, show: async () => {} });
     expect(live.active()).toBe(false);
     resolveWriter({ opening: async () => undefined, step: async () => undefined });
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(live.active()).toBe(true);
     live.close();
     expect(live.active()).toBe(false);
@@ -219,7 +214,7 @@ describe("startStatusLines", () => {
 
   it("stays inactive without a status model", async () => {
     const live = startStatusLines(target(undefined).target);
-    await vi.advanceTimersByTimeAsync(0);
+    await flush();
     expect(live.active()).toBe(false);
   });
 });
