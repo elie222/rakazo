@@ -140,21 +140,21 @@ describe("computer maintenance rows", () => {
   });
 
   it("ignores a status read that a newer one superseded", async () => {
-    const reads: Array<(value: ComputerStatus) => void> = [];
-    rpc.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          reads.push(resolve);
-        }),
-    );
+    const opening = deferred<ComputerStatus>();
+    const older = deferred<ComputerStatus>();
+    const newer = deferred<ComputerStatus>();
+    rpc
+      .mockReturnValueOnce(opening.promise)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
     await act(async () => root.render(createElement(Rows)));
-    await act(async () => reads[0]!(status({ busyBotName: "Other" })));
+    await act(async () => opening.resolve(status({ busyBotName: "Other" })));
     // A finished update re-reads status while the previous re-read is still out.
     const listener = subscribe.mock.lastCall![0] as () => void;
     await act(async () => listener());
     await act(async () => listener());
-    await act(async () => reads[2]!(status({ busyBotName: null })));
-    await act(async () => reads[1]!(status({ busyBotName: "Other" })));
+    await act(async () => newer.resolve(status({ busyBotName: null })));
+    await act(async () => older.resolve(status({ busyBotName: "Other" })));
     expect(button("Recover computer")!.disabled).toBe(false);
   });
 

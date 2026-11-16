@@ -98,7 +98,11 @@ export default function NewBot() {
   useEffect(() => {
     gone.current = false;
     // A first bot needs a model; ask before the form is filled in rather than after.
-    modelCheck.current = askForModelBeforeFirstBot(params.spaceId, () => !gone.current);
+    // The same Space Create would ask about, so both open the same model settings.
+    modelCheck.current = askForModelBeforeFirstBot(
+      params.spaceId ?? selectedSpaceId() ?? undefined,
+      () => !gone.current,
+    );
     void modelCheck.current.then((asked) => {
       if (asked && !gone.current) router.back();
     });
