@@ -19,6 +19,7 @@ import {
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
@@ -116,3 +117,13 @@ function asLabel(labels: unknown, key: string): string {
   const value = (labels as Record<string, unknown>)[key];
   return typeof value === "string" ? value : "";
 }
+
+export const elevenlabsVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "ElevenLabs",
+    description: "Highest quality and cloning. Flash v2.5 for conversational calls.",
+    transcribe: true,
+    speechModel: true,
+  },
+  create: () => new ElevenLabsVoiceProvider(),
+};
