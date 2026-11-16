@@ -1,6 +1,6 @@
 import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { hasLab, resolveLabs } from "@rakazo/contracts";
-import { isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
   effectiveMemoryScope,
   loadRunHistoryMessages,
@@ -37,6 +37,7 @@ import { findConnectedModelCredential, runModelChoice } from "./model-selection.
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import type { RunExecutorServices, RunHold } from "./run-attempt.js";
+import { isDelegatedRun, loadRunOrigin } from "./run-origin.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 import { runReplaysToolHistory } from "./tool-step-calls.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
@@ -114,10 +115,14 @@ export async function loadRunRecords(
   const { contextStrategy } = services;
   const { deps, run, secrets: runSecrets } = hold;
   const { pinnedComputerModels } = parts.saved;
+  const origin = await loadRunOrigin(deps.prisma, run);
+  if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
+    throw new Error("The originating conversation no longer authorizes this task.");
+  const conversationRun = origin ?? run;
   const messagingSource =
-    run.trigger === "messaging" && run.sourceMessageId
+    conversationRun.trigger === "messaging" && conversationRun.sourceMessageId
       ? await deps.prisma.message.findUnique({
-          where: { id: run.sourceMessageId },
+          where: { id: conversationRun.sourceMessageId },
           select: { id: true, blocks: true, clientNonce: true },
         })
       : null;
@@ -127,7 +132,7 @@ export async function loadRunRecords(
   // A source that lost entries may have lost its channel marker: the run gets a channel's
   // limits, and its reply is not sent to a chat app (see MessagingDelivery.deliverRun).
   const messagingChannelRun =
-    isMessagingChannelRun(run.trigger, sourceBlocks) || source?.intact === false;
+    isMessagingChannelRun(conversationRun.trigger, sourceBlocks) || source?.intact === false;
   // Without the marker nothing says which of the thread's messages that channel may see,
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
@@ -174,11 +179,13 @@ export async function loadRunRecords(
       deps.prisma,
       run,
       LEGACY_HISTORY_WINDOW_SIZE,
-      channelId
-        ? { channelId }
-        : unknownChannelSourceId
-          ? { sourceMessageId: unknownChannelSourceId }
-          : undefined,
+      run.trigger === BACKGROUND_HELPER_TRIGGER
+        ? undefined
+        : channelId
+          ? { channelId }
+          : unknownChannelSourceId
+            ? { sourceMessageId: unknownChannelSourceId }
+            : undefined,
     ),
     run.trigger === "bot_message"
       ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
@@ -214,8 +221,11 @@ export async function loadRunRecords(
     loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
   ]);
   // Team chat reaches people besides the owner, so their runs get a group channel's limits.
-  const teamChatConversationId = run.trigger === "messaging" ? thread.externalConversationId : null;
+  const conversationThread = origin?.thread ?? thread;
+  const teamChatConversationId =
+    conversationRun.trigger === "messaging" ? conversationThread.externalConversationId : null;
   const nonOwnerChatRun =
+    (isDelegatedRun(run.trigger) && !origin) ||
     messagingChannelRun ||
     (teamChatConversationId
       ? !(await teamChatRunFromOwner(deps.prisma, {
@@ -229,16 +239,16 @@ export async function loadRunRecords(
   });
   const ticketBoardEnabled = hasLab(resolveLabs(ownerLabs, deps.deploymentLabs), "board");
   const historySearchBeforeSeq =
-    contextStrategy !== "current" && run.sourceMessageId
-      ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
+    contextStrategy !== "current" && conversationRun.sourceMessageId
+      ? (messages.find((message) => message.id === conversationRun.sourceMessageId)?.seq ??
         (
           await deps.prisma.message.findUnique({
-            where: { id: run.sourceMessageId, threadId: thread.id },
+            where: { id: conversationRun.sourceMessageId, threadId: conversationThread.id },
             select: { seq: true },
           })
         )?.seq ??
-        thread.nextMessageSeq)
-      : thread.nextMessageSeq;
+        conversationThread.nextMessageSeq)
+      : conversationThread.nextMessageSeq;
   // Encoded forms too: read_file redacts with these values before any shell command runs.
   // Read here only to hide the values and to tell the model the variables' names: no
   // command has them yet, so nothing is recorded as used until the shell tool sends one.
@@ -268,6 +278,9 @@ export async function loadRunRecords(
         )
       : null;
   return {
+    origin,
+    conversationRun,
+    conversationThread,
     sourceBlocks,
     channelId,
     messagingChannelRun,

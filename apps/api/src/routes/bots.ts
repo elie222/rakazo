@@ -51,7 +51,7 @@ import {
   vaultImportLogin,
   vaultImportOrigin,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ClientError, COMPUTER_USING_RUNS, displayName } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   botProfileLabelsChanged,
@@ -613,7 +613,7 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               botId: bot.id,
               status: { in: [...ACTIVE_RUN_STATUSES] },
-              ...COMPUTER_USING_RUNS,
+              ...computerUsingRuns(),
             },
             select: { id: true },
           });

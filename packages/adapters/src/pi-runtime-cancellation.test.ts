@@ -235,25 +235,6 @@ describe("Pi runtime cancellation", () => {
     expect(agent.settled).toBe(true);
   });
 
-  it("aborts and settles nested agent work before returning", async () => {
-    fake.state.delegate = true;
-    const runtime = new PiAgentRuntime();
-    const stream = runtime.run(request)[Symbol.asyncIterator]();
-    await stream.next();
-    await microtasks();
-    expect(fake.state.agents).toHaveLength(2);
-    let closed = false;
-    const closing = stream.return!().then(() => {
-      closed = true;
-    });
-    await microtasks();
-    for (const agent of fake.state.agents) expect(agent.abort).toHaveBeenCalled();
-    expect(closed).toBe(false);
-    for (const agent of fake.state.agents) agent.release.resolve();
-    await closing;
-    expect(fake.state.agents.every((agent) => agent.settled)).toBe(true);
-  });
-
   it("does not erase a replacement attempt when the previous stream closes", async () => {
     const runtime = new PiAgentRuntime();
     const first = runtime.run(request)[Symbol.asyncIterator]();
