@@ -1,5 +1,5 @@
 import type { JobPublisher, NotificationMessage, NotificationProvider } from "@rakazo/adapter-kit";
-import type { StuckWorkStatus } from "@rakazo/core";
+import type { ExpirableWaitStatus, StuckWorkStatus } from "@rakazo/core";
 import {
   isStuckWorkStatus,
   STUCK_WORK_NOTICE,
@@ -9,11 +9,13 @@ import {
   stuckWorkDueAfterMs,
   stuckWorkReminder,
   stuckWorkStoppedNotification,
+  waitExpireAfterMs,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   expireStuckRun,
+  runHoldsOwnSecrets,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -25,9 +27,22 @@ import { wakeRun } from "./wake-run.js";
 
 type StuckCursor = { at: Date; id: string };
 
-type StuckCandidate = {
+const STUCK_CANDIDATE_SELECT = {
+  id: true,
+  status: true,
+  updatedAt: true,
+  spaceId: true,
+  threadId: true,
+  botId: true,
+  userId: true,
+  taskId: true,
+  bot: { select: { name: true, color: true, avatarSet: true, notifyOnFinish: true } },
+  thread: { select: { groupId: true } },
+} as const;
+
+type StuckCandidate<Status extends ExpirableWaitStatus = StuckWorkStatus> = {
   id: string;
-  status: StuckWorkStatus;
+  status: Status;
   updatedAt: Date;
   spaceId: string;
   threadId: string;
@@ -82,18 +97,7 @@ export async function reconcileStuckWork(deps: {
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: deps.batchSize,
-    select: {
-      id: true,
-      status: true,
-      updatedAt: true,
-      spaceId: true,
-      threadId: true,
-      botId: true,
-      userId: true,
-      taskId: true,
-      bot: { select: { name: true, color: true, avatarSet: true, notifyOnFinish: true } },
-      thread: { select: { groupId: true } },
-    },
+    select: STUCK_CANDIDATE_SELECT,
   });
 
   const due = runs.flatMap((run) => {
@@ -156,7 +160,7 @@ function readyStuckRun(
   };
 }
 
-function noticesEnabled(run: StuckCandidate): boolean {
+function noticesEnabled(run: StuckCandidate<ExpirableWaitStatus>): boolean {
   return Boolean(run.thread.groupId || run.bot.notifyOnFinish);
 }
 
@@ -323,6 +327,33 @@ async function clearStuckNotice(tx: Prisma.TransactionClient, eventId: string) {
   await tx.event.deleteMany({ where: { id: eventId } });
 }
 
+/**
+ * A question stays open, but a run that took a login or code for itself cannot keep it, or the
+ * redaction built from it, past the expiry: end that wait the way a stuck one ends. Returns when to
+ * look again while the run is still waiting and younger than that.
+ */
+export async function expireWaitHoldingSecrets(
+  deps: {
+    prisma: PrismaClient;
+    jobs: JobPublisher;
+    events?: ThreadEvents;
+    notifications?: NotificationProvider;
+    now: Date;
+  },
+  runId: string,
+): Promise<Date | undefined> {
+  const run = await deps.prisma.run.findUnique({
+    where: { id: runId },
+    select: STUCK_CANDIDATE_SELECT,
+  });
+  if (run?.status !== "waiting_input") return undefined;
+  const due = new Date(run.updatedAt.getTime() + waitExpireAfterMs());
+  if (due > deps.now) return due;
+  if (!(await runHoldsOwnSecrets(deps.prisma, run))) return undefined;
+  await expireOne(deps, { ...run, status: "waiting_input" });
+  return undefined;
+}
+
 async function expireOne(
   deps: {
     prisma: PrismaClient;
@@ -331,7 +362,7 @@ async function expireOne(
     notifications?: NotificationProvider;
     now: Date;
   },
-  run: StuckCandidate,
+  run: StuckCandidate<ExpirableWaitStatus>,
 ) {
   const expired = await withTransactionRetry(() =>
     deps.prisma.$transaction(
@@ -369,7 +400,7 @@ type StuckNoticeDelivery = "delivered" | "undeliverable" | "failed";
 
 async function sendStuckNotice(
   notifications: NotificationProvider,
-  run: StuckCandidate,
+  run: StuckCandidate<ExpirableWaitStatus>,
   message: NotificationMessage,
 ): Promise<StuckNoticeDelivery> {
   const context = {

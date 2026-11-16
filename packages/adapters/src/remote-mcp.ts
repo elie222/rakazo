@@ -10,6 +10,7 @@ import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.j
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
+  ConnectionSetupError,
   ipVersion,
   isCloudMetadataAddress,
   isCloudMetadataHost,
@@ -607,7 +608,7 @@ async function closeMcpSession(session: ScopedMcpSession): Promise<void> {
 /** A saved MCP endpoint is stored and shown in plaintext, so its credentials belong in headers. */
 export function assertNoMcpEndpointCredential(endpoint: string): void {
   const name = sensitiveQueryParameter(new URL(endpoint));
-  if (name) throw new Error(`Put ${name} in a header instead of the server URL`);
+  if (name) throw new ConnectionSetupError(`Put ${name} in a header instead of the server URL`);
 }
 
 export async function assertSafeRemoteUrl(
@@ -627,16 +628,17 @@ async function inspectSafeRemoteUrl(
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Connector URL is invalid");
+    throw new ConnectionSetupError("Connector URL is invalid");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Connector URL must use HTTPS");
+    throw new ConnectionSetupError("Connector URL must use HTTPS");
   }
-  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
-  if (url.hash) throw new Error("Connector URL must not contain a fragment");
+  if (url.username || url.password)
+    throw new ConnectionSetupError("Connector URL must not contain credentials");
+  if (url.hash) throw new ConnectionSetupError("Connector URL must not contain a fragment");
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isCloudMetadataHost(hostname))
-    throw egressRefused(hostname, new Error("Connector URL targets a private host"));
+    throw egressRefused(hostname, new ConnectionSetupError("Connector URL targets a private host"));
   // Loopback is a private endpoint too: only the private-endpoint escape reaches it.
   const allowPrivate = policy.allowPrivateEndpoint === true;
   const privateHost = isPrivateRemoteMcpHostname(hostname);
@@ -651,14 +653,16 @@ async function inspectSafeRemoteUrl(
       ? " Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it."
       : "";
   if (url.protocol === "http:" && !allowPrivate) {
-    throw new Error(
+    throw new ConnectionSetupError(
       settingHint ? `Connector URL must use HTTPS.${settingHint}` : "Connector URL must use HTTPS",
     );
   }
   if (privateHost && !allowPrivate) {
     throw egressRefused(
       hostname,
-      new Error(`Connector URL targets a private host${settingHint ? `.${settingHint}` : ""}`),
+      new ConnectionSetupError(
+        `Connector URL targets a private host${settingHint ? `.${settingHint}` : ""}`,
+      ),
     );
   }
   if (url.protocol === "http:" && isLocalhostOrLoopbackIp(hostname)) {
@@ -671,7 +675,7 @@ async function inspectSafeRemoteUrl(
     throw egressRefused(hostname, error);
   }
   if (url.protocol === "http:" && addresses.some((entry) => !isNonPublicAddress(entry.address))) {
-    throw new Error("Connector URL must use HTTPS");
+    throw new ConnectionSetupError("Connector URL must use HTTPS");
   }
   return { url, addresses };
 }
@@ -801,6 +805,21 @@ export function createPrivateNetworkFetch(
 
 const MAX_CAUSE_DEPTH = 5;
 
+/** The server's certificate failed the client's own checks during the handshake. */
+export const TLS_CERTIFICATE_CODES: ReadonlySet<string> = new Set([
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_REVOKED",
+  "CERT_UNTRUSTED",
+  "CERT_SIGNATURE_FAILURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
 /**
  * Codes that prove no connection was made, whichever call failed: the name did not resolve, the
  * connection was not made in time, or the server's certificate failed the client's own checks
@@ -813,17 +832,7 @@ const NEVER_CONNECTED_CODES = new Set([
   "EAI_FAIL",
   "ENODATA",
   "UND_ERR_CONNECT_TIMEOUT",
-  "CERT_HAS_EXPIRED",
-  "CERT_NOT_YET_VALID",
-  "CERT_REVOKED",
-  "CERT_UNTRUSTED",
-  "CERT_SIGNATURE_FAILURE",
-  "DEPTH_ZERO_SELF_SIGNED_CERT",
-  "SELF_SIGNED_CERT_IN_CHAIN",
-  "UNABLE_TO_GET_ISSUER_CERT",
-  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-  "ERR_TLS_CERT_ALTNAME_INVALID",
+  ...TLS_CERTIFICATE_CODES,
 ]);
 
 /** Any socket error, but only from the connect call: once connected the same codes say nothing. */
@@ -906,7 +915,7 @@ export function isPrivateRemoteMcpHostname(hostname: string): boolean {
 
 function assertLoopbackAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.length === 0 || addresses.some((entry) => !isLoopbackAddress(entry.address))) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
 }
 
@@ -925,29 +934,29 @@ function isAlwaysBlockedAddress(address: string): boolean {
 
 function assertUnmixedAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.length === 0) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
   if (addresses.some((entry) => isAlwaysBlockedAddress(entry.address))) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
   const hasPrivate = addresses.some((entry) => isNonPublicAddress(entry.address));
   const hasPublic = addresses.some((entry) => !isNonPublicAddress(entry.address));
   if (hasPrivate && hasPublic) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
 }
 
 /** Tailnet (*.ts.net) answers are private addresses too, so they need the private-endpoint escape. */
 function assertPublicAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.length === 0) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
   if (
     addresses.some(
       (entry) => isCloudMetadataAddress(entry.address) || isNonPublicAddress(entry.address),
     )
   ) {
-    throw new Error("Connector URL resolves to a private address");
+    throw new ConnectionSetupError("Connector URL resolves to a private address");
   }
 }
 

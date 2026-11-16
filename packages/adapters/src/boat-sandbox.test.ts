@@ -2018,6 +2018,93 @@ describe("BoatSandboxProvider", () => {
     },
   );
 
+  it("reports a workspace archive whose connection drops mid-download as unresponsive", async () => {
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.files(computer.id).set("/home/user/rakazo-home/kept.txt", {
+      content: Buffer.from("kept"),
+      executable: false,
+    });
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      const served = serveFakeBoatDownload(String(url));
+      if (!served) return new Response(null, { status: 404 });
+      const reader = (await served).body!.getReader();
+      const { value } = await reader.read();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (value) controller.enqueue(value.subarray(0, 8));
+          controller.error(new TypeError("terminated", { cause: new Error("other side closed") }));
+        },
+      });
+      return new Response(body);
+    });
+
+    const error = await exportAll(provider, computer).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((error as Error).message).toBe("Boat file download failed");
+    expect(archivesLeft(api, computer)).toEqual([]);
+  });
+
+  it("reports a download that outlives its time limit as unresponsive", async () => {
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    vi.mocked(globalThis.fetch).mockImplementation(async (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Uint8Array.of(1));
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), {
+            once: true,
+          });
+        },
+      });
+      return new Response(body);
+    });
+
+    const reading = provider
+      .readFile(computer, "large.bin", context)
+      .catch((failure: unknown) => failure);
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    deadline.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+
+    const error = await reading;
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((error as Error).message).toBe("Boat file download timed out");
+  });
+
+  it("keeps a caller's cancellation of a download in progress", async () => {
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+    vi.mocked(globalThis.fetch).mockImplementation(async (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Uint8Array.of(1));
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), {
+            once: true,
+          });
+        },
+      });
+      return new Response(body);
+    });
+    const cancel = new AbortController();
+    const reason = new Error("cancelled by the caller");
+
+    const reading = provider
+      .readFile(computer, "large.bin", { ...context, signal: cancel.signal })
+      .catch((failure: unknown) => failure);
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    cancel.abort(reason);
+
+    expect(await reading).toBe(reason);
+  });
+
   it.each([undefined, "1", "20"])(
     "cancels oversized downloads with content-length %s",
     async (contentLength) => {
