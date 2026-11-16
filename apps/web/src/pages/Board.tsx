@@ -8,7 +8,7 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
+import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -18,8 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Textarea,
 } from "@rakazo/ui-web";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,7 +58,7 @@ export function BoardPage() {
           ? queries.tickets.comments.queryKey({ input: { ticketId } })
           : queries.tickets.comments.key(),
       });
-    let cancelRetry: (() => void) | undefined;
+    const stopped = new AbortController();
     void (async () => {
       while (active) {
         const controller = new AbortController();
@@ -88,23 +87,16 @@ export function BoardPage() {
           controller.abort();
         }
         if (!active || !isRetryableError(failure)) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          );
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
+        await abortableDelay(
+          opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
+          stopped.signal,
+        );
       }
     })();
     return () => {
       active = false;
       currentController?.abort();
-      cancelRetry?.();
+      stopped.abort();
     };
   }, [queries]);
 
@@ -298,55 +290,37 @@ function TicketDialog({
             <span>
               <Trans>Owner</Trans>
             </span>
-            <NativeSelect
-              className="w-full"
+            <OptionSelect
               id={`${formId}-owner`}
-              value={owner}
-              onChange={(event) => setOwner(event.target.value)}
+              value={owner || null}
+              onValueChange={setOwner}
               required
-            >
-              {bots.map((bot) => (
-                <NativeSelectOption key={bot.id} value={bot.id}>
-                  {bot.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+            />
           </label>
           {ticket ? (
             <label htmlFor={`${formId}-status`} className="block space-y-1 text-body">
               <span>
                 <Trans>Status</Trans>
               </span>
-              <NativeSelect
-                className="w-full"
+              <OptionSelect<TicketStatus>
                 id={`${formId}-status`}
                 value={status}
-                onChange={(event) => setStatus(event.target.value as TicketStatus)}
-              >
-                {TICKET_STATUSES.map((value) => (
-                  <NativeSelectOption key={value} value={value}>
-                    {statuses[value]}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={setStatus}
+                options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
+              />
             </label>
           ) : null}
           <label htmlFor={`${formId}-priority`} className="block space-y-1 text-body">
             <span>
               <Trans>Priority</Trans>
             </span>
-            <NativeSelect
-              className="w-full"
+            <OptionSelect<TicketPriority>
               id={`${formId}-priority`}
               value={priority}
-              onChange={(event) => setPriority(event.target.value as TicketPriority)}
-            >
-              {TICKET_PRIORITIES.map((value) => (
-                <NativeSelectOption key={value} value={value}>
-                  {priorities[value]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              onValueChange={setPriority}
+              options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
+            />
           </label>
           <div className="flex justify-end">
             <Button type="submit" disabled={busy || !title.trim() || !owner}>

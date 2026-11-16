@@ -331,20 +331,21 @@ describePages("pages", () => {
         name: "routine.wakeup",
         payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
       });
-      for (let tries = 0; tries < 200; tries++) {
-        const run = await db().run.findFirst({
-          where: { routineId: routine.id, status: { in: ["completed", "failed", "cancelled"] } },
-          orderBy: { createdAt: "desc" },
-          select: { id: true, status: true },
-        });
-        if (run && !fired.has(run.id)) {
-          fired.add(run.id);
-          expect(run.status).toBe("completed");
-          return db().message.findMany({ where: { runId: run.id }, select: { blocks: true } });
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      throw new Error("the routine never ran");
+      const run = await vi.waitFor(
+        async () => {
+          const run = await db().run.findFirst({
+            where: { routineId: routine.id, status: { in: ["completed", "failed", "cancelled"] } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, status: true },
+          });
+          if (!run || fired.has(run.id)) throw new Error("the routine never ran");
+          return run;
+        },
+        { interval: 100, timeout: 20_000 },
+      );
+      fired.add(run.id);
+      expect(run.status).toBe("completed");
+      return db().message.findMany({ where: { runId: run.id }, select: { blocks: true } });
     };
 
     // The first save is news: the page's card arrives in the chat.
@@ -670,14 +671,17 @@ describePages("pages", () => {
     await sendAndWait(app, cookie, asker.id, {
       text: `message the bot named Builder saying call save_page with ${JSON.stringify(args)}`,
     });
-    const start = Date.now();
-    let blocks: unknown[] = [];
-    while (Date.now() - start < 20_000) {
-      const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: builder.id });
-      blocks = snap.messages.flatMap((message) => message.blocks.filter((b) => b.kind === "page"));
-      if (blocks.length) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    const blocks = await vi.waitFor(
+      async () => {
+        const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: builder.id });
+        const blocks = snap.messages.flatMap((message) =>
+          message.blocks.filter((b) => b.kind === "page"),
+        );
+        if (!blocks.length) throw new Error("the builder's history shows no page");
+        return blocks;
+      },
+      { interval: 100, timeout: 20_000 },
+    );
     expect(blocks).toEqual([
       { kind: "page", pageId: expect.any(String), version: 1, title: "Peer report" },
     ]);

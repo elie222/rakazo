@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { MessagingChannelMembership } from "@rakazo/contracts";
 import {
   createMessagingLinkGuard,
@@ -128,14 +129,13 @@ export default function MessagingSettings() {
       )
     ) {
       setLink(null);
-      return;
     }
-    const timer = setTimeout(
-      () => setLink(null),
-      Math.max(0, Date.parse(link.expiresAt) - Date.now()),
-    );
-    return () => clearTimeout(timer);
   }, [link, status]);
+  const untilLinkExpiry = useMemo(
+    () => (link ? Math.max(0, Date.parse(link.expiresAt) - Date.now()) : null),
+    [link],
+  );
+  useTimeout(() => setLink(null), untilLinkExpiry, link);
 
   function act(action: (send: SaveSend) => Promise<unknown>) {
     linkGuard.invalidate();

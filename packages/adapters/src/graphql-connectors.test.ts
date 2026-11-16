@@ -1,3 +1,5 @@
+import { ConnectionSetupError } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   executeGraphqlOperation,
@@ -108,6 +110,44 @@ describe("GraphQL connector import", () => {
       required: ["text"],
     });
   });
+
+  it.each([
+    [
+      "a credential with a line break",
+      { auth: { type: "bearer" } },
+      "fake-gql-key\r\nx-injected: 1",
+    ],
+    [
+      "a credential outside Latin-1",
+      { auth: { type: "header", name: "x-api-key" } },
+      "fake-gql-key-\u201C",
+    ],
+    [
+      "a header value with a line break",
+      { headers: { "x-team": "fake-gql-key\nx: 1" } },
+      undefined,
+    ],
+  ])(
+    "refuses %s before building the request, without repeating it",
+    async (_label, config, credential) => {
+      const fetch = vi.fn();
+      const logs = [vi.spyOn(getLogger(), "error"), vi.spyOn(getLogger(), "warn")];
+      try {
+        const error = await prepareGraphqlInstall({
+          source: "https://graphql.example.test/graphql",
+          config,
+          credential,
+          remote: { fetch, resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+        }).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(ConnectionSetupError);
+        expect((error as Error).message).not.toContain("fake-gql-key");
+        expect(JSON.stringify(logs.map((log) => log.mock.calls))).not.toContain("fake-gql-key");
+        expect(fetch).not.toHaveBeenCalled();
+      } finally {
+        for (const log of logs) log.mockRestore();
+      }
+    },
+  );
 
   it("introspects a GraphQL endpoint over the SSRF-safe fetch path", async () => {
     const fetch = vi.fn(async () =>
