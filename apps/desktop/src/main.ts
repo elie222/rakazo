@@ -102,7 +102,7 @@ import {
 } from "./setup-config.js";
 import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
 import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup-window.js";
-import { StackStopMenuAvailability } from "./stop-local-stack.js";
+import { StackStopMenuAvailability, stopStackLeftBehind } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
 import { registerWindowControls } from "./window-controls.js";
@@ -449,6 +449,11 @@ function deviceTokenCipher() {
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
   syncHostComputerAccess();
+  stopStackLeftBehind({
+    mode: desktop.currentSetup?.mode,
+    stack: desktop.localStack,
+    rebuildMenu: () => installApplicationMenu(),
+  });
   const previous = desktop.replacedAppWindow;
   desktop.replacedAppWindow = null;
   if (previous !== null && !previous.isDestroyed() && previous !== desktop.mainWindow)

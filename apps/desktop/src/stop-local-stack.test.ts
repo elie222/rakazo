@@ -1,87 +1,123 @@
+import type { DesktopLocalStackState } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { reportDesktopError } from "./monitoring.js";
 import {
+  quitAndStopBotsItem,
   StackStopMenuAvailability,
   stackStopAvailable,
-  stopLocalStackItem,
+  stopStackLeftBehind,
 } from "./stop-local-stack.js";
 
 vi.mock("./monitoring.js", () => ({ reportDesktopError: vi.fn() }));
 
-describe("stop local stack menu item", () => {
-  it("offers the off-switch while the app is connected to its local stack", () => {
+const stopped = { phase: "idle" } as DesktopLocalStackState;
+const failed = { phase: "failed" } as DesktopLocalStackState;
+
+function item(overrides: Partial<Parameters<typeof quitAndStopBotsItem>[0]> = {}) {
+  return quitAndStopBotsItem({
+    mode: "existing",
+    stackRunning: true,
+    stop: vi.fn(async () => stopped),
+    quit: vi.fn(),
+    rebuildMenu: vi.fn(),
+    ...overrides,
+  });
+}
+
+function click(menuItem: ReturnType<typeof quitAndStopBotsItem>) {
+  menuItem.click?.(undefined as never, undefined as never, undefined as never);
+}
+
+describe("quit and stop bots menu item", () => {
+  it("is offered while the app is connected to its local stack", () => {
     expect(stackStopAvailable("new", false)).toBe(true);
     expect(stackStopAvailable("new", true)).toBe(true);
-    expect(
-      stopLocalStackItem({ mode: "new", stackRunning: true, stop: vi.fn(), rebuildMenu: vi.fn() })
-        .visible,
-    ).toBe(true);
+    expect(item({ mode: "new" }).visible).toBe(true);
   });
 
-  it("keeps the off-switch working for a stack left running after a server switch", () => {
-    const stop = vi.fn();
-    const item = stopLocalStackItem({
-      mode: "existing",
-      stackRunning: true,
-      stop,
-      rebuildMenu: vi.fn(),
-    });
-    expect(item.visible).toBe(true);
-    item.click?.(undefined as never, undefined as never, undefined as never);
-    expect(stop).toHaveBeenCalledOnce();
+  it("is hidden when no app-managed stack exists", () => {
+    expect(item({ stackRunning: false }).visible).toBe(false);
+    expect(item({ mode: null, stackRunning: false }).visible).toBe(false);
   });
 
-  it("hides the off-switch when no app-managed stack exists", () => {
-    expect(
-      stopLocalStackItem({
-        mode: "existing",
-        stackRunning: false,
-        stop: vi.fn(),
-        rebuildMenu: vi.fn(),
-      }).visible,
-    ).toBe(false);
-    expect(
-      stopLocalStackItem({ mode: null, stackRunning: false, stop: vi.fn(), rebuildMenu: vi.fn() })
-        .visible,
-    ).toBe(false);
-  });
-
-  it("rebuilds the menu after a stop settles, including one that changes no phase", async () => {
+  it("quits only after the stack has stopped", async () => {
+    const done = deferred<DesktopLocalStackState>();
+    const quit = vi.fn();
     const rebuildMenu = vi.fn();
-    const stopped = deferred();
-    const stop = vi.fn(() => stopped.promise);
-    const item = stopLocalStackItem({ mode: "existing", stackRunning: true, stop, rebuildMenu });
-
-    item.click?.(undefined as never, undefined as never, undefined as never);
-    expect(stop).toHaveBeenCalledOnce();
+    click(item({ stop: () => done.promise, quit, rebuildMenu }));
     // Immediate rebuild first: deactivating computer access changes other menu items.
     expect(rebuildMenu).toHaveBeenCalledOnce();
-    await Promise.resolve();
-    expect(rebuildMenu).toHaveBeenCalledOnce();
+    await flush();
+    expect(quit).not.toHaveBeenCalled();
 
-    // A stack stopped outside the app settles without a phase transition; the menu follows.
-    stopped.resolve();
-    await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledTimes(2));
+    done.resolve(stopped);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
   });
 
-  it("rebuilds the menu and reports a rejected stop, without an unhandled rejection", async () => {
+  it("stays open after a failed stop", async () => {
+    const quit = vi.fn();
+    const rebuildMenu = vi.fn();
+    click(item({ stop: async () => failed, quit, rebuildMenu }));
+    await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledTimes(2));
+    expect(quit).not.toHaveBeenCalled();
+  });
+
+  it("reports a rejected stop and stays open, without an unhandled rejection", async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
+    const quit = vi.fn();
     const rebuildMenu = vi.fn();
-    const stop = vi.fn(() => Promise.reject(new Error("docker went away")));
-    const item = stopLocalStackItem({ mode: "existing", stackRunning: true, stop, rebuildMenu });
 
     try {
-      item.click?.(undefined as never, undefined as never, undefined as never);
-      expect(rebuildMenu).toHaveBeenCalledOnce();
+      click(item({ stop: () => Promise.reject(new Error("docker went away")), quit, rebuildMenu }));
       await flush();
       expect(rebuildMenu).toHaveBeenCalledTimes(2);
+      expect(quit).not.toHaveBeenCalled();
       expect(vi.mocked(reportDesktopError)).toHaveBeenCalledWith(expect.any(Error), "desktop.menu");
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandled);
+      vi.mocked(reportDesktopError).mockClear();
+    }
+  });
+});
+
+describe("stop stack left behind", () => {
+  function stack(running: boolean, stop = vi.fn(async () => stopped)) {
+    return { managedStackRunning: () => running, stop };
+  }
+
+  it("stops a running stack once the app switches to another server", async () => {
+    const running = stack(true);
+    const rebuildMenu = vi.fn();
+    stopStackLeftBehind({ mode: "existing", stack: running, rebuildMenu });
+    expect(running.stop).toHaveBeenCalledOnce();
+    // A stop that changes no phase still refreshes the menu once it settles.
+    await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledOnce());
+  });
+
+  it("leaves the stack alone on This computer or when none is running", () => {
+    const connected = stack(true);
+    const idle = stack(false);
+    stopStackLeftBehind({ mode: "new", stack: connected, rebuildMenu: vi.fn() });
+    stopStackLeftBehind({ mode: "existing", stack: idle, rebuildMenu: vi.fn() });
+    expect(connected.stop).not.toHaveBeenCalled();
+    expect(idle.stop).not.toHaveBeenCalled();
+  });
+
+  it("reports a rejected stop", async () => {
+    const rebuildMenu = vi.fn();
+    const rejecting = stack(
+      true,
+      vi.fn(() => Promise.reject(new Error("docker went away"))),
+    );
+    try {
+      stopStackLeftBehind({ mode: "existing", stack: rejecting, rebuildMenu });
+      await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledOnce());
+      expect(vi.mocked(reportDesktopError)).toHaveBeenCalledWith(expect.any(Error), "desktop.ipc");
+    } finally {
       vi.mocked(reportDesktopError).mockClear();
     }
   });
