@@ -12,7 +12,7 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
 } from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
-import { ScriptedVoiceProvider } from "./scripted-voice.js";
+import { SCRIPTED_TRANSCRIPT, ScriptedVoiceProvider } from "./scripted-voice.js";
 import type { VoiceProviderId } from "./voice-providers.js";
 import { voiceProviders } from "./voice-providers.js";
 import { XaiVoiceProvider } from "./xai-voice.js";
@@ -326,7 +326,7 @@ describe.each(kinds)("%s voice conformance", (kind) => {
       { apiKey, audio: MPEG, mimeType: "audio/mpeg", language: "en-US" },
       ctx,
     );
-    expect(result.text).not.toBe("");
+    expect(result.text).toBe(kind === "scripted" ? SCRIPTED_TRANSCRIPT : TRANSCRIPT);
   });
 
   it.runIf(fixtures[kind].routes)(

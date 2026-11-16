@@ -28,7 +28,7 @@ export function createVoiceProvider(
 ): VoiceProvider {
   if (isVoiceProviderId(kind)) return voiceProviders[kind].create(options);
   throw new Error(
-    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio | xai | openai-compatible.`,
+    `Unknown voice provider "${kind}". Use ${Object.keys(voiceProviders).join(" | ")}.`,
   );
 }
 
