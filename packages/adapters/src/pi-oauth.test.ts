@@ -1343,12 +1343,13 @@ describe("refreshExpiredModelCredential", () => {
     let locked = Promise.resolve();
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-        let release = () => {};
+        let release: Deferred | undefined;
         const tx = {
           $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
             if (!sql.join("").includes("pg_advisory_xact_lock")) return 0;
             const previous = locked;
-            locked = new Promise<void>((resolve) => (release = resolve));
+            release = deferred();
+            locked = release.promise;
             await previous;
             return 0;
           }),
@@ -1357,7 +1358,7 @@ describe("refreshExpiredModelCredential", () => {
         try {
           return await fn(tx);
         } finally {
-          release();
+          release?.resolve();
         }
       }),
       secret,

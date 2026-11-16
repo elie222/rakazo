@@ -3,12 +3,13 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotEmailAddress } from "@rakazo/contracts";
 import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import * as Clipboard from "expo-clipboard";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { native, useMobileTokens } from "../lib/native";
-import { accountRpcQuery, rpcQuery, useSave } from "../lib/query";
+import { accountRpcQuery, queryClient, rpcQuery, useSave } from "../lib/query";
 import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
@@ -66,7 +67,17 @@ export function useBotEmailRows({
   // A name refused before it is sent, or the server's reason for refusing it.
   const [problem, setProblem] = useState<string | null>(null);
   const claiming = useSave({
-    save: (parsedName: string, send) => send("bots/claimEmailAddress", { botId, name: parsedName }),
+    save: async (parsedName: string, send) => {
+      const claimed = await send("bots/claimEmailAddress", { botId, name: parsedName });
+      // Kept in the saved read too, so returning to the screen never offers the claim again.
+      const read = rpcQuery("bots/emailAddress", { botId }).queryKey;
+      if (queryClient.getQueryData(read)) {
+        await writeSaved(queryClient, read, (prior) =>
+          prior ? { ...prior, address: claimed.address } : null,
+        );
+      }
+      return claimed;
+    },
     onSaved: (claimed) => email.setAddress(claimed.address),
   });
   const claimError =

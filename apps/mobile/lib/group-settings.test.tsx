@@ -11,7 +11,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettingsScreen from "../app/group-settings";
 import { queryClient } from "./query";
 
-const { rpc, router, alert, selection, archivedListeners } = vi.hoisted(() => ({
+const { rpc, router, alert, selection, archivedListeners, params } = vi.hoisted(() => ({
+  params: { groupId: "group-1" },
   rpc: vi.fn(),
   router: { back: vi.fn(), replace: vi.fn(), push: vi.fn() },
   alert: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock("./archived-chats", () => ({
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useLocalSearchParams: () => ({ groupId: "group-1" }),
+  useLocalSearchParams: () => params,
   useRouter: () => router,
 }));
 vi.mock("react-native", () => {
@@ -93,9 +94,15 @@ const group = {
   name: "Team",
   members: [{ botId: "bot-1" }, { botId: "bot-2" }],
 };
+const otherGroup = {
+  id: "group-2",
+  name: "Crew",
+  members: [{ botId: "bot-1" }, { botId: "bot-3" }],
+};
 const bots = [
   { id: "bot-1", name: "Ada" },
   { id: "bot-2", name: "Bo" },
+  { id: "bot-3", name: "Cy" },
 ];
 let root: Root;
 let container: HTMLDivElement;
@@ -105,12 +112,13 @@ beforeEach(() => {
   queryClient.clear();
   archivedListeners.clear();
   selection.spaceId = "space-1";
+  params.groupId = "group-1";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
   write = deferred();
   rpc.mockImplementation(async (procedure: string) => {
-    if (procedure === "groups/list") return [group];
+    if (procedure === "groups/list") return [group, otherGroup];
     if (procedure === "bots/list") return bots;
     return write.promise;
   });
@@ -174,6 +182,17 @@ it("keeps an edited name when the group is read again", async () => {
     for (const listener of archivedListeners) listener();
   });
   expect(container.querySelector("input")!.value).toBe("Crew");
+});
+
+it("starts from the new group's own values when another group opens in place", async () => {
+  await act(async () => root.render(<GroupSettingsScreen />));
+  await rename("Renamed");
+  params.groupId = "group-2";
+  await act(async () => root.render(<GroupSettingsScreen />));
+  expect(container.querySelector("input")!.value).toBe("Crew");
+  expect(container.querySelector("output")!.textContent).toBe("bot-1,bot-3");
+  await act(async () => button("Save")!.click());
+  expect(writes("groups/update")).toHaveLength(0);
 });
 
 it("deletes after confirming and leaves for the inbox, or alerts why not", async () => {

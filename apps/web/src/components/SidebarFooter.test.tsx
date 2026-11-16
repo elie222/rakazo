@@ -250,6 +250,8 @@ const personal = {
   defaultSpaceId: "s1",
   spaceIds: ["s1"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const work = {
   id: "org-work",
@@ -257,11 +259,14 @@ const work = {
   defaultSpaceId: "s2",
   spaceIds: ["s2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 
 async function renderOrganizations(
   organizations: (typeof personal)[],
   onSwitchOrganization = vi.fn(),
+  onCreateOrganization = vi.fn(),
 ) {
   await act(async () =>
     root.render(
@@ -282,6 +287,7 @@ async function renderOrganizations(
           organizations={organizations}
           activeOrganizationId="org-personal"
           onSwitchOrganization={onSwitchOrganization}
+          onCreateOrganization={onCreateOrganization}
         />
       </DesktopUpdatesProvider>,
     ),
@@ -289,19 +295,32 @@ async function renderOrganizations(
   return [...document.querySelector('[data-slot="popover-content"]')!.querySelectorAll("button")];
 }
 
-it("shows no organization rows with one organization", async () => {
+async function openOrganizations() {
+  await act(async () =>
+    (document.querySelector('[data-testid="organization-menu-trigger"]') as HTMLElement).click(),
+  );
+  const menus = document.querySelectorAll('[data-slot="popover-content"]');
+  return [...menus[menus.length - 1]!.querySelectorAll("button")];
+}
+
+it("shows the active organization as one row, even when it is the only one", async () => {
   const rows = await renderOrganizations([personal]);
-  expect(rows[0]!.textContent).toBe("Settings");
+  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual(["Personal", "Settings"]);
 });
 
-it("lists two organizations with the active one checked", async () => {
+it("lists organizations in a submenu with the active one checked, then New organization", async () => {
   const onSwitch = vi.fn();
-  const rows = await renderOrganizations([personal, work], onSwitch);
-  expect(rows.map((row) => row.textContent).slice(0, 3)).toEqual(["Personal", "Work", "Settings"]);
-  expect(rows[0]!.getAttribute("aria-current")).toBe("true");
-  expect(rows[0]!.querySelector("svg")).not.toBeNull();
-  expect(rows[1]!.hasAttribute("aria-current")).toBe(false);
-  expect(rows[1]!.querySelector("svg")).toBeNull();
-  await act(async () => rows[1]!.click());
+  const onCreate = vi.fn();
+  const rows = await renderOrganizations([personal, work], onSwitch, onCreate);
+  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual(["Personal", "Settings"]);
+  const items = await openOrganizations();
+  expect(items.map((item) => item.textContent)).toEqual(["Personal", "Work", "New organization"]);
+  expect(items[0]!.getAttribute("aria-current")).toBe("true");
+  expect(items[0]!.querySelector("svg")).not.toBeNull();
+  expect(items[1]!.hasAttribute("aria-current")).toBe(false);
+  expect(items[1]!.querySelector("svg")).toBeNull();
+  await act(async () => items[1]!.click());
   expect(onSwitch).toHaveBeenCalledWith(work);
+  await act(async () => items[2]!.click());
+  expect(onCreate).toHaveBeenCalled();
 });

@@ -1,12 +1,12 @@
 import type { CreateBotInput } from "@rakazo/contracts";
 import type { Href } from "expo-router";
-import type { RpcArgs } from "./api";
-import { captureApiRequestContext, rpc, selectedSpaceId, spaceSelectionSeq } from "./api";
+import { captureApiRequestContext, selectedSpaceId, spaceSelectionSeq } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
 import { hapticSuccess } from "./haptics";
 import { notifyInboxChanged } from "./inbox-changes";
 import { askToAddModel } from "./model-settings";
 import type { SaveSend } from "./query";
+import { sendWith } from "./query";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "./search-inbox";
 
 /**
@@ -23,7 +23,10 @@ async function firstBotModelGate(spaceId: string | undefined, send: SaveSend) {
     isFirstBot && (await send("me", undefined).catch(() => null))?.needsModel,
   );
   const modelSpaceId =
-    needsModel && spaceId && (await send("spaceSettings/overrides", undefined)).includes("models")
+    needsModel &&
+    spaceId &&
+    // Unknown overrides open the account's model settings rather than failing the create.
+    (await send("spaceSettings/overrides", undefined).catch(() => null))?.includes("models")
       ? spaceId
       : undefined;
   return { isFirstBot, needsModel, modelSpaceId };
@@ -52,8 +55,7 @@ export async function askForModelBeforeFirstBot(
   open: () => boolean,
 ): Promise<boolean> {
   const asked = askedHere();
-  const options = spaceId ? { requestContext: await captureApiRequestContext(spaceId) } : undefined;
-  const send: SaveSend = (proc, input) => rpc(proc, ...([input, options] as RpcArgs<typeof proc>));
+  const send = sendWith(spaceId ? await captureApiRequestContext(spaceId) : undefined);
   const gate = await firstBotModelGate(spaceId, send).catch(() => null);
   if (!gate?.needsModel || !asked.unchanged() || !open()) return false;
   askToAddModel(gate.modelSpaceId);

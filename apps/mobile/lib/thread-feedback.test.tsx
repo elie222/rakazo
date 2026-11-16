@@ -7,6 +7,7 @@ import {
   reduceThreadSnapshot,
   resolveComposerSendPlan,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
@@ -188,14 +189,12 @@ describe("scoped mobile outbox", () => {
     vi.unstubAllGlobals();
   });
   it("shows the optimistic payload before confirmation, then replaces it with the echo", async () => {
-    let finish!: (value: { seq: number }) => void;
-    request.mockImplementation(async (proc) =>
-      proc === "artifacts/create"
-        ? { id: "artifact-a" }
-        : new Promise((resolve) => {
-            finish = resolve;
-          }),
-    );
+    let reply: Deferred<{ seq: number }> | undefined;
+    request.mockImplementation(async (proc) => {
+      if (proc === "artifacts/create") return { id: "artifact-a" };
+      reply = deferred();
+      return reply.promise;
+    });
     const attempt = feedback.sendAttempt(payload());
     let sending!: Promise<boolean>;
     act(() => {
@@ -203,12 +202,12 @@ describe("scoped mobile outbox", () => {
     });
     expect(container.textContent).toContain("Hello");
     expect(container.textContent).toContain("Sending…");
-    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(reply).toBeDefined());
     const writes = disk.save.mock.calls.length;
     act(() => confirmEchoes("bot-1", []));
     expect(disk.save).toHaveBeenCalledTimes(writes);
     await act(async () => {
-      finish({ seq: 42 });
+      reply!.resolve({ seq: 42 });
       await sending;
     });
     act(() => confirmEchoes("bot-1", [42]));
@@ -956,22 +955,20 @@ describe("scoped mobile outbox", () => {
     expect(attempt.state).toBe("failed");
   });
   it("drops late failures and further uploads after a session wipe", async () => {
-    let finish!: (value: { id: string }) => void;
-    request.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let upload: Deferred<{ id: string }> | undefined;
+    request.mockImplementation(() => {
+      upload = deferred();
+      return upload.promise;
+    });
     const attempt = feedback.sendAttempt(payload());
     let sending!: Promise<boolean>;
     act(() => {
       sending = feedback.send(attempt);
     });
-    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(upload).toBeDefined());
     act(() => clearFailedSends());
     await act(async () => {
-      finish({ id: "artifact-a" });
+      upload!.resolve({ id: "artifact-a" });
       await sending;
     });
     expect(request).toHaveBeenCalledOnce();
@@ -1261,22 +1258,18 @@ describe("scoped mobile outbox", () => {
     });
   });
   it("retries after a reconnect that arrived during an in-flight send", async () => {
-    let rejectUpload!: (error: unknown) => void;
-    request.mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectUpload = reject;
-        }),
-    );
+    const upload = deferred<never>();
+    const heldUpload = vi.fn(() => upload.promise);
+    request.mockImplementationOnce(heldUpload);
     const attempt = feedback.sendAttempt(payload("Held"));
     let sending!: Promise<boolean>;
     act(() => {
       sending = feedback.send(attempt);
     });
-    await vi.waitFor(() => expect(rejectUpload).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(heldUpload).toHaveBeenCalled());
     const replay = sendWaitingMessages();
     await act(async () => {
-      rejectUpload(Object.assign(new Error("unavailable"), { status: 503 }));
+      upload.reject(Object.assign(new Error("unavailable"), { status: 503 }));
       await sending;
       await replay;
     });
@@ -1302,22 +1295,18 @@ describe("scoped mobile outbox", () => {
     expect(attempt.acceptedSeq).toBe(42);
   });
   it("keeps the original Space while selection changes during an upload", async () => {
-    let finish!: (value: { id: string }) => void;
-    request.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
+    const upload = deferred<{ id: string }>();
+    const heldUpload = vi.fn(() => upload.promise);
+    request.mockImplementationOnce(heldUpload);
     const attempt = feedback.sendAttempt(payload());
     let sending!: Promise<boolean>;
     act(() => {
       sending = feedback.send(attempt);
     });
-    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(heldUpload).toHaveBeenCalled());
     scope.spaceId = "space-b";
     await act(async () => {
-      finish({ id: "artifact-a" });
+      upload.resolve({ id: "artifact-a" });
       await sending;
     });
     const [send] = request.mock.calls.filter(([proc]) => proc === "threads/send");
@@ -1400,16 +1389,12 @@ describe("a send and its echo", () => {
   }
   /** Holds the next threads/send open until the returned function accepts it. */
   function heldSend(): (value: { seq: number }) => Promise<void> {
-    let accept: ((value: { seq: number }) => void) | undefined;
-    request.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          accept = resolve;
-        }),
-    );
+    const reply = deferred<{ seq: number }>();
+    const send = vi.fn(() => reply.promise);
+    request.mockImplementationOnce(send);
     return async (value) => {
-      await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
-      accept!(value);
+      await vi.waitFor(() => expect(send).toHaveBeenCalled());
+      reply.resolve(value);
     };
   }
   function textPayload(text = "Hello"): SendPayload {

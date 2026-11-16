@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
 import { analyticsScreen } from "@rakazo/core";
@@ -77,6 +78,9 @@ const NavLinkPage = lazyComponent(() =>
 );
 const InvitePage = lazyComponent(() =>
   import("./pages/Invite").then((module) => module.InvitePage),
+);
+const JoinOrganizationPage = lazyComponent(() =>
+  import("./pages/JoinOrganization").then((module) => module.JoinOrganizationPage),
 );
 
 function SsoCallbackPage() {
@@ -269,6 +273,16 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/join/:invitationId"
+                element={
+                  user ? (
+                    <JoinOrganizationPage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
                 path="/invite/:token"
                 element={
                   user ? (
@@ -322,26 +336,22 @@ function SessionApp() {
  */
 function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   const { t } = useLingui();
-  const [attempt, setAttempt] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-  const retryImmediately = useRef(false);
-  const refetchRef = useRef(refetch);
-  refetchRef.current = refetch;
-
-  useEffect(() => {
-    let cancelled = false;
-    const delay = retryImmediately.current ? 0 : sessionRetryDelayMs(attempt);
-    retryImmediately.current = false;
-    const timer = setTimeout(() => {
-      void refetchRef.current().finally(() => {
-        if (!cancelled) setAttempt((value) => value + 1);
-      });
-    }, delay);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [attempt, retryKey]);
+  // Each retry is a new object, so a lookup that answers after Retry now cannot advance it.
+  const [retry, setRetry] = useState({ attempt: 0, delay: sessionRetryDelayMs(0) });
+  useTimeout(
+    () => {
+      const started = retry;
+      void refetch().finally(() =>
+        setRetry((current) =>
+          current === started
+            ? { attempt: started.attempt + 1, delay: sessionRetryDelayMs(started.attempt + 1) }
+            : current,
+        ),
+      );
+    },
+    retry.delay,
+    retry,
+  );
 
   return (
     <div className="grid h-full place-items-center bg-background px-6 text-center">
@@ -351,14 +361,7 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              retryImmediately.current = true;
-              setAttempt(0);
-              setRetryKey((key) => key + 1);
-            }}
-          >
+          <Button variant="secondary" onClick={() => setRetry({ attempt: 0, delay: 0 })}>
             <Trans>Retry now</Trans>
           </Button>
         </div>

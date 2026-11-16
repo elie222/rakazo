@@ -7,17 +7,17 @@ import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
-  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatuses,
-  parseWhatsAppStatuses,
-  photonProjectsFromEnv,
   splitOutboundBody,
-  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
+import { photonProjectsFromEnv } from "./photon-messaging.js";
+import { parseSendblueStatuses } from "./sendblue-messaging.js";
+import { enrichSlackTeamRoom } from "./slack-messaging.js";
+import { telegramBotsFromEnv } from "./telegram-messaging.js";
+import { parseWhatsAppStatuses } from "./whatsapp-messaging.js";
 
 // Fake credentials: adapters are constructed offline, never called.
 const fullEnv: MessagingEnvironmentValues = {

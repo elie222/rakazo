@@ -6,7 +6,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { EmailEmulator, ObjectAgentHomeStore, PrismaAgentHomeRecords } from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
-import { asSystem, ContentKeyRing, createDb, LocalKeyProvider } from "@rakazo/db";
+import { asSystem, ContentKeyRing, createDb, LocalKeyProvider, withLease } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryObjectStorage } from "../../../packages/adapters/src/object-storage.test-support.js";
 import { homeRetentionSweep } from "./home-retention.js";
@@ -418,13 +418,16 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     );
     await pending.promise;
     const swept = sweep();
-    for (;;) {
-      const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
-        SELECT count(*)::int AS waiting FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND query LIKE '%billing_accounts%FOR SHARE%'`;
-      if (waiting) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    // No limit of its own: the test's timeout bounds it.
+    await vi.waitUntil(
+      async () => {
+        const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%billing_accounts%FOR SHARE%'`;
+        return waiting > 0;
+      },
+      { interval: 20, timeout: 30_000 },
+    );
     held.resolve();
     await payment;
     await swept;
@@ -457,6 +460,77 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(errors).toEqual([]);
     expect(sent()).toHaveLength(0);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+  });
+  /** The previous release's claim on a notice, which knows nothing of the lease. */
+  const previousReleaseClaim = async (claimId: string) => {
+    await system.homeDeletionNotice.createMany({
+      data: [{ computerId: id }],
+      skipDuplicates: true,
+    });
+    const claimed = await system.homeDeletionNotice.updateMany({
+      where: {
+        computerId: id,
+        warnedAt: null,
+        OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lt: new Date() } }],
+      },
+      data: { claimId, claimExpiresAt: new Date(Date.now() + 15 * 60 * 1000) },
+    });
+    return claimed.count;
+  };
+
+  it("leaves a notice the previous release is emailing to it", async () => {
+    expect(await previousReleaseClaim("previous")).toBe(1);
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(0);
+    expect(
+      await system.homeDeletionNotice.findUniqueOrThrow({ where: { computerId: id } }),
+    ).toMatchObject({ claimId: "previous", warnedAt: null });
+
+    await system.homeDeletionNotice.updateMany({
+      where: { claimId: "previous" },
+      data: { claimId: null, claimExpiresAt: null },
+    });
+    await sweep();
+    expect(sent()).toHaveLength(1);
+  });
+
+  it("keeps the previous release out while it emails", async () => {
+    const sending = deferred();
+    const delivered = deferred();
+    const send = email.send.bind(email);
+    vi.spyOn(email, "send").mockImplementationOnce(async (message) => {
+      sending.resolve();
+      await delivered.promise;
+      return send(message);
+    });
+    const sweeping = sweep();
+    await sending.promise;
+    expect(await previousReleaseClaim("previous")).toBe(0);
+    delivered.resolve();
+    await sweeping;
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(1);
+    expect(
+      await system.homeDeletionNotice.findUniqueOrThrow({ where: { computerId: id } }),
+    ).toMatchObject({ claimId: null, claimExpiresAt: null, warnedAt: expect.any(Date) });
+  });
+
+  it("skips an organization another process is emailing", async () => {
+    const done = deferred();
+    const held = deferred();
+    const holding = withLease(system, `home-deletion-notice:${id}`, { ttlMs: 60_000 }, () => {
+      held.resolve();
+      return done.promise;
+    });
+    await held.promise;
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(0);
+    done.resolve();
+    await holding;
+    await sweep();
+    expect(sent()).toHaveLength(1);
   });
 });
 
