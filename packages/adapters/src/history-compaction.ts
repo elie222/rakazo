@@ -170,7 +170,7 @@ function logHistoryCompactPermanentFailure(
   getLogger().error(PERMANENT_COMPACTION_FAILURE, bindings);
 }
 
-/** Graphile emits this once `history.compact` has used its last attempt. */
+/** Reports a `history.compact` job that used its last attempt; false for any other task. */
 export function recordHistoryCompactAttemptsExhausted(
   job: {
     task_identifier: string;
@@ -179,8 +179,8 @@ export function recordHistoryCompactAttemptsExhausted(
     max_attempts: number;
   },
   error: unknown,
-): void {
-  if (job.task_identifier !== "history.compact") return;
+): boolean {
+  if (job.task_identifier !== "history.compact") return false;
   const unpacked = unwrapJobPayload(job.payload);
   const payload = unpacked.payload;
   const threadId =
@@ -195,6 +195,7 @@ export function recordHistoryCompactAttemptsExhausted(
     "job.attempts": job.attempts,
     "job.max_attempts": job.max_attempts,
   });
+  return true;
 }
 
 export interface CompactHistoryDeps {

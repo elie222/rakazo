@@ -813,7 +813,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     await host.stop();
   });
 
-  it("logs when history compaction fails permanently", async () => {
+  it("logs every job that fails permanently, history compaction with its own report", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);
     const sink = createTestSink();
@@ -829,6 +829,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
         | ((event: {
             job: {
               task_identifier: string;
+              key: string | null;
               payload: unknown;
               attempts: number;
               max_attempts: number;
@@ -840,6 +841,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       failed?.({
         job: {
           task_identifier: "history.compact",
+          key: null,
           payload: wrapJobPayload({ threadId: "thread-9" }),
           attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
           max_attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
@@ -849,6 +851,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       failed?.({
         job: {
           task_identifier: "run.continue",
+          key: "run:run-1",
           payload: wrapJobPayload({ runId: "run-1" }),
           attempts: 25,
           max_attempts: 25,
@@ -870,6 +873,15 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
         "job.attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
         "job.max_attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
         error: expect.objectContaining({ message: "The operation was aborted due to timeout" }),
+      }),
+      expect.objectContaining({
+        level: "error",
+        message: "jobs.attempts_exhausted",
+        "job.task": "run.continue",
+        "job.key": "run:run-1",
+        "job.attempts": 25,
+        "job.max_attempts": 25,
+        error: expect.objectContaining({ message: "handler failed" }),
       }),
     ]);
   });

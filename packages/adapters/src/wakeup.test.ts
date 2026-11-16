@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
 import {
@@ -10,6 +10,7 @@ import {
   DEAD_JOB_RETENTION_DAYS,
   InMemoryJobQueue,
   JOB_DRAIN_TIMEOUT_MS,
+  reportExhaustedJob,
 } from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
@@ -514,16 +515,17 @@ describe("createDeadJobPruner", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const query = vi
       .fn()
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rowCount: 1_000 })
       .mockResolvedValueOnce({ rowCount: 3 })
-      .mockResolvedValue({ rowCount: 0 });
+      .mockResolvedValue({ rows: [], rowCount: 0 });
     const prune = createDeadJobPruner({ query } as never);
 
     await prune();
     await prune();
 
-    expect(query).toHaveBeenCalledTimes(2);
-    const [sql, params] = query.mock.calls[0]!;
+    expect(query).toHaveBeenCalledTimes(3);
+    const [sql, params] = query.mock.calls[1]!;
     expect(params).toEqual([DEAD_JOB_RETENTION_DAYS, 1_000]);
     // Only exhausted, unlocked rows, rechecked by the delete itself, and never retry notices.
     expect(sql).toContain("dead.attempts >= dead.max_attempts and dead.locked_at is null");
@@ -535,8 +537,44 @@ describe("createDeadJobPruner", () => {
 
     now += 60 * 60 * 1000;
     await prune();
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(5);
     expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
+  });
+});
+
+describe("reportExhaustedJob", () => {
+  afterEach(() => installLogger(createLogger({ service: "test", level: "off", sinks: [] })));
+
+  it("logs any task once with its key and redacted error, and leaves tasks with their own report to it", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const job = (task_identifier: string, payload: unknown) => ({
+      task_identifier,
+      key: `${task_identifier}:key-1`,
+      payload: wrapJobPayload(payload),
+      attempts: 4,
+      max_attempts: 4,
+    });
+
+    reportExhaustedJob(
+      job("computer.sleep", { computerId: "computer-1" }),
+      new Error("401 api_key=fake-secret-value"),
+    );
+    reportExhaustedJob(job("history.compact", { threadId: "thread-1" }), new Error("timeout"));
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "error",
+        message: "jobs.attempts_exhausted",
+        "job.task": "computer.sleep",
+        "job.key": "computer.sleep:key-1",
+        "job.attempts": 4,
+        "job.max_attempts": 4,
+        error: expect.objectContaining({ message: expect.stringContaining("401") }),
+      }),
+      expect.objectContaining({ message: "history.compact failed permanently" }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("fake-secret-value");
   });
 });
 

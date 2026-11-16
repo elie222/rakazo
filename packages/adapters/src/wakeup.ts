@@ -477,10 +477,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         },
       },
     });
-    runner.events.on("job:failed", ({ job, error }) => {
-      recordHistoryCompactAttemptsExhausted(job, error);
-      recordConnectionCleanupAttemptsExhausted(job, error);
-    });
+    runner.events.on("job:failed", ({ job, error }) => reportExhaustedJob(job, error));
     if (this.stopping) {
       await runner.stop().catch(() => undefined);
       return;
@@ -647,15 +644,43 @@ export function createRoutineRetryNoticeReconciler(
   };
 }
 
+interface ExhaustedJob {
+  task_identifier: string;
+  key: string | null;
+  payload: unknown;
+  attempts: number;
+  max_attempts: number;
+}
+
+/** Reports a job that used its last attempt, once. Tasks with their own report say what to do. */
+export function reportExhaustedJob(job: ExhaustedJob, error: unknown): void {
+  if (recordHistoryCompactAttemptsExhausted(job, error)) return;
+  if (recordConnectionCleanupAttemptsExhausted(job, error)) return;
+  getLogger().error("jobs.attempts_exhausted", error, {
+    "job.task": job.task_identifier,
+    ...(job.key ? { "job.key": job.key } : {}),
+    "job.attempts": job.attempts,
+    "job.max_attempts": job.max_attempts,
+  });
+}
+
 export const DEAD_JOB_RETENTION_DAYS = 7;
 const DEAD_JOB_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 const DEAD_JOB_PRUNE_BATCH = 1_000;
 const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
+/**
+ * A worker that dies during a job's last attempt leaves it locked and never fails it, so the queue
+ * reports nothing, and after four hours Graphile clears the lock without a trace. No job holds its
+ * lock this long, and two hourly passes fit before Graphile's four hours.
+ */
+export const ABANDONED_LAST_ATTEMPT_MS = 2 * 60 * 60 * 1000;
+export const ABANDONED_LAST_ATTEMPT_ERROR = "The worker stopped during the last attempt";
 
 /**
  * Graphile keeps a job that exhausted its retries forever, and its own maintenance scans them.
  * Delete them once they are old enough that nobody is still diagnosing the failure. Exhausted
  * `routine.retry` rows are notice requests, which their reconciler deletes after delivery.
+ * First, a last attempt whose worker died is failed and reported like one that threw.
  *
  * Graphile's `cleanup` task deletes every exhausted job regardless of age or task, and
  * `completeJobs` deletes by id without rechecking, so a keyed job replaced back to life between
@@ -672,6 +697,18 @@ export function createDeadJobPruner(
     const now = Date.now();
     if (lastRun !== undefined && now - lastRun < intervalMs) return;
     lastRun = now;
+    const abandoned = await pool.query<ExhaustedJob>(
+      `update graphile_worker._private_jobs as jobs
+       set locked_at = null, locked_by = null, last_error = $2::text, updated_at = now()
+       from graphile_worker._private_tasks as tasks
+       where tasks.id = jobs.task_id and jobs.attempts >= jobs.max_attempts
+         and jobs.locked_at < now() - $1::int * interval '1 millisecond'
+       returning tasks.identifier as task_identifier, jobs.key, jobs.payload,
+         jobs.attempts, jobs.max_attempts`,
+      [ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_ERROR],
+    );
+    for (const job of abandoned.rows)
+      reportExhaustedJob(job, new Error(ABANDONED_LAST_ATTEMPT_ERROR));
     let removed = 0;
     for (let batch = 0; batch < DEAD_JOB_PRUNE_MAX_BATCHES; batch += 1) {
       const { rowCount } = await pool.query(

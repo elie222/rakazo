@@ -402,12 +402,12 @@ function isConnectionCleanup(payload: unknown): payload is ConnectionCleanup {
   );
 }
 
-/** The queue emits this once a `connection.cleanup` job has used its last attempt. */
+/** Reports a `connection.cleanup` job that used its last attempt; false for any other task. */
 export function recordConnectionCleanupAttemptsExhausted(
   job: { task_identifier: string; payload: unknown; attempts: number },
   error: unknown,
-): void {
-  if (job.task_identifier !== "connection.cleanup") return;
+): boolean {
+  if (job.task_identifier !== "connection.cleanup") return false;
   const { payload } = unwrapJobPayload(job.payload);
   getLogger().error(
     "connection cleanup gave up; remove the authorization at the provider by hand",
@@ -417,4 +417,5 @@ export function recordConnectionCleanupAttemptsExhausted(
       reason: sanitizeIntegrationError(error),
     },
   );
+  return true;
 }
