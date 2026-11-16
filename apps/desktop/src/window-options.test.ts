@@ -125,13 +125,23 @@ describe("saved window", () => {
   });
   const primary = display({ x: 0, y: 0, width: 1440, height: 875 });
   const second = display({ x: 1440, y: 0, width: 1920, height: 1080 });
-  const onSecond = { x: 1600, y: 100, width: 1400, height: 900, maximized: true };
+  const onSecond = {
+    x: 1600,
+    y: 100,
+    width: 1400,
+    height: 900,
+    maximized: true,
+    fullScreen: false,
+  };
 
   it("reads only complete, usable bounds", () => {
     expect(parseSavedWindow(JSON.stringify(onSecond))).toEqual(onSecond);
-    expect(parseSavedWindow(JSON.stringify({ ...onSecond, maximized: "yes" }))).toEqual({
+    expect(
+      parseSavedWindow(JSON.stringify({ ...onSecond, maximized: "yes", fullScreen: "yes" })),
+    ).toEqual({ ...onSecond, maximized: false, fullScreen: false });
+    expect(parseSavedWindow(JSON.stringify({ ...onSecond, fullScreen: true }))).toEqual({
       ...onSecond,
-      maximized: false,
+      fullScreen: true,
     });
     expect(parseSavedWindow(JSON.stringify({ ...onSecond, x: 1600.4, width: 1399.6 }))).toEqual(
       onSecond,
@@ -144,6 +154,8 @@ describe("saved window", () => {
 
   it("reopens on the display it was closed on", () => {
     expect(restorableWindow(onSecond, [primary, second])).toEqual(onSecond);
+    const fullScreen = { ...onSecond, fullScreen: true };
+    expect(restorableWindow(fullScreen, [primary, second])).toEqual(fullScreen);
   });
 
   it("opens at the default when that display is gone", () => {
@@ -152,7 +164,14 @@ describe("saved window", () => {
   });
 
   it("moves a window that runs past an edge back onto its display", () => {
-    const past = (x: number, y: number) => ({ x, y, width: 1000, height: 700, maximized: false });
+    const past = (x: number, y: number) => ({
+      x,
+      y,
+      width: 1000,
+      height: 700,
+      maximized: false,
+      fullScreen: false,
+    });
     expect(restorableWindow(past(900, 100), [primary])).toMatchObject({ x: 440, y: 100 });
     expect(restorableWindow(past(-400, 100), [primary])).toMatchObject({ x: 0, y: 100 });
     expect(restorableWindow(past(100, 400), [primary])).toMatchObject({ x: 100, y: 175 });
@@ -165,10 +184,11 @@ describe("saved window", () => {
       workArea: { x: 0, y: 0, width: 1440, height: 840 },
     };
     expect(
-      restorableWindow({ x: 100, y: 500, width: 800, height: 700, maximized: false }, [
-        withTaskbar,
-      ]),
-    ).toEqual({ x: 100, y: 140, width: 800, height: 700, maximized: false });
+      restorableWindow(
+        { x: 100, y: 500, width: 800, height: 700, maximized: false, fullScreen: false },
+        [withTaskbar],
+      ),
+    ).toEqual({ x: 100, y: 140, width: 800, height: 700, maximized: false, fullScreen: false });
   });
 
   it("shrinks to fit a smaller display", () => {
@@ -178,12 +198,16 @@ describe("saved window", () => {
       width: 1400,
       height: 875,
       maximized: true,
+      fullScreen: false,
     });
   });
 
   it("stays inside a display that does not start at the origin", () => {
     expect(
-      restorableWindow({ x: 2700, y: 500, width: 800, height: 700, maximized: false }, [second]),
-    ).toEqual({ x: 2560, y: 380, width: 800, height: 700, maximized: false });
+      restorableWindow(
+        { x: 2700, y: 500, width: 800, height: 700, maximized: false, fullScreen: false },
+        [second],
+      ),
+    ).toEqual({ x: 2560, y: 380, width: 800, height: 700, maximized: false, fullScreen: false });
   });
 });

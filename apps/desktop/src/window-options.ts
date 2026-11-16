@@ -36,8 +36,8 @@ export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkAr
 }
 
 type Bounds = { x: number; y: number; width: number; height: number };
-/** The app window as it was last closed: its normal (unmaximized) bounds. */
-export type SavedWindow = Bounds & { maximized: boolean };
+/** The app window as it was last closed: its normal bounds, and whether it filled the screen. */
+export type SavedWindow = Bounds & { maximized: boolean; fullScreen: boolean };
 
 // Smaller saved sizes are treated as damaged: the window would be too small to use.
 const MIN_SAVED_WIDTH = 400;
@@ -46,7 +46,7 @@ const MIN_SAVED_HEIGHT = 300;
 export function parseSavedWindow(raw: string): SavedWindow | null {
   try {
     const value = JSON.parse(raw) as Partial<Record<keyof SavedWindow, unknown>> | null;
-    const { x, y, width, height, maximized } = value ?? {};
+    const { x, y, width, height, maximized, fullScreen } = value ?? {};
     if (![x, y, width, height].every(Number.isFinite)) return null;
     if ((width as number) < MIN_SAVED_WIDTH || (height as number) < MIN_SAVED_HEIGHT) return null;
     return {
@@ -55,6 +55,7 @@ export function parseSavedWindow(raw: string): SavedWindow | null {
       width: Math.round(width as number),
       height: Math.round(height as number),
       maximized: maximized === true,
+      fullScreen: fullScreen === true,
     };
   } catch {
     return null;
@@ -81,11 +82,11 @@ export function restorableWindow(
   const width = Math.min(saved.width, area.width);
   const height = Math.min(saved.height, area.height);
   return {
+    ...saved,
     x: Math.min(Math.max(saved.x, area.x), area.x + area.width - width),
     y: Math.min(Math.max(saved.y, area.y), area.y + area.height - height),
     width,
     height,
-    maximized: saved.maximized,
   };
 }
 

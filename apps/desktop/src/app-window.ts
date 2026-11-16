@@ -74,6 +74,7 @@ function saveWindow(win: BrowserWindow) {
   const saved: SavedWindow = {
     ...win.getNormalBounds(),
     maximized: win.isMinimized() ? maximizedWindows.has(win) : win.isMaximized(),
+    fullScreen: win.isFullScreen(),
   };
   try {
     writePrivateFileSync(savedWindowFile(), JSON.stringify(saved));
@@ -184,8 +185,10 @@ export async function createWindow(url: string, partition: string | null) {
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height } : {}),
+    // Only ever true: an explicit false hides the full screen button on macOS.
+    ...(saved?.fullScreen ? { fullscreen: true } : {}),
     // A window that reopens maximized is shown once maximized, so its normal size never flashes.
-    ...(saved?.maximized ? { show: false } : {}),
+    ...(saved?.maximized && !saved.fullScreen ? { show: false } : {}),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -211,7 +214,9 @@ export async function createWindow(url: string, partition: string | null) {
     maximizedWindows.delete(win);
     saveSoon();
   });
-  if (saved?.maximized) {
+  win.on("enter-full-screen", saveSoon);
+  win.on("leave-full-screen", saveSoon);
+  if (saved?.maximized && !saved.fullScreen) {
     win.maximize();
     win.show();
   }
