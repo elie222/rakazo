@@ -90,6 +90,13 @@ export class OrganizationInvitationEmailError extends ClientError {
   }
 }
 
+export class AccountBeingDeletedError extends ClientError {
+  constructor() {
+    super("CONFLICT", "Your account is being deleted");
+    this.name = "AccountBeingDeletedError";
+  }
+}
+
 /** Account deletion while others still depend on the organization the account owns. */
 export class OwnedOrganizationHasMembersError extends ClientError {
   constructor() {
@@ -430,6 +437,14 @@ export async function acceptOrganizationInvitation(
           FOR SHARE
         `;
         if (!live) throw new OrganizationInvitationNotFoundError();
+        // An account being deleted joins nothing: its Spaces were already chosen for deletion, so a
+        // new one would outlive it with no members.
+        const [deleting] = await tx.$queryRaw<Array<{ key: string }>>`
+          SELECT key FROM "leases"
+          WHERE key = ${`account-deletion:${input.userId}`} AND "expiresAt" > now()
+          FOR SHARE
+        `;
+        if (deleting) throw new AccountBeingDeletedError();
         const claimed = await tx.invitation.updateMany({
           where: { id: invitation.id, status: PENDING, expiresAt: { gt: new Date() } },
           data: { status: "accepted" },

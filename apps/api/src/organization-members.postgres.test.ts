@@ -349,6 +349,23 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     ).resolves.toMatchObject({ organizationId: owner.organizationId });
     await expect(role(owner.organizationId, unverified.id)).resolves.toEqual({ role: "member" });
 
+    // Nor does an account while it is being deleted.
+    const leaving = await person("leaving");
+    const leavingJoin = await invite(owner, owner.organizationId, leaving.email);
+    await system.lease.create({
+      data: {
+        key: `account-deletion:${leaving.id}`,
+        fence: 1n,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    expect(
+      (await call(leaving.actor, "organizations/invitations/accept", { invitationId: leavingJoin }))
+        .status,
+    ).toBe(409);
+    await expect(role(owner.organizationId, leaving.id)).resolves.toBeNull();
+    await system.lease.delete({ where: { key: `account-deletion:${leaving.id}` } });
+
     // Once the owner's account deletion claims the organization, nobody joins it.
     const joiner = await person("joiner");
     const claimedJoin = await invite(owner, owner.organizationId, joiner.email);
