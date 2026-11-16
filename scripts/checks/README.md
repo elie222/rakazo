@@ -37,3 +37,7 @@ It lowers that rule's counts to the current ones and drops files that are gone o
 ### Raising a baseline
 
 Raising a count or adding a file is a hand edit that review will see. It is fine when the violations only moved: a file was renamed or split, so the total does not grow. Otherwise fix the code, or fix the rule if the hit is a false positive.
+
+## Compatibility shims
+
+Code kept only so the previous release keeps working during a deploy carries `compat-shim(after vX.Y.Z)` in a comment, naming the latest release in `CHANGELOG.md` when it was added. The shim ships in the next release; once a second one follows, nothing running needs it, and `compat-shims.test.mjs` fails until it is removed. That failure usually lands on the release pull request, which removes the shims it names.
