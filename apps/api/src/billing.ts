@@ -432,9 +432,9 @@ export function createBillingService(deps: {
 
   /**
    * Runs `work` holding the organization's checkout lease, one at a time across API instances.
-   * `underLease` runs writes that must not outlive the lease. The lease also holds the billing
-   * account's checkout claim, which the previous release takes instead, so the two keep out of
-   * each other during a deploy.
+   * `underLease` runs writes that must not outlive the lease. compat-shim(after v0.11.0): the
+   * lease also holds the billing account's checkout claim, which the previous release takes
+   * instead, so the two keep out of each other during a deploy.
    */
   async function withCheckoutLease<T>(
     organizationId: string,
