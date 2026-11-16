@@ -154,12 +154,14 @@ function SpaceHeading({
   appearance: ResolvedAppearance;
 }) {
   const styles = useThemedStyles(createHomeStyles);
+  const { t } = useLingui();
   return (
     <HeadingWithMenu space menu={menu} appearance={appearance}>
       {(press) => (
         <DragSafePressable
           accessibilityRole="button"
-          accessibilityLabel={title}
+          // The globe is drawn only; its meaning is read with the Space's name.
+          accessibilityLabel={hasGuests ? `${title}, ${t`Shared with guests`}` : title}
           accessibilityState={{ selected, disabled: busy }}
           disabled={busy}
           onPress={onPress}

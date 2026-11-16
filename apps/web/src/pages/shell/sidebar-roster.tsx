@@ -184,11 +184,13 @@ export function SidebarRoster({
                             : undefined
                       }
                       aria-label={
-                        group.emptySpaceId
+                        (group.emptySpaceId
                           ? t`Open ${headerName(group)}`
                           : collapsed
                             ? t`Expand ${headerName(group)}`
-                            : t`Collapse ${headerName(group)}`
+                            : t`Collapse ${headerName(group)}`) +
+                        // The button's own name is what is read, so the globe's meaning joins it.
+                        (group.hasGuests ? `, ${t`Shared with guests`}` : "")
                       }
                     >
                       <span

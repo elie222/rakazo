@@ -117,14 +117,12 @@ test("an owner invites someone by link and both see the space's members", async 
   await captureScreenshot(inviteePage, testInfo, "shared-thread-invitee");
   await ownerPage.reload();
   await expect(ownerPage.getByText("Bob Invitee", { exact: true })).toBeVisible();
-  // The Space with someone from outside is marked in the sidebar.
-  await expect(
-    ownerPage
-      .locator("aside")
-      .first()
-      .getByRole("button", { name: "Collapse Home" })
-      .locator("svg.lucide-globe"),
-  ).toBeVisible();
+  // The Space with someone from outside is marked in the sidebar, for screen readers too.
+  const homeHeading = ownerPage
+    .locator("aside")
+    .first()
+    .getByRole("button", { name: "Collapse Home, Shared with guests", exact: true });
+  await expect(homeHeading.locator("svg.lucide-globe")).toBeVisible();
   await captureScreenshot(ownerPage, testInfo, "shared-thread-owner");
 
   // A group in the shared space: each bot's reply is named and in its own color.
