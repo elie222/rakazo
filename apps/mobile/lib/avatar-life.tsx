@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AvatarClock,
   AvatarLifeState,
@@ -228,14 +229,9 @@ export function useSettling(state: AvatarLifeState): boolean {
   useEffect(() => {
     const wasActive = previous.current !== "idle";
     previous.current = state;
-    if (state !== "idle" || !wasActive) {
-      setSettling(false);
-      return;
-    }
-    setSettling(true);
-    const timer = setTimeout(() => setSettling(false), AVATAR_SETTLE_MS);
-    return () => clearTimeout(timer);
+    setSettling(state === "idle" && wasActive);
   }, [state]);
+  useTimeout(() => setSettling(false), settling ? AVATAR_SETTLE_MS : null);
   // The render that sees the bot stop already counts, so motion never blinks off and on.
   return settling || (state === "idle" && previous.current !== "idle");
 }
