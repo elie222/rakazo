@@ -1,5 +1,6 @@
 import { getEventListeners } from "node:events";
 import { IDLE_TIMEOUT_MS } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HEARTBEAT, HEARTBEAT_MS, withHeartbeats } from "./shared.js";
 
@@ -14,13 +15,11 @@ describe("withHeartbeats", () => {
 
   it("keeps the in-flight read across heartbeats so events stay in order", async () => {
     vi.useFakeTimers();
-    let release: (() => void) | undefined;
+    const release = deferred();
     const reads = vi.fn();
     async function* follow() {
       reads();
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await release.promise;
       yield "first";
       yield "second";
     }
@@ -31,7 +30,7 @@ describe("withHeartbeats", () => {
     await expect(heartbeat).resolves.toEqual({ done: false, value: HEARTBEAT });
 
     const first = stream.next();
-    release?.();
+    release.resolve();
     await expect(first).resolves.toEqual({ done: false, value: "first" });
     await expect(stream.next()).resolves.toEqual({ done: false, value: "second" });
     expect(reads).toHaveBeenCalledOnce();
