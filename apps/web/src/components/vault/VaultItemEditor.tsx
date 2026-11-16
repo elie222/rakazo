@@ -27,8 +27,7 @@ import {
   DialogTitle,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Switch,
 } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
@@ -612,20 +611,16 @@ function EditorForm({
           {text("card-name", t`Name on card`, cardName, setCardName)}
           {contacts?.length ? (
             <FormField id={id("billing")} label={t`Billing address`}>
-              <NativeSelect
+              <OptionSelect
                 id={id("billing")}
-                className="w-full"
                 disabled={busy}
                 value={billing}
-                onChange={(event) => setBilling(event.target.value)}
-              >
-                <NativeSelectOption value="">{t`None`}</NativeSelectOption>
-                {contacts.map((saved) => (
-                  <NativeSelectOption key={saved.name} value={saved.name}>
-                    {saved.title}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={setBilling}
+                options={[
+                  { value: "", label: t`None` },
+                  ...contacts.map((saved) => ({ value: saved.name, label: saved.title })),
+                ]}
+              />
             </FormField>
           ) : null}
         </>
@@ -651,18 +646,18 @@ function EditorForm({
         <>
           {siteField("https://api.example.com")}
           <FormField id={id("auth")} label={t`Type`}>
-            <NativeSelect
+            <OptionSelect<ApiAuthType>
               id={id("auth")}
               data-testid="vault-editor-auth"
-              className="w-full"
               disabled={busy || editing || asking}
               value={apiType}
-              onChange={(event) => setApiType(event.target.value as ApiAuthType)}
-            >
-              <NativeSelectOption value="bearer">{t`Bearer token`}</NativeSelectOption>
-              <NativeSelectOption value="header">{t`Custom header`}</NativeSelectOption>
-              <NativeSelectOption value="basic">{t`Basic auth`}</NativeSelectOption>
-            </NativeSelect>
+              onValueChange={setApiType}
+              options={[
+                { value: "bearer", label: t`Bearer token` },
+                { value: "header", label: t`Custom header` },
+                { value: "basic", label: t`Basic auth` },
+              ]}
+            />
           </FormField>
           {apiType === "header"
             ? text("header", t`Header name`, headerName, setHeaderName, {
