@@ -68,7 +68,7 @@ const HEALTH_POLL_INTERVAL_MS = 1_000;
 const POSTGRES_READY_TIMEOUT_MS = 120_000;
 /** The VM logs ready before its published port reliably carries connections, so the host asks too. */
 const DATABASE_ANSWER_ATTEMPTS = 30;
-const DATABASE_ANSWER_TIMEOUT_MS = 5_000;
+const DATABASE_ANSWER_TIMEOUT_MS = 1_000;
 /** Postgres's SSLRequest: a length of 8 and the code 80877103, answered with one byte, S or N. */
 const SSL_REQUEST = Buffer.from([0, 0, 0, 8, 4, 210, 22, 47]);
 const MIGRATE_TIMEOUT_MS = 10 * 60_000;
