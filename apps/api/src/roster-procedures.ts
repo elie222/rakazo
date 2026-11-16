@@ -28,7 +28,15 @@ export const ROSTER_PROCEDURES: Record<string, RosterScope> = {
   "bots.createFromTemplate": actorSpace,
   "bots.duplicate": actorSpace,
   "bots.reorder": actorSpace,
-  "bots.update": actorSpace,
+  // A bot's notify switch is each member's own mute, so a save of only that tells only them.
+  "bots.update": (actor, input) =>
+    input &&
+    typeof input === "object" &&
+    Object.entries(input).every(
+      ([key, value]) => value === undefined || key === "botId" || key === "notifyOnFinish",
+    )
+      ? actorOnly(actor, input, undefined)
+      : actorSpace(actor, input, undefined),
   "bots.restoreInstructions": actorSpace,
   "bots.setComputer": actorSpace,
   "bots.archive": actorSpace,
