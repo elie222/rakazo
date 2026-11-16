@@ -8,9 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
-export function formatRemaining(expiresAt: string | null): string {
+export function formatRemaining(expiresAt: string | null, now = Date.now()): string {
   if (!expiresAt) return "10:00";
-  const ms = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+  const ms = Math.max(0, new Date(expiresAt).getTime() - now);
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -30,8 +30,7 @@ export function TeachRecordingChrome({
   onStop: () => void | Promise<void>;
   variant?: "panel" | "overlay";
 }) {
-  useNow(1000);
-  const remaining = formatRemaining(recording.expiresAt);
+  const remaining = formatRemaining(recording.expiresAt, useNow(1000));
 
   const protectedInput = (
     <ProtectedTeachInput key={recording.id} botId={botId} skillId={recording.id} />
