@@ -142,16 +142,6 @@ describePostgres("space deletion lease (PostgreSQL)", () => {
     system.$executeRaw`
       UPDATE "leases" SET "fence" = nextval('leases_fence_seq') WHERE "key" = ${leaseKey(spaceId)}`;
 
-  /** Polls on immediates, which these tests leave unfaked while they fake timeouts. */
-  async function until(check: () => Promise<boolean> | boolean) {
-    const giveUpAt = performance.now() + 5_000;
-    while (performance.now() < giveUpAt) {
-      if (await check()) return;
-      await new Promise(setImmediate);
-    }
-    throw new Error("condition not reached");
-  }
-
   const nothingToDestroy = { destroy: vi.fn() };
 
   it("refuses someone who may not delete the Space before taking its lease", async () => {
@@ -255,7 +245,7 @@ describePostgres("space deletion lease (PostgreSQL)", () => {
       const aged = new Date(Date.now() - 10 * 60_000);
       await system.space.update({ where: { id: ada.spaceId }, data: { deletingAt: aged } });
       await vi.advanceTimersByTimeAsync(60_000);
-      await until(async () => {
+      await vi.waitUntil(async () => {
         const space = await system.space.findUniqueOrThrow({ where: { id: ada.spaceId } });
         return space.deletingAt!.getTime() > aged.getTime();
       });
@@ -293,7 +283,7 @@ describePostgres("space deletion lease (PostgreSQL)", () => {
       });
 
       hung.release();
-      await until(async () => (await leaseRows(ada.spaceId)) === 0);
+      await vi.waitUntil(async () => (await leaseRows(ada.spaceId)) === 0);
       await expect(
         system.space.findUniqueOrThrow({ where: { id: ada.spaceId } }),
       ).resolves.toMatchObject({ deletionClaimId: expect.any(String) });

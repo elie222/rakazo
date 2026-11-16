@@ -555,15 +555,6 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       vi.useRealTimers();
     }
   });
-  /** Polls on immediates, which these tests leave unfaked while they fake timeouts. */
-  async function until(check: () => Promise<boolean> | boolean) {
-    const giveUpAt = performance.now() + 5_000;
-    while (performance.now() < giveUpAt) {
-      if (await check()) return;
-      await new Promise(setImmediate);
-    }
-    throw new Error("condition not reached");
-  }
 
   /** Bumps the lease's fence, as if it had lapsed and another holder had taken it. */
   const takeLease = () =>
@@ -607,7 +598,7 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       });
       // The lease's next renewal refreshes the claims too.
       await vi.advanceTimersByTimeAsync(60_000);
-      await until(async () => {
+      await vi.waitUntil(async () => {
         const space = await prisma.space.findFirstOrThrow({
           where: { organizationId: only.organizationId },
         });
@@ -665,6 +656,30 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
     }
   });
 
+  it("gives its claims back when it is cut off during billing", async () => {
+    const only = await organization("cut-off-in-billing");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const cutOff = await deletionHeldAtBilling();
+    try {
+      await takeLease();
+      // The next renewal finds the lease taken, so the caller has its error while billing runs.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(cutOff.deleting).resolves.toBeInstanceOf(LeaseLostError);
+      cutOff.release();
+      // Billing settles with nothing torn down, so the next attempt need not wait for the claims.
+      await vi.waitUntil(async () => {
+        const space = await prisma.space.findFirstOrThrow({
+          where: { organizationId: only.organizationId },
+        });
+        return space.deletionClaimId === null;
+      });
+    } finally {
+      cutOff.release();
+      vi.useRealTimers();
+      await dropLease();
+    }
+  });
+
   it("gives its claims straight back when they land after it lost its lease", async () => {
     const only = await organization("late-claim");
     const reading = deferred();
@@ -690,7 +705,7 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       await expect(attempt).resolves.toBeInstanceOf(LeaseLostError);
       resume.resolve();
       // The attempt lets its lease go only once its late claims went back.
-      await until(async () => (await leaseRows()) === 0);
+      await vi.waitUntil(async () => (await leaseRows()) === 0);
       await expect(
         prisma.space.findFirstOrThrow({ where: { organizationId: only.organizationId } }),
       ).resolves.toMatchObject({ deletionClaimId: null, deletingAt: null });

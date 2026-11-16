@@ -165,12 +165,24 @@ export async function deleteSpaceWithContent(
     }
     lease.signal.throwIfAborted();
     await rehomeItemsLeaving(deps.prisma, spaceId);
-    return deleteClaimedSpaceForMember(deps.prisma, { ...claimedInput, lease });
+    const deleted = await deleteClaimedSpaceForMember(deps.prisma, { ...claimedInput, lease });
+    // Cleaned up here rather than after the lease, so a deletion that commits just as the attempt
+    // is cut off still removes what it left behind. The rows are gone and leftover stored files are
+    // unreachable, so cleanup failures only log.
+    const cleanup = await Promise.allSettled([
+      ...deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context())),
+      ...deleted.homeKeys.map((homeKey) => removeAgentHome(deps.home, homeKey, deps.dataDir)),
+    ]);
+    for (const result of cleanup) {
+      if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
+    }
+    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
+    return deleted.id;
   };
 
-  let deleted: Awaited<ReturnType<typeof deleteClaimedSpaceForMember>>;
+  let activeSpaceId: string;
   try {
-    deleted = await withLease(
+    activeSpaceId = await withLease(
       deps.prisma,
       `space-deletion:${spaceId}`,
       { ttlMs: SPACE_DELETION_CLAIM_TIMEOUT_MS, signal: timedOut.signal, onRenew: keepClaim },
@@ -190,14 +202,5 @@ export async function deleteSpaceWithContent(
       throw new SpaceDeletionInProgressError();
     throw error;
   }
-  // Rows are gone; leftover stored files are unreachable, so cleanup failures only log.
-  const cleanup = await Promise.allSettled([
-    ...deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context())),
-    ...deleted.homeKeys.map((homeKey) => removeAgentHome(deps.home, homeKey, deps.dataDir)),
-  ]);
-  for (const result of cleanup) {
-    if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
-  }
-  if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
-  return { activeSpaceId: deleted.id };
+  return { activeSpaceId };
 }

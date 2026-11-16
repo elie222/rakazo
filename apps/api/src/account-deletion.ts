@@ -84,7 +84,12 @@ export async function deleteAccountContent(
     // Cancel under the claims, so a checkout opened while another organization's cancellation
     // waits is refused by the deletion check instead of outliving the account.
     await deps.billing?.cancelForDeletedUser(userId);
-    lease.signal.throwIfAborted();
+    // Cut off during billing: billing has settled and nothing was torn down, so the claims go back
+    // now. The caller may already have its error and skipped the hand-back below.
+    if (lease.signal.aborted) {
+      await handBack(claim);
+      lease.signal.throwIfAborted();
+    }
     stage = "teardown";
     const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
     // Then leave other people's Spaces, so what this account made there passes to their owners
