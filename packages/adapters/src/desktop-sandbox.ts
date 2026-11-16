@@ -36,6 +36,7 @@ import {
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
+  WorkspacePathError,
 } from "./computer-support.js";
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
@@ -222,7 +223,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
     let refused = false;
     for (const parent of parents) {
       if (parent !== "bots" && parent !== ".browser-profiles")
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       const pattern = parent === "bots" ? /^[A-Za-z0-9_-]+$/ : /^chromium-bot-[0-9a-f]{32}$/;
       const names =
         request.action === "remove"
@@ -240,7 +241,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
       if (!info) continue;
       if (info.isSymbolicLink() || !info.isDirectory()) {
         if (request.action === "list") continue;
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       }
       const target = await localWorkspaceTarget(home, parent, true);
       if (request.action === "list") {
@@ -249,7 +250,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
         await removeOwnedWorkspaceChildren(target, names, info, context.signal);
       }
     }
-    if (refused) throw new Error("Path escapes the computer workspace");
+    if (refused) throw new WorkspacePathError("Path escapes the computer workspace");
     return entries;
   }
 
@@ -501,7 +502,7 @@ async function localWorkspaceTarget(home: string, relative: string, mustExist: b
   const normalized = normalizeDesktopWorkspacePath(relative);
   const candidate = path.resolve(home, normalized);
   if (!isAllowedDesktopPath(candidate, [home]))
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   const resolvedHome = await realpath(home);
   if (!mustExist) {
     // Walk/create parents from a held directory fd so a junction swap cannot
@@ -547,7 +548,7 @@ async function localWorkspaceTarget(home: string, relative: string, mustExist: b
             before = await nextHandle.stat();
             if (!before.isDirectory()) {
               await nextHandle.close().catch(() => undefined);
-              throw new Error("Path escapes the computer workspace");
+              throw new WorkspacePathError("Path escapes the computer workspace");
             }
             resolved = await assertContainedDirectoryHandle(
               nextHandle,
@@ -561,7 +562,7 @@ async function localWorkspaceTarget(home: string, relative: string, mustExist: b
             resolved = await realpath(next);
             before = await stat(resolved);
             if (!isAllowedDesktopPath(resolved, [resolvedHome]) || !before.isDirectory()) {
-              throw new Error("Path escapes the computer workspace");
+              throw new WorkspacePathError("Path escapes the computer workspace");
             }
             nextHandle = await open(resolved, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0));
             try {
@@ -600,7 +601,7 @@ async function localWorkspaceTarget(home: string, relative: string, mustExist: b
   }
   const resolved = await realpath(candidate);
   if (!isAllowedDesktopPath(resolved, [resolvedHome]))
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   return resolved;
 }
 
@@ -609,12 +610,12 @@ async function openContainedWorkspaceFile(home: string, target: string, mode: nu
   const parentPath = path.dirname(target);
   const name = path.basename(target);
   if (!name || name === "." || name === "..") {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
 
   const parentReal = await realpath(parentPath);
   if (!isAllowedDesktopPath(parentReal, [resolvedHome])) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   const parentBefore = await stat(parentReal);
   const parentHandle = await open(parentReal, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0));
@@ -681,7 +682,7 @@ async function openContainedWorkspaceFile(home: string, target: string, mode: nu
       opened.nlink !== 1n ||
       named.nlink !== 1n
     ) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
     await assertContainedFileHandle(handle, resolvedHome, parentHandle, containedParent, name);
     return handle;
@@ -725,31 +726,31 @@ async function assertContainedDirectoryHandle(
     !after.isDirectory() ||
     (expected && (after.dev !== expected.dev || after.ino !== expected.ino))
   ) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   // Prefer fd-bound realpath so containment cannot diverge from the open handle.
   const resolved = await realpathFromFd(handle.fd);
   if (resolved) {
     const named = await lstat(resolved).catch(() => undefined);
     if (named?.isSymbolicLink() || !isAllowedDesktopPath(resolved, [resolvedHome])) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
     const fully = await realpath(resolved);
     if (!isAllowedDesktopPath(fully, [resolvedHome])) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
     return fully;
   }
   // Pathname platforms: re-open the realpath immediately and require the same inode.
   const byPath = await realpath(pathToRecheck);
   if (!isAllowedDesktopPath(byPath, [resolvedHome])) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   const verify = await open(byPath, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0));
   try {
     const verified = await verify.stat();
     if (!verified.isDirectory() || verified.dev !== after.dev || verified.ino !== after.ino) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
   } finally {
     await verify.close().catch(() => undefined);
@@ -766,7 +767,7 @@ async function assertContainedFileHandle(
 ) {
   const opened = await handle.stat({ bigint: true });
   if (!opened.isFile() || opened.nlink !== 1n) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   const resolved = await realpathFromFd(handle.fd);
   if (resolved) {
@@ -779,11 +780,11 @@ async function assertContainedFileHandle(
       named.nlink !== 1n ||
       !isAllowedDesktopPath(resolved, [resolvedHome])
     ) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
     const fully = await realpath(resolved);
     if (!isAllowedDesktopPath(fully, [resolvedHome])) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
     return;
   }
@@ -798,11 +799,11 @@ async function assertContainedFileHandle(
     parentNow.dev !== parentOpened.dev ||
     parentNow.ino !== parentOpened.ino
   ) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   const parentReal = await realpath(parentPath);
   if (!isAllowedDesktopPath(parentReal, [resolvedHome])) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   const verifyPath = path.join(parentReal, childName);
   const verify = await open(verifyPath, constants.O_RDONLY | O_NOFOLLOW);
@@ -826,7 +827,7 @@ async function assertContainedFileHandle(
       again.ino !== opened.ino ||
       again.nlink !== 1n
     ) {
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     }
   } finally {
     await verify.close().catch(() => undefined);

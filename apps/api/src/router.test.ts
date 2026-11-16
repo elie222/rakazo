@@ -9,6 +9,9 @@ import {
   ConnectorAuthUnavailableError,
   connectionCleanupJob,
   connectionCleanupJobKey,
+  MEMORY_REVISION_CONFLICT_ERROR,
+  MemoryRevisionConflictError,
+  MessagingInstallRefusedError,
   routineWakeupJob,
   SandboxFileTooLargeError,
   SecretStoreUnavailableError,
@@ -45,6 +48,8 @@ import {
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
@@ -1401,14 +1406,14 @@ describe("thread stream authorization", () => {
   function threadStream() {
     vi.useFakeTimers();
     const queued: ProductEvent[] = [];
-    let waiting: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+    let waiting: Deferred<IteratorResult<ProductEvent>> | undefined;
     const follow = {
-      next: () =>
-        queued.length > 0
-          ? Promise.resolve({ done: false as const, value: queued.shift()! })
-          : new Promise<IteratorResult<ProductEvent>>((resolve) => {
-              waiting = resolve;
-            }),
+      next: () => {
+        if (queued.length > 0)
+          return Promise.resolve({ done: false as const, value: queued.shift()! });
+        waiting = deferred();
+        return waiting.promise;
+      },
       return: vi.fn(async () => ({ done: true as const, value: undefined })),
     };
     const emit = (seq: number, text: string, extra?: Partial<ProductEvent>) => {
@@ -1424,7 +1429,7 @@ describe("thread stream authorization", () => {
         ...extra,
       };
       if (waiting) {
-        waiting({ done: false, value: event });
+        waiting.resolve({ done: false, value: event });
         waiting = undefined;
       } else {
         queued.push(event);
@@ -2576,8 +2581,6 @@ describe("MCP server health", () => {
     args: ["-y", "@klodr/gmail-mcp@2.0.2"],
   };
 
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   it.each([
     [{ mcpStdioEnabled: false }, "Stdio MCP servers aren't available here"],
     [{ mcpStdioAllowedCommands: [] }, "Stdio MCP servers aren't available here"],
@@ -3403,16 +3406,13 @@ describe("connections.begin", () => {
 
   it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {
     vi.useFakeTimers();
-    let releaseSlot = () => {};
+    const slot = deferred();
     let holder: Promise<void> = Promise.resolve();
     const begin = vi.fn(async () => {
       // Another provider call takes this scope's slot while this one talks to the provider.
       holder = runProviderTransaction(
         providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-        () =>
-          new Promise<void>((resolve) => {
-            releaseSlot = resolve;
-          }),
+        () => slot.promise,
         120_000,
       );
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
@@ -3490,7 +3490,7 @@ describe("connections.begin", () => {
         expect.objectContaining({ data: { status: "error" } }),
       );
     } finally {
-      releaseSlot();
+      slot.resolve();
       await holder;
       vi.useRealTimers();
     }
@@ -4265,15 +4265,12 @@ describe("connections.complete", () => {
           dataDir: "/tmp/rakazo-router-test",
         } as unknown as RouterDeps),
       );
-      let releaseSlot = () => {};
+      const slot = deferred();
       const holder =
         held === "slot"
           ? runProviderTransaction(
               providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-              () =>
-                new Promise<void>((resolve) => {
-                  releaseSlot = resolve;
-                }),
+              () => slot.promise,
               60_000,
             )
           : Promise.resolve();
@@ -4305,7 +4302,7 @@ describe("connections.complete", () => {
         expect(connectionReady).not.toHaveBeenCalled();
         expect(prisma.$transaction).toHaveBeenCalledTimes(held === "lock" ? 1 : 0);
       } finally {
-        releaseSlot();
+        slot.resolve();
         await holder;
         vi.useRealTimers();
       }
@@ -5208,11 +5205,9 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
-  it("returns the team screen limit without private provider details", async () => {
+  it("returns the team screen limit", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new Error("cannot allocate another screen (limit 4): private provider detail"),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError(4)),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -5221,6 +5216,17 @@ describe("computer screen url", () => {
         message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
       }),
     });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure that only mentions the screen limit as a fault", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.not.toContain("private provider detail");
     expect(updateMany).not.toHaveBeenCalled();
   });
 
@@ -5234,7 +5240,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
+      Promise.reject(new ComputerScreenUnavailableError()),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -5703,6 +5709,25 @@ describe("computer terminal and file transfer", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("answers 400 when a stopped computer's file is too large to preview", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(new SandboxFileTooLargeError(1024));
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
+    });
+  });
+
+  it("reports a stopped computer's read failure that only mentions a size as a fault", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(
+      new Error("agent home file exceeds 1024 bytes"),
+    );
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({ status: 500 });
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -11999,5 +12024,111 @@ describe("connection tool listing", () => {
         }),
       );
     }
+  });
+});
+
+describe("adapter refusals answered by type", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const call = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  describe("saving a memory document", () => {
+    const save = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            memoryDocument: {
+              findFirst: vi.fn().mockResolvedValue({ id: "doc-1", scope: "user", path: "a.md" }),
+            },
+          },
+          memory: { commit: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "memory/update",
+        { documentId: "doc-1", content: "new", expectedRevision: 1 },
+      );
+
+    it("answers a lost revision race as a conflict", async () => {
+      const response = await save(new MemoryRevisionConflictError());
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        json: { code: "CONFLICT", message: MEMORY_REVISION_CONFLICT_ERROR },
+      });
+    });
+
+    it("reports another failure as a fault, even one quoting the conflict", async () => {
+      const response = await save(new Error(MEMORY_REVISION_CONFLICT_ERROR));
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(MEMORY_REVISION_CONFLICT_ERROR);
+    });
+  });
+
+  describe("finishing a chat workspace install", () => {
+    const complete = (failure: Error) =>
+      call(
+        {
+          prisma: {},
+          messagingInstallations: { complete: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "messaging/installations/complete",
+        { state: "s".repeat(43), code: "code" },
+      );
+
+    it("answers a refused install as a bad request", async () => {
+      const response = await complete(new MessagingInstallRefusedError("Authorization expired"));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "Bad Request" },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await complete(new Error("Authorization expired: database unreachable"));
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe("linking a chat identity to a bot", () => {
+    const link = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            messagingIdentity: {
+              findFirst: vi.fn().mockResolvedValue({ id: "identity-1", userId: "user-1" }),
+              update: vi.fn().mockRejectedValue(failure),
+            },
+            bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1" }) },
+          },
+        } as unknown as RouterDeps,
+        "messaging/identities/setBot",
+        { identityId: "identity-1", botId: "bot-1" },
+      );
+
+    it("answers a bot already linked elsewhere as a bad request", async () => {
+      const response = await link(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "That bot is already linked to a chat app." },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await link(new Error("connection reset"));
+      expect(response.status).toBe(500);
+    });
   });
 });

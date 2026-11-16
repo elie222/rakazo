@@ -166,6 +166,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   private readonly byProvider = new Map<string, MountedPlatform>();
   private sink: ((event: MessagingInboundEvent) => Promise<void>) | undefined;
   private initialized: Promise<void> | undefined;
+  private receiving = true;
 
   constructor(platforms: MessagingPlatform[], options: { userName?: string } = {}) {
     if (platforms.length === 0) throw new Error("ChatSdkMessagingSurface needs >=1 platform");
@@ -390,6 +391,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await this.ensureInitialized();
   }
 
+  /** Stops getUpdates polling; a send that starts the surface later leaves it stopped. */
+  async stopReceiving(): Promise<void> {
+    // A start still in flight stops polling itself once it finishes.
+    this.receiving = false;
+    await this.stopPollingAdapters();
+  }
+
   /**
    * Stop Telegram getUpdates before exit. Chat.shutdown() only calls
    * adapter.disconnect(), which Telegram does not implement.
@@ -409,7 +417,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!this.initialized) {
       const chats = [...this.byProvider.values()].map(({ chat }) => chat.initialize());
       this.initialized = Promise.all(chats).then(
-        () => undefined,
+        async () => {
+          if (!this.receiving) await this.stopPollingAdapters();
+        },
         async (error: unknown) => {
           try {
             // Telegram may already be polling if another platform's

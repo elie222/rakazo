@@ -33,6 +33,7 @@ import {
   renewComputerExecutionLease,
   replaceComputer,
   screenLeaseIdForRun,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
@@ -2581,6 +2582,7 @@ describe("computer execution leases", () => {
     });
     const client = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "run-1" }]),
+      run: { update: vi.fn().mockResolvedValue({}) },
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({ scope: "team", state: "running" }),
       },
@@ -2706,6 +2708,7 @@ describe("computer execution leases", () => {
       },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn(async () => []),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
@@ -2713,6 +2716,7 @@ describe("computer execution leases", () => {
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
       run: {
+        update: vi.fn().mockResolvedValue({}),
         findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
@@ -2891,7 +2895,11 @@ describe("computer execution leases", () => {
         updateManyAndReturn,
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+      run: {
+        update: vi.fn().mockResolvedValue({}),
+        aggregate: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
@@ -2932,7 +2940,10 @@ describe("computer execution leases", () => {
             .fn()
             .mockRejectedValue(Object.assign(new Error("lease exists"), { code: "P2002" })),
         },
-        run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }) },
+        run: {
+          update: vi.fn().mockResolvedValue({}),
+          aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }),
+        },
       };
       const prisma = {
         $transaction: async (work: (client: typeof tx) => unknown) => work(tx),
@@ -2973,7 +2984,7 @@ describe("computer execution leases", () => {
         updateManyAndReturn: vi.fn().mockResolvedValue([{ fence: 3 }]),
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn() },
+      run: { aggregate: vi.fn(), update: vi.fn(async () => ({})) },
     };
     const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
     const $transaction = vi
@@ -3087,6 +3098,7 @@ function leasePrisma(options: {
   const queryRaw = vi.fn().mockResolvedValue([{ id: "run-1" }]);
   const client = {
     $queryRaw: queryRaw,
+    run: { update: vi.fn().mockResolvedValue({}) },
     computer: { findUniqueOrThrow },
     computerExecutionLease: { updateManyAndReturn, create, updateMany, deleteMany },
   };
@@ -4319,3 +4331,19 @@ function replaceDeps(
 function closedRuns(harness: { prisma: PrismaClient }) {
   return vi.mocked(harness.prisma.$executeRaw).mock.calls.map(([, ...values]) => values);
 }
+
+it("fails a changed computer once instead of retrying it as a transient error", async () => {
+  const findUnique = vi.fn(async () => ({
+    computerId: "replacement",
+    archivedAt: null,
+    computerSwitching: false,
+  }));
+  await expect(
+    waitForRunComputerLease(
+      { bot: { findUnique } } as unknown as PrismaClient,
+      { computerId: "original", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("computer changed");
+  expect(findUnique).toHaveBeenCalledOnce();
+});

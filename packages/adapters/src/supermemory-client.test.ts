@@ -473,3 +473,17 @@ describe("private-host transport", () => {
     }
   });
 });
+
+describe("oversized Supermemory answers", () => {
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Supermemory response is too large.")),
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result).not.toEqual({ ok: false, error: "Supermemory response is too large." });
+  });
+});

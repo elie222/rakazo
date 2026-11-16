@@ -2,6 +2,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
+import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { reactToThreadMessage } from "./thread-reactions.js";
@@ -1163,7 +1164,18 @@ describe("threadSnapshot", () => {
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          threadId: "thread-1",
+          AND: [
+            {
+              OR: [
+                { threadId: "thread-1" },
+                {
+                  trigger: "helper",
+                  status: "waiting_input",
+                  sourceMessage: { threadId: "thread-1" },
+                },
+              ],
+            },
+          ],
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
           OR: [
             { trigger: { notIn: ["bot_message", "tickets"] } },
@@ -4009,7 +4021,7 @@ describe("sendThreadMessage", () => {
         { text: "book the flight", clientNonce: nonce },
       );
     await send(clientNonce);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     // A spoken turn tells no teammate; a typed message does.
     expect(members).not.toHaveBeenCalled();
 
