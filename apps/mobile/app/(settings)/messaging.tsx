@@ -14,7 +14,7 @@ import {
   messagingProviderName,
 } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
@@ -24,6 +24,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
+import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/session";
 import { errorText } from "../../lib/user-error";
 
 export default function MessagingSettings() {
@@ -32,8 +33,9 @@ export default function MessagingSettings() {
   const styles = useThemedStyles(createStyles);
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState("");
-  const [linkGuard] = useState(() => createMessagingLinkGuard(rpc));
-  const [issuingLink, setIssuingLink] = useState(false);
+  const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  const linkGuard = useMemo(() => createMessagingLinkGuard(rpc, session), [session]);
+  const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
   const [status, setStatus] = useState<MessagingStatus | null>(null);
   const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
     available: false,
@@ -183,7 +185,6 @@ export default function MessagingSettings() {
   async function startLink(provider: string, linkBotId = botId, fromPicker = true) {
     const request = linkGuard.begin(fromPicker);
     if (!request) return;
-    setIssuingLink(true);
     setError(null);
     setLoadError(null);
     setLink(null);
@@ -204,7 +205,6 @@ export default function MessagingSettings() {
       if (request.isCurrent()) setError(errorText(err));
     } finally {
       request.finish();
-      setIssuingLink(false);
     }
   }
 

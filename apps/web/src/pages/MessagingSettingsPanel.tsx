@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { createMessagingLinkGuard, isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import {
+  createMessagingLinkGuard,
+  deadlineSignal,
+  isRetryableError,
+  messagingConnectOptions,
+} from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -15,11 +20,11 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
-import { useSpaceQueries } from "../lib/query";
+import { useQueryUserId, useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { useEventListener } from "../lib/use-event-listener";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
@@ -45,8 +50,16 @@ export function MessagingSettingsPanel() {
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
   const queryClient = useQueryClient();
-  const [linkGuard] = useState(() => createMessagingLinkGuard(queryClient));
-  const [issuingLink, setIssuingLink] = useState(false);
+  const userId = useQueryUserId();
+  const linkGuard = useMemo(
+    () => createMessagingLinkGuard(queryClient, userId ?? ""),
+    [queryClient, userId],
+  );
+  const issuingLink = useSyncExternalStore(
+    linkGuard.subscribe,
+    linkGuard.isPending,
+    linkGuard.isPending,
+  );
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
@@ -223,11 +236,10 @@ export function MessagingSettingsPanel() {
   async function startLink(provider: string, botId: string, fromPicker = true) {
     const request = linkGuard.begin(fromPicker);
     if (!request) return;
-    setIssuingLink(true);
     setError(null);
     setLinkRequest(null);
     try {
-      const issued = await rpc.messaging.link.start({ botId });
+      const issued = await rpc.messaging.link.start({ botId }, { signal: deadlineSignal(8_000) });
       request.finish();
       if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
@@ -236,7 +248,6 @@ export function MessagingSettingsPanel() {
       if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
     } finally {
       request.finish();
-      setIssuingLink(false);
     }
   }
 

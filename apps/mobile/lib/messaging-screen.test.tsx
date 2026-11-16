@@ -24,6 +24,11 @@ vi.mock("./native", () => ({
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
+const session = vi.hoisted(() => ({ generation: 0 }));
+vi.mock("./session", () => ({
+  currentSessionGeneration: () => session.generation,
+  subscribeSessionGeneration: () => () => {},
+}));
 const push = vi.fn();
 let blur: (() => void) | undefined;
 vi.mock("expo-router", () => ({
@@ -610,4 +615,30 @@ it("blocks issuance across remounts until the previous request settles", async (
     vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
   ).toHaveLength(2);
   expect(container.textContent).toContain("NEW-CODE");
+});
+
+it("does not block a new session on the previous session's request", async () => {
+  const old = deferred<unknown>();
+  responses["messaging/link/start"] = old.promise;
+  await act(async () => root.render(<MessagingSettings />));
+  const connect = () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click();
+  await act(async () => connect());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  session.generation += 1;
+  responses["messaging/link/start"] = {
+    code: "NEW-SESSION",
+    expiresAt: new Date(Date.now() + 20_000).toISOString(),
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () => connect());
+  expect(container.textContent).toContain("NEW-SESSION");
+  await act(async () =>
+    old.resolve({ code: "OLD-SESSION", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).not.toContain("OLD-SESSION");
+  expect(container.textContent).toContain("NEW-SESSION");
 });

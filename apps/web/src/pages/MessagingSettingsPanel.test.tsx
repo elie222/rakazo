@@ -309,7 +309,10 @@ it("keeps code linking for legacy Slack deployments", async () => {
       .find((button) => button.textContent === "Slack")!
       .click(),
   );
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-1" },
+    { signal: expect.any(AbortSignal) },
+  );
   expect(messaging.installations.start).not.toHaveBeenCalled();
 });
 
@@ -334,7 +337,10 @@ it("links DMs to the bot that answers in the workspace", async () => {
       .find((button) => button.textContent === "Link DMs")!
       .click(),
   );
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-2" },
+    { signal: expect.any(AbortSignal) },
+  );
   expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
 });
 
@@ -477,7 +483,10 @@ it("lets members link personal DMs without owning the workspace connection", asy
       .find((button) => button.textContent === "Link DMs")!
       .click(),
   );
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-1" },
+    { signal: expect.any(AbortSignal) },
+  );
   expect(messaging.installations.start).not.toHaveBeenCalled();
 });
 
@@ -491,7 +500,10 @@ it("keeps other apps usable and withholds Slack when its setup method cannot loa
   );
   expect(buttons.some((button) => button.textContent === "Slack")).toBe(false);
   await act(async () => telegramItem()!.click());
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-1" },
+    { signal: expect.any(AbortSignal) },
+  );
 });
 
 it("lets a member choose which bot their DMs link to in a teammate's workspace", async () => {
@@ -516,7 +528,10 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
       .find((button) => button.textContent === "Link DMs")!
       .click(),
   );
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-2" },
+    { signal: expect.any(AbortSignal) },
+  );
 });
 
 it("keeps a teammate's DM link next to the user's own workspace elsewhere", async () => {
@@ -540,7 +555,10 @@ it("keeps a teammate's DM link next to the user's own workspace elsewhere", asyn
   );
   expect(links).toHaveLength(2);
   await act(async () => links[1]!.click());
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.link.start).toHaveBeenCalledWith(
+    { botId: "bot-1" },
+    { signal: expect.any(AbortSignal) },
+  );
 });
 
 it.each(["resolve", "reject"] as const)(
@@ -575,7 +593,10 @@ it.each(["resolve", "reject"] as const)(
     expect(container.textContent).not.toContain("OLD-CODE");
     expect(container.textContent).not.toContain("Couldn't update messaging settings");
     await act(async () => telegramItem()?.click());
-    expect(messaging.link.start).toHaveBeenLastCalledWith({ botId: "bot-2" });
+    expect(messaging.link.start).toHaveBeenLastCalledWith(
+      { botId: "bot-2" },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(container.textContent).toContain("ABCD-2345");
   },
 );
@@ -662,7 +683,10 @@ it.each([false, true])(
       }),
     );
     expect(container.textContent).toContain("WORKSPACE-CODE");
-    expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
+    expect(messaging.link.start).toHaveBeenCalledWith(
+      { botId: "workspace-bot" },
+      { signal: expect.any(AbortSignal) },
+    );
     await act(async () => pick("bot-1"));
     expect(container.textContent).toContain("WORKSPACE-CODE");
   },
@@ -677,6 +701,11 @@ it("blocks issuance across remounts until the previous request settles", async (
   await act(async () => root.unmount());
   root = createRoot(container);
   await renderOverlay();
+  expect(
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect a chat app",
+    )!.disabled,
+  ).toBe(true);
   await act(async () => telegramItem()?.click());
   expect(messaging.link.start).toHaveBeenCalledTimes(1);
   await act(async () =>
@@ -686,6 +715,11 @@ it("blocks issuance across remounts until the previous request settles", async (
     }),
   );
   expect(container.textContent).not.toContain("CLOSED-CODE");
+  expect(
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect a chat app",
+    )!.disabled,
+  ).toBe(false);
   await act(async () => telegramItem()?.click());
   expect(messaging.link.start).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("ABCD-2345");

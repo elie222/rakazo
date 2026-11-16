@@ -69,3 +69,22 @@ it("shares only pending issuance across guards in the same scope", () => {
   expect(reopened.begin()).toBeNull();
   fresh.finish();
 });
+
+it("notifies remounted observers and isolates sessions on the same client", () => {
+  const client = {};
+  const first = createMessagingLinkGuard(client, 1);
+  const remounted = createMessagingLinkGuard(client, 1);
+  const other = createMessagingLinkGuard(client, 2);
+  const snapshots: boolean[] = [];
+  const unsubscribe = remounted.subscribe(() => snapshots.push(remounted.isPending()));
+  const request = first.begin()!;
+  expect(remounted.isPending()).toBe(true);
+  expect(other.isPending()).toBe(false);
+  const otherRequest = other.begin()!;
+  request.finish();
+  request.finish();
+  expect(snapshots).toEqual([true, false]);
+  expect(other.isPending()).toBe(true);
+  unsubscribe();
+  otherRequest.finish();
+});

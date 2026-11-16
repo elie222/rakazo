@@ -1,21 +1,47 @@
 // Only issuance is shared across mounts; displayed results stay owned by each screen.
-const pendingByScope = new WeakMap<object, object>();
+type IssuanceState = { pending: object | null; listeners: Set<() => void> };
+const states = new WeakMap<object, Map<string | number, IssuanceState>>();
 
 /** Shared issuance rules; screens own their RPC, rendering, and navigation lifecycle. */
-export function createMessagingLinkGuard(scope: object = {}) {
+export function createMessagingLinkGuard(scope: object = {}, session: string | number = "") {
+  let sessions = states.get(scope);
+  if (!sessions) {
+    sessions = new Map();
+    states.set(scope, sessions);
+  }
+  let state = sessions.get(session);
+  if (!state) {
+    state = { pending: null, listeners: new Set() };
+    sessions.set(session, state);
+  }
+  const issuance = state;
+  const notify = () => {
+    for (const listener of issuance.listeners) listener();
+  };
   let current: object | null = null;
   let fromPicker = true;
   return {
+    isPending: () => issuance.pending !== null,
+    subscribe(listener: () => void) {
+      issuance.listeners.add(listener);
+      return () => {
+        issuance.listeners.delete(listener);
+      };
+    },
     begin(pickerBound = true) {
-      if (pendingByScope.has(scope)) return null;
+      if (issuance.pending) return null;
       const request = {};
       current = request;
-      pendingByScope.set(scope, request);
+      issuance.pending = request;
+      notify();
       fromPicker = pickerBound;
       return {
         isCurrent: () => current === request,
         finish() {
-          if (pendingByScope.get(scope) === request) pendingByScope.delete(scope);
+          if (issuance.pending === request) {
+            issuance.pending = null;
+            notify();
+          }
         },
       };
     },
