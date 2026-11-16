@@ -86,18 +86,16 @@ dbTests("model credits ledger", () => {
     expect(await balance()).toBe(-5_000_000n);
   });
   describe("overlapping syncs", () => {
-    type Purchase = { amountCents: number; disputedCents?: number };
-    const sync = (id: string, purchases: Purchase[]) =>
-      syncCreditPurchases(prisma, organizationId, async () =>
-        purchases.map((purchase) => ({ id, ...purchase })),
-      );
+    type Purchase = { id: string; amountCents: number; disputedCents?: number };
+    const sync = (purchases: Purchase[]) =>
+      syncCreditPurchases(prisma, organizationId, async () => purchases);
     /** A sync whose provider read starts now and returns `purchases` only when it is finished. */
-    const startSlowSync = async (id: string) => {
+    const startSlowSync = async () => {
       const started = deferred();
       const read = deferred<Purchase[]>();
       const done = syncCreditPurchases(prisma, organizationId, async () => {
         started.resolve();
-        return (await read.promise).map((purchase) => ({ id, ...purchase }));
+        return read.promise;
       });
       await started.promise;
       return (purchases: Purchase[]) => {
@@ -107,39 +105,49 @@ dbTests("model credits ledger", () => {
     };
     it("keeps a newer read's dispute hold when an older read lands after it", async () => {
       const id = `${organizationId}-stale`;
-      await sync(id, [{ amountCents: 1000 }]);
-      const finishOlder = await startSlowSync(id);
-      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
-      await finishOlder([{ amountCents: 1000 }]);
+      await sync([{ id, amountCents: 1000 }]);
+      const finishOlder = await startSlowSync();
+      await sync([{ id, amountCents: 1000, disputedCents: 1000 }]);
+      await finishOlder([{ id, amountCents: 1000 }]);
       expect(await balance()).toBe(0n);
     });
     it("skips an older read after a newer one that changed nothing", async () => {
       const id = `${organizationId}-unchanged`;
-      await sync(id, [{ amountCents: 1000 }]);
-      const finishOlder = await startSlowSync(id);
-      await sync(id, [{ amountCents: 1000 }]);
-      await finishOlder([{ amountCents: 1000, disputedCents: 1000 }]);
+      await sync([{ id, amountCents: 1000 }]);
+      const finishOlder = await startSlowSync();
+      await sync([{ id, amountCents: 1000 }]);
+      await finishOlder([{ id, amountCents: 1000, disputedCents: 1000 }]);
       expect(await balance()).toBe(10_000_000n);
-    });
-    it("skips an older read after a newer one that listed nothing", async () => {
-      const id = `${organizationId}-empty`;
-      const finishOlder = await startSlowSync(id);
-      await sync(id, []);
-      await finishOlder([{ amountCents: 1000 }]);
-      expect(await balance()).toBe(0n);
     });
     it("holds a purchase first seen disputed against an older undisputed read", async () => {
       const id = `${organizationId}-stale-first`;
-      const finishOlder = await startSlowSync(id);
-      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
-      await finishOlder([{ amountCents: 1000 }]);
+      const finishOlder = await startSlowSync();
+      await sync([{ id, amountCents: 1000, disputedCents: 1000 }]);
+      await finishOlder([{ id, amountCents: 1000 }]);
       expect(await balance()).toBe(0n);
+    });
+    it("still applies an older read's purchases after a newer read failed partway", async () => {
+      const held = `${organizationId}-held`;
+      const bought = `${organizationId}-bought`;
+      await sync([{ id: held, amountCents: 1000 }]);
+      const finishOlder = await startSlowSync();
+      await expect(
+        sync([
+          { id: held, amountCents: 1000, disputedCents: 1000 },
+          { id: bought, amountCents: -1 },
+        ]),
+      ).rejects.toThrow("Invalid credit purchase");
+      await finishOlder([
+        { id: held, amountCents: 1000 },
+        { id: bought, amountCents: 500 },
+      ]);
+      expect(await balance()).toBe(5_000_000n);
     });
     it("reports only a first grant as added, not credits a won dispute returns", async () => {
       const id = `${organizationId}-added`;
-      expect(await sync(id, [{ amountCents: 1000 }])).toBe(true);
-      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
-      expect(await sync(id, [{ amountCents: 1000 }])).toBe(false);
+      expect(await sync([{ id, amountCents: 1000 }])).toBe(true);
+      await sync([{ id, amountCents: 1000, disputedCents: 1000 }]);
+      expect(await sync([{ id, amountCents: 1000 }])).toBe(false);
       expect(await balance()).toBe(10_000_000n);
     });
   });
@@ -276,6 +284,35 @@ dbTests("model credits ledger", () => {
     expect(
       await prisma.modelCreditLot.findFirstOrThrow({ where: { organizationId } }),
     ).toMatchObject({ usedMicros: 4_000_000n, expiredMicros: 6_000_000n, availableMicros: 0n });
+  });
+  it("returns a won dispute's spending to the month that covered it, never as lasting credit", async () => {
+    const midFebruary = new Date("2030-01-15T00:00:00Z");
+    const january = (disputedCents: number, now: Date) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        {
+          id: `${organizationId}-january`,
+          amountCents: 1000,
+          disputedCents,
+          expiresAt: renewal.toISOString(),
+        },
+        now,
+      );
+    await january(0, beforeRenewal);
+    await grant("february", 1000, nextRenewal);
+    await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+    await january(1000, beforeRenewal);
+    expect(await balance()).toBe(0n);
+    await january(0, midFebruary);
+    expect(await balance()).toBe(10_000_000n);
+    const lots = await prisma.modelCreditLot.findMany({ where: { organizationId } });
+    expect(lots.filter((lot) => lot.expiresAt === null)).toEqual([]);
+    expect(lots.find((lot) => lot.expiresAt?.getTime() === nextRenewal.getTime())).toMatchObject({
+      availableMicros: 10_000_000n,
+    });
+    await expireModelCredits(prisma, organizationId, nextRenewal);
+    expect(await balance()).toBe(0n);
   });
   it("leaves lapsed credits out of a read without expiring them", async () => {
     await grant("topup", 2000);

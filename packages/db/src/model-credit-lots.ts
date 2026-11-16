@@ -123,8 +123,17 @@ export async function prepareCreditLots(
   return withheldMicros;
 }
 
-/** `withheldMicros` is what `prepareCreditLots` returned in this transaction: no lot is minted for it. */
-export async function syncLotBalance(tx: Tx, organizationId: string, withheldMicros: bigint) {
+/**
+ * `withheldMicros` is what `prepareCreditLots` returned in this transaction: no lot is minted for
+ * it. A balance no lot holds is minted as lasting credit, or with `restoredExpiresAt` when it is
+ * a restored grant's.
+ */
+export async function syncLotBalance(
+  tx: Tx,
+  organizationId: string,
+  withheldMicros: bigint,
+  restoredExpiresAt?: Date | null,
+) {
   const account = await tx.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } });
   const total = await tx.modelCreditLot.aggregate({
     where: { organizationId, availableMicros: { gt: 0n } },
@@ -135,10 +144,11 @@ export async function syncLotBalance(tx: Tx, organizationId: string, withheldMic
   if (difference > 0n)
     await tx.modelCreditLot.create({
       data: {
-        id: `legacy:${randomUUID()}`,
+        id: `${restoredExpiresAt === undefined ? "legacy" : "restored"}:${randomUUID()}`,
         organizationId,
         amountMicros: difference,
         availableMicros: difference,
+        expiresAt: restoredExpiresAt,
       },
     });
   else if (difference < 0n) await allocateCreditLots(tx, organizationId, -difference, undefined);
