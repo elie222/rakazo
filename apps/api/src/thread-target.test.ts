@@ -1539,6 +1539,121 @@ describe("threadSnapshot", () => {
       expect.objectContaining({ id: "run-late", status: "running" }),
     ]);
   });
+
+  it("reads each group member's status in the transaction that reads the cursor", async () => {
+    const findManyRuns = vi.fn(async (args: { where?: { botId?: { in?: string[] } } }) =>
+      args.where?.botId
+        ? [
+            { botId: "bot-a", status: "queued" },
+            { botId: "bot-a", status: "running" },
+          ]
+        : [],
+    );
+    const tx = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceMember: { count: vi.fn().mockResolvedValue(1) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue({ seq: 12 }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      run: { findMany: findManyRuns },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    const snapshot = await threadSnapshot(
+      { prisma },
+      {
+        kind: "group",
+        groupId: "group-1",
+        groupName: "Group",
+        threadId: "thread-1",
+        members: [
+          { botId: "bot-a", name: "Ada", color: "blue" },
+          { botId: "bot-b", name: "Ben", color: "green" },
+        ],
+        memberBotIds: ["bot-a", "bot-b"],
+      },
+    );
+
+    expect(snapshot.cursor).toBe(12);
+    expect(snapshot.members).toEqual([
+      { botId: "bot-a", name: "Ada", color: "blue", status: "running" },
+      { botId: "bot-b", name: "Ben", color: "green", status: "idle" },
+    ]);
+    expect(findManyRuns).toHaveBeenCalledWith({
+      where: {
+        botId: { in: ["bot-a", "bot-b"] },
+        status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+        trigger: { notIn: ["tickets", "helper"] },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { botId: true, status: true },
+    });
+  });
+
+  it("reads the computer and its work in the transaction that reads the cursor", async () => {
+    const resolved = {
+      id: "computer-1",
+      kind: "fake",
+      state: "running",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "empty",
+    };
+    const tx = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceMember: { count: vi.fn().mockResolvedValue(1) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue({ seq: 12 }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      run: {
+        findFirst: vi.fn(async (args: { where?: { status?: unknown } }) =>
+          args.where?.status === "waiting_takeover" ? { id: "run-waiting" } : null,
+        ),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      computer: {
+        findUnique: vi.fn().mockResolvedValue({
+          ...resolved,
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          controlUserId: "user-1",
+          controlLeaseId: "lease-1",
+        }),
+      },
+      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    const snapshot = await threadSnapshot(
+      { prisma },
+      {
+        kind: "bot",
+        botId: "bot-1",
+        threadId: "thread-1",
+        bot: { name: "Ada", spaceId: "space-1", computer: resolved },
+      } as unknown as ThreadTarget,
+      "user-1",
+    );
+
+    expect(snapshot.cursor).toBe(12);
+    expect(tx.computer.findUnique).toHaveBeenCalledWith({ where: { id: "computer-1" } });
+    expect(snapshot.computer).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-1",
+      takeoverRequested: true,
+    });
+  });
 });
 
 function isTerminalRunQuery(where: { status?: { in?: string[] } } | undefined) {
@@ -1647,6 +1762,7 @@ function groupTarget() {
     groupId: "group-1",
     groupName: "Group",
     members: [],
+    memberBotIds: [],
     threadId: "thread-1",
   } as unknown as ThreadTarget;
 }
@@ -5264,6 +5380,7 @@ describe("helper snapshot settlement", () => {
         threadId: "thread-1",
         bot: { computer: null },
         members: [],
+        memberBotIds: [],
       } as unknown as ThreadTarget);
       expect(result.messages.find((m) => m.id === "subagent:paused")?.blocks[0]).toMatchObject({
         status: "failed",

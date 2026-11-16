@@ -246,8 +246,22 @@ export function vaultImportOrigin(cell: string): string | undefined {
     const url = bare ? `https://${site}` : site;
     if (!URL.canParse(url)) continue;
     const parsed = new URL(url);
-    if (bare && !parsed.hostname.includes(".")) continue;
     parsed.hostname = parsed.hostname.replace(/\.$/, "");
+    // URL parsing reads "3.14" as the address 3.0.0.14, so a number needs all four parts as written.
+    let written: string;
+    try {
+      written = decodeURIComponent(
+        site.replace(/[\t\r\n]/g, "").match(/^[^\\/?#:]*/)?.[0] ?? "",
+      ).replace(/\.$/, "");
+    } catch {
+      continue;
+    }
+    if (
+      bare &&
+      (!parsed.hostname.includes(".") ||
+        (/^(\d+\.){3}\d+$/.test(parsed.hostname) && !/^(\d+\.){3}\d+$/.test(written)))
+    )
+      continue;
     if (parsed.protocol === "https:" && !parsed.username && !parsed.password) return parsed.origin;
   }
   return undefined;

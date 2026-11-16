@@ -1,6 +1,7 @@
 import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 
 const fakeAgentState = vi.hoisted(() => ({
   mode: "dispatch" as
@@ -492,9 +493,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.
 import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -1310,11 +1311,8 @@ describe("Pi connector tool dispatch", () => {
   });
 
   it("does not wait for a slow tool completion hook", async () => {
-    let resolveAudit!: () => void;
-    const audit = new Promise<void>((resolve) => {
-      resolveAudit = resolve;
-    });
-    const onToolCompleted = vi.fn(() => audit);
+    const audit = deferred();
+    const onToolCompleted = vi.fn(() => audit.promise);
     let settled = false;
     const runtime = new PiAgentRuntime();
     const run = (async () => {
@@ -1350,7 +1348,7 @@ describe("Pi connector tool dispatch", () => {
       expect(settled).toBe(true);
       expect(onToolCompleted).toHaveBeenCalledOnce();
     } finally {
-      resolveAudit();
+      audit.resolve();
       await run;
     }
   });

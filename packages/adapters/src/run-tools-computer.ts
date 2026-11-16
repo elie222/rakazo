@@ -44,15 +44,16 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
-import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets, recordVaultUse } from "./run-context.js";
-import { builtinOffered } from "./run-instructions.js";
+import { builtinOffered } from "./run-instructions.prompt.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { awaitScreenTurn } from "./screen-turn.js";
 import {
   isRunningShellCommand,
@@ -60,7 +61,7 @@ import {
   SHELL_STILL_RUNNING_NOTICE,
 } from "./shell-command-stream.js";
 import { recordPagePayment } from "./spending-gate.js";
-import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
+import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.prompt.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
 import { LOGIN_CODE_FIELD, vaultCardUseOf, vaultLoginUseOf } from "./vault-card-use.js";
 
@@ -336,7 +337,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
               const resolved = await resolvePurchaseCardFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
                 step.field,
@@ -407,7 +413,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Pay tokens are unavailable here." };
               const resolved = await resolvePurchasePayTokenFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
               );
@@ -577,7 +588,7 @@ export const computerTools: ToolHandlers = {
       const computer = await ctx.computer.get("tool", name);
       const shellEnvironment =
         ctx.computer.hostEnvironment ??
-        (usesNativeShell(computer.kind)
+        (sandboxKindCapabilities(computer.kind).nativeShell
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
       // The computer is sent the command with its variables here, so each is a use from then on,

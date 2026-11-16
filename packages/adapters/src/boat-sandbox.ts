@@ -29,10 +29,13 @@ import type {
   ScreenSession,
   StreamedPortableFile,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
@@ -40,7 +43,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   BoatApiError,
@@ -69,6 +72,7 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { installAgentBrowserCommand, installPageBrowserCommand } from "./page-browser-install.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -148,7 +152,7 @@ const BOAT_API_METHODS = [
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<BoatApi, (typeof BOAT_API_METHODS)[number]> & {
   /** Resolves once the sandbox no longer exists, including when it never did. */
-  deleteSandbox(sandboxId: string): Promise<void>;
+  deleteSandbox(sandboxId: string, init?: { signal?: AbortSignal }): Promise<void>;
 };
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
@@ -252,7 +256,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     warnMissingOnce: true,
   });
 
-  constructor(config: { apiKey: string; apiUrl?: string }, api?: BoatSandboxSdk) {
+  private readonly machines: UnreferencedMachineRecords | undefined;
+
+  constructor(
+    config: { apiKey: string; apiUrl?: string; unreferencedMachines?: UnreferencedMachineRecords },
+    api?: BoatSandboxSdk,
+  ) {
+    this.machines = config.unreferencedMachines;
     const gate = new BoatRequestGate();
     this.client = boatClient(api ?? createBoatSdk(config, gate), config.apiKey, gate);
   }
@@ -370,6 +380,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       { createSandboxRequest: { ttlSeconds: BOAT_SNAPSHOT_BUILD_TTL_SECONDS, noEnv: true } },
       { signal },
     );
+    const machine = { provider: "boat", machineId: sandbox.id };
+    await recordUnreferencedMachine(this.machines, machine, BASE_SNAPSHOT_BUILD_TIMEOUT_MS);
     try {
       await this.ensureRunnable(sandbox.id, signal);
       for (const command of BOAT_COMPUTER_SETUP) {
@@ -392,7 +404,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { name, built: true };
     } finally {
-      await this.client.deleteSandbox(sandbox.id).catch(() => undefined);
+      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
+        this.deleteMachine(machine, signal),
+      );
     }
   }
 
@@ -817,6 +831,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.client.deleteSandbox(machine.machineId, { signal });
+  }
+
   /**
    * Waits until the sandbox can run commands, resuming or recovering it on the way. Throws a
    * gone error when Boat cannot bring it back, so the caller replaces it from its checkpoint.
@@ -1125,7 +1143,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     let size = 0;
     try {
       if (maxBytes !== undefined && Number(response.headers.get("content-length")) > maxBytes) {
-        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(maxBytes);
       }
       if (!reader) {
         finished = true;
@@ -1136,7 +1154,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         if (done) break;
         size += value.byteLength;
         if (maxBytes !== undefined && size > maxBytes) {
-          throw new Error(`computer file exceeds ${maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(maxBytes);
         }
         yield value;
       }
@@ -1172,7 +1190,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       } catch (error) {
         if (isArtifactTooLarge(error)) {
           if (maxBytes !== undefined && maxBytes < BOAT_ARTIFACT_MAX_BYTES) {
-            throw new Error(`computer file exceeds ${maxBytes} bytes`);
+            throw new SandboxFileTooLargeError(maxBytes);
           }
         } else if (!(error instanceof SandboxUnresponsiveError)) throw error;
       }
@@ -1603,10 +1621,10 @@ function createBoatSdk(
     ]),
   ) as Pick<BoatApi, (typeof BOAT_API_METHODS)[number]>;
   return Object.assign(methods, {
-    deleteSandbox: async (sandboxId: string) => {
+    deleteSandbox: async (sandboxId: string, init?: { signal?: AbortSignal }) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
-      const signal = AbortSignal.timeout(BOAT_DELETE_TIMEOUT_MS);
+      const signal = deadlineSignal(BOAT_DELETE_TIMEOUT_MS, init?.signal);
       try {
         await withAbort(gate.wait(signal), signal);
         const response = await fetch(url, {
@@ -1633,6 +1651,7 @@ function createBoatSdk(
       } catch (error) {
         if (!signal.aborted || error !== signal.reason) throw error;
       }
+      init?.signal?.throwIfAborted();
       throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
   });

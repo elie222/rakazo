@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { sandboxKindsWhere } from "@rakazo/adapters";
 import type { HomeDeletionReason } from "@rakazo/auth";
 import { emailLocale, homeDeletionEmail } from "@rakazo/auth";
 import type { PrismaClient } from "@rakazo/db";
@@ -62,7 +63,7 @@ function planIsLive({ billing, modelCredits }: Account, now: Date) {
 const candidate = {
   homeStorageId: { not: null },
   // These work in a copy on a host the user or the server runs; the stored home only backs it up.
-  kind: { notIn: ["docker", "desktop", "wuying"] },
+  kind: { notIn: sandboxKindsWhere((capabilities) => capabilities.storedHomeIsBackup) },
 } satisfies Prisma.ComputerWhereInput;
 
 interface HomeRetentionDeps {
@@ -81,8 +82,8 @@ interface HomeRetentionDeps {
  * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
  * worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
- * whose provider copy has expired, starts empty next time. Docker, desktop and Wuying computers
- * are skipped: they work in a copy on a host, which the stored home backs up. Aborting stops it
+ * whose provider copy has expired, starts empty next time. Computers whose stored
+ * home is only a backup are skipped: they work in a copy on a host. Aborting stops it
  * between emails and deletions; the next sweep picks up the rest.
  */
 export function homeRetentionSweep(

@@ -12,6 +12,7 @@ import {
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { clearEndedRunState } from "./run-secrets.js";
+import { publishSpaceChange } from "./space-changes.js";
 import { createPendingSteeringRun, discardAnsweredSteering } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
@@ -157,7 +158,7 @@ export async function endTakeoverWaits(
 ): Promise<number> {
   const waits = await prisma.run.findMany({
     where: { id: { in: runIds }, status: "waiting_takeover" },
-    select: { id: true, threadId: true, updatedAt: true },
+    select: { id: true, spaceId: true, threadId: true, updatedAt: true },
   });
   let ended = 0;
   for (const wait of waits) {
@@ -177,6 +178,7 @@ export async function endTakeoverWaits(
     if (!expired) continue;
     ended += 1;
     await notifyRealtime(realtime, wait.threadId, expired.seq);
+    await publishSpaceChange(realtime, wait.spaceId, "runs");
   }
   return ended;
 }

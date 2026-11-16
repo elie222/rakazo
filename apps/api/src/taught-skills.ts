@@ -3,16 +3,14 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   createAdapterContext,
-  runContinueJob,
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
-import type { ComputerExecutionLease, TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
+import type { TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   anotherPersonHoldsControl,
   appendRecordingEvent,
-  ComputerBusyError,
   captureTeachingSnapshot,
   completeTeachingSession,
   emptyRecording,
@@ -26,23 +24,28 @@ import {
   recordTeachingInputEvent,
   releaseComputerExecutionLease,
   releaseTeachingComputerControlForBot,
+  sandboxKindCapabilities,
   screenLeaseIdForRun,
+  wakeRun,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
+  ClientError,
   COMPUTER_USING_RUNS,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  changeMessageBlocks,
   clearEndedRunState,
   expireComputerExecutionLeases,
   IsolationError,
   isUniqueViolation,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { takeComputerControl } from "./computer-control.js";
@@ -124,7 +127,7 @@ async function ensureGraphicalComputer(
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
 ) {
-  if (bot.computer?.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer?.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -133,19 +136,11 @@ async function ensureGraphicalComputer(
   if (bot.computer.state !== "running" || !bot.computer.providerRef) {
     const ctx = createAdapterContext(actor, bot.id, "skills.start");
     const manualRunId = `teach:${randomUUID()}`;
-    let lease: ComputerExecutionLease | null;
-    try {
-      lease = await acquireComputerExecutionLease(deps.prisma, {
-        computerId: bot.computer.id,
-        runId: manualRunId,
-        botId: bot.id,
-      });
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
-    }
+    const lease = await acquireComputerExecutionLease(deps.prisma, {
+      computerId: bot.computer.id,
+      runId: manualRunId,
+      botId: bot.id,
+    });
     const computerId = bot.computer.id;
     try {
       await getLogger().withContext({ reason: "teaching" }, () =>
@@ -154,11 +149,6 @@ async function ensureGraphicalComputer(
           screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
         }),
       );
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);
     }
@@ -170,7 +160,7 @@ async function ensureGraphicalComputer(
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
     throw new ORPCError("BAD_REQUEST", { message: "Computer must be running to teach" });
   }
-  if (bot.computer.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -245,17 +235,12 @@ async function updateSkillDraftMessage(
   });
 
   for (const message of messages) {
-    const parsed = message.blocks as MessageBlock[];
-    if (!Array.isArray(parsed)) continue;
-    const index = parsed.findIndex(
+    const existing = storedMessageBlocks(message).find(
       (block) => block.kind === "skill_draft" && block.skillId === skill.id,
     );
-    if (index === -1) continue;
-    const existing = parsed[index];
     if (existing?.kind !== "skill_draft") continue;
     const playbook = input.playbook ?? parsePlaybook(skill.playbook);
-    const nextBlocks: MessageBlock[] = [...parsed];
-    nextBlocks[index] = {
+    const draft: MessageBlock = {
       kind: "skill_draft",
       skillId: skill.id,
       name: input.name ?? existing.name,
@@ -263,16 +248,18 @@ async function updateSkillDraftMessage(
       playbook,
       status: input.status ?? existing.status,
     };
+    const next = changeMessageBlocks(message, (block) => (block === existing ? draft : block));
+    if (!next) return;
     await deps.prisma.message.update({
       where: { id: message.id },
-      data: { blocks: nextBlocks as never },
+      data: { blocks: next.stored },
     });
     await deps.events.append({
       spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: nextBlocks },
+      payload: { messageId: message.id, role: "bot", blocks: next.blocks },
     });
     return;
   }
@@ -401,9 +388,8 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           });
         });
       } catch (error) {
-        if (error instanceof ORPCError) throw error;
         if (isUniqueViolation(error)) {
-          throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+          throw new ClientError("CONFLICT", "A teaching session is already active");
         }
         throw error;
       }
@@ -554,7 +540,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           trigger: "skill",
         },
       });
-      await deps.jobs.enqueue(runContinueJob(run.id));
+      await wakeRun(deps.jobs, run.id);
       return { runId: run.id };
     },
 

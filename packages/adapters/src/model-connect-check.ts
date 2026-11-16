@@ -1,9 +1,8 @@
-import type { Context } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { MODEL_REQUEST_LIMIT_ERROR, normalizeRunError } from "@rakazo/core";
-import { Type } from "typebox";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
+import { MODEL_CONNECT_CHECK_CONTEXT } from "./model-connect-check.prompt.js";
 import { resolveRuntimeModel } from "./pi-runtime-models.js";
 import { reliableModelStream } from "./pi-runtime-stream.js";
 
@@ -15,12 +14,6 @@ export const MODEL_CONNECT_CHECK_TIMEOUT_MS = 15_000;
  * requested output ceiling, so keep it small: a key funded for real runs must pass.
  */
 const MODEL_CONNECT_CHECK_MAX_TOKENS = 1024;
-
-const CHECK_CONTEXT: Context = {
-  systemPrompt: "Reply with OK.",
-  messages: [{ role: "user", content: "OK?", timestamp: 0 }],
-  tools: [{ name: "noop", description: "Does nothing.", parameters: Type.Object({}) }],
-};
 
 /**
  * Failures that every run on this key and model would hit too. Rate limits, outages, and
@@ -36,7 +29,7 @@ const BLOCKING_KINDS = new Set(["auth", "access", "model", "key", "credit", "spe
 export async function verifyModelServesAgents(
   config: Pick<
     AgentRunModel,
-    "provider" | "id" | "apiKey" | "accountId" | "gatewayId" | "maxTokens"
+    "provider" | "id" | "apiKey" | "accountId" | "gatewayId" | "projectId" | "region" | "maxTokens"
   >,
   options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {},
 ): Promise<void> {
@@ -51,7 +44,7 @@ export async function verifyModelServesAgents(
   const stream = reliableModelStream(
     models,
     model,
-    CHECK_CONTEXT,
+    MODEL_CONNECT_CHECK_CONTEXT,
     withChatCompletionsCompatibility(
       model,
       withCloudflareAuth(config, {

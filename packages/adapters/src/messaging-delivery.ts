@@ -13,7 +13,6 @@ import {
   messagingSendJob,
   messagingSendJobKey,
   RetryJobLaterError,
-  runContinueJob,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
@@ -35,8 +34,10 @@ import {
   databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
+  readMessageBlocks,
   runAsSystem,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -44,6 +45,7 @@ import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 import { resolveMessagingThreadId } from "./team-chat-messaging.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
+import { wakeRun } from "./wake-run.js";
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -103,6 +105,9 @@ const SEND_ORDER: Prisma.MessagingOutboundOrderByWithRelationInput[] = [
 export type OutboundLane = { identityId: string } | { identityId: null; threadId: string };
 
 export type OutboundRow = Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">;
+
+/** One reply's rows: its text, split into message-sized parts, and its files. */
+type ReplyRows = { parts: OutboundRow[]; files: OutboundRow[] };
 
 type LaneRow = {
   id: string;
@@ -297,7 +302,8 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
-        const channelBlock = ((run.sourceMessage?.blocks ?? []) as MessageBlock[]).find(
+        const source = run.sourceMessage ? readMessageBlocks(run.sourceMessage) : undefined;
+        const channelBlock = source?.blocks.find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
         );
@@ -306,7 +312,9 @@ export class MessagingDelivery {
             const lane = await this.recordChannelRun(run, channelBlock);
             if (lane) lanes.push(lane);
           }
-        } else {
+        } else if (source?.intact !== false) {
+          // A source that lost entries may have lost its channel marker, so a group reply could
+          // land in the owner's direct chat: that one stays in the app.
           const lane = await this.recordDirectRun(run, options.progress ?? false);
           if (lane) lanes.push(lane);
         }
@@ -866,34 +874,61 @@ export class MessagingDelivery {
     const rowsByMessage = messages.map((message) => {
       const body = extractText(message.blocks, linkedPages, { asks });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
-      return [
-        ...parts.map((part, index) => ({
+      return {
+        parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "dm",
           identityId: identity.id,
           body: part,
           sourceMessageId: message.id,
         })),
-        ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
+        files: (sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
           idempotencyKey: `msg:${message.id}:file:${artifactId}`,
           kind: "dm",
           identityId: identity.id,
           body: "",
           sourceMessageId: message.id,
         })),
-      ];
+      };
     });
+    const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
     const held = progress
       ? rowsByMessage.findIndex(
-          (rows, index) =>
-            rows.length > 0 && !isUserProgressClientNonce(messages[index]!.clientNonce),
+          (reply, index) =>
+            sends(reply) && !isUserProgressClientNonce(messages[index]!.clientNonce),
         )
       : -1;
-    const rows = (held === -1 ? rowsByMessage : rowsByMessage.slice(0, held)).flat();
-    if (rows.length === 0) return undefined;
+    const replies = held === -1 ? rowsByMessage : rowsByMessage.slice(0, held);
+    if (!replies.some(sends)) return undefined;
     const lane = { identityId: identity.id };
-    await this.deps.prisma.$transaction((tx) => this.recordIn(tx, lane, rows));
+    await this.recordReplies(lane, replies);
     return lane;
+  }
+
+  /**
+   * Records each reply's parts, then its files. A reply's parts are recorded together, so a reply
+   * whose first part is recorded has them all and gets no more: a release that splits replies at
+   * other points would otherwise queue parts that repeat text already sent.
+   */
+  private async recordReplies(lane: OutboundLane, replies: ReplyRows[]): Promise<void> {
+    await this.deps.prisma.$transaction(async (tx) => {
+      await lockLane(tx, lane);
+      const recorded = await tx.messagingOutbound.findMany({
+        where: {
+          idempotencyKey: { in: replies.flatMap(({ parts }) => parts[0]?.idempotencyKey ?? []) },
+        },
+        select: { idempotencyKey: true },
+      });
+      const split = new Set(recorded.map((row) => row.idempotencyKey));
+      await this.recordIn(
+        tx,
+        lane,
+        replies.flatMap(({ parts, files }) => [
+          ...(parts[0] && split.has(parts[0].idempotencyKey) ? [] : parts),
+          ...files,
+        ]),
+      );
+    });
   }
 
   /**
@@ -926,12 +961,14 @@ export class MessagingDelivery {
     });
     // Ask answers are entered privately in the app. Check the same snapshot as the replies so a
     // resumed run cannot publish an answer-influenced response.
+    // A reply that lost entries may have lost its answered ask, so it is not published either.
     if (
-      replies.some((message) =>
-        (message.blocks as MessageBlock[]).some(
-          (block) => block.kind === "ask" && block.status === "answered",
-        ),
-      )
+      replies.some((message) => {
+        const { blocks, intact } = readMessageBlocks(message);
+        return (
+          !intact || blocks.some((block) => block.kind === "ask" && block.status === "answered")
+        );
+      })
     )
       return undefined;
     const linkedPages = linkedPageIds(replies);
@@ -942,20 +979,18 @@ export class MessagingDelivery {
     // One row per platform-sized part, like the DM path: the adapter truncates an oversized body
     // instead of failing, which would drop the reply's tail.
     const lane = { identityId: null, threadId: channel.threadId };
-    await prisma.$transaction((tx) =>
-      this.recordIn(
-        tx,
-        lane,
-        messages.flatMap(({ message, text }) =>
-          splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
-            idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-            kind: "group",
-            threadId: channel.threadId,
-            body: part,
-            sourceMessageId: message.id,
-          })),
-        ),
-      ),
+    await this.recordReplies(
+      lane,
+      messages.map(({ message, text }) => ({
+        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+          kind: "group",
+          threadId: channel.threadId,
+          body: part,
+          sourceMessageId: message.id,
+        })),
+        files: [],
+      })),
     );
     const hop = nextBotMessageHop(channelBlock.hop);
     const peers = await prisma.messagingChannelMember.findMany({
@@ -1038,9 +1073,7 @@ export class MessagingDelivery {
               throw error;
             });
           if (sent?.runId) {
-            await jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              getLogger().error("messaging peer wake enqueue error", error);
-            });
+            await wakeRun(jobs, sent.runId);
           }
           continue;
         }
@@ -1112,11 +1145,7 @@ export class MessagingDelivery {
     const ambient = message.kind === "ambient";
     const body =
       run.status === "completed"
-        ? teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            ambient,
-          )
+        ? teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, ambient)
         : ambient
           ? ""
           : `${run.bot.name} could not complete that request. Open Rakazo for details.`;
@@ -1166,11 +1195,7 @@ export class MessagingDelivery {
     const body =
       run.status === "failed"
         ? `${run.bot.name} could not complete the delegated request. Open Rakazo for details.`
-        : teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            true,
-          );
+        : teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, true);
     if (!body) return undefined;
     const lane = {
       identityId: null,

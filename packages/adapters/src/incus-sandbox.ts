@@ -18,6 +18,8 @@ import type {
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
@@ -30,6 +32,7 @@ import {
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
 } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
@@ -77,6 +80,7 @@ export interface IncusSandboxOptions {
   memoryLimit?: string;
   processLimit?: string;
   readyTimeoutMs?: number;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }
 
 export interface IncusResponse {
@@ -148,6 +152,7 @@ interface IncusOperation {
 
 export class IncusSandboxProvider implements SandboxProvider {
   private readonly project: string;
+  private readonly machines: UnreferencedMachineRecords | undefined;
   private readonly computerImage: string;
   private readonly cpuLimit: string;
   private readonly memoryLimit: string;
@@ -180,6 +185,7 @@ export class IncusSandboxProvider implements SandboxProvider {
   });
 
   constructor(options: IncusSandboxOptions, client?: IncusClient) {
+    this.machines = options.unreferencedMachines;
     this.project = options.project?.trim() || DEFAULT_PROJECT;
     this.computerImage = options.computerImage?.trim() || DEFAULT_COMPUTER_IMAGE;
     this.cpuLimit = options.cpuLimit?.trim() || DEFAULT_CPU_LIMIT;
@@ -235,11 +241,17 @@ export class IncusSandboxProvider implements SandboxProvider {
     // A new name for every start, as the Daytona provider does: a later start never adopts an
     // instance that an abandoned one created, so that one can be deleted without a race.
     const name = `rakazo-${randomUUID()}`;
+    const machine = { provider: "incus", machineId: name, homeKey: request.botId };
+    // The name is chosen here, so it is recorded before Incus is asked: a create whose answer is
+    // lost, or that this process does not outlive, is still deleted.
+    await recordUnreferencedMachine(this.machines, machine);
     await this.create(name, request.botId, signal);
     try {
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      await this.remove(name, AbortSignal.timeout(STOP_TIMEOUT_MS)).catch(() => {});
+      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
+        this.remove(name, signal),
+      );
       throw error;
     }
     return { id: name, botId: request.botId, kind: "incus", providerRef: name, fresh: true };
@@ -368,6 +380,10 @@ export class IncusSandboxProvider implements SandboxProvider {
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     await this.removeOwned(instanceName(computer), computer.botId);
+  }
+
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.remove(machine.machineId, signal);
   }
 
   private async removeOwned(name: string, botId: string): Promise<void> {

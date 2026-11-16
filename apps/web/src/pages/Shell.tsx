@@ -6,7 +6,7 @@ import type {
   ThreadMessage,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET, hasLab } from "@rakazo/contracts";
 import {
   activeThreadRuns,
   answerableAskMessageIds,
@@ -156,7 +156,7 @@ function SpaceShell() {
     setOverlay,
   } = useShellNavigation();
   const queries = spaceQueries(userId ?? null, shellSpaceId);
-  const roster = useSpaceRoster({ rpc, seed, botId, groupId, navigate, redirectKeepingOverlay });
+  const roster = useSpaceRoster({ rpc, seed, navigate, redirectKeepingOverlay });
   const {
     groups,
     setGroups,
@@ -597,6 +597,7 @@ function SpaceShell() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
+    beginSpaceSwitch: roster.beginSpaceSwitch,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -874,6 +875,7 @@ function SpaceShell() {
         computersAreUnavailable(bootstrapMe?.sandboxProvider),
       billing: bootstrapMe?.billingEnabled === true,
       updates: Boolean(desktopBridge()?.update),
+      labs: Boolean(bootstrapMe?.labsAvailable.length),
     },
     onNewBot: () => dialogs.setCreateBotOpen(true),
     onNewGroup: () => setPanel("create-group"),
@@ -1037,7 +1039,7 @@ function SpaceShell() {
         }
         footerLogos={footerLogos}
         user={session.data?.user}
-        ticketBoardEnabled={Boolean(bootstrapMe?.ticketBoardEnabled)}
+        boardEnabled={hasLab(bootstrapMe?.labs, "board")}
         navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}

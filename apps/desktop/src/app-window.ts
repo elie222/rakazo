@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, ipcMain, Menu, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
 import { LAUNCH_CHECK_DELAY_MS } from "./auto-update.js";
@@ -10,7 +10,7 @@ import { contextMenuTemplate } from "./context-menu.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { t, withDetail } from "./i18n.js";
 import { reportDesktopError } from "./monitoring.js";
-import { oauthCallbackFrom } from "./oauth-callback.js";
+import { mcpOAuthCallbackFrom, oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
   bundledRendererHeaders,
@@ -24,7 +24,12 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
-import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
+import {
+  mcpOAuthPartition,
+  mcpOAuthPopupServerId,
+  oauthPopupSessionPreferences,
+  shouldOpenInAppPopup,
+} from "./window-open.js";
 import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
@@ -32,19 +37,8 @@ export const PROBE_TIMEOUT_MS = 8_000;
 export class ServerUnavailable extends Error {}
 const bundledRendererInstallations = new Set<string>();
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
-export function permissionTarget() {
-  if (desktop.mainWindow === null || desktop.mainWindow.isDestroyed()) return null;
-  const url = appWindowTargets.get(desktop.mainWindow);
-  return url === undefined ? null : { webContents: desktop.mainWindow.webContents, url };
-}
 export function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
-}
-export function windowFrom(event: Electron.IpcMainInvokeEvent) {
-  return BrowserWindow.fromWebContents(event.sender);
-}
-export function fromMainWindow(event: Electron.IpcMainInvokeEvent) {
-  return desktop.mainWindow !== null && windowFrom(event) === desktop.mainWindow;
 }
 /** Dock/taskbar icon for unpackaged launches; packaged builds get theirs from electron-builder. */
 export function developmentIcon() {
@@ -173,9 +167,13 @@ export function createWindow(url: string, partition: string | null) {
   const appOrigin = targetOrigin ?? safeOrigin(url);
   win.webContents.setWindowOpenHandler(({ url: childUrl, frameName }) => {
     if (shouldOpenInAppPopup(appOrigin, childUrl, frameName)) {
+      // An MCP server signs in through a jar of its own so accounts never mix.
+      const mcpServerId = mcpOAuthPopupServerId(frameName);
       return {
         action: "allow",
-        overrideBrowserWindowOptions: oauthPopupWindowOptions(partition),
+        overrideBrowserWindowOptions: oauthPopupWindowOptions(
+          mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
+        ),
       };
     }
     const external = safeExternalUrl(childUrl);
@@ -205,6 +203,7 @@ export function createWindow(url: string, partition: string | null) {
   // the user on a blank window holding the authorization code in a URL they
   // cannot read. Capture it here and hand it to the app instead.
   win.webContents.on("did-create-window", (popup, { frameName }) => {
+    const mcpServerId = mcpOAuthPopupServerId(frameName);
     const capture = (details: {
       preventDefault: () => void;
       url: string;
@@ -212,6 +211,19 @@ export function createWindow(url: string, partition: string | null) {
     }) => {
       // will-redirect can fire for iframes; only the top-level callback counts.
       if (details.isMainFrame === false) return;
+      if (mcpServerId !== null && appOrigin !== null) {
+        const mcpCallback = mcpOAuthCallbackFrom(details.url, appOrigin);
+        if (mcpCallback) {
+          details.preventDefault();
+          if (!win.isDestroyed())
+            win.webContents.send("desktop.mcpBrowser.callback", {
+              serverId: mcpServerId,
+              ...mcpCallback,
+            });
+          if (!popup.isDestroyed()) popup.close();
+          return;
+        }
+      }
       const callback = oauthCallbackFrom(details.url, {
         frameName,
         excludeOrigins: appOrigin !== null ? [appOrigin] : [],
@@ -462,21 +474,10 @@ export function remoteServerOrigin() {
   const target = appWindowTargets.get(desktop.mainWindow);
   return target === undefined ? null : safeOrigin(target);
 }
-export function safeOrigin(targetUrl: string) {
+function safeOrigin(targetUrl: string) {
   try {
     return new URL(targetUrl).origin;
   } catch {
     return null;
   }
-}
-/** Answers an IPC channel only for senders `isSender` accepts; any other sender gets `refused()`. */
-export function handleOnlyFrom(
-  isSender: (event: Electron.IpcMainInvokeEvent) => boolean,
-  channel: string,
-  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
-  refused: () => unknown = () => undefined,
-) {
-  ipcMain.handle(channel, (event, ...args: unknown[]) =>
-    isSender(event) ? handler(event, ...args) : refused(),
-  );
 }

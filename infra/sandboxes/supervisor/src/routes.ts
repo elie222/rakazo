@@ -22,6 +22,7 @@ import {
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -38,6 +39,7 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import {
+  computerComputeGpus,
   computerDns,
   computerMounts,
   controlViaLoopback,
@@ -127,20 +129,21 @@ function identityHeaders(c: Context) {
   };
 }
 
+/** The only paths that answer without the service token. */
+export const SUPERVISOR_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/health"]);
+
+app.use("*", async (c, next) => {
+  if (
+    !SUPERVISOR_PUBLIC_PATHS.has(c.req.path) &&
+    !hasValidBearerToken(c.req.header("authorization"), supervisorToken)
+  ) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  await next();
+});
+
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
 
-app.use("/computers", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
-    return c.json({ error: "unauthorized" }, 401);
-  }
-  await next();
-});
-app.use("/computers/*", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
-    return c.json({ error: "unauthorized" }, 401);
-  }
-  await next();
-});
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
 
@@ -255,6 +258,8 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // And GPUs: turning them on or off, or changing the count, replaces it too.
+          computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
           computerLocaleMatches(info.Config.Env, locale) &&
           controlPublishOk &&
@@ -320,6 +325,7 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          computeGpus: computerComputeGpus,
           locale,
         });
         let container: Docker.Container | undefined;

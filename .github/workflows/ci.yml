@@ -63,7 +63,8 @@ jobs:
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm build
+      # The size budgets read the bundles this step just built, in a fraction of a second.
+      - run: pnpm build && node scripts/checks/bundle-size.mjs
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
@@ -158,6 +159,8 @@ jobs:
         run: node --test .github/scripts/app-store-review.test.mjs
       - name: Optional vendor SDKs load lazily
         run: node --test scripts/lazy-vendors.test.mjs
+      - name: Repo checks
+        run: node --test scripts/checks/*.test.mjs
 
   # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:

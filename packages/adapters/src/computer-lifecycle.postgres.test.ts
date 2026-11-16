@@ -82,7 +82,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -284,7 +284,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -385,7 +385,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox,
       home,
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -455,7 +455,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox: new FakeSandboxProvider(),
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -528,7 +528,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox: new FakeSandboxProvider(),
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -616,7 +616,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   it("frees a computer a vanished update left booting, then recovers it", async () => {
     const { botId } = identity;
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-abandoned-update-"));
-    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const jobs = {
+      enqueue: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      cancelIn: vi.fn(),
+    } as unknown as JobPublisher;
     const deps = {
       prisma,
       sandbox: new FakeSandboxProvider(),
@@ -696,7 +700,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   ] as const)(
     "releases a %s computer with machine %s left by a vanished update as %s",
     async (left, providerRef, expected) => {
-      const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+      const jobs = {
+        enqueue: vi.fn(async () => {}),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher;
       const update = await prisma.computerUpdate.create({
         data: {
           computerId,
@@ -740,7 +748,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   );
 
   it("leaves a computer another operation reserved alone", async () => {
-    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const jobs = {
+      enqueue: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      cancelIn: vi.fn(),
+    } as unknown as JobPublisher;
     const update = await prisma.computerUpdate.create({
       data: {
         computerId,
@@ -804,7 +816,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma: client,
       sandbox,
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -854,7 +870,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home: new LocalAgentHomeStore(dataDir),
-        jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: {
+          enqueue: vi.fn(async () => undefined),
+          cancel: vi.fn(),
+          cancelIn: vi.fn(),
+        } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -948,7 +968,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox,
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };

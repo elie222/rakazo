@@ -2,6 +2,8 @@
 
 import { i18n } from "@lingui/core";
 import type { Bot } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -96,12 +98,6 @@ afterEach(() => {
   container.remove();
 });
 
-async function flush() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 async function renderDialog() {
   const onConfirm = async (deleteMemories: boolean) => {
     await rpc.bots.remove({ botId: bot.id, deleteMemories });
@@ -113,18 +109,16 @@ async function renderDialog() {
       </QueryClientProvider>,
     );
   });
-  await flush();
+  await act(flush);
 }
 
 describe("DeleteBotDialog", () => {
   it("delete-bot-warns-dissolved-groups", async () => {
-    let resolvePreview: (groups: Array<{ id: string; name: string }>) => void = () => undefined;
-    rpc.bots.removePreview.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolvePreview = resolve;
-        }),
-    );
+    let resolvePreview: Deferred<Array<{ id: string; name: string }>> | undefined;
+    rpc.bots.removePreview.mockImplementation(() => {
+      resolvePreview = deferred();
+      return resolvePreview.promise;
+    });
     await renderDialog();
 
     expect(isDisabled(deleteButton())).toBe(true);
@@ -135,7 +129,7 @@ describe("DeleteBotDialog", () => {
     expect(rpc.bots.remove).not.toHaveBeenCalled();
 
     await act(async () => {
-      resolvePreview([{ id: "g1", name: "Alpha" }]);
+      resolvePreview?.resolve([{ id: "g1", name: "Alpha" }]);
       await vi.waitFor(() => expect(dialogText()).toContain("Alpha"));
     });
 

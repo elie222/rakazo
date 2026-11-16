@@ -17,11 +17,11 @@ import {
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
+  customMcpServerInput,
   filterConnectionCatalogItems,
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  newClientId,
   OTHER_PLUGINS,
 } from "@rakazo/core";
 import type { NativeStackNavigationOptions } from "expo-router";
@@ -841,7 +841,7 @@ export default function Integrations() {
         oauthBrowserOpen.current = true;
         await Linking.openURL(result.authorizationUrl);
       } else {
-        await refresh();
+        await retryRefresh(isCurrent);
       }
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
@@ -866,12 +866,7 @@ export default function Integrations() {
     let created: McpServer | null = null;
     try {
       if (sourceAuth === "oauth") {
-        created = await rpc("mcp/servers/create", {
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name: displayName,
-          transport: "streamable_http",
-          endpoint: url.trim(),
-        });
+        created = await rpc("mcp/servers/create", customMcpServerInput(displayName, url));
         if (!isCurrent()) return;
         setOauthServerId(created.id);
       } else {
@@ -893,7 +888,7 @@ export default function Integrations() {
       setCredential("");
       setSourceKind(null);
       setAdding(null);
-      await refresh();
+      await retryRefresh(isCurrent);
       if (created) await authorizeMcp(created.id);
     } catch (reason) {
       if (isCurrent()) setSourceError(errorText(reason, t`Could not add source`));

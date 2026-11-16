@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { act } from "react";
@@ -18,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 }));
 const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all } },
+  mcp: { servers: mocks, assignments: { all: access.all }, oauth: { disconnect: vi.fn() } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -195,6 +197,43 @@ function server(id: string, status = "unknown") {
     enabled: true,
   } as McpServer;
 }
+
+function oauthServer(id: string) {
+  return {
+    id,
+    name: id,
+    transport: "streamable_http",
+    endpoint: "https://provider.example.com/mcp",
+    oauthStatus: "connected",
+    health: { status: "ok" },
+    enabled: true,
+  } as McpServer;
+}
+
+it("disconnecting also empties the server's own sign-in browser", async () => {
+  const clear = vi.fn().mockResolvedValue(undefined);
+  window.rakazoDesktop = {
+    platform: "darwin",
+    mcpBrowser: { clear, onOAuthCallback: () => () => {} },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
+  api.mcp.oauth.disconnect.mockReset().mockResolvedValue({ ok: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.textContent).toContain("Disconnect"));
+    const item = Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Disconnect",
+    );
+    await act(async () => item?.click());
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledWith("Mobbin"));
+    expect(api.mcp.oauth.disconnect).toHaveBeenCalledWith({ serverId: "Mobbin" });
+  } finally {
+    await act(async () => root.unmount());
+    delete window.rakazoDesktop;
+  }
+});
 
 it("offers stdio only where the deployment runs it, and still shows existing stdio servers", async () => {
   mocks.list
@@ -508,15 +547,15 @@ it("reopens with cached servers and refreshes them in the background", async () 
   await act(async () => first.unmount());
   await client.invalidateQueries();
 
-  let finish: (servers: McpServer[]) => void = () => undefined;
-  mocks.list.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  const finish = deferred<McpServer[]>();
+  mocks.list.mockImplementationOnce(() => finish.promise);
   const second = createRoot(host);
   try {
     await act(async () => second.render(overlay()));
     // Painted from the cache while the refresh is still out.
     expect(host.textContent).toContain("cached");
     expect(mocks.list).toHaveBeenCalledTimes(2);
-    await act(async () => finish([server("cached"), server("added")]));
+    await act(async () => finish.resolve([server("cached"), server("added")]));
     await vi.waitFor(() => expect(host.textContent).toContain("added"));
   } finally {
     await act(async () => second.unmount());
@@ -531,8 +570,8 @@ it("keeps a test result when an older list read lands after it", async () => {
   await act(async () => first.unmount());
   await client.invalidateQueries();
 
-  let finishRead: (servers: McpServer[]) => void = () => undefined;
-  mocks.list.mockImplementationOnce(() => new Promise((resolve) => (finishRead = resolve)));
+  const finishRead = deferred<McpServer[]>();
+  mocks.list.mockImplementationOnce(() => finishRead.promise);
   mocks.test.mockReset().mockResolvedValue(server("one", "ok"));
   const second = createRoot(host);
   try {
@@ -542,7 +581,7 @@ it("keeps a test result when an older list read lands after it", async () => {
     );
     await act(async () => testButton?.click());
     // The read started before the test and must not bring back its older health.
-    await act(async () => finishRead([server("one")]));
+    await act(async () => finishRead.resolve([server("one")]));
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     const cached = client
       .getQueryCache()

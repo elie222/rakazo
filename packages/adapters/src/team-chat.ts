@@ -1,12 +1,11 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import {
   messagingReplyJob,
-  runContinueJob,
   teamChatAmbientJob,
   teamChatEngageJob,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type { AutomatedSenderPolicies, MessageBlock } from "@rakazo/contracts";
+import type { AutomatedSenderPolicies } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import {
   messageBlockForArtifact,
@@ -19,11 +18,13 @@ import {
   runAsSystem,
   SendClaimLostError,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   teamChatRunClientNonce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./inbound-delivery.js";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
+import { wakeRun } from "./wake-run.js";
 
 /** A received message's run starts at once; its backup job takes over after this. */
 export const TEAM_CHAT_ENGAGE_BACKUP_MS = 60_000;
@@ -238,12 +239,12 @@ export class TeamChat {
           id: { in: batch?.messageIds.length ? batch.messageIds : [message.id] },
         },
       },
-      select: { blocks: true },
+      select: { id: true, blocks: true },
       orderBy: { seq: "asc" },
     });
     const fileBlocks = transcripts
-      .flatMap(({ blocks }) =>
-        (blocks as MessageBlock[]).filter(
+      .flatMap((transcript) =>
+        storedMessageBlocks(transcript).filter(
           (block) => block.kind === "file" || block.kind === "image",
         ),
       )
@@ -285,7 +286,7 @@ export class TeamChat {
     if (!sent.runId) throw new Error("Team chat message did not create an agent run");
     // A replayed send skipped its claim; one that committed without the link is linked now.
     await this.settle(message.id, from, link(sent.runId), { runId: null });
-    await this.deps.jobs.enqueue(runContinueJob(sent.runId));
+    await wakeRun(this.deps.jobs, sent.runId);
   }
 
   /**

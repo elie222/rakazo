@@ -134,7 +134,7 @@ describe("finalizeRun", () => {
         .fn()
         .mockRejectedValueOnce(conflict)
         .mockImplementation(async (operation: (client: typeof tx) => unknown) => operation(tx));
-      const publish = vi.fn(async () => undefined);
+      const publish = vi.fn(async (_topic: string, _payload: string) => undefined);
 
       await expect(
         finalizeRun(
@@ -158,7 +158,10 @@ describe("finalizeRun", () => {
         where: { runId: "run-1", kind: "runtime_checkpoint", status: "runtime_checkpoint" },
       });
       expect(createEvent).toHaveBeenCalledOnce();
-      expect(publish).toHaveBeenCalledOnce();
+      expect(publish.mock.calls.map(([topic]) => topic)).toEqual([
+        "thread:thread-1",
+        "space-changes:space-1",
+      ]);
       // A finished run never resumes to read a waiting secret answer.
       expect(tx.secret.deleteMany).toHaveBeenCalledWith({
         where: {
@@ -2266,6 +2269,42 @@ describe("answerWaitingRunWithTextInTransaction", () => {
     ).resolves.toBeNull();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
+
+  it("does not pass over a newer message that only reads as a reaction once entries are dropped", async () => {
+    const tx = {
+      message: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "message-1", blocks: [{ kind: "ask", text: "Which city?", status: "pending" }] },
+          ]),
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            id: "newer-message",
+            seq: 3,
+            role: "user",
+            replyToMessageId: "message-1",
+            blocks: [{ kind: "text", text: "❤️" }, { text: "an entry that is not a block" }],
+          })
+          .mockResolvedValue(null),
+      },
+      run: { findFirst: vi.fn(), updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+    };
+
+    await expect(
+      answerWaitingRunWithTextInTransaction(tx as never, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        answeredByUserId: "user-1",
+        answer: "Paris",
+      }),
+    ).resolves.toBeNull();
+    expect(tx.message.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("answerRunInput approvals", () => {
@@ -3854,6 +3893,67 @@ describe("queue admission beside pending cards", () => {
     });
   });
 
+  describe("a waiting message stored beside entries that are not blocks", () => {
+    const stray = [{ text: "no kind" }, null];
+    const group = { kind: "channel_message", provider: "sendblue", channelId: "channel-1" };
+    const owner = [{ kind: "text", text: "Status?" }];
+    const row = (id: string, originTrigger: string | null, blocks: unknown) => ({
+      id,
+      userId: "user-1",
+      originTrigger,
+      message: { id: `message-${id}`, blocks, seq: 1 },
+    });
+    const continuation = async (rows: ReturnType<typeof row>[]) => {
+      const tx = {
+        run: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: "continuation" }),
+        },
+        steeringMessage: { findMany: vi.fn().mockResolvedValue(rows), updateMany: vi.fn() },
+        task: { create: vi.fn().mockResolvedValue({ id: "task-new" }) },
+      };
+      await createPendingSteeringRun(tx as never, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+      });
+      return {
+        claimed: tx.steeringMessage.updateMany.mock.calls[0]?.[0].where.id.in,
+        trigger: tx.run.create.mock.calls[0]?.[0].data.trigger,
+      };
+    };
+
+    it.each([
+      ["a group text whose channel message is still there", [group, ...stray]],
+      ["a chat-app text that may have lost its channel message", [...owner, ...stray]],
+      ["a chat-app text that is not a list", { kind: "text", text: "Status?" }],
+    ])("answers %s apart from the owner's private messages", async (_case, blocks) => {
+      expect(
+        await continuation([row("group", "messaging", blocks), row("owner", null, owner)]),
+      ).toEqual({
+        claimed: ["owner"],
+        trigger: "follow_up",
+      });
+      expect(await continuation([row("group", "messaging", blocks)])).toEqual({
+        claimed: ["group"],
+        trigger: "messaging",
+      });
+    });
+
+    it.each([
+      ["whose channel message is still there", [group, ...stray]],
+      ["that may have lost its channel message", [...owner, ...stray]],
+    ])(
+      "never starts an owner follow-up from a row queued before origins were recorded %s",
+      async (_case, blocks) => {
+        expect(await continuation([row("legacy", null, blocks)])).toEqual({
+          claimed: ["legacy"],
+          trigger: "messaging",
+        });
+      },
+    );
+  });
+
   it("creates a pending steering continuation without attaching it to a paused run", async () => {
     const tx = {
       run: {
@@ -4639,7 +4739,23 @@ describe("sendUserMessage", () => {
       source: undefined,
       held: false,
     },
-  ])("$name", async ({ parallel, incoming, source, held }) => {
+    {
+      name: "steers the same group when its channel message is stored beside an entry that is not a block",
+      parallel: false,
+      incoming: "group-1",
+      source: "group-1",
+      stray: true,
+      held: false,
+    },
+    {
+      name: "holds direct text during a run whose source may have lost its channel message",
+      parallel: false,
+      incoming: undefined,
+      source: undefined,
+      stray: true,
+      held: true,
+    },
+  ])("$name", async ({ parallel, incoming, source, stray, held }) => {
     const blocks = (channelId: string | undefined) =>
       channelId
         ? [
@@ -4678,7 +4794,10 @@ describe("sendUserMessage", () => {
             taskId: "task-text",
             trigger: "messaging",
             userId: "user-1",
-            sourceMessage: { blocks: blocks(source) },
+            sourceMessage: {
+              id: "source-text",
+              blocks: [...blocks(source), ...(stray ? [{ text: "no kind" }] : [])],
+            },
           },
         ]),
         findUnique: vi.fn().mockResolvedValue({ status: "running" }),
@@ -4709,7 +4828,9 @@ describe("sendUserMessage", () => {
 
     expect(tx.run.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        select: expect.objectContaining({ sourceMessage: { select: { blocks: true } } }),
+        select: expect.objectContaining({
+          sourceMessage: { select: { id: true, blocks: true } },
+        }),
       }),
     );
     expect(tx.run.create).not.toHaveBeenCalled();

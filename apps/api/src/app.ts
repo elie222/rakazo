@@ -37,6 +37,7 @@ import {
   createArtifactStore,
   createCloudAgentConnection,
   createConnectorRuntime,
+  createDubPartnerProgram,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -53,6 +54,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  machineCleanupRecords,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -93,7 +95,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
+import { encryptionKeyWarning } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -116,6 +118,7 @@ import {
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
 import {
+  bestEffort,
   createServiceLogger,
   enrichLogContext,
   getLogger,
@@ -175,6 +178,7 @@ import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
+import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
 import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -313,7 +317,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  // The queue is built from this client below; a secret dropped before then gets no retry.
+  let secretCleanupJobs: JobPublisher | undefined;
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -322,28 +328,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
+  const partnerProgram = env.dubApiKey ? createDubPartnerProgram(env.dubApiKey) : undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
-  const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
-  const environmentSignupPolicy = signupPolicyFromEnv(env);
-  // Mirror the env policy for the previous release during a rolling deploy.
-  await prisma.deploymentSettings.upsert({
-    where: { id: "default" },
-    create: {
-      id: "default",
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-    update: {
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-  });
 
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
@@ -372,11 +362,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
+  secretCleanupJobs = jobs;
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
   });
   const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
@@ -396,6 +387,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       dataDir: env.dataDir,
       prisma,
       secrets,
+      unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
@@ -462,6 +454,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
         experiments: createExperiments(env.experiments),
+        partnerProgram,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -475,7 +468,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,
-    { prisma, secrets, events },
+    { prisma, secrets, events, jobs },
     {
       network: remoteConnectors,
       composio: composioOverride,
@@ -529,6 +522,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
+    partnerProgram,
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
     oidc: env.oidc,
@@ -806,9 +800,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
+      deploymentLabs: env.deploymentLabs,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
-      ticketBoardEnabled,
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,
@@ -852,7 +846,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         return isTrustedOrigin(origin, env) ? origin : "";
       },
       credentials: true,
-      exposeHeaders: [SERVER_BUILD_HEADER],
+      exposeHeaders: [SERVER_BUILD_HEADER, "x-voice-id"],
     }),
   );
   // Session and account replies must never be stored by a client or an HTTP cache.
@@ -915,15 +909,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
-  // Account and session tables, signup bootstrap and account deletion span tenants;
-  // webhooks authenticate a bot or provider, then resolve the tenant from it.
-  for (const [path, reason] of [
-    ["/api/auth/*", "authentication"],
-    ["/api/v1/bots/*", "bot webhook"],
-    ["/api/v1/email/*", "inbound email"],
-    ["/api/v1/messaging/*", "messaging webhook"],
-    ["/api/v1/phone/*", "messaging webhook"],
-  ] as const) {
+  for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
   }
   if (directory) {
@@ -995,9 +981,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     const actor = await actorFromMembership(
       requireMembership(
         prisma,
-        session.user.id,
+        session.user,
         request.headers.get("x-rakazo-space-id"),
-        session.session.id,
+        session.session,
       ),
     );
     return actor && { actor, sessionId: session.session.id };
@@ -1196,9 +1182,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await realtime.close();
       await mcp.close();
       await installed.close();
-      await prisma.$disconnect().catch(() => undefined);
-      await created.pool?.end().catch(() => undefined);
-      await ownedJobPool?.end().catch(() => undefined);
+      await bestEffort("disconnect database client", prisma.$disconnect());
+      await bestEffort("close database pool", created.pool?.end());
+      await bestEffort("close job database pool", ownedJobPool?.end());
       await analytics?.flush();
       await logger.flush({ timeoutMs: 2_000 });
     },

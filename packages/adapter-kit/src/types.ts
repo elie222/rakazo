@@ -30,6 +30,17 @@ export interface AdapterContext {
   connectedProviders?: string[];
 }
 
+/**
+ * A provider machine no stored computer points at: one a start created and has not stored, or a
+ * snapshot build's. `provider` is the computer kind it would be stored under, and `machineId`
+ * the reference it would be stored as. `homeKey` names the computer it was created for.
+ */
+export interface UnreferencedMachine {
+  provider: string;
+  machineId: string;
+  homeKey?: string;
+}
+
 export interface ConnectedConnector {
   id: string;
   connectorId: string;
@@ -151,6 +162,12 @@ export interface ScreenSession {
   /** Provider credentials for the server proxy only; never return these to clients. */
   headers?: Record<string, string>;
   url: string | null;
+  /**
+   * Set when the URL signs in with a code that works once and ends the session an earlier code
+   * opened. `screen` names what the URL shows apart from that code: two sessions with the same
+   * value show the same screen.
+   */
+  singleUseSignIn?: { screen: string };
   mimeType: string;
   close(): Promise<void>;
 }
@@ -251,6 +268,28 @@ export interface ControlLeaseRef {
 export interface SnapshotRef {
   id: string;
   createdAt: string;
+}
+
+/**
+ * What every computer of one kind can do. A provider declares these once and they never vary by
+ * configuration, so shared code can read them from a stored kind without a provider instance.
+ */
+export interface SandboxKindCapabilities {
+  /** A person can open a shell on the computer. */
+  terminal: boolean;
+  /** The computer can be replaced by one on the current image, keeping its files. */
+  inPlaceUpdate: boolean;
+  /** Commands run in the host's own shell rather than bash on Linux. */
+  nativeShell: boolean;
+  /** The computer is the user's own machine, which costs nothing and owns its own lifetime. */
+  runsOnUserMachine: boolean;
+  screen: { width: number; height: number };
+  /** Whether the computer works in the server's home directory itself rather than a copy. */
+  serverHomeMount: "always" | "optional" | "never";
+  /** Only the server writes a Team Computer's stored home, so the server may edit it directly. */
+  serverOwnsStoredTeamHome: boolean;
+  /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
+  storedHomeIsBackup: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -554,6 +593,8 @@ export interface AgentRunModel {
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
+  projectId?: string;
+  region?: string;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
@@ -830,6 +871,8 @@ export interface VoiceInfo {
 export interface SpeechClip {
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
+  /** The voice actually used, when the provider substituted one for the requested voice. */
+  voiceId?: string;
 }
 
 export interface VoiceCapabilities {
@@ -922,7 +965,28 @@ export interface BackgroundJobPayloads {
   "messaging.deliver": { runId?: string };
   /** The previous release's interim-message mirror; drained by the new delivery path. */
   "messaging.progress": { runId: string };
+  /**
+   * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
+   * held the reference and `recordId` its record, so the job can confirm the entry is still
+   * unreferenced. `ref` is the store's reference to a remote entry, never a value.
+   */
+  "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
+  /** The previous release's `secret.cleanup` for a messaging installation. */
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /**
+   * Backup for removing an authorization a connection flow left at the provider with no local
+   * row. `ref` names one authorization request or account; without it, the app's accounts that
+   * no local row references.
+   */
+  "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
+  /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
+  "computer.machine-cleanup": UnreferencedMachine;
   /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
   "team_chat.engage": { externalMessageId: string };
   /** Decide whether a conversation's unanswered team-chat messages need the bot. */
@@ -935,6 +999,17 @@ export interface BackgroundJobPayloads {
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
+
+/** What held a secret-store reference before it was replaced or dropped. */
+export type SecretCleanupKind =
+  | "secret_row"
+  | "secret_tables"
+  | "messaging_installation"
+  | "deployment_computer_provider"
+  | "purchase_request"
+  | "purchase_card"
+  | "purchase_token"
+  | "payment_wallet";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 
@@ -1563,6 +1638,17 @@ export interface BillingCreditPurchase {
   amountCents: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
+}
+
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
 }
 
 export interface BillingCreditCheckoutRequest {
