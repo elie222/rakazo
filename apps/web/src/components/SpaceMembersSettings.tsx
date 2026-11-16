@@ -311,7 +311,7 @@ export function SpaceMembersSettings({
                 emailing.reset();
               }}
             />
-            <Button type="submit" disabled={emailing.pending || !invitee}>
+            <Button type="submit" size="lg" disabled={emailing.pending || !invitee}>
               <Trans>Invite</Trans>
             </Button>
           </div>
