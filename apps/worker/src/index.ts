@@ -110,7 +110,7 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
-  const timeZone = await timeZoneWarning(prisma);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
   if (timeZone) logger.warn(timeZone);
   // Set once push delivery is configured below; thread changes before then have no cards.
   let workActivities: WorkActivities | undefined;

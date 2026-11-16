@@ -307,7 +307,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
-  const timeZone = await timeZoneWarning(prisma);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
   if (timeZone) logger.warn(timeZone);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
