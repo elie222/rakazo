@@ -1,7 +1,7 @@
 /** Portable plugin parsing plus a bounded, public-GitHub acquisition adapter.
  * No repository code is executed and no files are written to the host. */
 import { createHash } from "node:crypto";
-import { McpServerConfigInput } from "@rakazo/contracts";
+import { McpServerConfigInput, trimEndChars, trimStartChars } from "@rakazo/contracts";
 import { buildSkillMd, deadlineSignal, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
@@ -772,11 +772,10 @@ export function parsePluginDirectory(input: {
         ? skillFolder(skillPaths[0]!).split("/").filter(Boolean).at(-1)
         : undefined;
     const rawName = input.fallbackName?.trim() || inferredName || "skills";
-    const name = rawName
-      .toLowerCase()
-      .replace(/[^a-z0-9.-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64);
+    const name = trimEndChars(
+      trimStartChars(rawName.toLowerCase().replace(/[^a-z0-9.-]+/g, "-"), "-"),
+      "-",
+    ).slice(0, 64);
     if (!name) throw new Error("Could not infer a name for this skill bundle");
     format = "agent-skills";
     manifest = { name };
