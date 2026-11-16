@@ -272,8 +272,7 @@ export function ModelRoleSettings({
     setDrag({ key: drag.key, order });
   };
   const drop = () => {
-    if (drag?.order.some((item, index) => !sameChoice(item, rows[index]!)))
-      void commit(drag.order);
+    if (drag?.order.some((item, index) => !sameChoice(item, rows[index]!))) void commit(drag.order);
     setDrag(null);
   };
   const remove = (index: number) => void commit(rows.filter((_, item) => item !== index));
