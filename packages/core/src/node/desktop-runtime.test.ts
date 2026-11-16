@@ -1392,13 +1392,16 @@ describe("shared Linux desktop lifecycle", () => {
       } catch {
         return false;
       }
-      // A killed orphan stays a zombie until whichever process adopted it reaps it.
+      // A killed orphan stays a zombie until whichever process adopted it reaps it. Without a
+      // readable /proc entry the signal check stands, so a hidden procfs cannot fake an exit;
+      // one that just exited reads as alive here and the next poll sees it gone.
+      let stat: string;
       try {
-        const stat = readFileSync(`/proc/${parsed}/stat`, "utf8");
-        return !/^[ZX]/.test(stat.slice(stat.lastIndexOf(")") + 2));
+        stat = readFileSync(`/proc/${parsed}/stat`, "utf8");
       } catch {
-        return false;
+        return true;
       }
+      return !/^[ZX]/.test(stat.slice(stat.lastIndexOf(")") + 2));
     };
     // Signals land asynchronously, so a stop that just sent one cannot promise the exit yet.
     const exited = (pid: string) => expect.poll(() => alive(pid), { timeout: 5_000 }).toBe(false);
