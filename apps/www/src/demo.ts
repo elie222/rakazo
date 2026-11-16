@@ -17,7 +17,7 @@ export type DemoMessage<Text extends string = string> =
 
 export type DemoRoutine<Text extends string = string> = {
   name: Text;
-  when: string;
+  when: Text;
   instruction?: Text;
   active?: boolean;
   runs?: DemoRoutineRun<Text>[];
