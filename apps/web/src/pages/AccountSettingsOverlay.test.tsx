@@ -34,8 +34,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
-  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Switch: ({
     checked,
     onCheckedChange,
@@ -70,9 +68,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   ),
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
-  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
-    <div data-testid={testId} />
-  ),
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
@@ -141,7 +137,7 @@ import {
 import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
-import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
+import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
 afterEach(() => {
   localStorage.clear();
@@ -172,9 +168,9 @@ it.each([undefined, null, "device", "different"])(
           />,
         ),
       );
-      expect(
-        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
-      ).toBe(timezone ?? deviceTimezone);
+      expect(container.querySelector('[data-testid="timezone-select"]')?.textContent).toBe(
+        (timezone ?? deviceTimezone).replaceAll("_", " "),
+      );
       expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
         saved === "different",
       );
@@ -334,64 +330,6 @@ it("updates the Enter preference from Settings and reflects external changes", a
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => composerEnterToSendPreference.set(true));
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-  } finally {
-    await act(async () => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("shows usage totals and a per-model breakdown", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(
-        <UsageSettingsPanel
-          usage={{
-            runs: 2,
-            inputTokens: 1200,
-            outputTokens: 34,
-            totalTokens: 1234,
-            costUsd: 0.5,
-            modelCalls: 3,
-            models: [
-              {
-                provider: "openai",
-                model: "model-a",
-                modelCalls: 2,
-                inputTokens: 1000,
-                outputTokens: 30,
-                totalTokens: 1030,
-                costUsd: 0.5,
-              },
-              {
-                provider: "local",
-                model: "model-b",
-                modelCalls: 1,
-                inputTokens: 200,
-                outputTokens: 4,
-                totalTokens: 204,
-                costUsd: null,
-              },
-            ],
-          }}
-        />,
-      ),
-    );
-    expect([...container.querySelectorAll("dd")].map((node) => node.textContent)).toEqual([
-      "2",
-      "1,234",
-      "$0.50",
-    ]);
-    expect(
-      [...container.querySelectorAll("tbody tr")].map((row) =>
-        [...row.querySelectorAll("td")].map((cell) => cell.textContent),
-      ),
-    ).toEqual([
-      ["model-aopenai", "2", "1,000", "30", "$0.50"],
-      ["model-blocal", "1", "200", "4", "—"],
-    ]);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -671,16 +609,14 @@ it("turns quiet hours on at the usual hours, moves one end, and turns them off",
     await act(async () => toggle().click());
     expect(saved).toEqual([{ start: 22, end: 7 }]);
     expect(toggle().getAttribute("aria-checked")).toBe("true");
-    const start = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Quiet hours start"]',
-    )!;
+    const start = container.querySelector<HTMLElement>('[aria-label="Quiet hours start"]')!;
+    expect(start.textContent).toBe("10:00 PM");
+    await act(async () => start.click());
+    const hours = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
     // The end hour isn't offered as the start, so the two can't match.
-    expect([...start.options].map((option) => option.value)).not.toContain("7");
-    expect(start.options).toHaveLength(23);
-    await act(async () => {
-      start.value = "23";
-      start.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(hours.map((option) => option.textContent)).not.toContain("7:00 AM");
+    expect(hours).toHaveLength(23);
+    await act(async () => hours.find((option) => option.textContent === "11:00 PM")?.click());
     expect(saved.at(-1)).toEqual({ start: 23, end: 7 });
 
     await act(async () => toggle().click());
@@ -728,7 +664,7 @@ it("lets a quiet hours save and a timezone save wait for each other", async () =
   const root = createRoot(container);
   const quietSave = deferred<void>();
   const zoneSave = deferred<void>();
-  const zone = () => container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')!;
+  const zone = () => container.querySelector<HTMLButtonElement>('[data-testid="timezone-select"]')!;
   const toggle = () =>
     container.querySelector<HTMLButtonElement>('[data-testid="quiet-hours-toggle"]')!;
   try {
@@ -748,10 +684,11 @@ it("lets a quiet hours save and a timezone save wait for each other", async () =
     await act(async () => quietSave.resolve());
     expect(zone().disabled).toBe(false);
 
-    await act(async () => {
-      zone().value = "UTC";
-      zone().dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => zone().click());
+    const utc = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent === "UTC",
+    );
+    await act(async () => utc?.click());
     expect(toggle().disabled).toBe(true);
     await act(async () => zoneSave.resolve());
     expect(toggle().disabled).toBe(false);

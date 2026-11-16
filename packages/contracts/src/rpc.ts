@@ -154,6 +154,8 @@ import {
   UpdateBotInput,
   UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
+  UsageBreakdownInputSchema,
+  UsageBreakdownSchema,
   UsageRecordSchema,
   UsageSummarySchema,
   VoiceCatalogEntrySchema,
@@ -1498,6 +1500,7 @@ export const appContract = {
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
     summary: oc.output(UsageSummarySchema),
+    breakdown: oc.input(UsageBreakdownInputSchema).output(UsageBreakdownSchema),
     /** Subscription sign-ins whose allowance could be read; others are left out. */
     limits: oc.output(z.array(PlanLimitsSchema)),
   },

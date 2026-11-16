@@ -1,11 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type {
-  BotAvatarSet,
-  LabFeature,
-  QuietHours,
-  SpaceMemoryConfig,
-  UsageSummary,
-} from "@rakazo/contracts";
+import type { BotAvatarSet, LabFeature, QuietHours, SpaceMemoryConfig } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -29,7 +23,6 @@ import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
   UpdatesSettingsPanel,
-  UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { LabsSettingsPanel } from "./LabsSettingsPanel";
@@ -42,6 +35,7 @@ import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
 import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
+import { UsageSettingsPanel } from "./UsageSettingsPanel";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 export function SettingsOverlay({
@@ -52,8 +46,6 @@ export function SettingsOverlay({
   onDeleteSpace,
   email,
   name,
-  usage,
-  onUsageOpen,
   section: requestedSection,
   onSectionChange,
   onNameSaved,
@@ -90,8 +82,6 @@ export function SettingsOverlay({
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
-  usage?: UsageSummary | null;
-  onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
@@ -177,11 +167,8 @@ export function SettingsOverlay({
   useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
 
   useEffect(() => {
-    if (section === "usage") {
-      onUsageOpen();
-      usageRef.current?.focus();
-    }
-  }, [section, onUsageOpen]);
+    if (section === "usage") usageRef.current?.focus();
+  }, [section]);
 
   const navItems = useSettingsNavItems({
     messaging: messagingEnabled,
@@ -464,7 +451,7 @@ export function SettingsOverlay({
                   {section === "usage" ? (
                     <>
                       <PlanUsage />
-                      <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                      <UsageSettingsPanel panelRef={usageRef} />
                     </>
                   ) : null}
                   {section === "computer" && showComputer ? (
