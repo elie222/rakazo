@@ -190,6 +190,19 @@ describe("media generation connection", () => {
       });
     }
   });
+  it("does not call another output failure that mentions a size a limit", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("upstream entity too large")),
+    });
+    const { provider } = setup(
+      json({ status: "COMPLETED" }),
+      json(videoResult),
+      new Response(body, { headers: { "content-type": "video/mp4" } }),
+    );
+    await expect(provider.pollVideo(jobId, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+  });
   it("rejects wrong output MIME and invalid statuses", async () => {
     await expect(
       setup(

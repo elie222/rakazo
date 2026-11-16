@@ -27,7 +27,11 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { abortableDelay, boundedSandboxCommandTimeoutMs, isRetryableError } from "@rakazo/core";
-import { boundedComputerActions, computerObservation } from "./computer-support.js";
+import {
+  boundedComputerActions,
+  computerObservation,
+  WorkspacePathError,
+} from "./computer-support.js";
 import { normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import { McpSession } from "./mcp-transport.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -511,7 +515,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
     const entries: string[] = [];
     for (const parent of parents) {
       if (parent !== "bots" && parent !== ".browser-profiles")
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       const directory = await this.target(computer, parent, context.signal);
       if (!(await this.exists(directory, context.signal))) continue;
       if (request.action === "list") {
@@ -521,7 +525,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
       }
       const pattern = parent === "bots" ? /^[A-Za-z0-9_-]+$/ : /^chromium-bot-[0-9a-f]{32}$/;
       if (request.names.some((name) => !pattern.test(name)))
-        throw new Error("Path escapes the computer workspace");
+        throw new WorkspacePathError("Path escapes the computer workspace");
       for (const name of request.names) {
         await this.tools.call(
           "fs_delete",
@@ -1114,7 +1118,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
     if (await this.exists(target, signal)) return;
     const profile = await this.userProfile(signal);
     if (!target.toLowerCase().startsWith(`${profile.toLowerCase()}\\`))
-      throw new Error("Path escapes the computer workspace");
+      throw new WorkspacePathError("Path escapes the computer workspace");
     let current = profile;
     for (const segment of target.slice(profile.length + 1).split("\\")) {
       current = `${current}\\${segment}`;

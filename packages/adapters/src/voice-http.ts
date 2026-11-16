@@ -1,13 +1,14 @@
 import type { VoiceVerifyResult } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
-import { cancelResponseBody, deadlineSignal } from "@rakazo/core";
+import { cancelResponseBody, deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
 /** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
 export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
 export const MAX_SPEAK_CHARS = 2000;
 export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
+const VOICE_RESPONSE_TOO_LARGE = "Voice response is too large.";
 
 /** Header-safe speech model id. A connection override wins over the deployment default. */
 export function isSpeechModelId(value: string): boolean {
@@ -26,13 +27,13 @@ async function readVoiceBytes(
   const declared = Number(res.headers?.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     cancelResponseBody(res);
-    throw new Error("Voice response is too large.");
+    throw new ResponseTooLargeError(VOICE_RESPONSE_TOO_LARGE);
   }
   try {
     return await readBodyCapped(res, maxBytes, signal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error("Voice response is too large.");
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError(VOICE_RESPONSE_TOO_LARGE, { cause: error });
     }
     throw error;
   }
@@ -53,7 +54,7 @@ export async function readVoiceText(res: Response): Promise<string | null> {
   try {
     return new TextDecoder().decode(await readVoiceBytes(res, MAX_VOICE_JSON_BYTES));
   } catch (error) {
-    if (error instanceof Error && error.message === "Voice response is too large.") throw error;
+    if (error instanceof ResponseTooLargeError) throw error;
     return null;
   }
 }
@@ -66,7 +67,7 @@ export async function readVoiceJson(
   try {
     bytes = await readVoiceBytes(res, MAX_VOICE_JSON_BYTES);
   } catch (error) {
-    if (error instanceof Error && error.message === "Voice response is too large.") throw error;
+    if (error instanceof ResponseTooLargeError) throw error;
     if (options.requireValid) throw new Error("Voice provider response could not be read.");
     return null;
   }
