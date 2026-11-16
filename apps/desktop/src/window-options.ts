@@ -90,6 +90,33 @@ export function restorableWindow(
   };
 }
 
+type StatefulWindow = {
+  isMinimized(): boolean;
+  isMaximized(): boolean;
+  isFullScreen(): boolean;
+  getNormalBounds(): Bounds;
+};
+
+/**
+ * Reads a window's state to save, keeping each window's state from before it was minimized:
+ * minimizing changes what Electron reports (macOS overwrites a maximized window's normal bounds,
+ * and Windows reports it as not maximized). Read it on every change so that state stays current.
+ */
+export function windowStateReader<W extends StatefulWindow>() {
+  const beforeMinimize = new WeakMap<W, SavedWindow>();
+  return (win: W): SavedWindow => {
+    const kept = beforeMinimize.get(win);
+    if (win.isMinimized() && kept) return kept;
+    const state = {
+      ...win.getNormalBounds(),
+      maximized: win.isMaximized(),
+      fullScreen: win.isFullScreen(),
+    };
+    if (!win.isMinimized()) beforeMinimize.set(win, state);
+    return state;
+  };
+}
+
 /**
  * Unpackaged (dev) launches set the dock/taskbar icon by hand. macOS draws the file as-is,
  * so it needs the squircle-with-margins asset; packaged builds already use icon.icns.

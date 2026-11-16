@@ -38,6 +38,7 @@ import {
   parseSavedWindow,
   restorableWindow,
   warmWindowTtlMs,
+  windowStateReader,
 } from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
@@ -64,20 +65,14 @@ async function readSavedWindow(): Promise<SavedWindow | null> {
   const raw = await readPrivateFile(savedWindowFile(), 1024);
   return raw === null ? null : parseSavedWindow(raw);
 }
-/** Windows reports a minimized window as not maximized, so its last state is kept here. */
-const maximizedWindows = new WeakSet<BrowserWindow>();
+const windowState = windowStateReader<BrowserWindow>();
 /** How long after a move or resize the window is saved, so a drag writes the file once. */
 const WINDOW_SAVE_DELAY_MS = 1_000;
 function saveWindow(win: BrowserWindow) {
   // While a server switch is pending, the new window may still be dropped for the old one.
   if (win.isDestroyed() || desktop.replacedAppWindow !== null) return;
-  const saved: SavedWindow = {
-    ...win.getNormalBounds(),
-    maximized: win.isMinimized() ? maximizedWindows.has(win) : win.isMaximized(),
-    fullScreen: win.isFullScreen(),
-  };
   try {
-    writePrivateFileSync(savedWindowFile(), JSON.stringify(saved));
+    writePrivateFileSync(savedWindowFile(), JSON.stringify(windowState(win)));
   } catch {
     // Losing the size only means the next launch opens at the default.
   }
@@ -201,25 +196,21 @@ export async function createWindow(url: string, partition: string | null) {
   // Saved soon after each change too, so a crash or force quit keeps the last layout.
   let saveTimer: NodeJS.Timeout | undefined;
   const saveSoon = () => {
+    windowState(win);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveWindow(win), WINDOW_SAVE_DELAY_MS);
   };
   win.on("move", saveSoon);
   win.on("resize", saveSoon);
-  win.on("maximize", () => {
-    maximizedWindows.add(win);
-    saveSoon();
-  });
-  win.on("unmaximize", () => {
-    maximizedWindows.delete(win);
-    saveSoon();
-  });
+  win.on("maximize", saveSoon);
+  win.on("unmaximize", saveSoon);
   win.on("enter-full-screen", saveSoon);
   win.on("leave-full-screen", saveSoon);
   if (saved?.maximized && !saved.fullScreen) {
     win.maximize();
     win.show();
   }
+  windowState(win);
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
   );

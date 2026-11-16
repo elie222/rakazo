@@ -7,6 +7,7 @@ import {
   restorableWindow,
   setupWindowOptions,
   warmWindowTtlMs,
+  windowStateReader,
 } from "./window-options.js";
 
 const laptop = { width: 1440, height: 875 };
@@ -209,5 +210,61 @@ describe("saved window", () => {
         [second],
       ),
     ).toEqual({ x: 2560, y: 380, width: 800, height: 700, maximized: false, fullScreen: false });
+  });
+});
+
+describe("window state to save", () => {
+  // Electron's reports for one window, which a test changes as the window would.
+  function fakeWindow() {
+    return {
+      minimized: false,
+      maximized: false,
+      fullScreen: false,
+      normal: { x: 10, y: 20, width: 900, height: 700 },
+      isMinimized() {
+        return this.minimized;
+      },
+      isMaximized() {
+        return this.maximized;
+      },
+      isFullScreen() {
+        return this.fullScreen;
+      },
+      getNormalBounds() {
+        return this.normal;
+      },
+    };
+  }
+  const normal = { x: 10, y: 20, width: 900, height: 700 };
+
+  it("keeps the state from before a maximized window was minimized", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const win = fakeWindow();
+    win.maximized = true;
+    read(win);
+    // macOS overwrites the normal bounds with the maximized frame, and Windows reports a
+    // minimized window as not maximized.
+    win.minimized = true;
+    win.maximized = false;
+    win.normal = { x: 0, y: 0, width: 1440, height: 875 };
+    expect(read(win)).toEqual({ ...normal, maximized: true, fullScreen: false });
+  });
+
+  it("reads the current state once the window is restored", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const win = fakeWindow();
+    read(win);
+    win.minimized = true;
+    read(win);
+    win.minimized = false;
+    win.normal = { x: 30, y: 40, width: 800, height: 600 };
+    expect(read(win)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
+  });
+
+  it("reads a window first seen minimized as it is", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const win = fakeWindow();
+    win.minimized = true;
+    expect(read(win)).toEqual({ ...normal, maximized: false, fullScreen: false });
   });
 });
