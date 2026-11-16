@@ -1,24 +1,38 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelConnectInput,
+  ModelCredential,
+  ModelSettings,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
   canonicalPiProviderId,
-  cloudflareModelConfigMessage,
-  cloudflareModelRouting,
-  isCloudflareModelProvider,
   MAX_ENABLED_MODEL_IDS,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
+import {
+  cloudflareModelConfigMessage,
+  cloudflareModelRouting,
+  isCloudflareModelProvider,
+} from "./cloudflare-ai-gateway.js";
+import { vertexRoutingForConnect } from "./google-vertex-routing.js";
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
+import { connectionModelSettings } from "./model-settings.js";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
-import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
+import {
+  compatibleEndpointPreset,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import { CHATGPT_OAUTH_PROVIDER, parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,
+  openAiCompatibleVisionModelIds,
   prepareOpenAiCompatibleConnect,
 } from "./pi-openai-compatible-provider.js";
 
@@ -91,12 +105,8 @@ export function buildModelConnectPlaintext(
       input.maxImagesPerPrompt === null
         ? undefined
         : (input.maxImagesPerPrompt ?? (sameEndpoint ? previous.maxImagesPerPrompt : undefined));
-    const thinkingLevel =
-      input.thinkingLevel !== undefined
-        ? input.thinkingLevel
-        : sameEndpoint
-          ? previous.thinkingLevel
-          : undefined;
+    // A model's effort is chosen where it is used; only older apps still send one here.
+    const thinkingLevel = input.thinkingLevel;
     const maxTokens = connectMaxTokens(
       input.maxTokens,
       sameEndpoint ? previous.maxTokens : undefined,
@@ -126,6 +136,7 @@ export function buildModelConnectPlaintext(
       },
       prepared.modelId,
     );
+    const reasoning = input.reasoning ?? compatiblePrevious?.reasoning;
     const compatibleCacheCapabilities =
       input.cacheCapabilities ?? compatiblePrevious?.cacheCapabilities;
     const secret: StoredModelSecret = {
@@ -138,7 +149,7 @@ export function buildModelConnectPlaintext(
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
         : {}),
-      ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
+      ...(reasoning !== undefined ? { reasoning } : {}),
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(contextWindow !== undefined ? { contextWindow } : {}),
@@ -152,6 +163,11 @@ export function buildModelConnectPlaintext(
           ? enabledModelIds.filter((id) => id !== prepared.modelId)
           : enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      // Settings follow the models the connection still serves.
+      ...keptCompatibleModels(
+        previous?.kind === "openai_compatible" ? previous.models : undefined,
+        enabledModelIds,
+      ),
     };
     return serializeModelSecret(secret);
   }
@@ -167,7 +183,9 @@ export function buildModelConnectPlaintext(
   if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
     throw new Error("Maximum output tokens must leave room for input");
   }
-  const routing = cloudflareRoutingForConnect(input, previous);
+  const routing =
+    vertexRoutingForConnect(input, inherited) ?? cloudflareRoutingForConnect(input, previous);
+  const models = previous?.models ? { models: previous.models } : {};
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
     assertHeaderSafeApiKey(apiKey);
@@ -177,6 +195,7 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...models,
     });
   }
   if (previous?.kind === "api_key" && previous.key.trim().length >= 8) {
@@ -189,10 +208,11 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...models,
     });
   }
   if (previous?.kind === "oauth") {
-    const limit = maxTokens !== undefined ? { maxTokens } : {};
+    const limit = { ...(maxTokens !== undefined ? { maxTokens } : {}), ...models };
     return serializeModelSecret(
       previous.reconnectRequired
         ? { kind: "oauth", reconnectRequired: true, ...limit }
@@ -203,6 +223,17 @@ export function buildModelConnectPlaintext(
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
   throw new Error("API key must contain at least 8 characters");
+}
+
+function keptCompatibleModels(
+  models: Record<string, ModelSettings> | undefined,
+  enabledModelIds: readonly string[],
+): { models?: Record<string, ModelSettings> } {
+  if (!models) return {};
+  const kept = Object.fromEntries(
+    Object.entries(models).filter(([modelId]) => enabledModelIds.includes(modelId)),
+  );
+  return Object.keys(kept).length > 0 ? { models: kept } : {};
 }
 
 const CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE =
@@ -267,6 +298,30 @@ function connectMaxTokens(
   return previous;
 }
 
+function endpointName(baseUrl: string): { endpointName?: string } {
+  const preset = compatibleEndpointPreset(baseUrl);
+  return preset ? { endpointName: preset.name } : {};
+}
+
+/** The efforts an OpenAI-compatible model offers: its endpoint's, once it is set to think. */
+export function compatibleModelThinkingLevels(
+  secret: Extract<StoredModelSecret, { kind: "openai_compatible" }>,
+  modelId: string,
+  row?: { supportsImages?: boolean; defaultModel?: string | null },
+): ThinkingLevel[] {
+  return getSupportedThinkingLevels(
+    openAiCompatibleModel(
+      modelId,
+      secret.baseUrl,
+      connectionModelSettings(secret, CONTRACT_OPENAI_COMPAT, modelId, row).reasoning,
+      false,
+      undefined,
+      undefined,
+      secret.apiProtocol,
+    ),
+  ) as ThinkingLevel[];
+}
+
 export function modelCredentialDto(
   row: {
     id: string;
@@ -307,6 +362,9 @@ export function modelCredentialDto(
         : {}),
       ...(parsed.kind === "api_key" && parsed.accountId ? { accountId: parsed.accountId } : {}),
       ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
+      ...(parsed.kind === "api_key" && parsed.projectId ? { projectId: parsed.projectId } : {}),
+      ...(parsed.kind === "api_key" && parsed.region ? { region: parsed.region } : {}),
+      ...(parsed.models ? { modelSettings: parsed.models } : {}),
     };
   }
   const compatibleCredential = {
@@ -318,6 +376,7 @@ export function modelCredentialDto(
   if (parsed.kind !== "openai_compatible") {
     return { ...compatibleCredential, authKind: modelCredentialAuthKind(parsed) };
   }
+  const operatorVisionModels = openAiCompatibleVisionModelIds();
   return {
     ...compatibleCredential,
     authKind: "openai_compatible",
@@ -326,12 +385,10 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...endpointName(parsed.baseUrl),
     ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
-    ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined
-      ? { thinkingLevel: credential.thinkingLevel ?? parsed.thinkingLevel }
-      : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
     cacheCapabilities: parsed.cacheCapabilities,
@@ -341,17 +398,13 @@ export function modelCredentialDto(
     ...(parsed.enabledModelIds !== undefined
       ? { enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel) }
       : {}),
-    thinkingLevels: getSupportedThinkingLevels(
-      openAiCompatibleModel(
-        row.defaultModel ?? "custom",
-        parsed.baseUrl,
-        parsed.reasoning,
-        false,
-        undefined,
-        undefined,
-        parsed.apiProtocol,
-      ),
-    ) as ThinkingLevel[],
+    visionModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel).filter(
+      (id) =>
+        connectionModelSettings(parsed, row.provider, id, row).images ??
+        operatorVisionModels.has(id),
+    ),
+    ...(parsed.models ? { modelSettings: parsed.models } : {}),
+    thinkingLevels: compatibleModelThinkingLevels(parsed, row.defaultModel ?? "custom", row),
     modelId: row.defaultModel ?? undefined,
   };
 }

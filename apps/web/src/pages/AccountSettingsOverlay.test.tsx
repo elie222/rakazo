@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -64,25 +66,36 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
       {children}
     </button>
   ),
-  ToggleGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children?: ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
-  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
-    <div data-testid={testId} />
-  ),
+  ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
+  ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
+vi.mock("../lib/auth-capabilities", () => ({
+  fetchAuthCapabilities: vi.fn(async () => ({
+    providers: [{ id: "social-one", name: "Provider" }],
+  })),
+}));
+vi.mock("../lib/passkeys", () => ({
+  usePasskeysSupported: () => false,
+  usePasskeysVersion: () => 0,
+}));
 const accountPolicy = vi.hoisted(() => ({
+  hasPassword: true,
+  linkedProviderIds: undefined as string[] | undefined,
   passwordChangeEnabled: undefined as boolean | undefined,
 }));
 vi.mock("../components/AccountAccess", () => ({
+  LinkSsoRow: ({ provider }: { provider: { name: string } }) => (
+    <button type="button">Link {provider.name}</button>
+  ),
   AccountAccess: ({ onSecurity }: { onSecurity: (value: AccountSecurity) => void }) => {
     useEffect(
       () =>
         onSecurity({
-          hasPassword: true,
+          hasPassword: accountPolicy.hasPassword,
+          linkedProviderIds: accountPolicy.linkedProviderIds,
           passwordChangeEnabled: accountPolicy.passwordChangeEnabled,
           freshOidcAuth: false,
           ssoLinked: false,
@@ -119,16 +132,54 @@ vi.mock("../lib/ui-appearance", () => ({
 import { authClient } from "../lib/auth";
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
-  getComposerEnterToSend,
-  setComposerEnterToSend,
+  composerEnterToSendPreference,
 } from "../lib/composer-enter-to-send-pref";
-import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
+import { localTimezone } from "../lib/local-timezone";
+import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
-import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
+import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
 afterEach(() => {
   localStorage.clear();
 });
+
+it.each([undefined, null, "device", "different"])(
+  "only offers the device timezone when the selected timezone differs (%s)",
+  async (saved) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const deviceTimezone = localTimezone();
+    const timezone =
+      saved === "device"
+        ? deviceTimezone
+        : saved === "different"
+          ? deviceTimezone === "UTC"
+            ? "Europe/London"
+            : "UTC"
+          : saved;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <GeneralSettingsPanels
+            name="Test"
+            timezone={timezone}
+            onTimezoneChange={async () => {}}
+          />,
+        ),
+      );
+      expect(container.querySelector('[data-testid="timezone-select"]')?.textContent).toBe(
+        (timezone ?? deviceTimezone).replaceAll("_", " "),
+      );
+      expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
+        saved === "different",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -181,19 +232,19 @@ it("turns loading web images on and off from the settings toggle", async () => {
     );
     if (!toggle) throw new Error("Missing remote images toggle");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(getRemoteImagesEnabled()).toBe(false);
+    expect(remoteImagesPreference.get()).toBe(false);
 
     await act(async () => {
       toggle.click();
     });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(getRemoteImagesEnabled()).toBe(true);
+    expect(remoteImagesPreference.get()).toBe(true);
 
     await act(async () => {
       toggle.click();
     });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(getRemoteImagesEnabled()).toBe(false);
+    expect(remoteImagesPreference.get()).toBe(false);
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -258,7 +309,7 @@ it("keeps the password form closed until asked and closes it after a change", as
 
 it("updates the Enter preference from Settings and reflects external changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  setComposerEnterToSend(true);
+  composerEnterToSendPreference.set(true);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
@@ -274,69 +325,11 @@ it("updates the Enter preference from Settings and reflects external changes", a
     );
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     await act(async () => toggle.click());
-    expect(getComposerEnterToSend()).toBe(false);
+    expect(composerEnterToSendPreference.get()).toBe(false);
     expect(localStorage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("0");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    await act(async () => setComposerEnterToSend(true));
+    await act(async () => composerEnterToSendPreference.set(true));
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-  } finally {
-    await act(async () => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("shows usage totals and a per-model breakdown", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(
-        <UsageSettingsPanel
-          usage={{
-            runs: 2,
-            inputTokens: 1200,
-            outputTokens: 34,
-            totalTokens: 1234,
-            costUsd: 0.5,
-            modelCalls: 3,
-            models: [
-              {
-                provider: "openai",
-                model: "model-a",
-                modelCalls: 2,
-                inputTokens: 1000,
-                outputTokens: 30,
-                totalTokens: 1030,
-                costUsd: 0.5,
-              },
-              {
-                provider: "local",
-                model: "model-b",
-                modelCalls: 1,
-                inputTokens: 200,
-                outputTokens: 4,
-                totalTokens: 204,
-                costUsd: null,
-              },
-            ],
-          }}
-        />,
-      ),
-    );
-    expect([...container.querySelectorAll("dd")].map((node) => node.textContent)).toEqual([
-      "2",
-      "1,234",
-      "$0.50",
-    ]);
-    expect(
-      [...container.querySelectorAll("tbody tr")].map((row) =>
-        [...row.querySelectorAll("td")].map((cell) => cell.textContent),
-      ),
-    ).toEqual([
-      ["model-aopenai", "2", "1,000", "30", "$0.50"],
-      ["model-blocal", "1", "200", "4", "—"],
-    ]);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -400,6 +393,7 @@ async function renderNameEditor(name = "Alex Rivera") {
           .querySelector("form")!
           .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       }),
+    unmount: () => act(async () => root.unmount()),
     cleanup: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -419,6 +413,24 @@ it("saves a trimmed name and refreshes the account data", async () => {
     expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it("refreshes the account data when the name saves after settings closed", async () => {
+  let updated!: Deferred<{ data: { status: boolean }; error: null }>;
+  vi.mocked(authClient.updateUser).mockImplementation(() => {
+    updated = deferred();
+    return updated.promise as never;
+  });
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("Sam Rivera");
+    await editor.submit();
+    await editor.unmount();
+    await act(async () => updated.resolve({ data: { status: true }, error: null }));
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
   } finally {
     await editor.cleanup();
   }
@@ -557,13 +569,11 @@ it.each(["response", "network"])(
 it("closes the name editor before refresh finishes and ignores a refresh failure", async () => {
   vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
   const editor = await renderNameEditor();
-  let rejectRefresh!: (error: Error) => void;
-  editor.onNameSaved.mockImplementation(
-    () =>
-      new Promise<void>((_resolve, reject) => {
-        rejectRefresh = reject;
-      }),
-  );
+  let rejectRefresh!: Deferred;
+  editor.onNameSaved.mockImplementation(() => {
+    rejectRefresh = deferred();
+    return rejectRefresh.promise;
+  });
   try {
     await editor.change("Sam Rivera");
     await editor.submit();
@@ -571,10 +581,56 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.button("Edit").disabled).toBe(false);
-    await act(async () => rejectRefresh(new Error("offline")));
+    await act(async () => rejectRefresh.reject(new Error("offline")));
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await editor.cleanup();
   }
 });
+
+it("keeps bot style available without a saved value and saves an explicit Original choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onChange = vi.fn(async () => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<GeneralSettingsPanels name="Tester" onBotAvatarSetChange={onChange} />);
+    });
+    const picker = container.querySelector('[data-testid="bot-style-select"]');
+    expect(picker).not.toBeNull();
+    const original = Array.from(picker!.querySelectorAll("button")).find(
+      (button) => button.textContent === "Original",
+    )!;
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => original.click());
+    expect(onChange).toHaveBeenCalledWith("organic");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([undefined, ["social-one"], []])(
+  "gates the Security group on loaded, available contents (%s)",
+  async (linkedProviderIds) => {
+    accountPolicy.hasPassword = false;
+    accountPolicy.linkedProviderIds = linkedProviderIds;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<GeneralSettingsPanels name="Test" />));
+      expect(container.textContent?.includes("Security")).toBe(linkedProviderIds?.length === 0);
+      expect(container.textContent?.includes("Link Provider")).toBe(
+        linkedProviderIds?.length === 0,
+      );
+    } finally {
+      await act(async () => root.unmount());
+      accountPolicy.hasPassword = true;
+      accountPolicy.linkedProviderIds = undefined;
+    }
+  },
+);

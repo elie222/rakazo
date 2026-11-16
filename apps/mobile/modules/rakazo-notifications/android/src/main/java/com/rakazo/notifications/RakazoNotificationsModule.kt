@@ -13,6 +13,7 @@ class RakazoNotificationsModule : Module() {
   private var incomingReceiver: android.content.BroadcastReceiver? = null
   override fun definition() = ModuleDefinition {
     Name("RakazoNotifications")
+    Constants("supportsSenderAvatars" to true)
     Events("onIncomingCallChanged")
     OnStartObserving {
       val receiver = object : android.content.BroadcastReceiver() {

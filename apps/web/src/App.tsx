@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
 import { analyticsScreen } from "@rakazo/core";
@@ -19,7 +20,7 @@ import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
-import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncCallIdentity } from "./lib/call-session";
 import { desktopBridge } from "./lib/desktop";
 import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
@@ -27,7 +28,8 @@ import { identifyMonitoringUser } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
 import { QueryUserProvider, setQueryUser } from "./lib/query";
-import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
+import { remoteImagesPreference } from "./lib/remote-images-preference";
+import { hasSignedInBefore, rememberSignedIn } from "./lib/returning-user";
 import { rpc } from "./lib/rpc";
 import {
   holdAnonymousGate,
@@ -36,11 +38,18 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import {
+  MCP_OAUTH_CALLBACK_PATH,
+  newAccountDestination,
+  SLACK_INSTALL_CALLBACK_PATH,
+  signInNext,
+} from "./lib/sign-in-next";
 import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
+import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
 
@@ -50,9 +59,6 @@ const PasswordResetPage = lazyComponent(() =>
 );
 const OnboardingPage = lazyComponent(() =>
   import("./pages/Onboarding").then((module) => module.OnboardingPage),
-);
-const WelcomePage = lazyComponent(() =>
-  import("./pages/Welcome").then((module) => module.WelcomePage),
 );
 const NotFoundPage = lazyComponent(() =>
   import("./pages/NotFound").then((module) => module.NotFoundPage),
@@ -70,6 +76,12 @@ const AdminAccessPage = lazyComponent(() =>
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
+const InvitePage = lazyComponent(() =>
+  import("./pages/Invite").then((module) => module.InvitePage),
+);
+const JoinOrganizationPage = lazyComponent(() =>
+  import("./pages/JoinOrganization").then((module) => module.JoinOrganizationPage),
+);
 
 function SsoCallbackPage() {
   useEffect(() => {
@@ -84,11 +96,7 @@ const linkFavicons: LinkFavicons = {
 };
 
 export function App() {
-  const loadRemoteImages = useSyncExternalStore(
-    subscribeRemoteImages,
-    getRemoteImagesEnabled,
-    () => false,
-  );
+  const loadRemoteImages = remoteImagesPreference.use();
   return (
     <RemoteImagesContext.Provider value={loadRemoteImages}>
       <LinkFaviconsContext.Provider value={linkFavicons}>
@@ -106,24 +114,12 @@ export function App() {
   );
 }
 
-const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
-const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
-
 function SessionApp() {
   const [searchParams] = useSearchParams();
-  const next = searchParams.get("next") ?? "";
-  // A connector sign-in started on another device lands here signed out; finish it after sign-in.
-  const signInDestination =
-    next === "/integrations/setup" ||
-    next === "/admin/plugins" ||
-    next === "/admin/access" ||
-    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
-    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
-      ? next
-      : "/app";
-  const ticketBoardEnabled = useSyncExternalStore(
-    subscribeTicketBoardEnabled,
-    getTicketBoardEnabled,
+  const next = signInNext(searchParams.get("next"));
+  const boardEnabled = useSyncExternalStore(
+    subscribeLabs,
+    () => getLabs().includes("board"),
     () => false,
   );
   const session = authClient.useSession();
@@ -155,6 +151,7 @@ function SessionApp() {
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
+    if (gate === "authenticated") rememberSignedIn();
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
@@ -186,23 +183,41 @@ function SessionApp() {
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
             <Routes>
-              <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
               <Route
-                path="/sign-in"
+                path="/"
                 element={
-                  user ? (
-                    <Navigate to={signInDestination} replace />
-                  ) : (
-                    <AuthPage key="in" mode="in" />
-                  )
+                  <Navigate
+                    to={user ? "/app" : hasSignedInBefore() ? "/sign-in" : "/sign-up"}
+                    replace
+                  />
                 }
               />
-              <Route
-                path="/sign-up"
-                element={
-                  user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />
-                }
-              />
+              {["/sign-in", "/sign-in/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={next ?? "/app"} replace />
+                    ) : (
+                      <AuthPage key={path} mode="in" />
+                    )
+                  }
+                />
+              ))}
+              {["/sign-up", "/sign-up/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={newAccountDestination(next)} replace />
+                    ) : (
+                      <AuthPage key={path} mode="up" />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/forgot-password"
                 element={
@@ -210,6 +225,7 @@ function SessionApp() {
                 }
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
+              <Route path="/p/:slugToken" element={<SharedPagePage />} />
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
@@ -257,6 +273,26 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/join/:invitationId"
+                element={
+                  user ? (
+                    <JoinOrganizationPage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
+                path="/invite/:token"
+                element={
+                  user ? (
+                    <InvitePage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
                 path="/admin/access"
                 element={
                   user ? <AdminAccessPage /> : <Navigate to="/sign-in?next=/admin/access" replace />
@@ -280,7 +316,7 @@ function SessionApp() {
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
                   <Route path="/app/artifacts" element={<ArtifactsPage />} />
                   <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
+                  {boardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
                   <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>
@@ -300,43 +336,32 @@ function SessionApp() {
  */
 function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   const { t } = useLingui();
-  const [attempt, setAttempt] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-  const retryImmediately = useRef(false);
-  const refetchRef = useRef(refetch);
-  refetchRef.current = refetch;
-
-  useEffect(() => {
-    let cancelled = false;
-    const delay = retryImmediately.current ? 0 : sessionRetryDelayMs(attempt);
-    retryImmediately.current = false;
-    const timer = setTimeout(() => {
-      void refetchRef.current().finally(() => {
-        if (!cancelled) setAttempt((value) => value + 1);
-      });
-    }, delay);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [attempt, retryKey]);
+  // Each retry is a new object, so a lookup that answers after Retry now cannot advance it.
+  const [retry, setRetry] = useState({ attempt: 0, delay: sessionRetryDelayMs(0) });
+  useTimeout(
+    () => {
+      const started = retry;
+      void refetch().finally(() =>
+        setRetry((current) =>
+          current === started
+            ? { attempt: started.attempt + 1, delay: sessionRetryDelayMs(started.attempt + 1) }
+            : current,
+        ),
+      );
+    },
+    retry.delay,
+    retry,
+  );
 
   return (
     <div className="grid h-full place-items-center bg-background px-6 text-center">
       <div className="flex flex-col items-center">
         <LoadingState label={t`Reconnecting`} />
-        <p className="mt-3 text-[13.5px] text-muted-foreground/80">
+        <p className="mt-3 text-body text-muted-foreground/80">
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              retryImmediately.current = true;
-              setAttempt(0);
-              setRetryKey((key) => key + 1);
-            }}
-          >
+          <Button variant="secondary" onClick={() => setRetry({ attempt: 0, delay: 0 })}>
             <Trans>Retry now</Trans>
           </Button>
         </div>
@@ -353,7 +378,7 @@ function AppFailed() {
       data-rakazo-app-state="failed"
     >
       <div className="flex flex-col items-center">
-        <p className="text-[13.5px] text-muted-foreground/80">
+        <p className="text-body text-muted-foreground/80">
           <Trans>Something went wrong. Try again.</Trans>
         </p>
         <div className="mt-4">

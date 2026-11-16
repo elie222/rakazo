@@ -75,18 +75,56 @@ export function stripNoResponseReply(
   assembled: string,
   blocks: MessageBlock[],
 ): { assembled: string; blocks: MessageBlock[] } {
-  const assembledTrimmed = assembled.trim();
-  const blockText = joinedText(blocks).trim();
-  const visible = assembledTrimmed || blockText;
-  if (!isExactNoResponse(visible)) return withoutStraySentinelsAtEdges(assembled, blocks);
+  const verdict = noResponseVerdict(assembled, blocks);
+  if (verdict === "prose") return withoutStraySentinelsAtEdges(assembled, blocks);
   // Fail closed: extra prose in either the assembled final or a text block keeps the reply.
-  if (assembledTrimmed && blockText && !isExactNoResponse(blockText)) {
-    return { assembled, blocks };
-  }
+  if (verdict === "mixed") return { assembled, blocks };
   return {
     assembled: "",
     blocks: blocks.filter((block) => block.kind !== "text"),
   };
+}
+
+/** True when the whole reply is the silent sentinel, as opposed to empty or a reply with prose. */
+export function isNoResponseReply(assembled: string, blocks: MessageBlock[]): boolean {
+  return noResponseVerdict(assembled, blocks) === "silent";
+}
+
+function noResponseVerdict(
+  assembled: string,
+  blocks: MessageBlock[],
+): "silent" | "mixed" | "prose" {
+  const assembledTrimmed = assembled.trim();
+  const blockText = joinedText(blocks).trim();
+  if (!isExactNoResponse(assembledTrimmed || blockText)) return "prose";
+  return assembledTrimmed && blockText && !isExactNoResponse(blockText) ? "mixed" : "silent";
+}
+
+// Whitespace and invisible format characters (zero-width space and joiners, byte-order mark).
+const INVISIBLE = /[\s\p{Cf}]/gu;
+
+/**
+ * A reply that only looks like one: nothing but whitespace and invisible characters, or a lone
+ * dot or ellipsis. It is what a model leaves when it means to say nothing. Any letter, digit,
+ * emoji or other mark ("✓", "—") is a reply. Entirely empty text is not a placeholder.
+ */
+export function isPlaceholderText(text: string): boolean {
+  if (text.length === 0) return false;
+  return /^[.…]*$/u.test(text.replace(INVISIBLE, ""));
+}
+
+/** A reply made only of placeholder characters; an entirely empty one is not. */
+export function isPlaceholderReply(assembled: string, blocks: MessageBlock[]): boolean {
+  return isPlaceholderText(assembled || joinedText(blocks));
+}
+
+/**
+ * True while text could still grow into the sentinel, so a live view can wait before showing
+ * it. Whitespace between repeats is ignored.
+ */
+export function couldBecomeNoResponse(text: string): boolean {
+  const rest = text.replace(/\s+/g, "").replace(/^(?:NO_RESPONSE)+/, "");
+  return NO_RESPONSE.startsWith(rest);
 }
 
 /**

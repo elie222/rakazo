@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   buildSkillMd,
@@ -5,11 +6,11 @@ import {
   extractForcedSkillName,
   extractRoutineSkillMentions,
   findSkillByName,
-  formatSkillsCatalogInstruction,
   mergeBuiltinSkills,
   parseSkillMd,
   renameRoutineSkillMentions,
 } from "./agent-skill.js";
+import { formatForcedSkillPrompt, formatSkillsCatalogInstruction } from "./agent-skill.prompt.js";
 
 describe("built-in skill merging", () => {
   it("uses the same normalized names for catalog precedence and prompt expansion", () => {
@@ -74,6 +75,80 @@ describe("parseSkillMd", () => {
     );
     expect(String(parsed.frontmatter.literal)).toContain("Keep trailing newlines");
     expect(String(parsed.frontmatter.literal).endsWith("\n")).toBe(true);
+  });
+
+  it("parses nested metadata with wrapped plain scalar values", () => {
+    const parsed = parseSkillMd(`---
+name: ai-governance
+description: >-
+  Design an AI governance system with lifecycle gates, risk controls, and oversight.
+metadata:
+  tags: ai-governance, responsible-ai, model-risk, governance-operating-model,
+    fairness, privacy, security
+  source_repo: https://example.test/skills
+---
+
+Apply the governance controls.
+`);
+    expect("error" in parsed).toBe(false);
+    if ("error" in parsed) return;
+    expect(parsed.frontmatter.metadata).toEqual({
+      tags: "ai-governance, responsible-ai, model-risk, governance-operating-model, fairness, privacy, security",
+      source_repo: "https://example.test/skills",
+    });
+  });
+
+  it("accepts comments after block scalar headers without changing their values", () => {
+    for (const header of [">", ">-", ">2", ">2-", ">-2", "|", "|+", "|2", "|2+", "|+2"]) {
+      for (const separator of [" ", "\t"]) {
+        const doc = (suffix: string) =>
+          `---\nname: Example\ndescription: ${header}${suffix}\n  First # content\n  Second\n---\n\n# Body\n`;
+        const expected = parseSkillMd(doc(""));
+        const parsed = parseSkillMd(doc(`${separator}# header comment`));
+        expect("error" in expected, header).toBe(false);
+        expect(parsed, `${header}${separator}`).toEqual(expected);
+        if ("error" in parsed) continue;
+        expect(parsed.description, header).toBe(
+          header.startsWith(">") ? "First # content Second" : "First # content\nSecond",
+        );
+        expect(parsed.body).toContain("# Body");
+      }
+    }
+  });
+
+  it("does not treat a hash without separation as a block header comment", () => {
+    const parsed = parseSkillMd("---\nname: Example\ndescription: >#comment\n  text\n---\n");
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("preserves commas in quoted inline array items through save and reload", () => {
+    const cases = [
+      { input: '["sales, marketing", "ops"]', expected: ["sales, marketing", "ops"] },
+      { input: "['sales, marketing', 'ops']", expected: ["sales, marketing", "ops"] },
+      { input: "['we''re, ready', ops]", expected: ["we're, ready", "ops"] },
+      {
+        input: `[${JSON.stringify('say "hi, team"')}, ${JSON.stringify("path\\part, rest")}]`,
+        expected: ['say "hi, team"', "path\\part, rest"],
+      },
+      { input: "[alpha, beta, gamma]", expected: ["alpha", "beta", "gamma"] },
+    ];
+    for (const { input, expected } of cases) {
+      const parsed = parseSkillMd(`---\nname: Example\ndescription: Test\ntags: ${input}\n---\n`);
+      expect("error" in parsed, input).toBe(false);
+      if ("error" in parsed) continue;
+      expect(parsed.frontmatter.tags, input).toEqual(expected);
+      const reloaded = parseSkillMd(buildSkillMd(parsed));
+      expect("error" in reloaded, input).toBe(false);
+      if (!("error" in reloaded)) expect(reloaded.frontmatter.tags, input).toEqual(expected);
+    }
+  });
+
+  it("keeps existing handling of unquoted scalar array items", () => {
+    const parsed = parseSkillMd(
+      "---\nname: Example\ndescription: Test\ntags: [plain, true, 2.5]\n---\n",
+    );
+    expect("error" in parsed).toBe(false);
+    if (!("error" in parsed)) expect(parsed.frontmatter.tags).toEqual(["plain", true, 2.5]);
   });
 
   it("parses block scalar indicators with chomping and indent hints", () => {
@@ -169,6 +244,108 @@ detail: ${detail}---
       error: "Skill name must be at most 80 characters.",
     });
   });
+
+  it("keeps legacy plain descriptions containing a colon and uses the last duplicate key", () => {
+    const parsed = parseSkillMd(`---
+name: First name
+name: Example
+description: Use when: the user asks for a status summary.
+---
+`);
+    expect(parsed).toMatchObject({
+      name: "Example",
+      description: "Use when: the user asks for a status summary.",
+    });
+  });
+
+  it("keeps legacy null frontmatter values as the string null", () => {
+    const parsed = parseSkillMd("---\nname: null\ndescription: null\n---\n");
+    expect(parsed).toMatchObject({ name: "null", description: "null" });
+    if ("error" in parsed) return;
+    const reloaded = parseSkillMd(buildSkillMd(parsed));
+    expect(reloaded).toMatchObject({ name: "null", description: "null" });
+  });
+
+  it("rejects malformed YAML with many escaped quotes", () => {
+    const parsed = parseSkillMd(`---\nname: Example\ndescription: "${'\\"'.repeat(40_000)}\n---\n`);
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("preserves legacy indicator-prefixed descriptions", () => {
+    for (const description of ["[WIP] thing", "*bold* text", "@user helper", "`code` helper"]) {
+      expect(parseSkillMd(`---\nname: Example\ndescription: ${description}\n---\n`)).toMatchObject({
+        description,
+      });
+    }
+  });
+
+  it("uses YAML comment semantics for plain descriptions", () => {
+    expect(parseSkillMd("---\nname: Example\ndescription: foo # note\n---\n")).toMatchObject({
+      description: "foo",
+    });
+  });
+
+  it("rejects malformed block comments containing Unicode separators", () => {
+    const parsed = parseSkillMd(
+      `---\nname: Example\ndescription: |${" ".repeat(45_000)}#${" ".repeat(45_000)}\u2028bad\nmetadata: [\n---\n`,
+    );
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("keeps backslashes literal in valid scalars when another line needs repair", () => {
+    for (const value of [String.raw`Reads "C:\Users\me"`, String.raw`'path "C:\dir"'`]) {
+      const parsed = parseSkillMd(
+        `---\nname: Example\ndescription: ${value}\nmetadata: a: b\n---\n`,
+      );
+      expect(parsed).toMatchObject({
+        description: value.startsWith("'") ? value.slice(1, -1) : value,
+      });
+    }
+  });
+
+  it("keeps legacy tab-indented metadata", () => {
+    const parsed = parseSkillMd(
+      "---\nname: Example\ndescription: Legacy tabs\nmetadata:\n\tversion: 1\n\ttags:\n\t\t- one\n---\n",
+    );
+    expect(parsed).toMatchObject({ frontmatter: { metadata: { version: 1, tags: ["one"] } } });
+  });
+
+  it("handles long scalar separators during legacy repair", () => {
+    const parsed = parseSkillMd(
+      `---\nname: Example\ndescription:${" ".repeat(90_000)}plain\nmetadata: [\n---\n`,
+    );
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("rejects malformed YAML after many blank lines", () => {
+    const parsed = parseSkillMd(`---\n${"\n".repeat(90_000)}invalid: [\n---\n`);
+    expect(parsed).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("rejects recursive aliases and excessively nested frontmatter", () => {
+    const recursive = parseSkillMd(`---
+name: Example
+description: Recursive metadata
+metadata: &metadata
+  child: *metadata
+---
+`);
+    expect(recursive).toMatchObject({ error: expect.stringContaining("recursive YAML aliases") });
+
+    const nested = [
+      "---",
+      "name: Example",
+      "description: Nested metadata",
+      "metadata:",
+      ...Array.from({ length: 34 }, (_, index) => `${"  ".repeat(index + 1)}level${index}:`),
+      `${"  ".repeat(35)}value: too deep`,
+      "---",
+      "",
+    ].join("\n");
+    expect(parseSkillMd(nested)).toMatchObject({
+      error: expect.stringContaining("nested too deeply"),
+    });
+  });
 });
 
 describe("buildSkillMd", () => {
@@ -182,6 +359,31 @@ describe("buildSkillMd", () => {
     expect(again.description).toBe(parsed.description);
     expect(again.frontmatter.compatibility).toBe("optional-extra");
     expect(again.body.trim()).toBe(parsed.body.trim());
+  });
+
+  it("round-trips nested metadata and multiline values", () => {
+    const doc = `---
+name: Nested
+description: Preserve nested metadata
+metadata:
+  owner:
+    team: Platform
+    note: |-
+      First line
+      Second line
+  tags:
+    - one
+    - two
+---
+
+Body.
+`;
+    const parsed = parseSkillMd(doc);
+    if ("error" in parsed) throw new Error(parsed.error);
+    const rebuilt = buildSkillMd(parsed);
+    const reloaded = parseSkillMd(rebuilt);
+    if ("error" in reloaded) throw new Error(reloaded.error);
+    expect(reloaded.frontmatter.metadata).toEqual(parsed.frontmatter.metadata);
   });
 
   it("round-trips keep-chomp and strip-chomp block scalars", () => {
@@ -217,6 +419,19 @@ clip: |
     expect(() => buildSkillMd({ name: "N".repeat(81), description: "ok", body: "body" })).toThrow(
       /at most 80 characters/,
     );
+  });
+
+  it("refuses fields their author must change as a bad request", () => {
+    for (const fields of [
+      { name: "", description: "ok" },
+      { name: "ok", description: "" },
+      { name: "N".repeat(81), description: "ok" },
+      { name: "ok", description: "D".repeat(2001) },
+    ]) {
+      expect(() => buildSkillMd({ ...fields, body: "body" })).toThrow(
+        expect.objectContaining({ name: "ClientError", kind: "BAD_REQUEST" }),
+      );
+    }
   });
 
   it.each([2, 3])(
@@ -255,6 +470,12 @@ describe("skill prompt helpers", () => {
       rest: "",
     });
     expect(extractForcedSkillName("/Settings: General")).toBeNull();
+    expect(extractForcedSkillName("/")).toBeNull();
+    expect(extractForcedSkillName("Use skill:  Weekly review \nnow")).toEqual({
+      name: "Weekly review",
+      rest: "now",
+    });
+    expectLinearTime(() => expect(extractForcedSkillName(`/${"\t".repeat(200_000)}`)).toBeNull());
   });
 
   it("extracts @skill mentions from routine prompts", () => {
@@ -415,6 +636,37 @@ describe("skill prompt helpers", () => {
     expect(line).toContain("- Daily standup: Prepare standup notes");
     expect(line).toContain("skill_read");
     expect(line).toContain("Prefer matching skills");
+  });
+
+  it("describes skills without naming a vendor, runtime or how they are stored", () => {
+    const text = formatSkillsCatalogInstruction([
+      { name: "Standup", description: "Prepare standup notes", source: "user", readOnly: false },
+    ]);
+    expect(text).not.toMatch(/claude|anthropic|\bpi\b|runtime|SKILL\.md|persist|inject/i);
+  });
+
+  it("renders the whole catalog instruction and a forced skill prompt", () => {
+    expect(
+      formatSkillsCatalogInstruction([
+        { name: "Standup", description: "Prepare standup notes", source: "user", readOnly: false },
+        { name: "Review", description: "Review a change", source: "builtin", readOnly: true },
+      ]),
+    ).toBe(
+      [
+        "Available skills (reusable how-to recipes, not account-specific routines):",
+        "- Standup: Prepare standup notes",
+        "- Review: Review a change",
+        "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
+        "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
+        "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
+        "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
+      ].join("\n"),
+    );
+    expect(formatSkillsCatalogInstruction([])).toBeUndefined();
+    expect(formatForcedSkillPrompt("Standup", " body \n", " rest ")).toBe(
+      "Use skill: Standup\n\nbody\n\nrest",
+    );
+    expect(formatForcedSkillPrompt("Standup", "body")).toBe("Use skill: Standup\n\nbody");
   });
 });
 

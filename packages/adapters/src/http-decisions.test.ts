@@ -1,5 +1,6 @@
 import type { AdapterContext, DecisionRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { estimateTextTokens } from "./context-selection.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 
 const context: AdapterContext = {
@@ -116,6 +117,66 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
 });
 
 describe("decision provider failures", () => {
+  it("keeps a full prompt count for an aborted request", async () => {
+    const afterCall = vi.fn();
+    const controller = new AbortController();
+    await expect(
+      new HttpDecisionProvider("openrouter", {
+        apiKey: "fake-key",
+        fetch: async () => {
+          controller.abort();
+          throw new Error("aborted");
+        },
+        callObserver: { beforeCall: () => "reservation", afterCall },
+      }).decide(request, { ...context, signal: controller.signal }),
+    ).rejects.toBeDefined();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        operationKind: "setup",
+        countedTokens: {
+          inputTokens: expect.any(Number),
+          outputTokens: 0,
+          ifStopped: { inputTokens: estimateTextTokens(JSON.stringify(request)), outputTokens: 0 },
+        },
+      }),
+    );
+  });
+
+  it("keeps a prompt count for a response without usage", async () => {
+    const afterCall = vi.fn();
+    await new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        Response.json({
+          answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
+        }),
+      callObserver: { beforeCall: () => "reservation", afterCall },
+    }).decide(request, context);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        costUsd: null,
+        pricingSnapshot: { input: expect.any(Number) },
+        countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 },
+      }),
+    );
+  });
+
+  it("does not count a request that never connected", async () => {
+    const afterCall = vi.fn();
+    await expect(
+      new HttpDecisionProvider("typesafe", {
+        apiKey: "fake-key",
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+        callObserver: { beforeCall: () => "reservation", afterCall },
+      }).decide(request, context),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+    expect(afterCall).toHaveBeenCalledWith("reservation", null);
+  });
+
   it("refuses a blank API key before any request", () => {
     expect(() => new HttpDecisionProvider("typesafe", { apiKey: " " })).toThrow(
       expect.objectContaining({ kind: "authentication" }),
@@ -125,7 +186,11 @@ describe("decision provider failures", () => {
   it.each([
     [422, "invalid", { costUsd: 0, usageSource: "provider-rejected" }],
     [429, "busy", { costUsd: 0, usageSource: "provider-rejected" }],
-    [503, "unavailable", null],
+    [
+      503,
+      "unavailable",
+      { costUsd: null, countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 } },
+    ],
   ] as const)(
     "maps HTTP %i to %s and bills only client rejections",
     async (status, kind, usage) => {
@@ -137,10 +202,7 @@ describe("decision provider failures", () => {
           callObserver: { beforeCall: () => "reservation", afterCall },
         }).decide(request, context),
       ).rejects.toMatchObject({ kind });
-      expect(afterCall).toHaveBeenCalledWith(
-        "reservation",
-        usage ? expect.objectContaining(usage) : null,
-      );
+      expect(afterCall).toHaveBeenCalledWith("reservation", expect.objectContaining(usage));
     },
   );
 });

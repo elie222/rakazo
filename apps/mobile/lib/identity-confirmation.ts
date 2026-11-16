@@ -1,5 +1,6 @@
+import { t } from "@lingui/core/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
-import { t } from "./i18n";
+import { identityConfirmationProviders } from "@rakazo/contracts";
 
 export type IdentityMethod = "sso" | "email";
 
@@ -33,11 +34,12 @@ export async function confirmIdentityOnDevice(deps: IdentityConfirmationDeps): P
   const security = await deps.fetchAccountSecurity();
   let kind: "password" | "code" = "password";
   if (!security.hasPassword) {
+    const providers = identityConfirmationProviders(security);
     const methods: IdentityMethod[] = [
-      ...(security.sso && security.ssoLinked ? (["sso"] as const) : []),
+      ...(providers.length ? (["sso"] as const) : []),
       ...(security.emailDeletion ? (["email"] as const) : []),
     ];
-    if (!methods.length) throw new Error(t("Could not continue"));
+    if (!methods.length) throw new Error(t`Could not continue`);
     const method = await deps.choose(methods);
     if (method === "sso") return deps.reauthenticate();
     if (method !== "email") return false;

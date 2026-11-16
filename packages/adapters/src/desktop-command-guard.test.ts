@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  desktopGuardApplies,
   desktopProtectionGuardMessage,
   isProtectedComputerLifecycleCommand,
   protectedComputerLifecycleRefusal,
@@ -632,4 +633,28 @@ connection.close()`;
       expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
     }
   });
+});
+
+it("guards by the computer a run actually uses", () => {
+  const stored = { kind: "docker" };
+  expect(desktopGuardApplies({ graphical: true, stored })).toBe(true);
+  // Not started yet: it may still reuse the running Linux computer.
+  expect(desktopGuardApplies({ graphical: true, stored, kind: "wuying" })).toBe(true);
+  expect(
+    desktopGuardApplies({
+      graphical: true,
+      stored,
+      kind: "wuying",
+      lazy: { ready: { kind: "wuying" } },
+    }),
+  ).toBe(false);
+  expect(
+    desktopGuardApplies({
+      graphical: true,
+      stored,
+      kind: "wuying",
+      lazy: { ready: { kind: "docker" } },
+    }),
+  ).toBe(true);
+  expect(desktopGuardApplies({ graphical: true, stored: { kind: "wuying" } })).toBe(false);
 });

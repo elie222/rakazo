@@ -17,14 +17,14 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 
-/** Expo remains the single FCM token owner; non-call messages use its normal delegate. */
+/** Expo remains the single FCM token owner; other messages use its normal delegate unless [SenderPush] renders them. */
 class RakazoMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(message: RemoteMessage) {
     val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull() ?: JSONObject()
     when (call.optString("kind")) {
       "incoming_call" -> IncomingCalls.report(this, call)
       "incoming_call_ended" -> IncomingCalls.settled(this, call)
-      else -> super.onMessageReceived(message)
+      else -> if (!SenderPush.present(this, call)) super.onMessageReceived(message)
     }
   }
 }
@@ -55,8 +55,10 @@ internal object IncomingCalls {
     ActivityManager.getMyMemoryState(process)
     if (!fromApp && process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) return
     val manager = context.getSystemService(NotificationManager::class.java)
+    // Copy follows the language picked in the app, like the ongoing-call notification.
+    val copy = localizedContext(context, NotificationStorage(context).locale)
     if (Build.VERSION.SDK_INT >= 26) {
-      val channel = NotificationChannel(CHANNEL, context.getString(R.string.rakazo_call_title), NotificationManager.IMPORTANCE_HIGH)
+      val channel = NotificationChannel(CHANNEL, copy.getString(R.string.rakazo_call_title), NotificationManager.IMPORTANCE_HIGH)
       channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
       channel.enableVibration(true)
       manager.createNotificationChannel(channel)
@@ -76,8 +78,8 @@ internal object IncomingCalls {
     if (Build.VERSION.SDK_INT >= 31) builder.setStyle(Notification.CallStyle.forIncomingCall(
       Person.Builder().setName(call.optString("botName", "Rakazo")).setImportant(true).build(), decline, answer))
     else {
-      builder.addAction(Notification.Action.Builder(null, context.getString(R.string.rakazo_call_decline), decline).build())
-      builder.addAction(Notification.Action.Builder(null, context.getString(R.string.rakazo_call_answer), answer).build())
+      builder.addAction(Notification.Action.Builder(null, copy.getString(R.string.rakazo_call_decline), decline).build())
+      builder.addAction(Notification.Action.Builder(null, copy.getString(R.string.rakazo_call_answer), answer).build())
     }
     // CallStyle requires a full-screen intent; without full-screen access Android 14+ shows it as a heads-up.
     builder.setFullScreenIntent(open, true)
@@ -169,6 +171,11 @@ class IncomingCallActivity : Activity() {
   private val handler = Handler(Looper.getMainLooper())
   private val expire = Runnable { finish() }
   private var receiver: BroadcastReceiver? = null
+  // The call screen's buttons follow the language picked in the app, not the device's.
+  override fun attachBaseContext(base: Context) {
+    super.attachBaseContext(localizedContext(base, NotificationStorage(base).locale))
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true) }

@@ -12,7 +12,7 @@ export function toComputerRef(computer: {
   return {
     id: computer.providerRef,
     botId: computer.homeKey,
-    kind: computer.kind as ComputerRef["kind"],
+    kind: computer.kind,
     providerRef: computer.providerRef,
   };
 }
@@ -62,11 +62,22 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
+/**
+ * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
+ * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
+ */
+export class WorkspacePathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspacePathError";
+  }
+}
+
 export function normalizeWorkspacePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const segments = normalized.split("/").filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   return segments.join("/");
 }
@@ -74,6 +85,27 @@ export function normalizeWorkspacePath(value: string): string {
 export function workspacePath(root: string, relative: string): string {
   const normalized = normalizeWorkspacePath(relative);
   return normalized ? path.posix.join(root, normalized) : root;
+}
+
+/** The workspace path bots see on every computer. */
+const VIRTUAL_HOME = "/home/rakazo";
+
+/**
+ * The directory a command runs in. Empty, ".", "/", the workspace root and any home alias
+ * mean the root; absolute paths under one of them keep their tail; anything else is taken
+ * relative to the root. "." and ".." segments throw, so a cwd cannot leave the workspace.
+ */
+export function workspaceCwd(
+  root: string,
+  cwd: string | undefined,
+  homes: readonly string[] = [],
+): string {
+  if (!cwd || cwd === "." || cwd === "/") return root;
+  for (const prefix of [root, VIRTUAL_HOME, ...homes]) {
+    if (cwd === prefix) return root;
+    if (cwd.startsWith(`${prefix}/`)) return workspacePath(root, cwd.slice(prefix.length + 1));
+  }
+  return workspacePath(root, cwd);
 }
 
 export function teamBotWorkspaceDirectory(botId: string): string {
@@ -98,7 +130,12 @@ export function resolveBotWorkspaceCwd(
   botId: string,
   requestedCwd: string | undefined,
 ): string | undefined {
-  if (scope !== "team") return requestedCwd;
+  if (scope !== "team") {
+    if (requestedCwd === undefined) return undefined;
+    const expanded = expandHomePrefix(requestedCwd);
+    if (expanded === requestedCwd) return requestedCwd;
+    return stripVirtualWorkspaceRoot(expanded) || undefined;
+  }
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;
@@ -123,7 +160,7 @@ export function resolveBotUploadPath(
   ) {
     return normalized;
   }
-  throw new Error("Path escapes the bot workspace");
+  throw new WorkspacePathError("Path escapes the bot workspace");
 }
 
 export function displayBotWorkspacePath(

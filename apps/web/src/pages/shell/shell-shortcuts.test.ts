@@ -4,7 +4,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RakazoDesktop } from "../../lib/desktop";
 import type { ShellShortcut, ShortcutHost } from "./shell-shortcuts";
-import { cycleBotId, shellShortcut, startsTyping, useShellShortcuts } from "./shell-shortcuts";
+import {
+  cycleBotId,
+  quoteShortcutLabel,
+  shellShortcut,
+  startsTyping,
+  useShellShortcuts,
+} from "./shell-shortcuts";
 
 function keyEvent(
   partial: Partial<Omit<KeyboardEvent, "target">> &
@@ -29,6 +35,40 @@ const windowsBrowser: ShortcutHost = { desktop: false, apple: false };
 const textarea = document.createElement("textarea");
 
 describe("shellShortcut", () => {
+  it("quotes with the plain chord in the desktop app and Shift on the web", () => {
+    for (const host of [macApp, windowsApp]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: true }), host)).toBeNull();
+    }
+    for (const host of [macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      // The browser keeps the plain chord for its address bar.
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: false }), host)).toBeNull();
+    }
+    for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      for (const extra of [
+        { altKey: true },
+        { repeat: true },
+        { isComposing: true },
+        { metaKey: true, ctrlKey: true },
+      ]) {
+        expect(shellShortcut(keyEvent({ ...chord, ...extra }), host)).toBeNull();
+      }
+      expect(
+        shellShortcut(keyEvent({ key: "l", metaKey: !host.apple, ctrlKey: host.apple }), host),
+      ).toBeNull();
+    }
+  });
+
+  it("writes the pill hint for each host", () => {
+    expect(quoteShortcutLabel(macApp)).toBe("⌘L");
+    expect(quoteShortcutLabel(windowsApp)).toBe("Ctrl+L");
+    expect(quoteShortcutLabel(macBrowser)).toBe("⌘⇧L");
+    expect(quoteShortcutLabel(windowsBrowser)).toBe("Ctrl+Shift+L");
+  });
   it("opens the command menu and the create menu with Cmd or Ctrl everywhere", () => {
     for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
       expect(shellShortcut(keyEvent({ key: "k", metaKey: true }), host)).toEqual({
@@ -43,7 +83,6 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "k", metaKey: true, shiftKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: "k", metaKey: true, altKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: "k", metaKey: true, repeat: true }), macApp)).toBeNull();
-    expect(shellShortcut(keyEvent({ key: "n", metaKey: true, shiftKey: true }), macApp)).toBeNull();
   });
 
   it("toggles the sidebar with Cmd on Apple keyboards and Ctrl elsewhere", () => {
@@ -58,6 +97,49 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "b", metaKey: true }), windowsApp)).toBeNull();
   });
 
+  it("focuses the composer, connects apps and toggles chat details with the primary key", () => {
+    for (const [host, primary] of [
+      [macBrowser, "metaKey"],
+      [windowsApp, "ctrlKey"],
+    ] as const) {
+      expect(shellShortcut(keyEvent({ key: "i", [primary]: true }), host)).toEqual({
+        type: "focus-composer",
+      });
+      expect(shellShortcut(keyEvent({ key: "M", [primary]: true, shiftKey: true }), host)).toEqual({
+        type: "integrations",
+      });
+      expect(
+        shellShortcut(keyEvent({ key: "<", code: "Comma", [primary]: true, shiftKey: true }), host),
+      ).toEqual({ type: "chat-panel" });
+    }
+    expect(shellShortcut(keyEvent({ key: "i", ctrlKey: true }), macApp)).toBeNull();
+    expect(shellShortcut(keyEvent({ key: "i", metaKey: true, shiftKey: true }), macApp)).toBeNull();
+    expect(shellShortcut(keyEvent({ key: ",", code: "Comma", metaKey: true }), macApp)).toBeNull();
+  });
+
+  it("lists the shortcuts with Cmd/Ctrl+/ on any layout", () => {
+    expect(shellShortcut(keyEvent({ key: "/", metaKey: true }), macBrowser)).toEqual({
+      type: "shortcuts",
+    });
+    expect(
+      shellShortcut(keyEvent({ key: "/", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "shortcuts" });
+    expect(shellShortcut(keyEvent({ key: "/", ctrlKey: true }), macBrowser)).toBeNull();
+    expect(shellShortcut(keyEvent({ key: "/", metaKey: true, altKey: true }), macApp)).toBeNull();
+  });
+
+  it("starts a group chat with Cmd/Ctrl+Shift+N in the desktop app", () => {
+    expect(shellShortcut(keyEvent({ key: "N", metaKey: true, shiftKey: true }), macApp)).toEqual({
+      type: "new-group",
+    });
+    expect(
+      shellShortcut(keyEvent({ key: "N", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "new-group" });
+    expect(
+      shellShortcut(keyEvent({ key: "N", metaKey: true, shiftKey: true }), macBrowser),
+    ).toBeNull();
+  });
+
   it("leaves Find, Cmd+1–9 and history chords to the browser", () => {
     for (const [host, primary] of [
       [macBrowser, "metaKey"],
@@ -70,14 +152,23 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "ArrowLeft", altKey: true }), windowsBrowser)).toBeNull();
   });
 
-  it("searches and jumps to the first nine bots in the desktop app", () => {
+  it("finds in the chat, searches bots and jumps to the first nine in the desktop app", () => {
     expect(shellShortcut(keyEvent({ key: "f", metaKey: true }), macApp)).toEqual({
-      type: "search",
+      type: "find",
     });
     expect(shellShortcut(keyEvent({ key: "f", ctrlKey: true }), windowsApp)).toEqual({
+      type: "find",
+    });
+    expect(shellShortcut(keyEvent({ key: "F", metaKey: true, shiftKey: true }), macApp)).toEqual({
       type: "search",
     });
+    expect(
+      shellShortcut(keyEvent({ key: "F", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "search" });
     expect(shellShortcut(keyEvent({ key: "f", ctrlKey: true }), macApp)).toBeNull();
+    expect(
+      shellShortcut(keyEvent({ key: "F", metaKey: true, shiftKey: true }), macBrowser),
+    ).toBeNull();
     expect(shellShortcut(keyEvent({ key: "1", metaKey: true }), macApp)).toEqual({
       type: "bot",
       index: 0,
@@ -177,6 +268,29 @@ describe("cycleBotId", () => {
 });
 
 describe("useShellShortcuts", () => {
+  it("leaves the address-bar chord alone and consumes the web chord only when a quote applied", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux");
+    const run = vi.fn(() => false);
+    const unmount = await mount(run);
+    const press = (shiftKey: boolean) => {
+      const event = new KeyboardEvent("keydown", {
+        key: shiftKey ? "L" : "l",
+        ctrlKey: true,
+        shiftKey,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event;
+    };
+    expect(press(false).defaultPrevented).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(press(true).defaultPrevented).toBe(false);
+    run.mockReturnValue(true);
+    expect(press(true).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: "quote-selection" });
+    await unmount();
+    vi.restoreAllMocks();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     delete window.rakazoDesktop;

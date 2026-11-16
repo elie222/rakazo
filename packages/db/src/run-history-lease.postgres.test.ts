@@ -2,15 +2,16 @@ import { TAKEOVER_COMPUTER_PENDING_STATE, TAKEOVER_COMPUTER_SKIPPED_STATE } from
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { appendEvent, settleReleasedTakeoverCards } from "./events.js";
+import { appendEvent } from "./events.js";
 import type { RunLease } from "./messages.js";
 import { createThreadMessage, RunHistoryWriteError } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
+import { settleReleasedTakeoverCards } from "./thread-takeover.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 describePostgres("run history writes under a lease (PostgreSQL)", () => {
   let prisma: PrismaClient;
@@ -35,11 +36,7 @@ describePostgres("run history writes under a lease (PostgreSQL)", () => {
       }
     };
     ({ userId, spaceId, botId, threadId } = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     ));
     provisioned = true;
   });

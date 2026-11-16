@@ -38,12 +38,8 @@ vi.mock("../components/thread/thread-screen", () => ({
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => state.selected,
-  selectSpace: state.selectSpace,
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string) => text;
-  return { t, useI18n: () => ({ t }) };
-});
+vi.mock("./organizations", () => ({ selectSpaceAcrossOrganizations: state.selectSpace }));
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./session", () => ({

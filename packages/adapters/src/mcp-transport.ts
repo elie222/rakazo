@@ -1,15 +1,17 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
-import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
+import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
+import { createMcpClient } from "./mcp-output-schema.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
   isInstalledMcpBin,
@@ -17,7 +19,6 @@ import {
   isPackageRunnerCommand,
 } from "./mcp-package-installer.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
-
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
@@ -93,6 +94,14 @@ export class McpStdioLaunchError extends Error {
   }
 }
 
+/** How long a tool call may go without an answer or a progress report. Real calls (a
+ * search across mail folders, a document export) take minutes; connecting stays short.
+ * Below the HTTP client's default five-minute header wait, so this timeout fires first. */
+export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
+/** Progress restarts the wait, but never past this. The run's own cancellation still
+ * ends a call at any time. */
+export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
+
 const STDERR_TAIL_CHARS = 4_096;
 /** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
@@ -119,6 +128,12 @@ export interface McpClientOptions {
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
 const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
+/**
+ * An authorization URL is opened by the browser, not fetched by the server, and carries
+ * every scope the MCP server publishes (PostHog lists over 150, about 3,000 characters).
+ * Bound it separately from MCP endpoints, at a size browsers and common web servers accept.
+ */
+export const MAX_AUTHORIZATION_URL_LENGTH = 8_192;
 // A Request owns the abort link for its signal in affected Node versions. Keep
 // that owner alive while a fetch/body still retains the signal, without keeping
 // completed requests alive once the signal is no longer used.
@@ -349,9 +364,9 @@ export class McpSession {
   }
 
   private newClient(): Client {
-    return new Client(
+    return createMcpClient(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
-      this.clientOptions.capabilities,
+      this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
     );
   }
 
@@ -466,12 +481,35 @@ export class McpSession {
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; timeoutMs?: number },
   ): Promise<CallToolResult> {
     this.assertConnected();
+    const timeout = options?.timeoutMs ?? MCP_TOOL_TIMEOUT_MS;
     return (await this.client.callTool({ name, arguments: args }, undefined, {
       signal: options?.signal,
+      timeout,
+      // A progress handler is what asks the server for progress reports at all.
+      onprogress: () => undefined,
+      resetTimeoutOnProgress: true,
+      maxTotalTimeout: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
     })) as CallToolResult;
+  }
+
+  async readResource(
+    uri: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ contents?: unknown }> {
+    this.assertConnected();
+    return this.client.readResource(
+      { uri },
+      { signal: options?.signal, timeout: MCP_APP_READ_TIMEOUT_MS },
+    );
+  }
+
+  /** Whether the connection is still up. A call that failed while it stayed up (a
+   * timeout, a cancelled run, the server's own error) leaves the session reusable. */
+  get open(): boolean {
+    return this.connected && this.client.transport !== undefined;
   }
 
   /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */

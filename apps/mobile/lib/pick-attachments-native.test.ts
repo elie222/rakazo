@@ -171,10 +171,30 @@ describe("native attachment reads", () => {
     expect(file.base64).not.toHaveBeenCalled();
   });
 
-  it("propagates read errors for documents within the remaining slots", async () => {
+  it("keeps readable documents when one cannot be read", async () => {
+    const assets = [document("first.txt"), document("broken.txt")];
+    file.size = 1;
+    file.base64.mockImplementation((uri: string) =>
+      uri === assets[1]!.uri
+        ? Promise.reject(new Error("read failed"))
+        : Promise.resolve("aGVsbG8="),
+    );
+    vi.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({ canceled: false, assets });
+
+    const result = await pickDocuments();
+
+    expect(result.attachments.map((item) => item.name)).toEqual(["first.txt"]);
+    expect(result.skipped).toEqual([{ name: "broken.txt", reason: "could not read" }]);
+  });
+
+  it("skips a document whose read fails within the remaining slots", async () => {
     file.size = 1;
     file.base64.mockRejectedValue(new Error("read failed"));
-    await expect(pickDocuments()).rejects.toThrow("read failed");
+
+    const result = await pickDocuments();
+
+    expect(result.attachments).toEqual([]);
+    expect(result.skipped).toEqual([{ name: "large.txt", reason: "could not read" }]);
   });
 });
 

@@ -1,7 +1,6 @@
 import type {
   CapabilityInstall,
   ConnectionCatalogItem,
-  McpServer,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { PluginPreviewSchema } from "@rakazo/contracts";
@@ -13,6 +12,7 @@ import {
   matchesPluginQuery,
   OTHER_PLUGINS,
   PLUGIN_CATEGORIES,
+  pluginSite,
 } from "@rakazo/core";
 
 /** What the plugin screen needs, from a catalog entry or a pasted GitHub URL. */
@@ -44,21 +44,6 @@ export function pluginParams(entry: PluginMarketplaceEntry): PluginParams {
 export function gitImportParams(url: string): PluginParams {
   const source = url.trim().replace(/\/$/, "");
   return { source, installedSource: source, name: source.split("/").pop() || source };
-}
-
-/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
-export function pluginSite(
-  entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">,
-): string | null {
-  const domain = entry.domains[0]?.replace(/^https?:\/\//, "").split("/")[0];
-  if (domain) return `https://${domain}`;
-  try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? new URL(entry.homepage).origin
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -114,11 +99,6 @@ export function filterPlugins(
       (!category || entry.category === (category === OTHER_PLUGINS ? null : category)) &&
       matchesPluginQuery(entry, query, entry.category ? categoryLabel(entry.category) : ""),
   );
-}
-
-/** Signed in, or answering without a sign-in. */
-export function mcpServerReady(server: McpServer): boolean {
-  return server.oauthStatus === "connected" || server.health.status === "ok";
 }
 
 /** Skills an install added; none when only its connector was added. */

@@ -1,8 +1,8 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { WAITING_ON_USER_RUN_STATUSES, WORKING_RUN_STATUSES } from "@rakazo/core";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
-  BOT_AVATAR_COLORS,
+  BOT_COLORS,
   BotAvatar,
   BotShapePreview,
   DEFAULT_BOT_AVATAR_COLOR,
@@ -12,7 +12,7 @@ import {
 } from "./bot-avatar.js";
 
 describe("BotAvatar", () => {
-  it("renders distinct SVG gradient IDs for concurrent working avatars", () => {
+  it("renders distinct ring gradient IDs for concurrent working avatars", () => {
     const html = renderToString(
       <div>
         <BotAvatar color="#8B5CF6::shape_0" status="running" />
@@ -21,8 +21,8 @@ describe("BotAvatar", () => {
     );
 
     const gradMatches = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
-    expect(gradMatches).toHaveLength(4);
-    expect(new Set(gradMatches).size).toBe(4);
+    expect(gradMatches).toHaveLength(2);
+    expect(new Set(gradMatches).size).toBe(2);
     for (const id of gradMatches) {
       expect(id).toBeTruthy();
       expect(html).toContain(`url(#${id})`);
@@ -36,7 +36,7 @@ describe("BotAvatar", () => {
     expect(shape).toMatch(/style="[^"]*width:26px;height:26px/);
   });
 
-  it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
+  it.each([...WORKING_RUN_STATUSES])("marks run status %s as working", (status) => {
     const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
     expect(html).toContain("<svg");
     expect(html).toContain('data-working="true"');
@@ -67,9 +67,9 @@ describe("BotAvatar", () => {
   });
 
   it("resolves explicit colors and shapes", () => {
-    expect(resolvePersonaColorDef("bot", "#10B981").hex.toLowerCase()).toBe("#10b981");
+    expect(resolvePersonaColorDef("bot", "#10B981").hex).toBe("#00C972");
     expect(resolvePersonaColorDef("bot", "#fff").hex).toBe("#fff");
-    expect(BOT_AVATAR_COLORS.length).toBeGreaterThan(0);
+    expect(BOT_COLORS.length).toBeGreaterThan(0);
   });
 
   it("falls back to the identity palette for invalid custom hex", () => {
@@ -98,6 +98,16 @@ describe("BotAvatar", () => {
     expect(html.indexOf("rakazo-bot-avatar-picture")).toBeLessThan(
       html.indexOf("rakazo-bot-avatar-ring"),
     );
+  });
+
+  it("keeps the ring off while a bot waits on the user", () => {
+    for (const status of WAITING_ON_USER_RUN_STATUSES) {
+      const html = renderToString(
+        <BotAvatar color="data:image/png;base64,abc" identity="maya" size={32} status={status} />,
+      );
+      expect(html).toContain('data-working="false"');
+      expect(html).not.toContain("rakazo-bot-avatar-ring");
+    }
   });
 
   it("keeps idle photo avatars ring-free", () => {

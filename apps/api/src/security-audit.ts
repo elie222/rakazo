@@ -59,6 +59,7 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "voice.connect": { type: "credential.created", kind: "voice", fields: ["provider"] },
   "voice.disconnect": { type: "credential.deleted", kind: "voice", fields: ["provider"] },
   "memory.connectProvider": { type: "credential.created", kind: "memory" },
+  "memory.updateProvider": { type: "credential.changed", kind: "memory" },
   "memory.disconnectProvider": { type: "credential.deleted", kind: "memory" },
   // Starting a sign-in replaces any wallet already connected.
   "paymentWallet.connect": { type: "credential.changed", kind: "payment_wallet" },
@@ -66,6 +67,16 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "deployment.update": {
     type: "deployment.settings.changed",
     fields: ["signupsEnabled", "computerHost"],
+  },
+  "computerProvider.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
+  },
+  "computerProvider.account.update": {
+    type: "credential.changed",
+    kind: "computer_provider",
+    fields: ["provider"],
   },
   "mcp.assignments.approve": {
     type: "approval.decided",
@@ -81,6 +92,11 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "approvalRules.remove": { type: "approval.policy.changed", fields: ["id"] },
   "models.setRole": { type: "approval.policy.changed", fields: ["role", "scope"] },
   "autoReview.set": { type: "approval.policy.changed", fields: ["enabled", "skipApprovals"] },
+  "spendingLimit.set": {
+    type: "approval.policy.changed",
+    kind: "spending_limit",
+    fields: ["limit.currency", "limit.period"],
+  },
   "spaceSettings.setOverride": {
     type: "approval.policy.changed",
     fields: ["setting", "enabled"],

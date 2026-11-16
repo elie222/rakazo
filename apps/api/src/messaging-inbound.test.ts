@@ -1,4 +1,11 @@
+import type { OutboundLane, OutboundRow } from "@rakazo/adapters";
+import {
+  inboundDeliveryClientNonce,
+  MESSAGING_DM_OUTBOUND_CAP,
+  messagingWakeIdempotencyKey,
+} from "@rakazo/adapters";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
@@ -7,9 +14,6 @@ import {
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
-import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./webhook-inbound.js";
-
-const signupPolicy = { signupsEnabled: undefined, signupAllowlist: undefined };
 
 function createDeps(
   overrides: {
@@ -46,6 +50,7 @@ function createDeps(
   );
   const notify = vi.fn(async () => undefined);
   const enqueue = vi.fn(async () => undefined);
+  const cancelIn = vi.fn(async (_tx: unknown, _key: string) => undefined);
   const acknowledge = vi.fn<MessagingReceipts["acknowledge"]>();
   const runs = new Map<string, { status: string; messagingMirroredAt: Date | null }>([
     ["run-1", { status: "running", messagingMirroredAt: null }],
@@ -66,8 +71,38 @@ function createDeps(
     threadId: "sendblue:grp-1",
     name: "Family",
     introPostedAt: null,
+    rosterSeenAt: null as Date | null,
   };
   const outboundRows: Array<Record<string, unknown>> = [];
+  let outboundIds = 0;
+  // Honors replace and skipDuplicates on the idempotency key, as the real recorder does.
+  const recordIn = vi.fn(
+    async (
+      _tx: unknown,
+      _lane: OutboundLane,
+      rows: OutboundRow[],
+      options: { replace?: boolean } = {},
+    ) => {
+      if (options.replace) {
+        const keys = rows.map((row) => row.idempotencyKey);
+        for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
+          if (keys.includes(outboundRows[i]!.idempotencyKey as string)) outboundRows.splice(i, 1);
+        }
+      }
+      const ids: string[] = [];
+      for (const row of rows) {
+        if (outboundRows.some((existing) => existing.idempotencyKey === row.idempotencyKey)) {
+          continue;
+        }
+        outboundIds += 1;
+        const id = `out-${outboundIds}`;
+        outboundRows.push({ id, status: "pending", createdAt: new Date(), ...row });
+        ids.push(id);
+      }
+      return ids;
+    },
+  );
+  const send = vi.fn(async (_lanes: OutboundLane[]) => undefined);
   const txMock = {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 2 })) },
     message: {
@@ -139,8 +174,13 @@ function createDeps(
     messagingChannel: {
       findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
+      // The transaction's roster read and write share the channel object's state.
+      findUniqueOrThrow: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
-      update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(channel, data);
+        return channel;
+      }),
     },
     messagingChannelMember: {
       findUnique: vi.fn(
@@ -232,55 +272,33 @@ function createDeps(
       ),
     },
     messagingOutbound: {
+      // Rows not out yet: anything but sent, or sent with no handle yet (claimed).
       count: vi.fn(
-        async ({
-          where,
-        }: {
-          where: { sourceMessageId: { in: string[] }; status: { not: string } };
-        }) =>
+        async ({ where }: { where: { sourceMessageId: { in: string[] } } }) =>
           outboundRows.filter(
             (row) =>
               where.sourceMessageId.in.includes(row.sourceMessageId as string) &&
-              (row.status ?? "pending") !== where.status.not,
+              ((row.status ?? "pending") !== "sent" || row.providerHandle == null),
           ).length,
       ),
       findFirst: vi.fn(
         async ({
           where,
         }: {
-          where: { identityId: string; kind: string; status: { in: string[] } };
+          where: { identityId: string; kind: string; status?: { in: string[] } };
         }) =>
           outboundRows
             .filter(
               (row) =>
                 row.identityId === where.identityId &&
                 row.kind === where.kind &&
-                where.status.in.includes((row.status as string | undefined) ?? "pending"),
+                (!where.status ||
+                  where.status.in.includes((row.status as string | undefined) ?? "pending")),
             )
             .toSorted(
               (a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime(),
             )[0] ?? null,
       ),
-      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-        let count = 0;
-        for (const item of data) {
-          // Honors skipDuplicates against the idempotencyKey unique key.
-          if (outboundRows.some((row) => row.idempotencyKey === item.idempotencyKey)) continue;
-          outboundRows.push({ createdAt: new Date(), ...item });
-          count += 1;
-        }
-        return { count };
-      }),
-      deleteMany: vi.fn(async ({ where }: { where: { idempotencyKey?: string } }) => {
-        let count = 0;
-        for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
-          if (outboundRows[i]!.idempotencyKey === where.idempotencyKey) {
-            outboundRows.splice(i, 1);
-            count += 1;
-          }
-        }
-        return { count };
-      }),
     },
     agentConnection: {
       findFirst: vi.fn(async () => null),
@@ -304,9 +322,11 @@ function createDeps(
           })),
         ),
         agentConnection: prisma.agentConnection,
+        messagingChannel: prisma.messagingChannel,
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
+        user: prisma.user,
         messagingLinkCode,
         bot: prisma.bot,
       }),
@@ -315,10 +335,10 @@ function createDeps(
   return {
     prisma,
     events: { sendUserMessage, notify },
-    jobs: { enqueue },
+    jobs: { enqueue, cancelIn },
+    delivery: { recordIn, send },
     provision,
     openSignup: true,
-    signupPolicy,
     acknowledge,
     storeAttachment: overrides.storeAttachment,
     transcribe: overrides.transcribe,
@@ -327,6 +347,9 @@ function createDeps(
     sendUserMessage,
     notify,
     enqueue,
+    cancelIn,
+    recordIn,
+    send,
     outboundRows,
     members,
     txMock,
@@ -336,6 +359,9 @@ function createDeps(
     sendUserMessage: ReturnType<typeof vi.fn>;
     notify: ReturnType<typeof vi.fn>;
     enqueue: ReturnType<typeof vi.fn>;
+    cancelIn: typeof cancelIn;
+    recordIn: typeof recordIn;
+    send: typeof send;
     acknowledge: typeof acknowledge;
     runs: typeof runs;
     botReplies: typeof botReplies;
@@ -346,6 +372,31 @@ function createDeps(
     createdIdentities: Array<Record<string, unknown>>;
     txMock: typeof txMock;
   };
+}
+
+/** Runs the send's claim in `tx` once the run exists, as sendUserMessage does. */
+function claimingSend(deps: ReturnType<typeof createDeps>, tx: unknown) {
+  deps.sendUserMessage.mockImplementationOnce(
+    async (input: { claim?: (tx: unknown, sent: object) => Promise<boolean> }) => {
+      if (input.claim && !(await input.claim(tx, { messageId: "msg-1", runId: "run-1" }))) {
+        throw new SendClaimLostError();
+      }
+      return { messageId: "msg-1", runId: "run-1", seq: 3 };
+    },
+  );
+}
+
+/** Keeps each transaction the fake database opens, so a test can see where a write ran. */
+function transactions(deps: ReturnType<typeof createDeps>) {
+  const run = vi.mocked(deps.prisma.$transaction).getMockImplementation()!;
+  const opened: unknown[] = [];
+  vi.mocked(deps.prisma.$transaction).mockImplementation(async (fn) =>
+    run(async (tx) => {
+      opened.push(tx);
+      return fn(tx);
+    }),
+  );
+  return opened;
 }
 
 const dmEvent = {
@@ -373,6 +424,15 @@ const groupEvent = {
 };
 
 describe("createMessagingInboundHandler DM routing", () => {
+  it("drops a message for a bot whose Space is being deleted instead of failing the delivery", async () => {
+    const deps = createDeps();
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+
+    await expect(handle(dmEvent)).resolves.toBeUndefined();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
   it("delivers a known sender's message into their bot's existing thread", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
@@ -389,6 +449,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       threadId: "thread-1",
       botId: "bot-1",
       userId: "user-1",
+      authorUserId: "user-1",
       blocks: [{ kind: "text", text: "hello bot" }],
       prompt: "hello bot",
       trigger: "messaging",
@@ -830,6 +891,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect(deliveries[0]![0]).toMatchObject({
         trigger: "webhook",
         blocks: [
+          { kind: "delivery" },
           { kind: "text", text: expect.stringContaining("<untrusted_delivery_payload>") },
           { kind, artifactId: "artifact-1", name, mimeType },
         ],
@@ -930,15 +992,12 @@ describe("createMessagingInboundHandler DM routing", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
 
-    expect(deps.provision).toHaveBeenCalledWith(
-      {
-        provider: "sendblue",
-        address: "+15551111111",
-        dmThreadId: "sendblue:dm-1",
-        displayName: null,
-      },
-      signupPolicy,
-    );
+    expect(deps.provision).toHaveBeenCalledWith({
+      provider: "sendblue",
+      address: "+15551111111",
+      dmThreadId: "sendblue:dm-1",
+      displayName: null,
+    });
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         spaceId: "ws-new",
@@ -990,6 +1049,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           botId: "bot-1",
+          userId: "user-1",
           active: true,
           messageProvider: "slack",
         }),
@@ -1031,6 +1091,8 @@ describe("createMessagingInboundHandler DM routing", () => {
 
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
     expect(deps.sendUserMessage.mock.calls[0]?.[0]?.trigger).toBe("webhook");
+    // Only a TeamChat message has a deferred row for the wake to claim.
+    expect(deps.sendUserMessage.mock.calls[0]?.[0]).not.toHaveProperty("claim");
     expect(deps.enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -1070,16 +1132,38 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(expected).not.toBe(mismatched);
   });
 
-  it("refuses TeamChat routine wake when agent ownership already claimed the row", async () => {
+  it("claims the deferred TeamChat message in the transaction that starts the routine run", async () => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
     });
-    const updateMany = vi.fn(async () => ({ count: 0 }));
-    Object.assign(deps.prisma, {
-      externalMessage: {
-        updateMany,
-      },
+    const tx = { externalMessage: { updateMany: vi.fn(async () => ({ count: 1 })) } };
+    claimingSend(deps, tx);
+
+    const woken = await wakeMessageRoutines(
+      deps,
+      { spaceId: "ws-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+      { ...dmEvent, provider: "slack", handle: "Ev-deferred", from: "U123" },
+      { deliveryProvider: "slack", externalMessageId: "external-deferred" },
+    );
+
+    expect(woken).toBe(true);
+    expect(tx.externalMessage.updateMany).toHaveBeenCalledWith({
+      where: { id: "external-deferred", status: "deferred" },
+      data: { status: "ignored", engagementReason: "message_routine_wake" },
     });
+    // The agent's backup job for the message goes in the same transaction.
+    expect(deps.cancelIn).toHaveBeenCalledWith(tx, "team_chat.engage:external-deferred");
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("starts no routine run for a TeamChat message the agent already has", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    const tx = { externalMessage: { updateMany: vi.fn(async () => ({ count: 0 })) } };
+    claimingSend(deps, tx);
 
     const woken = await wakeMessageRoutines(
       deps,
@@ -1088,62 +1172,10 @@ describe("createMessagingInboundHandler DM routing", () => {
       { deliveryProvider: "slack", externalMessageId: "external-agent-owned" },
     );
 
-    expect(woken).toBe(false);
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          id: "external-agent-owned",
-          status: { in: ["deferred", "received", "observed"] },
-        }),
-        data: expect.objectContaining({
-          engagementReason: "message_routine_routing",
-          nextAttemptAt: expect.any(Date),
-        }),
-      }),
-    );
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-  });
-
-  it("reasserts routing ownership before creating a TeamChat routine wake run", async () => {
-    const deps = createDeps({
-      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
-    });
-    const updateMany = vi.fn(async () => ({ count: 1 }));
-    Object.assign(deps.prisma, {
-      externalMessage: {
-        updateMany,
-      },
-    });
-
-    const woken = await wakeMessageRoutines(
-      deps,
-      { spaceId: "ws-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
-      { ...dmEvent, provider: "slack", handle: "Ev-reserve", from: "U123" },
-      { deliveryProvider: "slack", externalMessageId: "external-deferred" },
-    );
-
+    // Handled: the caller must not hand the message to the agent a second time.
     expect(woken).toBe(true);
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: "external-deferred",
-          status: { in: ["deferred", "received", "observed"] },
-          OR: [
-            { engagementReason: null },
-            {
-              engagementReason: {
-                in: ["message_routine_routing", "message_routine_routing_rearmed"],
-              },
-            },
-          ],
-        },
-        data: expect.objectContaining({
-          engagementReason: "message_routine_routing",
-          nextAttemptAt: expect.any(Date),
-        }),
-      }),
-    );
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("appends inbound media links to the message text", async () => {
@@ -1176,6 +1208,30 @@ describe("createMessagingInboundHandler DM routing", () => {
       }),
     );
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    // Under the cap nothing is held back, so there is nothing to send.
+    expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("sends the replies held behind the outbound cap once the person writes back", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+      },
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "", mediaUrl: null });
+
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
+    // The counter is reset first, or the held replies would stay capped.
+    expect(
+      vi.mocked(deps.prisma.messagingIdentity.update).mock.invocationCallOrder[0]!,
+    ).toBeLessThan(deps.send.mock.invocationCallOrder[0]!);
   });
 
   it("does not enqueue when the message created no run", async () => {
@@ -1226,7 +1282,10 @@ describe("inbound receipt", () => {
     deps.runs.get("run-1")!.messagingMirroredAt = new Date("2026-01-01T00:00:00Z");
     await expect(handled()).resolves.toBe(false);
 
+    // Claimed: marked sent before its handle is known.
     deps.outboundRows[0]!.status = "sent";
+    await expect(handled()).resolves.toBe(false);
+    deps.outboundRows[0]!.providerHandle = "handle-1";
     await expect(handled()).resolves.toBe(true);
   });
 
@@ -1285,14 +1344,15 @@ function sentPrompt(
   deps: { outboundRows: Array<Record<string, unknown>> },
   idempotencyKey: string,
   ageMs = 60_000,
-  status = "sent",
+  state: "sent" | "pending" | "retry" | "in flight" | "failed" = "sent",
 ) {
   deps.outboundRows.push({
     idempotencyKey,
     kind: "dm",
     identityId: "mi-1",
     body: "Reply YES to allow, NO to decline.",
-    status,
+    status: state === "in flight" ? "sent" : state,
+    providerHandle: state === "sent" ? `handle-${idempotencyKey}` : null,
     createdAt: new Date(Date.now() - ageMs),
   });
 }
@@ -1325,6 +1385,7 @@ describe("createMessagingInboundHandler owner commands", () => {
         idempotencyKey: "command:approve:cm-1",
       }),
     ]);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
@@ -1341,6 +1402,10 @@ describe("createMessagingInboundHandler owner commands", () => {
         data: { status: "declined" },
       }),
     );
+    expect(deps.outboundRows).toContainEqual(
+      expect.objectContaining({ idempotencyKey: "command:decline:cm-1", identityId: "mi-1" }),
+    );
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
@@ -1359,6 +1424,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.outboundRows[0]).toEqual(
       expect.objectContaining({ kind: "dm", body: expect.stringMatching(/unchanged|no leave/i) }),
     );
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
   });
 
   it("approves a pending agent connection on YES and messages both owners", async () => {
@@ -1422,6 +1488,199 @@ describe("createMessagingInboundHandler owner commands", () => {
         expect.objectContaining({ kind: "dm", identityId: "mi-9" }),
       ]),
     );
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }, { identityId: "mi-9" }]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not let an older request take a YES once a newer prompt failed to send", async () => {
+    const deps = createDeps();
+    const connection = vi.fn(async () => ({
+      id: "ac-attacker",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1", 120_000);
+    sentPrompt(deps, "connect:bot-9:bot-1", 60_000, "failed");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("does not approve a connection whose request is still on its way", async () => {
+    const deps = createDeps();
+    const connection = vi.fn(async () => ({
+      id: "ac-1",
+      requesterBotId: "bot-9",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "invite:ch-0:mi-1", 120_000);
+    sentPrompt(deps, "connect:bot-9:bot-1", 60_000, "in flight");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("does not let a YES approve a request held behind the outbound cap until that reply", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+      },
+    });
+    const connection = vi.fn(async () => ({
+      id: "ac-attacker",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "reply:msg-7:0", 120_000);
+    sentPrompt(deps, "connect:bot-6:bot-1", 60_000, "pending");
+    // Sending the held replies delivers the request the person never saw.
+    deps.send.mockImplementation(async () => {
+      for (const [index, row] of deps.outboundRows.entries()) {
+        if (row.status !== "pending") continue;
+        deps.outboundRows[index] = {
+          ...row,
+          status: "sent",
+          providerHandle: `handle-${row.idempotencyKey as string}`,
+        };
+      }
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
+    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ capReleaseHandle: dmEvent.handle }),
+      }),
+    );
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("does not let a redelivered YES approve the request its first attempt released", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: 0,
+        capReleaseHandle: dmEvent.handle,
+      },
+    });
+    const connection = vi.fn(async () => ({
+      id: "ac-1",
+      requesterBotId: "bot-6",
+      targetBotId: "bot-1",
+      status: "pending",
+    }));
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: connection,
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(connection).not.toHaveBeenCalled();
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+    );
+  });
+
+  it("lets a later YES approve a request an earlier reply released", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: 0,
+        lastInboundAt: new Date(Date.now() - 30_000),
+        capReleaseHandle: "handle-earlier",
+      },
+    });
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: vi.fn(async () => ({
+        id: "ac-1",
+        requesterBotId: "bot-6",
+        targetBotId: "bot-1",
+        status: "pending",
+      })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.agentConnection.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "approved" } }),
+    );
+  });
+
+  it("still answers a delivered request when the reply also releases held replies", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+      },
+      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+    });
+    sentPrompt(deps, "invite:ch-1:mi-1");
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    expect(deps.prisma.messagingChannelMember.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "cm-1", status: "invited" },
+        data: { status: "approved" },
+      }),
+    );
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
@@ -1447,31 +1706,37 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
-  it("answers the delivered question, not a request still waiting to go out", async () => {
-    const deps = createDeps({
-      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
-    });
-    sentPrompt(deps, "reply:msg-7:0", 120_000);
-    sentPrompt(deps, "invite:ch-1:mi-1", 60_000, "pending");
-    const handle = createMessagingInboundHandler(deps);
-    await handle({ ...dmEvent, content: "YES" });
+  it.each(["pending", "retry", "in flight", "failed"] as const)(
+    "answers the delivered question, not a request still %s",
+    async (status) => {
+      const deps = createDeps({
+        invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+      });
+      sentPrompt(deps, "reply:msg-7:0", 120_000);
+      sentPrompt(deps, "invite:ch-1:mi-1", 60_000, status);
+      const handle = createMessagingInboundHandler(deps);
+      await handle({ ...dmEvent, content: "YES" });
 
-    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
-    expect(deps.sendUserMessage).toHaveBeenCalled();
-  });
+      expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).toHaveBeenCalled();
+    },
+  );
 
-  it("treats YES as a reply once the bot has answered, even before that answer is sent", async () => {
-    const deps = createDeps({
-      invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
-    });
-    sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
-    sentPrompt(deps, "reply:msg-7:0", 60_000, "pending");
-    const handle = createMessagingInboundHandler(deps);
-    await handle({ ...dmEvent, content: "YES" });
+  it.each(["pending", "retry", "in flight", "failed"] as const)(
+    "treats YES as a reply once the bot has answered, even while that answer is %s",
+    async (status) => {
+      const deps = createDeps({
+        invitedMember: { id: "cm-1", channelId: "ch-1", status: "invited", identityId: "mi-1" },
+      });
+      sentPrompt(deps, "invite:ch-1:mi-1", 120_000);
+      sentPrompt(deps, "reply:msg-7:0", 60_000, status);
+      const handle = createMessagingInboundHandler(deps);
+      await handle({ ...dmEvent, content: "YES" });
 
-    expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
-    expect(deps.sendUserMessage).toHaveBeenCalled();
-  });
+      expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).toHaveBeenCalled();
+    },
+  );
 
   it("answers only the request whose prompt was sent last", async () => {
     const deps = createDeps({
@@ -1515,6 +1780,39 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
+
+  it("answers a stop once, even when the provider redelivers it", async () => {
+    const deps = createDeps();
+    Object.assign(deps.prisma.thread, {
+      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
+    });
+    const cancelRuns = vi.fn(async () => []);
+    Object.assign(deps.txMock.run, { updateManyAndReturn: cancelRuns });
+    Object.assign(deps.txMock, {
+      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
+    const handle = createMessagingInboundHandler(deps);
+    const stop = { ...dmEvent, content: "stop" };
+
+    await handle(stop);
+    await handle(stop);
+
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "command:stop:mi-1:handle-1",
+        identityId: "mi-1",
+        body: "Nothing is running.",
+      }),
+    ]);
+    // The receipt is the replay guard: written before anything is cancelled, so the
+    // redelivery finds it and cancels nothing.
+    expect(deps.recordIn.mock.invocationCallOrder[0]!).toBeLessThan(
+      cancelRuns.mock.invocationCallOrder[0]!,
+    );
+    expect(cancelRuns).toHaveBeenCalledTimes(1);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe("createMessagingInboundHandler channel routing", () => {
@@ -1555,6 +1853,7 @@ describe("createMessagingInboundHandler channel routing", () => {
 
   it("discovers the channel, invites linked members, and posts one intro for unlinked ones", async () => {
     const deps = createDeps();
+    const opened = transactions(deps);
     const handle = createMessagingInboundHandler(deps);
     await handle(groupEvent);
 
@@ -1585,9 +1884,64 @@ describe("createMessagingInboundHandler channel routing", () => {
         }),
       ]),
     );
+    const groupLane = { identityId: null, threadId: "sendblue:grp-1" };
+    // The invite commits with the roster change; the intro commits with the mark that it was posted.
+    expect(deps.recordIn).toHaveBeenCalledWith(
+      opened[0],
+      { identityId: "mi-1" },
+      [expect.objectContaining({ idempotencyKey: "invite:ch-1:mi-1" })],
+      { replace: true },
+    );
+    expect(deps.recordIn).toHaveBeenCalledWith(opened.at(-1), groupLane, [
+      expect.objectContaining({ idempotencyKey: "intro:ch-1" }),
+    ]);
+    expect(deps.prisma.messagingChannel.update).toHaveBeenCalledWith({
+      where: { id: "ch-1" },
+      data: { introPostedAt: expect.any(Date) },
+    });
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
+    expect(deps.send).toHaveBeenCalledWith([groupLane]);
     expect(deps.txMock.message.create).toHaveBeenCalled();
     // sender is only invited, not approved: no fan-out yet
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("records group invites in the roster's transaction, in identity order", async () => {
+    const deps = createDeps();
+    const linked: Record<string, string> = { "+15553333333": "mi-3", "+15551111111": "mi-1" };
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { provider_address?: { address: string } } }) => {
+          const address = where.provider_address?.address;
+          const id = address ? linked[address] : undefined;
+          return id
+            ? { id, provider: "sendblue", address, userId: "user-1", spaceId: "ws-1", botId: id }
+            : null;
+        },
+      ),
+    });
+    const opened = transactions(deps);
+    await createMessagingInboundHandler(deps)({
+      ...groupEvent,
+      participants: ["+15553333333", "+15551111111"],
+    });
+
+    // One order every writer agrees on, so two groups inviting the same people cannot deadlock.
+    expect(
+      deps.recordIn.mock.calls.map(([tx, lane, rows, options]) => [
+        tx,
+        lane,
+        rows.map((row) => row.idempotencyKey),
+        options,
+      ]),
+    ).toEqual([
+      [opened[0], { identityId: "mi-1" }, ["invite:ch-1:mi-1"], { replace: true }],
+      [opened[0], { identityId: "mi-3" }, ["invite:ch-1:mi-3"], { replace: true }],
+    ]);
+    expect(deps.send).toHaveBeenCalledTimes(1);
+    expect(deps.send.mock.calls[0]![0]).toEqual(
+      expect.arrayContaining([{ identityId: "mi-1" }, { identityId: "mi-3" }]),
+    );
   });
 
   it("does not post a second intro once one was posted", async () => {
@@ -1605,6 +1959,63 @@ describe("createMessagingInboundHandler channel routing", () => {
     await handle(groupEvent);
 
     expect(deps.outboundRows.filter((row) => row.kind === "intro")).toHaveLength(0);
+    expect(deps.send).not.toHaveBeenCalledWith([{ identityId: null, threadId: "sendblue:grp-1" }]);
+  });
+
+  it("still fans a message out to the other members when one member's Space is being deleted", async () => {
+    const senderMember = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peerMember = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [senderMember, peerMember] });
+    const peerIdentity = {
+      id: "mi-2",
+      provider: "sendblue",
+      address: "+15553333333",
+      userId: "user-2",
+      spaceId: "ws-2",
+      botId: "bot-2",
+      outboundSinceInbound: 0,
+    };
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { provider_address?: { provider: string; address: string }; id?: string };
+        }) => {
+          if (where.id === "mi-2" || where.provider_address?.address === "+15553333333") {
+            return peerIdentity;
+          }
+          return {
+            id: "mi-1",
+            provider: "sendblue",
+            address: "+15551111111",
+            userId: "user-1",
+            spaceId: "ws-1",
+            botId: "bot-1",
+            outboundSinceInbound: 0,
+          };
+        },
+      ),
+    });
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+    await expect(
+      handle({ ...groupEvent, participants: ["+15551111111", "+15553333333"] }),
+    ).resolves.toBeUndefined();
+
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
   });
 
   it("fans an approved member's message out to every approved member bot", async () => {
@@ -1819,6 +2230,359 @@ describe("createMessagingInboundHandler channel routing", () => {
     // A webhook with no participants roster must not mass-mark members left.
     await sparseHandle({ ...groupEvent, participants: [] });
     expect(sparse.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep an approved member when a delayed roster older than the newest arrives", async () => {
+    const joined = {
+      id: "cm-x",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    // The newer event first: its roster names the member, so the channel records it.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // A retry of an older webhook, delivered late: its roster predates the member.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("does not re-invite a member who left when the roster naming them is older", async () => {
+    const gone = {
+      id: "cm-y",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: "mi-2",
+      status: "left",
+    };
+    const deps = createDeps({ members: [gone] });
+    const handle = createMessagingInboundHandler(deps);
+    // A newer event without the member sets the channel's roster time first.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // The delayed older roster still names the member, who has since left.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(gone.status).toBe("left");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-2")).toBe(false);
+  });
+
+  it("does not discover members or queue invitations from a delayed older roster", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15554444444"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(deps.members.map((member) => member.address)).not.toContain("+15554444444");
+  });
+
+  it("ignores a roster whose time is not newer than the newest one seen", async () => {
+    const joined = {
+      id: "cm-z",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    const at = new Date("2026-11-04T10:01:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-first",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: at,
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-conflict",
+      participants: ["+15551111111"],
+      rosterAt: at,
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("keeps a leaver out and a peer in when an older roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    // The newest roster names both; the channel settles on its time.
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A delayed delivery of a roster from before the settled one, naming only
+    // the leaver: it must not re-invite them or sweep the peer out.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
+
+  it("keeps a leaver out and a peer in when an equal-time roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    const settled = new Date("2026-11-04T10:02:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: settled,
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A conflicting roster claiming the same time as the settled one: not
+    // newer, so it changes no membership either.
+    await handle({
+      ...groupEvent,
+      handle: "handle-equal",
+      participants: ["+15551111111"],
+      rosterAt: settled,
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
+
+  it("sweeps a member out when a real roster follows one with a far-future platform time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-f",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The sender's clock is far ahead of the server's: the roster's membership is
+      // not trusted, so the member keeps their status.
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A later real roster without the member must still win and sweep them out.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps two rosters' own order when both run seconds ahead of the server", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Both platform clocks are seconds ahead of the server's: within the accepted
+      // skew, so each roster keeps its own time as its version.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-g",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A second roster, one platform second newer, without the member.
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when its roster is redelivered later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-h",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The roster runs seconds ahead of the server, within the accepted skew.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A newer roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The first webhook is redelivered after both. Its own time is still the older
+      // version, so it must not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when a far-future roster naming them is replayed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-i",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // A roster dated far ahead of the server's clock: its membership is not trusted,
+      // so it changes nothing.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A real roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The far-future webhook is replayed after both: still distrusted, so it must
+      // not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
@@ -2122,7 +2886,8 @@ describe("createMessagingInboundHandler channel routing", () => {
       });
 
       // No "Reply YES" invitation she could never accept, and no member row to answer it.
-      expect(deps.prisma.messagingOutbound.createMany).not.toHaveBeenCalled();
+      expect(deps.recordIn).not.toHaveBeenCalled();
+      expect(deps.send).not.toHaveBeenCalled();
       expect(deps.prisma.messagingChannelMember.upsert).not.toHaveBeenCalled();
       expect(deps.sendUserMessage).not.toHaveBeenCalled();
     },
@@ -2215,6 +2980,7 @@ describe("createMessagingInboundHandler owner-command status races", () => {
 
     expect(swept.status).toBe("left");
     expect(deps.outboundRows).toHaveLength(1);
+    expect(deps.send).not.toHaveBeenCalled();
     // No longer actionable: the text falls through as a normal message.
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
@@ -2255,6 +3021,7 @@ describe("createMessagingInboundHandler owner-command status races", () => {
 
     expect(state.status).toBe("revoked");
     expect(deps.outboundRows).toHaveLength(1);
+    expect(deps.send).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 
@@ -2284,6 +3051,7 @@ describe("createMessagingInboundHandler owner-command status races", () => {
 
     expect(rejoined.status).toBe("invited");
     expect(deps.outboundRows).toHaveLength(0);
+    expect(deps.send).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 });
@@ -2306,6 +3074,7 @@ describe("createMessagingInboundHandler approval-cycle notifications", () => {
     await handle(groupEvent);
     expect(member.status).toBe("invited");
     expect(inviteRows()).toHaveLength(1);
+    inviteRows()[0]!.status = "sent";
 
     // The owner approves, then leaves again.
     member.status = "approved";
@@ -2314,12 +3083,11 @@ describe("createMessagingInboundHandler approval-cycle notifications", () => {
 
     // Second return: the stale invite row from the first cycle must not
     // suppress the new prompt.
+    deps.send.mockClear();
     await handle(groupEvent);
     expect(member.status).toBe("invited");
-    expect(deps.prisma.messagingOutbound.deleteMany).toHaveBeenCalledWith({
-      where: { idempotencyKey: "invite:ch-1:mi-1" },
-    });
-    expect(inviteRows()).toHaveLength(1);
+    expect(inviteRows()).toEqual([expect.objectContaining({ status: "pending" })]);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
   });
 
   it("confirms a repeated LEAVE of the same membership with a fresh DM", async () => {
@@ -2337,15 +3105,15 @@ describe("createMessagingInboundHandler approval-cycle notifications", () => {
 
     await handle({ ...dmEvent, content: "LEAVE" });
     expect(leaveRows()).toHaveLength(1);
+    leaveRows()[0]!.status = "sent";
 
     // Rejoin and leave again: the second confirmation must not be swallowed
     // by the first cycle's idempotency key.
     member.status = "approved";
+    deps.send.mockClear();
     await handle({ ...dmEvent, content: "LEAVE" });
-    expect(deps.prisma.messagingOutbound.deleteMany).toHaveBeenCalledWith({
-      where: { idempotencyKey: "command:leave:cm-1" },
-    });
-    expect(leaveRows()).toHaveLength(1);
+    expect(leaveRows()).toEqual([expect.objectContaining({ status: "pending" })]);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
   });
 });
 
@@ -2366,38 +3134,62 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
     });
-    const txCreateMany = vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-      deps.outboundRows.push(...data);
-      return { count: data.length };
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(async ({ where }: { where: { botId?: string } }) =>
+        where.botId === "bot-9"
+          ? {
+              id: "mi-0",
+              provider: "sendblue",
+              address: "+15550000000",
+              userId: "user-9",
+              spaceId: "ws-9",
+              botId: "bot-9",
+            }
+          : {
+              id: "mi-1",
+              provider: "sendblue",
+              address: "+15551111111",
+              userId: "user-1",
+              spaceId: "ws-1",
+              botId: "bot-1",
+              outboundSinceInbound: 0,
+            },
+      ),
     });
+    const tx = {
+      $queryRaw: vi.fn(async () =>
+        ["bot-1", "bot-9"].map((id) => ({
+          id,
+          spaceId: id,
+          crossSpaceCommunication: true,
+          archivedAt: null,
+        })),
+      ),
+      agentConnection: deps.prisma.agentConnection,
+    };
     deps.prisma.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        $queryRaw: vi.fn(async () =>
-          ["bot-1", "bot-9"].map((id) => ({
-            id,
-            spaceId: id,
-            crossSpaceCommunication: true,
-            archivedAt: null,
-          })),
-        ),
-        agentConnection: deps.prisma.agentConnection,
-        messagingOutbound: {
-          createMany: txCreateMany,
-          deleteMany: vi.fn(async () => ({ count: 0 })),
-        },
-      }),
+      fn(tx),
     ) as unknown as typeof deps.prisma.$transaction;
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
     // Both confirmations must be written while the claim's row lock is held;
-    // a revoke landing between claim and writes must not interleave.
-    const keys = txCreateMany.mock.calls.flatMap(([input]) =>
-      input.data.map((row) => row.idempotencyKey),
-    );
-    expect(keys).toEqual(
-      expect.arrayContaining(["command:approve:ac-1", "command:connected:ac-1"]),
-    );
+    // a revoke landing between claim and writes must not interleave. They go in
+    // identity order, so two answers cannot deadlock on the two chats.
+    expect(
+      deps.recordIn.mock.calls.map(([callTx, lane, rows]) => [
+        callTx,
+        lane,
+        rows.map((row) => row.idempotencyKey),
+      ]),
+    ).toEqual([
+      [tx, { identityId: "mi-0" }, ["command:connected:ac-1"]],
+      [tx, { identityId: "mi-1" }, ["command:approve:ac-1"]],
+    ]);
+    expect(
+      vi.mocked(deps.prisma.agentConnection.updateMany).mock.invocationCallOrder[0]!,
+    ).toBeLessThan(deps.recordIn.mock.invocationCallOrder[0]!);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }, { identityId: "mi-0" }]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
@@ -2411,29 +3203,25 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
     };
     const deps = createDeps({ invitedMember: invited });
     sentPrompt(deps, "invite:ch-1:mi-1");
-    const txCreateMany = vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-      deps.outboundRows.push(...data);
-      return { count: data.length };
-    });
+    const tx = { messagingChannelMember: deps.prisma.messagingChannelMember };
     deps.prisma.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        messagingChannelMember: deps.prisma.messagingChannelMember,
-        messagingOutbound: {
-          createMany: txCreateMany,
-          deleteMany: vi.fn(async () => ({ count: 0 })),
-        },
-      }),
+      fn(tx),
     ) as unknown as typeof deps.prisma.$transaction;
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
     // The participant sweep updates the same membership row; writing the
     // "You're in" text under the claim's lock keeps it from interleaving.
-    expect(txCreateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: [expect.objectContaining({ idempotencyKey: "command:approve:cm-1" })],
-      }),
+    expect(deps.recordIn).toHaveBeenCalledWith(
+      tx,
+      { identityId: "mi-1" },
+      [expect.objectContaining({ idempotencyKey: "command:approve:cm-1" })],
+      { replace: true },
     );
+    expect(
+      vi.mocked(deps.prisma.messagingChannelMember.updateMany).mock.invocationCallOrder[0]!,
+    ).toBeLessThan(deps.recordIn.mock.invocationCallOrder[0]!);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-1" }]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
@@ -2460,13 +3248,12 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
         throw error;
       }
     });
-    vi.mocked(deps.prisma.messagingOutbound.createMany).mockRejectedValueOnce(
-      new Error("database unavailable"),
-    );
+    deps.recordIn.mockRejectedValueOnce(new Error("database unavailable"));
     const handle = createMessagingInboundHandler(deps);
     const leave = { ...dmEvent, provider: "telegram", content: "LEAVE" };
 
     await expect(handle(leave)).rejects.toThrow("database unavailable");
+    expect(deps.send).not.toHaveBeenCalled();
     await handle(leave);
 
     expect([newest.status, older.status]).toEqual(["left", "approved"]);
@@ -2523,6 +3310,7 @@ describe("createMessagingInboundHandler linking", () => {
         body: 'Linked. Messages here now reach "Chief".',
       }),
     ]);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-linked" }]);
   });
 
   it("rolls back linking when confirmation fails, then retries without starting a run", async () => {
@@ -2565,9 +3353,7 @@ describe("createMessagingInboundHandler linking", () => {
         throw error;
       }
     });
-    vi.mocked(deps.prisma.messagingOutbound.createMany).mockRejectedValueOnce(
-      new Error("database unavailable"),
-    );
+    deps.recordIn.mockRejectedValueOnce(new Error("database unavailable"));
     const handle = createMessagingInboundHandler(deps);
     const event = { ...dmEvent, content: "ABCD2345" };
     await expect(handle(event)).rejects.toThrow("database unavailable");
@@ -2638,6 +3424,28 @@ describe("teamChatSenderCanWakeMessageRoutines", () => {
         ...dmEvent,
         provider: "slack",
         from: "U999",
+        isDirect: true,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("treats a deactivated linked sender like a stranger", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+    });
+    deps.prisma.user.findUnique = vi.fn(async () => ({ deactivatedAt: new Date() })) as never;
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(deps, {
+        ...dmEvent,
+        provider: "slack",
+        from: "U123",
         isDirect: true,
       }),
     ).resolves.toBe(false);

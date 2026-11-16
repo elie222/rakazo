@@ -14,9 +14,17 @@ import {
   ContextMenuTrigger,
   GroupAvatar,
 } from "@rakazo/ui-web";
-import { ChevronDown, CircleAlert, Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import { Suspense } from "react";
+import {
+  ChevronDown,
+  CircleAlert,
+  Globe,
+  Lock,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Users,
+} from "lucide-react";
+import type { RefObject } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import {
@@ -24,6 +32,8 @@ import {
   rosterHasUndismissedRunError,
   rosterWorkStatusLabel,
 } from "../../lib/roster-status";
+import type { ChatMenuState } from "./chat-context-menu";
+import { ChatMenu } from "./chat-context-menu";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
 import { useRedrawAtMidnight } from "./use-redraw-at-midnight";
@@ -52,11 +62,9 @@ export function SidebarRoster({
   displayedRunError,
   draggedBotId,
   setDraggedBotId,
-  botMenu,
-  setBotMenu,
+  chatMenu,
   reorderRosterBot,
   activeSnapshot,
-  botMenuContent,
   mini = false,
 }: {
   sidebarGroups: ReturnType<
@@ -84,11 +92,9 @@ export function SidebarRoster({
   displayedRunError: string | null;
   draggedBotId: string | null;
   setDraggedBotId: (id: string | null) => void;
-  botMenu: { kind: "bot" | "group"; id: string } | null;
-  setBotMenu: Dispatch<SetStateAction<{ kind: "bot" | "group"; id: string } | null>>;
+  chatMenu: ChatMenuState;
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
   activeSnapshot: ThreadSnapshot | null;
-  botMenuContent: ReactNode;
   mini?: boolean;
 }) {
   useRedrawAtMidnight();
@@ -157,7 +163,7 @@ export function SidebarRoster({
                       render={
                         group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />
                       }
-                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
+                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-label font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
                       onClick={() => {
                         if (group.emptySpaceId) {
                           openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -178,18 +184,27 @@ export function SidebarRoster({
                             : undefined
                       }
                       aria-label={
-                        group.emptySpaceId
+                        (group.emptySpaceId
                           ? t`Open ${headerName(group)}`
                           : collapsed
                             ? t`Expand ${headerName(group)}`
-                            : t`Collapse ${headerName(group)}`
+                            : t`Collapse ${headerName(group)}`) +
+                        // The button's own name is what is read, so the globe's meaning joins it.
+                        (group.hasGuests ? `, ${t`Shared with guests`}` : "")
                       }
                     >
                       <span
                         className={`flex min-w-0 items-center gap-1.5 truncate ${hasSpaceActions ? "pe-7" : ""}`}
                       >
-                        {group.showLock ? (
-                          <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                        {/* People from outside the organization are marked even in a lone Space. */}
+                        {group.hasGuests ? (
+                          <Globe size={11} strokeWidth={2} aria-hidden="true" />
+                        ) : group.showLock ? (
+                          group.shared ? (
+                            <Users size={11} strokeWidth={2} aria-hidden="true" />
+                          ) : (
+                            <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                          )
                         ) : null}
                         <span className="truncate">{group.title}</span>
                         {group.subtitle ? (
@@ -446,7 +461,7 @@ export function SidebarRoster({
                             <span
                               dir="auto"
                               data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                              className={`max-w-full shrink-0 truncate text-body2 text-foreground ${
+                              className={`max-w-full shrink-0 truncate text-body-sm text-foreground ${
                                 item.chat.unread ? "font-semibold" : "font-medium"
                               }`}
                             >
@@ -459,7 +474,14 @@ export function SidebarRoster({
                             ) : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            {!compact ? (
+                            {item.woke ? (
+                              <span
+                                data-roster-woke
+                                className="text-label font-medium text-foreground/75"
+                              >
+                                <Trans>Woke</Trans>
+                              </span>
+                            ) : !compact ? (
                               <span
                                 data-roster-time
                                 className="text-label text-faint-foreground tabular-nums"
@@ -487,7 +509,7 @@ export function SidebarRoster({
                                     ? item.chat.status
                                     : undefined
                               }
-                              className={`mt-0.5 flex items-center gap-1 text-[11.5px] ${
+                              className={`mt-0.5 flex items-center gap-1 text-label ${
                                 rowError
                                   ? "font-medium text-destructive"
                                   : workStatusLabel
@@ -526,19 +548,10 @@ export function SidebarRoster({
                       opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                     }}
                   >
-                    <ContextMenu
+                    <ChatMenu
+                      target={{ kind: item.kind, id: item.chat.id }}
+                      state={chatMenu}
                       disabled={item.chat.spaceId !== bootstrapMe?.spaceId}
-                      open={botMenu?.kind === item.kind && botMenu.id === item.chat.id}
-                      // A sibling row's menu may already own the state; only clear our own.
-                      onOpenChange={(open) =>
-                        setBotMenu((current) =>
-                          open
-                            ? { kind: item.kind, id: item.chat.id }
-                            : current?.kind === item.kind && current.id === item.chat.id
-                              ? null
-                              : current,
-                        )
-                      }
                     >
                       {mini ? (
                         <IconTooltip
@@ -554,10 +567,7 @@ export function SidebarRoster({
                       ) : (
                         chatTrigger
                       )}
-                      {botMenu?.kind === item.kind && botMenu.id === item.chat.id ? (
-                        <Suspense fallback={null}>{botMenuContent}</Suspense>
-                      ) : null}
-                    </ContextMenu>
+                    </ChatMenu>
                   </div>
                 );
               })}

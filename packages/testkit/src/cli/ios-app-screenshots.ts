@@ -30,6 +30,8 @@ const LOCAL_API_PORT = 3110;
 // Debug builds load JavaScript from this port only.
 const METRO_PORT = 8081;
 const METRO_URL = `http://localhost:${METRO_PORT}`;
+// The local API names this as the web origin, which computer screens load through, as in production.
+const SCREEN_RELAY_PORT = 5180;
 const LOCAL_PASSWORD = "ios-screenshot-password-1234";
 
 async function main() {
@@ -76,6 +78,11 @@ async function main() {
   });
   const { apiUrl, databaseUrl } = backend;
   const metro = await startMetro(apiUrl, outDir);
+  const screenRelay = await startScreenRelay(apiUrl, outDir).catch(async (error: unknown) => {
+    metro.stop();
+    await backend.stop();
+    throw error;
+  });
   try {
     await firstLaunch(udid, outDir);
     const fixture = await seedIosScreenshotFixture({
@@ -114,6 +121,7 @@ async function main() {
       botId: fixture.botId,
     });
   } finally {
+    screenRelay.stop();
     metro.stop();
     await backend.stop();
   }
@@ -272,6 +280,29 @@ function startMetro(apiUrl: string, outDir: string) {
     ready: () =>
       fetch(`${METRO_URL}/status`).then(
         async (response) => (await response.text()).includes("packager-status:running"),
+        () => false,
+      ),
+  });
+}
+
+/** The web dev server relays computer screens, as it does for the web app. */
+function startScreenRelay(apiUrl: string, outDir: string) {
+  return startServer({
+    name: "The screen relay",
+    args: ["--filter", "@rakazo/web", "exec", "vite"],
+    port: SCREEN_RELAY_PORT,
+    log: path.join(outDir, "screen-relay.log"),
+    // These win over any values in the repository's .env.
+    env: {
+      API_PROXY_TARGET: apiUrl,
+      WEB_PORT: String(SCREEN_RELAY_PORT),
+      RAKAZO_DEV_HOST: "127.0.0.1",
+      SCREEN_PROXY_SECRET: process.env.SCREEN_PROXY_SECRET ?? "",
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "",
+    },
+    ready: () =>
+      fetch(`http://127.0.0.1:${SCREEN_RELAY_PORT}/`).then(
+        (response) => response.ok,
         () => false,
       ),
   });

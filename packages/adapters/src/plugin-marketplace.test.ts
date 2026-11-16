@@ -232,6 +232,7 @@ describe("marketplace service", () => {
         "app/assets/logo.svg",
         "pack/skills/plan/SKILL.md",
         "pack/skills/write/SKILL.md",
+        "hooked/plugin.json",
         "hooked/skills/plan/SKILL.md",
         "hooked/hooks/hooks.json",
         "local-mcp/mcp.json",
@@ -271,6 +272,59 @@ describe("marketplace service", () => {
       { name: "references", hasConnector: false, skillCount: 1 },
     ]);
     expect(skippedEntries).toBe(6);
+  });
+  it("lists manifestless skill catalogs without importing unrelated plugin parts", async () => {
+    const read = registryReader({
+      cursor: [{ name: "catalog", source: "catalog" }],
+      tree: [
+        "catalog/skills/plan/SKILL.md",
+        "catalog/skills/write/SKILL.md",
+        "catalog/hooks/hooks.json",
+        "catalog/agents/reviewer.md",
+        "catalog/commands/deploy.md",
+      ],
+    });
+    const { entries, skippedEntries } = await createPluginMarketplace(read).catalog("");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      name: "catalog",
+      hasConnector: false,
+      skillCount: 2,
+    });
+    expect(skippedEntries).toBe(0);
+  });
+  it("leaves out plugins whose connector works only in the catalog's own app", async () => {
+    const server = (url: string, extra = {}) =>
+      JSON.stringify({ mcpServers: { tools: { type: "http", url, ...extra } } });
+    const read = registryReader({
+      cursor: ["drive", "relay", "header", "client", "lookalike"].map((name) => ({
+        name,
+        source: name,
+      })),
+      tree: [
+        "drive/plugin.json",
+        "drive/mcp.json",
+        "drive/skills/find/SKILL.md",
+        "relay/mcp.json",
+        "header/mcp.json",
+        "client/mcp.json",
+        "lookalike/mcp.json",
+      ],
+      text: {
+        "/drive/mcp.json": server("https://API.cursor.com/rest-mcp/google-drive/mcp"),
+        "/relay/mcp.json": server("https://gateway.grok.com/mcp"),
+        "/header/mcp.json": server("https://mcp.example.test/mcp", {
+          headers: { "X-Cursor-Plugin": "header" },
+        }),
+        "/client/mcp.json": server("https://mcp.example.test/mcp", {
+          auth: { CLIENT_ID: "vendor-app" },
+        }),
+        "/lookalike/mcp.json": server("https://api.cursor.com.example.test/mcp"),
+      },
+    });
+    const { entries, skippedEntries } = await createPluginMarketplace(read).catalog("");
+    expect(entries.map((entry) => entry.name)).toEqual(["lookalike"]);
+    expect(skippedEntries).toBe(4);
   });
   it("returns explicit unavailability without leaking provider errors", async () => {
     const service = createPluginMarketplace(async () => {

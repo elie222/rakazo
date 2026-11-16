@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { SecurityEvent, SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
-import { SECURITY_EVENT_TYPES, SecurityEventTypeSchema } from "@rakazo/contracts";
+import type { SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
 import { recordAuditEvent } from "./audit-events.js";
 import type { PrismaClient } from "./client.js";
@@ -44,6 +43,11 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
 ]);
 /** Deployment-wide signals with no account or organization to attribute them to. */
 const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
+/** Done to an account by the directory or the operator (`metadata.by`), not by the account itself. */
+const DONE_TO_ACCOUNT = new Set<SecurityEventType>([
+  "auth.account.deactivated",
+  "auth.account.reactivated",
+]);
 const MAX_METADATA_KEYS = 16;
 const MAX_METADATA_STRING = 200;
 /** Keys that could carry what a user said or a secret. Never stored, whatever the value. */
@@ -93,16 +97,25 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
     }
   }
   if (event.userId && !NOT_AUDITED.has(event.type)) {
-    const { kind, runId } = event.metadata;
+    const { kind, runId, by } = event.metadata;
     const userId = event.userId;
     await withSecurityRequest(
       { ip: event.ip ?? undefined, userAgent: event.userAgent ?? undefined },
       () =>
         recordAuditEvent({
           action: event.type,
-          actor: { type: "user", id: userId },
+          ...(DONE_TO_ACCOUNT.has(event.type)
+            ? {
+                actor: { type: "system", label: typeof by === "string" ? by : "system" },
+                target: { type: "user", id: userId },
+              }
+            : {
+                actor: { type: "user", id: userId },
+                target: typeof kind === "string" ? { type: kind } : undefined,
+              }),
           spaceId: event.spaceId,
-          target: typeof kind === "string" ? { type: kind } : undefined,
+          // Every vault item is its person's own; see the vault rule in audit-events.ts.
+          userId: kind === "vault_credential" ? userId : undefined,
           runId: typeof runId === "string" ? runId : undefined,
           metadata: event.metadata,
         }),
@@ -177,53 +190,4 @@ export function createRetentionPruner(
     const removed = await prune(at);
     if (removed > 0) getLogger().info(`${event}.pruned`, { [`${event}.removed`]: removed });
   };
-}
-
-export async function listSecurityEvents(
-  db: SecurityEventDb,
-  input: { type?: SecurityEventType; ip?: string; userId?: string; cursor?: string; limit: number },
-): Promise<SecurityEvent[]> {
-  const after = input.cursor
-    ? await db.securityEvent.findUnique({
-        where: { id: input.cursor },
-        select: { id: true, createdAt: true },
-      })
-    : null;
-  if (input.cursor && !after) return [];
-  const rows = await db.securityEvent.findMany({
-    where: {
-      // Only types this release knows, filtered before `take` so a page is never emptied by
-      // events a newer release wrote before a rollback.
-      type: input.type ?? { in: [...SECURITY_EVENT_TYPES] },
-      ...(input.ip ? { ip: input.ip } : {}),
-      ...(input.userId ? { userId: input.userId } : {}),
-      // Same order as the sort, so events sharing a timestamp are neither skipped nor repeated.
-      ...(after
-        ? {
-            OR: [
-              { createdAt: { lt: after.createdAt } },
-              { createdAt: after.createdAt, id: { lt: after.id } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: input.limit,
-  });
-  return rows.flatMap((row) => {
-    const type = SecurityEventTypeSchema.safeParse(row.type);
-    if (!type.success) return [];
-    return [
-      {
-        id: row.id,
-        type: type.data,
-        userId: row.userId,
-        spaceId: row.spaceId,
-        ip: row.ip,
-        userAgent: row.userAgent,
-        metadata: (row.metadata ?? {}) as SecurityEventMetadata,
-        createdAt: row.createdAt.toISOString(),
-      },
-    ];
-  });
 }

@@ -11,6 +11,12 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../components/thread-
 import { runErrorActionLabel } from "./run-error-presentation";
 import { liveEndRunError } from "./thread-window";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 402, fontScale: 1 }),
@@ -51,13 +57,6 @@ vi.mock("./native", () => ({
   native: { fill: "native-fill" },
   useMobileTokens: () => ({ card: "token-card" }),
   useResolvedAppearance: () => "light",
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    locale: "en",
-    t: (key: string, values?: Record<string, string>) =>
-      key.replace(/\{(\w+)\}/g, (_, name: string) => values?.[name] ?? name),
-  }),
 }));
 
 const details =
@@ -128,7 +127,7 @@ describe("run error recovery", () => {
     "This connection's request limit is too small. Choose another model.",
     "The model hit its output limit before finishing its reply.",
   ])("offers model recovery without suggesting a key failure for %s", (details) => {
-    const label = runErrorActionLabel((key) => key, normalizeRunError(details));
+    const label = runErrorActionLabel(normalizeRunError(details));
     expect(label).toBe("Change model");
     const node = mount(
       createElement(RunErrorSheet, {
@@ -175,7 +174,7 @@ describe("inline error card", () => {
     const onDetails = vi.fn();
     function Notice() {
       const error = useRunError(details, false);
-      const actionLabel = error ? runErrorActionLabel((key) => key, error) : null;
+      const actionLabel = error ? runErrorActionLabel(error) : null;
       return createElement(ThreadErrorNotice, {
         error: null,
         summary: error?.summary ?? null,

@@ -1,6 +1,11 @@
-import { BillingNoMonthlyCreditsError } from "@rakazo/adapter-kit";
+import { BillingNoMonthlyCreditsError, BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { StripeBillingProvider } from "./stripe-billing.js";
+import { byokTierOf, StripeBillingProvider } from "./stripe-billing.js";
+
+const toYearly = {
+  from: { tier: "standard", interval: "month", amountCents: 1500 },
+  to: { tier: "standard", interval: "year", amountCents: 14400 },
+} as const;
 
 function fixture(routes: Record<string, unknown> = {}) {
   const requests: Array<{ path: string; params: URLSearchParams }> = [];
@@ -11,8 +16,10 @@ function fixture(routes: Record<string, unknown> = {}) {
     fetch: vi.fn(async (input, init) => {
       const url = new URL(String(input));
       requests.push({ path: url.pathname, params: new URLSearchParams(String(init?.body ?? "")) });
+      const route = routes[`${init?.method} ${url.pathname}`];
+      if (route instanceof Response) return route;
       return Response.json(
-        routes[`${init?.method} ${url.pathname}`] ??
+        route ??
           routes[url.pathname] ??
           (url.pathname === "/v1/checkout/sessions" && init?.method === "POST"
             ? { url: "https://checkout.example.test/session" }
@@ -29,7 +36,7 @@ describe("Stripe prepaid model credits", () => {
     const { provider, requests } = fixture();
     await provider.createCreditCheckout({
       customerId: "cus_fixture",
-      amountCents: 1000,
+      amountCents: 2000,
       monthly: true,
       successUrl: "https://example.test/return",
       cancelUrl: "https://example.test/app",
@@ -45,8 +52,8 @@ describe("Stripe prepaid model credits", () => {
       requests
         .find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"))
         ?.params.get("unit_amount"),
-    ).toBe("1000");
-    expect(body.get("subscription_data[metadata][rakazo_credit_cents]")).toBe("1000");
+    ).toBe("2000");
+    expect(body.get("subscription_data[metadata][rakazo_credit_cents]")).toBe("2000");
     expect(body.has("subscription_data[trial_period_days]")).toBe(false);
   });
   it("creates top-ups as one-time payments without expiring other checkout sessions", async () => {
@@ -65,6 +72,25 @@ describe("Stripe prepaid model credits", () => {
     expect(requests[0]!.params.get("payment_intent_data[metadata][rakazo_credit_cents]")).toBe(
       "2000",
     );
+  });
+  it("asks the bank to confirm the buyer of every credit purchase", async () => {
+    const { provider, requests } = fixture();
+    for (const [amountCents, monthly] of [
+      [2000, true],
+      [2000, false],
+    ] as const)
+      await provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents,
+        monthly,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      });
+    expect(
+      requests
+        .filter((r) => r.path === "/v1/checkout/sessions" && r.params.has("mode"))
+        .map((r) => r.params.get("payment_method_options[card][request_three_d_secure]")),
+    ).toEqual(["any", "any"]);
   });
   it("looks up a monthly price once, not on every checkout", async () => {
     const { provider, requests } = fixture();
@@ -106,6 +132,24 @@ describe("Stripe prepaid model credits", () => {
     const created = requests.find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"));
     expect(created?.params.get("recurring[interval]")).toBe("year");
     expect(created?.params.get("lookup_key")).toBe("rakazo_byok_yearly_14400");
+  });
+  it("names the tier in the price's lookup key, keeping Standard's keys", async () => {
+    const { provider, requests } = fixture();
+    await provider.createByokCheckout({
+      customerId: "cus_fixture",
+      amountCents: 4900,
+      tier: "pro",
+      successUrl: "https://example.test/return",
+      cancelUrl: "https://example.test/app",
+    });
+    const created = requests.find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"));
+    expect(created?.params.get("lookup_key")).toBe("rakazo_byok_pro_monthly_4900");
+    expect(created?.params.get("recurring[interval]")).toBe("month");
+    expect(byokTierOf("rakazo_byok_pro_monthly_4900")).toBe("pro");
+    expect(byokTierOf("rakazo_byok_max_yearly_142800")).toBe("max");
+    expect(byokTierOf("rakazo_byok_monthly_1500")).toBe("standard");
+    expect(byokTierOf("rakazo_byok_yearly_14400")).toBe("standard");
+    expect(byokTierOf(null)).toBe("standard");
   });
   it("leaves a plan alone when it is not the live monthly plan, or credits have started", async () => {
     const plan = (
@@ -158,7 +202,7 @@ describe("Stripe prepaid model credits", () => {
         has_more: false,
       },
     });
-    await expect(provider.switchByokToYearly("cus_fixture", "sub_unpaid", 14400)).resolves.toBe(
+    await expect(provider.changeByokPlan("cus_fixture", "sub_unpaid", toYearly)).resolves.toBe(
       false,
     );
     for (const id of [
@@ -169,7 +213,7 @@ describe("Stripe prepaid model credits", () => {
       "sub_quarterly",
       "sub_seats",
     ])
-      await expect(provider.switchByokToYearly("cus_fixture", id, 14400)).resolves.toBe(false);
+      await expect(provider.changeByokPlan("cus_fixture", id, toYearly)).resolves.toBe(false);
     const withCredits = fixture({
       "GET /v1/subscriptions": {
         data: [
@@ -180,7 +224,7 @@ describe("Stripe prepaid model credits", () => {
       },
     });
     await expect(
-      withCredits.provider.switchByokToYearly("cus_fixture", "sub_active", 14400),
+      withCredits.provider.changeByokPlan("cus_fixture", "sub_active", toYearly),
     ).resolves.toBe(false);
     for (const { path } of [...requests, ...withCredits.requests])
       expect(path).not.toMatch(/^\/v1\/subscriptions\/sub_/);
@@ -209,7 +253,7 @@ describe("Stripe prepaid model credits", () => {
       },
       "POST /v1/subscriptions/sub_byok": { id: "sub_byok" },
     });
-    await expect(provider.switchByokToYearly("cus_fixture", "sub_byok", 14400)).resolves.toBe(true);
+    await expect(provider.changeByokPlan("cus_fixture", "sub_byok", toYearly)).resolves.toBe(true);
     const update = requests.find((r) => r.path === "/v1/subscriptions/sub_byok")!.params;
     expect(update.get("items[0][id]")).toBe("si_byok");
     expect(update.get("items[0][price]")).toBe("price_credits");
@@ -220,6 +264,59 @@ describe("Stripe prepaid model credits", () => {
         .find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"))
         ?.params.get("recurring[interval]"),
     ).toBe("year");
+  });
+  it("moves an own-key plan to another tier at its interval, and reports the tier", async () => {
+    const subscription = (lookupKey: string, unitAmount: number) => ({
+      id: "sub_byok",
+      status: "active",
+      metadata: { rakazo_plan: "byok" },
+      created: 1,
+      items: {
+        data: [
+          {
+            id: "si_byok",
+            quantity: 1,
+            price: {
+              id: "price_pro",
+              unit_amount: unitAmount,
+              lookup_key: lookupKey,
+              recurring: { interval: "month" },
+            },
+          },
+        ],
+      },
+    });
+    const { provider, requests } = fixture({
+      "GET /v1/subscriptions": {
+        data: [subscription("rakazo_byok_pro_monthly_4900", 4900)],
+        has_more: false,
+      },
+      "POST /v1/subscriptions/sub_byok": { id: "sub_byok" },
+    });
+    expect(await provider.getCustomerSubscription("cus_fixture")).toMatchObject({
+      byokTier: "pro",
+      byokPriceCents: 4900,
+    });
+    const change = {
+      from: { tier: "pro", interval: "month", amountCents: 4900 },
+      to: { tier: "max", interval: "month", amountCents: 14900 },
+    } as const;
+    // The caller saw a different plan than the provider has.
+    await expect(
+      provider.changeByokPlan("cus_fixture", "sub_byok", {
+        ...change,
+        from: { ...change.from, tier: "standard" },
+      }),
+    ).resolves.toBe(false);
+    expect(requests.some((r) => r.path === "/v1/subscriptions/sub_byok")).toBe(false);
+    await expect(provider.changeByokPlan("cus_fixture", "sub_byok", change)).resolves.toBe(true);
+    const update = requests.find((r) => r.path === "/v1/subscriptions/sub_byok")!.params;
+    expect(update.get("items[0][id]")).toBe("si_byok");
+    expect(update.get("proration_behavior")).toBe("always_invoice");
+    expect(update.get("payment_behavior")).toBe("error_if_incomplete");
+    const created = requests.find((r) => r.path === "/v1/prices" && r.params.has("unit_amount"));
+    expect(created?.params.get("lookup_key")).toBe("rakazo_byok_max_monthly_14900");
+    expect(created?.params.get("recurring[interval]")).toBe("month");
   });
   it("reports the price an own-key subscription was bought at", async () => {
     const { provider } = fixture({
@@ -262,6 +359,52 @@ describe("Stripe prepaid model credits", () => {
       }),
     ).rejects.toThrow("Invalid credit amount");
     expect(requests).toHaveLength(0);
+  });
+  it("no longer sells retired amounts but still counts what was paid for them", async () => {
+    const { provider, requests } = fixture({
+      "/v1/charges": {
+        data: [
+          {
+            id: "ch_retired",
+            payment_intent: "pi_retired",
+            currency: "usd",
+            paid: true,
+            captured: true,
+            disputed: false,
+            amount: 50000,
+            amount_refunded: 0,
+          },
+        ],
+        has_more: false,
+      },
+      "/v1/checkout/sessions": {
+        data: [
+          {
+            id: "cs_retired",
+            mode: "payment",
+            payment_status: "paid",
+            currency: "usd",
+            amount_total: 50000,
+            payment_intent: "pi_retired",
+            metadata: { rakazo_credit_cents: "50000" },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(
+      provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents: 50000,
+        monthly: true,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      }),
+    ).rejects.toThrow("Invalid credit amount");
+    expect(requests).toHaveLength(0);
+    expect(await provider.listCreditPurchases("cus_fixture")).toEqual([
+      { id: "cs_retired", amountCents: 50000 },
+    ]);
   });
   it("reads only settled credit payments, deducts refunds, and ignores legacy invoices", async () => {
     const { provider } = fixture({
@@ -456,9 +599,21 @@ describe("Stripe prepaid model credits", () => {
     );
     expect(requests.some((r) => r.path === "/v1/subscriptions/sub_fixture")).toBe(false);
   });
+  it("names a declined upgrade as a payment that was not completed", async () => {
+    const { provider } = fixture({
+      "/v1/subscriptions": subscription(1000),
+      "POST /v1/subscriptions/sub_fixture": Response.json(
+        { error: { type: "card_error", code: "card_declined", message: "declined" } },
+        { status: 402 },
+      ),
+    });
+    await expect(provider.setMonthlyCredits("cus_fixture", 2000)).rejects.toBeInstanceOf(
+      BillingPaymentNotCompletedError,
+    );
+  });
   it("changes the renewal price without a charge or proration when downgrading", async () => {
-    const { provider, requests } = fixture({ "/v1/subscriptions": subscription(2000) });
-    await provider.setMonthlyCredits("cus_fixture", 1000);
+    const { provider, requests } = fixture({ "/v1/subscriptions": subscription(3000) });
+    await provider.setMonthlyCredits("cus_fixture", 2000);
     expect(requests.at(-1)!.params.get("proration_behavior")).toBe("none");
   });
   it("reuses a matching active plan instead of Checkout's archived inline product", async () => {
@@ -613,4 +768,63 @@ describe("Stripe prepaid model credits", () => {
       ]);
     },
   );
+});
+
+describe("Stripe credit disputes", () => {
+  const disputes: Record<string, Array<{ id: string; amount: number; status: string }>> = {
+    open: [{ id: "dp_needs_response", amount: 2000, status: "needs_response" }],
+    review: [{ id: "dp_under_review", amount: 2000, status: "under_review" }],
+    inquiry: [{ id: "dp_warning_needs_response", amount: 2000, status: "warning_needs_response" }],
+    won: [{ id: "dp_won", amount: 2000, status: "won" }],
+    lost: [{ id: "dp_lost", amount: 2000, status: "lost" }],
+    partial: [{ id: "dp_needs_response", amount: 1000, status: "needs_response" }],
+  };
+  const ids = Object.keys(disputes);
+  const page = (data: unknown[]) => Response.json({ data, has_more: false });
+  const provider = new StripeBillingProvider({
+    secretKey: "sk_test_fixture",
+    webhookSecret: "whsec_fixture",
+    fetch: vi.fn(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/charges")
+        return page(
+          ids.map((id) => ({
+            id,
+            payment_intent: `pi_${id}`,
+            currency: "usd",
+            paid: true,
+            captured: true,
+            disputed: true,
+            amount: 2000,
+            amount_refunded: id === "partial" ? 500 : 0,
+          })),
+        );
+      if (url.pathname === "/v1/checkout/sessions")
+        return page(
+          ids.map((id) => ({
+            id: `cs_${id}`,
+            mode: "payment",
+            payment_status: "paid",
+            currency: "usd",
+            amount_total: 2000,
+            payment_intent: `pi_${id}`,
+            metadata: { rakazo_credit_cents: "2000" },
+          })),
+        );
+      if (url.pathname === "/v1/disputes")
+        return page(disputes[url.searchParams.get("charge") ?? ""] ?? []);
+      return page([]);
+    }),
+  });
+
+  it("holds credits while a dispute is open, keeps them when it is won, and drops them when lost", async () => {
+    expect(await provider.listCreditPurchases("cus_fixture")).toEqual([
+      { id: "cs_open", amountCents: 2000, disputedCents: 2000 },
+      { id: "cs_review", amountCents: 2000, disputedCents: 2000 },
+      { id: "cs_inquiry", amountCents: 2000 },
+      { id: "cs_won", amountCents: 2000 },
+      { id: "cs_lost", amountCents: 0 },
+      { id: "cs_partial", amountCents: 1500, disputedCents: 1000 },
+    ]);
+  });
 });

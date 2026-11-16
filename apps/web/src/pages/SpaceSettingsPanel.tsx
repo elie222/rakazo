@@ -2,29 +2,41 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { SpaceMembersSettings } from "../components/SpaceMembersSettings";
+import { useSave } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 import type { SettingsSpace } from "./shell/dialogs";
 import { DeleteSpaceDialog } from "./shell/dialogs";
 
-/** One space's page: its name, the account settings it customizes, and deletion for its owner. */
+/**
+ * One space's page: its name, its members, the account settings it customizes, and deletion for
+ * its owner.
+ */
 export function SpaceSettingsPanel({
   space,
   onRename,
   onDelete,
+  onLeft,
   onClose,
   onBusyChange,
 }: {
   space: SettingsSpace;
-  onRename: (name: string) => Promise<void>;
+  onRename: (name: string, client: RpcClient) => Promise<void>;
   onDelete: () => Promise<void>;
+  /** After leaving, with the space the server moved this person to. */
+  onLeft: (activeSpaceId: string) => void;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
   const nameId = useId();
   const [draft, setDraft] = useState(space.name);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const rename = useSave({
+    save: (name: string, client) => onRename(name, client),
+    onSaved: (_, name) => setDraft(name),
+  });
+  const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [overridesBusy, setOverridesBusy] = useState(false);
   // A rename in flight holds the dialog open, so a failure is shown instead of lost on leaving.
@@ -33,27 +45,16 @@ export function SpaceSettingsPanel({
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
 
-  async function save() {
+  function save() {
     const trimmed = draft.trim();
     if (pending) return;
     // An empty or unchanged name keeps the current one without a request.
     if (!trimmed || trimmed === space.name) {
       setDraft(space.name);
-      setError(null);
+      rename.reset();
       return;
     }
-    setPending(true);
-    setError(null);
-    try {
-      await onRename(trimmed);
-      setDraft(trimmed);
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message.trim() ? err.message : t`Could not rename space`,
-      );
-    } finally {
-      setPending(false);
-    }
+    rename.run(trimmed);
   }
 
   return (
@@ -75,9 +76,9 @@ export function SpaceSettingsPanel({
                 disabled={pending}
                 onChange={(event) => {
                   setDraft(event.target.value);
-                  setError(null);
+                  rename.reset();
                 }}
-                onBlur={() => void save()}
+                onBlur={save}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") event.stopPropagation();
                   // Enter or Escape that ends an IME composition is not a commit or cancel.
@@ -87,20 +88,21 @@ export function SpaceSettingsPanel({
                   }
                   if (event.key === "Escape") {
                     setDraft(space.name);
-                    setError(null);
+                    rename.reset();
                   }
                 }}
               />
             }
           >
-            {error ? (
-              <p role="alert" className="pt-2 text-[12.5px] text-destructive">
-                {error}
+            {rename.error ? (
+              <p role="alert" className="pt-2 text-body-sm text-destructive">
+                {rename.error.message.trim() || t`Could not rename space`}
               </p>
             ) : null}
           </SettingsRow>
         </SettingsGroup>
       ) : null}
+      <SpaceMembersSettings space={space} onLeft={onLeft} />
       <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
       {space.canDelete ? (
         <Button

@@ -107,6 +107,39 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(replyChip).toContainText(/forty two percent/);
   await expect(replyChip).toContainText("**forty two percent**");
 
+  // A new selection replaces the quote even within the same message and focuses the composer.
+  await sourceRow.click();
+  await selectAndRelease(page, sourceRow, "growth");
+  await expect(quoteButton).toBeVisible();
+  await expect(quoteButton).toContainText(/⌘⇧L|Ctrl\+Shift\+L/);
+  await captureScreenshot(page, testInfo, "quote-shortcut-pill");
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(quoteButton).toHaveCount(0);
+  await expect(replyChip).toContainText("growth");
+  await expect(replyChip).not.toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+  await captureScreenshot(page, testInfo, "quote-shortcut-applied");
+
+  // A bot message quotes the same way as one of my own.
+  const botRow = transcript
+    .locator("[data-message-id]")
+    .filter({ hasText: `done. i handled: quote-source-${stamp}` })
+    .first();
+  await botRow.click();
+  await selectAndRelease(page, botRow, "forty two percent");
+  await expect(quoteButton).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(replyChip).toContainText("forty two percent");
+  await expect(replyChip).not.toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+
+  await sourceRow.click();
+  await selectAndRelease(page, sourceRow, "**forty two percent**");
+  await expect(quoteButton).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+L");
+  await expect(replyChip).toContainText("**forty two percent**");
+  await expect(composer).toBeFocused();
+
   const replyText = `quote-reply-${stamp} why this number?`;
   await composer.fill(replyText);
   await composer.press("Enter");
@@ -223,6 +256,29 @@ test("an armed reply survives the parent paging out of the transcript", async ({
 
   // Stop the reply's run so its continues cannot churn into the next test.
   await rpc(page, "threads/stop", { botId });
+});
+
+test("triple-clicking the last paragraph of the latest reply quotes it", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `quote-triple-${stamp}@rakazo.test`, "password12", "Quote Tester");
+  await completeOnboarding(page);
+
+  const composer = page.getByRole("combobox", { name: /Message/ });
+  await composer.fill(`quote-triple-${stamp}`);
+  await composer.press("Enter");
+  // The scripted bot answers in two paragraphs; the last one ends the transcript,
+  // so a triple-click's selection runs on into the composer.
+  const lastParagraph = page
+    .getByTestId("message-bot-bubble")
+    .locator("p")
+    .filter({ hasText: `i handled: quote-triple-${stamp}` });
+  await expect(lastParagraph).toBeVisible({ timeout: 20_000 });
+
+  await lastParagraph.click({ clickCount: 3 });
+  const quoteButton = page.getByTestId("quote-selection");
+  await expect(quoteButton).toBeVisible();
+  await quoteButton.click();
+  await expect(page.getByTestId("reply-chip")).toContainText(`i handled: quote-triple-${stamp}`);
 });
 
 test("quoting a second message retargets the armed reply", async ({ page }) => {

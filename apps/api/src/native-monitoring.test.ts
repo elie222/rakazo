@@ -31,6 +31,31 @@ describe("native error collector privacy boundary", () => {
     });
   });
 
+  it("keeps the coarse mobile screen name and drops anything route-like", () => {
+    expect(sanitizeNativeEvent({ tags: { screen: "chat" } }, "mobile").tags).toEqual({
+      surface: "mobile",
+      screen: "chat",
+    });
+    for (const screen of ["/thread?id=abc", "Chat with Sam", "chat/123", "alice_smith", 7])
+      expect(sanitizeNativeEvent({ tags: { screen } }, "mobile").tags).toEqual({
+        surface: "mobile",
+      });
+    expect(sanitizeNativeEvent({ tags: { screen: "other" } }, "mobile").tags).toEqual({
+      surface: "mobile",
+      screen: "other",
+    });
+    expect(sanitizeNativeEvent({ tags: { screen: "chat" } }, "desktop").tags).toEqual({
+      surface: "desktop",
+    });
+  });
+
+  it("drops the screen from a startup error replayed from the previous launch", () => {
+    expect(
+      sanitizeNativeEvent({ tags: { screen: "chat", "startup.previous_launch": "true" } }, "mobile")
+        .tags,
+    ).toEqual({ surface: "mobile", "startup.previous_launch": "true" });
+  });
+
   it("keeps which desktop child process stopped", () => {
     const tags = { "process.name": "Audio Service", "process.exit_code": "-1" };
     expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
@@ -38,6 +63,33 @@ describe("native error collector privacy boundary", () => {
     expect(
       sanitizeNativeEvent(
         { tags: { "process.name": "/Users/someone/app", "process.exit_code": "private text" } },
+        "desktop",
+      ).tags,
+    ).toEqual({ surface: "desktop" });
+  });
+
+  it("keeps a desktop renderer's route, uptime and memory trend", () => {
+    const tags = {
+      "renderer.route": "/app/:id",
+      "renderer.uptime_min": "184",
+      "renderer.memory_mb": "812,1460,2210",
+    };
+    expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
+    expect(sanitizeNativeEvent({ tags }, "mobile").tags).toEqual({ surface: "mobile" });
+    for (const route of ["file:", "unknown", "/app/:id/:i"])
+      expect(sanitizeNativeEvent({ tags: { "renderer.route": route } }, "desktop").tags).toEqual({
+        surface: "desktop",
+        "renderer.route": route,
+      });
+    expect(
+      sanitizeNativeEvent(
+        {
+          tags: {
+            "renderer.route": "/Users/someone/private",
+            "renderer.uptime_min": "a while",
+            "renderer.memory_mb": "lots",
+          },
+        },
         "desktop",
       ).tags,
     ).toEqual({ surface: "desktop" });
@@ -57,6 +109,14 @@ describe("native error collector privacy boundary", () => {
       { category: "ui.lifecycle", data: { screen: "RNSScreen" } },
     ]);
     expect(sanitizeNativeEvent({ breadcrumbs }, "desktop").breadcrumbs).toBeUndefined();
+  });
+
+  it("keeps the Android mapping id so obfuscated stacks can be deobfuscated", () => {
+    const uuid = "00000000-0000-4000-8000-000000000000";
+    expect(
+      sanitizeNativeEvent({ debug_meta: { images: [{ type: "proguard", uuid }] } }, "mobile")
+        .debug_meta,
+    ).toEqual({ images: [{ type: "proguard", uuid }] });
   });
 
   it("keeps replayed startup failures anonymous", () => {

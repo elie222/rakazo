@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { NavLink } from "@rakazo/contracts";
-import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
+import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
   Button,
@@ -11,12 +11,16 @@ import {
 } from "@rakazo/ui-web";
 import {
   BookOpen,
+  Building2,
+  Check,
+  ChevronRight,
   Download,
   FolderOpen,
   Gauge,
   Link2,
   LogOut,
   Plug,
+  Plus,
   ScrollText,
   Settings,
   Smartphone,
@@ -25,6 +29,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
+import type { Organization } from "../lib/organizations";
 import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
 
@@ -44,11 +49,17 @@ type Props = {
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
-  onUsage: () => void;
+  /** How much of the member's allowance is used; the Usage row shows only with one. */
+  usage?: string | null;
+  onUsage?: () => void;
   onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
   logOutError: string | null;
+  organizations?: Organization[];
+  activeOrganizationId?: string | null;
+  onSwitchOrganization?: (organization: Organization) => void;
+  onCreateOrganization?: () => void;
 };
 
 // Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
@@ -72,11 +83,16 @@ export function SidebarFooter({
   onLink,
   onArtifacts,
   onSettings,
+  usage,
   onUsage,
   onInvite,
   onLogOut,
   signingOut,
   logOutError,
+  organizations = [],
+  activeOrganizationId,
+  onSwitchOrganization,
+  onCreateOrganization,
 }: Props) {
   const { t } = useLingui();
   const update = useSidebarUpdate();
@@ -113,7 +129,7 @@ export function SidebarFooter({
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-sm font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-body font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
@@ -139,11 +155,17 @@ export function SidebarFooter({
               data-testid="account-menu-header"
               className="mb-1 min-w-0 border-b border-border px-2.5 py-2.5"
             >
-              <p className="truncate text-sm font-medium">{name}</p>
+              <p className="truncate text-body font-medium">{name}</p>
               {email && email !== name ? (
-                <p className="truncate text-xs text-muted-foreground">{email}</p>
+                <p className="truncate text-label text-muted-foreground">{email}</p>
               ) : null}
             </div>
+            <OrganizationRow
+              organizations={organizations}
+              activeOrganizationId={activeOrganizationId}
+              onSwitch={onSwitchOrganization}
+              onCreate={onCreateOrganization}
+            />
             {mini ? (
               <Button
                 variant="ghost"
@@ -152,6 +174,19 @@ export function SidebarFooter({
               >
                 <Plug className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Connect apps</Trans>
+              </Button>
+            ) : null}
+            {usage ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onUsage}
+              >
+                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Usage</Trans>
+                <span className="ms-auto text-body-sm tabular-nums text-muted-foreground">
+                  {usage}
+                </span>
               </Button>
             ) : null}
             <Button
@@ -200,18 +235,12 @@ export function SidebarFooter({
                 {link.label}
               </Button>
             ))}
-            <Button
-              variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onUsage}
-            >
-              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Usage</Trans>
-            </Button>
             <div className="my-1 border-t border-border" />
             <a
               className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-              href={/Android/i.test(navigator.userAgent) ? ANDROID_APK_URL : IOS_APP_STORE_URL}
+              href={
+                /Android/i.test(navigator.userAgent) ? ANDROID_APP_STORE_URL : IOS_APP_STORE_URL
+              }
               target="_blank"
               rel="noreferrer"
             >
@@ -248,7 +277,7 @@ export function SidebarFooter({
               <Trans>Log out</Trans>
             </Button>
             {logOutError ? (
-              <p role="alert" className="px-2.5 pt-1 pb-2 text-[13px] text-destructive">
+              <p role="alert" className="px-2.5 pt-1 pb-2 text-body-sm text-destructive">
                 {logOutError}
               </p>
             ) : null}
@@ -282,5 +311,75 @@ export function SidebarFooter({
         </IconTooltip>
       ) : null}
     </div>
+  );
+}
+
+/** The organization in use; its submenu switches to another or starts a new one. */
+function OrganizationRow({
+  organizations,
+  activeOrganizationId,
+  onSwitch,
+  onCreate,
+}: {
+  organizations: Organization[];
+  activeOrganizationId?: string | null;
+  onSwitch?: (organization: Organization) => void;
+  onCreate?: () => void;
+}) {
+  const active = organizations.find((organization) => organization.id === activeOrganizationId);
+  if (!active) return null;
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger
+          openOnHover
+          delay={100}
+          data-testid="organization-menu-trigger"
+          render={
+            <Button variant="ghost" className="h-9 w-full justify-start gap-2.5 font-normal" />
+          }
+        >
+          <Building2 className="text-muted-foreground" strokeWidth={1.75} />
+          <span className="min-w-0 truncate">{active.name}</span>
+          <ChevronRight className="ms-auto text-muted-foreground" strokeWidth={1.75} />
+        </PopoverTrigger>
+        <PopoverContent
+          side="right"
+          align="start"
+          sideOffset={4}
+          className="max-h-(--available-height) w-60 gap-0 overflow-y-auto p-1 *:shrink-0"
+        >
+          {organizations.map((organization) => {
+            const current = organization.id === active.id;
+            return (
+              <Button
+                key={organization.id}
+                variant="ghost"
+                aria-current={current ? "true" : undefined}
+                className="h-9 w-full justify-between gap-2.5 font-normal"
+                onClick={() => onSwitch?.(organization)}
+              >
+                <span className="min-w-0 truncate">{organization.name}</span>
+                {current ? <Check aria-hidden="true" strokeWidth={1.75} /> : null}
+              </Button>
+            );
+          })}
+          {onCreate ? (
+            <>
+              <div className="my-1 border-t border-border" />
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onCreate}
+              >
+                <Plus className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>New organization</Trans>
+              </Button>
+            </>
+          ) : null}
+        </PopoverContent>
+      </Popover>
+      <div className="my-1 border-t border-border" />
+    </>
   );
 }

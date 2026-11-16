@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { BOT_COLORS, BOT_SETTINGS_SECTIONS } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -10,11 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BotSettingsScreen from "../app/bot-settings";
 import { MenuPicker } from "../components/menu-picker";
 import { afterChatNotifyChange } from "./live-notifications";
+import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
   instructions: "",
   description: "",
   crossSpaceCommunication: false,
+  autoSpeak: false,
+  dailyCheckIns: undefined as boolean | undefined,
+  fleetManagement: false,
   avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
   os: "ios",
@@ -29,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   loadBot: vi.fn(),
   back: vi.fn(),
+  push: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
@@ -44,16 +51,6 @@ const offered = [
   { identifier: "voice-b", name: "Beth", language: "en-GB" },
 ];
 
-function deferredSave<T = void>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((resolveSave, rejectSave) => {
-    resolve = resolveSave;
-    reject = rejectSave;
-  });
-  return { promise, resolve, reject };
-}
-
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./bot-voices", () => ({
   voiceLabel: (voice: { language: string; name: string }) => `${voice.name} (${voice.language})`,
@@ -66,8 +63,12 @@ vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://api.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-a" },
+  }),
   rpc: async (procedure: string, input?: unknown) => {
     if (
       [
@@ -93,9 +94,10 @@ vi.mock("./api", () => ({
         instructionHistory: mocks.history,
         color: BOT_COLORS[0],
         avatarSet: mocks.avatarSet,
-        autoSpeak: false,
+        autoSpeak: mocks.autoSpeak,
         computerMode: "team",
-        fleetManagement: false,
+        dailyCheckIns: mocks.dailyCheckIns,
+        fleetManagement: mocks.fleetManagement,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
       };
     }
@@ -104,6 +106,13 @@ vi.mock("./api", () => ({
     if (procedure === "me") return {};
     return [];
   },
+}));
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => 1,
 }));
 vi.mock("./live-notifications", { spy: true });
 vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
@@ -118,7 +127,7 @@ vi.mock("expo-notifications", () => ({
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: mocks.back }),
+  useRouter: () => ({ back: mocks.back, push: mocks.push }),
   useLocalSearchParams: () => ({ botId: "bot-fixture", focus: mocks.focus }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
@@ -192,10 +201,12 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       scrollEnabled,
+      editable,
     }: {
       value: string;
       onChangeText?: (value: string) => void;
       scrollEnabled?: boolean;
+      editable?: boolean;
       style?: unknown;
       accessibilityLabel?: string;
       placeholder?: string;
@@ -203,6 +214,7 @@ vi.mock("react-native", () => {
     }) =>
       createElement("textarea", {
         value,
+        disabled: editable === false,
         onChange: () => undefined,
         onInput: (event: { currentTarget: HTMLTextAreaElement }) =>
           onChangeText?.(event.currentTarget.value),
@@ -250,6 +262,7 @@ vi.mock("react-native", () => {
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: {
+    secondaryLabel: "muted",
     tertiaryLabel: "muted",
     get fill() {
       return mocks.fill;
@@ -259,35 +272,7 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string | number>) =>
-    text.replace(/\{(\w+)\}/g, (_, key) => String(values?.[key] ?? ""));
-  return { t, useI18n: () => ({ t }) };
-});
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
-vi.mock("./bot-avatar-edit", () => ({
-  avatarColor: (value: string) => value,
-  avatarShape: () => null,
-  isAvatarPhoto: () => false,
-  withAvatarColor: (_value: string, color: string) => color,
-  withAvatarShape: (value: string) => value,
-}));
-vi.mock("../components/native-segmented-control", () => ({
-  NativeSegmentedControl: ({
-    options,
-    onChange,
-  }: {
-    options: { value: string; label: string }[];
-    onChange: (value: string) => void;
-  }) =>
-    options.map((option) =>
-      createElement(
-        "button",
-        { type: "button", key: option.value, onClick: () => onChange(option.value) },
-        option.label,
-      ),
-    ),
-}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -361,7 +346,11 @@ describe("bot settings device voice menu", () => {
   let root: Root;
   let container: HTMLDivElement;
   beforeEach(() => {
+    queryClient.clear();
     mocks.crossSpaceCommunication = false;
+    mocks.autoSpeak = false;
+    mocks.dailyCheckIns = undefined;
+    mocks.fleetManagement = false;
     mocks.avatarSet = undefined;
     vi.clearAllMocks();
     mocks.loadBot.mockReset();
@@ -394,30 +383,48 @@ describe("bot settings device voice menu", () => {
   };
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
-  it("defaults daily check-ins on and saves an opt-out", async () => {
+  it("hides read aloud and permission switches for a bot on the defaults", async () => {
+    mocks.crossSpaceCommunication = true;
+    mocks.fleetManagement = true;
+    await render();
+    for (const label of [
+      "Read replies aloud",
+      "Daily check-ins on unfinished work",
+      "Allow cross-space bot communication",
+      "Manage other bots",
+    ])
+      expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
+    expect(container.textContent).not.toContain("Permissions");
+    expect(menu()).not.toBeNull();
+  });
+
+  it("keeps a turned-off daily check-ins switch so it can be turned back on", async () => {
+    mocks.dailyCheckIns = false;
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Daily check-ins on unfinished work"]',
     )!;
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => toggle.click());
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
       botId: "bot-fixture",
-      dailyCheckIns: false,
+      dailyCheckIns: true,
     });
+    expect(
+      container.querySelector('[aria-label="Daily check-ins on unfinished work"]'),
+    ).not.toBeNull();
   });
 
-  it.each([false, true])("loads and saves cross-space communication: %s", async (enabled) => {
-    mocks.crossSpaceCommunication = enabled;
+  it("loads and saves a turned-off cross-space communication switch", async () => {
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Allow cross-space bot communication"]',
     )!;
-    expect(toggle.getAttribute("aria-checked")).toBe(String(enabled));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => toggle.click());
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
       botId: "bot-fixture",
-      crossSpaceCommunication: !enabled,
+      crossSpaceCommunication: true,
     });
   });
 
@@ -431,16 +438,16 @@ describe("bot settings device voice menu", () => {
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
       expect(JSON.parse(trigger.dataset.style!)).toMatchObject({ minHeight: 44 });
       expect(JSON.parse(trigger.dataset.style!)).not.toHaveProperty("backgroundColor");
-      expect(JSON.parse(trigger.querySelector("span")!.dataset.style!)).toEqual([
-        { fontSize: 12, fontWeight: "500", flexShrink: 1 },
-        { color: "muted" },
-      ]);
+      expect(JSON.parse(trigger.querySelector("span")!.dataset.style!)).toMatchObject({
+        color: "muted",
+        fontSize: 14,
+      });
       const heading = [...container.querySelectorAll('[role="header"]')].find(
         (node) => node.textContent === "Notifications",
       )!;
       expect(heading).toBeDefined();
       expect(JSON.parse((heading.parentElement as HTMLElement).dataset.style!)).toMatchObject({
-        gap: 8,
+        gap: 7,
       });
       expect(
         container.querySelector('[role="switch"][aria-label="When it finishes or needs input"]'),
@@ -514,18 +521,95 @@ describe("bot settings device voice menu", () => {
     });
   });
 
+  it.each([false, true])(
+    "locks instruction edits and Save during restore (fails: %s)",
+    async (fails) => {
+      mocks.history = [
+        {
+          id: "v1",
+          instructions: "Earlier",
+          reason: "Manual edit",
+          createdAt: "2026-10-01T00:00:00Z",
+        },
+      ];
+      const restore = deferred<{ id: string; instructions: string }>();
+      mocks.rpc.mockReturnValue(restore.promise);
+      mocks.autoSpeak = true;
+      await render();
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
+      );
+      const history = container.querySelector('[data-menu="Instruction history"]')!;
+      await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
+      const confirm = mocks.alert.mock.calls.at(-1)![2][1].onPress;
+      await act(async () => {
+        confirm();
+        confirm();
+      });
+      const input = container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Instructions"]',
+      )!;
+      expect(input.disabled).toBe(true);
+      const save = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Saving…",
+      )!;
+      expect(save.disabled).toBe(true);
+      await act(async () => save.click());
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        if (fails) restore.reject(new Error("restore failed"));
+        else restore.resolve({ id: "bot-fixture", instructions: "Earlier" });
+      });
+      expect(input.disabled).toBe(false);
+      expect(input.value).toBe(fails ? "" : "Earlier");
+      if (fails) expect(container.textContent).toContain("restore failed");
+      expect(mocks.back).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not start a restore while Save is in flight", async () => {
+    mocks.history = [
+      {
+        id: "v1",
+        instructions: "Earlier",
+        reason: "Manual edit",
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+    ];
+    const save = deferred();
+    mocks.rpc.mockReturnValue(save.promise);
+    mocks.autoSpeak = true;
+    await render();
+    const history = container.querySelector('[data-menu="Instruction history"]')!;
+    await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
+    const confirm = mocks.alert.mock.calls.at(-1)![2][1].onPress;
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
+    );
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Save",
+    )!;
+    await act(async () => {
+      button.click();
+      confirm();
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", expect.any(Object));
+    await act(async () => save.resolve());
+  });
+
   it("exports through the share sheet and confirms conversation clearing", async () => {
     await render();
     mocks.rpc.mockResolvedValueOnce({ version: 1 });
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Export"]')!.click(),
-    );
+    const button = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (node) => node.textContent === label,
+      )!;
+    await act(async () => button("Export").click());
     expect(mocks.rpc).toHaveBeenCalledWith("export/bot", { botId: "bot-fixture" });
     expect(mocks.share).toHaveBeenCalledWith({ message: JSON.stringify({ version: 1 }, null, 2) });
     mocks.rpc.mockClear();
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Clear conversation"]')!.click(),
-    );
+    await act(async () => button("Clear conversation").click());
     expect(mocks.rpc).not.toHaveBeenCalled();
     mocks.rpc.mockResolvedValueOnce({ ok: true });
     await act(async () => mocks.alert.mock.calls.at(-1)![2][1].onPress());
@@ -644,6 +728,8 @@ describe("bot settings device voice menu", () => {
       content: "Fixture notes",
     }));
     await act(async () => root.render(<BotSettingsScreen />));
+    expect(container.textContent).not.toContain("notes/0.md");
+    await expand();
     expect(container.textContent).not.toContain("Task 6");
     expect(container.textContent).not.toContain("notes/6.md");
     for (const button of [...container.querySelectorAll("button")].filter(
@@ -653,9 +739,14 @@ describe("bot settings device voice menu", () => {
     expect(container.textContent).toContain("Task 6");
     expect(container.textContent).toContain("notes/6.md");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="notes/6.md"]')!.click(),
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((node) => node.textContent === "notes/6.md")!
+        .click(),
     );
-    expect(mocks.alert).toHaveBeenCalledWith("notes/6.md", "Fixture notes");
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: "/memory-note",
+      params: { id: "doc-6", botId: "bot-fixture" },
+    });
   });
 
   it("uses a dialog rather than inline fields on Android", async () => {
@@ -707,11 +798,13 @@ describe("bot settings device voice menu", () => {
   });
 
   it("hides advanced controls until expanded and follows the shared order", async () => {
+    mocks.autoSpeak = true;
+    mocks.dailyCheckIns = false;
     await act(async () => root.render(<BotSettingsScreen />));
     for (const label of [
       "Model",
       "Thinking",
-      "Computer",
+      "Own computer",
       "Read replies aloud",
       "Device voice",
       "Manage other bots",
@@ -737,7 +830,7 @@ describe("bot settings device voice menu", () => {
     });
     const labels = {
       instructions: "Instructions",
-      computer: "Computer",
+      computer: "Own computer",
       model: "Model",
       readAloud: "Read replies aloud",
       voice: "Device voice",
@@ -757,10 +850,11 @@ describe("bot settings device voice menu", () => {
     expect(actual).toEqual(
       Object.values(BOT_SETTINGS_SECTIONS)
         .flat()
-        .filter((key) => key in labels && key !== "instructions" && key !== "computer"),
+        .filter((key) => key in labels && key !== "instructions"),
     );
     expect(actual).toEqual([
       "model",
+      "computer",
       "readAloud",
       "voice",
       "dailyCheckIns",
@@ -787,7 +881,7 @@ describe("bot settings device voice menu", () => {
         },
       },
     ] as never);
-    const first = deferredSave<{ threadId: string }>();
+    const first = deferred<{ threadId: string }>();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -829,7 +923,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("dismisses direct-chat notifications when muting before the bot loads", async () => {
-    const loading = deferredSave();
+    const loading = deferred();
     mocks.loadBot.mockReturnValueOnce(loading.promise);
     mocks.rpc.mockResolvedValueOnce({ threadId: "thread-fixture" });
     vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
@@ -880,7 +974,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("queues notifications and ignores an older failure before saving the latest choice", async () => {
-    const first = deferredSave();
+    const first = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -913,8 +1007,8 @@ describe("bot settings device voice menu", () => {
   ])(
     "serializes name edits (first fails: $firstFails, latest fails: $latestFails)",
     async ({ firstFails, latestFails }) => {
-      const first = deferredSave();
-      const last = deferredSave();
+      const first = deferred();
+      const last = deferred();
       mocks.rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
       await render();
       const edit = async (value: string) => {
@@ -956,14 +1050,13 @@ describe("bot settings device voice menu", () => {
 
   it("saves read aloud and computer mode after expanding Advanced", async () => {
     mocks.rpc.mockResolvedValue(undefined);
+    mocks.autoSpeak = true;
     await render();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
     );
     await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Private")!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Own computer"]')!.click(),
     );
     await act(async () =>
       [...container.querySelectorAll("button")]
@@ -976,7 +1069,7 @@ describe("bot settings device voice menu", () => {
     });
     expect(mocks.rpc).toHaveBeenCalledWith(
       "bots/update",
-      expect.objectContaining({ botId: "bot-fixture", autoSpeak: true }),
+      expect.objectContaining({ botId: "bot-fixture", autoSpeak: false }),
     );
   });
 
@@ -1008,8 +1101,8 @@ describe("bot settings device voice menu", () => {
   });
 
   it("keeps the switch and Save enabled while saving and coalesces rapid toggles", async () => {
-    const first = deferredSave();
-    const last = deferredSave();
+    const first = deferred();
+    const last = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
@@ -1040,8 +1133,8 @@ describe("bot settings device voice menu", () => {
   it.each([false, true])(
     "waits for the full bot management queue before leaving (failure: %s)",
     async (fails) => {
-      const first = deferredSave();
-      const last = deferredSave();
+      const first = deferred();
+      const last = deferred();
       let fleetCalls = 0;
       mocks.rpc.mockImplementation((_procedure: string, input: { fleetManagement?: boolean }) =>
         input.fleetManagement === undefined
@@ -1050,6 +1143,7 @@ describe("bot settings device voice menu", () => {
             ? first.promise
             : last.promise,
       );
+      mocks.autoSpeak = true;
       await render();
       const toggle = container.querySelector<HTMLButtonElement>(
         '[aria-label="Manage other bots"]',
@@ -1100,11 +1194,12 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockResolvedValue(undefined);
     mocks.rpc.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({
       instructions: "",
-      autoSpeak: true,
+      autoSpeak: false,
       instructionHistory: [
         { id: "v1", instructions: "Older", reason: "edit", createdAt: "2026-10-21T18:00:00Z" },
       ],
     });
+    mocks.autoSpeak = true;
     await render();
     expect(container.querySelector('[data-menu="Instruction history"]')).toBeNull();
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
@@ -1118,7 +1213,7 @@ describe("bot settings device voice menu", () => {
     await act(async () => save.click());
     expect(mocks.rpc).toHaveBeenLastCalledWith("bots/update", {
       botId: "bot-fixture",
-      autoSpeak: true,
+      autoSpeak: false,
     });
     expect(mocks.back).not.toHaveBeenCalled();
     expect(container.textContent).toContain("offline");
@@ -1132,7 +1227,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("coalesces a queued value matching the confirmed save", async () => {
-    const first = deferredSave();
+    const first = deferred();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Manage other bots"]')!;
@@ -1162,6 +1257,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it("marks the current voice, keeps the plain row, and saves before playing a sample", async () => {
+    mocks.autoSpeak = true;
     await render();
     const actions = menu()!.querySelectorAll("button");
     expect([...actions].map((action) => [action.textContent, action.dataset.state])).toEqual([
@@ -1170,18 +1266,16 @@ describe("bot settings device voice menu", () => {
     ]);
     const labels = [...container.querySelectorAll("span")];
     const label = (text: string) => labels.find((item) => item.textContent === text)!;
-    expect(label("Device voice").dataset.style).toBe(label("Read replies aloud").dataset.style);
-    const row = label("Device voice").parentElement!;
-    expect(menu()!.firstElementChild).toBe(row);
-    expect(JSON.parse(row.dataset.style!)[0]).toEqual(
-      JSON.parse(label("Read replies aloud").parentElement!.dataset.style!),
-    );
-    expect(menu()!.contains(label("Device voice"))).toBe(true);
-    const trigger = menu()!.firstElementChild!;
+    const style = (node: HTMLElement) =>
+      Object.assign({}, ...[JSON.parse(node.dataset.style!)].flat(Infinity));
+    expect(style(label("Device voice"))).toEqual(style(label("Read replies aloud")));
+    const row = menu()!.firstElementChild as HTMLElement;
+    expect(row.contains(label("Device voice"))).toBe(true);
+    const trigger = row.firstElementChild!;
     expect(trigger.getAttribute("role")).toBe("button");
     expect(trigger.getAttribute("aria-label")).toBe("Device voice");
     expect(trigger.getAttribute("aria-valuetext")).toBe("Alice (en-US)");
-    expect(label("Alice (en-US)").dataset.style).toContain('"textAlign":"right"');
+    expect(trigger.contains(label("Alice (en-US)"))).toBe(true);
     expect(menu()!.querySelector("i")!.dataset).toMatchObject({
       ios: "chevron.up.chevron.down",
       android: "chevron-expand",
@@ -1224,8 +1318,8 @@ describe("bot settings device voice menu", () => {
         ...offered,
         { identifier: "voice-c", name: "Clara", language: "en-US" },
       ]);
-      const first = deferredSave();
-      const latest = deferredSave();
+      const first = deferred();
+      const latest = deferred();
       mocks.setVoiceForBot.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
       await render();
       const actions = () => [...menu()!.querySelectorAll("button")];
@@ -1270,18 +1364,12 @@ describe("bot settings device voice menu", () => {
       mocks.deviceVoices.mockResolvedValue(voices);
       await render();
       expect(menu()).toBeNull();
-      const label = [...container.querySelectorAll("span")].find(
-        (item) => item.textContent === "Device voice",
-      )!;
-      expect(label.parentElement!.lastElementChild!.tagName).toBe("SPAN");
-      expect(label.parentElement!.lastElementChild!.getAttribute("data-style")).toContain(
-        '"textAlign":"right"',
-      );
-      expect(
-        [...container.querySelectorAll("span")]
-          .find((span) => span.textContent === "Device voice")!
-          .parentElement!.querySelector('i[data-ios="chevron.up.chevron.down"]'),
-      ).toBeNull();
+      const row = container.querySelector<HTMLElement>('[aria-label="Device voice"]')!;
+      expect(row.tagName).toBe("DIV");
+      expect(row.getAttribute("role")).toBeNull();
+      expect(row.lastElementChild!.tagName).toBe("SPAN");
+      expect(row.lastElementChild!.textContent).toBe(row.getAttribute("aria-valuetext"));
+      expect(row.querySelector('i[data-ios="chevron.up.chevron.down"]')).toBeNull();
     },
   );
 
@@ -1290,9 +1378,9 @@ describe("bot settings device voice menu", () => {
     await render();
     expect(menu()).toBeNull();
     expect(
-      [...container.querySelectorAll("span")]
-        .find((span) => span.textContent === "Device voice")!
-        .parentElement!.querySelector('i[data-ios="chevron.up.chevron.down"]'),
+      container
+        .querySelector('[aria-label="Device voice"]')!
+        .querySelector('i[data-ios="chevron.up.chevron.down"]'),
     ).toBeNull();
     const retry = () =>
       [...container.querySelectorAll("button")].find((item) =>

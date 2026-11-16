@@ -6,6 +6,10 @@ const workflow = readFileSync(
   path.resolve(import.meta.dirname, "../../../.github/workflows/release-desktop.yml"),
   "utf8",
 );
+const releaseScript = readFileSync(
+  path.resolve(import.meta.dirname, "../../../scripts/release/desktop-release.mjs"),
+  "utf8",
+);
 
 const expression = (inner: string) => `\${{ ${inner} }}`;
 
@@ -56,22 +60,15 @@ describe("desktop release workflow", () => {
     );
   });
 
-  it("always builds Windows and signs it once Azure Artifact Signing is configured", () => {
-    expect(workflow).toContain(
-      `WINDOWS_SIGNING: ${expression("secrets.DESKTOP_WIN_AZURE_CLIENT_ID != ''")}`,
-    );
+  it("always signs Windows with Azure Artifact Signing and has no unsigned fallback", () => {
+    expect(workflow).toContain('test -n "$AZURE_CLIENT_ID"');
+    expect(workflow).not.toMatch(/windows_signed|WINDOWS_SIGNING|unsigned/i);
     expect(workflow).not.toContain("AZURE_CLIENT_SECRET");
     expect(workflow).toContain("environment: desktop-release");
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("azure/login@");
     expect(workflow).toContain("TimeStamperCertificate");
-    expect(workflow).toContain(
-      "if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'",
-    );
-    expect(workflow).toContain(
-      "if: runner.os == 'Windows' && needs.validate.outputs.windows_signed != 'true'",
-    );
-    expect(workflow).toContain("Unsigned Windows update config names a publisher.");
+    expect(workflow.match(/--win --x64/g)).toHaveLength(1);
     for (const option of [
       "endpoint",
       "codeSigningAccountName",
@@ -85,11 +82,25 @@ describe("desktop release workflow", () => {
       `include: ${expression("fromJSON(needs.validate.outputs.platforms)")}`,
     );
     expect(workflow).toContain(
-      `include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'`,
+      'include="$(node scripts/release/desktop-release.mjs platforms "$MAC_ONLY")"',
     );
-    expect(workflow.split("windows-2022")).toHaveLength(2);
+    expect(releaseScript).toContain('{ os: "windows-2022", artifact: "windows" }');
+    expect(workflow).not.toContain("windows-2022");
+    expect(releaseScript.split("windows-2022")).toHaveLength(2);
     expect(workflow).toContain("test -f release-artifacts/latest.yml");
     expect(workflow).toContain("compgen -G 'release-artifacts/*.exe' >/dev/null");
+  });
+
+  it("signs every Linux AppImage and publishes its signature", () => {
+    expect(workflow).toContain(
+      `SIGNING_KEY: ${expression("secrets.DESKTOP_LINUX_UPDATE_SIGNING_KEY")}`,
+    );
+    expect(workflow).toMatch(/if \[\[ -z "\$SIGNING_KEY" \]\]; then\n.*\n\s+exit 1/);
+    expect(workflow).toContain(`trap 'rm -f "$key"' EXIT`);
+    expect(workflow).toContain('chmod 600 "$key"');
+    expect(workflow).toContain("pnpm exec tsx apps/desktop/scripts/sign-linux-update.ts");
+    expect(workflow).toContain("apps/desktop/out/*.AppImage.sig");
+    expect(workflow).toContain('if [[ ! -s "$image.sig" ]]; then');
   });
 
   it("pins every platform update feed to the official GitHub owner and repo", () => {
@@ -118,9 +129,30 @@ describe("desktop release workflow", () => {
     expect(workflow).not.toMatch(/secrets\.APPLE_TEAM_ID/);
   });
 
+  it("publishes the Apple silicon server bundle the macOS app names", () => {
+    expect(workflow).toContain('node scripts/build-server-bundle.mjs "$RUNNER_TEMP/server-bundle"');
+    expect(workflow).toContain(
+      `"https://github.com/\${GITHUB_REPOSITORY}/releases/download/\${RELEASE_TAG}"`,
+    );
+    expect(workflow).toContain(
+      'cp "$RUNNER_TEMP/server-bundle/server-bundle.json" apps/desktop/build/server-bundle.json',
+    );
+    expect(workflow).toContain("Contents/Resources/server-bundle.json");
+    expect(workflow).toContain("apps/desktop/out/rakazo-server-*.tar.xz");
+    expect(workflow).toContain(
+      'test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"',
+    );
+  });
+
   it("publishes only a complete stable, upgrade-only feed", () => {
-    expect(workflow).toContain("^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$");
-    expect(workflow).toContain("must be newer than published release");
+    expect(workflow).toContain(
+      'node scripts/release/desktop-release.mjs check-tag "$RELEASE_REF_TYPE" "$RELEASE_TAG"',
+    );
+    expect(workflow).toContain(
+      'node scripts/release/desktop-release.mjs check-newer "$RELEASE_TAG"',
+    );
+    expect(releaseScript).toContain("const STABLE_TAG = /^v(\\d+)\\.(\\d+)\\.(\\d+)$/;");
+    expect(releaseScript).toContain("must be newer than published release");
     expect(workflow).toContain("group: release-desktop-stable");
     expect(workflow).toContain("latest.yml");
     expect(workflow).toContain("latest-mac.yml");

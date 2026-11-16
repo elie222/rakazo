@@ -36,15 +36,16 @@ export function createHomeStyles() {
       flexDirection: "row",
       alignItems: "center",
       padding: 2,
-      borderRadius: 22,
-      backgroundColor: native.fillPressed,
     },
-    circleButton: {
+    headerCircle: {
       width: 44,
       height: 44,
-      borderRadius: 22,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // Where Liquid Glass is unavailable.
+    headerFill: {
+      borderRadius: 22,
       backgroundColor: native.fillPressed,
     },
     headerButton: {
@@ -194,6 +195,7 @@ export function createHomeStyles() {
       minHeight: 44,
       justifyContent: "center",
     },
+    spaceTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     spaceTitle: {
       color: native.label,
       fontSize: 14,
@@ -242,8 +244,6 @@ export function createHomeStyles() {
       paddingBottom: 4,
     },
     activitySection: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: native.fillPressed,
       marginBottom: 4,
       paddingBottom: 4,
     },

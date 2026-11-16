@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, readResponseWithin } from "@rakazo/core";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
@@ -12,6 +12,8 @@ const NEW_PASSWORD_FIELDS = new Map([
 ]);
 
 const CHECK_TIMEOUT_MS = 3_000;
+// A range response, padded or not, runs to tens of kilobytes.
+const MAX_RANGE_RESPONSE_BYTES = 256 * 1024;
 
 /**
  * Rejects new passwords found in the Have I Been Pwned corpus. Only a five-character SHA-1
@@ -59,13 +61,19 @@ export function breachedPasswordCheck() {
 /** Have I Been Pwned k-anonymity range lookup, aborted at the deadline. */
 async function isPasswordBreached(password: string): Promise<boolean> {
   const hash = createHash("sha1").update(password).digest("hex").toUpperCase();
+  const signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
   const response = await fetch(`https://api.pwnedpasswords.com/range/${hash.slice(0, 5)}`, {
     headers: { "Add-Padding": "true" },
-    signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    signal,
   });
   if (!response.ok) throw new Error(`Breach lookup failed with status ${response.status}`);
+  const range = await readResponseWithin(response, {
+    maxBytes: MAX_RANGE_RESPONSE_BYTES,
+    tooLargeMessage: "Breach lookup response is too large",
+    signal,
+  });
   const suffix = `${hash.slice(5)}:`;
-  for (const line of (await response.text()).split(/\r?\n/)) {
+  for (const line of new TextDecoder().decode(range).split(/\r?\n/)) {
     if (line.toUpperCase().startsWith(suffix)) return Number(line.slice(suffix.length)) > 0;
   }
   return false;

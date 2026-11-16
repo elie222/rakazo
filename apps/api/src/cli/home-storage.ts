@@ -43,8 +43,12 @@ const { prisma, pool } = createDb(process.env.DATABASE_URL, {
 });
 const write = (line: string) => process.stdout.write(`${line}\n`);
 let stopping = false;
-process.once("SIGINT", () => (stopping = true));
-process.once("SIGTERM", () => (stopping = true));
+const stop = () => {
+  stopping = true;
+  process.exitCode = 1;
+};
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);
 
 try {
   const home = createAgentHomeStore(process.env.DATA_DIR ?? "./data", prisma);

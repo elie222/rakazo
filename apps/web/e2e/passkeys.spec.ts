@@ -1,5 +1,11 @@
 import { test as base, expect } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openEmailSignIn,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 // Loopback deployments use the WebAuthn relying party `localhost` (IP hosts cannot hold
 // passkeys), so this flow runs on the localhost twin of the configured origin.
@@ -72,6 +78,7 @@ test("adds a passkey after signup and signs in with it", async ({ page }, testIn
   await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId, enabled: false });
   await account.click();
   await page.getByRole("button", { name: "Log out" }).click();
+  await openEmailSignIn(page);
   const signIn = page.getByRole("button", { name: "Sign in with passkey" });
   await expect(signIn).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
@@ -80,6 +87,25 @@ test("adds a passkey after signup and signs in with it", async ({ page }, testIn
   signedIn = verified();
   await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId, enabled: true });
   await signIn.click();
+  await signedIn;
+  await page.waitForURL(/\/app/);
+  await expect(account).toBeVisible();
+
+  // With a provider configured, sign-in opens on the chooser, which offers the passkey itself.
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const capabilities = await (await route.fetch()).json();
+    await route.fulfill({
+      json: { ...capabilities, providers: [{ id: "google", name: "Google" }] },
+    });
+  });
+  await account.click();
+  await page.getByRole("button", { name: "Log out" }).click();
+  const choice = page.getByRole("button", { name: /^Continue with passkey/ });
+  await expect(choice).toBeVisible();
+  await expect(choice).toContainText("Last used");
+  await captureScreenshot(page, testInfo, "passkey-sign-in-chooser");
+  signedIn = verified();
+  await choice.click();
   await signedIn;
   await page.waitForURL(/\/app/);
   await expect(account).toBeVisible();

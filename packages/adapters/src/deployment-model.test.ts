@@ -22,10 +22,14 @@ describe("resolveDeploymentModel", () => {
   });
 
   it("pairs the deployment model key with the provider it belongs to", () => {
-    const both = { OPENROUTER_API_KEY: "or-key", ANTHROPIC_API_KEY: "sk-ant-key" };
+    const both = {
+      OPENROUTER_API_KEY: "or-key",
+      ANTHROPIC_API_KEY: "sk-ant-key",
+      DEEPSEEK_API_KEY: "sk-deepseek-key",
+    };
     expect(resolveDeploymentModel(both)).toEqual({
       provider: "openrouter",
-      model: "openai/gpt-6-luna",
+      model: "anthropic/claude-haiku-5.5",
       key: "or-key",
       configured: true,
       hostCredentials: false,
@@ -35,6 +39,26 @@ describe("resolveDeploymentModel", () => {
       provider: "anthropic",
       model: "claude-sonnet-5",
       key: "sk-ant-key",
+      configured: true,
+      hostCredentials: false,
+    });
+    expect(resolveDeploymentModel({ ...both, PI_DEFAULT_PROVIDER: "deepseek" })).toEqual({
+      provider: "deepseek",
+      model: "deepseek-flash",
+      key: "sk-deepseek-key",
+      configured: true,
+      hostCredentials: false,
+    });
+    expect(
+      resolveDeploymentModel({
+        ...both,
+        PI_DEFAULT_PROVIDER: "deepseek",
+        PI_DEFAULT_MODEL: "deepseek-v4-pro",
+      }),
+    ).toEqual({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      key: "sk-deepseek-key",
       configured: true,
       hostCredentials: false,
     });

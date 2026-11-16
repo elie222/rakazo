@@ -2,11 +2,13 @@ import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
+  ClientError,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
@@ -52,6 +54,7 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
     messageProvider: input.messageProvider,
+    emailSenders: input.emailSenders,
     modelProvider: input.modelProvider,
     modelId: input.modelId,
     thinkingLevel: input.thinkingLevel,
@@ -65,7 +68,8 @@ export function nextRoutineDate(crons: string[], timezone: string): Date {
   try {
     next = nextCronDateAcrossStrict(crons, new Date(), timezone);
   } catch {
-    throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
+    // Parsing the caller's expressions is all this does, so any failure is a malformed one.
+    throw new ClientError("BAD_REQUEST", "Enter a valid cron expression.");
   }
   if (!next) throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
   return next;
@@ -88,6 +92,7 @@ export function mapRoutine(row: {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
+  emailSenders: string | null;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -109,6 +114,7 @@ export function mapRoutine(row: {
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
+    emailSenders: RoutineEmailSendersSchema.safeParse(row.emailSenders).data ?? null,
     modelProvider: row.modelProvider ? canonicalPiProviderId(row.modelProvider) : null,
     modelId: row.modelId ?? null,
     thinkingLevel: (row.thinkingLevel as Routine["thinkingLevel"]) ?? null,
@@ -116,22 +122,20 @@ export function mapRoutine(row: {
     watchState: parseRoutineWatchState(row.watchState),
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
+    scheduleDelayed: routineScheduleDelayed({
+      active: row.active,
+      nextRunAt: row.nextRunAt?.getTime() ?? null,
+    }),
     createdAt: row.createdAt.toISOString(),
   };
 }
 
+/** Any member may change a routine; editing it hands it to them (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map((row) => routineDto(row, actor));
-}
-
-export function routineDto(
-  row: Parameters<typeof mapRoutine>[0] & { userId: string },
-  actor: Actor,
-) {
-  return { ...mapRoutine(row), editable: row.userId === actor.userId };
+  return rows.map(mapRoutine);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {
@@ -156,7 +160,7 @@ export function createRoutineAnnouncer(deps: RouterDeps) {
   return announceRoutine;
 }
 
-/** The caller's own routine on a bot they may use, the check behind every routine test run. */
+/** A routine in the caller's Space on a bot they may use, the check behind every routine test run. */
 export async function routineTestTarget(
   prisma: PrismaClient,
   repos: RouterContext["repos"],
@@ -164,7 +168,7 @@ export async function routineTestTarget(
   routineId: string,
 ) {
   const routine = await prisma.routine.findFirst({
-    where: { id: routineId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: routineId, spaceId: actor.spaceId },
   });
   if (!routine) throw new IsolationError();
   const bot = await repos.getBot(actor, routine.botId);

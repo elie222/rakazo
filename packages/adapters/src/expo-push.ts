@@ -8,11 +8,12 @@ import type {
   NotificationProvider,
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
-import type { PushTokenStore } from "./push-token-store.js";
+import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -22,20 +23,41 @@ const EXPO_PUSH_TIMEOUT_MS = 15_000;
 const EXPO_PUSH_RETRY_DELAYS_MS = [1_000, 2_000];
 /** Expo suggests reading receipts 15 minutes after a send and clears them after a day. */
 const EXPO_RECEIPT_DELAY_MS = 15 * 60_000;
+/** APNs or FCM turned down one device, or it got too many pushes; the deployment is fine. */
+const EXPECTED_RECEIPT_ERRORS = new Set(["ProviderError", "MessageRateExceeded"]);
 /** Keeps a push well inside Expo's 4096-byte payload limit. */
 const MAX_PUSH_TITLE_CHARS = 100;
 const MAX_PUSH_BODY_CHARS = 180;
+/** APNs and FCM cap the whole payload at 4096 bytes; multibyte text and the sender thumbnail count. */
+const MAX_PUSH_PAYLOAD_BYTES = 3300;
 export const MAX_EXPO_PUSH_RESPONSE_BYTES = 64 * 1024;
 const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 
 /** Data a notification tap uses to open the bot or group thread in its space.
  * `deliveryId` distinguishes this send from another push for the same thread:
- * the Expo request identifier stays the thread id. */
-export function expoPushData(message: NotificationMessage, spaceId: string, deliveryId: string) {
+ * the Expo request identifier stays the thread id. The sender carries one avatar:
+ * the largest the registration's devices can draw. */
+export function expoPushData(
+  message: NotificationMessage,
+  spaceId: string,
+  deliveryId: string,
+  largeAvatar = false,
+) {
+  const sender = message.sender
+    ? {
+        botId: message.sender.botId,
+        name: message.sender.name,
+        avatar: largeAvatar
+          ? (message.sender.avatarLarge ?? message.sender.avatar)
+          : message.sender.avatar,
+      }
+    : undefined;
   return {
     kind: message.kind,
+    ...(sender ? { sender } : {}),
     botId: message.botId,
     threadId: message.threadId,
+    ...(message.runId ? { runId: message.runId } : {}),
     deliveryId,
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
@@ -244,7 +266,7 @@ export class ExpoPushProvider implements NotificationProvider {
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0 && !call.ended) {
       await Promise.allSettled(
-        (await this.deliverableTokens(userId)).map(async (token) => {
+        (await this.deliverableTokens(userId)).map(async ({ token }) => {
           if ((await this.sendCallPush(userId, token, call)) === "invalid")
             await this.tokens.remove(userId, credentialDigest(token));
         }),
@@ -291,15 +313,15 @@ export class ExpoPushProvider implements NotificationProvider {
    * device took the push, so a retry never repeats it on a device that already has it.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const tokens = await this.deliverableTokens(context.userId);
+    const registrations = await this.deliverableTokens(context.userId);
     const results = await Promise.allSettled(
-      tokens.map((token) => this.deliverTo(token, message, context)),
+      registrations.map((registration) => this.deliverTo(registration, message, context)),
     );
     for (const [index, result] of results.entries())
       if (result.status === "rejected")
         getLogger().error("expo push device delivery failed", {
           error: result.reason,
-          tokenDigest: credentialDigest(tokens[index]!),
+          tokenDigest: credentialDigest(registrations[index]!.token),
         });
     if (results.some((result) => result.status === "fulfilled" && result.value === "delivered"))
       return "delivered";
@@ -309,19 +331,54 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   private async deliverTo(
-    token: string,
+    registration: PushRecord,
     message: NotificationMessage,
     context: AdapterContext,
   ): Promise<ExpoPushDelivery> {
-    const payload = {
+    const token = registration.token;
+    const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
+    let bodyChars = MAX_PUSH_BODY_CHARS;
+    let text = capped(message.body, bodyChars);
+    // Android's installed sender code drops an avatar over 96px; iOS and plain pushes have no
+    // pixel cap, so they carry the larger render when one fit.
+    const largeAvatar = registration.presentation !== "android_sender";
+    const data = expoPushData(message, context.spaceId, randomUUID(), largeAvatar);
+    const shared = {
       to: token,
-      title: capped(message.title, MAX_PUSH_TITLE_CHARS),
-      body: capped(message.body, MAX_PUSH_BODY_CHARS),
       collapseId: message.threadId,
-      tag: message.threadId,
       ...(message.badge === undefined ? {} : { badge: message.badge }),
-      data: expoPushData(message, context.spaceId, randomUUID()),
     };
+    const urgent =
+      message.kind === "help" || message.kind === "takeover" || message.kind === "failure";
+    const build = () =>
+      registration.presentation === "android_sender"
+        ? {
+            ...shared,
+            ...(urgent ? { priority: "high" } : {}),
+            // No `tag`: Expo turns it into a visible notification, which Android then draws
+            // blank in the background instead of handing the data to SenderPush.
+            data: {
+              ...data,
+              notificationTitle: title,
+              notificationBody: text,
+              ...(message.badge === undefined ? {} : { notificationBadge: message.badge }),
+            },
+          }
+        : {
+            ...shared,
+            tag: message.threadId,
+            title,
+            body: text,
+            data,
+            ...(message.sender ? { mutableContent: true } : {}),
+            ...(urgent ? { priority: "high" } : {}),
+          };
+    let payload = build();
+    while (Buffer.byteLength(JSON.stringify(payload)) > MAX_PUSH_PAYLOAD_BYTES && bodyChars > 1) {
+      bodyChars = Math.floor(bodyChars / 2);
+      text = capped(message.body, bodyChars);
+      payload = build();
+    }
     const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
     const [ticket] = expoPushTickets(body);
     if (status < 300 && body === undefined) {
@@ -333,10 +390,7 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     const failure =
       expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
-    if (failure) {
-      getLogger().error(failure);
-      throw new Error(failure);
-    }
+    if (failure) throw new Error(failure);
     if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
     return "delivered";
   }
@@ -375,9 +429,10 @@ export class ExpoPushProvider implements NotificationProvider {
       await this.tokens.remove(receipt.userId, receipt.tokenDigest);
       return;
     }
-    getLogger().error(
-      `expo push receipt error: ${result.details?.error ?? result.message ?? "unknown"}`,
-    );
+    const code = result.details?.error;
+    const message = `expo push receipt error: ${code ?? result.message ?? "unknown"}`;
+    if (code && EXPECTED_RECEIPT_ERRORS.has(code)) getLogger().warn(message);
+    else getLogger().error(message);
   }
 
   private async postWithBackoff(url: string, payload: unknown, signal?: AbortSignal) {
@@ -407,7 +462,7 @@ export class ExpoPushProvider implements NotificationProvider {
    * row is removed. Tokens are read again after the lookups so a sign-out or
    * handover during that wait is not sent.
    */
-  private async deliverableTokens(userId: string): Promise<string[]> {
+  private async deliverableTokens(userId: string): Promise<PushRecord[]> {
     const saved = await this.tokens.list(userId);
     const live = await Promise.all(
       saved.map(async ({ sessionId }) => {
@@ -427,13 +482,11 @@ export class ExpoPushProvider implements NotificationProvider {
       }),
     );
     const current = await this.tokens.list(userId);
-    return saved
-      .filter(
-        (row, index) =>
-          live[index] &&
-          current.some((now) => now.token === row.token && now.sessionId === row.sessionId),
-      )
-      .map((row) => row.token);
+    return current.filter((now) =>
+      saved.some(
+        (row, index) => live[index] && row.token === now.token && row.sessionId === now.sessionId,
+      ),
+    );
   }
 }
 
@@ -472,7 +525,7 @@ async function postToExpo(
     return { status: response.status, body: await readExpoPushBody(response, attempt) };
   } catch (error) {
     getLogger().warn("expo push request failed", { error });
-    if (signal?.aborted || errorMessage(error) === RESPONSE_TOO_LARGE) throw error;
+    if (signal?.aborted || error instanceof ResponseTooLargeError) throw error;
     return { status: 503, body: { errors: [{ message: errorMessage(error) }] } };
   }
 }
@@ -494,15 +547,15 @@ async function readExpoPushBody(response: Response, signal: AbortSignal): Promis
       cancel.catch(() => undefined),
       signal,
     ).catch(() => undefined);
-    throw new Error(RESPONSE_TOO_LARGE);
+    throw new ResponseTooLargeError(RESPONSE_TOO_LARGE);
   }
   try {
     const bytes = await readBodyCapped(response, MAX_EXPO_PUSH_RESPONSE_BYTES, signal);
     if (bytes.byteLength === 0) return undefined;
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error(RESPONSE_TOO_LARGE);
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError(RESPONSE_TOO_LARGE, { cause: error });
     }
     if (error instanceof SyntaxError) return undefined;
     throw error;

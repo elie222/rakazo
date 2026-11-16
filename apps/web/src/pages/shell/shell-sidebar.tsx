@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, NavLink } from "@rakazo/contracts";
+import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
   Button,
@@ -10,19 +10,24 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
+import { CreateOrganizationDialog } from "../../components/CreateOrganizationDialog";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
+import { useUsageHint } from "../../components/PlanUsage";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
+import { switchOrganization, useOrganizations } from "../../lib/organizations";
+import { useQueryUserId } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
 import { SpaceSearchResults } from "../SpaceSearch";
 import type { SettingsSection } from "../shell-overlay";
+import type { ChatMenuState } from "./chat-context-menu";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
 
@@ -33,6 +38,19 @@ export function focusSidebarSearch() {
     input?.focus();
     input?.select();
   });
+}
+
+/**
+ * Chromium keeps the top fade drawn when collapsing sections shrinks a scrolled list until it no
+ * longer scrolls; replaying the fade's scroll-driven animations lets it settle at the top.
+ */
+function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
+  const list = event.currentTarget;
+  if (list.scrollHeight > list.clientHeight) return;
+  for (const animation of list.getAnimations()) {
+    animation.cancel();
+    animation.play();
+  }
 }
 
 type User = { name?: string | null; email?: string; image?: string | null };
@@ -50,19 +68,24 @@ export function ShellSidebar({
   setCreateMenuOpen,
   search,
   bots,
+  groups,
+  collapsedSidebarSections,
+  toggleSidebarSection,
   setPanel,
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
+  chatMenu,
   roster,
   archived,
   footerLogos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   openSettings,
   openIntegrations,
   openSkills,
+  openSpaceChat,
 }: {
   isMobile: boolean;
   mobileOpen: boolean;
@@ -75,19 +98,24 @@ export function ShellSidebar({
   setCreateMenuOpen: (open: boolean) => void;
   search: SidebarSearch;
   bots: Bot[];
+  groups: Group[];
+  collapsedSidebarSections: ReadonlySet<string>;
+  toggleSidebarSection: (key: string) => void;
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
+  chatMenu: ChatMenuState;
   roster: ReactNode;
   archived: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
   openSkills: () => void;
+  openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
   const {
@@ -148,20 +176,17 @@ export function ShellSidebar({
             toggleActivityMode();
           }}
           searchOpen={searchOpen && !mini}
-          onSearch={
-            activityMode && !mini
-              ? undefined
-              : () => {
-                  if (searchOpen && !mini) {
-                    setQuery("");
-                    setSearchOpen(false);
-                    return;
-                  }
-                  if (mini) setCollapsedPref(false);
-                  setSearchOpen(true);
-                  focusSidebarSearch();
-                }
-          }
+          onSearch={() => {
+            if (searchOpen && !mini) {
+              if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+              else setQuery("");
+              setSearchOpen(false);
+              return;
+            }
+            if (mini) setCollapsedPref(false);
+            setSearchOpen(true);
+            focusSidebarSearch();
+          }}
           setBotsSidebarCollapsedPref={setCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileOpen}
@@ -170,7 +195,12 @@ export function ShellSidebar({
           setNewSpaceOpen={setNewSpaceOpen}
           setCreateBotOpen={setCreateBotOpen}
         />
-        {mini || !(activityMode || searchOpen || query) ? null : (
+        {mini ||
+        !(
+          searchOpen ||
+          query ||
+          (activityMode && (activityFilterCount > 0 || activityFiltersExpanded))
+        ) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
@@ -191,11 +221,8 @@ export function ShellSidebar({
                   event.keyCode === 229
                 )
                   return;
-                if (activityMode) {
-                  setActivityFilters({ ...activityFilters, query: "" });
-                  return;
-                }
-                setQuery("");
+                if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
+                else setQuery("");
                 setSearchOpen(false);
               }}
               placeholder={activityMode ? t`Search runs` : t`Search`}
@@ -226,7 +253,10 @@ export function ShellSidebar({
             ) : null}
           </InputGroup>
         )}
-        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div
+          onScroll={resetFadeWhenUnscrollable}
+          className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
+        >
           {showSpaceSearch && !mini ? (
             <SpaceSearchResults
               hits={searchHits}
@@ -234,26 +264,45 @@ export function ShellSidebar({
               error={searchError}
               onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
+              chatMenu={chatMenu}
+            />
+          ) : activityMode && !mini ? (
+            <ActivityList
+              bots={bots}
+              groups={groups}
+              toggledSections={collapsedSidebarSections}
+              onToggleSection={toggleSidebarSection}
+              onOpenBot={(bot) => {
+                setMobileOpen(false);
+                navigate(`/app/${bot.id}`);
+              }}
+              onOpenGroup={(group) => {
+                setMobileOpen(false);
+                navigate(`/app/g/${group.id}`);
+              }}
+              filters={activityFilters}
+              onFiltersChange={setActivityFilters}
+              filtersExpanded={activityFiltersExpanded}
+              filtersId={activityFiltersId}
+              onOpenRun={(run) => {
+                setMobileOpen(false);
+                if (run.groupId) navigate(`/app/g/${run.groupId}`);
+                else navigate(`/app/${run.botId}`);
+              }}
             />
           ) : (
-            <>
-              {activityMode && !mini ? (
-                <ActivityList
-                  filters={activityFilters}
-                  onFiltersChange={setActivityFilters}
-                  filtersExpanded={activityFiltersExpanded}
-                  filtersId={activityFiltersId}
-                  onOpenRun={(run) => {
-                    setMobileOpen(false);
-                    if (run.groupId) navigate(`/app/g/${run.groupId}`);
-                    else navigate(`/app/${run.botId}`);
-                  }}
-                />
-              ) : null}
-              {roster}
-            </>
+            roster
           )}
-          <div className={mini ? "hidden" : "contents"}>{archived}</div>
+        </div>
+        {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
+        <div
+          className={
+            mini || activityMode
+              ? "hidden"
+              : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
+          }
+        >
+          {archived}
         </div>
         <div className={mini ? "hidden" : "contents"}>
           <PasskeyOffer />
@@ -262,13 +311,14 @@ export function ShellSidebar({
           mini={mini}
           logos={footerLogos}
           user={user}
-          ticketBoardEnabled={ticketBoardEnabled}
+          boardEnabled={boardEnabled}
           navLinks={navLinks}
           closeMobileSidebar={() => setMobileOpen(false)}
           navigate={navigate}
           openSettings={openSettings}
           openIntegrations={openIntegrations}
           openSkills={openSkills}
+          openSpaceChat={openSpaceChat}
         />
       </Sidebar>
     </>
@@ -279,26 +329,30 @@ function ShellSidebarFooter({
   mini,
   logos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   closeMobileSidebar,
   navigate,
   openSettings,
   openIntegrations,
   openSkills,
+  openSpaceChat,
 }: {
   mini: boolean;
   logos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   closeMobileSidebar: () => void;
   navigate: (path: string) => void;
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
   openSkills: () => void;
+  openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t, i18n } = useLingui();
+  const userId = useQueryUserId();
+  const { organizations, activeOrganizationId } = useOrganizations();
   const { status: billing, showPlans } = useBilling();
   const freeUntil =
     billing?.funding === "byok" &&
@@ -306,8 +360,10 @@ function ShellSidebarFooter({
     new Date(billing.byokFreeUntil) > new Date()
       ? billing.byokFreeUntil
       : null;
+  const usage = useUsageHint();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [creatingOrganization, setCreatingOrganization] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
@@ -320,7 +376,7 @@ function ShellSidebarFooter({
   return (
     <>
       {freeUntil && !mini ? (
-        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-sm text-muted-foreground">
+        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-body text-muted-foreground">
           <span className="min-w-0 truncate">
             <Trans>Free plan ends {day}</Trans>
           </span>
@@ -352,7 +408,7 @@ function ShellSidebarFooter({
           openSkills();
         }}
         onBoard={
-          ticketBoardEnabled
+          boardEnabled
             ? () => {
                 setMenuOpen(false);
                 closeMobileSidebar();
@@ -375,6 +431,7 @@ function ShellSidebarFooter({
           setMenuOpen(false);
           openSettings("general");
         }}
+        usage={usage}
         onUsage={() => {
           setMenuOpen(false);
           openSettings("usage");
@@ -393,6 +450,22 @@ function ShellSidebarFooter({
         }}
         signingOut={signingOut}
         logOutError={logOutError}
+        organizations={organizations}
+        activeOrganizationId={activeOrganizationId}
+        onSwitchOrganization={(organization) => {
+          setMenuOpen(false);
+          if (organization.id !== activeOrganizationId)
+            void switchOrganization(userId, organization, openSpaceChat);
+        }}
+        onCreateOrganization={() => {
+          setMenuOpen(false);
+          setCreatingOrganization(true);
+        }}
+      />
+      <CreateOrganizationDialog
+        open={creatingOrganization}
+        onOpenChange={setCreatingOrganization}
+        openSpaceChat={openSpaceChat}
       />
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />

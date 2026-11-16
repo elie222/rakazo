@@ -2,6 +2,7 @@ import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { emailLocale, referralEmail } from "@rakazo/auth";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { isForeignKeyViolation } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -60,29 +61,9 @@ export function sendReferralEmails(deps: {
         if (claim.count > 0) await deps.email.send(message);
       } catch (error) {
         // Account deletion may race the foreign-key insert.
-        if (error && typeof error === "object" && "code" in error && error.code === "P2003")
-          continue;
+        if (isForeignKeyViolation(error)) continue;
         deps.onError(error);
       }
     }
-  };
-}
-
-/** Runs the sweep at startup and hourly; every API instance may run it, the claim dedupes. */
-export function startReferralEmails(sweep: () => Promise<void>, onError: (error: unknown) => void) {
-  let running: Promise<void> | undefined;
-  const tick = () => {
-    running ??= sweep()
-      .catch(onError)
-      .finally(() => {
-        running = undefined;
-      });
-  };
-  const timer = setInterval(tick, HOUR_MS);
-  timer.unref();
-  tick();
-  return async () => {
-    clearInterval(timer);
-    await running;
   };
 }

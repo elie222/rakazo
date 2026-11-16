@@ -41,6 +41,18 @@ const peerExchange = [
 ];
 
 describe("user-visible messages", () => {
+  it("hides a delivery that woke the bot but keeps the bot's reply", () => {
+    const delivery = {
+      ...message("delivery", "run-1", [
+        { kind: "delivery" },
+        { kind: "text", text: 'Run routine "CRM sync":\nAdd the contact.' },
+      ]),
+      role: "user",
+    };
+    const reply = message("reply", "run-1", [{ kind: "text", text: "Added Ada." }]);
+    expect(userVisibleMessages([delivery, reply]).map((item) => item.id)).toEqual(["reply"]);
+  });
+
   it("keeps ordinary group replies inline when a member sends a peer message", () => {
     const messages: ThreadMessage[] = [
       { ...message("first", "group-run", [{ kind: "text", text: "Checking" }]), botId: "first" },
@@ -215,6 +227,16 @@ describe("user-visible messages", () => {
     expect(transcript.markerOf.get("chart_reply")).toBe("received");
     expect(expandPeerReplies(transcript, new Set())).toEqual([received]);
     expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([received, chartReply]);
+  });
+
+  it("folds page-only peer replies under their received marker", () => {
+    const pageReply = message("page_reply", "run-peer", [
+      { kind: "page", pageId: "page-1", version: 1, title: "Results" },
+    ]);
+    const transcript = foldPeerReplies([received, pageReply], { includePeerReceipts: true });
+
+    expect(transcript.messages).toEqual([received]);
+    expect(transcript.folded.get("received")).toEqual([pageReply]);
   });
 
   it("keeps chart-only relays inline", () => {

@@ -1,4 +1,5 @@
 import type { Message } from "@earendil-works/pi-ai";
+import { SCREENSHOT_REMOVED_NOTE, STALE_PAGE_STATE_NOTE } from "./runtime-context.prompt.js";
 
 type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
@@ -25,8 +26,6 @@ const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
  * them saves nothing, and counting them would push real page state out of the kept set.
  */
 const STALE_PAGE_STATE_MIN_CHARS = 1_000;
-const STALE_PAGE_STATE_NOTE =
-  "[Earlier page state trimmed to save context. Facts you still need from that page should already be in your notes or tracker; otherwise take a fresh snapshot.]";
 
 /**
  * Replace all but the most recent large page-state tool results with a short note. The runtime
@@ -71,6 +70,7 @@ function textLength(message: ToolResultMessage): number {
  * Keep the latest screenshots within an optional model image budget. The runtime context policy
  * applies this only when it rebuilds a run's transcript; between rebuilds screenshots accumulate
  * up to the model's limit, so a rebuild keeps at most the default two to leave room for more.
+ * An older frame keeps its result text and gains a one-line note.
  */
 export function pruneComputerScreenshotContext(
   messages: Message[],
@@ -103,7 +103,10 @@ export function pruneComputerScreenshotContext(
     transformed ??= [...messages];
     transformed[index] = {
       ...message,
-      content: message.content.filter((part) => part.type !== "image"),
+      content: [
+        ...message.content.filter((part) => part.type !== "image"),
+        { type: "text", text: SCREENSHOT_REMOVED_NOTE },
+      ],
     };
   }
   return transformed ?? messages;

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -45,11 +46,22 @@ vi.mock("@rakazo/ui-web", () => {
 vi.mock("./SpaceSettingOverrides", () => ({
   SpaceSettingOverrides: () => <div data-testid="space-setting-overrides" />,
 }));
+vi.mock("../components/SpaceMembersSettings", () => ({
+  SpaceMembersSettings: () => <div data-testid="space-members-settings" />,
+}));
+
+const client = vi.hoisted(() => ({ spaces: {} }));
+vi.mock("../lib/rpc", () => ({
+  rpc: client,
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => null,
+}));
 
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 
 let container: HTMLDivElement;
-let root: Root;
+let root: ReturnType<typeof createRoot>;
 
 type Props = ComponentProps<typeof SpaceSettingsPanel>;
 
@@ -60,6 +72,7 @@ async function render(props: Partial<Props>) {
         space={{ id: "space-a", name: "Support", canRename: true, canDelete: true, botCount: 0 }}
         onRename={async () => undefined}
         onDelete={async () => undefined}
+        onLeft={() => undefined}
         onClose={() => undefined}
         {...props}
       />,
@@ -127,7 +140,7 @@ describe("SpaceSettingsPanel", () => {
     expect(container.querySelector("input")?.value).toBe("Support");
     await type("  Help desk  ");
     await commit();
-    expect(onRename).toHaveBeenCalledWith("Help desk");
+    expect(onRename).toHaveBeenCalledWith("Help desk", client);
     expect(container.querySelector("input")?.value).toBe("Help desk");
   });
 
@@ -145,19 +158,17 @@ describe("SpaceSettingsPanel", () => {
   });
 
   it("holds the dialog busy while a rename is saving", async () => {
-    let finish: () => void = () => undefined;
-    const onRename = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let finish: Deferred | undefined;
+    const onRename = vi.fn(() => {
+      finish = deferred();
+      return finish.promise;
+    });
     const onBusyChange = vi.fn();
     await render({ onRename, onBusyChange });
     await type("Help desk");
     await commit();
     expect(onBusyChange).toHaveBeenLastCalledWith(true);
-    await act(async () => finish());
+    await act(async () => finish?.resolve());
     expect(onBusyChange).toHaveBeenLastCalledWith(false);
   });
 

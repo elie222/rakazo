@@ -4,9 +4,9 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
 } from "@rakazo/contracts";
-import { inferAttachmentMimeType } from "@rakazo/core";
+import { inferAttachmentMimeType, isStaticPng, PNG_ANIMATION_HEADER_BYTES } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
+import { File, FileMode } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -53,8 +53,25 @@ async function prepareImage(
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
-  if (!width || !height || Math.max(width, height) <= ATTACHMENT_IMAGE_MAX_EDGE) {
+  const needsResize = width && height && Math.max(width, height) > ATTACHMENT_IMAGE_MAX_EDGE;
+  // Unsupported photo formats (such as HEIC) need conversion even when already small.
+  if (!needsResize && mimeType) {
     return { uri, name, mimeType };
+  }
+  if (mimeType === "image/png") {
+    try {
+      const handle = new File(uri).open(FileMode.ReadOnly);
+      try {
+        if (!isStaticPng(await handle.readBytes(PNG_ANIMATION_HEADER_BYTES))) {
+          return { uri, name, mimeType };
+        }
+      } finally {
+        handle.close();
+      }
+    } catch {
+      // Never flatten a PNG when its animation metadata cannot be inspected.
+      return { uri, name, mimeType };
+    }
   }
   const manipulator = loadImageManipulator();
   if (!manipulator) return { uri, name, mimeType };
@@ -62,11 +79,13 @@ async function prepareImage(
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
     const context = manipulator.ImageManipulator.manipulate(uri);
-    context.resize(
-      width >= height
-        ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
-        : { height: ATTACHMENT_IMAGE_MAX_EDGE },
-    );
+    if (needsResize) {
+      context.resize(
+        width >= height
+          ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
+          : { height: ATTACHMENT_IMAGE_MAX_EDGE },
+      );
+    }
     const image = await context.renderAsync();
     const saved = await image.saveAsync({ compress: ATTACHMENT_IMAGE_QUALITY, format });
     return {
@@ -121,21 +140,27 @@ export async function pickFromLibrary(
       previewUri: asset.uri,
     };
     if (existingCount + attachments.length < maxCount) {
-      const prepared = await prepareImage(
-        asset.uri,
-        originalName,
-        asset.mimeType,
-        asset.width,
-        asset.height,
-      );
-      const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
-      candidate = {
-        name: prepared.name,
-        mimeType: prepared.mimeType,
-        size,
-        contentBase64,
-        previewUri: prepared.uri,
-      };
+      try {
+        const prepared = await prepareImage(
+          asset.uri,
+          originalName,
+          asset.mimeType,
+          asset.width,
+          asset.height,
+        );
+        const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
+        candidate = {
+          name: prepared.name,
+          mimeType: prepared.mimeType,
+          size,
+          contentBase64,
+          previewUri: prepared.uri,
+        };
+      } catch {
+        // One unreadable photo must not discard the rest of the selection.
+        skipped.push({ name: originalName, reason: "could not read" });
+        continue;
+      }
     }
     const filtered = filterPickedAttachments(
       existingCount + attachments.length,
@@ -173,21 +198,26 @@ export async function takePhoto(
     asset.width,
     asset.height,
   );
-  const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
-  return filterPickedAttachments(
-    existingCount,
-    [
-      {
-        name: prepared.name,
-        mimeType: prepared.mimeType,
-        size,
-        contentBase64,
-        previewUri: prepared.uri,
-      },
-    ],
-    maxBytes,
-    maxCount,
-  );
+  try {
+    const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
+    return filterPickedAttachments(
+      existingCount,
+      [
+        {
+          name: prepared.name,
+          mimeType: prepared.mimeType,
+          size,
+          contentBase64,
+          previewUri: prepared.uri,
+        },
+      ],
+      maxBytes,
+      maxCount,
+    );
+  } catch {
+    // The camera delivered a photo this build cannot read; report it instead of throwing.
+    return { attachments: [], skipped: [{ name: prepared.name, reason: "could not read" }] };
+  }
 }
 
 export async function pickDocuments(
@@ -212,7 +242,15 @@ export async function pickDocuments(
       continue;
     }
     const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-    const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
+    let contentBase64: string;
+    let size: number;
+    try {
+      ({ contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes));
+    } catch {
+      // One unreadable document must not discard the rest of the selection.
+      skipped.push({ name, reason: "could not read" });
+      continue;
+    }
     const filtered = filterPickedAttachments(
       existingCount + attachments.length,
       [{ name, mimeType, size, contentBase64 }],
@@ -240,43 +278,68 @@ export async function readDroppedFiles(
     reason: attachmentCountSkipReason(maxCount),
   }));
   const attachments: PickedAttachment[] = [];
+  // Resized copies live outside the dropped-file cache, so they are deleted here.
+  const resized: string[] = [];
   try {
     for (const file of files) {
-      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+      let { uri, name, size } = file;
+      let mimeType = inferAttachmentMimeType(name, file.mimeType || undefined);
+      const full = existingCount + attachments.length >= maxCount;
+      if (!full && uri && file.width && file.height && mimeType?.startsWith("image/")) {
+        const prepared = await prepareImage(uri, name, mimeType, file.width, file.height);
+        if (prepared.uri !== uri) {
+          resized.push(prepared.uri);
+          let resizedSize: number | undefined;
+          try {
+            resizedSize = new File(prepared.uri).info().size;
+          } catch {
+            // Keeps the original when the resized copy cannot be measured.
+          }
+          if (resizedSize !== undefined) {
+            ({ uri, name } = prepared);
+            mimeType = inferAttachmentMimeType(name, prepared.mimeType ?? undefined);
+            size = resizedSize;
+          }
+        }
+      }
       const reason = attachmentSkipReason(
-        { name: file.name, size: file.size ?? 0, mimeType },
+        { name, size: size ?? 0, mimeType },
         existingCount,
         attachments.length,
         maxBytes,
         maxCount,
       );
       if (reason) {
-        skipped.push({ name: file.name, reason });
+        skipped.push({ name, reason });
         continue;
       }
-      if (!file.uri) continue;
-      const read = await readUriAsBase64(file.uri, maxBytes).catch(() => null);
+      if (!uri) {
+        // A file the native side could not copy is reported like one that cannot be read.
+        skipped.push({ name, reason: "permission denied" });
+        continue;
+      }
+      const read = await readUriAsBase64(uri, maxBytes).catch(() => null);
       if (!read) {
         // A copy that vanished or cannot be read costs that file only.
-        skipped.push({ name: file.name, reason: "permission denied" });
+        skipped.push({ name, reason: "permission denied" });
         continue;
       }
-      const { contentBase64, size } = read;
+      const { contentBase64 } = read;
+      size = read.size;
       if (size > maxBytes) {
-        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        skipped.push({ name, reason: attachmentSizeSkipReason(maxBytes) });
         continue;
       }
       const previewUri = mimeType?.startsWith("image/")
         ? `data:${mimeType};base64,${contentBase64}`
         : undefined;
-      attachments.push(
-        pickedAttachment({ name: file.name, mimeType, size, contentBase64, previewUri }),
-      );
+      attachments.push(pickedAttachment({ name, mimeType, size, contentBase64, previewUri }));
     }
   } finally {
-    await Promise.allSettled(
-      files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
-    );
+    await Promise.allSettled([
+      ...files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
+      ...resized.map(async (uri) => new File(uri).delete()),
+    ]);
   }
   return { attachments, skipped };
 }
@@ -292,6 +355,8 @@ export async function readSharedFiles(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   const failedFiles: typeof files = [];
+  // The source share file of each attachment, so its copy can follow the attachment around.
+  const sources: string[] = [];
   for (const file of files) {
     if (existingCount + attachments.length >= maxCount) {
       skipped.push({ name: file.name, reason: attachmentCountSkipReason(maxCount) });
@@ -317,11 +382,12 @@ export async function readSharedFiles(
         continue;
       }
       attachments.push(...result.attachments);
+      if (result.attachments.length) sources.push(file.uri);
       skipped.push(...result.skipped);
     } catch {
       skipped.push({ name: file.name, reason: "could not read" });
       failedFiles.push(file);
     }
   }
-  return { attachments, skipped, failedFiles };
+  return { attachments, skipped, failedFiles, sources };
 }

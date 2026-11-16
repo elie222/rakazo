@@ -4,11 +4,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "Computer Access…": "コンピュータへのアクセス…",
   "Revoke Local Computer Access": "ローカルコンピュータへのアクセスを取り消す",
   "Change Rakazo Server…": "Rakazoサーバを変更…",
-  "Stop Local Stack": "ローカルスタックを停止",
   "Hide {name}": "{name}を非表示",
   "Hide Others": "ほかを非表示",
   "Show All": "すべてを表示",
   "Quit {name}": "{name}を終了",
+  "Quit and Stop Bots": "終了してボットを停止",
   File: "ファイル",
   Exit: "終了",
   Quit: "終了",
@@ -78,7 +78,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "Rakazoを設定",
   "Quit Rakazo": "Rakazoを終了",
   "Welcome to Rakazo": "Rakazoへようこそ",
-  "Choose which server this app should use.": "このアプリで使うサーバを選んでください。",
+  "Choose where Rakazo runs.": "Rakazoを動かす場所を選んでください。",
   Instance: "インスタンス",
   "This computer": "このコンピュータ",
   "Existing instance": "既存のインスタンス",
@@ -89,7 +89,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Name: value": "名前: 値",
   "Check connection": "接続を確認",
   Continue: "続ける",
-  "Check again": "もう一度確認",
   Retry: "再試行",
   "Getting ready…": "準備しています…",
   "Downloading Rakazo…": "Rakazoをダウンロードしています…",
@@ -149,16 +148,12 @@ export const JA_MESSAGES: Record<string, string> = {
     "接続しましたが、次回の起動用に設定を保存できませんでした。もう一度「続ける」をクリックしてください。",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "アプリが管理するRakazoサービスの準備ができていません。設定をやり直してください。",
-  "Docker is not installed on this computer.":
-    "このコンピュータにはDockerがインストールされていません。",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Dockerはインストールされていますが、Docker Composeがありません。Docker Desktopまたはdocker-compose-pluginをインストールしてください。",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Composeを確認できませんでした。下の出力を確認してから再試行してください。",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Dockerはインストールされていますが、実行されていません。Dockerを起動してからもう一度確認してください。",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "このユーザはDockerにアクセスできません。dockerグループに追加し（sudo usermod -aG docker $USER）、サインアウトしてサインインし直してから、もう一度確認してください。",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "このユーザはDockerにアクセスできません。dockerグループに追加し（sudo usermod -aG docker $USER）、サインアウトしてサインインし直してください。",
   "The start was interrupted. Retry to continue.":
     "起動が中断されました。続けるには再試行してください。",
   "Images for {tag} are not published yet. Try again in a few minutes.":
@@ -192,6 +187,43 @@ export const JA_MESSAGES: Record<string, string> = {
   "Previous Bot": "前のボット",
   "Command Menu…": "コマンドメニュー…",
   "Toggle Sidebar": "サイドバーを切り替え",
-  "Search…": "検索…",
+  "Find…": "検索…",
+  "Search Bots…": "ボットを検索…",
   "The window closed before the app loaded.": "アプリの読み込み前にウインドウが閉じられました。",
+  "New Group Chat": "新規グループチャット",
+  "Connect Apps…": "アプリを接続…",
+  "Chat Details": "チャットの詳細",
+  Help: "ヘルプ",
+  "Keyboard Shortcuts": "キーボードショートカット",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazoをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Dockerからデータを移行できませんでした。下の出力を確認してから、もう一度お試しください。",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "すでに実行中のコンピューターランタイムが古すぎます。更新するか終了してから、もう一度お試しください。",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Rakazoのデータは別のコンピューターランタイムにあります。実行中のものを終了してから、もう一度お試しください。",
+  "Run Rakazo without Docker?": "DockerなしでRakazoを実行しますか？",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "ボットとデータは引き継がれます。Dockerは停止されますが、削除はされません。",
+  Move: "移行",
+  "Keep Docker": "Dockerを使い続ける",
+  "Nothing to install.": "インストール不要です。",
+  "Your data stays on this computer.": "データはこのコンピュータに保存されます。",
+  "Connect to a server you or your team already run.":
+    "あなたやチームがすでに運用しているサーバーに接続します。",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "このコンピュータでRakazoを動かすにはDocker Desktopが必要です。",
+  "Rakazo needs Docker to run on this computer.":
+    "このコンピュータでRakazoを動かすにはDockerが必要です。",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktopは、Rakazoをバックグラウンドで動かす無料のアプリです。インストールして一度開いてください。",
+  "Install Docker Engine and start it.": "Docker Engineをインストールして起動してください。",
+  "Download Docker Desktop": "Docker Desktopをダウンロード",
+  "Install Docker": "Dockerをインストール",
+  "Docker is installed but not running. Open it to continue.":
+    "Dockerはインストールされていますが、実行されていません。開くと続行します。",
+  "Starting {app}…": "{app}を起動しています…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
 };

@@ -27,7 +27,26 @@ services:
 
   data-init:
     image: ${BUSYBOX_IMAGE:-busybox:1}
-    command: ["chown", "-R", "1000:1000", "/data"]
+    # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
+    # in the volume; -h changes a symlink itself, never its target.
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:
@@ -77,6 +96,7 @@ services:
       SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       SANDBOX_COMPUTER_MOUNTS: ${SANDBOX_COMPUTER_MOUNTS:-}
+      SANDBOX_COMPUTER_COMPUTE_GPUS: ${SANDBOX_COMPUTER_COMPUTE_GPUS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
       AXIOM_TOKEN: ${AXIOM_TOKEN:-}
@@ -128,6 +148,7 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_DEFAULT_MODE: ${COMPUTER_DEFAULT_MODE:-team}
       COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
       COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:
@@ -154,6 +175,7 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_DEFAULT_MODE: ${COMPUTER_DEFAULT_MODE:-team}
       COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
       COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:

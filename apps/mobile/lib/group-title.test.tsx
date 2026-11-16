@@ -5,8 +5,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { publishChatTitle } from "../components/chat-header-title";
 import { useThreadHeader } from "../components/thread/thread-header";
-import type { MobileGroup } from "./api";
 import type { InboxSpace } from "./inbox-spaces";
+import type { MobileGroup } from "./mobile-types";
 import { addToSearchInbox, setSearchInbox, useInboxGroup } from "./search-inbox";
 import { threadGroupMembers } from "./thread-snapshot";
 
@@ -27,7 +27,6 @@ vi.mock("../components/thread-header-right", () => ({ threadHeaderRight: () => (
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
 vi.mock("./bot-lifecycle", () => ({}));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("./native", () => ({ useResolvedAppearance: () => "light" }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: String }));
@@ -127,7 +126,6 @@ it("publishes the members the chat loads to its title", () => {
       titleName: "Duo",
       groupMembers: members,
       composingBots: "",
-      styles: {} as Parameters<typeof useThreadHeader>[0]["styles"],
       onCleared: vi.fn(),
     });
     return null;

@@ -177,9 +177,18 @@ export function useModelOAuthSignIn(options: {
         await browserAuth.open(started.verificationUri);
         if (controller.signal.aborted) return;
       } else {
-        // null means the browser blocked the popup — the card keeps showing the
-        // URL, and callers can flag that nothing opened.
-        if (!window.open(started.verificationUri, "rakazo-model-oauth", "noopener,noreferrer")) {
+        // noopener returns null even when the tab opens. Detach a blank tab
+        // before navigating so the handle can distinguish a blocked popup.
+        const popup = window.open("about:blank", "_blank");
+        if (popup) {
+          popup.opener = null;
+          // A noreferrer link suppresses the navigation request's Referer header.
+          const link = popup.document.createElement("a");
+          link.href = started.verificationUri;
+          link.rel = "noreferrer";
+          popup.document.body.append(link);
+          link.click();
+        } else {
           setPopupBlocked(true);
         }
       }

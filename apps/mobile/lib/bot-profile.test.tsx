@@ -1,19 +1,30 @@
 // @vitest-environment jsdom
 
 import type { Routine } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArtifactsScreen from "../app/artifacts";
 import BotProfile from "../app/bot-profile";
 import RoutineDetail from "../app/routine";
+import RoutineRuns from "../app/routine-runs";
 import RoutinesScreen from "../app/routines";
+import { onConversationCleared } from "./conversation-cleared";
+import type * as NativeControls from "./native-controls";
 import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
-import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
+import { ROUTINES_RETRY_MS } from "./routine-store";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 const {
   rpc,
@@ -21,44 +32,90 @@ const {
   alert,
   afterChatNotifyChange,
   listSpaceArtifacts,
+  removeArtifact,
   params,
   color,
   focus,
   session,
   requestContext,
+  screen,
 } = vi.hoisted(() => ({
   rpc: vi.fn(),
   push: vi.fn(),
   alert: vi.fn(),
   afterChatNotifyChange: vi.fn(async () => undefined),
   listSpaceArtifacts: vi.fn(),
+  removeArtifact: vi.fn(),
   params: { current: {} as Record<string, string> },
   color: new Proxy({}, { get: (_, key) => String(key) }),
   focus: new Set<() => (() => void) | undefined>(),
   session: { generation: 0 },
   requestContext: vi.fn(),
+  screen: {
+    options: {} as Record<string, unknown>,
+    search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
+    // A short list makes FlatList ask for more as soon as it lays out, before effects run.
+    endOnLayout: false,
+  },
 }));
+
+const spaceChangeListeners = vi.hoisted(() => new Map<string, Set<() => unknown>>());
+vi.mock("./roster-signals", () => ({
+  useSpaceChanges: (kind: string, onChange: () => unknown, enabled: boolean) => {
+    useEffect(() => {
+      if (!enabled) return;
+      const listeners = spaceChangeListeners.get(kind) ?? new Set();
+      spaceChangeListeners.set(kind, listeners);
+      listeners.add(onChange);
+      return () => void listeners.delete(onChange);
+    }, [kind, onChange, enabled]);
+  },
+}));
+/** Signals a routine change, waiting for the reads it starts unless one is held open. */
+const routinesChanged = () =>
+  act(async () => {
+    const reads = [...(spaceChangeListeners.get("routines") ?? [])].map((listener) => listener());
+    await Promise.race([
+      Promise.allSettled(reads),
+      vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : flush(),
+    ]);
+  });
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
   captureApiRequestContext: requestContext,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
-  matchesArtifactQuery: () => true,
-  removeArtifact: vi.fn(),
+  matchesArtifactQuery: (item: { name: string }, query: string) => item.name.includes(query),
+  removeArtifact,
 }));
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  Stack: {
+    Screen: ({ options }: { options: Record<string, unknown> }) => {
+      screen.options = options;
+      return null;
+    },
+  },
   useRouter: () => ({ push }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigationContainerRef: () => ({
+    getCurrentRoute: () => ({ name: "bot-profile", params: params.current }),
+  }),
+  useNavigation: () => ({
+    setOptions: (options: { headerSearchBarOptions?: typeof screen.search }) => {
+      screen.search = options.headerSearchBarOptions ?? null;
+    },
+  }),
   useLocalSearchParams: () => params.current,
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
     // Lets a test bring the screen back into view.
@@ -68,6 +125,11 @@ vi.mock("expo-router", () => ({
     }, [effect]);
   },
 }));
+// iOS 26, where the profile's menu is a native header item.
+vi.mock("./native-controls", async (importOriginal) => ({
+  ...(await importOriginal<typeof NativeControls>()),
+  iosAtLeast: () => true,
+}));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   return {
@@ -76,10 +138,13 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ fontScale: 1, width: 390 }),
     ActivityIndicator: () => createElement("progress"),
     Alert: { alert },
-    RefreshControl: () => null,
+    BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
+    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) =>
+      createElement("button", { type: "button", onClick: onRefresh }, "Refresh files"),
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+    TextInput: ({ value }: { value?: string }) => createElement("input", { value, readOnly: true }),
     Pressable: ({
       children,
       onPress,
@@ -104,10 +169,38 @@ vi.mock("react-native", () => {
     FlatList: ({
       ListHeaderComponent,
       ListEmptyComponent,
+      data = [],
+      keyExtractor,
+      renderItem,
+      onEndReached,
+      refreshControl,
     }: {
       ListHeaderComponent?: ReactNode;
       ListEmptyComponent?: ReactNode;
-    }) => createElement("div", null, ListHeaderComponent, ListEmptyComponent),
+      data?: unknown[];
+      keyExtractor?: (item: unknown) => string;
+      renderItem?: (info: { item: unknown }) => ReactNode;
+      onEndReached?: () => void;
+      refreshControl?: ReactNode;
+    }) => {
+      useLayoutEffect(() => {
+        if (screen.endOnLayout) onEndReached?.();
+      });
+      return createElement(
+        "div",
+        null,
+        ListHeaderComponent,
+        refreshControl,
+        data.length === 0
+          ? ListEmptyComponent
+          : data.map((item) =>
+              createElement("div", { key: keyExtractor?.(item) }, renderItem?.({ item })),
+            ),
+        onEndReached
+          ? createElement("button", { type: "button", onClick: onEndReached }, "End of list")
+          : null,
+      );
+    },
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -117,16 +210,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values: Record<string, string | number> = {}) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
-  return {
-    t,
-    useI18n: () => ({ t, locale: "en" }),
-    getActiveUiLocale: () => "en",
-    dateLocaleForUi: () => "en-US",
-  };
-});
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
   deviceTimeZone: () => "Europe/Berlin",
@@ -160,6 +243,31 @@ vi.mock("../components/run-error-sheet", () => ({
     details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-segmented-control", () => ({
+  NativeSegmentedControl: ({
+    options,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "nav",
+      null,
+      options.map((option) =>
+        createElement(
+          "button",
+          { key: option.value, type: "button", onClick: () => onChange(option.value) },
+          option.label,
+        ),
+      ),
+    ),
+}));
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
@@ -172,6 +280,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   nextRunAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,
@@ -268,23 +377,50 @@ const listCalls = () => rpc.mock.calls.filter(([procedure]) => procedure === "ro
 const routinesRow = () => button("Routines");
 
 describe("bot profile", () => {
-  it("links the bot's settings, routines, artifacts and computer", async () => {
+  it("links the bot's settings, routines, pages, artifacts and computer", async () => {
     profileRpc(async () => []);
     await render(createElement(BotProfile));
 
     expect(container.textContent).toContain("Fixture");
     button("Edit").click();
     routinesRow().click();
+    button("Pages").click();
     button("Artifacts").click();
     button("Computer").click();
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
       [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
+      [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
       [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
     ]);
     const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 4)).toEqual(["Edit", "Routines0 on", "Artifacts", "Computer"]);
+    expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
+  });
+
+  it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {
+    profileRpc(async () => []);
+    await render(createElement(BotProfile));
+    const [menu] = (
+      screen.options.unstable_headerRightItems as () => {
+        menu: { items: { label: string; onPress: () => void }[] };
+      }[]
+    )();
+    const items = menu!.menu.items;
+    expect(items.map((item) => item.label)).toEqual(["Clear conversation", "Archive", "Delete…"]);
+    const cleared = vi.fn();
+    const stop = onConversationCleared(cleared);
+    items[0]!.onPress();
+    const [, , buttons] = alert.mock.lastCall as [
+      string,
+      string,
+      { text: string; onPress?: () => void }[],
+    ];
+    rpc.mockResolvedValueOnce({});
+    await act(async () => buttons.find((button) => button.text === "Clear")!.onPress!());
+    expect(rpc).toHaveBeenCalledWith("threads/clear", { botId: "bot-fixture" });
+    expect(cleared).toHaveBeenCalledWith("bot-fixture");
+    stop();
   });
 
   it.each([
@@ -318,13 +454,16 @@ describe("bot profile", () => {
   });
 
   it("shows the row without a count until the first read lands", async () => {
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     await render(createElement(BotProfile));
     expect(rpc).toHaveBeenCalledWith("routines/list", { botId: "bot-fixture" }, expect.anything());
     expect(routinesRow().textContent).toBe("Routines");
 
-    await act(async () => load([routine("r1", "Morning digest")]));
+    await act(async () => load.resolve([routine("r1", "Morning digest")]));
     expect(routinesRow().textContent).toBe("Routines1 on");
   });
 
@@ -362,20 +501,22 @@ describe("bot profile", () => {
     expect(routinesRow().textContent).toBe("Routines1 on");
   });
 
-  it("reads again every 15 seconds while shown, and stops when it closes", async () => {
+  it("reads again when routines change while shown, never on a timer", async () => {
     vi.useFakeTimers();
     let rows = [routine("r1", "Morning digest")];
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
     expect(listCalls()).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(listCalls()).toHaveLength(1);
 
     rows = [...rows, routine("r2", "Weekly report", { createdAt: "2026-02-01T00:00:00.000Z" })];
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     expect(listCalls()).toHaveLength(2);
     expect(routinesRow().textContent).toBe("Routines2 on");
 
     act(() => root.unmount());
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS * 2));
+    await routinesChanged();
     expect(listCalls()).toHaveLength(2);
     root = createRoot(container);
   });
@@ -400,13 +541,18 @@ describe("bot profile notifications", () => {
     container.querySelector<HTMLInputElement>('input[aria-label="Notifications"]');
 
   it("shows no switch until the bot has loaded", async () => {
-    let load!: (bot: unknown) => void;
-    profileRpc(async () => [], { bot: () => new Promise((resolve) => (load = resolve)) });
+    let load!: Deferred<unknown>;
+    profileRpc(async () => [], {
+      bot: () => {
+        load = deferred<unknown>();
+        return load.promise;
+      },
+    });
     await render(createElement(BotProfile));
     expect(notificationsSwitch()).toBeNull();
     expect(container.textContent).not.toContain(footer);
 
-    await act(async () => load({ ...fixtureBot, notifyOnFinish: false }));
+    await act(async () => load.resolve({ ...fixtureBot, notifyOnFinish: false }));
     expect(notificationsSwitch()?.checked).toBe(false);
   });
 
@@ -426,10 +572,13 @@ describe("bot profile notifications", () => {
   );
 
   it("saves at once and keeps the switch enabled while saving", async () => {
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
 
@@ -442,7 +591,7 @@ describe("bot profile notifications", () => {
     });
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
 
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(notificationsSwitch()!.disabled).toBe(false);
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
@@ -450,10 +599,13 @@ describe("bot profile notifications", () => {
   });
 
   it("keeps rapid on/off/on taps responsive and skips the redundant queued save", async () => {
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
     for (const checked of [true, false, true]) {
@@ -464,7 +616,7 @@ describe("bot profile notifications", () => {
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toEqual([
       ["bots/update", { botId: "bot-fixture", notifyOnFinish: true }],
     ]);
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
     expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
@@ -503,10 +655,13 @@ describe("bot profile notifications", () => {
     "keeps the change when a reload that started %s the save returns the old value",
     async (when) => {
       const reads: Array<(bot: unknown) => void> = [];
-      let save!: () => void;
+      let save!: Deferred;
       profileRpc(async () => [], {
         bot: () => new Promise((resolve) => reads.push(resolve)),
-        update: () => new Promise<void>((resolve) => (save = resolve)),
+        update: () => {
+          save = deferred();
+          return save.promise;
+        },
       });
       await render(createElement(BotProfile));
       await act(async () => reads[0]!(fixtureBot));
@@ -518,7 +673,7 @@ describe("bot profile notifications", () => {
       if (when === "before") await refocus();
       await act(async () => notificationsSwitch()!.click());
       if (when === "during") await refocus();
-      await act(async () => save());
+      await act(async () => save.resolve());
       await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
       expect(container.textContent).toContain("Reloaded");
       expect(notificationsSwitch()!.checked).toBe(false);
@@ -532,10 +687,13 @@ describe("bot profile notifications", () => {
 
   it("keeps the change when a reload starts and resolves while the save is pending", async () => {
     const reads: Array<(bot: unknown) => void> = [];
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: () => new Promise((resolve) => reads.push(resolve)),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
     await act(async () => reads[0]!(fixtureBot));
@@ -551,7 +709,7 @@ describe("bot profile notifications", () => {
     expect(notificationsSwitch()!.checked).toBe(false);
     expect(notificationsSwitch()!.disabled).toBe(false);
 
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(false);
     expect(notificationsSwitch()!.disabled).toBe(false);
 
@@ -645,17 +803,24 @@ describe("routines screen", () => {
     });
   });
 
-  it("shows a spinner, then the empty text, with no list or button", async () => {
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+  it("shows a spinner, then the empty text and a way to create one", async () => {
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     await render(createElement(RoutinesScreen));
     expect(container.querySelector("progress")).toBeTruthy();
     expect(container.textContent).toBe("");
 
-    await act(async () => load([]));
+    await act(async () => load.resolve([]));
     expect(container.querySelector("progress")).toBeNull();
-    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.");
-    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.New routine");
+    rowFor("New routine")!.click();
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/routine",
+      params: { botId: "bot-fixture", botName: "Fixture", origin: "profile" },
+    });
   });
 
   it("offers Try again after a failed read and its retry, and reloads", async () => {
@@ -684,7 +849,8 @@ describe("routines screen", () => {
     });
     await render(createElement(RoutinesScreen));
     fail = true;
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS + ROUTINES_RETRY_MS));
+    await routinesChanged();
+    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_RETRY_MS));
     expect(listCalls()).toHaveLength(3);
     expect(rowFor("Morning digest, On")).toBeTruthy();
     expect(container.textContent).not.toContain("Could not load routines");
@@ -704,8 +870,11 @@ describe("routines screen", () => {
   });
 
   it("pauses at once, saves once, keeps the row in place and updates the profile count", async () => {
-    let save!: (row: unknown) => void;
-    const updateRoutine = vi.fn(() => new Promise((resolve) => (save = resolve)));
+    let save!: Deferred<unknown>;
+    const updateRoutine = vi.fn(() => {
+      save = deferred<unknown>();
+      return save.promise;
+    });
     profileRpc(async () => [digest(), report()], { updateRoutine });
     await render(createElement(RoutinesScreen));
 
@@ -718,7 +887,7 @@ describe("routines screen", () => {
     expect(updateRoutine).toHaveBeenCalledExactlyOnceWith({ routineId: "r1", active: false });
 
     // Pausing clears the next run; the row still stays first.
-    await act(async () => save({ ...digest(), active: false, nextRunAt: null }));
+    await act(async () => save.resolve({ ...digest(), active: false, nextRunAt: null }));
     expect(rowTexts()[0]).toBe("Morning digestEvery day at 7:30 AM, Paused");
     expect(alert).not.toHaveBeenCalled();
 
@@ -749,17 +918,20 @@ describe("routines screen", () => {
   });
 
   it("drops a save when the session changes between the tap and the send", async () => {
-    let captured!: (context: unknown) => void;
+    let captured!: Deferred<unknown>;
     const updateRoutine = vi.fn(async () => ({ ...digest(), active: false }));
     profileRpc(async () => [digest()], { updateRoutine });
     await render(createElement(RoutinesScreen));
-    requestContext.mockImplementationOnce(() => new Promise((resolve) => (captured = resolve)));
+    requestContext.mockImplementationOnce(() => {
+      captured = deferred<unknown>();
+      return captured.promise;
+    });
 
     await act(async () => switchFor("Morning digest")!.click());
     expect(switchFor("Morning digest")!.checked).toBe(false);
     session.generation += 1;
     await act(async () =>
-      captured({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
+      captured.resolve({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
     );
     expect(updateRoutine).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
@@ -832,21 +1004,24 @@ describe("routines screen", () => {
   it("keeps a switch as tapped when a read that overlapped its save returns the old value", async () => {
     vi.useFakeTimers();
     const reads: Array<(rows: unknown) => void> = [];
-    let save!: (row: unknown) => void;
+    let save!: Deferred<unknown>;
     profileRpc(() => new Promise((resolve) => reads.push(resolve)), {
-      updateRoutine: () => new Promise((resolve) => (save = resolve)),
+      updateRoutine: () => {
+        save = deferred<unknown>();
+        return save.promise;
+      },
     });
     await render(createElement(RoutinesScreen));
     await act(async () => reads[0]!([digest()]));
 
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     await act(async () => switchFor("Morning digest")!.click());
-    await act(async () => save({ ...digest(), active: false }));
+    await act(async () => save.resolve({ ...digest(), active: false }));
     await act(async () => reads[1]!([digest()]));
     expect(switchFor("Morning digest")!.checked).toBe(false);
 
     // The next read that started after the save shows the server again.
-    await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS));
+    await routinesChanged();
     await act(async () => reads[2]!([{ ...digest(), active: true }]));
     expect(switchFor("Morning digest")!.checked).toBe(true);
   });
@@ -860,8 +1035,11 @@ describe("routines screen", () => {
   });
 
   it("asks before deleting and removes the row only once the server confirms", async () => {
-    let remove!: (value: unknown) => void;
-    const removeRoutine = vi.fn(() => new Promise((resolve) => (remove = resolve)));
+    let remove!: Deferred<unknown>;
+    const removeRoutine = vi.fn(() => {
+      remove = deferred<unknown>();
+      return remove.promise;
+    });
     profileRpc(async () => [digest(), report()], { removeRoutine });
     await render(createElement(RoutinesScreen));
 
@@ -884,7 +1062,7 @@ describe("routines screen", () => {
     rowFor("Weekly report, Off")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
     expect(alert).toHaveBeenCalledTimes(1);
 
-    await act(async () => remove({ ok: true }));
+    await act(async () => remove.resolve({ ok: true }));
     expect(rowFor("Morning digest, On")).toBeNull();
     expect(rowFor("Weekly report, Off")).toBeTruthy();
   });
@@ -918,12 +1096,15 @@ describe("routines screen", () => {
     const removeRoutine = vi.fn(async () => ({ ok: true }));
     profileRpc(async () => [digest(), report()], { removeRoutine });
     await render(createElement(RoutinesScreen));
-    let captured!: (context: unknown) => void;
-    requestContext.mockImplementationOnce(() => new Promise((resolve) => (captured = resolve)));
+    let captured!: Deferred<unknown>;
+    requestContext.mockImplementationOnce(() => {
+      captured = deferred<unknown>();
+      return captured.promise;
+    });
     await confirmDelete("Morning digest, On");
     session.generation += 1;
     await act(async () =>
-      captured({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
+      captured.resolve({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
     );
     expect(removeRoutine).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledTimes(1);
@@ -973,10 +1154,13 @@ describe("routine detail", () => {
   });
 
   it("reads again once a save running when it opened finishes", async () => {
-    let save!: (row: unknown) => void;
+    let save!: Deferred<unknown>;
     params.current = { botId: "bot-fixture", name: "Fixture" };
     profileRpc(async () => [routine("r1", "Morning digest"), routine("r2", "Weekly report")], {
-      updateRoutine: () => new Promise((resolve) => (save = resolve)),
+      updateRoutine: () => {
+        save = deferred<unknown>();
+        return save.promise;
+      },
     });
     await render(createElement(RoutinesScreen));
     await act(async () =>
@@ -994,13 +1178,18 @@ describe("routine detail", () => {
         routine("r1", "Morning digest", { prompt: "Check the inbox and the calendar" }),
         routine("r2", "Weekly report", { active: false }),
       ],
-      { updateRoutine: () => new Promise((resolve) => (save = resolve)) },
+      {
+        updateRoutine: () => {
+          save = deferred<unknown>();
+          return save.promise;
+        },
+      },
     );
     params.current = { botId: "bot-fixture", botName: "Fixture", routineId: "r1" };
     await render(createElement(RoutineDetail));
     expect(listCalls()).toHaveLength(0);
 
-    await act(async () => save(routine("r2", "Weekly report", { active: false })));
+    await act(async () => save.resolve(routine("r2", "Weekly report", { active: false })));
     expect(listCalls()).toHaveLength(1);
     expect(container.textContent).toContain("Check the inbox and the calendar");
   });
@@ -1012,15 +1201,21 @@ describe("routine detail", () => {
     await render(createElement(BotProfile));
     act(() => root.unmount());
     root = createRoot(container);
+    // The detail opens after that read; on a fast machine both can fall in one millisecond.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 1);
 
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     params.current = { botId: "bot-fixture", botName: "Fixture", routineId: "r1" };
     await render(createElement(RoutineDetail));
     expect(container.textContent).not.toContain("This routine no longer exists");
     expect(container.querySelector("progress")).toBeTruthy();
 
-    await act(async () => load([routine("r1", "Morning digest")]));
+    await act(async () => load.resolve([routine("r1", "Morning digest")]));
     expect(container.textContent).toContain("Check the inbox");
   });
 
@@ -1046,6 +1241,26 @@ describe("routine detail", () => {
     profileRpc(async () => [routine("r2", "Weekly report")]);
     await render(createElement(RoutineDetail));
     expect(container.textContent).toContain("This routine no longer exists");
+  });
+
+  it("opens the form only from Edit routine", async () => {
+    await render(createElement(RoutineDetail));
+    const field = 'input:not([aria-label="Active"])';
+    expect(container.querySelector(field)).toBeNull();
+    expect(container.textContent).not.toContain("Delete routine");
+    await act(async () => button("Edit routine").click());
+    expect(container.querySelector(field)).toBeTruthy();
+    expect(container.textContent).toContain("Delete routine");
+    expect(container.textContent).not.toContain("Run history");
+  });
+
+  it("opens the run history from its row", async () => {
+    await render(createElement(RoutineDetail));
+    button("Run history").click();
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/routine-runs",
+      params: { routineId: "r1", botName: "Fixture" },
+    });
   });
 
   it("lists the routine's runs and opens a reply at its message", async () => {
@@ -1083,8 +1298,7 @@ describe("routine detail", () => {
         nextCursor: null,
       }),
     });
-    await render(createElement(RoutineDetail));
-    expect(container.textContent).toContain("Run history");
+    await render(createElement(RoutineRuns));
     expect(container.textContent).not.toContain("1m 22s");
     expect(container.textContent).not.toContain("Done");
     expect(container.textContent).toContain("summary: 504: timed out");
@@ -1133,7 +1347,7 @@ describe("routine detail", () => {
         : { runs: [run], nextCursor: cursor },
     );
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     await act(async () => button("Load older runs").click());
     expect(history).toHaveBeenLastCalledWith({ routineId: "r1", before: cursor, limit: 20 });
     expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(2);
@@ -1157,7 +1371,7 @@ describe("routine detail", () => {
       return { runs: [run], nextCursor: { id: "run-1", createdAt: run.createdAt } };
     });
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     await act(async () => button("Load older runs").click());
     expect(container.textContent).toContain("Could not load run history");
     expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(1);
@@ -1165,7 +1379,7 @@ describe("routine detail", () => {
   });
 
   it("says when a routine has not run, and when its history could not load", async () => {
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     expect(container.textContent).toContain("No runs yet");
     act(() => root.unmount());
     root = createRoot(container);
@@ -1175,7 +1389,7 @@ describe("routine detail", () => {
       throw new Error("offline");
     });
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     expect(container.textContent).toContain("Could not load run history");
     history.mockImplementation(async () => ({ runs: [], nextCursor: null }) as never);
     await act(async () => button("Try again").click());
@@ -1202,9 +1416,417 @@ describe("artifacts opened for one bot", () => {
     params.current = { botId: "bot-fixture" };
   });
 
+  it.each(["refresh", "pagination"])(
+    "does not restore deleted files from a stale %s response",
+    async (mode) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const stale = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: "fresh-page" });
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "page-2" });
+      listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+      removeArtifact.mockResolvedValue(undefined);
+      await render(createElement(ArtifactsScreen));
+      await act(async () => button(mode === "refresh" ? "Refresh files" : "End of list").click());
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      expect(removeArtifact).toHaveBeenCalledWith("file-a");
+      expect(container.textContent).not.toContain("report.md");
+      await act(async () => stale.resolve({ items: [file], nextCursor: "stale-page" }));
+      expect(container.textContent).not.toContain("report.md");
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+        botId: "bot-fixture",
+        madeByBots: false,
+        limit: 30,
+      });
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "fresh-page" }),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "blocks pagination during deletion refresh and resumes search (%s)",
+    async (search) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const fresh = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "old-page" });
+      listSpaceArtifacts.mockReturnValueOnce(fresh.promise);
+      removeArtifact.mockResolvedValueOnce(undefined);
+      await render(createElement(ArtifactsScreen));
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      if (search) {
+        act(() => screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }));
+      }
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [], nextCursor: null });
+      await act(async () => fresh.resolve({ items: [], nextCursor: "old-page" }));
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "old-page" }),
+      );
+    },
+  );
+
+  it("keeps a failed deletion's file and allows the pending refresh to finish", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockRejectedValueOnce(new Error("Deletion failed"));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    expect(alert.mock.lastCall?.[0]).toBe("Could not delete this artifact");
+    await act(async () =>
+      stale.resolve({ items: [{ ...file, name: "updated.md" }], nextCursor: null }),
+    );
+    expect(container.textContent).toContain("updated.md");
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("reloads the current filter when deletion finishes after a filter change", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("shows an error when the deletion refresh supersedes a filter load and fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const deletion = deferred<void>();
+    const stale = deferred<{ items: (typeof file)[]; nextCursor: null }>();
+    listSpaceArtifacts.mockResolvedValue({ items: [], nextCursor: null });
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(stale.promise);
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    removeArtifact.mockReturnValueOnce(deletion.promise);
+    await render(createElement(ArtifactsScreen));
+    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    await act(async () =>
+      alert.mock.lastCall?.[2]
+        .find((action: { style?: string }) => action.style === "destructive")
+        .onPress(),
+    );
+    await act(async () => button("Other").click());
+    await act(async () => deletion.resolve());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "other-bot",
+      madeByBots: false,
+      limit: 30,
+    });
+    await act(async () => stale.resolve({ items: [file], nextCursor: null }));
+    expect(container.textContent).not.toContain("report.md");
+    expect(container.querySelector("progress")).toBeNull();
+    expect(container.textContent).toContain("Could not load artifacts.");
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("No artifacts yet");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+  });
+
+  it("keeps displayed files when a background refresh fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+    expect(container.querySelector("progress")).toBeNull();
+  });
+
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
-    expect(listSpaceArtifacts).toHaveBeenCalledWith({ botId: "bot-fixture", limit: 30 });
+    expect(listSpaceArtifacts).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
   });
+
+  it("lists only what bots made while Made by bots is chosen", async () => {
+    await render(createElement(ArtifactsScreen));
+    expect(container.textContent).toContain("No artifacts yet");
+    await act(async () => button("Made by bots").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No matching artifacts");
+    expect(container.textContent).not.toContain("No artifacts yet");
+    await act(async () => button("All files").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("keeps Made by bots on the next page and when the screen comes back", async () => {
+    const file = (id: string, name: string) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId: `run-${id}`,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) =>
+        !input.madeByBots
+          ? { items: [], nextCursor: null }
+          : input.cursor
+            ? { items: [file("b", "second-report.md")], nextCursor: null }
+            : { items: [file("a", "first-report.md")], nextCursor: "page-2" },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Made by bots").click());
+    expect(container.textContent).toContain("first-report.md");
+
+    await act(async () => button("End of list").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      cursor: "page-2",
+      limit: 30,
+    });
+    expect(container.textContent).toContain("first-report.md");
+    expect(container.textContent).toContain("second-report.md");
+
+    await act(async () => {
+      for (const effect of focus) effect();
+    });
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+  });
+
+  it("never pages the new filter with the old filter's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) => {
+        if (input.cursor) throw new Error("page 2 failed");
+        return input.madeByBots
+          ? { items: [file("a", "report.md", "run-a")], nextCursor: null }
+          : { items: [file("u", "my-upload.txt", null)], nextCursor: "all-files-2" };
+      },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ madeByBots: false, cursor: "all-files-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Made by bots").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.madeByBots === true && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  it("never pages another bot with the previous bot's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(async (input: { botId?: string; cursor?: string }) => {
+      if (input.cursor) throw new Error("page 2 failed");
+      return input.botId === "bot-fixture"
+        ? { items: [file("u", "my-upload.txt", null)], nextCursor: "fixture-2" }
+        : { items: [file("o", "other.txt", null)], nextCursor: null };
+    });
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ botId: "bot-fixture", cursor: "fixture-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Other").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.botId !== "bot-fixture" && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  for (const label of ["Fixture", "All files"]) {
+    it(`keeps paging after tapping the already chosen ${label}`, async () => {
+      listSpaceArtifacts.mockImplementation(async (input: { cursor?: string }) => ({
+        items: [
+          {
+            id: input.cursor ? "b" : "a",
+            name: input.cursor ? "second.md" : "first.md",
+            botId: "bot-fixture",
+            groupId: null,
+            runId: null,
+            description: null,
+            mimeType: "text/markdown",
+            size: 6,
+            version: 1,
+            versionCount: 1,
+            createdAt: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+        nextCursor: input.cursor ? null : "page-2",
+      }));
+      await render(createElement(ArtifactsScreen));
+      expect(container.textContent).toContain("first.md");
+      await act(async () => button(label).click());
+      await act(async () => button("End of list").click());
+      expect(container.textContent).toContain("second.md");
+    });
+  }
 });

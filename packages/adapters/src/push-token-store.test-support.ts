@@ -8,14 +8,19 @@ export class MemoryPushTokenStore implements PushTokenStore {
   async list(userId: string) {
     return this.rows
       .filter((row) => row.userId === userId)
-      .map(({ token, sessionId }) => ({ token, ...(sessionId ? { sessionId } : {}) }));
+      .map(({ userId: _, ...record }) => record);
   }
-  async save(userId: string, token: string, sessionId = "") {
+  async save(userId: string, token: string, sessionId = "", presentation?: "android_sender") {
     this.rows = this.rows.filter(
       (row) =>
         row.token !== token && !(sessionId && row.userId === userId && row.sessionId === sessionId),
     );
-    this.rows.push({ userId, token, ...(sessionId ? { sessionId } : {}) });
+    this.rows.push({
+      userId,
+      token,
+      ...(sessionId ? { sessionId } : {}),
+      ...(presentation ? { presentation } : {}),
+    });
   }
   async importLegacy(userId: string, token: string, sessionId: string) {
     if (this.rows.some((row) => row.userId === userId || row.token === token)) return false;

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { cancelResponseBody, readBoundedJsonResponse } from "@rakazo/core";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
+
+const MAX_RESPONSE_BYTES = 4_096;
 
 interface ResendEmailConfig {
   apiKey: string;
@@ -64,67 +66,92 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
     const signal = AbortSignal.timeout(this.timeoutMs);
     // Reuse only within this delivery: a later sign-in request must get a new email.
     const idempotencyKey = randomUUID();
+    const { from, replyTo, cc, ...rest } = message;
+    const reply = replyTo ?? this.config.replyTo;
     const body = JSON.stringify({
-      from: this.config.from,
-      ...(this.config.replyTo ? { reply_to: this.config.replyTo } : {}),
-      ...message,
+      from: from ?? this.config.from,
+      ...(reply ? { reply_to: reply } : {}),
+      ...(cc?.length ? { cc } : {}),
+      ...rest,
     });
-    for (let attempt = 0; ; attempt++) {
-      let retry = true;
-      let failure = "Resend email request failed";
-      try {
-        const response = await this.request("https://api.resend.com/emails", {
-          method: "POST",
-          redirect: "error",
-          headers: {
-            authorization: `Bearer ${this.config.apiKey}`,
-            "content-type": "application/json",
-            "idempotency-key": idempotencyKey,
-          },
-          body,
+    let retryable = true;
+    let retryAfterMs: number | undefined;
+    try {
+      await retry(
+        async () => {
+          retryable = true;
+          retryAfterMs = undefined;
+          let recipientRejected = false;
+          let failure = "Resend email request failed";
+          try {
+            const response = await this.request("https://api.resend.com/emails", {
+              method: "POST",
+              redirect: "error",
+              headers: {
+                authorization: `Bearer ${this.config.apiKey}`,
+                "content-type": "application/json",
+                "idempotency-key": idempotencyKey,
+              },
+              body,
+              signal,
+            });
+            if (response.ok) {
+              const result: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES);
+              if (
+                typeof result === "object" &&
+                result !== null &&
+                "id" in result &&
+                typeof result.id === "string" &&
+                result.id.length > 0
+              )
+                return;
+              failure = "Resend returned an invalid email response";
+            } else {
+              retryable = response.status === 429 || response.status >= 500;
+              retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+              const error = await errorDetail(response);
+              recipientRejected = error.recipientRejected;
+              failure = `Resend email request failed (HTTP ${response.status}${error.detail})`;
+            }
+          } catch {
+            // A lost response may already have sent the email; the same key makes retry safe.
+          }
+          throw recipientRejected ? new EmailRecipientRejectedError(failure) : new Error(failure);
+        },
+        {
+          attempts: this.retryDelaysMs.length + 1,
+          retryable: (error) => retryable && !(error instanceof EmailRecipientRejectedError),
+          delayMs: (attempt) => retryAfterMs ?? this.retryDelaysMs[attempt] ?? 0,
           signal,
-        });
-        if (response.ok) {
-          const result: unknown = await response.json();
-          if (
-            typeof result === "object" &&
-            result !== null &&
-            "id" in result &&
-            typeof result.id === "string" &&
-            result.id.length > 0
-          )
-            return;
-          failure = "Resend returned an invalid email response";
-        } else {
-          retry = response.status === 429 || response.status >= 500;
-          failure = `Resend email request failed (HTTP ${response.status}${await errorDetail(response)})`;
-        }
-      } catch {
-        // A lost response may already have sent the email; the same key makes retry safe.
-      }
+        },
+      );
+    } catch (error) {
       if (signal.aborted) throw new Error("Resend email delivery timed out");
-      const delay = this.retryDelaysMs[attempt];
-      if (!retry || delay === undefined) throw new Error(failure);
-      try {
-        await sleep(delay, undefined, { signal });
-      } catch {
-        throw new Error("Resend email delivery timed out");
-      }
+      throw error;
     }
   }
 }
 
-/** Resend's error name and message, without addresses: the message can quote a recipient. */
-async function errorDetail(response: Response): Promise<string> {
-  const body: unknown = await readBoundedJsonResponse(response, 4_096).catch(() => {
+/**
+ * Resend's error name and message, without addresses: the message can quote a recipient.
+ * A validation error naming a recipient field means the address itself was refused.
+ */
+async function errorDetail(
+  response: Response,
+): Promise<{ detail: string; recipientRejected: boolean }> {
+  const body: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES).catch(() => {
     cancelResponseBody(response);
     return undefined;
   });
-  if (typeof body !== "object" || body === null) return "";
+  if (typeof body !== "object" || body === null) return { detail: "", recipientRejected: false };
   const { name, message } = body as { name?: unknown; message?: unknown };
-  const parts = [
-    typeof name === "string" && /^[a-z_]{1,64}$/.test(name) ? name : "",
-    typeof message === "string" ? message.replace(/\S+@\S+/g, "<address>").slice(0, 200) : "",
-  ].filter(Boolean);
-  return parts.length > 0 ? `: ${parts.join(": ")}` : "";
+  const errorName = typeof name === "string" && /^[a-z_]{1,64}$/.test(name) ? name : "";
+  const text =
+    typeof message === "string" ? message.replace(/\S+@\S+/g, "<address>").slice(0, 200) : "";
+  const parts = [errorName, text].filter(Boolean);
+  return {
+    detail: parts.length > 0 ? `: ${parts.join(": ")}` : "",
+    recipientRejected:
+      response.status < 500 && errorName === "validation_error" && /`(to|cc)`/.test(text),
+  };
 }

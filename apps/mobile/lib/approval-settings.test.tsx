@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -34,10 +36,6 @@ vi.mock("./native", () => ({
   native: {},
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => {
-  const i18n = { t: (text: string) => text };
-  return { useI18n: () => i18n };
-});
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./api", () => ({
   rpc: state.rpc,
@@ -202,14 +200,20 @@ afterEach(() => {
 
 it("shows the mode as the row's value and saves a pick from the menu at once", async () => {
   await render();
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   // Named outright, so the menu symbol beside the value isn't read out.
-  expect(spoken()).toBe("Approvals, Ask");
+  expect(spoken()).toBe(
+    "Approvals, Ask, Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 
   await act(async () => choice("Never ask").click());
   expect(sets()).toEqual([["autoReview/set", { scope: "account", mode: "never" }]]);
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   expect(choices()).toEqual(["Never ask*", "Ask"]);
 
   // Picking the current mode saves nothing.
@@ -240,7 +244,9 @@ it("offers a retry in the row when the first load fails", async () => {
   expect(choices()).toEqual([]);
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
 });
 
@@ -248,13 +254,12 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
   await render();
   const base = state.rpc.getMockImplementation()!;
   let stored: string | null = null;
-  let finishRead: () => void = () => undefined;
+  let finishRead!: Deferred;
   state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
     if (proc === "autoReview/set") throw new Error("offline");
     if (proc === "autoReview/get") {
-      await new Promise<void>((resolve) => {
-        finishRead = resolve;
-      });
+      finishRead = deferred();
+      await finishRead.promise;
       if (!stored) throw new Error("offline");
       return { ...state.settings, mode: stored };
     }
@@ -263,18 +268,22 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
 
   await act(async () => choice("Never ask").click());
   expect(state.alert).toHaveBeenCalledWith("Could not save that preference", "Try again.");
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choices()).toEqual(["Never ask", "Ask*"]);
   // If what is stored can't be read either, the row shows no mode and offers to read it again.
-  await act(async () => finishRead());
+  await act(async () => finishRead.resolve());
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
   expect(choices()).toEqual([]);
 
   // A save that landed before its reply was lost shows as saved.
   stored = "never";
   await act(async () => container.querySelector("span")!.click());
-  await act(async () => finishRead());
-  expect(row()).toBe("Approvals | Never ask");
+  await act(async () => finishRead.resolve());
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("shows the saved mode when a read started during the save lands after it", async () => {
@@ -287,7 +296,9 @@ it("shows the saved mode when a read started during the save lands after it", as
   await act(async () => state.refocus());
   await act(async () => slow.finish());
   for (const read of slow.reads.splice(0)) await act(async () => read());
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   // It reads again once the save is done, so the rule count is fresh too.
   expect(reads()).toBe(2);
 });
@@ -304,7 +315,9 @@ it("drops a save that lands after the Space went back to following the account",
   state.settings = { ...state.settings, mode: "ask" };
   await render(target, true);
   await act(async () => slow.finish());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("tells screen readers the row is unavailable while loading or saving", async () => {
@@ -331,7 +344,9 @@ it("offers a retry when a refresh fails after the mode loaded", async () => {
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
 
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
 });
 
 it("holds the menu while a save is in flight", async () => {
@@ -359,29 +374,31 @@ it("holds the menu while a save is in flight", async () => {
   expect(sets()).toHaveLength(2);
 
   await act(async () => finish());
-  expect(row()).toBe("Approvals | Ask");
+  expect(row()).toBe(
+    "Approvals | Ask | Asks before sending, spending or changing anything in your apps.",
+  );
   expect(choice("Never ask").disabled).toBe(false);
 });
 
 it("keeps a saved mode when a read that started before the save lands after it", async () => {
   await render();
   const base = state.rpc.getMockImplementation()!;
-  let resolveRead: (value: Settings) => void = () => undefined;
-  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) =>
-    proc === "autoReview/get"
-      ? new Promise((resolve) => {
-          resolveRead = resolve;
-        })
-      : base(proc, input),
-  );
+  let resolveRead!: Deferred<Settings>;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc !== "autoReview/get") return base(proc, input);
+    resolveRead = deferred<Settings>();
+    return resolveRead.promise;
+  });
   const stale = { ...state.settings };
 
   // Coming back starts a refresh; the owner picks Never ask before it lands with the old mode.
   state.rules = [{ id: "rule-1" }];
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
-  await act(async () => resolveRead(stale));
-  expect(row()).toBe("Approvals | Never ask");
+  await act(async () => resolveRead.resolve(stale));
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   // The rules it read are still current, so the count follows them.
   expect(container.querySelector("output")?.textContent).toBe("1");
 });
@@ -391,21 +408,23 @@ it.each(["autoReview/get", "approvalRules/list"])(
   async (failedProc) => {
     await render();
     const base = state.rpc.getMockImplementation()!;
-    let rejectRead: (reason: Error) => void = () => undefined;
-    state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
-      proc === failedProc
-        ? new Promise((_, reject) => {
-            rejectRead = reject;
-          })
-        : base(proc, input),
-    );
+    let rejectRead!: Deferred<never>;
+    state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) => {
+      if (proc !== failedProc) return base(proc, input);
+      rejectRead = deferred<never>();
+      return rejectRead.promise;
+    });
 
     await act(async () => state.refocus());
     await act(async () => choice("Never ask").click());
     expect(state.settings.mode).toBe("never");
-    expect(row()).toBe("Approvals | Never ask");
-    await act(async () => rejectRead(new Error("offline")));
-    expect(row()).toBe("Approvals | Never ask");
+    expect(row()).toBe(
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+    );
+    await act(async () => rejectRead.reject(new Error("offline")));
+    expect(row()).toBe(
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+    );
     expect(choices()).toEqual(["Never ask*", "Ask"]);
   },
 );
@@ -414,23 +433,25 @@ it("ignores an older refresh failure while a save is pending", async () => {
   await render();
   const slow = slowSaves();
   const base = state.rpc.getMockImplementation()!;
-  let rejectRead: (reason: Error) => void = () => undefined;
-  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
-    proc === "autoReview/get"
-      ? new Promise((_, reject) => {
-          rejectRead = reject;
-        })
-      : base(proc, input),
-  );
+  let rejectRead!: Deferred<never>;
+  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) => {
+    if (proc !== "autoReview/get") return base(proc, input);
+    rejectRead = deferred<never>();
+    return rejectRead.promise;
+  });
 
   await act(async () => state.refocus());
   await act(async () => choice("Never ask").click());
-  await act(async () => rejectRead(new Error("offline")));
-  expect(row()).toBe("Approvals | Never ask");
+  await act(async () => rejectRead.reject(new Error("offline")));
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
   expect(held()).toBe("true");
   await act(async () => slow.finish());
   expect(state.settings.mode).toBe("never");
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("shows a refresh failure from a read started after a successful save", async () => {
@@ -442,7 +463,9 @@ it("shows a refresh failure from a read started after a successful save", async 
   await act(async () => state.refocus());
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
   await act(async () => container.querySelector("span")!.click());
-  expect(row()).toBe("Approvals | Never ask");
+  expect(row()).toBe(
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
+  );
 });
 
 it("reads and saves a Space's own copy, and nothing while the Space follows the account", async () => {

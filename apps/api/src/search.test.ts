@@ -56,7 +56,7 @@ describe("artifact search batching", () => {
     expect(group.text).toContain('t."groupId" = candidate."targetId"');
     for (const query of [direct, group]) {
       expect(query.values).toContain(actor.spaceId);
-      expect(query.values).toContain(actor.userId);
+      expect(query.values).not.toContain(actor.userId);
       expect(query.text).toContain('ORDER BY m."createdAt" DESC');
     }
   });
@@ -158,26 +158,26 @@ it("resolves active group eligibility once for names, artifacts, and messages", 
 
   const eligibility = prisma.$queryRaw.mock.calls[0]?.[0];
   expect(eligibility.text).toContain('g."spaceId" = $1');
-  expect(eligibility.text).toContain('g."userId" = $2');
   expect(eligibility.text).toContain('g."archivedAt" IS NULL');
   expect(eligibility.text).toContain("SELECT COUNT(*) FROM chat_group_members gm");
   expect(eligibility.text).toContain('INNER JOIN bots gb ON gb.id = gm."botId"');
   expect(eligibility.text).toContain('gm."groupId" = g.id AND gb."archivedAt" IS NULL');
-  expect(eligibility.text).toContain(") >= $3");
-  expect(eligibility.values).toEqual([actor.spaceId, actor.userId, GROUP_MEMBER_MIN]);
+  expect(eligibility.text).not.toContain('"userId"');
+  expect(eligibility.text).toContain(") >= $2");
+  expect(eligibility.values).toEqual([actor.spaceId, GROUP_MEMBER_MIN]);
 
   expect(prisma.chatGroup.findMany.mock.calls[0]?.[0]).toMatchObject({
-    where: { spaceId: actor.spaceId, userId: actor.userId, id: { in: ["group-test"] } },
+    where: { spaceId: actor.spaceId, id: { in: ["group-test"] } },
     take: 5,
   });
   expect(prisma.artifact.findMany.mock.calls[1]?.[0]).toMatchObject({
-    where: { spaceId: actor.spaceId, userId: actor.userId, groupId: { in: ["group-test"] } },
+    where: { spaceId: actor.spaceId, groupId: { in: ["group-test"] } },
     take: 25,
   });
   const [strings, ...values] = prisma.$queryRaw.mock.calls[2]!;
   const groupMessageQuery = Prisma.sql(strings, ...values);
-  expect(groupMessageQuery.text).toContain("AND g.id IN ($3)");
-  expect(groupMessageQuery.values[2]).toBe("group-test");
+  expect(groupMessageQuery.text).toContain("AND g.id IN ($2)");
+  expect(groupMessageQuery.values[1]).toBe("group-test");
 });
 
 it("applies group eligibility before name and artifact limits", async () => {
@@ -266,4 +266,45 @@ it("guards name-derived snippets while preserving descriptions", async () => {
       .map((hit) => hit.snippet),
   ).toEqual(["", ""]);
   expect(hits.find((hit) => hit.botId === "bot-2")?.snippet).toBe("Keep __TestTok2__ literal");
+});
+
+describe("cancelled search", () => {
+  it("stops issuing queries once the request is cancelled", async () => {
+    const { prisma } = fixture(1);
+    const abort = new AbortController();
+    prisma.bot.findMany.mockImplementation(async () => {
+      abort.abort();
+      return [];
+    });
+    await expect(
+      querySpaceSearch(prisma as unknown as PrismaClient, actor, "report", abort.signal),
+    ).rejects.toBe(abort.signal.reason);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.artifact.findMany).not.toHaveBeenCalled();
+  });
+});
+
+it("finds text stored beside entries that are not blocks, in a bot chat and in a group", async () => {
+  const { prisma } = fixture(0);
+  const blocks = [{ text: "no kind" }, { kind: "text", text: "the quarterly report" }, null];
+  // The message scans are tagged templates: their first argument is the SQL's literal parts.
+  prisma.$queryRaw.mockImplementation(async (sql: readonly string[] | object) => {
+    const text = Array.isArray(sql) ? sql.join("") : "";
+    if (text.includes('b.id AS "botId"'))
+      return [
+        { id: "message-1", threadId: "thread-1", seq: 3, blocks, botId: "bot-1", botName: "Bot" },
+      ];
+    if (text.includes('g.id AS "groupId"'))
+      return [
+        { id: "message-2", threadId: "thread-2", seq: 4, blocks, groupId: "g-1", groupName: "G" },
+      ];
+    return [];
+  });
+
+  const hits = await querySpaceSearch(prisma as never, actor, "report");
+
+  expect(hits).toMatchObject([
+    { kind: "message", botId: "bot-1", messageId: "message-1", seq: 3 },
+    { kind: "message", groupId: "g-1", messageId: "message-2", seq: 4 },
+  ]);
 });

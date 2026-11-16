@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { credentialDigest } from "./credential-digest.js";
 import { PrismaPushTokenStore, PushSessionEndedError } from "./push-token-store.js";
 
-const suite =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 suite("database push registrations", () => {
   let a: ReturnType<typeof createDb>;
   let b: ReturnType<typeof createDb>;
@@ -68,6 +68,13 @@ suite("database push registrations", () => {
     await runAsTenant({ userId: user("b"), spaceId: "unused" }, async () => {
       expect(await a.prisma.pushRegistration.findMany()).toEqual([]);
     });
+  });
+
+  it("keeps the native presentation capability across replicas and clears it on legacy registration", async () => {
+    await api.save(user("a"), token("a"), session("a"), "android_sender");
+    expect((await worker.load(user("a")))?.presentation).toBe("android_sender");
+    await api.save(user("a"), token("a"), session("a"));
+    expect((await worker.load(user("a")))?.presentation).toBeUndefined();
   });
 
   it("serializes concurrent device handovers so only one account owns a token", async () => {
@@ -164,26 +171,20 @@ suite("database push registrations", () => {
   });
 
   it("does not publish a registration after a concurrent session deletion commits", async () => {
-    let release!: () => void;
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const ready = deferred();
+    const hold = deferred();
     const deletion = runAsSystem("delete fixture session concurrently", () =>
       a.prisma.$transaction(async (tx) => {
         await tx.session.delete({ where: { id: session("a2") } });
-        locked();
-        await hold;
+        ready.resolve();
+        await hold.promise;
       }),
     );
-    await ready;
+    await ready.promise;
     const registering = worker.save(user("a"), token("late"), session("a2"));
     // Attach rejection handling before releasing the blocked registration.
     const rejected = expect(registering).rejects.toBeInstanceOf(PushSessionEndedError);
-    release();
+    hold.resolve();
     await deletion;
     await rejected;
     expect(await api.list(user("a"))).toEqual([]);

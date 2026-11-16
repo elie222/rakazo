@@ -6,6 +6,8 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { InboxHeader } from "../components/inbox-header";
+// Activates the language the menus are translated into, as the app does at startup.
+import "./i18n";
 
 const header = vi.hoisted(() => ({
   platform: { OS: "ios" },
@@ -67,10 +69,6 @@ vi.mock("./appearance", () => ({
   mobileTokens: () => ({}),
   resolveMobileAppearance: () => "light",
 }));
-vi.mock("./i18n", () => {
-  const i18n = { t: (text: string) => text };
-  return { useI18n: () => i18n };
-});
 vi.mock("./native", () => ({ native: {}, useThemedStyles: () => ({}) }));
 
 let root: Root;

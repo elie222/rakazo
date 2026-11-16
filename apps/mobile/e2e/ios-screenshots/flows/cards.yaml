@@ -13,13 +13,21 @@ name: Request cards
     timeout: 3000
 - takeScreenshot: 01-api-key
 - scrollUntilVisible:
+    element: ".*Pay on freshcart.test.*"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-pay
+- scrollUntilVisible:
     element: ".*Which tone should replies use.*"
     direction: UP
     timeout: 15000
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 02-choice-and-computer
+- takeScreenshot: 03-choice-and-computer
 - scrollUntilVisible:
     element: ".*Sign in to the help desk.*"
     direction: UP
@@ -27,7 +35,7 @@ name: Request cards
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 03-answered-requests
+- takeScreenshot: 04-answered-requests
 - scrollUntilVisible:
     element: ".*Gmail.*"
     direction: UP
@@ -35,4 +43,4 @@ name: Request cards
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 04-app-connect
+- takeScreenshot: 05-app-connect

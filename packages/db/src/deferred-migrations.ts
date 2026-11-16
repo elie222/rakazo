@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "pg";
@@ -23,11 +24,14 @@ async function appliedMigrations(client: Client): Promise<Set<string> | undefine
  * Names of `-- deferred` migrations to leave out of this run. Each is held back the first time a
  * migration run sees it and applied on the next, so it lands one release after the code that stops
  * reading what it drops. That keeps the previous release working while the two run side by side,
- * and keeps rolling back one release safe. A database with no applied migrations holds nothing.
+ * and keeps rolling back one release safe. When supplied, previousMigrations also requires that
+ * the last successful deployment contained the migration, so a failed rollout cannot advance it.
+ * A database with no applied migrations holds nothing.
  */
 export async function heldBackMigrations(
   migrationUrl: string,
   migrationsDir: string,
+  previousMigrations?: readonly string[],
 ): Promise<string[]> {
   const deferred = readdirSync(migrationsDir, { withFileTypes: true })
     .filter(
@@ -53,7 +57,12 @@ export async function heldBackMigrations(
       'INSERT INTO "_deferred_migrations" (name) SELECT unnest($1::text[]) ON CONFLICT DO NOTHING RETURNING name',
       [pending],
     );
-    return firstSeen.map((row) => row.name);
+    const held = new Set(firstSeen.map((row) => row.name));
+    if (previousMigrations !== undefined) {
+      const previous = new Set(previousMigrations);
+      for (const name of pending) if (!previous.has(name)) held.add(name);
+    }
+    return [...held];
   } finally {
     await client.end();
   }
@@ -142,6 +151,14 @@ async function rollBackLockConflict(migrationUrl: string, migrationsPath: string
   }
 }
 
+/** The database package's own Prisma CLI, run by this runtime so no package manager is needed. */
+function prismaCli(dbPackageDir: string) {
+  const manifest = createRequire(path.join(dbPackageDir, "package.json")).resolve(
+    "prisma/package.json",
+  );
+  return path.join(path.dirname(manifest), "build/index.js");
+}
+
 /**
  * `prisma migrate deploy` from the database package, without the migrations held back this run.
  * A migration gives up on a lock the running release holds after a short wait, instead of stalling
@@ -153,9 +170,14 @@ export async function deployMigrations(input: {
   migrationsDir?: string;
   lockRetryDelaysMs?: number[];
   lockTimeoutMs?: number;
+  previousMigrations?: readonly string[];
 }) {
   const migrationsDir = input.migrationsDir ?? path.join(input.dbPackageDir, "prisma/migrations");
-  const held = await heldBackMigrations(input.migrationUrl, migrationsDir);
+  const held = await heldBackMigrations(
+    input.migrationUrl,
+    migrationsDir,
+    input.previousMigrations,
+  );
   let migrationsPath = migrationsDir;
   if (held.length) {
     migrationsPath = mkdtempSync(path.join(tmpdir(), "rakazo-migrations-"));
@@ -171,7 +193,7 @@ export async function deployMigrations(input: {
       : withLockTimeout(input.migrationUrl, input.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
     for (let attempt = 0; ; attempt++) {
       try {
-        execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+        execFileSync(process.execPath, [prismaCli(input.dbPackageDir), "migrate", "deploy"], {
           cwd: input.dbPackageDir,
           stdio: "inherit",
           env: {
@@ -186,7 +208,12 @@ export async function deployMigrations(input: {
         const retried =
           delay === undefined
             ? undefined
-            : await rollBackLockConflict(input.migrationUrl, migrationsPath).catch(() => undefined);
+            : await rollBackLockConflict(input.migrationUrl, migrationsPath).catch((checkError) => {
+                throw new AggregateError(
+                  [error, checkError],
+                  "Migration failed, and checking whether it lost a lock failed too",
+                );
+              });
         if (!retried) throw error;
         process.stdout.write(`${retried} lost a lock to running queries; retrying\n`);
         await new Promise((resolve) => setTimeout(resolve, delay));

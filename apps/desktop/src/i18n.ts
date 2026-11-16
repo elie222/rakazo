@@ -1,8 +1,5 @@
 import type { TextDirection } from "@rakazo/core";
 import { matchUiLocale, textDirectionForLocale, translate } from "@rakazo/core";
-import type { IpcMainInvokeEvent } from "electron";
-import type { AppTarget } from "./app-frame.js";
-import { fromAppFrame } from "./app-frame.js";
 import { DE_MESSAGES } from "./locales/de.js";
 import { ES_MESSAGES } from "./locales/es.js";
 import { FR_MESSAGES } from "./locales/fr.js";
@@ -11,6 +8,7 @@ import { HI_MESSAGES } from "./locales/hi.js";
 import { JA_MESSAGES } from "./locales/ja.js";
 import { KO_MESSAGES } from "./locales/ko.js";
 import { NL_MESSAGES } from "./locales/nl.js";
+import { PL_MESSAGES } from "./locales/pl.js";
 import { PT_BR_MESSAGES } from "./locales/pt-BR.js";
 import { RU_MESSAGES } from "./locales/ru.js";
 import { TR_MESSAGES } from "./locales/tr.js";
@@ -27,6 +25,7 @@ export const CATALOGS = {
   ja: JA_MESSAGES,
   ko: KO_MESSAGES,
   nl: NL_MESSAGES,
+  pl: PL_MESSAGES,
   "pt-BR": PT_BR_MESSAGES,
   ru: RU_MESSAGES,
   tr: TR_MESSAGES,
@@ -99,16 +98,9 @@ export function startDesktopLocale(
  * `desktop.locale.set`: the app window's own page reports the language the person chose there.
  * It is saved for the next launch, and `onChange` runs when the desktop's language changes with it.
  */
-export function createLocaleHandler(
-  getTarget: () => AppTarget | null,
-  save: (locale: string) => Promise<void>,
-  onChange: () => void,
-) {
-  return (
-    event: Pick<IpcMainInvokeEvent, "sender" | "senderFrame">,
-    locale: unknown,
-  ): Promise<void> => {
-    if (!fromAppFrame(getTarget(), event) || !isLanguageTag(locale)) return Promise.resolve();
+export function createLocaleHandler(save: (locale: string) => Promise<void>, onChange: () => void) {
+  return (_event: unknown, locale: unknown): Promise<void> => {
+    if (!isLanguageTag(locale)) return Promise.resolve();
     reportedLocale = locale;
     const next = resolveDesktopLocale(locale, undefined);
     if (next !== activeLocale) {

@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider-id.js";
+import { sliceWellFormed } from "./utf8.js";
 
 /** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
@@ -14,6 +15,14 @@ export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 180_000;
 export const DEFAULT_MODEL_STREAM_MAX_RETRIES = 1;
 
+/**
+ * Options for an undici `Agent` that carries model streams. undici otherwise drops a
+ * response after 5 minutes without headers or body data, which caps the timeouts
+ * above and fails as a bare "terminated". The SDK's `timeoutMs` and the stream idle
+ * watchdog bound both waits instead.
+ */
+export const MODEL_STREAM_AGENT_TIMEOUTS = { headersTimeout: 0, bodyTimeout: 0 } as const;
+
 /** More retries extend the worst-case turn; the executor heartbeat renews its leases. */
 export function modelStreamMaxRetries(): number {
   const value = process.env.MODEL_STREAM_MAX_RETRIES?.trim();
@@ -21,10 +30,47 @@ export function modelStreamMaxRetries(): number {
   return Number.isInteger(raw) && raw >= 0 && raw <= 5 ? raw : DEFAULT_MODEL_STREAM_MAX_RETRIES;
 }
 
+/**
+ * Parse a configurable timeout in whole milliseconds. Invalid or blank values
+ * retain the existing default. Node timers support delays up to 2^31 - 1 ms.
+ * Provider HTTP transports may impose additional independent limits.
+ */
+function timeoutMsFromEnv(
+  value: string | undefined,
+  fallback: number,
+  min: number = 1_000,
+  max: number = 300_000,
+): number {
+  const raw = Number(value?.trim() || fallback);
+  return Number.isInteger(raw) && raw >= min && raw <= max ? raw : fallback;
+}
+
+export function modelStreamTimeoutMs(): number {
+  return timeoutMsFromEnv(
+    process.env.MODEL_STREAM_TIMEOUT_MS,
+    MODEL_STREAM_TIMEOUT_MS,
+    1_000,
+    2_147_483_647,
+  );
+}
+
+export function modelConnectTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_CONNECT_TIMEOUT_MS, MODEL_CONNECT_TIMEOUT_MS);
+}
+
+export function modelStreamIdleTimeoutMs(): number {
+  return timeoutMsFromEnv(
+    process.env.MODEL_STREAM_IDLE_TIMEOUT_MS,
+    MODEL_STREAM_IDLE_TIMEOUT_MS,
+    0,
+    2_147_483_647,
+  );
+}
+
 export const TOOL_RESULT_TEXT_LIMIT = 12_000;
 
 export function clipToolResultText(text: string, limit: number = TOOL_RESULT_TEXT_LIMIT): string {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  return text.length > limit ? `${sliceWellFormed(text, limit)}…` : text;
 }
 
 /**

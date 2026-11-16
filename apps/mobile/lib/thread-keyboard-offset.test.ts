@@ -7,14 +7,14 @@ vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: "18.5" } }));
 
 afterEach(() => {
   Platform.OS = "ios";
-  Platform.Version = "18.5";
+  (Platform as { Version: number | string }).Version = "18.5";
 });
 
 describe("threadKeyboardAvoidance", () => {
   it.each(["18.5", 26, "26.1", "27.1"])(
     "preserves zero offset for the floating iOS header on %s",
     (version) => {
-      Platform.Version = version;
+      (Platform as { Version: number | string }).Version = version;
       expect(
         threadKeyboardAvoidance({
           os: Platform.OS,

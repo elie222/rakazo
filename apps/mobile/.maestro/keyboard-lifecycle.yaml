@@ -11,7 +11,7 @@ tags:
 # A cold API 34 emulator can show a launcher ANR over the healthy app.
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"
@@ -74,10 +74,8 @@ tags:
 - extendedWaitUntil:
     visible: "Message Researcher"
     timeout: 15000
+# The unsent draft survives a restart.
 - tapOn: "Message Researcher"
-- inputText: "Keyboard lifecycle check"
-- pressKey: Enter
-- inputText: "Second line"
 - assertVisible: 'Keyboard lifecycle check\nSecond line'
 - assertVisible: "Send"
 - takeScreenshot: "keyboard-restarted"
@@ -104,6 +102,7 @@ tags:
     visible: "Message Researcher"
     timeout: 15000
 - tapOn: "Message Researcher"
+- eraseText: 100
 - inputText: "Keyboard lifecycle check"
 - pressKey: Enter
 - inputText: "Second line"

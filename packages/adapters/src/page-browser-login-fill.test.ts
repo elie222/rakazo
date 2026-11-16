@@ -176,7 +176,9 @@ describe("live page helper saved-login fill", () => {
     for (const url of ["https://example.test/login", "https://www.example.test.evil.test/login"]) {
       const { domWindow, browser } = installPageHelper(url, html);
       const email = "Email";
-      expect(() => browser.fill(email, "fake-user", origin, "username")).toThrow(/not on the site/);
+      expect(() => browser.fill(email, "fake-user", origin, "username")).toThrow(
+        `This login is saved for https://www.example.test; the page is on ${new URL(url).origin}.`,
+      );
       expect(fieldValue(domWindow, "Email")).toBe("");
     }
   });
@@ -330,12 +332,19 @@ describe("live page helper one-time code fill", () => {
       expect(outerSet).not.toHaveBeenCalled();
     });
 
-    it("draws them as dots when the widget draws its slots a moment later", async () => {
-      const { fill, set } = widget(10);
-      fill("123456");
-      expect(set).not.toHaveBeenCalled();
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+    it("draws them as dots when the widget draws its slots a moment later", () => {
+      // Fake timers make the order explicit: the widget draws at 10 ms, then the helper masks
+      // again at 50 ms. The test no longer depends on how a loaded runner schedules them.
+      vi.useFakeTimers();
+      try {
+        const { fill, set } = widget(10);
+        fill("123456");
+        expect(set).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(50);
+        expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("finds a code written with dashes shown without them, and gives the slots back when the box is refilled", () => {

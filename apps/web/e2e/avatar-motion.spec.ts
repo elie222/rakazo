@@ -123,7 +123,7 @@ test("organic avatars hold still while idle and stop working motion while offscr
   );
 
   // The working morph joins the running svg clock instead of restarting it, and fades in.
-  const handoff = await avatar.evaluate(async (svg) => {
+  const handoff = await avatar.evaluate(async (svg: SVGSVGElement) => {
     const body = (mode: string) =>
       svg.querySelector<SVGPathElement>(`.rakazo-organic-avatar-body-${mode}`)!;
     const before = svg.getCurrentTime();

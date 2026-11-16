@@ -9,6 +9,7 @@ import {
   readBotsSidebarWidth,
   writeBotsSidebarWidth,
 } from "../../lib/bots-sidebar-pref";
+import { useEventListener } from "../../lib/use-event-listener";
 
 function direction() {
   return document.documentElement.dir === "rtl" ? -1 : 1;
@@ -52,13 +53,7 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEffect(() => {
-    function resize() {
-      setViewportWidth(window.innerWidth);
-    }
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
+  useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
 
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {

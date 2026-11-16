@@ -9,15 +9,17 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import {
   readVoiceAudio,
   readVoiceJson,
   requireOk,
   speechUploadName,
   verifyVoiceHttpGet,
-  voiceDeadline,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
@@ -46,7 +48,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
     const res = await fetch(`${API}/voices`, {
       headers: { "xi-api-key": apiKey },
-      signal: voiceDeadline(context.signal, 20_000),
+      signal: deadlineSignal(20_000, context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "listing voices", body);
@@ -64,7 +66,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
-    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const signal = deadlineSignal(60_000, request.signal ?? context.signal);
     const res = await fetch(
       `${API}/text-to-speech/${encodeURIComponent(request.voiceId)}?output_format=${FORMAT}`,
       {
@@ -74,7 +76,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           "content-type": "application/json",
           accept: "audio/mpeg",
         },
-        body: JSON.stringify({ text: request.text, model_id: MODEL }),
+        body: JSON.stringify({ text: request.text, model_id: request.model?.trim() || MODEL }),
         signal,
       },
     );
@@ -88,6 +90,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   ): Promise<{ text: string }> {
     const form = new FormData();
     form.set("model_id", TRANSCRIBE_MODEL);
+    // Without a hint Scribe guesses the language, and a short clip in one language can
+    // come back as lookalike words in another.
+    const language = voiceLanguageHint(request.language);
+    if (language) form.set("language_code", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
@@ -97,7 +103,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { "xi-api-key": request.apiKey },
       body: form,
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal: deadlineSignal(60_000, request.signal ?? context.signal),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "transcribing", body);
@@ -111,3 +117,13 @@ function asLabel(labels: unknown, key: string): string {
   const value = (labels as Record<string, unknown>)[key];
   return typeof value === "string" ? value : "";
 }
+
+export const elevenlabsVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "ElevenLabs",
+    description: "Highest quality and cloning. Flash v2.5 for conversational calls.",
+    transcribe: true,
+    speechModel: true,
+  },
+  create: () => new ElevenLabsVoiceProvider(),
+};

@@ -309,3 +309,34 @@ function delay(ms: number, signal?: AbortSignal | null): Promise<void> {
     signal?.addEventListener("abort", abort, { once: true });
   });
 }
+
+describe("Fish Audio language filter", () => {
+  it("advertises catalog language support", () => {
+    expect(new FishAudioVoiceProvider().describe().capabilities.languages).toBe(true);
+  });
+
+  it("sends the language filter on public pages but not user-owned pages", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        queries.push(url.searchParams.toString());
+        if (url.searchParams.has("self")) return Response.json({ items: [] });
+        return Response.json({
+          total: 1,
+          items: [{ _id: "public-1", title: "Public" }],
+        });
+      }),
+    );
+    const voices = await new FishAudioVoiceProvider().listVoices("fake-fish-key", context, {
+      language: "de-DE",
+    });
+    expect(voices.map((voice) => voice.id)).toEqual(["public-1"]);
+    const publicQueries = queries.filter((query) => !query.includes("self=true"));
+    expect(publicQueries.length).toBeGreaterThan(0);
+    for (const query of publicQueries) expect(query).toContain("language=de");
+    for (const query of queries.filter((query) => query.includes("self=true")))
+      expect(query).not.toContain("language=");
+  });
+});

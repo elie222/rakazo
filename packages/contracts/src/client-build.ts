@@ -19,6 +19,7 @@ export type MinimumClientBuilds = Partial<Record<ClientKind, string>>;
 export const IOS_APP_STORE_URL = "https://apps.apple.com/app/rakazo/id6801531099";
 export const ANDROID_APK_URL =
   "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk";
+export const ANDROID_APP_STORE_URL = "https://play.google.com/store/apps/details?id=com.rakazo.app";
 
 const BUILD_ID = /^\d{14}$/;
 

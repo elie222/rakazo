@@ -117,7 +117,7 @@ A bot can pause for approval at a boundary you set. Actions are recorded in an a
 
 The day-to-day surface is chat. A new bot interviews you, and you manage it from that chat. Optional connectors for Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark are extras.
 
-Rakazo fits repeated operational work where you want the bot, the routine, and the approval in one app, and you are willing to run Docker. It is a poor fit if you want a library inside an existing service, or if you want the agent to live only inside Discord with no Rakazo app. The [self-host page](/self-hosted-ai-agent/) is the install. The [OpenClaw](/openclaw-alternative/) and [Hermes](/hermes-alternative/) pages are the closest shape comparisons.
+Rakazo fits repeated operational work where you want the bot, the routine, and the approval in one app, and you are willing to run Docker. It is a poor fit if you want a library inside an existing service, or if you want the agent to live only inside Discord with no Rakazo app. The [self-hosted AI agent guide](/self-hosted-ai-agent/) is the install. The [OpenClaw](/openclaw-alternative/) and [Hermes](/hermes-alternative/) pages are the closest shape comparisons.
 
 ## OpenClaw
 

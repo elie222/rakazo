@@ -2,6 +2,11 @@
 
 Run Rakazo on a public server with automatic HTTPS, hardened hosts and zero-downtime deploys.
 
+For a single-node cluster, see [Kubernetes / k3s installation](./self-host-kubernetes.md).
+Putting a cookie-based login gate in front of any deployment also needs
+[capability-aware screen routing](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer):
+a screen iframe can lack the outer cookie even after the user signs in.
+
 ## Public single-VM deployment
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
@@ -224,9 +229,13 @@ docker compose --env-file .env \
 ## Other deployment layouts
 
 API and worker need always-on processes; serverless request handlers are not sufficient. Use a
-Node.js version supported by the root `package.json`, Postgres 16 or newer and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
-backups. Homes stay on that volume unless they are kept in
-[object storage](./self-host-storage.md#bot-homes-in-object-storage); other `DATA_DIR` files still need it shared.
+Node.js version supported by the root `package.json`, Postgres 16 or newer and, by default, a
+persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host backups. Homes stay on that volume unless they are kept in
+[object storage](./self-host-storage.md#bot-homes-in-object-storage). With object storage set from
+the first start, `DATA_DIR` is only per-process scratch, so replicas can each use their own
+non-persistent directory, unless you run Docker computers: they mount their cached home from
+`DATA_DIR/homes`, so the API and worker that start them must share that directory on the same
+host. The [data directory](./self-host-storage.md#data-directory) lists what each path holds.
 
 Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
 proxy routes. Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the

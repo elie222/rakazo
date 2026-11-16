@@ -19,6 +19,13 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 02-approval-rules
+- openLink: "rakazo:///approval-rule-add"
+- extendedWaitUntil:
+    visible: "Browser act"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02b-add-approval-rule
 - openLink: "rakazo:///vault"
 - extendedWaitUntil:
     visible: ".*deploy_token.*"
@@ -26,24 +33,24 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 03-vault
-- tapOn: ".*help-desk.*"
+- tapOn: "Help desk"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 04-vault-actions
+- takeScreenshot: 04-vault-item
 - tapOn: "Remove"
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 05-vault-remove
 - tapOn: "Cancel"
-- tapOn: "Add credential"
+- tapOn: "Done"
+- tapOn: "New item"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 06-vault-add
-- tapOn: "Bearer token"
-- tapOn: "Website login"
+- takeScreenshot: 06-vault-new
+- tapOn: "Card"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 07-vault-add-login
+- takeScreenshot: 07-vault-new-card
 - tapOn: "Cancel"
 - openLink: "rakazo:///archived-bots"
 - extendedWaitUntil:
@@ -59,3 +66,10 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 09-space-settings
+- openLink: "rakazo:///space-members?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
+- extendedWaitUntil:
+    visible: "Owner"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 10-space-members

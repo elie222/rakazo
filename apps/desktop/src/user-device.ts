@@ -9,7 +9,12 @@ import type {
   UserDevicePairRequest,
   UserDevicePairResponse,
 } from "@rakazo/contracts";
-import { USER_DEVICE_PAIR_PATH, USER_DEVICE_PATH } from "@rakazo/contracts";
+import {
+  USER_DEVICE_PAIR_PATH,
+  USER_DEVICE_PATH,
+  USER_DEVICE_SESSION_PATH,
+} from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export interface DeviceTokenCipher {
@@ -97,6 +102,9 @@ export async function readDeviceConsent(
   try {
     const saved = raw === null ? null : JSON.parse(raw);
     if (saved?.origin !== origin) return null;
+    // Versions before accounts were saved also wrote "declined" when the server ended a pairing,
+    // so that answer may not be the person's: ask again.
+    if (saved.consent === "declined" && !("userId" in saved)) return null;
     return saved.consent === "allowed" || saved.consent === "declined"
       ? { consent: saved.consent, userId: optionalString(saved.userId) }
       : null;
@@ -158,6 +166,9 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
+  const untied = new Map<string, string>();
+  const tying = new Map<string, { again: boolean }>();
   /** A revoked token's file deletion, which a new pairing's save must follow. */
   const removals = new Map<string, Promise<void>>();
 
@@ -177,6 +188,7 @@ export function createUserDeviceAccess(deps: {
       onRevoked: (reason) => {
         if (client === active) client = undefined;
         paired.delete(origin);
+        untied.delete(origin);
         removals.set(
           origin,
           deletePairedDevice(deps.userDataDir, origin).catch(() => undefined),
@@ -249,8 +261,54 @@ export function createUserDeviceAccess(deps: {
 
   function pair() {
     const origin = current;
-    if (origin === null || consent.get(origin)?.consent === "declined") return Promise.resolve();
+    if (origin === null) return Promise.resolve();
+    void tieToSignIn(origin);
+    if (consent.get(origin)?.consent === "declined") return Promise.resolve();
     return pairOnce(origin);
+  }
+
+  /**
+   * Retries on each sign-in until the server ties it; already tied, the server leaves it alone.
+   * A sign-in during a request asks again once that request ends.
+   */
+  async function tieToSignIn(origin: string) {
+    const running = tying.get(origin);
+    if (running) {
+      running.again = true;
+      return;
+    }
+    const state = { again: false };
+    tying.set(origin, state);
+    try {
+      for (;;) {
+        const token = untied.get(origin);
+        if (!token) return;
+        state.again = false;
+        if (await requestTie(origin, token)) {
+          if (untied.get(origin) === token) untied.delete(origin);
+          return;
+        }
+        if (!state.again) return;
+      }
+    } finally {
+      tying.delete(origin);
+    }
+  }
+
+  async function requestTie(origin: string, token: string) {
+    try {
+      const response = await deps.fetch(new URL(USER_DEVICE_SESSION_PATH, origin).href, {
+        method: "POST",
+        credentials: "include",
+        headers: { authorization: `Bearer ${token}` },
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+      await response.body?.cancel();
+      return response.status === 204;
+    } catch {
+      return false;
+    }
   }
 
   function pairOnce(origin: string) {
@@ -331,6 +389,7 @@ export function createUserDeviceAccess(deps: {
   return {
     /** Switches to a server origin (or none), connecting or pairing unless this computer declined it. */
     async select(origin: string | null) {
+      origin = secureHttpOrigin(origin ?? undefined);
       if (origin === current) return;
       const selection = ++generation;
       disconnect();
@@ -344,7 +403,9 @@ export function createUserDeviceAccess(deps: {
       if (consent.get(origin)?.consent !== "declined") consent.set(origin, choice);
       if (device) {
         paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
+        untied.set(origin, device.token);
         start(origin, device.token);
+        void tieToSignIn(origin);
       } else {
         paired.delete(origin);
         void pair();

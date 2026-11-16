@@ -1,16 +1,16 @@
+import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import {
   choiceCardOptions,
   DISMISSED_CHOICE_ANSWER_ID,
   threadCardWidth,
 } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
+import { useSave } from "../lib/query";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { GlassIconButton } from "./glass-icon-button";
@@ -61,37 +61,31 @@ export function ChoiceCard({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const { width: windowWidth } = useWindowDimensions();
-  const [busy, setBusy] = useState(false);
-  // Set in the handler, so a second tap cannot pass before the buttons re-render disabled.
-  const pending = useRef(false);
   // Shows the outcome before the thread stream delivers the updated block.
   const [localAnswerId, setLocalAnswerId] = useState<string>();
   const answerId = block.answerId ?? localAnswerId;
-  if (answerId === DISMISSED_CHOICE_ANSWER_ID) return null;
-
   // Dismissing records the server's dismissed answer id, so both outcomes share this path.
-  async function submit(optionId: string) {
-    if (readOnly || pending.current || answerId) return;
-    pending.current = true;
-    setBusy(true);
-    try {
-      if (optionId === DISMISSED_CHOICE_ANSWER_ID) {
-        await rpc("onboarding/dismissFocus", { botId });
-      } else {
-        await rpc("onboarding/choose", { botId, optionId });
-      }
+  const choice = useSave({
+    save: async (optionId: string, send) => {
+      if (optionId === DISMISSED_CHOICE_ANSWER_ID) await send("onboarding/dismissFocus", { botId });
+      else await send("onboarding/choose", { botId, optionId });
+    },
+    onSaved: (_, optionId) => {
       setLocalAnswerId(optionId);
       if (optionId === DISMISSED_CHOICE_ANSWER_ID) onDismissed?.();
-    } catch (reason) {
-      Alert.alert(t("Could not complete action"), errorText(reason, t("Please try again.")));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    },
+    onFailed: (reason) =>
+      Alert.alert(t`Could not complete action`, errorText(reason, t`Please try again.`)),
+  });
+  const busy = choice.pending;
+  if (answerId === DISMISSED_CHOICE_ANSWER_ID) return null;
+
+  function submit(optionId: string) {
+    if (!readOnly && !answerId) choice.run(optionId);
   }
 
   return (
@@ -124,14 +118,14 @@ export function ChoiceCard({
         {!readOnly && !answerId ? (
           <GlassIconButton
             testID="choice-card-dismiss"
-            accessibilityLabel={t("Dismiss")}
+            accessibilityLabel={t`Dismiss`}
             ios="xmark"
             android="close"
             size={30}
             iconSize={13}
             fallbackStyle={{ backgroundColor: native.fillPressed }}
             disabled={busy}
-            onPress={() => void submit(DISMISSED_CHOICE_ANSWER_ID)}
+            onPress={() => submit(DISMISSED_CHOICE_ANSWER_ID)}
           />
         ) : null}
       </View>
@@ -145,7 +139,7 @@ export function ChoiceCard({
               accessibilityLabel={option.label}
               accessibilityState={{ disabled: readOnly || busy || chosen, selected: chosen }}
               disabled={readOnly || busy || chosen}
-              onPress={() => void submit(option.id)}
+              onPress={() => submit(option.id)}
               style={({ pressed }) => [
                 styles.option,
                 {

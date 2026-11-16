@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 
 import type { ComputerStatus } from "@rakazo/contracts";
+import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, Fragment, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -97,6 +100,7 @@ vi.mock("react-native", () => {
       },
     },
     Modal: MockModal,
+    StyleSheet: { create: <T,>(styles: T) => styles },
     Pressable: MockPressable,
     ScrollView: MockView,
     Text: MockView,
@@ -153,9 +157,12 @@ vi.mock("react-native-safe-area-context", () => {
   };
 });
 
+const routeParams = vi.hoisted(() => ({ botId: "bot-1" as string | undefined }));
+const routerPush = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ botId: "bot-1", name: "Basil" }),
+  useLocalSearchParams: () => ({ botId: routeParams.botId, name: "Basil" }),
   useNavigation: () => ({ setOptions: () => undefined }),
+  useRouter: () => ({ push: routerPush }),
 }));
 
 vi.mock("../lib/fold-regions", () => ({ useFoldRegions: () => folds.regions }));
@@ -194,10 +201,6 @@ vi.mock("../components/glass-icon-button", () => {
   };
 });
 
-vi.mock("../components/computer-maintenance-actions", () => ({
-  ComputerMaintenanceActions: () => null,
-}));
-
 vi.mock("../components/computer-mode-picker", () => {
   return {
     ComputerModePicker: (props: {
@@ -217,12 +220,6 @@ vi.mock("../components/computer-mode-picker", () => {
 const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
 
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }) };
-});
-
 vi.mock("./native", () => ({
   useMobileTokens: () => ({
     background: "background",
@@ -238,6 +235,7 @@ vi.mock("./native", () => ({
 }));
 
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 
 const botWorking: ComputerStatus = {
   botId: "bot-1",
@@ -274,6 +272,7 @@ describe("computer screen", () => {
 
   beforeEach(() => {
     rpc.mockReset();
+    routeParams.botId = "bot-1";
     textScale.fontScale = 1;
     picker.mounts = 0;
     picker.props = undefined;
@@ -334,6 +333,34 @@ describe("computer screen", () => {
     const window = view.querySelector("section");
     expect(window?.textContent).toContain("Could not load the desktop.");
     expect(window?.textContent).toContain("Retry screen");
+  });
+
+  it("keeps an unreachable screen's error while later reads rotate its token", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    const expiresAt = Date.now() + 60 * 60_000;
+    let token = 0;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+      if (method !== "computer/screenUrl") return original(method, ...args);
+      token += 1;
+      return { url: `http://127.0.0.1:5180/novnc/session/view/${expiresAt}.t${token}/embed.html` };
+    });
+    const view = await render();
+    act(() => screens.error?.());
+    expect(view.textContent).toContain("Could not load the desktop.");
+    const mounted = screens.mounts;
+    const reads = calls("computer/screenUrl").length;
+    for (let poll = 0; poll < 5; poll += 1) {
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      await settle();
+    }
+    // The failed URL is read again once, and that fresh token alone does not reload the page.
+    expect(calls("computer/screenUrl").length).toBe(reads + 1);
+    expect(screens.mounts).toBe(mounted);
+    expect(view.textContent).toContain("Could not load the desktop.");
+    expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
   });
 
   it("shows a fixed screen failure when the page stalls", async () => {
@@ -419,7 +446,7 @@ describe("computer screen", () => {
     });
     const view = await render();
     const release = Array.from(view.querySelectorAll("button")).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     expect(release).toBeDefined();
     await act(async () => release?.click());
@@ -450,11 +477,73 @@ describe("computer screen", () => {
     expect(screens.mounts).toBeGreaterThan(mounted);
     report({ rakazoScreen: "connected" });
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
-    // The first drop after connecting reconnects by itself; only a drop it can't ride out shows.
+    // A drop reconnects by itself. A dying page's further terminal reports are more words for
+    // the same drop: they don't spend tries. Only loads that come back without connecting do.
+    const load = () => act(() => screens.onLoadStart?.());
     report({ rakazoScreen: "disconnected" });
     expect(view.textContent).not.toContain("The screen connection closed.");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    for (let reload = 0; reload < 3; reload += 1) {
+      await load();
+      report({ rakazoScreen: "failed" });
+      if (reload < 2) {
+        expect(view.textContent).not.toContain("Could not connect to the computer screen");
+      }
+    }
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    // A pressed Retry starts the screen over: its next flash connection still reconnects
+    // with the whole budget rather than showing the error at once.
+    const retryAgain = Array.from(view.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry screen",
+    );
+    expect(retryAgain).toBeDefined();
+    await act(async () => retryAgain?.click());
+    await settle();
+    await load();
+    report({ rakazoScreen: "connected" });
     report({ rakazoScreen: "disconnected" });
-    expect(view.textContent).toContain("The screen connection closed.");
+    expect(view.textContent).not.toContain("The screen connection closed.");
+    vi.useRealTimers();
+  });
+
+  it("gives a switched-to bot a fresh reconnect budget", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const bot2Working = { ...botWorking, botId: "bot-2" };
+    rpc.mockImplementation(async (method: string, args?: { botId?: string }) => {
+      const status = args?.botId === "bot-2" ? bot2Working : botWorking;
+      if (method === "computer/status") return status;
+      if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+      return {};
+    });
+    const view = await render();
+    const report = (data: Record<string, string>) =>
+      act(() =>
+        screens.onMessage?.({ nativeEvent: { data: JSON.stringify(data), url: screens.source } }),
+      );
+    const load = () => act(() => screens.onLoadStart?.());
+    // Exhaust this bot's screen: flash connections and failed reloads reach the error.
+    await load();
+    await report({ rakazoScreen: "connected" });
+    await report({ rakazoScreen: "disconnected" });
+    for (let reload = 0; reload < 3; reload += 1) {
+      await load();
+      await report({ rakazoScreen: "failed" });
+    }
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    // Another bot's screen starts with its own budget: its first flash connection
+    // reconnects instead of inheriting the exhausted one.
+    routeParams.botId = "bot-2";
+    await act(async () => {
+      root?.render(<Computer />);
+    });
+    await settle();
+    await load();
+    await report({ rakazoScreen: "connected" });
+    await report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).not.toContain("The screen connection closed.");
     vi.useRealTimers();
   });
 
@@ -705,18 +794,16 @@ describe("computer screen", () => {
     expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
   });
 
-  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+  it("closes the keyboard as soon as Hand back is tapped, even if the release fails", async () => {
     const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
     respond({ ...held, busyBotName: null });
-    let fail: (error: Error) => void = () => undefined;
+    let fail!: Deferred<never>;
     const base = rpc.getMockImplementation();
-    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
-      method === "computer/release"
-        ? new Promise((_, reject) => {
-            fail = reject;
-          })
-        : base?.(method, ...rest),
-    );
+    rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+      if (method !== "computer/release") return base?.(method, ...rest);
+      fail = deferred<never>();
+      return fail.promise;
+    });
     const view = await render();
     await act(async () => preview(view).click());
     await settle();
@@ -725,15 +812,91 @@ describe("computer screen", () => {
     const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
     expect(bar()?.dataset.active).toBe("true");
     const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Release",
+      (button) => button.textContent === "Hand back control",
     );
     await act(async () => release?.click());
     expect(calls("computer/release")).toHaveLength(1);
     expect(bar()?.dataset.active).toBe("false");
 
-    await act(async () => fail(new Error("offline")));
+    await act(async () => fail.reject(new Error("offline")));
     await settle();
     expect(bar()?.dataset.active).toBe("true");
+  });
+
+  /** Control this screen takes with Take control; the server's status names its lease. */
+  function respondTakingControl() {
+    let held = false;
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "computer/takeover") {
+        held = true;
+        return { leaseId: "lease-1", expiresAt: new Date().toISOString() };
+      }
+      if (method === "computer/status") {
+        return held
+          ? {
+              ...botWorking,
+              controlHolder: "user",
+              controlBotId: "bot-1",
+              controlLeaseId: "lease-1",
+              busyBotName: null,
+            }
+          : { ...botWorking, busyBotName: null };
+      }
+      if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+      return {};
+    });
+  }
+
+  async function takeControl(view: HTMLElement) {
+    await act(async () => takeControlButtons(view)[0]?.click());
+    await settle();
+  }
+
+  it("hands its lease back when the full window closes, and checks in often while holding it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      respondTakingControl();
+      const view = await render();
+      await takeControl(view);
+      const beats = calls("computer/heartbeat").length;
+      await act(async () => vi.advanceTimersByTime(15_000));
+      expect(calls("computer/heartbeat").length).toBeGreaterThan(beats);
+      expect(calls("computer/release")).toHaveLength(0);
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toEqual([
+        ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands its lease back when the computer screen goes away while open", async () => {
+    respondTakingControl();
+    const view = await render();
+    await takeControl(view);
+    act(() => root?.unmount());
+    root = undefined;
+    expect(calls("computer/release")).toEqual([
+      ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+    ]);
+  });
+
+  it("hands back whatever control it holds when Hand back is pressed", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    const handBack = Array.from(
+      view.querySelector("section")?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Hand back control");
+    await act(async () => handBack?.click());
+    await settle();
+    expect(calls("computer/release")[0]).toEqual(["computer/release", { botId: "bot-1" }]);
   });
 
   it("loads the screen again when the app returns from the background", async () => {
@@ -786,7 +949,7 @@ describe("computer screen", () => {
         await new Promise((resolve) => setTimeout(resolve, ms));
       });
 
-    it("loads the screen again by itself once, a second after the drop", async () => {
+    it("loads the screen again by itself, a second after the drop", async () => {
       const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
       vi.stubGlobal("fetch", fetchStub);
       await openScreen();
@@ -802,10 +965,51 @@ describe("computer screen", () => {
       // It asks the server's status-only probe, never the computer's page itself.
       expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toContain("rakazo_probe=1");
 
-      // A second drop soon after is left showing; Retry is the user's.
+      // A second drop of a connection that only flashed up reconnects too, waiting twice
+      // as long this time.
       await load();
       await post('{"rakazoScreen":"connected"}');
       await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 2);
+    });
+
+    it("keeps one reconnect while its reload is still on its way", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      // The reconnect's refresh answers slowly; the dying page reports the same drop again
+      // while that one reload is still loading.
+      const original = rpc.getMockImplementation()!;
+      let hangNext: ((resolve: () => void) => void) | undefined;
+      let release: (() => void) | undefined;
+      rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+        if (method === "computer/screenUrl" && hangNext) {
+          const hang = hangNext;
+          hangNext = undefined;
+          await new Promise<void>((resolve) => hang(resolve));
+        }
+        return original(method, ...args);
+      });
+      hangNext = (resolve) => {
+        release = resolve;
+      };
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened);
+      await post('{"rakazoScreen":"failed"}');
+      await act(async () => release?.());
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      // The repeated report must not have started a second reload.
       await wait(1100);
       await settle();
       expect(screens.mounts).toBe(opened + 1);
@@ -1047,6 +1251,21 @@ describe("computer screen", () => {
       expect(tryAgain(view)?.disabled).toBe(false);
     });
 
+    it("offers Upgrade instead of Try again once the computer hours are spent", async () => {
+      const view = await render();
+      await act(async () => boots[0]?.reject(new Error(COMPUTER_ALLOWANCE_USED_ERROR)));
+      await settle();
+
+      expect(view.textContent).toContain(COMPUTER_ALLOWANCE_USED_ERROR);
+      expect(view.textContent).not.toContain("Couldn't start the computer");
+      expect(tryAgain(view)).toBeUndefined();
+      const upgrade = Array.from(view.querySelectorAll("button")).find(
+        (button) => button.textContent === "Upgrade",
+      );
+      await act(async () => upgrade?.click());
+      expect(routerPush).toHaveBeenCalledWith("/billing");
+    });
+
     it("offers Try again after a failed boot", async () => {
       const view = await render();
       expect(tryAgain(view)).toBeUndefined();
@@ -1142,6 +1361,43 @@ describe("computer screen", () => {
       expect(view.textContent).not.toContain("Couldn't start the computer");
       expect(tryAgain(view)).toBeUndefined();
       expect(view.querySelector("section")).toBeNull();
+    });
+
+    it("keeps and later hands back a Take control the server granted after timing out", async () => {
+      status = idle;
+      const base = rpc.getMockImplementation()!;
+      rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+        if (method !== "computer/takeover") return base(method, ...rest);
+        // The server granted control after the app stopped waiting for the answer.
+        status = {
+          ...idle,
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          controlLeaseId: "lease-1",
+        };
+        return Promise.reject(
+          Object.defineProperty(new Error("Request timed out"), "name", {
+            value: "TimeoutError",
+          }),
+        );
+      });
+      const view = await render();
+      await act(async () => boots[0]?.resolve());
+      await settle();
+
+      await act(async () => takeControlButtons(view)[0]?.click());
+      await settle();
+      expect(view.textContent).not.toContain("Request timed out");
+      expect(view.querySelector("section")).not.toBeNull();
+
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      expect(calls("computer/release")).toContainEqual([
+        "computer/release",
+        { botId: "bot-1", leaseId: "lease-1" },
+      ]);
     });
 
     it("keeps following the boot after the request times out", async () => {

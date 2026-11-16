@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { BotAvatar, Button, cn, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { CallState } from "../../lib/call-session";
 import {
@@ -11,6 +11,7 @@ import {
   toggleTranscript,
   useCallSession,
 } from "../../lib/call-session";
+import { useEventListener } from "../../lib/use-event-listener";
 import { CallWindow } from "./CallWindow";
 
 const BARS = [9, 15, 21, 15, 9];
@@ -25,13 +26,7 @@ function callClock(seconds: number): string {
 /** Whole seconds the call has been connected, ticking while it is. */
 function useCallElapsed(call: CallState | null): number {
   const connectedAt = call?.connectedAt ?? null;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (connectedAt === null) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [connectedAt]);
+  const now = useNow(connectedAt === null ? null : 1000);
   return connectedAt === null ? 0 : Math.max(0, Math.floor((now - connectedAt) / 1000));
 }
 
@@ -42,17 +37,12 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
   const navigate = useNavigate();
   const { botId } = useParams();
   const onCall = Boolean(call);
-  useEffect(() => {
-    if (!onCall) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || EDITABLE.test(target?.tagName ?? "")) return;
-      endCall();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCall]);
+  useEventListener(onCall ? window : null, "keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable || EDITABLE.test(target?.tagName ?? "")) return;
+    endCall();
+  });
   if (!call || call.minimized) return null;
   const onBotScreen = botId === call.botId;
   const ringing = call.phase === "ringing";
@@ -127,11 +117,11 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           />
         </button>
         <div className="flex flex-col items-center gap-1 text-center">
-          <span className="text-2xl font-semibold text-foreground md:text-xl" dir="auto">
+          <span className="text-heading1 font-semibold text-foreground md:text-heading2" dir="auto">
             {call.botName}
           </span>
           <span
-            className="flex gap-2 text-sm tabular-nums text-muted-foreground"
+            className="flex gap-2 text-body tabular-nums text-muted-foreground"
             aria-live="polite"
           >
             {ringing ? (
@@ -167,7 +157,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
       </div>
 
       {call.transcriptOpen ? (
-        <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-sm leading-[1.45]">
+        <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-body leading-[1.45]">
           {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
             <p
               key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
@@ -187,7 +177,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           ) : null}
         </div>
       ) : call.caption ? (
-        <p className="mb-4 text-center text-sm text-muted-foreground" dir="auto">
+        <p className="mb-4 text-center text-body text-muted-foreground" dir="auto">
           {call.caption}
         </p>
       ) : null}
@@ -228,7 +218,7 @@ export function CallReturnBar() {
       type="button"
       data-testid="call-return-bar"
       onClick={() => setCallMinimized(false)}
-      className="app-no-drag flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 bg-success px-3 text-sm font-medium text-background"
+      className="app-no-drag flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 bg-success px-3 text-body font-medium text-background"
     >
       <span dir="auto">{t`Return to call with ${call.botName}`}</span>
       <span className="ms-1 tabular-nums">

@@ -4,11 +4,15 @@ import type { Actor, AnalyticsEvent } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { billingAccountForOrganization, createBillingAccount, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BILLING_RETURN_PATH, createBillingService, TRIAL_DAYS } from "./billing.js";
+import {
+  BILLING_RETURN_PATH,
+  createBillingService,
+  INVITED_TRIAL_DAYS,
+  TRIAL_DAYS,
+} from "./billing.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("billing service (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
@@ -141,6 +145,47 @@ describePostgres("billing service (PostgreSQL)", () => {
     expect(account?.seats).toBe(2);
   });
 
+  it("corrects a missed seat recount at the next billing sync", async () => {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    const subscription = () => emulator.subscriptions.find((s) => s.customerId === customerId)!;
+    // A member joined, and the recount after it never ran.
+    const joinedId = `${memberId}-unrecounted`;
+    await prisma.user.create({
+      data: { id: joinedId, name: "Late", email: `${joinedId}@rakazo.test`, emailVerified: false },
+    });
+    await prisma.member.create({
+      data: {
+        id: `m-${joinedId}`,
+        organizationId,
+        userId: joinedId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      seats: 2,
+    });
+
+    await billing.sync(customerId);
+    expect(subscription().seats).toBe(3);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      seats: 3,
+    });
+
+    // Leaving is corrected the same way, also while a payment is overdue, so the subscription
+    // resumes with the right count.
+    emulator.setStatus(customerId, "unpaid");
+    await prisma.user.delete({ where: { id: joinedId } });
+    await billing.sync(customerId);
+    expect(subscription().seats).toBe(2);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      status: "unpaid",
+      seats: 2,
+    });
+    emulator.setStatus(customerId, "trialing");
+    await billing.sync(customerId);
+  });
+
   it("stores the cancellation answer and reports it to the owner once", async () => {
     const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
     const subscription = emulator.subscriptions.find((s) => s.customerId === customerId)!;
@@ -253,6 +298,51 @@ describePostgres("billing service (PostgreSQL)", () => {
       expect(accounts[0]!.customerId).toBe(accounts[1]!.customerId);
     } finally {
       await prisma.organization.deleteMany({ where: { id: raced } });
+    }
+  });
+
+  it("gives an invited organization a longer first trial", async () => {
+    const invited = `${organizationId}-invited`;
+    const referrer = `${organizationId}-referrer`;
+    // A trial is once per person, so the invited organization belongs to someone new.
+    const inviteeId = `${ownerId}-invitee`;
+    const createdAt = new Date();
+    await prisma.user.create({
+      data: {
+        id: inviteeId,
+        name: "Invitee",
+        email: `${inviteeId}@rakazo.test`,
+        emailVerified: true,
+      },
+    });
+    for (const id of [invited, referrer])
+      await prisma.organization.create({ data: { id, name: id, slug: id, createdAt } });
+    try {
+      await prisma.space.create({
+        data: { id: invited, organizationId: invited, name: "General", isDefault: true },
+      });
+      await prisma.member.create({
+        data: { id: invited, organizationId: invited, userId: inviteeId, role: "owner", createdAt },
+      });
+      await prisma.referralCode.create({
+        data: { organizationId: referrer, code: `ref-${suffix}` },
+      });
+      const actor = {
+        ...owner,
+        userId: inviteeId,
+        email: `${inviteeId}@rakazo.test`,
+        spaceId: invited,
+      };
+      await billing.claimReferral(actor, `ref-${suffix}`);
+      await expect(billing.status(actor)).resolves.toMatchObject({
+        trialDays: INVITED_TRIAL_DAYS,
+      });
+      await billing.checkout(actor);
+      const account = await billingAccountForOrganization(prisma, invited);
+      expect(emulator.checkouts.get(account!.customerId)?.trialDays).toBe(INVITED_TRIAL_DAYS);
+    } finally {
+      await prisma.organization.deleteMany({ where: { id: { in: [invited, referrer] } } });
+      await prisma.user.deleteMany({ where: { id: inviteeId } });
     }
   });
 });
