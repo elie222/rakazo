@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
+import { databaseClock } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import { enforceModelCreditCap } from "./model-credit-cap.js";
@@ -66,13 +67,16 @@ export async function unexpiredCreditAccount(
 
 /**
  * Payment replay, refunds and disputes reconcile one durable grant. Refunds can never be
- * re-credited; credits an open dispute holds come back when it is won.
+ * re-credited; credits an open dispute holds come back when it is won. `readAt` is the database
+ * clock before the provider read: a read older than the one already applied is skipped, so it
+ * cannot release a hold a newer read placed.
  */
 export async function reconcileCreditPurchase(
   prisma: PrismaClient,
   organizationId: string,
   purchase: BillingCreditPurchase,
   now = new Date(),
+  readAt?: Date,
 ) {
   const disputedCents = purchase.disputedCents ?? 0;
   if (
@@ -91,6 +95,7 @@ export async function reconcileCreditPurchase(
     const existing = await tx.modelCreditEntry.findUnique({ where: { source } });
     if (existing && existing.organizationId !== organizationId)
       throw new Error("Credit purchase belongs to another account");
+    if (readAt && existing?.syncedAt && existing.syncedAt >= readAt) return 0;
     // Only what a dispute holds can come back; a refund or a lost dispute lowers the ceiling for good.
     const ceiling = existing ? existing.amountMicros + existing.disputedMicros : undefined;
     const paid = BigInt(purchase.amountCents) * 10_000n;
@@ -98,7 +103,7 @@ export async function reconcileCreditPurchase(
     const held = BigInt(disputedCents) * 10_000n;
     const amountMicros = held < kept ? kept - held : 0n;
     const disputedMicros = kept - amountMicros;
-    if (!existing && amountMicros === 0n) return 0;
+    if (!existing && kept === 0n) return 0;
     const delta = amountMicros - (existing?.amountMicros ?? 0n);
     const expiresAt = purchase.expiresAt === undefined ? undefined : new Date(purchase.expiresAt);
     if (expiresAt && !Number.isFinite(expiresAt.getTime()))
@@ -116,8 +121,8 @@ export async function reconcileCreditPurchase(
       return 0;
     const entry = await tx.modelCreditEntry.upsert({
       where: { source },
-      create: { source, organizationId, amountMicros, disputedMicros },
-      update: { amountMicros, disputedMicros },
+      create: { source, organizationId, amountMicros, disputedMicros, syncedAt: readAt },
+      update: { amountMicros, disputedMicros, ...(readAt ? { syncedAt: readAt } : {}) },
     });
     if (delta !== 0n)
       await tx.modelCreditAccount.update({
@@ -310,4 +315,19 @@ export async function expireModelCredits(
     await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
   });
+}
+
+/** Reconciles every purchase the provider lists; true when any added credits. */
+export async function syncCreditPurchases(
+  prisma: PrismaClient,
+  organizationId: string,
+  load: () => Promise<BillingCreditPurchase[]>,
+) {
+  const readAt = await databaseClock(prisma);
+  let added = false;
+  for (const purchase of await load()) {
+    if ((await reconcileCreditPurchase(prisma, organizationId, purchase, new Date(), readAt)) > 0)
+      added = true;
+  }
+  return added;
 }

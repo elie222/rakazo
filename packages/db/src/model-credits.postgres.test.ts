@@ -83,6 +83,51 @@ dbTests("model credits ledger", () => {
     await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 2000 });
     expect(await balance()).toBe(-5_000_000n);
   });
+  it("keeps a newer read's dispute hold when an older read commits after it", async () => {
+    const id = `${organizationId}-stale`;
+    const older = new Date("2030-01-01T00:00:00Z");
+    const newer = new Date("2030-01-01T00:00:01Z");
+    await reconcileCreditPurchase(
+      prisma,
+      organizationId,
+      { id, amountCents: 1000 },
+      new Date(),
+      older,
+    );
+    await reconcileCreditPurchase(
+      prisma,
+      organizationId,
+      { id, amountCents: 1000, disputedCents: 1000 },
+      new Date(),
+      newer,
+    );
+    await reconcileCreditPurchase(
+      prisma,
+      organizationId,
+      { id, amountCents: 1000 },
+      new Date(),
+      older,
+    );
+    expect(await balance()).toBe(0n);
+  });
+  it("holds a purchase first seen disputed against an older undisputed read", async () => {
+    const id = `${organizationId}-stale-first`;
+    await reconcileCreditPurchase(
+      prisma,
+      organizationId,
+      { id, amountCents: 1000, disputedCents: 1000 },
+      new Date(),
+      new Date("2030-01-01T00:00:01Z"),
+    );
+    await reconcileCreditPurchase(
+      prisma,
+      organizationId,
+      { id, amountCents: 1000 },
+      new Date(),
+      new Date("2030-01-01T00:00:00Z"),
+    );
+    expect(await balance()).toBe(0n);
+  });
   it("keeps a lost dispute's credits gone", async () => {
     const id = `${organizationId}-lost`;
     await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 });

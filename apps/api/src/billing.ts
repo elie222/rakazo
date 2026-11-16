@@ -50,7 +50,6 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
-  reconcileCreditPurchase,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
   releaseCheckoutLease,
@@ -58,6 +57,7 @@ import {
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
+  syncCreditPurchases,
   unexpiredCreditAccount,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -243,11 +243,10 @@ export function createBillingService(deps: {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
       if (account) {
-        let added = false;
-        for (const purchase of await provider.listCreditPurchases(customerId)) {
-          if ((await reconcileCreditPurchase(prisma, account.organizationId, purchase)) > 0)
-            added = true;
-        }
+        const listCreditPurchases = provider.listCreditPurchases.bind(provider);
+        const added = await syncCreditPurchases(prisma, account.organizationId, () =>
+          listCreditPurchases(customerId),
+        );
         await prisma.modelCreditAccount.updateMany({
           where: {
             organizationId: account.organizationId,

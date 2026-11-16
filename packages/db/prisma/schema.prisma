@@ -2594,6 +2594,8 @@ model ModelCreditEntry {
   amountMicros           BigInt
   /// A purchase's paid credits an open dispute holds back; `amountMicros` excludes them.
   disputedMicros         BigInt             @default(0)
+  /// Database time before the provider read last applied to a purchase; older reads are skipped.
+  syncedAt               DateTime?
   pending                Boolean            @default(false)
   callId                 String?            @unique
   userId                 String?
