@@ -66,8 +66,11 @@ async function readSavedWindow(): Promise<SavedWindow | null> {
 }
 /** Windows reports a minimized window as not maximized, so its last state is kept here. */
 const maximizedWindows = new WeakSet<BrowserWindow>();
+/** How long after a move or resize the window is saved, so a drag writes the file once. */
+const WINDOW_SAVE_DELAY_MS = 1_000;
 function saveWindow(win: BrowserWindow) {
-  if (win.isDestroyed()) return;
+  // While a server switch is pending, the new window may still be dropped for the old one.
+  if (win.isDestroyed() || desktop.replacedAppWindow !== null) return;
   const saved: SavedWindow = {
     ...win.getNormalBounds(),
     maximized: win.isMinimized() ? maximizedWindows.has(win) : win.isMaximized(),
@@ -192,8 +195,22 @@ export async function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
-  win.on("maximize", () => maximizedWindows.add(win));
-  win.on("unmaximize", () => maximizedWindows.delete(win));
+  // Saved soon after each change too, so a crash or force quit keeps the last layout.
+  let saveTimer: NodeJS.Timeout | undefined;
+  const saveSoon = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveWindow(win), WINDOW_SAVE_DELAY_MS);
+  };
+  win.on("move", saveSoon);
+  win.on("resize", saveSoon);
+  win.on("maximize", () => {
+    maximizedWindows.add(win);
+    saveSoon();
+  });
+  win.on("unmaximize", () => {
+    maximizedWindows.delete(win);
+    saveSoon();
+  });
   if (saved?.maximized) {
     win.maximize();
     win.show();
@@ -281,6 +298,7 @@ export async function createWindow(url: string, partition: string | null) {
     popup.webContents.on("will-navigate", (details) => capture(details));
   });
   win.on("close", (event) => {
+    clearTimeout(saveTimer);
     saveWindow(win);
     if (
       process.platform === "darwin" &&
@@ -296,6 +314,7 @@ export async function createWindow(url: string, partition: string | null) {
     }
   });
   win.once("closed", () => {
+    clearTimeout(saveTimer);
     clearTimeout(desktop.warmWindowTimer);
     if (desktop.mainWindow === win) desktop.mainWindow = null;
   });

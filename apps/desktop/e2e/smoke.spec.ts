@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -194,6 +194,11 @@ test("reopens at the size and position it had when it closed", async () => {
   await window.evaluate((win, next) => win.setBounds(next), bounds);
   // A window manager can apply the new bounds a moment later.
   await expect.poll(() => window.evaluate((win) => win.getNormalBounds())).toEqual(bounds);
+  // Saved soon after the resize, before any close, so a crash would keep it too.
+  const savedFile = path.join(userData, "window-bounds.json");
+  await expect
+    .poll(async () => JSON.parse((await readFile(savedFile, "utf8").catch(() => null)) ?? "null"))
+    .toMatchObject(bounds);
   await app.close();
 
   app = await launch();
