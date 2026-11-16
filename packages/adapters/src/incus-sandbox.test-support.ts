@@ -1,3 +1,4 @@
+import { withAbort } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { expect, vi } from "vitest";
 import type { ExecOutput } from "./exec-computer.test-support.js";
@@ -85,7 +86,7 @@ export class FakeIncus implements IncusClient {
     const url = new URL(path, "https://incus.test");
     const parts = url.pathname.split("/").slice(2).map(decodeURIComponent);
     if (parts[0] === "operations" && parts[2] === "wait") {
-      return { metadata: await abortable(this.operations.get(parts[1]!)!, signal) };
+      return { metadata: await withAbort(this.operations.get(parts[1]!)!, signal) };
     }
     if (parts[0] === "operations" && !parts[1]) {
       const running = [...this.creating].map(([id, name]) => ({
@@ -243,13 +244,6 @@ export class FakeIncus implements IncusClient {
     this.operations.set(id, result);
     return { metadata: {}, operation: `/1.0/operations/${id}` };
   }
-}
-
-export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-    promise.then(resolve, reject);
-  });
 }
 
 export function providerFor(
