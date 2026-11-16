@@ -89,14 +89,22 @@ describe("startStatusLines", () => {
     live.close();
   });
 
-  it("shows a tool's own description when no status model answers, but never the bot's text", async () => {
+  it("shows a tool's own description when no status model answers", async () => {
     const t = target({ opening: async () => undefined, step: async () => undefined });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
     await flush();
-    live.step("I found two sources and will compare them now.", { fallback: false });
-    await flush();
     expect(t.shown).toEqual(["Running: ls"]);
+    live.close();
+  });
+
+  it("asks for no opening status on an attempt that resumes earlier work", async () => {
+    const opening = vi.fn(async () => "Looking into the plan pricing");
+    const t = target({ opening, step: async () => undefined });
+    const live = startStatusLines({ ...t.target, opening: false });
+    await flush();
+    expect(opening).not.toHaveBeenCalled();
+    expect(t.shown).toEqual([]);
     live.close();
   });
 

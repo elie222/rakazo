@@ -13,7 +13,7 @@ import {
 } from "./history-speakers.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { messageToAgentHistorySegments, messageToAgentHistoryText } from "./reply-context.js";
-import type { ConnectedRun, RunRecords } from "./run-assembly-records.js";
+import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import type { RunHold } from "./run-attempt.js";
 import { threadContextForRun } from "./run-instructions.prompt.js";
 import {
@@ -109,7 +109,7 @@ export type ThreadHistory = Awaited<ReturnType<typeof readThreadHistory>>;
 
 export async function loadTurnContext(
   hold: RunHold,
-  parts: { records: RunRecords; connected: ConnectedRun; thread: ThreadHistory },
+  parts: { saved: SavedTurn; records: RunRecords; connected: ConnectedRun; thread: ThreadHistory },
 ) {
   const { deps, run, runId } = hold;
   const {
@@ -180,6 +180,8 @@ export async function loadTurnContext(
     run.trigger === "user" &&
     run.groupReplyOptional;
   startRunStatusLines(hold, {
+    // Earlier attempts reached a step when they saved a checkpoint before it.
+    resumesEarlierWork: parts.saved.storedTurnCheckpoint || Boolean(hold.takeover.resumeCheckpoint),
     records: parts.records,
     connected: parts.connected,
     turnBlocks,
@@ -290,6 +292,7 @@ export type TurnContext = Awaited<ReturnType<typeof loadTurnContext>>;
 function startRunStatusLines(
   hold: RunHold,
   parts: {
+    resumesEarlierWork: boolean;
     records: RunRecords;
     connected: ConnectedRun;
     turnBlocks: readonly MessageBlock[] | undefined;
@@ -320,6 +323,7 @@ function startRunStatusLines(
     writer,
     request: parts.turnBlocks ? messageBlocksText(parts.turnBlocks).trim() : "",
     ready,
+    opening: !parts.resumesEarlierWork,
     signal: parts.connected.runAbortController.signal,
     held: () => hold.statusLines.held(),
     show: (text) =>

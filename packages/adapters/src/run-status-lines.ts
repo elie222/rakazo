@@ -7,11 +7,8 @@ export type LiveStatusLines = {
    * step waits for it, and false without one or once the run ended.
    */
   active(): boolean;
-  /**
-   * A step the status model words for the person. Without an answer, a tool's own description
-   * shows instead; the bot's own text (`fallback: false`) never shows as written.
-   */
-  step(text: string, options?: { fallback?: boolean }): void;
+  /** A step the status model words for the person. Without an answer, its own line shows. */
+  step(text: string): void;
   /** Something else now owns the working line: the model's own status, or its reply text. */
   supersede(): void;
   /** Shows the current step's status again, after something else cleared the line. */
@@ -30,6 +27,8 @@ export type StatusLineTarget = {
    * status model before then. Without it, calls start at once.
    */
   ready?: Promise<unknown>;
+  /** False when the attempt resumes earlier work: the moment for an opening status has passed. */
+  opening?: boolean;
   /** The run's own abort: when it fires, every pending status request stops too. */
   signal?: AbortSignal;
   /** Shows one status as the working line. */
@@ -92,7 +91,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     "write opening status",
     writer.then(async (writer) => {
       // A step or reply that came first owns the line: the opening is never requested.
-      if (!writer || closed || opening !== generation) return;
+      if (!writer || closed || opening !== generation || target.opening === false) return;
       const line = await writer.opening(
         target.request,
         AbortSignal.any([abort.signal, current.signal]),
@@ -103,15 +102,14 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
 
   return {
     active: () => !closed && (hasWriter || !writerKnown),
-    step(text, { fallback = true } = {}) {
+    step(text) {
       const mine = ++generation;
       const signal = replaceCurrent();
       void bestEffort(
         "write step status",
         writer.then((writer) => writer?.step(target.request, text, signal)),
       ).then((line) => {
-        const shown = line || (fallback ? text : undefined);
-        if (shown) return show(shown, mine);
+        return show(line || text, mine);
       });
     },
     supersede() {
