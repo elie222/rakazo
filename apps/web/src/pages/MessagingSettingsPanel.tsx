@@ -137,8 +137,9 @@ export function MessagingSettingsPanel() {
             )
           ) {
             stopped.abort();
+            // Cleared before waiting, and only if still this code: a newer one may follow.
+            setLinkRequest((current) => (current === linkRequest ? null : current));
             await writeSaved(queryClient, statusOptions.queryKey, () => next);
-            setLinkRequest(null);
             await refresh();
             return;
           }
