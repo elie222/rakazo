@@ -52,9 +52,9 @@ export function pluginSite(
   const domain = entry.domains[0]?.replace(/^https?:\/\//, "").split("/")[0];
   if (domain) return `https://${domain}`;
   try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? new URL(entry.homepage).origin
-      : null;
+    if (!entry.homepage) return null;
+    const { hostname, origin } = new URL(entry.homepage);
+    return hostname === "github.com" || hostname.endsWith(".github.com") ? null : origin;
   } catch {
     return null;
   }

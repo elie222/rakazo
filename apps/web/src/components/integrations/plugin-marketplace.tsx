@@ -44,9 +44,9 @@ function pluginSite(entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">)
   const domain = entry.domains[0]?.replace(/^https?:\/\//, "");
   if (domain) return `https://${domain}`;
   try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? entry.homepage
-      : null;
+    if (!entry.homepage) return null;
+    const { hostname } = new URL(entry.homepage);
+    return hostname === "github.com" || hostname.endsWith(".github.com") ? null : entry.homepage;
   } catch {
     return null;
   }
