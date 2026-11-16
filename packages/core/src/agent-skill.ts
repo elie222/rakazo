@@ -3,8 +3,7 @@ import { formatForcedSkillPrompt } from "./agent-skill.prompt.js";
 import { ClientError } from "./client-error.js";
 
 /**
- * Claude Agent Skills: reusable SKILL.md recipes shared across assistants.
- * The Pi runtime already understands this format; we persist and inject them.
+ * Skills: reusable how-to recipes written as SKILL.md files.
  * Distinct from taught skills (demo/record playbooks on a single bot).
  */
 
@@ -19,7 +18,7 @@ export type ParsedSkillMd = {
   body: string;
   /**
    * All frontmatter keys as parsed scalars/structures. Unknown keys are preserved
-   * so Claude Agent Skills with extra fields round-trip safely.
+   * so skills with extra fields round-trip safely.
    */
   frontmatter: Record<string, unknown>;
 };
