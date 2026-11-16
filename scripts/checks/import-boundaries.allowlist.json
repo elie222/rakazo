@@ -72,6 +72,7 @@
     "packages/testkit/src/railway-environment.test.ts -> ../../../infra/railway/sandbox-environment.mjs",
     "packages/testkit/src/usage-accounting.postgres.test.ts -> ../../adapters/src/auto-review.js",
     "packages/testkit/src/usage-accounting.postgres.test.ts -> ../../adapters/src/history-compaction.js",
+    "scripts/agent-import-defaults.mjs -> ../packages/core/src/agent-import/stock.ts",
     "scripts/build-server.mjs -> ../packages/core/src/node/prompt-source-version.ts"
   ],
   "server": [

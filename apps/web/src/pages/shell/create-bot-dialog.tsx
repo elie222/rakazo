@@ -18,6 +18,8 @@ import {
   Input,
 } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
+import { useSave } from "../../lib/query";
+import type { RpcClient } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { BotLookPicker } from "./avatar-studio-popover";
 
@@ -39,27 +41,22 @@ export function CreateBotDialog({
   /** The account's set: the server gives it to the new bot, so the preview draws it too. */
   avatarSet: BotAvatarSet;
   onCancel: () => void;
-  onCreate: (input: CreateBotDialogInput) => Promise<void>;
+  onCreate: (input: CreateBotDialogInput, client: RpcClient) => Promise<void>;
 }) {
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [look, setLook] = useState(newBotLook);
   const identity = newBotPreviewIdentity(avatarSet, look);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Creating the bot closes this dialog, so a success keeps it held.
+  const save = useSave({ save: onCreate, closesScreen: true });
+  const submitting = save.pending;
+  const error = save.error ? errorText(save.error, t`Could not create bot`) : null;
   const trimmed = name.trim();
 
-  async function create() {
+  function create() {
     if (!trimmed || submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await onCreate({ name: trimmed, ...newBotLookInput(avatarSet, look) });
-    } catch (err) {
-      setError(errorText(err, t`Could not create bot`));
-      setSubmitting(false);
-    }
+    save.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
   }
 
   return (
@@ -80,7 +77,7 @@ export function CreateBotDialog({
           className="contents"
           onSubmit={(event) => {
             event.preventDefault();
-            void create();
+            create();
           }}
         >
           <DialogHeader>
