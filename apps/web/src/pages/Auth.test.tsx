@@ -428,3 +428,16 @@ it("leaves the password form unchanged without email codes", async () => {
   expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.required).toBe(true);
   expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
 });
+
+it("fills in a demo server's shared login on sign-in only", async () => {
+  const demoAccount = { email: "demo@example.com", password: "demo-password" };
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
+  vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
+  await render("up");
+  expect(host.querySelector<HTMLInputElement>('input[name="email"]')!.value).toBe("");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  await submit();
+  expect(authClient.signIn.email).toHaveBeenCalledWith(demoAccount);
+});

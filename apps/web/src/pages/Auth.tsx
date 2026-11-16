@@ -102,7 +102,13 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     let active = true;
     void fetchAuthCapabilities()
       .then((capabilities) => {
-        if (active) setReset(capabilities);
+        if (!active) return;
+        setReset(capabilities);
+        const demo = capabilities.demoAccount;
+        if (demo && mode === "in") {
+          setEmail((current) => current || demo.email);
+          setPassword((current) => current || demo.password);
+        }
       })
       .catch(() => {
         if (active) setCapabilityError(true);
