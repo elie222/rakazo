@@ -148,18 +148,30 @@ function positiveIntegerOrDefault(value: string | undefined, fallback: number): 
 /** Follow `tools/list` cursors, bounded by the shared page and tool caps. Tools only a
  * server's own app may call are left out: the model never sees them. */
 export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
+  return (await listMcpToolPages(client, options)).tools;
+}
+
+/** {@link listMcpTools} plus the shortest `ttlMs` freshness hint any page carried (MCP
+ * caching utility); `undefined` when no page sent one. */
+export async function listMcpToolPages(
+  client: Client,
+  options: RequestOptions,
+): Promise<{ tools: Tool[]; ttlMs?: number }> {
   const maxTools = positiveIntegerOrDefault(process.env.MCP_MAX_TOOLS, DEFAULT_MAX_MCP_TOOLS);
   const maxPages = positiveIntegerOrDefault(process.env.MCP_MAX_PAGES, DEFAULT_MAX_MCP_PAGES);
   const tools: Tool[] = [];
+  let ttlMs: number | undefined;
   let cursor: string | undefined;
   for (let page = 0; page < maxPages && tools.length < maxTools; page += 1) {
     const result = await client.listTools(cursor ? { cursor } : undefined, options);
     const visible = result.tools.filter(mcpToolVisibleToModel);
     tools.push(...visible.slice(0, maxTools - tools.length));
+    if (typeof result.ttlMs === "number" && Number.isFinite(result.ttlMs))
+      ttlMs = Math.min(ttlMs ?? Number.POSITIVE_INFINITY, Math.max(0, result.ttlMs));
     cursor = result.nextCursor;
     if (!cursor) break;
   }
-  return tools;
+  return { tools, ttlMs };
 }
 
 /** Call through the guarded transport, optionally projecting before the final byte limit. */
