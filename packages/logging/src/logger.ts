@@ -2,7 +2,7 @@ import { enrichLogContext, getLogContext, runWithLogContext } from "./context.js
 import { redactBindings, redactSensitiveText } from "./redaction.js";
 import { markReportedError } from "./reported-errors.js";
 import { serializeError } from "./serialize-error.js";
-import { guardedFlush, guardedWrite, reportSinkError } from "./sink-guard.js";
+import { guardedFlush, guardedWrite, reportDroppedLine } from "./sink-guard.js";
 import type {
   CreateLoggerOptions,
   EmitLevel,
@@ -88,7 +88,7 @@ class LoggerImpl implements Logger {
     try {
       this.write(level, message, bindings, error);
     } catch (failure) {
-      reportSinkError(failure);
+      reportDroppedLine(failure);
     }
   }
 

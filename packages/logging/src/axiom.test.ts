@@ -157,6 +157,22 @@ describe("axiom sink", () => {
     expect(JSON.stringify(failed)).not.toContain("hunter2secretvalue");
   });
 
+  it("keeps redacted text out of a stand-in", async () => {
+    const store = new BatchingStore();
+    const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    logger.warn("run.setup_failed", {
+      "run.id": "run-a",
+      note: "token=hunter2secretvalue",
+      attempts: Array.from({ length: 200 }, () => "y".repeat(10_000)),
+      error: new Error("token=hunter2secretvalue"),
+    });
+    await logger.flush();
+
+    expect(store.stored).toEqual([expect.objectContaining({ "log.oversized": true })]);
+    expect(JSON.stringify(store.stored)).not.toContain("hunter2secretvalue");
+  });
+
   it("stands in for a line that cannot be serialized, and keeps the rest of its batch", async () => {
     const store = new BatchingStore();
     const sink = await createAxiomSink({ dataset: "rakazo-logs", client: store });

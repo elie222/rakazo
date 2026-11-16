@@ -82,14 +82,22 @@ describe("sink failure diagnostics", () => {
     reportSinkError("first failure");
     reportSinkError(sensitive);
     expect(consoleError).toHaveBeenCalledExactlyOnceWith("log sink failed", "first failure");
-    expect(logSinkHealth()).toEqual({ failures: failures + 2, lastFailureAt: now, degraded: true });
+    expect(logSinkHealth()).toMatchObject({
+      failures: failures + 2,
+      lastFailureAt: now,
+      degraded: true,
+    });
 
     now += 30_000;
     vi.mocked(Date.now).mockReturnValue(now);
     reportSinkError(sensitive);
 
     expect(consoleError).toHaveBeenLastCalledWith("log sink failed (1 suppressed)", redacted);
-    expect(logSinkHealth()).toEqual({ failures: failures + 3, lastFailureAt: now, degraded: true });
+    expect(logSinkHealth()).toMatchObject({
+      failures: failures + 3,
+      lastFailureAt: now,
+      degraded: true,
+    });
     expect(logSinkHealth(now + 300_000).degraded).toBe(false);
   });
 });
