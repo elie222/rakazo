@@ -40,6 +40,7 @@ export * from "./external-conversations.js";
 export * from "./groups.js";
 export * from "./history-retrieval.js";
 export * from "./json-column.js";
+export * from "./leases.js";
 export * from "./memory-config.js";
 export * from "./message-blocks.js";
 export * from "./messages.js";

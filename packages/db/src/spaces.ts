@@ -3,6 +3,8 @@ import { ClientError, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, ownedOrganizationId } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import type { HeldLease } from "./leases.js";
+import { assertLeaseHeld } from "./leases.js";
 import type { PageShareSecret } from "./page-shares.js";
 import { deletePageShareSecrets } from "./page-shares.js";
 import { IsolationError } from "./scope.js";
@@ -824,16 +826,24 @@ export async function claimSpaceForDeletion(
  * commit, but none when another claim has since taken the space over. With `soleMemberId`, a
  * space someone joined after the claim is released instead and null is returned. With
  * `organizationId`, the organization goes in the same transaction once its last Space does, so it
- * is never left without the claim that lets a retry find it.
+ * is never left without the claim that lets a retry find it. With `lease`, nothing commits unless
+ * the caller still holds it.
  */
 export async function deleteClaimedSpace(
   prisma: PrismaClient,
-  input: { spaceId: string; claimId: string; soleMemberId?: string; organizationId?: string },
+  input: {
+    spaceId: string;
+    claimId: string;
+    soleMemberId?: string;
+    organizationId?: string;
+    lease?: Pick<HeldLease, "key" | "fence">;
+  },
 ): Promise<{ artifactKeys: string[]; pageShareSecrets: PageShareSecret[] } | null> {
-  const { spaceId, claimId, soleMemberId, organizationId } = input;
+  const { spaceId, claimId, soleMemberId, organizationId, lease } = input;
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
+        if (lease) await assertLeaseHeld(tx, lease);
         await lockSpaceDeletion(tx, spaceId);
         const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
           soleMemberId ? tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) }) : 0,

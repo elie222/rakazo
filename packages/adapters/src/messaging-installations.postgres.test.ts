@@ -64,11 +64,10 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
     };
     for (let i = 0; i < 2; i++) {
       const ids = await runAsSystem("messaging install fixtures", () =>
-        provisionMessagingIdentity(
-          prisma,
-          { provider: "install-test", address: `fake-sender-${i}` },
-          { signupsEnabled: "true", signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma, {
+          provider: "install-test",
+          address: `fake-sender-${i}`,
+        }),
       );
       actors.push({
         spaceId: ids.spaceId,

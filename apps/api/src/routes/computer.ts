@@ -256,15 +256,26 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Computer recovery is not available on this device",
           });
         try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+          const update = await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+          deps.analytics?.capture(context.actor.userId, {
+            name: "computer_repair_started",
+            action: "recover",
+          });
+          return update;
         } finally {
           // A refused start can still have dismissed earlier failures.
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
-      reset: authed.computer.reset.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "reset", "reset"),
-      ),
+      reset: authed.computer.reset.handler(async ({ context, input }) => {
+        const status = await runComputerReplace(deps, context, input.botId, "reset", "reset");
+        // Counted once the reset ran, so a refused request is not a repair.
+        deps.analytics?.capture(context.actor.userId, {
+          name: "computer_repair_started",
+          action: "reset",
+        });
+        return status;
+      }),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();

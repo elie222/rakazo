@@ -46,6 +46,8 @@ const demoRpc: Record<string, unknown> = {
   me: null,
   "scratchpad/list": [],
   "memory/list": [],
+  "pages/list": { items: [], nextCursor: null },
+  "bots/emailAddress": null,
   "agentSkills/list": [],
 };
 
@@ -149,8 +151,7 @@ function ModelShot() {
     >
       <BotSettings
         bot={inboxBot()}
-        memoryProviderConfigured={false}
-        onSkillsChange={() => undefined}
+        focusModel={1}
         onSave={async () => undefined}
         onExport={async () => undefined}
         onClear={() => undefined}

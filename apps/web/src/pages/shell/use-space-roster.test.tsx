@@ -3,7 +3,7 @@
 import type { AppBootstrap, Bot, Group } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { ComponentType } from "react";
-import { act, lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
+import { act, lazy, StrictMode, Suspense, useLayoutEffect, useRef, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
@@ -168,6 +168,20 @@ async function open(path: string) {
       <BrowserRouter useTransitions={false}>
         <ShellPage />
       </BrowserRouter>,
+    ),
+  );
+}
+
+/** Opens `path` as development does: the shell's effects run, are torn down, and run again. */
+async function openStrict(path: string) {
+  window.history.replaceState({ idx: 0 }, "", path);
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <BrowserRouter useTransitions={false}>
+          <ShellPage />
+        </BrowserRouter>
+      </StrictMode>,
     ),
   );
 }
@@ -607,6 +621,26 @@ describe("a link to a group chat in another space", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
     expect(window.location.pathname).toBe("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe("/app/g/standup");
+  });
+
+  it("opens the group in its space when a discarded first load answers before the kept one", async () => {
+    const kept = deferred<AppBootstrap>();
+    state.take
+      .mockImplementationOnce(async (botId?: string, groupId?: string) =>
+        bootstrapOf("personal", botId, groupId),
+      )
+      .mockReturnValueOnce(kept.promise);
+    await openStrict("/app/g/standup");
+    expect(state.take).toHaveBeenCalledTimes(2);
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/g/standup");
+    await act(async () => {
+      kept.resolve(bootstrapOf("personal", undefined, "standup"));
+      await vi.advanceTimersByTimeAsync(50);
+    });
     await finishLoadingSpace();
     expect(state.space).toBe("work");
     expect(window.location.pathname).toBe("/app/g/standup");

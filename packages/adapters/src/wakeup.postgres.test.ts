@@ -13,6 +13,7 @@ import {
   RetryJobLaterError,
   routineWakeupJob,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool, currentDbContext, runAsTenant } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -68,14 +69,6 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "push.receipt": vi.fn(async () => undefined),
     ...overrides,
   };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void> {

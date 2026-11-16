@@ -34,11 +34,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     const userId = `bot-email-${++sequence}-${suffix}`;
     users.push(userId);
     await system.user.create({ data: { id: userId, name: userId, email, emailVerified: true } });
-    const { spaceId } = await bootstrapUserSpace(
-      system,
-      { id: userId },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const { spaceId } = await bootstrapUserSpace(system, { id: userId });
     return { userId, spaceId };
   }
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import * as Core from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTextTokens } from "../../adapters/src/context-selection.js";
 import type { ModelEmulatorRequest } from "./model-emulator.js";
@@ -632,11 +633,3 @@ describe("real Pi against an offline model HTTP endpoint", () => {
     second.assertComplete();
   });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
