@@ -642,9 +642,6 @@ export function botsRoutes(ctx: RouterContext) {
                 controlUserId: null,
                 controlLeaseExpiresAt: null,
                 controlBotId: null,
-                executionRunId: null,
-                executionBotId: null,
-                executionLeaseExpiresAt: null,
               },
             });
             await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");

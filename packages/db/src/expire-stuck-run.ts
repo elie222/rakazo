@@ -125,14 +125,6 @@ export async function expireStuckRun(
     where: { runId: input.runId, ...transientRunEventsWhere() },
   });
   await expireComputerExecutionLeases(tx, { runId: input.runId });
-  await tx.computer.updateMany({
-    where: { executionRunId: input.runId },
-    data: {
-      executionRunId: null,
-      executionBotId: null,
-      executionLeaseExpiresAt: null,
-    },
-  });
   await discardAnsweredSteering(tx, { threadId: run.threadId, runId: input.runId });
   await tx.steeringMessage.updateMany({
     where: { runId: input.runId },

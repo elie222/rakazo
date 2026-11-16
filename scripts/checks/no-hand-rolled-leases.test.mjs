@@ -24,8 +24,6 @@ const EXISTING = new Set([
   "Computer.controlLeaseId",
   "Computer.controlLeaseExpiresAt",
   "Computer.controlFence",
-  "Computer.executionLeaseExpiresAt",
-  "Computer.executionFence",
   "HomeDeletionNotice.claimId",
   "HomeDeletionNotice.claimExpiresAt",
   "ComputerExecutionLease.fence",
