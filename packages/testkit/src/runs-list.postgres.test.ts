@@ -108,6 +108,8 @@ describeRunsList("runs.list activity tracker", () => {
     // From the hour before now until two hours later, in UTC, so the test can't cross the end.
     const hour = new Date().getUTCHours();
     const quietHours = { start: (hour + 23) % 24, end: (hour + 2) % 24 };
+    // Without a timezone the hours would be read in UTC, so they need one saved or sent along.
+    expect((await raw(app, cookie, "preferences/update", { quietHours })).status).toBe(400);
     const me = await rpc<{ quietHours: unknown }>(app, cookie, "preferences/update", {
       timezone: "UTC",
       quietHours,

@@ -195,6 +195,15 @@ export function accountRoutes(ctx: RouterContext) {
                 quietHoursStart: input.quietHours?.start ?? null,
                 quietHoursEnd: input.quietHours?.end ?? null,
               };
+        // Quiet hours are read in the account's timezone; without one they would mean UTC hours.
+        if (input.quietHours && !input.timezone) {
+          const saved = await deps.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
+          if (!saved?.timezone)
+            throw new ClientError("BAD_REQUEST", "Set a timezone to use quiet hours.");
+        }
         // A feature the deployment turns on is not the account's choice, so it is not saved with it.
         const deploymentLabs = deps.env?.deploymentLabs ?? [];
         const labs =
