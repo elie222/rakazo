@@ -156,7 +156,15 @@ export async function listOrganizationMembers(
   const canManage = role !== "member";
   const [rows, invitations] = await Promise.all([
     prisma.member.findMany({
-      where: { organizationId: input.organizationId, role: { not: GUEST_ROLE } },
+      where: {
+        organizationId: input.organizationId,
+        // A guest never owns a Space, so one who does is a removal that stopped part way: they
+        // stay listed until removing them again finishes it.
+        OR: [
+          { role: { not: GUEST_ROLE } },
+          { spaceMemberships: { some: { role: { contains: "owner" } } } },
+        ],
+      },
       select: {
         userId: true,
         role: true,

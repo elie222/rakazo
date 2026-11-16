@@ -551,6 +551,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     await expect(
       system.spaceMember.findMany({ where: { spaceId: ownSpaceId }, select: { userId: true } }),
     ).resolves.toEqual([{ userId: member.id }]);
+    // Still listed, so the removal can be finished.
+    const listed = await call(owner.actor, "organizations/members/list", { organizationId });
+    expect(listed.json.members).toContainEqual(
+      expect.objectContaining({ userId: member.id, manageable: true }),
+    );
 
     // The owner finishes the removal and keeps the Space.
     expect(

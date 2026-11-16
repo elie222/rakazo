@@ -163,12 +163,14 @@ export function organizationsRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               email: input.email,
             });
-            await recordAuditEvent({
-              action: "organization.invitation.created",
-              actor: { type: "user", id: context.actor.userId },
-              organizationId: input.organizationId,
-              target: { type: "invitation", id: invitation.id },
-            });
+            // Past an address's daily limit the pending invitation comes back unchanged.
+            if (invitation.send)
+              await recordAuditEvent({
+                action: "organization.invitation.created",
+                actor: { type: "user", id: context.actor.userId },
+                organizationId: input.organizationId,
+                target: { type: "invitation", id: invitation.id },
+              });
             const url = invitationUrl(deps, invitation.id);
             const emailed =
               deps.email && invitation.send
