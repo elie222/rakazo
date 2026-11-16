@@ -32,19 +32,16 @@ try {
   (server as Server).keepAliveTimeout = 125_000;
 
   let stopped: Promise<void> | undefined;
-  let handBack = false;
-  let runsDraining = false;
   const shutdown = (letRunsFinish: boolean) => {
-    if (!letRunsFinish) {
-      handBack = true;
-      // One that arrives while the runs are draining ends the drain at once.
-      if (runsDraining) void stop();
+    // Stopping at once claims no new run, even while ordinary requests finish. One without
+    // letRunsFinish that arrives while the runs are draining ends the drain at once.
+    if (stopped) {
+      if (!letRunsFinish) void stop();
+      return stopped;
     }
-    stopped ??= (async () => {
-      stopStallWatch();
-      await drain(20_000);
-      runsDraining = !handBack;
-      await stop({ letRunsFinish: !handBack });
+    stopStallWatch();
+    stopped = (async () => {
+      await stop({ letRunsFinish, connectionsClosed: drain(20_000) });
       await logger.flush({ timeoutMs: 2_000 });
     })();
     return stopped;

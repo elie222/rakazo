@@ -221,9 +221,10 @@ export interface AppHandles {
   /**
    * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
    * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
-   * without it, they are handed back at once.
+   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
+   * for `connectionsClosed`, which settles once the server has stopped taking requests.
    */
-  stop: (options?: { letRunsFinish?: boolean }) => Promise<void>;
+  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -1168,14 +1169,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     stop: (options = {}) => {
       if (!options.letRunsFinish) runDrain.end();
       stopped ??= (async () => {
-        // Handlers still running would otherwise query the pool after it ends.
-        const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
         // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
         // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
-        auth.disposeOidcDiscovery();
+        // It also ends run claims at once, while ordinary requests still finish.
         shutdown.abort();
         // Aborted runs hand themselves back while realtime is still open to announce them.
         const runsStopped = runs?.stop();
+        await options.connectionsClosed;
+        // Handlers still running would otherwise query the pool after it ends.
+        const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
+        auth.disposeOidcDiscovery();
         await userDeviceHub?.close();
         await oauthLogins.abortAll();
         await messagingRuntime?.stop();

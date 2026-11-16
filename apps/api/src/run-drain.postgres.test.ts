@@ -213,10 +213,14 @@ describePostgres("an API a deploy replaces, and the chat turns it is running (Po
     expect(replacement.turnsOf(run.id)).toHaveLength(0);
   });
 
-  it("claims and starts no new run once it is stopping", async () => {
+  it("claims and starts no new run once it is stopping, while requests still finish", async () => {
     const leaving = await startApi();
     const { turn } = await turnInFlight(leaving);
-    const stop = leaving.handles.stop({ letRunsFinish: true });
+    const connections = deferred();
+    const stop = leaving.handles.stop({
+      letRunsFinish: true,
+      connectionsClosed: connections.promise,
+    });
 
     const delivered = await (await seedChat())();
     await leaving.continueRun(delivered.id, "leaving");
@@ -226,6 +230,7 @@ describePostgres("an API a deploy replaces, and the chat turns it is running (Po
     expect(leaving.turnsOf(delivered.id)).toHaveLength(0);
 
     turn.finish.resolve();
+    connections.resolve();
     await stop;
   });
 
@@ -261,10 +266,16 @@ describePostgres("an API a deploy replaces, and the chat turns it is running (Po
     const leaving = await startApi();
     const { run, turn } = await turnInFlight(leaving);
 
-    const draining = leaving.handles.stop({ letRunsFinish: true });
+    const connections = deferred();
+    const draining = leaving.handles.stop({
+      letRunsFinish: true,
+      connectionsClosed: connections.promise,
+    });
     expect(turn.signal.aborted).toBe(false);
+    // Requests are still finishing, and the turns go back all the same.
     const stopped = leaving.handles.stop();
     expect(turn.signal.aborted).toBe(true);
+    connections.resolve();
     await Promise.all([draining, stopped]);
 
     expect(await runRow(run.id)).toMatchObject({ status: "queued", leaseOwner: null });
