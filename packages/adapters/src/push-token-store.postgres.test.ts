@@ -72,9 +72,9 @@ suite("database push registrations", () => {
 
   it("keeps the native presentation capability across replicas and clears it on legacy registration", async () => {
     await api.save(user("a"), token("a"), session("a"), "android_sender");
-    expect((await worker.load(user("a")))?.presentation).toBe("android_sender");
+    expect((await worker.list(user("a")))[0]?.presentation).toBe("android_sender");
     await api.save(user("a"), token("a"), session("a"));
-    expect((await worker.load(user("a")))?.presentation).toBeUndefined();
+    expect((await worker.list(user("a")))[0]?.presentation).toBeUndefined();
   });
 
   it("serializes concurrent device handovers so only one account owns a token", async () => {
