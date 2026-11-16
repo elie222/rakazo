@@ -147,11 +147,12 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
     what: string,
     deadline: number,
   ): Promise<void> {
-    while (performance.now() < deadline) {
-      if (await condition()) return;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new Error(`timed out waiting for ${what}`);
+    await vi.waitFor(
+      async () => {
+        if (!(await condition())) throw new Error(`timed out waiting for ${what}`);
+      },
+      { interval: 100, timeout: Math.max(0, deadline - performance.now()) },
+    );
   }
 
   const event = (handleId: string, roster: string[], rosterAt: Date): MessagingInboundMessage => ({

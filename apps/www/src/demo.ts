@@ -1,48 +1,51 @@
-export type DemoCardLine = {
-  k: string;
-  v: string;
+import type { DemoTextKey } from "./i18n/demo-text";
+
+/** `Text` is `DemoTextKey` for the English seed, so every seeded string must have a translation. */
+export type DemoCardLine<Text extends string = string> = {
+  k: Text;
+  v: Text;
 };
 
-export type DemoMessage =
-  | { type: "time"; text: string }
-  | { type: "meta"; text: string }
-  | { type: "user"; text: string }
-  | { type: "bot"; text: string }
+export type DemoMessage<Text extends string = string> =
+  | { type: "time"; text: Text }
+  | { type: "meta"; text: Text }
+  | { type: "user"; text: Text }
+  | { type: "bot"; text: Text }
   | { type: "typing" }
-  | { type: "computer"; text: string }
-  | { type: "card"; lines: DemoCardLine[] };
+  | { type: "computer"; text: Text }
+  | { type: "card"; lines: DemoCardLine<Text>[] };
 
-export type DemoRoutine = {
-  name: string;
-  when: string;
-  instruction?: string;
+export type DemoRoutine<Text extends string = string> = {
+  name: Text;
+  when: Text;
+  instruction?: Text;
   active?: boolean;
-  runs?: DemoRoutineRun[];
+  runs?: DemoRoutineRun<Text>[];
 };
 
-export type DemoRoutineRun = {
+export type DemoRoutineRun<Text extends string = string> = {
   mark: string;
   color: string;
-  text: string;
-  time: string;
+  text: Text;
+  time: Text;
 };
 
-export type DemoScreen = {
+export type DemoScreen<Text extends string = string> = {
   host: string;
-  title: string;
-  lines: string[];
+  title: Text;
+  lines: Text[];
 };
 
-export type DemoBot = {
+export type DemoBot<Text extends string = string> = {
   id: string;
   name: string;
   color: string;
-  time: string;
-  preview: string;
-  routines: DemoRoutine[];
-  screen: DemoScreen;
-  thread: DemoMessage[];
-  reply: string;
+  time: Text;
+  preview: Text;
+  routines: DemoRoutine<Text>[];
+  screen: DemoScreen<Text>;
+  thread: DemoMessage<Text>[];
+  reply: Text;
 };
 
 export type RosterBot = {
@@ -52,7 +55,7 @@ export type RosterBot = {
   desc: string;
 };
 
-export const DEMO_BOTS: DemoBot[] = [
+export const DEMO_BOTS: DemoBot<DemoTextKey>[] = [
   {
     id: "chief",
     name: "Chief of Staff",

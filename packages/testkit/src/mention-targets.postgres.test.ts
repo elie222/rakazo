@@ -4,7 +4,7 @@ import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import { deferred } from "@rakazo/core/test-async";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
@@ -253,13 +253,14 @@ describeWithDatabase("structured @ mention targets", () => {
           text,
           routineIds: [late.id, digest.id],
         });
-        for (let tries = 0; ; tries += 1) {
-          const [waiting] = await prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT count(*) AS count FROM pg_locks WHERE NOT granted`;
-          if (Number(waiting?.count) > 0) break;
-          if (tries > 100) throw new Error("the second send never waited");
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+        await vi.waitFor(
+          async () => {
+            const [waiting] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT count(*) AS count FROM pg_locks WHERE NOT granted`;
+            if (!(Number(waiting?.count) > 0)) throw new Error("the second send never waited");
+          },
+          { interval: 50, timeout: 5_000 },
+        );
         const first = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
           botId: bot.id,
           clientNonce,
