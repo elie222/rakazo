@@ -51,6 +51,7 @@ describe("desktop preload bridge", () => {
       "computer",
       "device",
       "locale",
+      "mcpBrowser",
       "menu",
       "monitoring",
       "nativeWindowFrame",
@@ -116,6 +117,29 @@ describe("desktop preload bridge", () => {
       "desktop.update.install",
       "desktop.server.change",
     ]);
+  });
+
+  it("forwards captured MCP codes without leaking the IPC event to the renderer", async () => {
+    const listeners: Array<(event: unknown, callback: unknown) => void> = [];
+    const on = vi.fn((_channel: string, handler: (event: unknown, callback: unknown) => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { invoke, exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    const browser = bridge.mcpBrowser!;
+
+    await browser.clear("clx123abc");
+    expect(invoke).toHaveBeenCalledWith("desktop.mcpBrowser.clear", "clx123abc");
+
+    const received: unknown[] = [];
+    const unsubscribe = browser.onOAuthCallback((callback) => received.push(callback));
+    expect(on).toHaveBeenCalledWith("desktop.mcpBrowser.callback", expect.any(Function));
+    listeners[0]?.({ sender: "ipc-event" }, { serverId: "clx123abc", code: "mcp_123", state: "s" });
+    expect(received).toEqual([{ serverId: "clx123abc", code: "mcp_123", state: "s" }]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.mcpBrowser.callback", expect.any(Function));
   });
 
   it("forwards captured codes without leaking the IPC event to the renderer", () => {

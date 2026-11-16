@@ -4,6 +4,7 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { pollUntil } from "@rakazo/core";
 import type { HostScreen, HostScreenAction, HostScreenObservation } from "./host-screen.js";
 import {
   actThenObserve,
@@ -191,13 +192,13 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
     return Number(launched.structuredContent?.pid) || 0;
   }
 
-  async function windowWithin(pid: number, ms: number, signal: AbortSignal) {
-    const deadline = Date.now() + ms;
-    for (;;) {
-      const window = await frontWindow(pid, signal);
-      if (window || Date.now() > deadline) return window;
-      await sleep(400, undefined, { signal });
-    }
+  function windowWithin(pid: number, ms: number, signal: AbortSignal) {
+    return pollUntil(() => frontWindow(pid, signal), {
+      intervalMs: 400,
+      timeoutMs: ms,
+      signal,
+      onTimeout: () => undefined,
+    });
   }
 
   async function target(query: string, signal: AbortSignal): Promise<Target> {

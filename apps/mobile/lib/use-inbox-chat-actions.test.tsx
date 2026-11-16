@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -128,6 +130,8 @@ async function handlers(
       current().runRowAction(kind, chat as MobileBot, action),
     editSectionFromMenu: (...args: Parameters<Actions["editSectionFromMenu"]>) =>
       current().editSectionFromMenu(...args),
+    promptRenameSection: (...args: Parameters<Actions["promptRenameSection"]>) =>
+      current().promptRenameSection(...args),
     updateChat: (
       kind: "bot" | "group",
       chat: Chat,
@@ -241,15 +245,18 @@ it("drops queued changes quietly once the session changes", async () => {
 });
 
 it("marks unread optimistically, keeps it through the request, then refreshes", async () => {
-  let finish!: () => void;
-  const h = await handlers(() => new Promise<void>((resolve) => (finish = resolve)));
+  let finish!: Deferred;
+  const h = await handlers(() => {
+    finish = deferred();
+    return finish.promise;
+  });
   const pending = h.runRowAction("bot", { id: "b1" }, "unread");
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
   expect(sent(vi.mocked(rpc).mock.calls[0]!)).toEqual(["threads/markUnread", { botId: "b1" }]);
   await vi.waitFor(() => expect(h.state.overrides.get("bot:b1")).toBe(true));
   // A poll landing now still shows the stale server value underneath the override.
   expect(applyUnreadOverrides("bot", h.state.bots, h.state.overrides)[0]!.unread).toBe(true);
-  finish();
+  finish.resolve();
   await pending;
   expect(h.state.bots[0]!.unread).toBe(true);
   expect(h.loadBots).toHaveBeenCalledTimes(1);
@@ -357,13 +364,40 @@ it("creates and renames a section from the row menu in the chat's own space", as
   ]);
 });
 
+it("renames a section from its heading with the name prompt and reloads the inbox", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  const options = vi.mocked(promptSectionName).mock.calls.at(-1)![0];
+  expect(options).toMatchObject({ title: "Rename section", defaultValue: "Work" });
+  options.onSubmit("Home");
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(rpc).mock.calls.at(-1)!.slice(0, 2)).toEqual([
+    "botSections/update",
+    { sectionId: "s1", name: "Home" },
+  ]);
+});
+
+it("tells the user when a heading rename is refused", async () => {
+  const h = await handlers(async () => {
+    throw new Error("refused");
+  });
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  vi.mocked(promptSectionName).mock.calls.at(-1)![0].onSubmit("Home");
+  await vi.waitFor(() =>
+    expect(session.alert).toHaveBeenCalledWith("Could not rename section", "Try again."),
+  );
+  expect(h.loadBots).not.toHaveBeenCalled();
+});
+
 it("hides an archived chat at the tap and keeps it hidden from a reload until it settles", async () => {
-  let finish!: (value: unknown) => void;
-  const h = await handlers(() => new Promise((resolve) => (finish = resolve)));
-  let finishReload!: () => void;
-  const reload = new Promise<void>((resolve) => (finishReload = resolve));
+  let finish!: Deferred<unknown>;
+  const h = await handlers(() => {
+    finish = deferred<unknown>();
+    return finish.promise;
+  });
+  const reload = deferred();
   h.loadBots.mockImplementation(async () => {
-    await reload;
+    await reload.promise;
     h.state.bots = h.state.bots.filter((bot) => bot.id !== "b1");
   });
   h.state.bots = [
@@ -380,7 +414,7 @@ it("hides an archived chat at the tap and keeps it hidden from a reload until it
     "b2",
   ]);
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
-  finish({ ok: true });
+  finish.resolve({ ok: true });
   await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
   expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
   // A poll replaces the stored list while the post-archive reload is still pending.
@@ -390,7 +424,7 @@ it("hides an archived chat at the tap and keeps it hidden from a reload until it
     "b0",
     "b2",
   ]);
-  finishReload();
+  reload.resolve();
   await pending;
   expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
   expect(h.state.spaces[0]!.bots).toEqual([]);

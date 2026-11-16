@@ -285,6 +285,11 @@ export class BillingEmulator implements BillingProvider {
     this.creditCheckouts.delete(customerId);
   }
 
+  /** The emulator takes no payments outside a customer. */
+  async customerForPayment(_paymentId: string): Promise<string | null> {
+    return null;
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(WEBHOOK_SECRET, rawBody, headers, this.now());
   }

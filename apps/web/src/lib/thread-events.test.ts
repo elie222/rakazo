@@ -379,7 +379,7 @@ describe("computer event reduction", () => {
   it("waits for this computer's screen read before diagnosing a missing screen", () => {
     const options = {
       state: "running" as const,
-      kind: undefined,
+      runsOnUserMachine: undefined,
       booting: false,
       screenUrlLoaded: false,
       embeddedUrl: null,
@@ -390,7 +390,9 @@ describe("computer event reduction", () => {
       screenMissing({ ...options, screenUrlLoaded: true, embeddedUrl: "https://screen.example" }),
     ).toBe(false);
     expect(screenMissing({ ...options, screenUrlLoaded: true, booting: true })).toBe(false);
-    expect(screenMissing({ ...options, screenUrlLoaded: true, kind: "desktop" })).toBe(false);
+    expect(screenMissing({ ...options, screenUrlLoaded: true, runsOnUserMachine: true })).toBe(
+      false,
+    );
     expect(screenMissing({ ...options, screenUrlLoaded: true, state: "error" })).toBe(false);
   });
 });

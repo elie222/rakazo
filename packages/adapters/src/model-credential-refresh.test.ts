@@ -1,4 +1,5 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { updateStoredModelSecret } from "./model-credential-refresh.js";
@@ -21,10 +22,7 @@ describe("model settings notifications", () => {
     let started = 0;
     let committed = 0;
     let published = 0;
-    let release!: () => void;
-    const allStarted = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const allStarted = deferred();
     const encrypted = new EncryptedSecretStore("test-only-key");
     const rows = new Map<string, string>();
     for (let index = 0; index < capacity; index++) {
@@ -58,8 +56,8 @@ describe("model settings notifications", () => {
     const prisma = {
       $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<boolean>) => {
         active++;
-        if (++started === capacity) release();
-        await allStarted;
+        if (++started === capacity) allStarted.resolve();
+        await allStarted.promise;
         let saved: { id: string; ciphertext: string } | undefined;
         const tx = {
           $executeRaw: async () => 0,

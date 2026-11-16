@@ -1,0 +1,8 @@
+{
+  "apps/desktop/e2e/setup.spec.ts": 1,
+  "apps/web/e2e/avatar-motion.spec.ts": 3,
+  "apps/web/e2e/computer-screen-error.spec.ts": 4,
+  "apps/web/e2e/logo-avatar-motion-conformance.spec.ts": 1,
+  "apps/web/e2e/logo-avatars.spec.ts": 10,
+  "apps/web/e2e/pages.spec.ts": 3
+}

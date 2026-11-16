@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 
 type UpdateManyArgs = Parameters<PrismaClient["billingAccount"]["updateMany"]>[0];
@@ -8,10 +9,7 @@ type UpdateManyArgs = Parameters<PrismaClient["billingAccount"]["updateMany"]>[0
  * holder without guessing how long the queued attempt takes to get there.
  */
 export function watchCheckoutLeaseClaims(prisma: PrismaClient) {
-  let refused!: () => void;
-  const leaseRefused = new Promise<void>((resolve) => {
-    refused = resolve;
-  });
+  const leaseRefused = deferred();
   const watched = new Proxy(prisma, {
     get(target, property, receiver) {
       if (property !== "billingAccount") return Reflect.get(target, property, receiver);
@@ -21,12 +19,13 @@ export function watchCheckoutLeaseClaims(prisma: PrismaClient) {
           return async (args: UpdateManyArgs) => {
             const result = await accounts.updateMany(args);
             // Only a claim writes a new lease id; a release clears it and a renewal keeps it.
-            if (typeof args.data.checkoutLeaseId === "string" && result.count === 0) refused();
+            if (typeof args.data.checkoutLeaseId === "string" && result.count === 0)
+              leaseRefused.resolve();
             return result;
           };
         },
       });
     },
   });
-  return { prisma: watched, leaseRefused };
+  return { prisma: watched, leaseRefused: leaseRefused.promise };
 }

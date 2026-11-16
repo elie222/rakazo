@@ -1,7 +1,9 @@
 import { setTimeout as delay } from "node:timers/promises";
+import type { UnreferencedMachine, UnreferencedMachineRecords } from "@rakazo/adapter-kit";
 import { SandboxRateLimitError, SandboxSizeUnavailableError } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
+import { withAbort } from "@rakazo/core";
 import { shellQuote } from "./computer-support.js";
 import type {
   CommandResult,
@@ -10,6 +12,7 @@ import type {
   RemoteDesktopSdk,
 } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
@@ -80,7 +83,8 @@ export interface InstaboxApi {
     spec?: InstaboxSpec,
   ): Promise<InstaboxMachine>;
   connect(id: string, resume: boolean): Promise<InstaboxMachine>;
-  kill(id: string): Promise<boolean>;
+  /** `timeoutMs` bounds each request and the wait for the delete to finish. */
+  kill(id: string, timeoutMs?: number): Promise<boolean>;
 }
 
 /** The SDK loads only when an instabox computer is used, never in the default runtime. */
@@ -91,25 +95,48 @@ export async function nativeInstaboxApi(apiKey: string): Promise<InstaboxApi> {
     create: (template, metadata, spec) =>
       Sandbox.create(template, { apiKey, metadata, vault: false, ...spec }),
     connect: (id, resume) => Sandbox.connect(id, { apiKey, resume }),
-    kill: (id) => Sandbox.kill(id, { apiKey }),
+    kill: (id, timeoutMs) =>
+      Sandbox.kill(id, {
+        apiKey,
+        ...(timeoutMs !== undefined && {
+          requestTimeoutMs: timeoutMs,
+          operationTimeoutMs: timeoutMs,
+        }),
+      }),
   };
 }
 
 /** instabox owns the VM lifecycle; the shared Linux runtime owns each bot's desktop. */
 export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
+  private readonly kill: (id: string) => Promise<boolean>;
+
   constructor(
-    options: { apiKey: string; onUnsafeStop?: (providerRef: string) => Promise<void> },
+    options: {
+      apiKey: string;
+      onUnsafeStop?: (providerRef: string) => Promise<void>;
+      unreferencedMachines?: UnreferencedMachineRecords;
+    },
     sdk?: RemoteDesktopSdk,
   ) {
+    const instabox =
+      sdk ??
+      instaboxSdk(options.apiKey, options.onUnsafeStop, undefined, options.unreferencedMachines);
     super({
       id: "instabox",
       label: "instabox",
       apiKey: options.apiKey,
       template: INSTABOX_COMPUTER_TEMPLATE,
-      sdk: sdk ?? instaboxSdk(options.apiKey, options.onUnsafeStop),
+      sdk: instabox,
       // Commands past their deadline come back as exit 124, never as an error.
       isTimeoutError: () => false,
+      pageBrowser: true,
     });
+    this.kill = (id) => instabox.kill(id, { apiKey: options.apiKey });
+  }
+
+  /** Killing by id never resumes a paused computer; false means it was already gone. */
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await withAbort(this.kill(machine.machineId), signal);
   }
 }
 
@@ -117,6 +144,7 @@ export function instaboxSdk(
   apiKey: string,
   onUnsafeStop?: (providerRef: string) => Promise<void>,
   load: () => Promise<InstaboxApi> = () => nativeInstaboxApi(apiKey),
+  machines?: UnreferencedMachineRecords,
 ): RemoteDesktopSdk {
   let loaded: Promise<InstaboxApi> | undefined;
   const api = () => (loaded ??= load());
@@ -161,11 +189,19 @@ export function instaboxSdk(
       } catch (error) {
         throw translate(error);
       }
+      const created = {
+        provider: "instabox",
+        machineId: machine.sandboxId,
+        homeKey: options.metadata.botId,
+      };
+      await recordUnreferencedMachine(machines, created);
       try {
         return await openDesktop(machine, true, pause(machine));
       } catch (error) {
         // Nothing has the new computer's reference yet, so nothing else would delete it.
-        await (await api()).kill(machine.sandboxId).catch(() => false);
+        await deleteUnreferencedMachine(machines, created, async (_signal, timeoutMs) =>
+          (await api()).kill(machine.sandboxId, timeoutMs),
+        );
         throw error;
       }
     },

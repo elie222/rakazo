@@ -3,8 +3,7 @@ import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "./subscription-faq";
 
 export const GROK_ALTERNATIVE_PATH = "/grok-bot-alternative/";
 
-export const GROK_ALTERNATIVE_TITLE =
-  "Grok Bot alternatives (open source and hosted) – Rakazo";
+export const GROK_ALTERNATIVE_TITLE = "Grok Bot alternatives (open source and hosted) – Rakazo";
 
 export const GROK_ALTERNATIVE_DESCRIPTION =
   "Open source and hosted Grok Bot alternatives: Rakazo, OpenClaw, Hermes Agent, Meta Muse, OpenAI Dots, Instinct, Hark Pro, and Claude Duet.";
@@ -213,48 +212,33 @@ export const GROK_ALTERNATIVE_FAQ = [
   },
 ] as const;
 
-export function grokAlternativeStructuredData(pageUrl: string) {
-  return {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebPage",
-        "@id": `${pageUrl}#webpage`,
-        url: pageUrl,
-        name: GROK_ALTERNATIVE_TITLE,
-        description: GROK_ALTERNATIVE_DESCRIPTION,
-        mainEntity: { "@id": `${pageUrl}#list` },
-      },
-      {
-        "@type": "ItemList",
-        "@id": `${pageUrl}#list`,
-        name: GROK_ALTERNATIVE_H1,
-        description: GROK_ALTERNATIVE_DESCRIPTION,
-        url: pageUrl,
-        itemListOrder: "https://schema.org/ItemListOrderAscending",
-        numberOfItems: GROK_ALTERNATIVES.length,
-        itemListElement: GROK_ALTERNATIVES.map((item, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: item.label,
-          url: absoluteHref(item.href),
-        })),
-      },
-      {
-        "@type": "FAQPage",
-        "@id": `${pageUrl}#faq`,
-        url: pageUrl,
-        mainEntity: GROK_ALTERNATIVE_FAQ.map((item) => ({
-          "@type": "Question",
-          name: item.question,
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: item.answer,
-          },
-        })),
-      },
-    ],
-  };
+/** The page and its list of alternatives, for the page's article graph. */
+export function grokAlternativeNodes(pageUrl: string) {
+  return [
+    {
+      "@type": "WebPage",
+      "@id": `${pageUrl}#webpage`,
+      url: pageUrl,
+      name: GROK_ALTERNATIVE_TITLE,
+      description: GROK_ALTERNATIVE_DESCRIPTION,
+      mainEntity: { "@id": `${pageUrl}#list` },
+    },
+    {
+      "@type": "ItemList",
+      "@id": `${pageUrl}#list`,
+      name: GROK_ALTERNATIVE_H1,
+      description: GROK_ALTERNATIVE_DESCRIPTION,
+      url: pageUrl,
+      itemListOrder: "https://schema.org/ItemListOrderAscending",
+      numberOfItems: GROK_ALTERNATIVES.length,
+      itemListElement: GROK_ALTERNATIVES.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: item.label,
+        url: absoluteHref(item.href),
+      })),
+    },
+  ];
 }
 
 function absoluteHref(href: string): string {
@@ -279,9 +263,7 @@ export function grokAlternativeMarkdown(): string {
     const caption = item.caption ? `\n\n${item.caption}` : "";
     return `### ${item.label}\n\n${image}${caption}\n\n${absoluteMarkdown(item.note)}`;
   }).join("\n\n");
-  const sources = GROK_SOURCES.map((source) => `- [${source.label}](${source.href})`).join(
-    "\n",
-  );
+  const sources = GROK_SOURCES.map((source) => `- [${source.label}](${source.href})`).join("\n");
   const faq = GROK_ALTERNATIVE_FAQ.map(
     (item) => `### ${item.question}\n\n${absoluteMarkdown(item.answer)}`,
   ).join("\n\n");

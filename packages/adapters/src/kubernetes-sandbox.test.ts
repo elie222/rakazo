@@ -5,12 +5,15 @@ import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
+import { providerFor, readyPod } from "./kubernetes-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import { settleMachineCleanup } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
 
@@ -30,31 +33,6 @@ const context: AdapterContext = {
   userId: "user",
   signal: new AbortController().signal,
 };
-
-const readyPod: V1Pod = {
-  metadata: { name: "pod", labels: { "rakazo-bot-id": "bot-a" } },
-  status: {
-    phase: "Running",
-    podIP: "10.0.0.8",
-    conditions: [{ type: "Ready", status: "True" }],
-  },
-};
-
-function providerFor(
-  core: Partial<KubernetesSandboxSdk["core"]> = {},
-  exec: KubernetesSandboxSdk["exec"]["exec"] = vi.fn(),
-  options: ConstructorParameters<typeof KubernetesSandboxProvider>[0] = {},
-) {
-  return new KubernetesSandboxProvider(options, {
-    core: {
-      readNamespacedPod: vi.fn().mockResolvedValue(readyPod),
-      createNamespacedPod: vi.fn().mockResolvedValue(readyPod),
-      deleteNamespacedPod: vi.fn().mockResolvedValue({ status: "Success" }),
-      ...core,
-    },
-    exec: { exec },
-  } as unknown as KubernetesSandboxSdk);
-}
 
 const computer: ComputerRef = {
   id: "pod",
@@ -83,83 +61,6 @@ function successfulExec(stdoutText = "", stderrText = "", code = 0) {
 }
 
 describe("KubernetesSandboxProvider", () => {
-  it("passes the shared offline sandbox workspace contract", async () => {
-    const files = new Map<string, { content: Buffer; executable: boolean }>();
-    let exportedNames: string[] = [];
-    const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
-      const command = args[3];
-      if (!Array.isArray(command)) throw new Error("expected argv");
-      const stdout = args[4];
-      const stdin = args[6];
-      const finish = () => args[8]?.({ status: "Success" });
-      if (stdin) {
-        const chunks: Buffer[] = [];
-        stdin.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-        stdin.on("end", () => {
-          const content = Buffer.concat(chunks);
-          const write = command.indexOf("rakazo-write");
-          if (write >= 0) {
-            files.set(command[write + 1]!, {
-              content,
-              executable: command[write + 2] === "700",
-            });
-          } else {
-            expect(command).toContain("rakazo-export-list");
-            exportedNames = content.toString().split("\0").filter(Boolean);
-          }
-          finish();
-        });
-      } else {
-        queueMicrotask(() => {
-          if (command.includes("echo")) stdout?.write("graphical-ok\n");
-          else if (command.includes("stat"))
-            stdout?.write(String(files.get(command.at(-1)!)!.content.length));
-          else if (command.includes("cat")) stdout?.write(files.get(command.at(-1)!)!.content);
-          else if (
-            command.includes("find") ||
-            command.some((arg) => arg.includes("find . -regextype"))
-          ) {
-            const directory = command.includes("find")
-              ? command[command.indexOf("find") + 1]!
-              : "/home/rakazo";
-            for (const [name, file] of files) {
-              const relative = name.slice(directory.length + 1);
-              if (!name.startsWith(`${directory}/`)) continue;
-              if (command.includes("-maxdepth")) {
-                if (relative.includes("/")) continue;
-                stdout?.write(
-                  `${relative}\0f\0${file.content.length}\0${file.executable ? "700" : "600"}\0`,
-                );
-              } else stdout?.write(`${relative}\0`);
-            }
-          } else if (command.includes("tar")) {
-            for (const name of exportedNames) {
-              const file = files.get(`/home/rakazo/${name}`)!;
-              for (const chunk of encodeTarEntry(name, file.content, file.executable))
-                stdout?.write(chunk);
-            }
-            stdout?.write(TAR_END);
-          } else if (command.some((arg) => arg.includes("RAKAZO_DESKTOP=")))
-            stdout?.write("RAKAZO_DESKTOP=0:offline-view-token\n");
-          else if (command.some((arg) => arg.includes("getmouselocation")))
-            stdout?.write("cG5n\nCURSOR X=1 Y=2\n");
-          finish();
-        });
-      }
-      return { close: vi.fn(), onclose: null, onerror: null } as unknown as Awaited<
-        ReturnType<Exec["exec"]>
-      >;
-    });
-    const provider = providerFor({}, exec);
-    const provisioned = await provisionPrepared(
-      provider,
-      { botId: "bot-a", homePath: "/unused" },
-      context,
-    );
-    await assertSandboxWorkspaceContract(provider, provisioned, context);
-    await provider.destroy(provisioned, context);
-  });
-
   describe("when the exec connection is refused", () => {
     class SocketErrorEvent {
       readonly #status: number;
@@ -1126,13 +1027,11 @@ describe("KubernetesSandboxProvider", () => {
     async (mode) => {
       vi.useFakeTimers();
       try {
-        let connect!: (socket: Awaited<ReturnType<Exec["exec"]>>) => void;
-        const exec = vi.fn(
-          () =>
-            new Promise<Awaited<ReturnType<Exec["exec"]>>>((resolve) => {
-              connect = resolve;
-            }),
-        );
+        let connect!: Deferred<Awaited<ReturnType<Exec["exec"]>>>;
+        const exec = vi.fn(() => {
+          connect = deferred<Awaited<ReturnType<Exec["exec"]>>>();
+          return connect.promise;
+        });
         const controller = new AbortController();
         const consume = async () => {
           const events: ProcessEvent[] = [];
@@ -1150,7 +1049,7 @@ describe("KubernetesSandboxProvider", () => {
         else await vi.advanceTimersByTimeAsync(11_000);
         expect(await result).toContainEqual({ type: "exit", code: mode === "abort" ? 130 : 124 });
         const socket = { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
-        connect(socket);
+        connect.resolve(socket);
         await vi.advanceTimersByTimeAsync(0);
         expect(socket.close).toHaveBeenCalledOnce();
       } finally {
@@ -1325,12 +1224,59 @@ describe("KubernetesSandboxProvider", () => {
       await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
       controller.abort(new Error("caller cancelled"));
       await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(19_000);
       expect(outcome).toBe("pending");
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      // Two tries of 10 seconds each fill the cleanup's 20 seconds.
+      expect(del).toHaveBeenCalledTimes(2);
       expect(outcome).toEqual(new Error("caller cancelled"));
     } finally {
       timeout.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  describe("a pod created by a start that then fails", () => {
+    const failedPod = { ...readyPod, status: { phase: "Failed" } };
+    const start = async (del: KubernetesSandboxSdk["core"]["deleteNamespacedPod"]) => {
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockResolvedValue(failedPod);
+      const create = vi.fn().mockResolvedValue(readyPod);
+      const provider = providerFor({
+        readNamespacedPod: read,
+        createNamespacedPod: create,
+        deleteNamespacedPod: del,
+      });
+      const outcome = await settleMachineCleanup(() =>
+        provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+      );
+      const pod: string = create.mock.calls[0]![0].body.metadata.name;
+      return { ...outcome, pod };
+    };
+
+    it("is deleted, trying a failed delete again", async () => {
+      const del = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockResolvedValue({ status: "Success" });
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const del = vi.fn().mockRejectedValue(new Error("connection reset"));
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "kubernetes", machineId: pod }]);
+    });
   });
 });

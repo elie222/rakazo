@@ -1,4 +1,6 @@
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrowserNotificationApi,
@@ -166,6 +168,41 @@ describe("browser notifications", () => {
     });
   });
 
+  it("keeps an ask-card notification when a later message arrives", () => {
+    const show = vi.fn();
+    const notifiedEventIds = new Set<string>();
+    const deliver = (next: ReturnType<typeof event>) =>
+      deliverBrowserNotification(next, "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds,
+        show,
+      });
+    expect(
+      deliver(
+        event({
+          id: "ask-1",
+          payload: {
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Which repo?", status: "pending" }],
+          },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(
+      deliver(
+        event({
+          id: "plain-2",
+          payload: { role: "bot", blocks: [{ kind: "text", text: "Saturday works." }] },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(show).toHaveBeenNthCalledWith(1, "Chief", "Which repo?", "thread-1:ask");
+    expect(show).toHaveBeenNthCalledWith(2, "Chief", "Saturday works.", "thread-1");
+  });
+
   it("dedupes a replay but delivers another message from the same run", () => {
     const notifiedEventIds = new Set<string>();
     const show = vi.fn().mockImplementationOnce(() => {
@@ -193,20 +230,18 @@ describe("browser notifications", () => {
   });
 
   it("allows a later send gesture to retry a dismissed permission prompt", async () => {
-    let resolvePermission: ((permission: "default") => void) | undefined;
-    const requestPermission = vi.fn(
-      () =>
-        new Promise<"default">((resolve) => {
-          resolvePermission = resolve;
-        }),
-    );
+    let resolvePermission: Deferred<"default"> | undefined;
+    const requestPermission = vi.fn(() => {
+      resolvePermission = deferred();
+      return resolvePermission.promise;
+    });
     const api: BrowserNotificationApi = { permission: "default", requestPermission };
 
     requestBrowserNotificationPermission(api);
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(1);
 
-    resolvePermission?.("default");
+    resolvePermission?.resolve("default");
     await Promise.resolve();
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(2);

@@ -13,7 +13,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
+import { currentApiBase, selectedSpaceId } from "../../lib/api";
 import { getCachedAppearancePreference, setAppearancePreference } from "../../lib/appearance";
 import {
   getHapticsEnabled,
@@ -35,6 +35,7 @@ import {
 import type { MobileMe } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
 import { registerPushToken } from "../../lib/push";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
 import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
@@ -46,8 +47,10 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { useScreenQuery } from "../../lib/screen-query";
 import { loadSessionToken } from "../../lib/session";
 import { createSettingsPageStyles } from "../../lib/settings-page-styles";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -60,8 +63,18 @@ export default function General() {
   const router = useRouter();
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
-  const [me, setMe] = useState<MobileMe | null>(null);
-  const botStyleRequest = useRef(0);
+  // Read on every visit, so a failed read retries when the page is shown again.
+  const meRead = accountRpcQuery("me");
+  const me = useScreenQuery(meRead).data;
+  const botStyle = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (botAvatarSet: NonNullable<MobileMe["botAvatarSet"]>, send) => {
+      // The answer is the account as saved, so the picker keeps it if the read after it fails.
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", { botAvatarSet }));
+    },
+    stale: [meRead.queryKey],
+    onFailed: () => Alert.alert(t`Couldn't update bot style`),
+  });
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -104,21 +117,6 @@ export default function General() {
       ]);
     });
   }
-
-  // Read on every visit, so a failed read retries when the page is shown again.
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void rpc("me")
-        .then((next) => {
-          if (active) setMe(next);
-        })
-        .catch(() => undefined);
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
 
   useEffect(() => {
     if (Platform.OS === "android") {
@@ -188,22 +186,7 @@ export default function General() {
   }
 
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
-    if (!me || !botAvatarSet) return;
-    const previous = me.botAvatarSet;
-    // Only the latest tap's reply may land, so a slower earlier save can't undo it.
-    const request = ++botStyleRequest.current;
-    setMe((current) => (current ? { ...current, botAvatarSet } : current));
-    rpc("preferences/update", { botAvatarSet })
-      .then((next) => {
-        // Take only the style, so an older snapshot can't undo another edit.
-        if (request !== botStyleRequest.current) return;
-        setMe((current) => (current ? { ...current, botAvatarSet: next.botAvatarSet } : next));
-      })
-      .catch(() => {
-        if (request !== botStyleRequest.current) return;
-        setMe((current) => (current ? { ...current, botAvatarSet: previous } : current));
-        Alert.alert(t`Couldn't update bot style`);
-      });
+    if (me && botAvatarSet) botStyle.run(botAvatarSet);
   }
 
   return (
@@ -232,12 +215,13 @@ export default function General() {
             <SettingsLabel>{t`Bot style`}</SettingsLabel>
             <NativeSegmentedControl
               accessibilityLabel={t`Bot style`}
+              disabled={botStyle.pending}
               onChange={updateBotStyle}
               options={[
                 { value: "organic", label: t`Original` },
                 { value: "rakazo", label: t`Rakazo` },
               ]}
-              value={me.botAvatarSet ?? ""}
+              value={(botStyle.pending ? botStyle.input : me.botAvatarSet) ?? ""}
             />
           </View>
         ) : null}

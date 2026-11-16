@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import { recordUsage, runAsSystem } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { runAutoReviewJudge } from "../../adapters/src/auto-review.js";
@@ -24,15 +25,9 @@ const usage = {
 };
 
 describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
-  it("accounts parent, subagent, failed and background calls once and retains spend after clear/delete", async () => {
-    let openedCancellation = () => {};
-    const cancellationStarted = new Promise<void>((resolve) => {
-      openedCancellation = resolve;
-    });
-    let openedDeletion = () => {};
-    const deletionStarted = new Promise<void>((resolve) => {
-      openedDeletion = resolve;
-    });
+  it("accounts parent, independent subagent, failed and background calls once and retains spend after clear/delete", async () => {
+    const cancellationStarted = deferred();
+    const deletionStarted = deferred();
     const model = await startModelEmulator({
       steps: [
         {
@@ -47,12 +42,13 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
         { expect: () => {}, response: { type: "text", text: "Fixture inspected." }, usage },
         { expect: () => {}, response: { type: "text", text: "Done." }, usage },
+        { expect: () => {}, response: { type: "text", text: "Helper result received." }, usage },
         // The cut reply is continued once; the continuation is cut too, which fails the run.
         { expect: () => {}, response: { type: "disconnect", text: "Partial result." }, usage },
         { expect: () => {}, response: { type: "disconnect", text: " More." }, usage },
         {
           expect: () => {},
-          response: { type: "hold", text: "Still working.", onOpen: openedCancellation },
+          response: { type: "hold", text: "Still working.", onOpen: cancellationStarted.resolve },
           usage,
         },
         {
@@ -77,7 +73,11 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
         {
           expect: () => {},
-          response: { type: "hold", text: "Deleting while pending.", onOpen: openedDeletion },
+          response: {
+            type: "hold",
+            text: "Deleting while pending.",
+            onOpen: deletionStarted.resolve,
+          },
           usage,
         },
       ],
@@ -177,6 +177,17 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           interval: 100,
         })
         .toBe("completed");
+      const helper = await db.run.findFirstOrThrow({ where: { botId: bot.id, trigger: "helper" } });
+      // An independent helper wakes the parent in a separate run after it completes.
+      await expect
+        .poll(
+          async () =>
+            db.run.count({
+              where: { botId: bot.id, trigger: "helper_result", status: "completed" },
+            }),
+          { timeout: 15000, interval: 100 },
+        )
+        .toBe(1);
       const failed = await rpc<{ runId: string }>("threads/send", {
         botId: bot.id,
         text: "Inspect the failure fixture.",
@@ -191,7 +202,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         botId: bot.id,
         text: "Inspect the cancellation fixture.",
       });
-      await cancellationStarted;
+      await cancellationStarted.promise;
       await rpc("threads/stop", { botId: bot.id });
       // The API marks durable cancellation; production workers may learn it at lease renewal.
       // Abort explicitly here to deterministically exercise the producer-side accounting boundary.
@@ -247,8 +258,8 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         where: { botId: bot.id },
         orderBy: { createdAt: "asc" },
       });
-      expect(rows).toHaveLength(8);
-      expect(new Set(rows.map((row) => row.callId)).size).toBe(8);
+      expect(rows).toHaveLength(9);
+      expect(new Set(rows.map((row) => row.callId)).size).toBe(9);
       const delivered = rows[0]!;
       const replayEvent = {
         type: "usage" as const,
@@ -269,7 +280,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           }),
         ),
       );
-      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(8);
+      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(9);
       type Summary = {
         totalTokens: number | null;
         modelCalls: number;
@@ -283,17 +294,17 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         }[];
       };
       const summary = await rpc<Summary>("usage/summary");
-      expect(summary).toMatchObject({ totalTokens: 1040, modelCalls: 8, runs: 3 });
-      expect(summary.costUsd).toBeCloseTo(0.00096);
+      expect(summary).toMatchObject({ totalTokens: 1170, modelCalls: 9, runs: 5 });
+      expect(summary.costUsd).toBeCloseTo(0.00108);
       expect(summary.models).toHaveLength(1);
       expect(summary.models[0]).toMatchObject({
         model: delivered.model,
-        modelCalls: 8,
-        totalTokens: 1040,
+        modelCalls: 9,
+        totalTokens: 1170,
       });
-      expect(summary.models[0]?.costUsd).toBeCloseTo(0.00096);
+      expect(summary.models[0]?.costUsd).toBeCloseTo(0.00108);
       // A call without a price makes its model's cost and the overall cost unknown, not zero.
-      const unpriced = await db.usageRecord.create({
+      await db.usageRecord.create({
         data: {
           spaceId: delivered.spaceId,
           userId: delivered.userId,
@@ -305,16 +316,16 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
       });
       const mixed = await rpc<Summary>("usage/summary");
-      expect(mixed).toMatchObject({ totalTokens: 1042, modelCalls: 9, runs: 3, costUsd: null });
+      expect(mixed).toMatchObject({ totalTokens: 1172, modelCalls: 10, runs: 5, costUsd: null });
       expect(
         mixed.models.map(({ model, modelCalls, totalTokens }) => [model, modelCalls, totalTokens]),
       ).toEqual([
-        [delivered.model, 8, 1040],
+        [delivered.model, 9, 1170],
         ["unpriced-model", 1, 2],
       ]);
-      expect(mixed.models[0]?.costUsd).toBeCloseTo(0.00096);
+      expect(mixed.models[0]?.costUsd).toBeCloseTo(0.00108);
       expect(mixed.models[1]?.costUsd).toBeNull();
-      await db.usageRecord.delete({ where: { id: unpriced.id } });
+
       for (const row of rows)
         expect(row).toMatchObject({
           inputTokens: 60,
@@ -326,23 +337,23 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           costUsd: 0.00012,
           costSource: "provider-reported",
         });
-      expect(rows.filter((row) => row.operationKind === "answer")).toHaveLength(5);
+      expect(rows.filter((row) => row.operationKind === "answer")).toHaveLength(6);
       expect(rows.find((row) => row.operationKind === "subagent")).toMatchObject({
-        parentRunId: first.runId,
-        runId: first.runId,
-        agentId: expect.any(String),
+        parentRunId: helper.id,
+        runId: helper.id,
+        agentId: null,
       });
       expect(rows.find((row) => row.operationKind === "compaction")).toMatchObject({
         runId: null,
         parentRunId: null,
       });
       await rpc("threads/clear", { botId: bot.id });
-      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(8);
+      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(9);
       const deletedWhilePending = await rpc<{ runId: string }>("threads/send", {
         botId: bot.id,
         text: "Inspect the deletion fixture.",
       });
-      await deletionStarted;
+      await deletionStarted.promise;
       await rpc("bots/remove", { botId: bot.id, deleteMemories: false });
       await handles.runtime.abort(deletedWhilePending.runId);
       await expect
@@ -353,7 +364,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         .toBe(1);
       model.assertComplete();
       const retained = await db.usageRecord.findMany({ where: { botId: bot.id } });
-      expect(retained).toHaveLength(9);
+      expect(retained).toHaveLength(10);
       expect(retained.find((row) => row.parentRunId === deletedWhilePending.runId)).toMatchObject({
         inputTokens: 60,
         cacheReadTokens: 40,
@@ -361,7 +372,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         costUsd: 0.00012,
         runId: deletedWhilePending.runId,
       });
-      expect(retained.filter((row) => row.parentRunId === first.runId)).toHaveLength(4);
+      expect(retained.filter((row) => row.parentRunId === first.runId)).toHaveLength(3);
       expect(retained.every((row) => row.runId === row.parentRunId)).toBe(true);
     } finally {
       await stop?.();

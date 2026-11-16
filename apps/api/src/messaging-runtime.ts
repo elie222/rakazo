@@ -22,7 +22,10 @@ import { createTeamChatInboundHandler } from "./team-chat-inbound.js";
 import { prefersTeamChatSurface } from "./team-chat-startup.js";
 import { transcribeInboundVoice } from "./voice.js";
 
-/** Messaging and team chat for one API process; `stop` ends polling and receipts. */
+/**
+ * Messaging and team chat for one API process; `stopReceiving` ends polling while replies still
+ * send, and `stop` also ends receipts.
+ */
 export async function startMessagingRuntime({
   app,
   prisma,
@@ -49,7 +52,7 @@ export async function startMessagingRuntime({
   messagingInstallations: MessagingInstallations | undefined;
   delivery: MessagingDelivery;
   teamChat: TeamChat;
-}): Promise<{ stop: () => Promise<void> }> {
+}): Promise<{ stopReceiving: () => Promise<void>; stop: () => Promise<void> }> {
   // Shared with stop so a shutdown during retry delays does not restart polling.
   let messagingStopped = false;
   let clearMessagingRetryDelay: (() => void) | undefined;
@@ -70,12 +73,8 @@ export async function startMessagingRuntime({
     jobs,
     delivery,
     sandbox,
-    provision: (request, policyEnv) => provisionMessagingIdentity(prisma, request, policyEnv),
+    provision: (request) => provisionMessagingIdentity(prisma, request),
     openSignup: env.messagingOpenSignup,
-    signupPolicy: {
-      signupsEnabled: env.signupsEnabled,
-      signupAllowlist: env.signupAllowlist,
-    },
     acknowledge: receipts.acknowledge,
     storeAttachment,
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
@@ -175,12 +174,17 @@ export async function startMessagingRuntime({
       }
     }
   })();
+  const stopReceiving = async () => {
+    messagingStopped = true;
+    clearMessagingRetryDelay?.();
+    await messagingInitTask.catch(() => undefined);
+    await messaging.stopReceiving?.();
+  };
   return {
+    stopReceiving,
     stop: async () => {
-      messagingStopped = true;
-      clearMessagingRetryDelay?.();
+      await stopReceiving();
       receipts.stop();
-      await messagingInitTask.catch(() => undefined);
       await messaging.shutdown?.();
     },
   };

@@ -1,6 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import type { StuckWorkStatus } from "@rakazo/core";
+import type { ExpirableWaitStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -12,13 +12,14 @@ import {
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { clearEndedRunState } from "./run-secrets.js";
+import { publishSpaceChange } from "./space-changes.js";
 import { createPendingSteeringRun, discardAnsweredSteering } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export interface ExpireStuckRunInput {
   runId: string;
   threadId: string;
-  status: StuckWorkStatus;
+  status: ExpirableWaitStatus;
   /** Episode clock. A newer claim or answer changes updatedAt and must win. */
   updatedAt: Date;
   now: Date;
@@ -157,7 +158,7 @@ export async function endTakeoverWaits(
 ): Promise<number> {
   const waits = await prisma.run.findMany({
     where: { id: { in: runIds }, status: "waiting_takeover" },
-    select: { id: true, threadId: true, updatedAt: true },
+    select: { id: true, spaceId: true, threadId: true, updatedAt: true },
   });
   let ended = 0;
   for (const wait of waits) {
@@ -177,6 +178,7 @@ export async function endTakeoverWaits(
     if (!expired) continue;
     ended += 1;
     await notifyRealtime(realtime, wait.threadId, expired.seq);
+    await publishSpaceChange(realtime, wait.spaceId, "runs");
   }
   return ended;
 }

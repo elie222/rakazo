@@ -1,15 +1,12 @@
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import {
-  computerControlExpireJob,
-  computerControlExpireJobKey,
-  runContinueJob,
-} from "@rakazo/adapter-kit";
+import { computerControlExpireJob, computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import { COMPUTER_CONTROL_LEASE_MS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { wakeRun } from "./wake-run.js";
 
 // Who holds a computer's user control is decided in one place, next to the computer rows.
 export {
@@ -38,13 +35,7 @@ export async function enqueueTakeoverContinuation(
   jobs: JobPublisher,
   runId: string | null,
 ): Promise<void> {
-  if (!runId) return;
-  try {
-    await jobs.enqueue(runContinueJob(runId));
-  } catch (error) {
-    // The release is durable; reconciliation will retry this queued run.
-    getLogger().error("takeover continuation enqueue", error);
-  }
+  if (runId) await wakeRun(jobs, runId);
 }
 
 /**

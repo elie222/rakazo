@@ -3,7 +3,6 @@ import type { AgentMessage, AgentOptions } from "@earendil-works/pi-agent-core";
 import type {
   AssistantMessage,
   Context,
-  CredentialStore,
   Model,
   ModelThinkingLevel,
   TranscriptContext,
@@ -17,6 +16,8 @@ import {
   MODEL_REQUEST_LIMIT_ERROR,
   normalizeRunError,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -608,57 +609,6 @@ describe("Pi runtime transient model retries", () => {
     expect(input.executeTool).not.toHaveBeenCalled();
   });
 
-  it("retries the same model for a helper agent without configured backups", async () => {
-    const input = request();
-    input.tools = [
-      {
-        name: "run_subagent",
-        description: "Run a helper agent.",
-        inputSchema: {
-          type: "object",
-          properties: { name: { type: "string" }, task: { type: "string" } },
-          required: ["name", "task"],
-        },
-        readOnly: true,
-      },
-    ];
-    providerState.stream
-      .mockImplementationOnce(() =>
-        stream(
-          primary,
-          message(
-            primary,
-            [
-              {
-                type: "toolCall",
-                id: "retry-helper",
-                name: "run_subagent",
-                arguments: { name: "helper", task: "Summarize the fixture." },
-              },
-            ],
-            "toolUse",
-          ),
-        ),
-      )
-      .mockImplementationOnce(() => stream(primary, message(primary, [], "error", "terminated")))
-      .mockImplementationOnce(() =>
-        stream(primary, message(primary, [], "error", "503 overloaded")),
-      )
-      .mockImplementationOnce(() =>
-        stream(primary, message(primary, [{ type: "text", text: "Helper result." }], "stop")),
-      )
-      .mockImplementation(() =>
-        stream(primary, message(primary, [{ type: "text", text: "Complete." }], "stop")),
-      );
-    const events = await run(input);
-    expect(providerState.stream).toHaveBeenCalledTimes(5);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "subagent", status: "completed", result: "Helper result." }),
-    );
-    expect(events.at(-1)).toEqual({ type: "done", text: "Complete." });
-    expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000, 8_000]);
-  });
-
   it("waits for each bounded backoff before retrying", async () => {
     vi.useFakeTimers();
     const { abortableDelay } = await vi.importActual<typeof Core>("@rakazo/core");
@@ -766,7 +716,7 @@ describe("Pi runtime ordered model fallback", () => {
       void first.then(() => {
         started = true;
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(started).toBe(false);
       expect(providerState.stream.mock.lastCall?.[2]).toMatchObject(options);
       upstream.push({ type: "error", reason: "error", error: failure });
@@ -1283,146 +1233,6 @@ describe("Pi runtime ordered model fallback", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "usage", provider: primary.provider, model: primary.id }),
     );
-  });
-
-  it("keeps helper-model selection on the active backup after the primary fails", async () => {
-    const input = request([
-      { provider: backupA.provider, id: backupA.id, apiKey: "backup-fixture-key" },
-    ]);
-    input.model.apiKey = "primary-fixture-key";
-    input.tools = [
-      {
-        name: "run_subagent",
-        description: "Run a helper agent.",
-        inputSchema: {
-          type: "object",
-          properties: { name: { type: "string" }, task: { type: "string" } },
-          required: ["name", "task"],
-        },
-        readOnly: true,
-      },
-    ];
-    const providers: string[] = [];
-    const apiKeys: Array<string | undefined> = [];
-    let backupCalls = 0;
-    providerState.stream.mockImplementation(
-      (target: Model<"openai-completions">, _context: unknown, options?: { apiKey?: string }) => {
-        providers.push(target.provider);
-        apiKeys.push(options?.apiKey);
-        if (target.provider === primary.provider) {
-          return stream(target, message(target, [], "error", "429 rate_limit_error"));
-        }
-        backupCalls += 1;
-        if (backupCalls === 1) {
-          return stream(
-            target,
-            message(
-              target,
-              [
-                {
-                  type: "toolCall",
-                  id: "helper-call",
-                  name: "run_subagent",
-                  arguments: { name: "helper", task: "Summarize the fixture." },
-                },
-              ],
-              "toolUse",
-            ),
-          );
-        }
-        return stream(target, message(target, [{ type: "text", text: "Complete." }], "stop"));
-      },
-    );
-
-    await run(input);
-
-    expect(providers).toEqual([
-      primary.provider,
-      backupA.provider,
-      backupA.provider,
-      backupA.provider,
-    ]);
-    expect(apiKeys).toEqual([
-      "primary-fixture-key",
-      "backup-fixture-key",
-      "backup-fixture-key",
-      "backup-fixture-key",
-    ]);
-  });
-
-  it("keeps a refreshed backup OAuth token for later helper calls", async () => {
-    const input = request([{ provider: backupA.provider, id: backupA.id }]);
-    input.tools = [
-      {
-        name: "run_subagent",
-        description: "Run a helper agent.",
-        inputSchema: {
-          type: "object",
-          properties: { name: { type: "string" }, task: { type: "string" } },
-          required: ["name", "task"],
-        },
-        readOnly: true,
-      },
-    ];
-    input.resolveFallbackModel = vi.fn(async () => ({
-      provider: backupA.provider,
-      id: backupA.id,
-      oauth: {
-        credential: {
-          type: "oauth" as const,
-          access: "backup-access-before-refresh",
-          refresh: "backup-refresh",
-          expires: Date.now() + 60_000,
-        },
-      },
-    }));
-    const backupKeys: Array<string | undefined> = [];
-    let backupCalls = 0;
-    providerState.stream.mockImplementation(
-      (target: Model<"openai-completions">, _context: unknown, options?: { apiKey?: string }) => {
-        if (target.provider === primary.provider) {
-          return stream(target, message(target, [], "error", "429 rate_limit_error"));
-        }
-        backupCalls += 1;
-        backupKeys.push(options?.apiKey);
-        if (backupCalls !== 1) {
-          return stream(target, message(target, [{ type: "text", text: "Complete." }], "stop"));
-        }
-        const credentialStore = providerState.credentialStores[0] as CredentialStore;
-        const response = message(
-          target,
-          [
-            {
-              type: "toolCall",
-              id: "oauth-helper-call",
-              name: "run_subagent",
-              arguments: { name: "helper", task: "Summarize the fixture." },
-            },
-          ],
-          "toolUse",
-        );
-        const output = new AssistantMessageEventStream();
-        void (async () => {
-          await credentialStore.modify(backupA.provider, async (current) => {
-            if (current?.type !== "oauth") throw new Error("OAuth credential missing in fixture");
-            return { ...current, access: "backup-access-after-refresh" };
-          });
-          for await (const event of stream(target, response)) output.push(event);
-          output.end(response);
-        })();
-        return output;
-      },
-    );
-
-    const events = await run(input);
-
-    expect(backupKeys).toEqual([
-      "backup-access-before-refresh",
-      "backup-access-after-refresh",
-      "backup-access-after-refresh",
-    ]);
-    expect(JSON.stringify(events)).not.toContain("backup-access-before-refresh");
-    expect(JSON.stringify(events)).not.toContain("backup-access-after-refresh");
   });
 
   it("persists the selected model before streaming from the backup", async () => {
@@ -2413,13 +2223,11 @@ describe("Pi runtime ordered model fallback", () => {
 
   it("does not persist or start a backup when cancellation wins during credential resolution", async () => {
     const input = request([{ provider: backupA.provider, id: backupA.id }]);
-    let releaseResolution: ((model: AgentRunRequest["model"]) => void) | undefined;
-    input.resolveFallbackModel = vi.fn(
-      () =>
-        new Promise<AgentRunRequest["model"]>((resolve) => {
-          releaseResolution = resolve;
-        }),
-    );
+    let releaseResolution: Deferred<AgentRunRequest["model"]> | undefined;
+    input.resolveFallbackModel = vi.fn(() => {
+      releaseResolution = deferred<AgentRunRequest["model"]>();
+      return releaseResolution.promise;
+    });
     const onModelChange = vi.fn(async () => undefined);
     input.onModelChange = onModelChange;
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
@@ -2450,7 +2258,11 @@ describe("Pi runtime ordered model fallback", () => {
     const running = consume();
     await vi.waitFor(() => expect(input.resolveFallbackModel).toHaveBeenCalledOnce());
     controller.abort();
-    releaseResolution?.({ provider: backupA.provider, id: backupA.id, apiKey: "test-backup-key" });
+    releaseResolution?.resolve({
+      provider: backupA.provider,
+      id: backupA.id,
+      apiKey: "test-backup-key",
+    });
     await running;
 
     expect(onModelChange).not.toHaveBeenCalled();

@@ -4,21 +4,11 @@ import path from "node:path";
 import type { PeerCertificate } from "node:tls";
 import { rootCertificates } from "node:tls";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { encodeTarEntry } from "./exec-computer.js";
-import type {
-  IncusClient,
-  IncusResponse,
-  IncusSocket,
-  IncusSocketHandlers,
-} from "./incus-sandbox.js";
-import {
-  IncusError,
-  IncusSandboxProvider,
-  incusTlsOptions,
-  ociImageSource,
-} from "./incus-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import { IncusError, incusTlsOptions, ociImageSource } from "./incus-sandbox.js";
+import { FakeIncus, providerFor, running } from "./incus-sandbox.test-support.js";
+import { MachineRecords, settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -35,260 +25,6 @@ const computer: ComputerRef = {
   providerRef: "box",
 };
 
-type Output = { stdout?: string | Buffer; stderr?: string | Buffer; code?: number };
-/** Runs one exec in the fake: `hang` waits until the client signals or closes the command. */
-type Runner = (command: string[], input: Buffer, tty: boolean) => Output | "hang";
-
-interface Instance {
-  status: string;
-  ephemeral: boolean;
-  config: Record<string, string>;
-  state?: {
-    network: Record<string, { addresses: { family: string; address: string; scope: string }[] }>;
-  };
-}
-
-interface Exec {
-  command: string[];
-  body: Record<string, unknown>;
-  signals: number[];
-  input: Buffer[];
-  inputClosed: boolean;
-  closed: Set<string>;
-  handlers: Map<string, IncusSocketHandlers>;
-  finish: (code: number) => void;
-}
-
-function running(botId = "bot-a", address = "10.0.0.8"): Instance {
-  return {
-    status: "Running",
-    ephemeral: true,
-    config: { "user.rakazo-bot-id": botId },
-    state: {
-      network: {
-        lo: { addresses: [{ family: "inet", address: "127.0.0.1", scope: "local" }] },
-        eth0: {
-          addresses: [
-            { family: address.includes(":") ? "inet6" : "inet", address, scope: "global" },
-            { family: "inet6", address: "fe80::1", scope: "link" },
-          ],
-        },
-      },
-    },
-  };
-}
-
-/** An in-memory Incus API with the behaviour the provider relies on, as observed on Incus 7. */
-class FakeIncus implements IncusClient {
-  readonly instances = new Map<string, Instance>();
-  readonly requests: { method: string; path: string; body: unknown }[] = [];
-  readonly execs: Exec[] = [];
-  /** Lets a test change an instance between the provider's reads. */
-  onRead?: (name: string) => void;
-  failCreate?: (name: string) => void;
-  /** Creates the instance, then fails the operation, as a start that fails does. */
-  failStart?: boolean;
-  /** Holds instance creation until it settles, as an image download does. */
-  createGate?: Promise<void>;
-  /** Holds an exec's control stream; Incus starts the command without it. */
-  controlGate?: Promise<void>;
-  private readonly operations = new Map<string, Promise<Record<string, unknown>>>();
-  /** Operations still creating an instance, by id, as Incus lists them. */
-  private readonly creating = new Map<string, string>();
-  private readonly secrets = new Map<string, { exec: Exec; fd: string }>();
-  private next = 0;
-
-  constructor(private readonly runner: Runner = () => ({})) {}
-
-  async request(
-    method: string,
-    path: string,
-    body: unknown,
-    signal: AbortSignal,
-  ): Promise<IncusResponse> {
-    signal.throwIfAborted();
-    this.requests.push({ method, path, body });
-    const url = new URL(path, "https://incus.test");
-    const parts = url.pathname.split("/").slice(2).map(decodeURIComponent);
-    if (parts[0] === "operations" && parts[2] === "wait") {
-      return { metadata: await abortable(this.operations.get(parts[1]!)!, signal) };
-    }
-    if (parts[0] === "operations" && !parts[1]) {
-      const running = [...this.creating].map(([id, name]) => ({
-        id,
-        status_code: 103,
-        resources: { instances: [`/1.0/instances/${name}?project=default`] },
-      }));
-      return { metadata: { running } };
-    }
-    if (parts[0] !== "instances") throw new IncusError("not found", 404);
-    const name = parts[1];
-    if (method === "GET" && !name) {
-      const [, botId] =
-        /^config\.user\.rakazo-bot-id eq (\S+)$/.exec(url.searchParams.get("filter") ?? "") ?? [];
-      return {
-        metadata: [...this.instances]
-          .filter(([, instance]) => instance.config["user.rakazo-bot-id"] === botId)
-          .map(([instanceName, instance]) => ({
-            name: instanceName,
-            ...structuredClone(instance),
-          })),
-      };
-    }
-    if (method === "POST" && !name) return this.create(body as Record<string, unknown>);
-    if (!name) throw new IncusError("not found", 404);
-    this.onRead?.(name);
-    const instance = this.instances.get(name);
-    if (!instance)
-      throw new IncusError(`Failed to fetch instance "${name}": Instance not found`, 404);
-    if (method === "GET" && !parts[2]) return { metadata: { name, ...structuredClone(instance) } };
-    if (method === "PUT" && parts[2] === "state") {
-      if (instance.status !== "Running")
-        throw new IncusError("The instance is already stopped", 400);
-      if (instance.ephemeral) this.instances.delete(name);
-      else instance.status = "Stopped";
-      return this.operation(Promise.resolve({ status: "Success", status_code: 200 }));
-    }
-    if (method === "DELETE" && !parts[2]) {
-      if (instance.status === "Running") throw new IncusError("Instance is running", 400);
-      this.instances.delete(name);
-      return this.operation(Promise.resolve({ status: "Success", status_code: 200 }));
-    }
-    if (method === "POST" && parts[2] === "exec") {
-      if (instance.status !== "Running") throw new IncusError("Instance is not running", 400);
-      return this.exec(body as Record<string, unknown>);
-    }
-    throw new IncusError("not implemented", 501);
-  }
-
-  async websocket(path: string, handlers: IncusSocketHandlers): Promise<IncusSocket> {
-    const url = new URL(path, "https://incus.test");
-    this.requests.push({ method: "WEBSOCKET", path, body: undefined });
-    const entry = this.secrets.get(url.searchParams.get("secret") ?? "");
-    if (!entry) throw new Error("unknown websocket secret");
-    const { exec, fd } = entry;
-    if (fd === "control") await this.controlGate;
-    exec.handlers.set(fd, handlers);
-    queueMicrotask(() => this.maybeStart(exec));
-    return {
-      send: async (data) => {
-        if (fd === "control") exec.signals.push(JSON.parse(String(data)).signal);
-        else exec.input.push(Buffer.from(data));
-        if (fd === "control") exec.finish(128 + exec.signals.at(-1)!);
-      },
-      close: () => {
-        if (exec.closed.has(fd)) return;
-        exec.closed.add(fd);
-        if (fd === "0") {
-          exec.inputClosed = true;
-          this.maybeStart(exec);
-        }
-      },
-    };
-  }
-
-  private create(body: Record<string, unknown>): IncusResponse {
-    const name = String(body.name);
-    if (this.instances.has(name)) throw new IncusError(`Instance "${name}" already exists`, 500);
-    this.failCreate?.(name);
-    const config = body.config as Record<string, string>;
-    const created = (this.createGate ?? Promise.resolve()).then(() => {
-      this.instances.set(name, {
-        ...running(config["user.rakazo-bot-id"]),
-        ...(this.failStart ? { status: "Stopped" } : {}),
-        config: { ...config },
-      });
-      return this.failStart
-        ? { status: "Failure", status_code: 400, err: "Failed to start instance" }
-        : { status: "Success", status_code: 200 };
-    });
-    const response = this.operation(created);
-    const id = response.operation!.split("/").pop()!;
-    this.creating.set(id, name);
-    void created.finally(() => this.creating.delete(id));
-    return response;
-  }
-
-  private exec(body: Record<string, unknown>): IncusResponse {
-    const tty = body.interactive === true;
-    let finish!: (code: number) => void;
-    const done = new Promise<number>((resolve) => (finish = resolve));
-    const exec: Exec = {
-      command: body.command as string[],
-      body,
-      signals: [],
-      input: [],
-      inputClosed: false,
-      closed: new Set(),
-      handlers: new Map(),
-      finish: (code) => finish(code),
-    };
-    this.execs.push(exec);
-    const fds = Object.fromEntries(
-      (tty ? ["0", "control"] : ["0", "1", "2", "control"]).map((fd) => {
-        const secret = `secret-${this.next++}`;
-        this.secrets.set(secret, { exec, fd });
-        return [fd, secret];
-      }),
-    );
-    const finished = done.then(async (code) => {
-      // An interactive command ends only once the client closes its stream.
-      if (tty) await vi.waitFor(() => expect(exec.closed.has("0")).toBe(true));
-      return { status: "Success", status_code: 200, metadata: { return: code } };
-    });
-    return { ...this.operation(finished), metadata: { metadata: { fds } } };
-  }
-
-  private started = new WeakSet<Exec>();
-
-  private maybeStart(exec: Exec) {
-    const tty = exec.body.interactive === true;
-    const required = tty ? ["0"] : ["0", "1", "2"];
-    if (!required.every((fd) => exec.handlers.has(fd))) return;
-    if (!tty && !exec.inputClosed) return;
-    if (this.started.has(exec)) return;
-    this.started.add(exec);
-    const result = this.runner(exec.command, Buffer.concat(exec.input), tty);
-    if (result === "hang") return;
-    const emit = (fd: string, data: string | Buffer | undefined) => {
-      if (data?.length) exec.handlers.get(fd)?.message(Buffer.from(data), true);
-    };
-    if (tty) {
-      emit("0", result.stdout);
-      exec.handlers.get("0")?.message(Buffer.alloc(0), false);
-    } else {
-      emit("1", result.stdout);
-      emit("2", result.stderr);
-      exec.handlers.get("1")?.close();
-      exec.handlers.get("2")?.close();
-    }
-    exec.finish(result.code ?? 0);
-  }
-
-  private operation(result: Promise<Record<string, unknown>>): IncusResponse {
-    const id = `op-${this.next++}`;
-    this.operations.set(id, result);
-    return { metadata: {}, operation: `/1.0/operations/${id}` };
-  }
-}
-
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-    promise.then(resolve, reject);
-  });
-}
-
-function providerFor(
-  fake = new FakeIncus(),
-  options: Partial<ConstructorParameters<typeof IncusSandboxProvider>[0]> = {},
-) {
-  return new IncusSandboxProvider(
-    { url: "https://incus.test:8443", clientCert: "cert", clientKey: "key", ...options },
-    fake,
-  );
-}
-
 async function collect(events: AsyncIterable<ProcessEvent>) {
   const collected: ProcessEvent[] = [];
   for await (const event of events) collected.push(event);
@@ -296,64 +32,6 @@ async function collect(events: AsyncIterable<ProcessEvent>) {
 }
 
 describe("IncusSandboxProvider", () => {
-  it("passes the shared offline sandbox workspace contract", async () => {
-    const files = new Map<string, { content: Buffer; executable: boolean }>();
-    let exportedNames: string[] = [];
-    const fake = new FakeIncus((command, input) => {
-      const write = command.indexOf("rakazo-write");
-      if (write >= 0) {
-        files.set(command[write + 1]!, {
-          content: input,
-          executable: command[write + 2] === "700",
-        });
-        return {};
-      }
-      if (command.includes("rakazo-export-list")) {
-        exportedNames = input.toString().split("\0").filter(Boolean);
-        return {};
-      }
-      if (command.includes("echo")) return { stdout: "graphical-ok\n" };
-      if (command.includes("stat"))
-        return { stdout: String(files.get(command.at(-1)!)!.content.length) };
-      if (command.includes("cat")) return { stdout: files.get(command.at(-1)!)!.content };
-      if (command.includes("find") || command.some((arg) => arg.includes("find . -regextype"))) {
-        const directory = command.includes("find")
-          ? command[command.indexOf("find") + 1]!
-          : "/home/rakazo";
-        let stdout = "";
-        for (const [name, file] of files) {
-          if (!name.startsWith(`${directory}/`)) continue;
-          const relative = name.slice(directory.length + 1);
-          if (!command.includes("-maxdepth")) stdout += `${relative}\0`;
-          else if (!relative.includes("/"))
-            stdout += `${relative}\0f\0${file.content.length}\0${file.executable ? "700" : "600"}\0`;
-        }
-        return { stdout };
-      }
-      if (command.includes("tar")) {
-        const chunks = exportedNames.flatMap((name) => {
-          const file = files.get(`/home/rakazo/${name}`)!;
-          return [...encodeTarEntry(name, file.content, file.executable)];
-        });
-        return { stdout: Buffer.concat([...chunks, Buffer.alloc(1024)]) };
-      }
-      if (command.some((arg) => arg.includes("RAKAZO_DESKTOP=")))
-        return { stdout: "RAKAZO_DESKTOP=0:offline-view-token\n" };
-      if (command.some((arg) => arg.includes("getmouselocation")))
-        return { stdout: "cG5n\nCURSOR X=1 Y=2\n" };
-      return {};
-    });
-    const provider = providerFor(fake);
-    const provisioned = await provisionPrepared(
-      provider,
-      { botId: "bot-a", homePath: "/unused" },
-      context,
-    );
-    await assertSandboxWorkspaceContract(provider, provisioned, context);
-    await provider.destroy(provisioned, context);
-    expect(fake.instances.size).toBe(0);
-  });
-
   it("creates an unprivileged, capped, ephemeral instance from the computer image", async () => {
     const fake = new FakeIncus();
     const provider = providerFor(fake, {
@@ -518,8 +196,8 @@ describe("IncusSandboxProvider", () => {
 
   it("deletes an instance whose create request lost its answer", async () => {
     const fake = new FakeIncus();
-    let release!: () => void;
-    fake.createGate = new Promise((resolve) => (release = resolve));
+    const release = deferred();
+    fake.createGate = release.promise;
     const request = fake.request.bind(fake);
     vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
       const response = await request(method, path, body, signal);
@@ -531,7 +209,7 @@ describe("IncusSandboxProvider", () => {
     await expect(
       providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context),
     ).rejects.toThrow("socket hang up");
-    release();
+    release.resolve();
     await vi.waitFor(() =>
       expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
     );
@@ -549,8 +227,8 @@ describe("IncusSandboxProvider", () => {
 
   it("deletes an instance whose start was cancelled once Incus has created it", async () => {
     const fake = new FakeIncus();
-    let release!: () => void;
-    fake.createGate = new Promise((resolve) => (release = resolve));
+    const release = deferred();
+    fake.createGate = release.promise;
     const controller = new AbortController();
     const provisioning = providerFor(fake).provision(
       { botId: "bot-a", homePath: "/unused" },
@@ -562,7 +240,7 @@ describe("IncusSandboxProvider", () => {
     controller.abort();
     await expect(provisioning).rejects.toThrow();
     // Incus goes on to create and start the instance; nothing else knows its name.
-    release();
+    release.resolve();
     await vi.waitFor(() =>
       expect(fake.requests.some((entry) => entry.method === "PUT")).toBe(true),
     );
@@ -595,6 +273,135 @@ describe("IncusSandboxProvider", () => {
       ),
     ).rejects.toThrow("did not become ready");
     expect(fake.instances.size).toBe(0);
+  });
+
+  describe("a new instance that does not become ready", () => {
+    /**
+     * The instance never answers on its gateway. Stopping it fails `stopFailures` times, or with
+     * `stalled`, Incus answers nothing from the first stop on.
+     */
+    async function start(stopFailures: number, stalled = false) {
+      const fake = new FakeIncus((command) =>
+        command.some((arg) => arg.includes("/dev/tcp")) ? { code: 1 } : {},
+      );
+      const request = fake.request.bind(fake);
+      let stops = 0;
+      let stalledAt: number | undefined;
+      let endedAt = 0;
+      const unanswered: AbortSignal[] = [];
+      vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+        if (method === "PUT" && path.includes("/state")) {
+          stops += 1;
+          if (stalled) stalledAt ??= Date.now();
+          else if (stops <= stopFailures) throw new IncusError("Instance is busy", 500);
+        }
+        if (stalledAt === undefined) return request(method, path, body, signal);
+        unanswered.push(signal);
+        return untilAborted(signal);
+      });
+      const outcome = await settleMachineCleanup(() =>
+        providerFor(fake, { readyTimeoutMs: 1 })
+          .provision({ botId: "bot-a", homePath: "/unused" }, context)
+          .finally(() => {
+            endedAt = Date.now();
+          }),
+      );
+      return {
+        ...outcome,
+        stops,
+        instances: [...fake.instances.keys()],
+        cleanupMs: endedAt - (stalledAt ?? endedAt),
+        stillOpen: unanswered.filter((signal) => !signal.aborted).length,
+      };
+    }
+
+    it("is removed, trying a failed removal again", async () => {
+      const { error, left, stops, instances } = await start(1);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(2);
+      expect(instances).toEqual([]);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be removed, and the start's own error stands", async () => {
+      const { error, left, stops, instances } = await start(4);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(stops).toBe(4);
+      expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
+    });
+
+    it("is reported within the cleanup's 20 seconds when Incus stops answering", async () => {
+      const { error, left, stops, instances, cleanupMs, stillOpen } = await start(0, true);
+
+      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      // Each try is cut off after 10 seconds; a try used to wait a minute of its own.
+      expect(stops).toBe(2);
+      expect(cleanupMs).toBe(20_000);
+      expect(stillOpen).toBe(0);
+      expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
+    });
+  });
+
+  it("records a new instance's name for its computer before asking Incus to create it", async () => {
+    const fake = new FakeIncus();
+    const records = new MachineRecords();
+    let whenAsked: ReturnType<MachineRecords["dueIn"]> | undefined;
+    const request = fake.request.bind(fake);
+    vi.spyOn(fake, "request").mockImplementation((method, path, body, signal) => {
+      if (method === "POST" && path.startsWith("/1.0/instances")) whenAsked ??= records.dueIn();
+      return request(method, path, body, signal);
+    });
+
+    const computer = await providerFor(fake, { unreferencedMachines: records }).provision(
+      { botId: "bot-a", homePath: "/unused" },
+      context,
+    );
+
+    expect(whenAsked).toMatchObject([
+      { provider: "incus", machineId: computer.providerRef, homeKey: "bot-a" },
+    ]);
+    expect(whenAsked?.[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("hands a new instance it could not remove to the records", async () => {
+    const fake = new FakeIncus((command) =>
+      command.some((arg) => arg.includes("/dev/tcp")) ? { code: 1 } : {},
+    );
+    const records = new MachineRecords();
+    const request = fake.request.bind(fake);
+    vi.spyOn(fake, "request").mockImplementation(async (method, path, body, signal) => {
+      if (method === "PUT" && path.includes("/state"))
+        throw new IncusError("Instance is busy", 500);
+      return request(method, path, body, signal);
+    });
+    let endedAt = 0;
+
+    await settleMachineCleanup(() =>
+      providerFor(fake, { readyTimeoutMs: 1, unreferencedMachines: records })
+        .provision({ botId: "bot-a", homePath: "/unused" }, context)
+        .finally(() => {
+          endedAt = Date.now();
+        }),
+    );
+
+    expect(records.dueIn(endedAt)).toEqual([
+      { provider: "incus", machineId: [...fake.instances.keys()][0], homeKey: "bot-a", dueInMs: 0 },
+    ]);
+  });
+
+  it("removes an instance from its name alone, and counts one already gone as removed", async () => {
+    const fake = new FakeIncus();
+    const provider = providerFor(fake);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const machine = { provider: "incus", machineId: computer.providerRef };
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine(machine, signal);
+
+    expect(fake.instances.size).toBe(0);
+    await expect(provider.deleteMachine(machine, signal)).resolves.toBeUndefined();
   });
 
   it("rejects an instance that disappears while starting", async () => {
@@ -782,9 +589,9 @@ describe("IncusSandboxProvider", () => {
   it("signals a command cancelled before its control stream connected", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      let release!: () => void;
+      const release = deferred();
       const fake = new FakeIncus(() => "hang");
-      fake.controlGate = new Promise((resolve) => (release = resolve));
+      fake.controlGate = release.promise;
       fake.instances.set("box", running());
       const controller = new AbortController();
       const result = collect(
@@ -799,7 +606,7 @@ describe("IncusSandboxProvider", () => {
       controller.abort();
       expect((await result).at(-1)).toEqual({ type: "exit", code: 130 });
       expect(fake.execs[0]?.closed.size).toBe(0);
-      release();
+      release.resolve();
       await vi.waitFor(() => expect(fake.execs[0]?.signals).toEqual([15]));
       await vi.advanceTimersByTimeAsync(7_000);
       expect(fake.execs[0]?.closed).toEqual(new Set(["0", "1", "2", "control"]));

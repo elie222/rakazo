@@ -25,8 +25,8 @@ beforeEach(() => {
 });
 afterEach(() => act(() => root.unmount()));
 
-const status = (botId: string) =>
-  ({ botId, state: "running", canUpdate: true, busyBotName: null }) as ComputerStatus;
+const status = (botId: string, extra: Partial<ComputerStatus> = {}) =>
+  ({ botId, state: "running", canUpdate: true, busyBotName: null, ...extra }) as ComputerStatus;
 const render = (computer: ComputerStatus) =>
   act(() =>
     root.render(
@@ -39,9 +39,19 @@ const render = (computer: ComputerStatus) =>
   );
 const labels = () => [...host.querySelectorAll("button")].map((button) => button.textContent);
 
-it("offers Update and Reset for the bot whose settings are open", async () => {
+it("offers Recover for a computer that can update in place", async () => {
   await render(status("bot-settings"));
-  expect(labels()).toEqual(["Update computer", "Reset computer"]);
+  expect(labels()).toEqual(["Recover computer"]);
+});
+
+it("offers Reset for a computer that cannot update in place", async () => {
+  await render(status("bot-settings", { canUpdate: false }));
+  expect(labels()).toEqual(["Reset computer"]);
+});
+
+it("offers nothing while the computer is booting", async () => {
+  await render(status("bot-settings", { state: "booting" }));
+  expect(labels()).toEqual([]);
 });
 
 it("hides the rows when the shared status belongs to another bot's computer", async () => {

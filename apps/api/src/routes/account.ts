@@ -8,12 +8,19 @@ import {
   PushSessionEndedError,
   settleCallRequest,
 } from "@rakazo/adapters";
-import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import type {
+  ActionApprovalRule,
+  Actor,
+  Me,
+  SettingsScope,
+  SpaceChangeKind,
+} from "@rakazo/contracts";
 import { parseLabs } from "@rakazo/contracts";
 import {
   abortableDelay,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
+  ClientError,
   callRequestClientNonce,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -67,9 +74,8 @@ import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
-const COMPUTER_UPDATES_CHANGED = Symbol("computer updates changed");
 
-const COMPUTER_UPDATES_FAILURE_HOLD_MS = 30_000;
+const SIGNAL_FAILURE_HOLD_MS = 30_000;
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -360,30 +366,34 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts, followRosterChanges, followComputerUpdateChanges } = deps.events;
+        const { followChatAlerts, followRosterChanges, followSpaceChanges } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
         const rosterChanges = async function* (
           signal: AbortSignal,
         ): AsyncGenerator<typeof ROSTER_CHANGED> {
           if (!followRosterChanges) return;
-          // Chat alerts keep flowing if roster signals fail; the client falls back to polling.
+          // The app re-reads the roster only on these signals, so a failure ends the stream the
+          // same way Space changes do below.
           try {
             for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
-          } catch {}
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
         };
-        const computerUpdateChanges = async function* (
+        const spaceChanges = async function* (
           signal: AbortSignal,
-        ): AsyncGenerator<typeof COMPUTER_UPDATES_CHANGED> {
-          if (!followComputerUpdateChanges) return;
-          // The app reads computer updates only on these signals, so a failure ends the stream and
+        ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
+          if (!followSpaceChanges) return;
+          // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
-            for await (const _ of followComputerUpdateChanges(spaceId, signal))
-              yield COMPUTER_UPDATES_CHANGED;
+            for await (const spaceChange of followSpaceChanges(spaceId, signal))
+              yield { spaceChange };
           } catch (error) {
-            await abortableDelay(COMPUTER_UPDATES_FAILURE_HOLD_MS, signal);
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
             throw error;
           }
         };
@@ -391,13 +401,13 @@ export function accountRoutes(ctx: RouterContext) {
           mergeStreams(
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
-            computerUpdateChanges(signal),
+            spaceChanges(signal),
           ),
         );
         for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
           else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
-          else if (next === COMPUTER_UPDATES_CHANGED) yield { type: "computerUpdates" as const };
+          else if ("spaceChange" in next) yield { type: next.spaceChange };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),
@@ -453,7 +463,8 @@ export function accountRoutes(ctx: RouterContext) {
           try {
             await deps.pushTokens.saveDevice?.(context.actor.userId, input, context.sessionId);
           } catch (error) {
-            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            if (error instanceof PushSessionEndedError)
+              throw new ClientError("UNAUTHORIZED", "Unauthorized");
             throw error;
           }
           return { ok: true as const };
@@ -470,7 +481,8 @@ export function accountRoutes(ctx: RouterContext) {
             input.presentation,
           );
         } catch (error) {
-          if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+          if (error instanceof PushSessionEndedError)
+            throw new ClientError("UNAUTHORIZED", "Unauthorized");
           throw error;
         }
         return { ok: true as const };
@@ -549,6 +561,8 @@ export function accountRoutes(ctx: RouterContext) {
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,
+          sttBaseUrl: input.sttBaseUrl,
+          sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
           scope: input.scope,

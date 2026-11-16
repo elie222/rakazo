@@ -44,6 +44,17 @@ else if (args[0] === "pr" && args[1] === "view") {
     const count = readFileSync(process.env.POLLS, "utf8").length;
     for (const status of polls[Math.min(count, polls.length) - 1]) print(status);
   }
+  else if (endpoint.includes("/actions/runs?")) {
+    const polls = fixture.workflows ?? [[]];
+    const count = readFileSync(process.env.POLLS, "utf8").length;
+    const jq = args[args.indexOf("--jq") + 1];
+    const runs = polls[Math.min(count, polls.length) - 1].map((run) => ({ event: "pull_request", ...run }));
+    const input = JSON.stringify({ workflow_runs: runs });
+    const result = require("node:child_process").spawnSync("jq", ["-c", jq], { input, encoding: "utf8" });
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    process.exit(result.status);
+  }
   else if (endpoint.includes("/issues/")) print(fixture.conversation ?? []);
   else if (endpoint.includes("/reviews?")) print(fixture.reviews ?? []);
   else if (endpoint.includes("/comments?")) print(fixture.inline ?? []);
@@ -76,6 +87,7 @@ function runDigest(
     check?: object;
     checks?: object[];
     statuses?: object[][];
+    workflows?: object[][];
     fork?: boolean;
     steps?: Record<string, object[]>;
   },
@@ -429,6 +441,77 @@ describe("pr-digest", () => {
     expect(result.calls).toBe("POST\n");
   });
 
+  describe("workflow runs", () => {
+    const passed = {
+      name: "lint",
+      status: "completed",
+      conclusion: "success",
+      html_url: "https://github.com/example/project/actions/runs/9/job/1",
+    };
+    const workflow = {
+      name: "ci",
+      status: "queued",
+      conclusion: null,
+      html_url: "https://github.com/example/project/actions/runs/7",
+    };
+
+    it("counts a queued workflow with no jobs as pending and names it", () => {
+      const result = runDigest({ check: passed, workflows: [[workflow]] });
+      expect(result.status).toBe(12);
+      expect(result.stdout).toContain("checks 1 success · 1 workflow queued");
+    });
+
+    it("ignores a manually dispatched workflow on the same commit", () => {
+      const result = runDigest({
+        check: passed,
+        workflows: [[{ ...workflow, event: "workflow_dispatch" }]],
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("workflow queued");
+    });
+
+    it("fails on a workflow that ended without a failed job of its own", () => {
+      const result = runDigest({
+        check: passed,
+        workflows: [[{ ...workflow, status: "completed", conclusion: "startup_failure" }]],
+      });
+      expect(result.status).toBe(10);
+      expect(result.stdout).toContain("FAIL workflow ci [startup_failure]");
+    });
+
+    it("judges a workflow by its newest run on the commit", () => {
+      const older = {
+        ...workflow,
+        workflow_id: 1,
+        status: "completed",
+        conclusion: "startup_failure",
+        id: 1,
+      };
+      const newer = {
+        ...older,
+        conclusion: "success",
+        id: 2,
+        html_url: `${workflow.html_url}0`,
+      };
+      const result = runDigest({ check: passed, workflows: [[newer, older]] });
+      expect(result.status).toBe(0);
+    });
+
+    it("does not count a failed workflow twice when its job failed", () => {
+      const job = {
+        ...passed,
+        conclusion: "failure",
+        html_url: "https://github.com/example/project/actions/runs/7/job/2",
+      };
+      const result = runDigest({
+        check: job,
+        workflows: [[{ ...workflow, status: "completed", conclusion: "failure" }]],
+      });
+      expect(result.status).toBe(10);
+      expect(result.stdout).not.toContain("FAIL workflow");
+    });
+  });
+
   describe("--watch", () => {
     const running = { name: "e2e", status: "in_progress", conclusion: null, html_url: "" };
     const failed = { ...running, status: "completed", conclusion: "failure" };
@@ -476,6 +559,30 @@ describe("pr-digest", () => {
         "1",
       );
       expect(result.status).toBe(10);
+    });
+
+    it("keeps waiting on a workflow queued before it has any jobs", () => {
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const workflow = {
+        name: "ci",
+        status: "queued",
+        conclusion: null,
+        html_url: "https://github.com/example/project/actions/runs/9",
+      };
+      const result = runDigest(
+        {
+          check: passed,
+          workflows: [
+            [workflow],
+            [workflow],
+            [{ ...workflow, status: "completed", conclusion: "success" }],
+          ],
+        },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT green");
     });
 
     it("keeps waiting on a failure that was already there", () => {

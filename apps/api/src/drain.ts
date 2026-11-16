@@ -1,6 +1,14 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 
+/**
+ * Asks a replaced API to stop taking requests and let the chat turns it is running end, for up
+ * to RUN_DRAIN_MS, before it exits; SIGTERM hands them back at once. The image's
+ * `org.rakazo.run-drain-signal` label names it, so the deploy sends it only to an API that
+ * handles it.
+ */
+export const RUN_DRAIN_SIGNAL = "SIGUSR2";
+
 const isStream = (request: IncomingMessage) =>
   request.headers.accept?.includes("text/event-stream") === true;
 

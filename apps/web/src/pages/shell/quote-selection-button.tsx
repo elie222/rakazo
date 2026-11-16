@@ -3,7 +3,10 @@ import { Button, cn } from "@rakazo/ui-web";
 import { TextQuote } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { desktopBridge } from "../../lib/desktop";
 import { isDetachedRange } from "../../lib/quote-selection";
+import { useEventListener } from "../../lib/use-event-listener";
+import { isApplePlatform, quoteShortcutLabel } from "./shell-shortcuts";
 
 export const QuoteSelectionButton = memo(function QuoteSelectionButton({
   range,
@@ -20,34 +23,28 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
     above: boolean;
   } | null>(null);
 
-  useLayoutEffect(() => {
-    const update = () => {
-      if (isDetachedRange(range)) {
-        setPlacement(null);
-        return;
-      }
-      const rect = range.getBoundingClientRect();
-      const width = buttonRef.current?.offsetWidth ?? 0;
-      const height = buttonRef.current?.offsetHeight ?? 0;
-      const above = rect.top >= height + 8;
-      setPlacement({
-        top: above ? rect.top - 8 : rect.bottom + 8,
-        left: Math.min(
-          Math.max(rect.left + rect.width / 2, width / 2 + 8),
-          window.innerWidth - width / 2 - 8,
-        ),
-        above,
-      });
-    };
-    update();
-    window.addEventListener("resize", update);
-    // Scroll doesn't bubble — listen on the capture phase to catch any scroller.
-    window.addEventListener("scroll", update, { capture: true, passive: true });
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
-  }, [range]);
+  const update = () => {
+    if (isDetachedRange(range)) {
+      setPlacement(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    const width = buttonRef.current?.offsetWidth ?? 0;
+    const height = buttonRef.current?.offsetHeight ?? 0;
+    const above = rect.top >= height + 8;
+    setPlacement({
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      left: Math.min(
+        Math.max(rect.left + rect.width / 2, width / 2 + 8),
+        window.innerWidth - width / 2 - 8,
+      ),
+      above,
+    });
+  };
+  useLayoutEffect(update, [range]);
+  useEventListener(window, "resize", update);
+  // Scroll doesn't bubble — listen on the capture phase to catch any scroller.
+  useEventListener(window, "scroll", update, { capture: true, passive: true });
 
   return createPortal(
     // The wrapper owns the offset so the button's pressed nudge cannot move it.
@@ -74,6 +71,9 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
       >
         <TextQuote strokeWidth={2} />
         {t`Reply`}
+        <span className="hidden text-label text-muted-foreground pointer-fine:inline">
+          {quoteShortcutLabel({ desktop: Boolean(desktopBridge()), apple: isApplePlatform() })}
+        </span>
       </Button>
     </div>,
     document.body,

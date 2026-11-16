@@ -1,4 +1,5 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { prefersTeamChatSurface, settleWithTimeout } from "./team-chat-startup.js";
 
@@ -49,14 +50,11 @@ describe("team chat startup helpers", () => {
   it("bounds settlement when the task stays blocked", async () => {
     vi.useFakeTimers();
     try {
-      let resolveTask: (() => void) | undefined;
-      const task = new Promise<void>((resolve) => {
-        resolveTask = resolve;
-      });
-      const settled = settleWithTimeout(task, 1_000);
+      const task = deferred();
+      const settled = settleWithTimeout(task.promise, 1_000);
       await vi.advanceTimersByTimeAsync(1_000);
       await expect(settled).resolves.toBe("timeout");
-      resolveTask?.();
+      task.resolve();
     } finally {
       vi.useRealTimers();
     }

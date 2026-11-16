@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -60,6 +61,7 @@ const NOT_PASSED: Record<string, string> = {
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
+  RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
@@ -147,8 +149,18 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+/** Computer providers declare their settings as env bindings, read by name through the registry. */
+const { computerProviders } = (await import(
+  pathToFileURL(path.join(repoRoot, "packages/adapters/src/computer-providers.ts")).href
+)) as { computerProviders: Record<string, { env?: Record<string, { name: string }> }> };
+const COMPUTER_PROVIDER_ENV = Object.values(computerProviders).flatMap(({ env = {} }) =>
+  Object.values(env).map((binding) => binding.name),
+);
+
 function scanEnvReads(dirs: readonly string[]): Set<string> {
-  const names = new Set<string>();
+  const names = new Set<string>(
+    dirs.includes("packages/adapters/src") ? COMPUTER_PROVIDER_ENV : [],
+  );
   for (const dir of dirs) {
     for (const file of sourceFiles(path.join(repoRoot, dir))) {
       const text = readFileSync(file, "utf8");

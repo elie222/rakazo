@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const SERVER = fileURLToPath(new URL("./sites/freshcart/server.py", import.meta.url));
 const TOKEN = "test-admin-token";
@@ -62,17 +62,18 @@ describe.skipIf(!hasPython)("freshcart site (requires python3)", () => {
       ...["--port", String(port), "--seed", "7"],
       ...["--admin-token", TOKEN, "--state-file", stateFile],
     ]);
-    for (let i = 0; i < 100; i++) {
-      if (
-        await fetch(base).then(
-          (r) => r.ok,
-          () => false,
+    await vi.waitFor(
+      async () => {
+        if (
+          !(await fetch(base).then(
+            (r) => r.ok,
+            () => false,
+          ))
         )
-      )
-        return;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    throw new Error("freshcart did not start");
+          throw new Error("freshcart did not start");
+      },
+      { timeout: 5_000, interval: 50 },
+    );
   }
 
   async function stop() {

@@ -10,6 +10,8 @@ import type {
   DesktopSetupState,
   RakazoSetup,
 } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ES_MESSAGES } from "./locales/es.js";
 import { HE_MESSAGES } from "./locales/he.js";
@@ -27,22 +29,6 @@ const setupBody = readFileSync(path.join(srcDir, "setup.html"), "utf8").match(
   /<body>([\s\S]*)<\/body>/,
 )?.[1];
 const setupScript = readFileSync(path.join(srcDir, "setup.js"), "utf8");
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 function stackState(phase: DesktopLocalStackState["phase"]): DesktopLocalStackState {
   return { phase, message: null, output: [], layerBytes: {}, imageTag: "v0.0.0" };

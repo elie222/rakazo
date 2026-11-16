@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -121,7 +122,7 @@ it("copies and opens links for a page only right after the person tapped it", as
   const send = (data: object) =>
     act(async () => {
       host.message?.(JSON.stringify(data), () => undefined);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   const touch = (name: string, x: number, y: number, fingers?: number) =>
     host.touch[name]?.(at(x, y, fingers));
@@ -188,7 +189,7 @@ it("does not let a page that reloads right after a tap act on that tap", async (
   const copy = () =>
     act(async () => {
       host.message?.(JSON.stringify({ type: "rakazo-page:copy", id: "a", text: "x" }), () => {});
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   host.touch.onTouchStart?.(at(10, 10));
   host.touch.onTouchEnd?.(at(10, 10));

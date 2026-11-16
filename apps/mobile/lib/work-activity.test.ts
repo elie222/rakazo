@@ -1,3 +1,4 @@
+import { deferred, flush } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
@@ -46,8 +47,6 @@ vi.mock("./session", () => ({
 
 const { startWorkActivities, startWorkActivity } = await import("./work-activity");
 startWorkActivities();
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 beforeEach(() => {
   vi.clearAllMocks();
   rpc.mockReset();
@@ -58,20 +57,20 @@ beforeEach(() => {
 });
 
 it("starts the card for the chat just sent to only after the server confirms support", async () => {
-  let reply!: (value: { following: boolean }) => void;
-  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  const reply = deferred<{ following: boolean }>();
+  rpc.mockReturnValueOnce(reply.promise);
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { groupId: "group-1" } });
   expect(rpc).toHaveBeenCalledWith("notifications/followWorkActivity", {});
   expect(native.startWorkActivity).not.toHaveBeenCalled();
-  reply({ following: true });
-  await settle();
+  reply.resolve({ following: true });
+  await flush();
   expect(native.startWorkActivity).toHaveBeenCalledWith("Planner", "space-1", null, "group-1");
 });
 
 it("skips creating a card when the server cannot follow it", async () => {
   rpc.mockResolvedValueOnce({ following: false });
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
-  await settle();
+  await flush();
   expect(native.startWorkActivity).not.toHaveBeenCalled();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 });
@@ -79,57 +78,57 @@ it("skips creating a card when the server cannot follow it", async () => {
 it.each(["unsupported preflight", "offline"])("skips creating a card on %s", async (message) => {
   rpc.mockRejectedValueOnce(new Error(message));
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
-  await settle();
+  await flush();
   expect(native.startWorkActivity).not.toHaveBeenCalled();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 });
 
 it("ignores preflight support from a previous session", async () => {
-  let reply!: (value: { following: boolean }) => void;
-  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  const reply = deferred<{ following: boolean }>();
+  rpc.mockReturnValueOnce(reply.promise);
   startWorkActivity({ title: "Planner", spaceId: "space-1", target: { botId: "bot-1" } });
   app.generation += 1;
-  reply({ following: true });
-  await settle();
+  reply.resolve({ following: true });
+  await flush();
   expect(native.startWorkActivity).not.toHaveBeenCalled();
 });
 
 it("ends the card only when the server says nothing would update it", async () => {
   rpc.mockResolvedValueOnce({ following: true });
   native.token!({ token: "ab" });
-  await settle();
+  await flush();
   expect(rpc).toHaveBeenCalledWith("notifications/followWorkActivity", { token: "ab" });
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 
   rpc.mockRejectedValueOnce(new Error("offline"));
   native.token!({ token: "ab" });
-  await settle();
+  await flush();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 
   // A reply that lands after the account changed is ignored.
-  let reply!: (value: { following: boolean }) => void;
-  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  const reply = deferred<{ following: boolean }>();
+  rpc.mockReturnValueOnce(reply.promise);
   native.token!({ token: "ab" });
   app.generation += 1;
-  reply({ following: false });
-  await settle();
+  reply.resolve({ following: false });
+  await flush();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 
   rpc.mockResolvedValueOnce({ following: false });
   native.token!({ token: "ab" });
-  await settle();
+  await flush();
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
 });
 
 it("hands the phone's token for starting cards to the server", async () => {
   rpc.mockResolvedValueOnce({ ok: true });
   native.startToken!({ token: "cd" });
-  await settle();
+  await flush();
   expect(rpc).toHaveBeenCalledWith("notifications/registerWorkActivityStarts", { token: "cd" });
   // A failed request is asked again on the next open.
   rpc.mockRejectedValueOnce(new Error("offline"));
   native.startToken!({ token: "cd" });
-  await settle();
+  await flush();
 });
 
 it("asks again on launch and whenever the app opens, and ends the card on sign-out", async () => {
@@ -142,7 +141,7 @@ it("asks again on launch and whenever the app opens, and ends the card on sign-o
 
   native.refreshWorkActivity.mockClear();
   app.session!();
-  await settle();
+  await flush();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
   // A new sign-in hands both tokens to its session.
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
@@ -153,10 +152,10 @@ it("asks again on launch and whenever the app opens, and ends the card on sign-o
   app.ready = 1;
   app.readFails = true;
   app.session!();
-  await settle();
+  await flush();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
   app.readFails = false;
   app.session!();
-  await settle();
+  await flush();
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
 });

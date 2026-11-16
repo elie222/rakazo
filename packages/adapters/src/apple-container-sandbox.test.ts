@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppleContainerSandboxProvider, localVmFirewall } from "./apple-container-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import { fakeCli, removeFakeClis } from "./apple-container-sandbox.test-support.js";
+import {
+  assertSandboxReadLimit,
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+} from "./sandbox-test-support.js";
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -16,101 +19,7 @@ const context: AdapterContext = {
   signal: new AbortController().signal,
 };
 
-// A stand-in for the `container` CLI: it logs each call and keeps its VMs in a JSON file.
-const FAKE_CLI = `
-const fs = require("node:fs");
-const dir = __dirname;
-const statePath = dir + "/state.json";
-const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
-const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
-const argv = process.argv.slice(2);
-const log = (stdin) => fs.appendFileSync(dir + "/calls.jsonl", JSON.stringify({ argv, stdin }) + "\\n");
-const readStdin = () => { try { return fs.readFileSync(0, "utf8"); } catch { return ""; } };
-const option = (name) => argv[argv.indexOf(name) + 1];
-const [command, sub] = argv;
-if (command === "exec") {
-  let index = 1;
-  while (argv[index].startsWith("-")) index += ["--interactive", "--tty"].includes(argv[index]) ? 1 : 2;
-  const [name, program, ...rest] = argv.slice(index);
-  const stdin = argv.includes("--interactive") ? readStdin() : "";
-  log(stdin);
-  if (state.vms[name]?.status.state !== "running") { process.stderr.write("not running"); process.exit(1); }
-  if (program === "nft") {
-    if (state.nftMissing) { process.stderr.write("exec failed: nft: not found"); process.exit(127); }
-    if (rest[0] === "list") process.stdout.write("table inet rakazo {}\\n");
-    process.exit(0);
-  }
-  const script = rest.join(" ");
-  if (script.includes("/dev/tcp/127.0.0.1/6080") || script.includes("rakazo-write")) process.exit(0);
-  if (script.includes("sleep")) setInterval(() => {}, 1000);
-  else { process.stdout.write("out:" + script.slice(-5)); process.stderr.write("err"); process.exit(7); }
-} else {
-  log();
-  if (command === "network") process.exit(0);
-  if (command === "run") {
-    const name = option("--name");
-    state.vms[name] = {
-      configuration: { id: name, labels: { "rakazo.bot-id": option("--label").split("=")[1] } },
-      status: { state: "running", networks: [{ ipv4Address: "192.168.70.2/24", ipv4Gateway: "192.168.70.1" }] },
-    };
-    save();
-  } else if (command === "inspect") {
-    if (sub === "rakazo-unreadable") { process.stderr.write("Error: XPC connection interrupted"); process.exit(1); }
-    if (!state.vms[sub]) { process.stderr.write("Error: container not found: " + sub); process.exit(1); }
-    process.stdout.write(JSON.stringify([state.vms[sub]]));
-  } else if (command === "ls") {
-    process.stdout.write(JSON.stringify(Object.values(state.vms)));
-  } else if (command === "rm") {
-    delete state.vms[argv[2]];
-    save();
-  }
-}
-`;
-
-const fakes: string[] = [];
-afterEach(() => {
-  for (const dir of fakes.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
-
-function fakeCli(vms: Record<string, { botId: string; state?: string }> = {}, nftMissing = false) {
-  const dir = mkdtempSync(path.join(tmpdir(), "rakazo-fake-container-"));
-  fakes.push(dir);
-  const cli = path.join(dir, "container");
-  writeFileSync(cli, `#!/usr/bin/env node\n${FAKE_CLI}`);
-  chmodSync(cli, 0o755);
-  const records = Object.fromEntries(
-    Object.entries(vms).map(([name, vm]) => [
-      name,
-      {
-        configuration: { id: name, labels: { "rakazo.bot-id": vm.botId } },
-        status: {
-          state: vm.state ?? "running",
-          networks: [{ ipv4Address: "192.168.70.2/24", ipv4Gateway: "192.168.70.1" }],
-        },
-      },
-    ]),
-  );
-  writeFileSync(path.join(dir, "state.json"), JSON.stringify({ vms: records, nftMissing }));
-  return {
-    provider: new AppleContainerSandboxProvider({
-      cli,
-      computerImage: "computer:test",
-      readyTimeoutMs: 5_000,
-    }),
-    calls: (): { argv: string[]; stdin?: string }[] => {
-      try {
-        return readFileSync(path.join(dir, "calls.jsonl"), "utf8")
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line));
-      } catch {
-        return [];
-      }
-    },
-    vms: (): Record<string, unknown> =>
-      JSON.parse(readFileSync(path.join(dir, "state.json"), "utf8")).vms,
-  };
-}
+afterEach(removeFakeClis);
 
 const ref = (name: string, botId = "bot-a"): ComputerRef => ({
   id: name,
@@ -295,7 +204,7 @@ describe("AppleContainerSandboxProvider", () => {
   it("streams output and the exit code, and passes stdin", async () => {
     const fake = fakeCli({ "rakazo-1": { botId: "bot-a" } });
     const events = await collect(
-      fake.provider.execute(ref("rakazo-1"), { argv: ["echo", "hello"] }, context),
+      fake.provider.execute(ref("rakazo-1"), { argv: ["printf", "hello"] }, context),
     );
     expect(events).toEqual([
       { type: "stdout", data: "out:hello" },
@@ -339,6 +248,17 @@ describe("AppleContainerSandboxProvider", () => {
     );
     setTimeout(() => controller.abort(), 300);
     expect((await running).at(-1)).toEqual({ type: "exit", code: 130 });
+  });
+
+  it("refuses a file over a read's size limit by type and returns one at the limit", async () => {
+    const content = new TextEncoder().encode("portable");
+    const fake = fakeCli({ "rakazo-1": { botId: "bot-a" } }, false, {
+      "/home/rakazo/notes/result.txt": content,
+    });
+    await assertSandboxReadLimit(fake.provider, ref("rakazo-1"), context, {
+      path: "notes/result.txt",
+      content,
+    });
   });
 
   it("removes the VM and its network when stopped", async () => {

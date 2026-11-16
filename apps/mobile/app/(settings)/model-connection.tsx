@@ -6,6 +6,7 @@ import {
   connectionDisplayName,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -18,11 +19,13 @@ import {
   connectionModels,
   createModelProbe,
   initialModelProbeState,
+  modelConnectionFormSecrets,
   modelConnectRequest,
+  sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -47,6 +50,7 @@ import {
   modelConnectionRequest,
 } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
+import { useScreenHeader } from "../../lib/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { useListSearch } from "../../lib/use-list-search";
 import { useSubscriptionSignIn } from "../../lib/use-subscription-sign-in";
@@ -62,7 +66,6 @@ type FeedbackAnchor = "probe" | "model" | "connection";
 export default function ModelConnection() {
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
-  const navigation = useNavigation();
   const { requestId = "" } = useLocalSearchParams<{ requestId?: string }>();
   const [request] = useState(() => modelConnectionRequest(requestId));
   const makeDefault = request?.makeDefault ?? false;
@@ -85,6 +88,8 @@ export default function ModelConnection() {
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [region, setRegion] = useState("global");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -165,6 +170,8 @@ export default function ModelConnection() {
       setThinkingLevel(fields.thinkingLevel);
       setAccountId(fields.accountId);
       setGatewayId(fields.gatewayId);
+      setProjectId(fields.projectId ?? "");
+      setRegion(fields.region ?? "global");
       return nextMe;
     },
     [request, rpc, t],
@@ -249,14 +256,18 @@ export default function ModelConnection() {
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
     : (endpointPreset?.name ?? providerName);
-  useLayoutEffect(() => {
-    if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
-  }, [navigation, selectedProviderLabel]);
+  useScreenHeader({ title: selectedProviderLabel || undefined });
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
-    accountId,
-    gatewayId,
-  });
+  const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
+    selected?.routingFields,
+    {
+      accountId,
+      gatewayId,
+      projectId,
+      region,
+    },
+    credential,
+  );
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -278,9 +289,7 @@ export default function ModelConnection() {
     credential,
     keyRequired: Boolean(endpointPreset),
   });
-  const gatewayDirty =
-    accountId.trim() !== (credential?.accountId ?? "") ||
-    gatewayId.trim() !== (credential?.gatewayId ?? "");
+  const gatewayDirty = modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
   const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
@@ -307,6 +316,13 @@ export default function ModelConnection() {
     setApiKey(nextApiKey);
     resetOpenAiCompatibleProbe();
     clearFeedback();
+  }
+
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
   }
 
   async function probeServerModels() {
@@ -340,7 +356,7 @@ export default function ModelConnection() {
       },
       onError: (err) =>
         publishFeedback("probe", {
-          error: errorText(err, t`Could not reach this model server`),
+          error: connectionErrorText(err, t`Could not reach this model server`),
         }),
     });
   }
@@ -378,6 +394,8 @@ export default function ModelConnection() {
         thinkingLevel,
         accountId,
         gatewayId,
+        projectId,
+        region,
       },
       selected,
       credential,
@@ -414,7 +432,7 @@ export default function ModelConnection() {
       }
     } catch (err) {
       publishFeedback("connection", {
-        error: errorText(err, t`Could not connect this provider`),
+        error: connectionErrorText(err, t`Could not connect this provider`),
       });
     } finally {
       setPending(null);
@@ -634,35 +652,39 @@ export default function ModelConnection() {
           <View style={styles.keySection}>
             {needsRouting ? (
               <>
-                <Text style={styles.sectionTitle}>{t`Account ID`}</Text>
+                <Text style={styles.sectionTitle}>
+                  {needsProject ? t`Project ID` : t`Account ID`}
+                </Text>
                 <TextInput
-                  accessibilityLabel={t`Account ID`}
+                  accessibilityLabel={needsProject ? t`Project ID` : t`Account ID`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
                   editable={!busy}
                   onChangeText={(value) => {
-                    setAccountId(value);
+                    (needsProject ? setProjectId : setAccountId)(value);
                     clearFeedback();
                   }}
                   style={styles.keyInput}
-                  value={accountId}
+                  value={needsProject ? projectId : accountId}
                 />
-                {needsGateway ? (
+                {needsGateway || needsProject ? (
                   <>
-                    <Text style={styles.sectionTitle}>{t`Gateway ID`}</Text>
+                    <Text style={styles.sectionTitle}>
+                      {needsProject ? t`Region` : t`Gateway ID`}
+                    </Text>
                     <TextInput
-                      accessibilityLabel={t`Gateway ID`}
+                      accessibilityLabel={needsProject ? t`Region` : t`Gateway ID`}
                       autoCapitalize="none"
                       autoCorrect={false}
                       autoComplete="off"
                       editable={!busy}
                       onChangeText={(value) => {
-                        setGatewayId(value);
+                        (needsProject ? setRegion : setGatewayId)(value);
                         clearFeedback();
                       }}
                       style={styles.keyInput}
-                      value={gatewayId}
+                      value={needsProject ? region : gatewayId}
                     />
                   </>
                 ) : null}

@@ -40,7 +40,6 @@ vi.mock("../lib/organizations", () => ({
     activeOrganizationId: "org-1",
   }),
 }));
-vi.mock("../components/CreateOrganizationDialog", () => ({ CreateOrganizationDialog: () => null }));
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
 import { queryClient } from "../lib/query";

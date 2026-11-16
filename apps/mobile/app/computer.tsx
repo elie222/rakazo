@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
@@ -12,9 +13,9 @@ import {
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { RefObject } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -65,6 +66,7 @@ import { tabletopLayout } from "../lib/fold-layout";
 import { useFoldRegions } from "../lib/fold-regions";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useScreenHeader } from "../lib/screen-header";
 import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { useComputerBoot } from "../lib/use-computer-boot";
@@ -74,7 +76,6 @@ export default function Computer() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const navigation = useNavigation();
   const router = useRouter();
   const windowSize = useWindowDimensions();
   const stacked = stacksAtTextScale(windowSize.fontScale);
@@ -171,9 +172,7 @@ export default function Computer() {
 
   const label = computerLabel(computer?.mode, name);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ title: label });
-  }, [label, navigation]);
+  useScreenHeader({ title: label });
 
   const refresh = refreshController.refresh;
 
@@ -834,13 +833,16 @@ function ScreenWebView({
   reportCallback.current = onScreenState;
   useEffect(() => {
     reportStarted.current = false;
-    // Only proxy pages report their state; one that never starts shows as failed.
-    if (!isProxiedScreenPage(loadedSource)) return;
-    const timer = setTimeout(() => {
-      if (!reportStarted.current) reportCallback.current?.("failed");
-    }, 15_000);
-    return () => clearTimeout(timer);
   }, [loadedSource, nativeKeyboard]);
+  // Only proxy pages report their state; one that never starts shows as failed.
+  const pageLoad = useMemo(() => ({}), [loadedSource, nativeKeyboard]);
+  useTimeout(
+    () => {
+      if (!reportStarted.current) reportCallback.current?.("failed");
+    },
+    isProxiedScreenPage(loadedSource) ? 15_000 : null,
+    pageLoad,
+  );
   return (
     <WebView
       ref={webViewRef}

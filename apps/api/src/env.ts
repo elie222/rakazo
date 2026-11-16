@@ -2,18 +2,18 @@ import { readFileSync } from "node:fs";
 import type {
   ApnsVoipConfig,
   PhotonProjectCredentials,
+  SandboxProviderOptions,
   TelegramBotCredentials,
 } from "@rakazo/adapters";
 import {
   apnsVoipConfig,
-  boatApiKeyFromEnv,
-  boatApiUrlFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
@@ -108,14 +108,8 @@ export interface AppEnv {
   deploymentModelConfigured: boolean;
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
-  e2bApiKey: string | undefined;
-  novitaApiKey: string | undefined;
-  sandboxTemplate: string | undefined;
-  daytonaApiKey: string | undefined;
-  daytonaApiUrl: string | undefined;
-  daytonaTarget: string | undefined;
-  boatApiKey: string | undefined;
-  boatApiUrl: string | undefined;
+  /** Every computer provider's options, read through the provider's own environment bindings. */
+  sandboxOptions: SandboxProviderOptions;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -142,6 +136,8 @@ export interface AppEnv {
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
+  /** Reports signups and plan payments to the affiliate program; off when unset. */
+  dubApiKey: string | undefined;
   emailEmulator: boolean;
   billingEmulator: boolean;
   /** A/B tests this deployment runs, by key; none by default. */
@@ -196,6 +192,15 @@ export interface AppEnv {
     | undefined;
   /** Crisp chat on the paywall, for the hosted service; self-hosted installs leave it unset. */
   crispWebsiteId?: string | null;
+}
+
+/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
+export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEnv {
+  return {
+    ...env,
+    ...overrides,
+    sandboxOptions: { ...env.sandboxOptions, ...overrides.sandboxOptions },
+  };
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -259,6 +264,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
+  let sandboxOptions: SandboxProviderOptions | undefined;
   return {
     passwordAuth,
     breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
@@ -313,14 +319,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
-    e2bApiKey: source.E2B_API_KEY,
-    novitaApiKey: source.NOVITA_API_KEY,
-    sandboxTemplate: source.SANDBOX_TEMPLATE,
-    daytonaApiKey: source.DAYTONA_API_KEY,
-    daytonaApiUrl: source.DAYTONA_API_URL,
-    daytonaTarget: source.DAYTONA_TARGET,
-    boatApiKey: boatApiKeyFromEnv(source),
-    boatApiUrl: boatApiUrlFromEnv(source),
+    // Read on first use, so a malformed computer setting stops only the services that build one.
+    get sandboxOptions() {
+      sandboxOptions ??= sandboxProviderOptionsFromEnv(source);
+      return sandboxOptions;
+    },
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
@@ -345,6 +348,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
+    dubApiKey: optional(source.DUB_API_KEY),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
     experiments: optional(source.EXPERIMENTS),
     billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",

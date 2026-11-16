@@ -144,3 +144,8 @@ export function buildBotMessageWakePrompt(args: {
     ...(intent === "fyi" ? [] : [BOT_DELIBERATION_GUIDANCE]),
   ].join("\n");
 }
+
+/** Status a delegated bot sends its requester the moment it stops to ask the user something. */
+export function botMessageWaitingText(ask: string): string {
+  return `Paused until the user responds in my chat: ${ask}`;
+}

@@ -4,6 +4,7 @@ import {
   compatibleEndpointPresets,
   connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelRoutingDirty,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -87,8 +88,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     enabledModelIds,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
@@ -302,8 +306,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     needsRouting &&
-    (accountId.trim() !== (credential?.accountId ?? "") ||
-      gatewayId.trim() !== (credential?.gatewayId ?? ""));
+    modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
 
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(
@@ -375,6 +378,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         thinkingLevel,
         accountId,
         gatewayId,
+        projectId,
+        region,
       },
       selected,
       credential,
@@ -411,7 +416,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       // A fresh connection speaks for itself through the Active model row.
       if (isOpenAiCompatible || savingWithoutKey) setNotice(t`Saved.`);
     } catch (err) {
-      if (stillSelected()) setError(errorText(err, t`Could not connect this provider`));
+      if (stillSelected()) setError(connectionErrorText(err, t`Could not connect this provider`));
     } finally {
       setPending(null);
     }

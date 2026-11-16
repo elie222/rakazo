@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -218,14 +219,6 @@ class FlakyCancelEmulator extends BillingEmulator {
     if (this.failCancellation) throw new Error("provider unavailable");
     await super.cancelCustomerSubscriptions(customerId);
   }
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 /** Holds the own-key checkout call until the test releases it. */

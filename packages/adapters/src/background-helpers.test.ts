@@ -27,6 +27,9 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
   const createRun = vi.fn(async (_args: unknown) => ({ id: "helper-run" }));
   const tx = {
     $queryRaw: vi.fn(async () => []),
+    message: {
+      findMany: vi.fn(async (_args: unknown): Promise<{ id: string; blocks: unknown[] }[]> => []),
+    },
     thread: { create: vi.fn(async () => ({ id: "helper-thread" })) },
     task: { create: vi.fn(async () => ({ id: "helper-task" })) },
     run: {
@@ -49,7 +52,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
       botId: overrides.threadBotId === undefined ? "bot" : overrides.threadBotId,
     },
   } as unknown as RunContext;
-  return { ctx, prisma, createRun, enqueue };
+  return { ctx, prisma, createRun, enqueue, tx };
 }
 
 describe("starting a background helper", () => {
@@ -73,6 +76,44 @@ describe("starting a background helper", () => {
     });
   });
 
+  it("preserves the source user's attachments on the independent run", async () => {
+    const h = harness();
+    h.ctx.run.sourceMessageId = "user-message";
+    const file = {
+      kind: "file",
+      artifactId: "artifact-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      size: 12,
+    };
+    h.tx.message.findMany.mockResolvedValue([
+      { id: "user-message", blocks: [{ kind: "text", text: "Summarize this" }, file] },
+    ]);
+    await startBackgroundHelper(h.ctx, START);
+    expect(h.tx.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          threadId: "chat",
+          role: "user",
+          OR: [
+            { id: "user-message" },
+            { steeringMessages: { some: { runId: "run-1", claimedAt: { not: null } } } },
+          ],
+        }),
+      }),
+    );
+    expect(createThreadMessageInTransaction).toHaveBeenCalledWith(
+      h.tx,
+      expect.objectContaining({
+        threadId: "helper-thread",
+        runId: "helper-run",
+        role: "user",
+        blocks: [file],
+        markUnread: false,
+      }),
+    );
+  });
+
   it("keeps its card running when the turn that started it ends", async () => {
     const h = harness();
     await startBackgroundHelper(h.ctx, START);
@@ -84,18 +125,47 @@ describe("starting a background helper", () => {
     expect(event.runId).toBeUndefined();
   });
 
+  it.each([{ threadBotId: null }, { trigger: "messaging" }])(
+    "delegates from any chat surface",
+    async (overrides) => {
+      const h = harness(overrides);
+      await expect(startBackgroundHelper(h.ctx, START)).resolves.toMatchObject({ ok: true });
+      expect(h.createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegatedFromRunId: "run-1",
+            sourceMessageId: "card",
+          }),
+        }),
+      );
+    },
+  );
+
   it.each([
-    ["a group or connected team chat", { threadBotId: null }],
-    ["a linked Telegram or SMS chat", { trigger: "messaging" }],
     ["a routine", { trigger: "routine" }],
     ["another bot's request", { trigger: "bot_message" }],
     ["a helper's result coming back", { trigger: "helper_result" }],
   ])("refuses to start one from %s", async (_label, overrides) => {
     const h = harness(overrides);
     await expect(startBackgroundHelper(h.ctx, START)).resolves.toEqual({
-      error: expect.stringContaining("only from the user's own app chat"),
+      error: expect.stringContaining("cannot delegate further"),
     });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("inherits a model explicitly pinned on the parent run", async () => {
+    const h = harness();
+    Object.assign(h.ctx.run, { modelPinned: true, modelProvider: "fixture", modelId: "pinned" });
+    await startBackgroundHelper(h.ctx, START);
+    expect(h.createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          modelProvider: "fixture",
+          modelId: "pinned",
+          modelPinned: true,
+        }),
+      }),
+    );
   });
 
   it("pins the model it was asked for, and needs both halves of it", async () => {
@@ -133,19 +203,24 @@ describe("returning a helper's outcome", () => {
       { ...run, sourceMessageId: "card" },
       { status: "completed", text: "done" },
     );
-    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 });
 
 describe("passing a helper's result back in a shared space", () => {
   // The bot was made by "creator"; "member" shares the space and started the helper.
-  function shared(overrides: { member?: boolean; archived?: boolean } = {}) {
+  function shared(
+    overrides: { member?: boolean; archived?: boolean; attachments?: unknown[] } = {},
+  ) {
     const createRun = vi.fn(async (_args: unknown) => ({ id: "wake" }));
     const tx = {
       $queryRaw: vi.fn(async () => []),
       run: { updateMany: vi.fn(async () => ({ count: 1 })), create: createRun },
       message: {
+        findMany: vi.fn(async () =>
+          overrides.attachments ? [{ id: "helper-file", blocks: overrides.attachments }] : [],
+        ),
         findFirst: vi.fn(async () => ({
           id: "card",
           threadId: "chat",
@@ -188,6 +263,22 @@ describe("passing a helper's result back in a shared space", () => {
     );
     return { returned, createRun, enqueue };
   }
+
+  it("returns attached files to the conversation under the result run", async () => {
+    const file = {
+      kind: "file",
+      artifactId: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      size: 12,
+    };
+    const h = shared({ attachments: [file] });
+    await h.returned;
+    expect(createThreadMessageInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threadId: "chat", runId: "wake", blocks: [file] }),
+    );
+  });
 
   it("brings it back for a member who did not make the bot, as their own turn", async () => {
     const h = shared();

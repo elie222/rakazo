@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -9,6 +11,8 @@ import NewSpace from "../app/new-space";
 
 const state = vi.hoisted(() => ({
   focused: true,
+  selectedSpace: "space-1",
+  alert: vi.fn(),
   rpc: vi.fn(),
   selectSpace: vi.fn(),
   hapticSuccess: vi.fn(),
@@ -22,7 +26,15 @@ vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => state.selectedSpace,
+  captureApiRequestContext: async (spaceId: string | null = state.selectedSpace) => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./api-server", () => ({
   selectSpace: state.selectSpace,
 }));
@@ -46,7 +58,7 @@ vi.mock("expo-router", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
-  Alert: { alert: vi.fn() },
+  Alert: { alert: state.alert },
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   TextInput: ({
@@ -83,12 +95,22 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 
+/** What a request sent from a Space carries. */
+const sentFrom = (spaceId: string) => ({
+  requestContext: {
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": spaceId },
+  },
+});
+
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(async () => {
   vi.clearAllMocks();
   state.focused = true;
+  state.selectedSpace = "space-1";
   Object.assign(state.session, { generation: 4, apiBase: "http://api.test" });
   state.rpc.mockResolvedValue({ id: "space-new", name: "Work" });
   state.selectSpace.mockResolvedValue(true);
@@ -115,19 +137,17 @@ async function type(value: string) {
 }
 
 it("confirms space creation once after the server accepts the trimmed name", async () => {
-  let finish!: (space: { id: string; name: string }) => void;
-  state.rpc.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  state.rpc.mockImplementation(() => {
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await type("  Work  ");
   await act(async () => container.querySelector("button")!.click());
-  expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" });
+  expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" }, sentFrom("space-1"));
   expect(state.hapticSuccess).not.toHaveBeenCalled();
   expect(container.querySelector("button")?.disabled).toBe(true);
-  await act(async () => finish({ id: "space-new", name: "Work" }));
+  await act(async () => finish.resolve({ id: "space-new", name: "Work" }));
   expect(state.hapticSuccess).toHaveBeenCalledOnce();
   expect(state.selectSpace).toHaveBeenCalledWith("space-new");
 });
@@ -164,17 +184,65 @@ it("does not confirm a space created after the session changes", async () => {
 });
 
 it("does not confirm space creation after its screen loses focus", async () => {
-  let finish!: (space: { id: string; name: string }) => void;
-  state.rpc.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<{ id: string; name: string }>;
+  state.rpc.mockImplementation(() => {
+    finish = deferred<{ id: string; name: string }>();
+    return finish.promise;
+  });
   await type("Work");
   await act(async () => container.querySelector("button")!.click());
-  expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" });
+  expect(state.rpc).toHaveBeenCalledWith("spaces/create", { name: "Work" }, sentFrom("space-1"));
   state.focused = false;
-  await act(async () => finish({ id: "space-new", name: "Work" }));
+  await act(async () => finish.resolve({ id: "space-new", name: "Work" }));
   expect(state.hapticSuccess).not.toHaveBeenCalled();
+  // The space exists by then, so it is still opened.
+  expect(state.selectSpace).toHaveBeenCalledWith("space-new");
+  expect(state.replace).toHaveBeenCalledWith("/");
+});
+
+it("creates one space when Create is tapped twice in one tick", async () => {
+  await type("Work");
+  await act(async () => {
+    container.querySelector("button")!.click();
+    container.querySelector("button")!.click();
+  });
+  expect(state.rpc).toHaveBeenCalledOnce();
+  expect(state.replace).toHaveBeenCalledOnce();
+});
+
+it("keeps Create held once the space is made, while the sheet closes", async () => {
+  // Opening the new space selects it, which must not hand the button back.
+  state.selectSpace.mockImplementation(async (id: string) => {
+    state.selectedSpace = id;
+    return true;
+  });
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.dismissAll).toHaveBeenCalledOnce();
+  expect(state.replace).toHaveBeenCalledWith("/");
+  expect(container.querySelector("button")?.disabled).toBe(true);
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.rpc).toHaveBeenCalledOnce();
+  expect(state.replace).toHaveBeenCalledOnce();
+});
+
+it("says so when the new space could not be opened, and still returns home", async () => {
+  state.selectSpace.mockResolvedValue(false);
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.alert).toHaveBeenCalledWith(
+    "Space created",
+    "It could not be opened. Try again from the sidebar.",
+  );
+  expect(state.dismissAll).toHaveBeenCalledOnce();
+  expect(state.replace).toHaveBeenCalledWith("/");
+});
+
+it("shows a space that failed while opening as not created, and permits retry", async () => {
+  state.selectSpace.mockRejectedValue(new Error("Storage unavailable"));
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.textContent).toContain("Storage unavailable");
+  expect(state.replace).not.toHaveBeenCalled();
+  expect(container.querySelector("button")?.disabled).toBe(false);
 });

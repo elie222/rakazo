@@ -391,13 +391,19 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   if (cron.trim().split(/\s+/).length !== 5) {
     throw new RangeError("Cron expressions must contain five fields");
   }
-  const schedule = new Cron(cron, {
-    paused: true,
-    timezone: validTimezoneOrUtc(timezone),
-  });
-  const next = schedule.nextRun(from);
-  if (!next) throw new RangeError(`Cron expression has no future run: ${cron}`);
-  return next;
+  const zone = validTimezoneOrUtc(timezone);
+  // Croner only matches the fields, on a clock that never changes: its own zone conversion
+  // returns past times while clocks go back. instantOfWallTime places each match in the zone.
+  const schedule = new Cron(cron, { paused: true, utcOffset: 0 });
+  let wall = wallTime(from.getTime(), zone);
+  for (;;) {
+    const match = schedule.nextRun(new Date(wall));
+    if (!match) throw new RangeError(`Cron expression has no future run: ${cron}`);
+    wall = match.getTime();
+    const next = instantOfWallTime(wall, zone);
+    // In the second pass of a repeated hour, the times left in it already ran in the first.
+    if (next > from.getTime()) return new Date(next);
+  }
 }
 
 /** The preset of an interval step that recurs from the scheduled fire, or undefined. */
@@ -430,25 +436,19 @@ export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezo
   }
 
   const zone = validTimezoneOrUtc(timezone);
-  const localAnchor = new CronDate(anchor, zone);
-  const localNow = new CronDate(from, zone);
-  // CronDate stores months zero-based, like Date.
-  const anchorDay = Date.UTC(localAnchor.year, localAnchor.month, localAnchor.day);
-  const nowDay = Date.UTC(localNow.year, localNow.month, localNow.day);
-  let steps = Math.max(1, Math.floor((nowDay - anchorDay) / (preset.n * 86_400_000)));
-  let next: Date;
-  do {
-    const day = new Date(anchorDay + steps * preset.n * 86_400_000);
-    // Normalize the calendar date before letting Croner resolve its wall-clock
-    // time in the routine zone (including daylight saving transitions).
-    const candidate = new CronDate(localAnchor, zone);
-    candidate.year = day.getUTCFullYear();
-    candidate.month = day.getUTCMonth();
-    candidate.day = day.getUTCDate();
-    next = new Date(candidate.getDate().getTime() + localAnchor.ms);
-    steps++;
-  } while (next <= from);
-  return next;
+  const startOfDay = (wall: number) => Math.floor(wall / DAY_MS) * DAY_MS;
+  const anchorWall = wallTime(anchor.getTime(), zone);
+  const anchorDay = startOfDay(anchorWall);
+  // Day intervals are written for midnight. A run that a clock change moved off midnight still
+  // counts from it, so later runs return there; any other anchor keeps its own time of day.
+  const timeOfDay =
+    instantOfWallTime(anchorDay, zone) === anchor.getTime() ? 0 : anchorWall - anchorDay;
+  const gap = preset.n * DAY_MS;
+  const fromDay = startOfDay(wallTime(from.getTime(), zone));
+  for (let steps = Math.max(1, Math.floor((fromDay - anchorDay) / gap)); ; steps++) {
+    const next = instantOfWallTime(anchorDay + steps * gap + timeOfDay, zone);
+    if (next > from.getTime()) return new Date(next);
+  }
 }
 
 // The shared anchor belongs to an interval only with one recurring schedule.
@@ -567,7 +567,51 @@ export function wallClock(instant: Date, timezone = "UTC"): string {
   return `${local.year}-${pad(local.month + 1)}-${pad(local.day)}T${pad(local.hour)}:${pad(local.minute)}:${pad(local.second)}`;
 }
 
-function validTimezoneOrUtc(timezone: string): string {
+const DAY_MS = 86_400_000;
+
+function zoneOffset(instant: number, zone: string): number {
+  const local = new CronDate(new Date(instant), zone);
+  // CronDate stores months zero-based, like Date.
+  const wall = Date.UTC(
+    local.year,
+    local.month,
+    local.day,
+    local.hour,
+    local.minute,
+    local.second,
+    local.ms,
+  );
+  return wall - instant;
+}
+
+/** The zone's wall-clock reading of `instant`, as the UTC timestamp that shows the same fields. */
+function wallTime(instant: number, zone: string): number {
+  return instant + zoneOffset(instant, zone);
+}
+
+/**
+ * The instant `zone` shows a wall-clock reading (as wallTime returns it). A reading that clocks
+ * going back repeat is its first occurrence; one that clocks going forward skip is the end of
+ * the gap, so a schedule in the gap runs once, as soon as the clocks have moved.
+ */
+function instantOfWallTime(wall: number, zone: string): number {
+  // A day either side is beyond any clock change that could affect this reading.
+  const before = wall - zoneOffset(wall - DAY_MS, zone);
+  const after = wall - zoneOffset(wall + DAY_MS, zone);
+  let earlier = Math.min(before, after);
+  let later = Math.max(before, after);
+  if (wallTime(earlier, zone) === wall) return earlier;
+  if (wallTime(later, zone) === wall) return later;
+  const offsetBeforeGap = zoneOffset(earlier, zone);
+  while (later - earlier > 1) {
+    const middle = Math.floor((earlier + later) / 2);
+    if (zoneOffset(middle, zone) === offsetBeforeGap) earlier = middle;
+    else later = middle;
+  }
+  return later;
+}
+
+export function validTimezoneOrUtc(timezone: string): string {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
     return timezone;

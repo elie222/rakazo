@@ -185,6 +185,22 @@ export type ApiRequestContext = {
 export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string {
   return [requestContext.apiBase, requestContext.headers["x-rakazo-space-id"] ?? ""].join("\u0000");
 }
+const aiConsentListeners = new Set<() => void>();
+/** Runs after a consent prompt's Allow is saved, so whatever shows the permissions reads them again. */
+export function subscribeAiConsentGranted(listener: () => void): () => void {
+  aiConsentListeners.add(listener);
+  return () => {
+    aiConsentListeners.delete(listener);
+  };
+}
+/** Saves the Allow of a consent prompt shown outside the permissions screen. */
+export async function allowPromptedAiConsent(
+  input: RpcInput<"aiConsent/allow">,
+  requestContext?: ApiRequestContext,
+): Promise<void> {
+  await rpc("aiConsent/allow", input, { requestContext });
+  for (const listener of aiConsentListeners) listener();
+}
 /** Pins a request to the current server and session, and to a Space (the selected one by default). */
 export async function captureApiRequestContext(
   spaceId: string | null = selectedSpaceId(),
@@ -204,41 +220,79 @@ let passwordChangesInFlight = 0;
 export function passwordChangeInFlight() {
   return passwordChangesInFlight > 0;
 }
+export async function fetchAuthenticatedAccountJson<T>(
+  path: string,
+  init: RequestInit,
+  invalidJsonFallback: T,
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  const context = await captureApiRequestContext(null);
+  return withMobileResponse(
+    `${context.apiBase}${path}`,
+    { ...init, headers: { origin: "rakazo://", ...context.headers } },
+    context.apiBase,
+    async (response, signal) => {
+      if (
+        response.status === 401 &&
+        context.headers.authorization &&
+        context.apiBase === currentApiBase() &&
+        context.sessionGeneration === currentSessionGeneration() &&
+        !passwordChangesInFlight
+      ) {
+        await rejectSession();
+      }
+      if (!response.ok || init.method === "DELETE") {
+        cancelResponseBody(response);
+        return { response, body: invalidJsonFallback };
+      }
+      return readMobileJson(response, signal, invalidJsonFallback);
+    },
+  );
+}
+
 export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
+  apiBase = currentApiBase(),
 ): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  return withMobileResponse(input, init, apiBase, (response, signal) =>
+    readMobileJson(response, signal, invalidJsonFallback),
+  );
+}
+
+async function readMobileJson<T>(
+  response: Response,
+  signal: AbortSignal,
+  invalidJsonFallback?: T,
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+  try {
+    const body = await readBoundedJsonResponse<T>(response, MAX_MOBILE_AUTH_RESPONSE_BYTES, signal);
+    return { response, body };
+  } catch (error) {
+    if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
+      return { response, body: invalidJsonFallback, invalidJson: true };
+    }
+    throw requestError(error, signal);
+  }
+}
+
+async function withMobileResponse<T>(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  apiBase: string,
+  read: (response: Response, signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetchServer(
-        input,
-        {
-          ...init,
-          signal: controller.signal,
-        },
-        currentApiBase(),
-      ),
+      fetchServer(input, { ...init, signal: controller.signal }, apiBase),
       controller.signal,
       "Request timed out",
     ).catch((error: unknown) => {
       throw requestError(error, controller.signal);
     });
-    try {
-      const body = await readBoundedJsonResponse<T>(
-        response,
-        MAX_MOBILE_AUTH_RESPONSE_BYTES,
-        controller.signal,
-      );
-      return { response, body };
-    } catch (error) {
-      if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback, invalidJson: true };
-      }
-      throw requestError(error, controller.signal);
-    }
+    return await read(response, controller.signal);
   } finally {
     clearTimeout(timer);
   }
@@ -636,12 +690,11 @@ async function request(
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
       prompt: promptAiConsent,
       allow: (input) =>
-        rpc(
-          "aiConsent/allow",
+        allowPromptedAiConsent(
           consentTarget.settingsScope
             ? { ...input, settingsScope: consentTarget.settingsScope }
             : input,
-          { requestContext: consentContext },
+          consentContext,
         ),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
     });

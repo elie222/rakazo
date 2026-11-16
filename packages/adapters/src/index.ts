@@ -34,11 +34,13 @@ export {
   defaultVaultItemTitle,
   forgetBotSecret,
   getBotSecretMetadata,
+  importedLoginValue,
   isSecretAlreadySaved,
   LOGIN_ALREADY_SAVED,
   LOGIN_CODE_REPEAT_WINDOW_MS,
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
+  LoginAlreadySavedError,
   listBotSecretMetadata,
   listBotSecrets,
   listVaultItems,
@@ -51,16 +53,20 @@ export {
   revealBotSecret,
   SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
+  SpaceVaultNotInUseError,
   storeBotSecret,
   UNKNOWN_BOTS,
   UNSUPPORTED_ACCESS,
   VAULT_CHANGED,
+  VaultFullError,
+  VaultItemRefusedError,
+  VaultRetryError,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
 export * from "./builtin.tool-definition.js";
-export * from "./builtin-skills.js";
+export * from "./builtin-skills.prompt.js";
 export * from "./builtin-tool-bridge.js";
 export { loadUserIncomingCalls, settleCallRequest } from "./call-request.js";
 export * from "./cartesia-voice.js";
@@ -81,7 +87,11 @@ export * from "./computer-control.js";
 export * from "./computer-disk.js";
 export * from "./computer-idle.js";
 export * from "./computer-lifecycle.js";
-export * from "./computer-provider-descriptor.js";
+export type {
+  ComputerProviderDefinition,
+  SandboxProviderOptions,
+  SettingsComputerProvider,
+} from "./computer-provider-descriptor.js";
 export * from "./computer-provider-registry.js";
 export * from "./computer-screens.js";
 export * from "./computer-support.js";
@@ -90,6 +100,7 @@ export * from "./computer-tools.js";
 export * from "./computer-update.js";
 export * from "./computer-workspace.js";
 export * from "./configured-sandbox.js";
+export * from "./connection-cleanup.js";
 export * from "./connector-catalog.js";
 export * from "./connector-registry.js";
 export {
@@ -107,6 +118,7 @@ export * from "./deployment-model.js";
 export * from "./desktop-sandbox.js";
 export * from "./destination-emulator.js";
 export * from "./docker-sandbox.js";
+export * from "./dub-partner-program.js";
 export * from "./e2b-sandbox.js";
 export * from "./elevenlabs-voice.js";
 export * from "./email-emulator.js";
@@ -143,6 +155,7 @@ export * from "./key-provider-factory.js";
 export * from "./keyless-http-web.js";
 export * from "./kubernetes-sandbox.js";
 export * from "./labs-env.js";
+export * from "./machine-cleanup.js";
 export * from "./macos-voice.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
@@ -215,12 +228,15 @@ export * from "./resend-email.js";
 export { finishRoutineHandover } from "./routine-handover.js";
 export * from "./routine-watch.js";
 export { notifyMemberMessage } from "./run-notifications.js";
+export { loadRunOrigin } from "./run-origin.js";
 export * from "./run-runtime.js";
 export * from "./run-secret.js";
+export { createRunTrustLoaders } from "./run-trust.js";
 export * from "./run-wakeup.js";
 export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";
 export * from "./sandbox-factory.js";
+export * from "./sandbox-kind-capabilities.js";
 export * from "./sandbox-provider-env.js";
 export * from "./schedule-tools.js";
 export * from "./scratchpad-context.js";
@@ -228,6 +244,7 @@ export * from "./scratchpad-tools.js";
 export * from "./scripted-auto-review.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
+export * from "./secret-cleanup.js";
 export * from "./secret-migration.js";
 export * from "./secret-persistence.js";
 export * from "./secret-store-factory.js";
@@ -266,6 +283,7 @@ export {
 } from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
+export * from "./wake-run.js";
 export * from "./wakeup.js";
 export * from "./web-limits.js";
 export * from "./web-provider-factory.js";

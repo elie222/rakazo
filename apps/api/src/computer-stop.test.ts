@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { FakeSandboxProvider, LocalAgentHomeStore, provisionComputer } from "@rakazo/adapters";
+import {
+  FakeSandboxProvider,
+  InMemoryJobQueue,
+  LocalAgentHomeStore,
+  provisionComputer,
+} from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -15,14 +21,6 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   planComputerSize: vi.fn(async () => "standard"),
 }));
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("Stop during a computer reconnect", () => {
   it.each([false, true])(
@@ -111,13 +109,14 @@ describe("Stop during a computer reconnect", () => {
           createMany: vi.fn(async () => ({ count: 1 })),
         },
         run: { findFirst: vi.fn(async () => null) },
+        $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
       } as unknown as PrismaClient;
       const deps = {
         prisma,
         sandbox,
         home: new LocalAgentHomeStore(dataDir),
         dataDir,
-        jobs: { cancel: vi.fn(async () => undefined) },
+        jobs: new InMemoryJobQueue(),
         env: {
           defaultProvider: "fake",
           defaultModel: "fake-model",

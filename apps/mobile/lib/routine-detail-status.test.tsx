@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -146,12 +147,8 @@ it("uses the shared routine store with focus-scoped polling enabled", () => {
 });
 
 async function startDelete() {
-  let resolve!: () => void;
-  state.removeBotRoutine.mockReturnValue(
-    new Promise<void>((done) => {
-      resolve = done;
-    }),
-  );
+  const held = deferred();
+  state.removeBotRoutine.mockReturnValue(held.promise);
   const press = async (label: string) => {
     const button = [...container.querySelectorAll("button")].find(
       (node) => node.textContent === label,
@@ -167,7 +164,7 @@ async function startDelete() {
       .find((button: { text: string }) => button.text === "Delete")
       .onPress(),
   );
-  return resolve;
+  return held.resolve;
 }
 
 it("goes back when deletion finishes in the original detail", async () => {

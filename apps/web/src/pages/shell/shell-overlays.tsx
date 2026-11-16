@@ -5,13 +5,10 @@ import type {
   Me,
   Space,
   SpaceMemoryConfig,
-  UsageSummary,
 } from "@rakazo/contracts";
 import { parseLabs } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useCallback } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
 import type { connectedAppMarks } from "../../lib/connected-apps";
@@ -154,11 +151,6 @@ export function SettingsOverlays({
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
-  // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
-  const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
-  const usage: UsageSummary | null = usageQuery.data ?? null;
-  const refetchUsage = usageQuery.refetch;
-  const refreshUsage = useCallback(() => void refetchUsage(), [refetchUsage]);
   const voiceStatusKey = queries.voice.status.queryKey();
   return (
     <>
@@ -182,8 +174,6 @@ export function SettingsOverlays({
             await refetchSession();
           }}
           email={user?.email}
-          usage={usage}
-          onUsageOpen={refreshUsage}
           section={overlay.section}
           onSectionChange={(section) => setOverlay({ ...overlay, section })}
           billingEnabled={bootstrapMe?.billingEnabled === true}
@@ -199,6 +189,7 @@ export function SettingsOverlays({
           onTimezoneChange={async (timezone) => {
             const nextMe = await rpc.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+            void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
@@ -207,7 +198,7 @@ export function SettingsOverlays({
               prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
             );
             // Unpinned bots were restyled with it. The save already succeeded, so a failed
-            // refresh only waits for the roster's next poll.
+            // refresh only waits for the roster's next re-read.
             void refreshSpaces().catch(() => undefined);
           }}
           labs={parseLabs(bootstrapMe?.labs)}

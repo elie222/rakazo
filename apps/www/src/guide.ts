@@ -57,7 +57,87 @@ export type ComparisonRow = {
 
 export const SELF_HOST_TITLE = "Self-Hosted AI Agent (Open Source) – Rakazo";
 export const SELF_HOST_DESCRIPTION =
-  "Run Rakazo yourself: an open source AI agent with your data, your model, and your costs. Requirements and the setup steps for Docker or a source checkout.";
+  "A self-hosted AI agent runs its app, data, and tools on a machine you control. Run Rakazo, an open source one, with Docker: your data, your model, your costs.";
+
+export const SELF_HOST_DEFINITION =
+  "A self-hosted AI agent is an AI agent whose app, data, and tools run on a machine you control, such as a laptop, a home server, or a VPS, instead of on a vendor's cloud. It still needs a model: a hosted one through your own API key, or a local one on your hardware.";
+
+export const SELF_HOST_MODEL_PARAGRAPHS = [
+  "Self-hosting the agent does not self-host the model. With a hosted provider, the prompts and context a bot sends go to that provider. To keep them on your hardware, point the bot at a local model server such as Ollama, LM Studio, llama.cpp, or MLX, use a local approval model too, and keep the default local Docker computer.",
+  "A model server answers prompts. It is not an agent on its own. The agent is the part that keeps conversations, memory, and schedules, uses a browser and a shell, and asks before crossing a boundary you set.",
+] as const;
+
+export const SELF_HOST_HARDWARE =
+  "A machine that runs Docker, on amd64 or arm64. Each bot computer is capped at 2 GB of memory and 2 CPU cores by default (`RAKAZO_COMPUTER_MEMORY`, `RAKAZO_COMPUTER_CPUS`). The production Compose file sizes Postgres for an 8 GB host. You need a GPU only for a local model or for GPU work inside a bot computer.";
+
+export const SELF_HOST_OPTIONS_CHECKED = "November 16, 2026";
+
+export type SelfHostOption = {
+  name: string;
+  href: string;
+  license: string;
+  run: string;
+  fit: string;
+};
+
+export const SELF_HOST_OPTIONS: readonly SelfHostOption[] = [
+  {
+    name: "Rakazo",
+    href: GITHUB_URL,
+    license: "Apache-2.0",
+    run: "Docker images, then the web, desktop, and mobile apps",
+    fit: "Persistent bots with routines, approvals, and an audit log",
+  },
+  {
+    name: "OpenClaw",
+    href: OPENCLAW_GITHUB_URL,
+    license: "MIT",
+    run: "A Gateway on your computer or server",
+    fit: "An assistant in the chat apps you already use",
+  },
+  {
+    name: "Hermes Agent",
+    href: "https://github.com/NousResearch/hermes-agent",
+    license: "MIT",
+    run: "A CLI, plus a gateway process for chat apps",
+    fit: "A personal agent in the terminal and in chat apps",
+  },
+  {
+    name: "OpenHands Agent Canvas",
+    href: "https://github.com/OpenHands/OpenHands",
+    license: "MIT",
+    run: "A self-hosted control center",
+    fit: "Coding agents and automations",
+  },
+  {
+    name: "Goose",
+    href: "https://github.com/aaif-goose/goose",
+    license: "Apache-2.0",
+    run: "A desktop app, a CLI, or an API",
+    fit: "A general agent on your own machine",
+  },
+  {
+    name: "n8n",
+    href: "https://github.com/n8n-io/n8n",
+    license: "Sustainable Use License (fair-code)",
+    run: "Self-hosted, or n8n's cloud",
+    fit: "Visual workflows that include AI agents",
+  },
+  {
+    name: "LangGraph",
+    href: "https://github.com/langchain-ai/langgraph",
+    license: "MIT",
+    run: "A library inside a program you write",
+    fit: "Stateful agents you build",
+  },
+  {
+    name: "CrewAI",
+    href: "https://github.com/crewAIInc/crewAI",
+    license: "MIT",
+    run: "A Python framework inside a program you write",
+    fit: "Multi-agent workflows you build",
+  },
+];
 
 export const OPENCLAW_H1 = "Open source OpenClaw alternative";
 export const OPENCLAW_TITLE = "Open Source OpenClaw Alternative – Rakazo";
@@ -83,13 +163,27 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   },
   {
     question: "Is hosted Rakazo available?",
-    answer:
-      "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
+    answer: "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
   },
   {
     question: "How does this compare with OpenClaw?",
     answer:
       "Both are open source and run on hardware you control. After a Docker or desktop install, Rakazo is a chat for persistent teammates. OpenClaw's getting-started guide adds a wizard, a Gateway you run in the terminal or install as a background service, and a separate step to connect a chat app.",
+  },
+  {
+    question: "Can a self-hosted AI agent run entirely on my own hardware?",
+    answer:
+      "Yes, when every model it uses is local. Rakazo with local models, including the approval model, and the default local Docker computer keeps prompts, data, and tool work on your machines. Tools that browse the web or call an integration still reach those sites.",
+  },
+  {
+    question: "Should I self-host or use a hosted AI agent?",
+    answer:
+      "Self-host when you want the data on your machines, your own model, and features that are self-host only. A hosted agent saves you upgrades, backups, and TLS. Rakazo Cloud is the hosted version of the same product, in beta.",
+  },
+  {
+    question: "How do I build my own AI agent?",
+    answer:
+      "Write one with a library such as LangGraph or CrewAI and host the program yourself, or run an agent app. In Rakazo, a new bot interviews you about the job, then keeps its routines as Markdown you can edit.",
   },
 ];
 
@@ -226,41 +320,45 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   },
   {
     aspect: "Software cost",
-    rakazo: "No seat fee for the open source software. You pay the models and infrastructure you use.",
+    rakazo:
+      "No seat fee for the open source software. You pay the models and infrastructure you use.",
     openclaw: "The docs say there is no paid tier. You pay the models and the machine you run.",
   },
 ];
-
-export function faqPageStructuredData(items: readonly FaqItem[]) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: items.map((item) => ({
-      "@type": "Question",
-      name: item.question,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: item.answer,
-      },
-    })),
-  };
-}
 
 function faqMarkdown(items: readonly FaqItem[]): string {
   return items.map((item) => `### ${item.question}\n\n${item.answer}`).join("\n\n");
 }
 
-function comparisonMarkdown(): string {
-  const header = "| | Rakazo | OpenClaw |\n| --- | --- | --- |";
-  const rows = COMPARISON_ROWS.map(
-    (row) => `| ${row.aspect} | ${row.rakazo} | ${row.openclaw} |`,
+function selfHostOptionsMarkdown(): string {
+  const header = "| Project | License | What you run | Built for |\n| --- | --- | --- | --- |";
+  const rows = SELF_HOST_OPTIONS.map(
+    (option) =>
+      `| [${option.name}](${option.href}) | ${option.license} | ${option.run} | ${option.fit} |`,
   );
   return [header, ...rows].join("\n");
 }
 
+function comparisonMarkdown(): string {
+  const header = "| | Rakazo | OpenClaw |\n| --- | --- | --- |";
+  const rows = COMPARISON_ROWS.map((row) => `| ${row.aspect} | ${row.rakazo} | ${row.openclaw} |`);
+  return [header, ...rows].join("\n");
+}
+
+export const BEST_OPEN_SOURCE_AGENTS_PATH = "/blog/best-open-source-ai-agents-2026/";
+
+export const SELF_HOST_RELATED = [
+  { href: BEST_OPEN_SOURCE_AGENTS_PATH, label: "Best open source AI agents in 2026" },
+  { href: "/blog/self-host-an-ai-agent/", label: "How to self-host an AI agent with Docker" },
+  { href: "/blog/openclaw-vs-hermes-vs-rakazo/", label: "OpenClaw vs Hermes Agent vs Rakazo" },
+  { href: "/alternatives/", label: "All comparisons" },
+] as const;
+
 export const SELF_HOST_MARKDOWN = `# Self-hosted AI agent
 
 > Open source AI agent you run on a machine you control. Your keys, your model, your data.
+
+${SELF_HOST_DEFINITION}
 
 Rakazo is an open source AI agent for persistent teammates. Each bot can use a browser and a shell, keep routines as Markdown, and pause for approval when work crosses a boundary you set. Self-hosting means that stack runs on infrastructure you operate.
 
@@ -280,6 +378,10 @@ Connect OpenAI, Anthropic, Google, OpenRouter, or Vercel AI Gateway. You can als
 
 There is no seat fee for the open source software. You pay the model provider you connect and any remote computer provider you choose. Local Docker computers are the default, so a single machine does not need an E2B, Daytona, CreateOS, or Boat account.
 
+## Local or hosted model
+
+${SELF_HOST_MODEL_PARAGRAPHS.join("\n\n")}
+
 ## Self-host only, for now
 
 These work on your own deployment and are not yet on Rakazo Cloud. Each turns on from \`.env\`.
@@ -288,16 +390,25 @@ These work on your own deployment and are not yet on Rakazo Cloud. Each turns on
 - **Image and video generation.** \`MEDIA_GENERATION_PROVIDER=fal\`, \`MEDIA_GENERATION_API_KEY\`, and an image or video model (\`MEDIA_GENERATION_IMAGE_MODEL\`, \`MEDIA_GENERATION_VIDEO_MODEL\`).
 - **Purchases with Stripe Link.** \`PAYMENT_WALLET_PROVIDER=link\`. Each purchase waits for your approval in Link.
 - **Cursor cloud agents.** \`CLOUD_AGENT_PROVIDER=cursor\`, \`CURSOR_API_KEY\`, and \`CLOUD_AGENT_SPACE_ID\`.
-- **Ticket board.** \`TICKET_BOARD_ENABLED=true\`.
 - **Local models and local MCP servers.** \`RAKAZO_LOCAL_MODELS\`, and \`MCP_STDIO_ENABLED\` with \`MCP_STDIO_ALLOWED_COMMANDS\`.
 
 The [full guide](${DOCS_URL}) lists every setting for each one.
+
+## Other self-hosted AI agents
+
+Licenses from each project's repository on ${SELF_HOST_OPTIONS_CHECKED}. Not a ranking.
+
+${selfHostOptionsMarkdown()}
+
+More detail is in [Best open source AI agents in 2026](${SITE_URL}${BEST_OPEN_SOURCE_AGENTS_PATH}). The [OpenClaw comparison](${SITE_URL}${OPENCLAW_ALTERNATIVE_PATH}) goes deeper on the closest one.
 
 ## Requirements
 
 Published images need Docker Engine 26 or newer (API 1.45 or newer, for bot home volume subpaths), the Compose plugin, curl, and OpenSSL. No Node.js install.
 
 A source checkout needs Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 25.x is not supported.
+
+Hardware: ${SELF_HOST_HARDWARE}
 
 ## Install with published images
 
@@ -369,6 +480,7 @@ ${faqMarkdown(SELF_HOST_FAQS)}
 
 - [Home](${SITE_URL}/)
 - [OpenClaw comparison](${SITE_URL}${OPENCLAW_ALTERNATIVE_PATH})
+${SELF_HOST_RELATED.map((item) => `- [${item.label}](${SITE_URL}${item.href})`).join("\n")}
 `;
 
 export const OPENCLAW_RELATED = [

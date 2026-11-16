@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -19,6 +20,7 @@ import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
 import { loadSessionToken } from "./session";
 import { continueWithSso } from "./sso";
+import { confirmUnsentSendLoss } from "./unsent-send-warning";
 
 const route = vi.hoisted(() => ({ mode: "in", waiting: false, redirect: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
@@ -165,6 +167,7 @@ vi.mock("./api-auth", () => ({
 vi.mock("./incoming-share", () => ({ hasIncomingShare: () => route.waiting }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
 vi.mock("./passkey", () => ({ passkeysAvailable: vi.fn(), signInWithPasskey: vi.fn() }));
+vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 
 const capabilities = {
@@ -186,6 +189,8 @@ beforeEach(() => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue(capabilities);
   vi.mocked(passkeysAvailable).mockReset().mockResolvedValue(false);
   vi.mocked(signInWithPasskey).mockReset();
+  // No waiting messages: every ordinary sign-in goes through without a prompt.
+  vi.mocked(confirmUnsentSendLoss).mockResolvedValue(true);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -379,6 +384,51 @@ it("returns from the code step with the email kept", async () => {
   expect(sendSignInCode).toHaveBeenCalledTimes(2);
 });
 
+it("asks before a sign-in deletes the queue a rejected session kept", async () => {
+  vi.mocked(confirmUnsentSendLoss).mockResolvedValue(false);
+  vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
+  await render();
+  await type(input("Email")!, "ada@example.test");
+  await type(input("Password")!, "example-password");
+  await press("Sign in");
+  expect(confirmUnsentSendLoss).toHaveBeenCalledExactlyOnceWith("sign-in");
+  expect(signIn).not.toHaveBeenCalled();
+  expect(router.replace).not.toHaveBeenCalled();
+
+  vi.mocked(confirmUnsentSendLoss).mockResolvedValue(true);
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
+  await press("Sign in");
+  expect(signIn).toHaveBeenCalledExactlyOnceWith("ada@example.test", "example-password");
+  expect(router.replace).toHaveBeenCalledWith("/");
+});
+
+it("asks an external sign-in before it deletes the kept queue", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
+  vi.mocked(confirmUnsentSendLoss).mockResolvedValue(false);
+  await render();
+  await press("Continue with Example");
+  expect(confirmUnsentSendLoss).toHaveBeenCalledExactlyOnceWith("sign-in");
+  expect(continueWithSso).not.toHaveBeenCalled();
+});
+
+it("ignores a second tap while an external sign-in waits on the queue check", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
+  const decide = deferred<boolean>();
+  vi.mocked(confirmUnsentSendLoss).mockReturnValue(decide.promise);
+  await render();
+  const sso = ssoButtons()[0]!;
+  await act(async () => sso.click());
+  await act(async () => sso.click());
+  expect(confirmUnsentSendLoss).toHaveBeenCalledOnce();
+
+  await act(async () => decide.resolve(false));
+  expect(continueWithSso).not.toHaveBeenCalled();
+  expect(router.replace).not.toHaveBeenCalled();
+  // Cancelling released the button, so a later attempt asks again.
+  await press("Continue with Example");
+  expect(confirmUnsentSendLoss).toHaveBeenCalledTimes(2);
+});
+
 it("signs in with a typed password and emails a code when it is blank", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
   vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
@@ -397,15 +447,15 @@ it("signs in with a typed password and emails a code when it is blank", async ()
 
 it("verifies the code even if a password was typed while it was sent", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  let sent!: () => void;
-  vi.mocked(sendSignInCode).mockReturnValue(new Promise<void>((resolve) => (sent = resolve)));
+  const sent = deferred();
+  vi.mocked(sendSignInCode).mockReturnValue(sent.promise);
   vi.mocked(signInWithCode).mockResolvedValue();
   vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
   await type(input("Password")!, "example-password");
-  await act(async () => sent());
+  await act(async () => sent.resolve());
   await type(input("Code")!, "123456");
   expect(signInWithCode).toHaveBeenCalledWith("ada@example.test", "123456", undefined);
   expect(signIn).not.toHaveBeenCalled();

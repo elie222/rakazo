@@ -1,5 +1,5 @@
 import type { Alternative, FaqItem } from "./alternatives";
-import { ALTERNATIVES, ALTERNATIVES_HUB, ROUNDUP_UPDATED, alternativePath } from "./alternatives";
+import { ALTERNATIVES, ALTERNATIVES_HUB, alternativePath, ROUNDUP_UPDATED } from "./alternatives";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
 import { OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
@@ -304,31 +304,18 @@ export const ROUNDUP_FAQ: readonly FaqItem[] = [
   },
 ];
 
-export function roundupStructuredData() {
+export function roundupItemList() {
   return {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "ItemList",
-        name: ROUNDUP_TITLE,
-        itemListOrder: "https://schema.org/ItemListOrderAscending",
-        numberOfItems: ROUNDUP_CARDS.length,
-        itemListElement: ROUNDUP_CARDS.map((card, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: card.name,
-          url: new URL(card.href, SITE_URL).toString(),
-        })),
-      },
-      {
-        "@type": "FAQPage",
-        mainEntity: ROUNDUP_FAQ.map((item) => ({
-          "@type": "Question",
-          name: item.question,
-          acceptedAnswer: { "@type": "Answer", text: item.answer },
-        })),
-      },
-    ],
+    "@type": "ItemList",
+    name: ROUNDUP_TITLE,
+    itemListOrder: "https://schema.org/ItemListOrderAscending",
+    numberOfItems: ROUNDUP_CARDS.length,
+    itemListElement: ROUNDUP_CARDS.map((card, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: card.name,
+      url: new URL(card.href, SITE_URL).toString(),
+    })),
   };
 }
 
