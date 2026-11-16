@@ -25,14 +25,17 @@ BEGIN
       AND ("tokenDigest" = OLD."tokenDigest" OR "sessionId" = OLD."sessionId");
     RETURN OLD;
   END IF;
-  -- The same device kept its token: update only its own row, so a token the new release has
-  -- since handed to another account is not taken back.
+  -- The same device kept its token: update only its own row, so a session retarget does not take
+  -- back a token the new release has since handed to another account. A re-registration seals
+  -- the token again, so a new ciphertext with no row left falls through and registers the device.
   IF TG_OP = 'UPDATE' AND OLD."tokenDigest" = NEW."tokenDigest" THEN
     UPDATE "push_registrations"
       SET "sessionId" = NEW."sessionId", "ciphertext" = NEW."ciphertext",
         "presentation" = NEW."presentation", "updatedAt" = NEW."updatedAt"
       WHERE "userId" = NEW."userId" AND "tokenDigest" = NEW."tokenDigest";
-    RETURN NEW;
+    IF FOUND OR NEW."ciphertext" = OLD."ciphertext" THEN
+      RETURN NEW;
+    END IF;
   END IF;
   -- An old-release update overwrites its one row per account; another device's row stays.
   DELETE FROM "push_registrations"
