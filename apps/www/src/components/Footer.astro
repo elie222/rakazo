@@ -17,6 +17,7 @@ import { VOICE_PROVIDERS_PATH } from "../voice-providers/shared";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
+  AFFILIATE_PROGRAM_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
@@ -84,6 +85,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
       { href: "/blog/", label: linkLabels.blog },
       { href: "/about/", label: linkLabels.about },
       { href: "/brand/", label: linkLabels.brand },
+      { href: AFFILIATE_PROGRAM_URL, label: linkLabels.affiliates, external: true },
       { href: "/support/", label: linkLabels.support },
       { href: "/privacy/", label: linkLabels.privacy },
       { href: "/terms/", label: linkLabels.terms },
