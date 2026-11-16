@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -26,7 +27,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  OptionSelect: (await importOriginal<typeof import("@rakazo/ui-web")>()).OptionSelect,
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
 }));
 vi.mock("./ai/primitives", () => ({ SuccessPop: () => null }));
 const { deployment, account, me } = vi.hoisted(() => ({
