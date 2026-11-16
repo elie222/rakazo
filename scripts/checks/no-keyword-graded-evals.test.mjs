@@ -17,6 +17,13 @@ const graders = [
   'pass: e.text.toLowerCase().includes("bullet points"),',
   "expect(reply).toContain('next step');",
   "pass: /(?:succeeded|failed)\\b/m.test(\n  reply,\n),",
+  'pass: reply.includes("is filed"),',
+  'pass: !finalReply.includes("can\'t"),',
+  'pass: e.text.includes("bullet points."),',
+  'check("next-step", /next step/i.test(slackReply(e))),',
+  "pass: replyText.match(/order placed/i) !== null,",
+  "expect(\n  reply,\n).toContain('a summary');",
+  'const told = e.memory\n  .toLowerCase()\n  .includes("the user said");',
 ].join("\n");
 
 const deterministic = [
@@ -28,6 +35,9 @@ const deterministic = [
   '/fairhaven/i.test(String(call.args.query)) && call.outcome === "read",',
   'expect: { bot: { name: "~scout" } },',
   "pass: posted.includes(owner),",
+  'pass: replyText.includes("ZD-1842 filed"),',
+  'expect(messageIds).toContain("msg_1"),',
+  'expect: { bot: { instructions: null, description: "" } },',
 ].join("\n");
 
 const sources = {
@@ -48,7 +58,7 @@ test("counts word matches on model prose in eval code, not in grader tests or pr
   assert.deepEqual(
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
-      "packages/testkit/src/evals/graders.ts": [1, 2, 3, 4, 5, 6],
+      "packages/testkit/src/evals/graders.ts": [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 19],
       "packages/testkit/src/flows/shopping.ts": [1],
     },
   );

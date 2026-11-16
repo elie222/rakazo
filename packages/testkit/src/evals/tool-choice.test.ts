@@ -10,6 +10,7 @@ import {
   TOOL_CHOICE_JUDGE_CALIBRATION,
   TOOL_CHOICE_JUDGE_VERSION,
   ToolChoiceCaseSchema,
+  toolChoiceEvalCase,
 } from "./tool-choice.js";
 import { TOOL_CHOICE_CASES, TOOL_CHOICE_DEFINITIONS } from "./tool-choice-cases.js";
 
@@ -219,6 +220,33 @@ describe("tool-choice grading", () => {
         expect: { calls: [{ tool: "update_bot", args: { description: "~metrics" } }] },
       }).success,
     ).toBe(false);
+  });
+
+  it("grades a prose wildcard by meaning, and lets exact values through", () => {
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    const parses = (expect: object) => ToolChoiceCaseSchema.safeParse({ ...base, expect }).success;
+    expect(parses({ bot: { instructions: "*" } })).toBe(false);
+    expect(parses({ calls: [{ tool: "update_bot", args: { description: "*" } }] })).toBe(false);
+    expect(parses({ bot: { instructions: ["*", null] } })).toBe(false);
+    const keepsName = { calls: [{ tool: "update_bot", args: { name: "Scout" } }] };
+    expect(
+      parses({ ...keepsName, callsMustNot: [{ tool: "update_bot", args: { instructions: "*" } }] }),
+    ).toBe(true);
+    const meaningOnly = toolChoiceEvalCase({
+      ...base,
+      expect: { botMeans: { instructions: "Review pull requests." } },
+    });
+    expect(meaningOnly.judge).toBeDefined();
+    expect(parses({ bot: { instructions: null } })).toBe(true);
+    expect(parses({ bot: { description: "" } })).toBe(true);
+    expect(parses({ bot: { instructions: "Help with travel planning." } })).toBe(true);
+    expect(parses({ bot: { instructions: ["~travel", null] } })).toBe(false);
+    expect(
+      parses({
+        ...keepsName,
+        callsMustNot: [{ tool: "update_bot", args: { instructions: [null, ""] } }],
+      }),
+    ).toBe(true);
   });
 
   it("calibrates the judge against passing and failing references", () => {

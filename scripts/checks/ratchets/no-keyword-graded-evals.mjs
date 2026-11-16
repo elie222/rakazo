@@ -12,8 +12,14 @@ export const include = [
 export const exclude = ["**/{evals,flows,scenarios}/**/*.test.*"];
 
 // Names that hold what a model wrote: replies, saved files, memory, messages and bot settings.
-const PROSE =
-  /\b(?:text|texts|reply|replies|answer|memory|body|content|instructions|description|summary|message|messages|transcript|said)\b|\bfiles?\s*[([]/;
+// Camel-case names count too when a part says it holds a reply (`slackReply`, `replyText`). Generic
+// parts such as `Text` stay out: `lastText` also holds the product's own fixed notices.
+const PROSE_WORDS =
+  "reply|replies|answer|memory|message|messages|summary|transcript|instructions|description";
+const capitalized = PROSE_WORDS.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+const PROSE = new RegExp(
+  `\\b(?:text|texts|body|content|said|${PROSE_WORDS})\\b|\\b(?:${PROSE_WORDS})[A-Z]|[a-z](?:${capitalized})\\b|\\bfiles?\\s*[([]`,
+);
 // A string search with a literal, or a matcher in an assertion.
 const STRING_SEARCH =
   /\.(?:includes|startsWith|endsWith|indexOf|toContain|toMatch)\(\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
@@ -32,12 +38,35 @@ export function seeksWords(literal) {
     const plain = source.replace(/\\[a-zA-Z]/g, " ").replace(/\(\?[:=!<]+/g, " ");
     return plain.split(/[^A-Za-z0-9_.\-/]+/).some(isWord);
   }
-  const value = literal.slice(1, -1).replace(/^~/, "");
-  return value.split(/\s+/).every(isWord) && value.trim() !== "";
+  const tokens = literal
+    .slice(1, -1)
+    .replace(/^~/, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.replace(/[.,;:!?]+$/, ""));
+  // A phrase is mostly words; one token that looks like code or a marker (`ZD-1842`, `rpt_v3`,
+  // `[tool`) makes it an identifier.
+  if (tokens.some((token) => /[^A-Za-z'-]|[A-Z]{2}/.test(token))) return false;
+  const words = tokens.filter(
+    (token) => /^[A-Za-z][a-z]*(?:'[a-z]+)?$/.test(token) && token.length > 1,
+  );
+  return words.length > 0 && words.length * 2 >= tokens.length;
 }
 
 // A lowercase dictionary-style word: no digits, separators or ALL-CAPS code (`ZD-1842`, `rpt_v3`).
 const isWord = (token) => /^[A-Za-z][a-z]{2,}$/.test(token);
+
+/** What a call is made on: its own line, and earlier lines when the call continues them. */
+function receiver(text, index) {
+  let start = text.lastIndexOf("\n", index - 1) + 1;
+  for (let lines = 0; start > 0 && lines < 4; lines += 1) {
+    const previousStart = text.lastIndexOf("\n", start - 2) + 1;
+    const previous = text.slice(previousStart, start - 1).trimEnd();
+    if (!/^[.)\]]/.test(text.slice(start, index + 1).trimStart()) && !/[(=]$/.test(previous)) break;
+    start = previousStart;
+  }
+  return text.slice(start, index);
+}
 
 /** The call's argument text from just after its opening parenthesis, across lines. */
 function argument(text, start) {
@@ -56,17 +85,13 @@ export function count(text) {
     const line = text.slice(0, index).split("\n").length;
     hits.push({ line, text: lines[line - 1].trim() });
   };
-  for (const match of text.matchAll(STRING_SEARCH)) {
-    const before = text.slice(text.lastIndexOf("\n", match.index) + 1, match.index);
-    if (PROSE.test(before) && seeksWords(match[1])) hit(match.index);
-  }
+  for (const match of text.matchAll(STRING_SEARCH))
+    if (PROSE.test(receiver(text, match.index)) && seeksWords(match[1])) hit(match.index);
   for (const match of text.matchAll(REGEX_TEST))
     if (PROSE.test(argument(text, match.index + match[0].length)) && seeksWords(match[1]))
       hit(match.index);
-  for (const match of text.matchAll(REGEX_MATCH)) {
-    const before = text.slice(text.lastIndexOf("\n", match.index) + 1, match.index);
-    if (PROSE.test(before) && seeksWords(match[1])) hit(match.index);
-  }
+  for (const match of text.matchAll(REGEX_MATCH))
+    if (PROSE.test(receiver(text, match.index)) && seeksWords(match[1])) hit(match.index);
   for (const match of text.matchAll(PROSE_MATCHER)) hit(match.index);
   return hits.sort((a, b) => a.line - b.line);
 }

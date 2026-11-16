@@ -18,6 +18,11 @@ const MatcherSchema: z.ZodType<Matcher> = z.lazy(() =>
 );
 type Matcher = string | number | boolean | null | Matcher[];
 
+const some = (matcher: Matcher | undefined, test: (m: Matcher) => boolean): boolean =>
+  Array.isArray(matcher)
+    ? matcher.some((m) => some(m, test))
+    : matcher !== undefined && test(matcher);
+
 const CallSchema = z.object({
   tool: z.string().min(1),
   args: z.record(z.string(), MatcherSchema).optional(),
@@ -49,13 +54,17 @@ const ExpectSchema = z
   .strict()
   .refine(
     ({ bot, calls, anyOf, callsMustNot }) =>
-      [
-        bot,
-        ...[...(calls ?? []), ...(anyOf ?? []), ...(callsMustNot ?? [])].map((c) => c.args),
-      ].every((fields) =>
-        PROSE_SETTINGS.every((key) => fields?.[key] === undefined || fields[key] === "*"),
+      [bot, ...[...(calls ?? []), ...(anyOf ?? []), ...(callsMustNot ?? [])].map((c) => c.args)]
+        .flatMap((fields) => PROSE_SETTINGS.map((key) => fields?.[key]))
+        .every((matcher) => !some(matcher, (m) => typeof m === "string" && m.startsWith("~"))),
+    { message: 'Prose settings are graded by meaning: use "*" with botMeans, not "~" wording' },
+  )
+  .refine(
+    ({ bot, calls, anyOf, botMeans }) =>
+      [bot, ...[...(calls ?? []), ...(anyOf ?? [])].map((c) => c.args)].every((fields) =>
+        PROSE_SETTINGS.every((key) => !some(fields?.[key], (m) => m === "*") || botMeans?.[key]),
       ),
-    { message: 'Prose settings are graded by meaning: use "*" with botMeans, not wording' },
+    { message: 'A prose setting expected as "*" needs botMeans saying what it must mean' },
   );
 export type ToolChoiceExpect = z.infer<typeof ExpectSchema>;
 
@@ -92,7 +101,7 @@ export const ToolChoiceCaseSchema = z
         expect.calls?.length ||
           expect.anyOf ||
           expect.order ||
-          Object.keys({ ...expect.bot, ...expect.user }).length,
+          Object.keys({ ...expect.bot, ...expect.user, ...expect.botMeans }).length,
       ),
     { message: "A guard needs a call, setting or order it must produce, not only prohibitions" },
   );
