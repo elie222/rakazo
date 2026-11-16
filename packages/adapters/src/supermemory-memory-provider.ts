@@ -11,6 +11,8 @@ import type {
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
+  localServiceTrust,
+  localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
 } from "./local-service-endpoint.js";
@@ -27,8 +29,9 @@ import {
 export const SUPERMEMORY_PROVIDER_ID = "supermemory";
 export { SUPERMEMORY_CLOUD_BASE_URL };
 
+/** A self-hosted server needs the operator's setting unless it was checked to be public. */
 export function supermemoryRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
-  return settings.mode === "local";
+  return settings.mode === "local" && localServiceTrust(settings) === "private";
 }
 
 function isSupermemoryCloudBaseUrl(baseUrl: string): boolean {
@@ -65,7 +68,12 @@ function parseSupermemoryConnection(
     assertLocalServiceBaseUrlSync(baseUrl);
   }
   parseServiceBaseUrl(baseUrl);
-  return { mode, baseUrl, apiKey };
+  return {
+    mode,
+    baseUrl,
+    apiKey,
+    ...(mode === "local" ? { trust: localServiceTrust(settings) } : {}),
+  };
 }
 
 export async function prepareSupermemoryConnection(
@@ -78,14 +86,13 @@ export async function prepareSupermemoryConnection(
   },
 ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
   const { mode, baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
-  const pinnedAddresses =
-    mode === "local" ? await pinLocalServiceHost(baseUrl, options) : undefined;
+  const pin = mode === "local" ? await pinLocalServiceHost(baseUrl, options) : undefined;
   const connection: SupermemoryConnectionConfig = {
     baseUrl,
     apiKey,
     resolveHostname: options?.resolveHostname,
     fetch: options?.fetch,
-    ...(pinnedAddresses ? { pinnedAddresses } : {}),
+    ...pin,
   };
   const probe = await probeSupermemory(connection);
   if (!probe.ok) throw new Error(probe.error);
@@ -96,15 +103,18 @@ export async function prepareSupermemoryConnection(
     connection,
   );
   if (!deletable.ok) throw new Error(deletable.error);
-  return { settings: { mode, baseUrl }, credentials: { apiKey } };
+  return {
+    settings: { mode, baseUrl, ...localServiceTrustSettings(pin) },
+    credentials: { apiKey },
+  };
 }
 
 export function createSupermemoryProvider(
   settings: Record<string, string>,
   credentials: Record<string, string>,
 ): SemanticMemoryProvider {
-  const { baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
-  return new SupermemoryMemoryProvider({ baseUrl, apiKey });
+  const { baseUrl, apiKey, trust } = parseSupermemoryConnection(settings, credentials);
+  return new SupermemoryMemoryProvider({ baseUrl, apiKey, trust });
 }
 
 export function decodeLegacySupermemoryCredentials(
@@ -136,7 +146,11 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
 
   constructor(private readonly connection: SupermemoryConnectionConfig) {
     if (!isSupermemoryCloudBaseUrl(connection.baseUrl)) {
-      this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
+      this.localHost = new LocalServiceHost(
+        connection.baseUrl,
+        connection.trust ?? "private",
+        connection.resolveHostname,
+      );
     }
   }
 

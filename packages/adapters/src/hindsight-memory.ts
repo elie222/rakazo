@@ -5,7 +5,10 @@ import {
   parseRecallBanks,
   prepareHindsightConnection,
 } from "./hindsight-memory-provider.js";
-import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import {
+  classifyLocalServiceSettings,
+  revalidateLocalServiceSettings,
+} from "./local-service-endpoint.js";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
 import {
   connectionModeFields,
@@ -81,6 +84,7 @@ export const hindsightMemory: MemoryProviderDefinition = {
       settings.mode === "local" ? selfHostedLabel(settings) : "Hindsight Cloud",
   },
   requiresPrivateEndpoint: hindsightRequiresPrivateEndpoint,
+  classifySettings: classifyLocalServiceSettings,
   revalidate: revalidateLocalServiceSettings,
   prepare: prepareHindsightConnection,
   create: createHindsightProvider,

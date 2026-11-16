@@ -956,12 +956,17 @@ describe("Honcho local mode", () => {
     });
   }
 
-  it("requires the deployment owner for every mode except Honcho Cloud", () => {
+  it("requires the deployment owner for every mode except Honcho Cloud and checked public servers", () => {
     expect(honchoRequiresPrivateEndpoint({})).toBe(false);
     expect(honchoRequiresPrivateEndpoint({ mode: "cloud" })).toBe(false);
     for (const mode of ["local", " local ", "LOCAL", ""]) {
       expect(honchoRequiresPrivateEndpoint({ mode, baseUrl: LOCAL_URL })).toBe(true);
     }
+    expect(
+      honchoRequiresPrivateEndpoint({ mode: "local", baseUrl: LOCAL_URL, endpointTrust: "public" }),
+    ).toBe(false);
+    // A mark only means anything for local mode.
+    expect(honchoRequiresPrivateEndpoint({ mode: "LOCAL", endpointTrust: "public" })).toBe(true);
   });
 
   it.each([" local ", "LOCAL", " cloud "])(
@@ -995,18 +1000,28 @@ describe("Honcho local mode", () => {
     expect(resolveHostname).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    ["a public hostname", "https://honcho.example.com"],
-    ["a public address", "http://203.0.113.10:8000"],
-  ])("rejects %s before sending the key", async (_case, baseUrl) => {
+  it("connects a public HTTPS server without the private-endpoint setting", async () => {
+    const fetch = vi.fn(async () => Response.json({}));
+    const prepared = await prepareHonchoConnection(
+      { mode: "local", baseUrl: "https://honcho.example.com" },
+      { apiKey: "honcho-admin-token" },
+      { resolveHostname: publicResolver, fetch },
+    );
+    expect(prepared.settings).toMatchObject({ mode: "local", endpointTrust: "public" });
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toMatch(
+      /^https:\/\/honcho\.example\.com\//,
+    );
+  });
+
+  it("rejects a public address over plain HTTP before sending the key", async () => {
     const fetch = localFetch();
     await expect(
       prepareHonchoConnection(
-        { mode: "local", baseUrl },
+        { mode: "local", baseUrl: "http://203.0.113.10:8000" },
         { apiKey: "honcho-admin-token" },
         { allowPrivateEndpoint: true, resolveHostname: publicResolver, fetch },
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow(/HTTPS/);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -1024,7 +1039,6 @@ describe("Honcho local mode", () => {
           ),
         ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
       }
-      expect(resolveHostname).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
     },
   );
