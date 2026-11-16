@@ -467,38 +467,38 @@ export function observedPiStream(
             ...(observer ? { maxRetries: 0 } : {}),
           }),
         );
-        const streamOptions = hooks?.onRejectedRequest
-          ? withRejectedRequestCapture(historyOptions, hooks.onRejectedRequest)
-          : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
         try {
           const reportRequestId = (id: string) =>
             reservation !== undefined ? observer?.onRequestId?.(reservation, id) : undefined;
-          const callerOnProviderStreamEvent = streamOptions?.onProviderStreamEvent;
+          const callerOnProviderStreamEvent = historyOptions?.onProviderStreamEvent;
+          const requestOptions = collectRawUsage
+            ? {
+                ...historyOptions,
+                fetch: usageReportingFetch(
+                  model.provider === "openrouter"
+                    ? openRouterInferenceFetch(
+                        historyOptions?.fetch ?? globalThis.fetch,
+                        attribution.userId,
+                      )
+                    : (historyOptions?.fetch ?? globalThis.fetch),
+                  reported,
+                  reportRequestId,
+                ),
+                onProviderStreamEvent: async (event: unknown, eventModel: Model<Api>) => {
+                  if (!sseObserved.has(reported)) {
+                    await observeUsageEvent(event, reported, reportRequestId);
+                  }
+                  await callerOnProviderStreamEvent?.(event, eventModel);
+                },
+              }
+            : historyOptions;
           upstream = models.streamSimple(
             model,
             preparedContext,
-            collectRawUsage
-              ? {
-                  ...streamOptions,
-                  fetch: usageReportingFetch(
-                    model.provider === "openrouter"
-                      ? openRouterInferenceFetch(
-                          streamOptions?.fetch ?? globalThis.fetch,
-                          attribution.userId,
-                        )
-                      : (streamOptions?.fetch ?? globalThis.fetch),
-                    reported,
-                    reportRequestId,
-                  ),
-                  onProviderStreamEvent: async (event, eventModel) => {
-                    if (!sseObserved.has(reported)) {
-                      await observeUsageEvent(event, reported, reportRequestId);
-                    }
-                    await callerOnProviderStreamEvent?.(event, eventModel);
-                  },
-                }
-              : streamOptions,
+            hooks?.onRejectedRequest
+              ? withRejectedRequestCapture(requestOptions, hooks.onRejectedRequest)
+              : requestOptions,
           );
         } catch (error) {
           // The request is sent while the stream is consumed, so this one never left.
