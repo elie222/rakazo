@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
@@ -53,14 +54,6 @@ import { resumeLiveNotifications, stopLiveNotifications } from "./live-notificat
 import { registerPushToken } from "./push";
 import * as session from "./session";
 import { restoreSessionToken } from "./session";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 const settled = <T>(promise: Promise<T>) =>
   Promise.race([promise, new Promise((done) => setTimeout(done, 100, "still waiting"))]);

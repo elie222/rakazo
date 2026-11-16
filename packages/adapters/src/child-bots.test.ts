@@ -24,6 +24,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import type { createRepos, PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -1683,15 +1684,12 @@ describe("destroyBot", () => {
   it("reports deletion success when the in-computer folder cleanup never finishes", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      let markStarted: () => void = () => undefined;
-      const cleanupStarted = new Promise<void>((resolve) => {
-        markStarted = resolve;
-      });
+      const cleanupStarted = deferred();
       let commandSignal: AbortSignal | undefined;
       // Never finishes and ignores aborts, like a wedged provider call.
       const execute = vi.fn((_computer: unknown, _request: CommandRequest, commandContext) => {
         commandSignal = (commandContext as AdapterContext).signal;
-        markStarted();
+        cleanupStarted.resolve();
         return (async function* () {
           await new Promise(() => undefined);
           yield { type: "exit" as const, code: 0 };
@@ -1725,7 +1723,7 @@ describe("destroyBot", () => {
         context,
         { deleteMemories: true },
       );
-      await cleanupStarted;
+      await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(10_000);
 
       await expect(deleting).resolves.toEqual({ removedGroupIds: [] });

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
@@ -610,13 +612,11 @@ it.each(["response", "network"])(
 it("closes the name editor before refresh finishes and ignores a refresh failure", async () => {
   vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
   const editor = await renderNameEditor();
-  let rejectRefresh!: (error: Error) => void;
-  editor.onNameSaved.mockImplementation(
-    () =>
-      new Promise<void>((_resolve, reject) => {
-        rejectRefresh = reject;
-      }),
-  );
+  let rejectRefresh!: Deferred;
+  editor.onNameSaved.mockImplementation(() => {
+    rejectRefresh = deferred();
+    return rejectRefresh.promise;
+  });
   try {
     await editor.change("Sam Rivera");
     await editor.submit();
@@ -624,7 +624,7 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.button("Edit").disabled).toBe(false);
-    await act(async () => rejectRefresh(new Error("offline")));
+    await act(async () => rejectRefresh.reject(new Error("offline")));
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {

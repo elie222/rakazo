@@ -25,7 +25,8 @@ import {
   loginFieldLabelsArgument,
   oneTimeCodeArgument,
 } from "./bot-secrets.js";
-import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
+import { FIND_TOOL, USE_TOOL } from "./builtin.tool-definition.js";
+import { findTools, partitionTools } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";

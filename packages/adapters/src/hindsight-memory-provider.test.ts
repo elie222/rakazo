@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AdapterContext, SemanticMemoryConversationRequest } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HINDSIGHT_CLOUD_BASE_URL } from "./hindsight-client.js";
@@ -1100,14 +1102,11 @@ describe("Hindsight conversations", () => {
   it("shares one cleanup deadline across deletes and later document listings", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
-    let markListingsStarted!: () => void;
-    const listingsStarted = new Promise<void>((resolve) => {
-      markListingsStarted = resolve;
-    });
+    const listingsStarted = deferred();
     let listings = 0;
     const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "DELETE") return Response.json({});
-      if (++listings === 2) markListingsStarted();
+      if (++listings === 2) listingsStarted.resolve();
       const signal = init?.signal;
       return new Promise<Response>((_resolve, reject) => {
         signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -1118,7 +1117,7 @@ describe("Hindsight conversations", () => {
         { botId: "bot-1", threadId: "thread-1", generations: [3] },
         context,
       );
-      await listingsStarted;
+      await listingsStarted.promise;
       deadline.abort();
       expect((await purging).ok).toBe(false);
       expect(fetch.mock.calls).toHaveLength(4);
@@ -1303,19 +1302,14 @@ describe("Hindsight connection", () => {
   it("keeps the local recall deadline when HTTP starts after DNS", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
-    let finishDns!: (addresses: { address: string; family: number }[]) => void;
-    const resolveHostname = vi.fn(
-      () =>
-        new Promise<{ address: string; family: number }[]>((resolve) => {
-          finishDns = resolve;
-        }),
-    );
-    let requestStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      requestStarted = resolve;
+    let finishDns!: Deferred<{ address: string; family: number }[]>;
+    const resolveHostname = vi.fn(() => {
+      finishDns = deferred<{ address: string; family: number }[]>();
+      return finishDns.promise;
     });
+    const started = deferred();
     const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      requestStarted();
+      started.resolve();
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
       });
@@ -1337,8 +1331,8 @@ describe("Hindsight connection", () => {
         { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
         context,
       );
-      finishDns([{ address: "10.0.0.2", family: 4 }]);
-      await started;
+      finishDns.resolve([{ address: "10.0.0.2", family: 4 }]);
+      await started.promise;
       deadline.abort(new Error("shared operation deadline"));
       await expect(pending).resolves.toMatchObject({ ok: false });
       expect(fetch).toHaveBeenCalledOnce();
@@ -1421,14 +1415,11 @@ describe("Hindsight connection", () => {
   it("checks banks concurrently under the setup deadline and names an unverified bank", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
-    let markBanksStarted!: () => void;
-    const banksStarted = new Promise<void>((resolve) => {
-      markBanksStarted = resolve;
-    });
+    const banksStarted = deferred();
     let banks = 0;
     const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       if (!String(url).endsWith("/config")) return Response.json({ banks: [] });
-      if (++banks === 2) markBanksStarted();
+      if (++banks === 2) banksStarted.resolve();
       const signal = init?.signal;
       return new Promise<Response>((_resolve, reject) => {
         signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -1440,7 +1431,7 @@ describe("Hindsight connection", () => {
         { apiKey: "hsk-test-key" },
         { fetch },
       );
-      await banksStarted;
+      await banksStarted.promise;
       deadline.abort();
       await expect(preparing).rejects.toThrow('Hindsight bank "notes" could not be verified:');
       expect(fetch).toHaveBeenCalledTimes(3);

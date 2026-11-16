@@ -468,7 +468,12 @@ describe("thread composer isolation", () => {
   });
 
   it("puts everyone first in a group and filters by the words of a name", () => {
-    const everyone = { kind: "everyone", id: "everyone", name: "everyone" } as const;
+    const everyone = {
+      kind: "everyone",
+      id: "everyone",
+      name: "everyone",
+      aliases: ["everyone", "all", "所有人"],
+    } as const;
     const members = [
       { kind: "bot", id: "bot-a", name: "Research Bot" },
       { kind: "bot", id: "bot-b", name: "Chef" },

@@ -170,6 +170,12 @@ through a transaction pooler. It defaults to `DATABASE_URL`.
 job queue during rolling upgrades. New agent runs dispatch straight from Postgres and do not take
 those slots.
 
+`RUN_DRAIN_ENABLED=true` lets a stopping worker end the turns it is running, for up to five
+minutes, before it hands them back; otherwise it hands them back at once and the next worker
+repeats the model call that was in flight. `docker-compose.prod.yml` turns it on. Turn it on only
+where a stopping worker is left alone for longer than that, as Compose's `stop_grace_period` does:
+a worker killed sooner leaves a run mid-turn waiting for its lease to expire.
+
 ## API and worker memory
 
 Chat runs execute in the API container that receives the message, and routines and other

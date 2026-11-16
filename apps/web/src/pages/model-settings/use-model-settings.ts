@@ -88,6 +88,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     enabledModelIds,
     gatewayId,
     projectId,
@@ -415,7 +416,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       // A fresh connection speaks for itself through the Active model row.
       if (isOpenAiCompatible || savingWithoutKey) setNotice(t`Saved.`);
     } catch (err) {
-      if (stillSelected()) setError(errorText(err, t`Could not connect this provider`));
+      if (stillSelected()) setError(connectionErrorText(err, t`Could not connect this provider`));
     } finally {
       setPending(null);
     }

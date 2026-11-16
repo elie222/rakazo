@@ -1,6 +1,7 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -298,13 +299,10 @@ describe("mobile API sign-in and account", () => {
           storage.delete(key);
         });
         await saveApiBase("https://first.example.test", { "x-gateway": "fake-gateway-key" });
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        const held = deferred();
         const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
           if (input.startsWith("https://first.example.test/api/auth/sign-")) {
-            await held;
+            await held.promise;
             return jsonResponse({ token: "fake-session-first" });
           }
           if (input.endsWith("/api/auth/sign-out")) return jsonResponse({ success: true });
@@ -317,7 +315,7 @@ describe("mobile API sign-in and account", () => {
         await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
         await expect(change()).resolves.toMatchObject({ ok: true });
         expect(currentApiBase()).toBe(next);
-        release();
+        held.resolve();
         await rejection;
 
         expect(await loadSessionToken()).toBe("");
@@ -361,18 +359,12 @@ describe("mobile API sign-in and account", () => {
       const storage = new Map<string, string>();
       mockSecureStore(storage);
       await saveApiBase("https://first.example.test");
-      let releaseWrite!: () => void;
-      const writeHeld = new Promise<void>((resolve) => {
-        releaseWrite = resolve;
-      });
-      let writing!: () => void;
-      const writeStarted = new Promise<void>((resolve) => {
-        writing = resolve;
-      });
+      const writeHeld = deferred();
+      const writeStarted = deferred();
       const holdEndpointWrite = async (key: string) => {
         if (key !== "rakazo.api_base") return;
-        writing();
-        await writeHeld;
+        writeStarted.resolve();
+        await writeHeld.promise;
       };
       vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
         await holdEndpointWrite(key);
@@ -390,7 +382,7 @@ describe("mobile API sign-in and account", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       const switching = change();
-      await writeStarted;
+      await writeStarted.promise;
       expect(currentApiBase()).toBe("https://first.example.test");
       const pending = signIn("ada@example.test", "correct horse");
       let settled = false;
@@ -403,7 +395,7 @@ describe("mobile API sign-in and account", () => {
       try {
         await vi.waitFor(() => expect(settled).toBe(true));
       } finally {
-        releaseWrite();
+        writeHeld.resolve();
       }
       await rejection;
       await expect(switching).resolves.toMatchObject({ ok: true });
@@ -423,21 +415,15 @@ describe("mobile API sign-in and account", () => {
   );
 
   it("drops a sign-in whose session changes while its token is being written", async () => {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let writing!: () => void;
-    const started = new Promise<void>((resolve) => {
-      writing = resolve;
-    });
+    const held = deferred();
+    const started = deferred();
     // A store that keeps what it accepts: the dropped sign-in's revocation is delivered from it.
     const storage = new Map<string, string>();
     mockSecureStore(storage);
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
       if (key === "rakazo.session_token") {
-        writing();
-        await held;
+        started.resolve();
+        await held.promise;
       }
       storage.set(key, value);
     });
@@ -450,9 +436,9 @@ describe("mobile API sign-in and account", () => {
 
     const pending = signIn("ada@example.test", "correct horse");
     const rejection = expect(pending).rejects.toThrow("Could not continue");
-    await started;
+    await started.promise;
     const clearing = clearSessionToken();
-    release();
+    held.resolve();
     await clearing;
     await rejection;
 
@@ -469,14 +455,11 @@ describe("mobile API sign-in and account", () => {
   it("keeps a dropped sign-in's revocation pending until its server answers", async () => {
     const storage = new Map<string, string>();
     mockSecureStore(storage);
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = deferred();
     let firstServerUp = false;
     const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       if (input.startsWith("http://127.0.0.1:3100/api/auth/sign-in/")) {
-        await held;
+        await held.promise;
         return jsonResponse({ token: "fake-session-first" });
       }
       if (input.startsWith("http://127.0.0.1:3100/") && !firstServerUp)
@@ -489,7 +472,7 @@ describe("mobile API sign-in and account", () => {
     const rejection = expect(pending).rejects.toThrow("Could not continue");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     await expect(saveApiBase("https://second.example.test")).resolves.toMatchObject({ ok: true });
-    release();
+    held.resolve();
     await rejection;
 
     // The first server cannot be reached, so the revocation stays recorded for it.
@@ -1290,12 +1273,9 @@ describe("mobile API sign-in and account", () => {
       mockSecureStore(store);
       const fetchMock = vi.fn<typeof globalThis.fetch>(async () => new Response("{}", { status }));
       vi.stubGlobal("fetch", fetchMock);
-      let finishClear!: () => void;
-      const clearHeld = new Promise<void>((release) => {
-        finishClear = release;
-      });
+      const clearHeld = deferred();
       vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-        if (key === "rakazo.session_token") await clearHeld;
+        if (key === "rakazo.session_token") await clearHeld.promise;
         store.delete(key);
       });
 
@@ -1304,7 +1284,7 @@ describe("mobile API sign-in and account", () => {
       // window. After a hard answer the sign-out's own delivery finds no record left to send.
       await vi.waitFor(() => expect(pendingSignOutRecords(store)).toHaveLength(1));
       await flushPendingSignOut(true);
-      finishClear();
+      clearHeld.resolve();
       await signingOut;
 
       await vi.waitFor(() =>
@@ -1322,14 +1302,11 @@ describe("mobile API sign-in and account", () => {
   it("joins the earlier sign-out's delivery instead of resending it", async () => {
     const store = new Map<string, string>([["rakazo.session_token", "token-a"]]);
     mockSecureStore(store);
-    let releaseFirst!: (response: Response) => void;
-    const heldResponse = new Promise<Response>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const heldResponse = deferred<Response>();
     let calls = 0;
     const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
       calls += 1;
-      if (calls === 1) return heldResponse;
+      if (calls === 1) return heldResponse.promise;
       return Promise.resolve(jsonResponse({}));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1353,7 +1330,7 @@ describe("mobile API sign-in and account", () => {
       new Promise((resolve) => setTimeout(() => resolve("waiting"), 100)),
     ]);
     expect(raced).toBe("waiting");
-    releaseFirst(jsonResponse({}));
+    heldResponse.resolve(jsonResponse({}));
     await flushing;
 
     const bearers = fetchMock.mock.calls.map(
@@ -1380,14 +1357,11 @@ describe("mobile API sign-in and account", () => {
       ],
     ]);
     mockSecureStore(store);
-    let releaseFirst!: (response: Response) => void;
-    const heldResponse = new Promise<Response>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const heldResponse = deferred<Response>();
     let calls = 0;
     const fetchMock = vi.fn<typeof globalThis.fetch>((_url) => {
       calls += 1;
-      if (calls === 1) return heldResponse;
+      if (calls === 1) return heldResponse.promise;
       return Promise.resolve(jsonResponse({}));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1397,7 +1371,7 @@ describe("mobile API sign-in and account", () => {
     await vi.waitFor(() => expect(calls).toBe(1));
     // Signing out again must join that delivery, not replace it with another one.
     await signOut();
-    releaseFirst(jsonResponse({}));
+    heldResponse.resolve(jsonResponse({}));
     await flushing;
 
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
@@ -1685,7 +1659,7 @@ describe("mobile API sign-in and account", () => {
         pendingListReads += 1;
         if (pendingListReads === 2) {
           resolveStarted();
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await flush();
         }
         return stored;
       });
@@ -2054,19 +2028,16 @@ describe("mobile API sign-in and account", () => {
     const store = new Map<string, string>();
     mockSecureStore(store);
     await restoreSessionToken("token-a");
-    let releaseSave!: () => void;
-    const saveHeld = new Promise<void>((resolve) => {
-      releaseSave = resolve;
-    });
+    const saveHeld = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === "rakazo.session_token" && value === "token-b") await saveHeld;
+      if (key === "rakazo.session_token" && value === "token-b") await saveHeld.promise;
       store.set(key, value);
     });
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
     const saving = saveSessionToken("token-b");
     const signingOut = signOut();
-    releaseSave();
+    saveHeld.resolve();
     await saving;
 
     await expect(signingOut).rejects.toThrow("Could not clear the local session");

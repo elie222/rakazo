@@ -454,7 +454,8 @@ export const CreateBotInput = z.object({
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
-  computerMode: ComputerModeSchema.default("team"),
+  /** Unset follows the deployment's default computer. */
+  computerMode: ComputerModeSchema.optional(),
   /** Idempotency key within a space (unique with spaceId). */
   spawnKey: z.string().trim().min(1).max(120).optional(),
 });
@@ -1305,6 +1306,8 @@ export const SpaceMemoryConfigSchema = z.object({
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
+  /** One line naming the connection, written by the provider. Absent from older servers. */
+  connectionLabel: z.string().optional(),
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 

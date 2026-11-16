@@ -66,6 +66,7 @@ export async function pauseRunForTakeover(
         leaseOwner: null,
         leaseExpiresAt: null,
         checkpoint: released ? run.checkpoint : null,
+        ...(released ? { wakeAt: new Date() } : {}),
       },
     });
     if (paused.count !== 1) return null;

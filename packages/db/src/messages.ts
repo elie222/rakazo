@@ -5,6 +5,12 @@ import { markThreadUnreadForMembers } from "./thread-reads.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 /**
+ * What a group turn reads of its thread: one channel's messages, or only the message that woke
+ * it when that message no longer says which channel it came from.
+ */
+export type GroupTurnHistory = { channelId: string } | { sourceMessageId: string };
+
+/**
  * Group turns use channel inputs and their own outputs, never private thread history.
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
  * leaves out of this run's history.
@@ -13,18 +19,22 @@ export async function loadRunHistoryMessages(
   prisma: PrismaClient,
   run: { id: string; threadId: string; botId: string; userId: string },
   limit: number,
-  channelId?: string,
+  groupTurn?: GroupTurnHistory,
 ) {
   const messages = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
-      ...(channelId
+      ...(groupTurn
         ? {
             OR: [
-              {
-                role: "user",
-                blocks: { array_contains: [{ kind: "channel_message", channelId }] },
-              },
+              "channelId" in groupTurn
+                ? {
+                    role: "user",
+                    blocks: {
+                      array_contains: [{ kind: "channel_message", channelId: groupTurn.channelId }],
+                    },
+                  }
+                : { id: groupTurn.sourceMessageId },
               { role: "bot", runId: run.id },
             ],
           }

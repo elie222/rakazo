@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -497,7 +498,10 @@ it("returns to the provider list when a refresh removes the open model", async (
     ]);
     await typeInto(labeled(view.container, "Maximum output tokens")!, "2000");
     await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
-    expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull();
+    // The save, the refresh after it and the return to the list each take their own turn.
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull(),
+    );
     expect(view.container.textContent).toContain("model-b");
     expect(labeled(view.container, "Maximum output tokens")).toBeNull();
   } finally {
@@ -584,7 +588,7 @@ it("renaming a connection keeps unsaved form fields", async () => {
     if (!(nameSave instanceof HTMLButtonElement)) throw new Error("Missing name save button");
     await click(nameSave);
     await act(async () => {
-      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+      for (let index = 0; index < 5; index += 1) await flush();
     });
     expect(models.rename).toHaveBeenCalledWith({
       credentialId: "cred-deepseek",
@@ -1140,6 +1144,26 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
     );
     expect(view.container.textContent).toContain("In use by Helper");
     expect(modelCheckbox(view.container, "model-b").checked).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("hides a credential in a refused save's message", async () => {
+  models.connect.mockRejectedValue(
+    new Error("Incorrect API key provided: example-1234. Check the key."),
+  );
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
+  try {
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(view.container.textContent).toContain("Incorrect API key provided: •••. Check the key.");
+    expect(view.container.textContent).not.toContain("example-1234");
   } finally {
     await view.unmount();
   }
@@ -1727,13 +1751,8 @@ it("replaces one connection's key and disconnects only that connection", async (
 it("keeps another connection's form when an earlier save finishes", async () => {
   models.list.mockResolvedValue([deepseekEntry, openrouterEntry]);
   models.credentials.mockResolvedValue([deepseekCredential]);
-  let finishSave!: (value: unknown) => void;
-  models.connect.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishSave = resolve;
-      }),
-  );
+  const finishSave = deferred<unknown>();
+  models.connect.mockImplementationOnce(() => finishSave.promise);
   const view = await renderSettings();
   try {
     await openPicker("Add fallback");
@@ -1746,7 +1765,7 @@ it("keeps another connection's form when an earlier save finishes", async () => 
     await manage();
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     await act(async () => {
-      finishSave({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
+      finishSave.resolve({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
     });
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     // The finished save's slot picker does not take over.
@@ -1773,6 +1792,61 @@ it("renames a connection", async () => {
       credentialId: "cred-deepseek-work",
       label: "Client work",
     });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("renames once, holds Save meanwhile, then reads the connections again", async () => {
+  const renaming = deferred<{ ok: true }>();
+  models.rename.mockReturnValue(renaming.promise);
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    const save = () => input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await act(async () => {
+      input.form?.requestSubmit();
+      input.form?.requestSubmit();
+    });
+    expect(models.rename).toHaveBeenCalledTimes(1);
+    expect(save()?.disabled).toBe(true);
+    expect(save()?.textContent).toBe("Saving…");
+
+    const reads = models.credentials.mock.calls.length;
+    models.credentials.mockResolvedValue([
+      deepseekCredential,
+      { ...workCredential, label: "Client work" },
+    ]);
+    await act(async () => renaming.resolve({ ok: true }));
+    await vi.waitFor(() => expect(save()).toBeNull());
+    expect(models.credentials.mock.calls.length).toBeGreaterThan(reads);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("says why a rename failed and offers Save again", async () => {
+  models.rename.mockRejectedValue({ code: "INTERNAL_SERVER_ERROR" });
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    await act(async () => {
+      input.form?.requestSubmit();
+    });
+    await vi.waitFor(() =>
+      expect(input.form?.textContent).toContain("Could not rename connection"),
+    );
+    const save = input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(save?.disabled).toBe(false);
+    expect(save?.textContent).toBe("Save");
   } finally {
     await view.unmount();
   }

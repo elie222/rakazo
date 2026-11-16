@@ -9,6 +9,7 @@ import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
 } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CHROME_OWNS_DEBUG_PORT_SCRIPT,
@@ -21,7 +22,12 @@ import {
   MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
 } from "./createos-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
+import {
+  assertSandboxReadLimit,
+  MachineRecords,
+  settleMachineCleanup,
+  untilAborted,
+} from "./sandbox-test-support.js";
 
 // Status polls wait a second between reads; the fakes below settle on the next read.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -138,6 +144,8 @@ function createosFixture(
     annotateScreen?: boolean;
     failConnectScreenIds?: string[];
     holdConnect?: { screenId: string; hit: number; gate: Promise<void>; onHold: () => void };
+    /** What `stat` reports for the one file the fixture serves; unset, it prints no size. */
+    statSize?: number;
   } = {},
 ) {
   const statuses = [...(options.statuses ?? ["running"])];
@@ -195,6 +203,9 @@ function createosFixture(
       }
       if (command.includes("os.listdir")) {
         return jsonResponse({ result: { stdout: WORKSPACE_LISTING, exit_code: 0 } });
+      }
+      if (options.statSize !== undefined && command.includes("'stat' '-c' '%s'")) {
+        return jsonResponse({ result: { stdout: `${options.statSize}\n`, exit_code: 0 } });
       }
       return jsonResponse({ result: { stdout: "hello\n", exit_code: 0 } });
     }
@@ -322,6 +333,18 @@ describe("CreateOSSandboxProvider", () => {
       `mkdir -p '/home/desktop/rakazo-home/notes' && cd '/home/desktop/rakazo-home/notes' && eval "$(cat)" && 'env' '-u' 'FAILED' '--' 'echo' 'hello'`,
     );
     expect(exec?.stdin).toBe("export TEST_VALUE='works'\n");
+  });
+
+  // The fixture serves one five-byte file. A stale size stands for a file that grew after
+  // it was measured, which only the capped download catches.
+  it.each([
+    ["the size the computer reports", 5],
+    ["the bytes that arrive when the reported size is stale", 0],
+  ])("refuses a file over a read's size limit by %s", async (_name, statSize) => {
+    await assertSandboxReadLimit(provider(createosFixture({ statSize })), computer, context, {
+      path: "notes.txt",
+      content: new TextEncoder().encode("notes"),
+    });
   });
 
   it("sends command secrets on stdin, never in command text", async () => {
@@ -757,18 +780,17 @@ describe("CreateOSSandboxProvider", () => {
   });
 
   it("deletes a screen only after its in-flight connection finishes", async () => {
-    let openGate: () => void = () => undefined;
-    const connectGate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
-    let markHeld: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      markHeld = resolve;
-    });
+    const connectGate = deferred();
+    const held = deferred();
     const fixture = createosFixture({
       connectionUrl: "https://sandbox.app.sb.createos.sh/vnc.html",
       annotateScreen: true,
-      holdConnect: { screenId: "screen-1", hit: 2, gate: connectGate, onHold: () => markHeld() },
+      holdConnect: {
+        screenId: "screen-1",
+        hit: 2,
+        gate: connectGate.promise,
+        onHold: () => held.resolve(),
+      },
     });
     const target = provider(fixture);
     const botA = { ...context, botId: "bot-a" };
@@ -777,14 +799,14 @@ describe("CreateOSSandboxProvider", () => {
     await target.connectScreen(computer, { view: "stream" }, botA);
     await target.connectScreen(computer, { view: "stream" }, botB);
     const reconnecting = target.connectScreen(computer, { view: "stream" }, botB);
-    await held;
+    await held.promise;
     const releasing = target.releaseScreen(computer, botB);
     await vi.waitFor(() => {
       expect(fixture.execs.some((exec) => exec.command.includes("begin-release"))).toBe(true);
     });
     expect(fixture.events.some((event) => event.startsWith("delete:"))).toBe(false);
 
-    openGate();
+    connectGate.resolve();
     const session = await reconnecting;
     await releasing;
 
@@ -1241,6 +1263,42 @@ describe("CreateOS sandbox lifecycle", () => {
         status: "creating",
       });
     });
+  });
+
+  it("records a new sandbox for its computer before waiting for it to start", async () => {
+    const plane = createosControlPlane();
+    const records = new MachineRecords();
+    let whenFirstPolled: ReturnType<MachineRecords["dueIn"]> | undefined;
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const route = `${init?.method ?? "GET"} ${new URL(String(input)).pathname}`;
+      if (route === "GET /v1/sandboxes/sbx-new-1") whenFirstPolled ??= records.dueIn();
+      return plane.fetchImpl(input, init);
+    }) as typeof fetch;
+    const provider = new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      fetch: fetchImpl,
+      unreferencedMachines: records,
+    });
+
+    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    expect(whenFirstPolled).toMatchObject([
+      { provider: "createos", machineId: "sbx-new-1", homeKey: "bot-a" },
+    ]);
+    expect(whenFirstPolled?.[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("deletes a sandbox from its id alone, and counts one CreateOS no longer has as deleted", async () => {
+    const plane = createosControlPlane({ status: "running" });
+    const provider = new CreateOSSandboxProvider({ apiKey: "test-key", fetch: plane.fetchImpl });
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine({ provider: "createos", machineId: "sbx-1" }, signal);
+
+    expect(plane.status("sbx-1")).toBe("destroyed");
+    await expect(
+      provider.deleteMachine({ provider: "createos", machineId: "sbx-never-made" }, signal),
+    ).resolves.toBeUndefined();
   });
 });
 

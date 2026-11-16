@@ -3,6 +3,7 @@
 import { i18n } from "@lingui/core";
 import type { BotSecretMetadata, SettingsScope } from "@rakazo/contracts";
 import { encodeCardSecret, encodeLoginSecret, noneSkipped } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -121,12 +122,6 @@ let container: HTMLDivElement;
 let root: Root;
 let queryClient: QueryClient;
 
-async function flush() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 async function render(scope: SettingsScope = "account") {
   await act(async () => {
     root.render(
@@ -135,7 +130,7 @@ async function render(scope: SettingsScope = "account") {
       </QueryClientProvider>,
     );
   });
-  await flush();
+  await act(flush);
 }
 
 function find<T extends HTMLElement = HTMLElement>(testId: string): T | null {
@@ -152,7 +147,7 @@ async function click(target: string | HTMLElement) {
   await act(async () => {
     (typeof target === "string" ? byTestId(target) : target).click();
   });
-  await flush();
+  await act(flush);
 }
 
 function rowNamed(name: string) {
@@ -242,7 +237,7 @@ describe("an item's uses", () => {
     await act(async () => {
       await queryClient.invalidateQueries();
     });
-    await flush();
+    await act(flush);
     const failure = container.querySelector('[role="alert"]') as HTMLElement;
     expect(failure.textContent).toContain("Could not load activity");
     vault.activity.mockResolvedValue([use]);
@@ -459,8 +454,8 @@ describe("an item for chosen bots", () => {
       addEventListener() {},
       removeEventListener() {},
     }));
-    let loaded: (value: string[]) => void = () => {};
-    spaceSettings.overrides.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+    const loaded = deferred<string[]>();
+    spaceSettings.overrides.mockReturnValue(loaded.promise);
     const custom = { ...rows[3]!, allBots: false, botIds: ["bot-1"] };
     vault.list.mockResolvedValue([...rows.slice(0, 3), custom, rows[4]]);
     vault.put.mockResolvedValue(custom);
@@ -469,8 +464,8 @@ describe("an item for chosen bots", () => {
     await click("vault-item-edit");
     await click(buttonIn(byTestId("vault-item-access"), "Block")!);
     expect(find("agent-access")).toBeNull();
-    await act(async () => loaded([]));
-    await flush();
+    await act(async () => loaded.resolve([]));
+    await act(flush);
     // Blocked, the bots aren't offered; allowed again, they are, as saved.
     expect(find("agent-access")).toBeNull();
     await click(buttonIn(byTestId("vault-item-access"), "Allow")!);
@@ -487,8 +482,8 @@ describe("an item for chosen bots", () => {
       addEventListener() {},
       removeEventListener() {},
     }));
-    let loaded: (value: string[]) => void = () => {};
-    spaceSettings.overrides.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+    const loaded = deferred<string[]>();
+    spaceSettings.overrides.mockReturnValue(loaded.promise);
     bots.list.mockResolvedValue([{ id: "bot-1", name: "Ada", color: "#F97316" }]);
     bots.listArchived.mockResolvedValue([
       { id: "bot-old", name: "Old", color: "#6366F1", archivedAt: "2026-10-01T00:00:00.000Z" },
@@ -500,8 +495,8 @@ describe("an item for chosen bots", () => {
     await click(rowNamed("custom"));
     await click("vault-item-edit");
     expect(find("agent-access")).toBeNull();
-    await act(async () => loaded([]));
-    await flush();
+    await act(async () => loaded.resolve([]));
+    await act(flush);
     await openPicker();
     await act(async () => menuItem("Old · Archived")!.click());
     await click("vault-editor-save");
@@ -514,14 +509,14 @@ describe("an item for chosen bots", () => {
       addEventListener() {},
       removeEventListener() {},
     }));
-    let loaded: (value: string[]) => void = () => {};
-    spaceSettings.overrides.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+    const loaded = deferred<string[]>();
+    spaceSettings.overrides.mockReturnValue(loaded.promise);
     vault.list.mockResolvedValue([{ ...rows[2]!, allBots: true, botIds: [] }]);
     await render();
     await startNew("api_key");
     expect(find("agent-access")).toBeNull();
-    await act(async () => loaded([]));
-    await flush();
+    await act(async () => loaded.resolve([]));
+    await act(flush);
     await vi.waitFor(() => expect(find("agent-access")).not.toBeNull());
   });
 
@@ -589,9 +584,9 @@ describe("an item for chosen bots", () => {
       addEventListener() {},
       removeEventListener() {},
     }));
-    let loaded: (value: unknown[]) => void = () => {};
+    const loaded = deferred<unknown[]>();
     bots.list.mockResolvedValue([{ id: "bot-1", name: "Ada", color: "#F97316" }]);
-    bots.listArchived.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+    bots.listArchived.mockReturnValue(loaded.promise);
     const custom = { ...rows[3]!, allBots: false, botIds: ["bot-old"] };
     vault.list.mockResolvedValue([...rows.slice(0, 3), custom, rows[4]]);
     await render();
@@ -600,11 +595,11 @@ describe("an item for chosen bots", () => {
     await click("vault-item-edit");
     expect(find("agent-access")).toBeNull();
     await act(async () =>
-      loaded([
+      loaded.resolve([
         { id: "bot-old", name: "Old", color: "#6366F1", archivedAt: "2026-10-01T00:00:00.000Z" },
       ]),
     );
-    await flush();
+    await act(flush);
     expect(byTestId("agent-access").textContent).not.toContain("No bots");
   });
 
@@ -784,13 +779,13 @@ describe("a login that asks first", () => {
   });
 
   it("never says No bots while the bots are still loading", async () => {
-    let loaded!: (list: unknown[]) => void;
-    bots.list.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+    const loaded = deferred<unknown[]>();
+    bots.list.mockReturnValue(loaded.promise);
     vault.list.mockResolvedValue([{ ...rows[0]!, allBots: false, botIds: ["bot-1"] }]);
     await render();
     await click(rowNamed("github"));
     expect(find("vault-item-access-detail")).toBeNull();
-    await act(async () => loaded([{ id: "bot-1", name: "Ada", color: "#F97316" }]));
+    await act(async () => loaded.resolve([{ id: "bot-1", name: "Ada", color: "#F97316" }]));
     await vi.waitFor(() =>
       expect(byTestId("vault-item-access-detail").textContent).toBe("BotsAda"),
     );
@@ -1399,7 +1394,7 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     const counts = () =>
       [...document.querySelectorAll("[data-testid=vault-import-count]")].map(
         (row) => row.textContent,
@@ -1450,7 +1445,7 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     expect(
       [...find("vault-import-problems")!.querySelectorAll("li")].map((row) => row.textContent),
     ).toEqual([
@@ -1491,7 +1486,7 @@ describe("VaultSettings item details", () => {
         await act(async () =>
           reads[name]!(`url,password\nhttps://${name}.example.com,fake-${name}`),
         );
-        await flush();
+        await act(flush);
       }
       await click(buttonIn(find("vault-import-page"), "Import")!);
       expect(vault.import).toHaveBeenCalledWith({
@@ -1515,7 +1510,7 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     const counts = [...document.querySelectorAll("[data-testid=vault-import-count]")].map(
       (row) => row.textContent,
     );
@@ -1533,7 +1528,7 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     // The first login was saved before the server failed on the second.
     vault.import.mockRejectedValueOnce(new Error("Internal server error"));
     const saved = item({
@@ -1544,7 +1539,7 @@ describe("VaultSettings item details", () => {
     });
     vault.list.mockResolvedValue([...rows, saved]);
     await click(buttonIn(find("vault-import-page"), "Import")!);
-    await flush();
+    await act(flush);
     // Two sentences on two lines: joining them would need punctuation each language writes its way.
     const alert = find("vault-import-page")?.querySelector("[role=alert]");
     expect(alert?.textContent).toBe(
@@ -1578,11 +1573,11 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     vault.import.mockRejectedValueOnce(new Error("Internal server error"));
     vault.list.mockRejectedValue(new Error("offline"));
     await click(buttonIn(find("vault-import-page"), "Import")!);
-    await flush();
+    await act(flush);
     expect(find("vault-import-page")?.querySelector("[role=alert]")?.textContent).toContain(
       "Some logins may have been saved. Importing the file again skips them.",
     );
@@ -1603,7 +1598,7 @@ describe("VaultSettings item details", () => {
     await act(async () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await flush();
+    await act(flush);
     await click(buttonIn(find("vault-import-page"), "Import")!);
     expect(find("vault-import-page")?.textContent).toContain(
       "Update your server to import logins.",

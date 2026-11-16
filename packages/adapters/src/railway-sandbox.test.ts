@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
   RailwayGraphQLError,
@@ -21,6 +22,7 @@ import { RailwaySandboxProvider } from "./railway-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
+  MachineRecords,
   settleMachineCleanup,
   untilAborted,
 } from "./sandbox-test-support.js";
@@ -622,7 +624,7 @@ describe("Railway computers", () => {
     try {
       const pending = transport("https://backboard.railway.com/graphql/v2");
       const assertion = expect(pending).rejects.toThrow("deadline");
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await flush();
       controller.abort(new Error("deadline"));
       await assertion;
       expect(deadline).toHaveBeenCalledWith(30_000);
@@ -635,17 +637,11 @@ describe("Railway computers", () => {
   it("captures and destroys a sandbox when canceled before the create response is read", async () => {
     const controller = new AbortController();
     const reason = new Error("provision canceled");
-    let acceptRequest!: () => void;
-    const accepted = new Promise<void>((resolve) => {
-      acceptRequest = resolve;
-    });
-    let sendResponse!: (response: Response) => void;
-    const response = new Promise<Response>((resolve) => {
-      sendResponse = resolve;
-    });
+    const accepted = deferred();
+    const response = deferred<Response>();
     const fetchMock = vi.fn((_input, _init) => {
-      acceptRequest();
-      return response;
+      accepted.resolve();
+      return response.promise;
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(Sandbox.create).mockImplementation(async (options) => {
@@ -658,9 +654,9 @@ describe("Railway computers", () => {
       { ...ctx, signal: controller.signal },
     );
     const assertion = expect(pending).rejects.toBe(reason);
-    await accepted;
+    await accepted.promise;
     controller.abort(reason);
-    sendResponse(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
+    response.resolve(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
     await assertion;
 
     expect(fetchMock.mock.calls[0]?.[1]?.signal.aborted).toBe(false);
@@ -909,6 +905,55 @@ describe("Railway computers", () => {
       expect(unanswered.every((signal) => signal.aborted)).toBe(true);
       expect(left).toEqual([{ provider: "railway", machineId: "created-1" }]);
     });
+
+    it("is handed to the records when it cannot be destroyed", async () => {
+      withoutPrivateNetwork();
+      sandbox.destroy.mockRejectedValue(new Error("connection reset"));
+      const records = new MachineRecords();
+      const recording = new RailwaySandboxProvider({
+        token: "test",
+        environmentId: "environment",
+        unreferencedMachines: records,
+      });
+
+      await settleMachineCleanup(() =>
+        recording.provision({ botId: "bot", homePath: "/unused" }, ctx),
+      );
+
+      expect([...records.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "railway", machineId: "sandbox", homeKey: "bot" },
+      ]);
+    });
+  });
+
+  it("records a new sandbox for its computer when Railway's create reply names it", async () => {
+    backboard();
+    const records = new MachineRecords();
+    const recording = new RailwaySandboxProvider({
+      token: "test",
+      environmentId: "environment",
+      unreferencedMachines: records,
+    });
+
+    const computer = await recording.provision({ botId: "bot", homePath: "/unused" }, ctx);
+
+    expect(computer.providerRef).toBe("created-1");
+    expect(records.dueIn()).toMatchObject([
+      { provider: "railway", machineId: "created-1", homeKey: "bot" },
+    ]);
+    expect(records.dueIn()[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("destroys a sandbox from its id alone, and counts one already gone as destroyed", async () => {
+    const api = backboard({});
+    const signal = AbortSignal.timeout(5_000);
+
+    await provider.deleteMachine({ provider: "railway", machineId: "sandbox" }, signal);
+
+    expect(api.operations).toContain("RailwaySandboxDestroy");
+    await expect(
+      provider.deleteMachine({ provider: "railway", machineId: "never-made" }, signal),
+    ).resolves.toBeUndefined();
   });
 
   it("preserves output and reports timeout as a nonzero exit", async () => {

@@ -1,4 +1,6 @@
 import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { MemoryProviderDescriptor } from "@rakazo/contracts";
+import { settingsFieldProblem, visibleSettingsFields } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -8,13 +10,16 @@ import {
   parseRecallBanks,
   prepareHindsightConnection,
 } from "./hindsight-memory-provider.js";
+import { hindsightMemorySettings } from "./hindsight-memory-settings.js";
 import {
   createHonchoProvider,
   HONCHO_PROVIDER_ID,
   honchoRequiresPrivateEndpoint,
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
+import { honchoMemorySettings } from "./honcho-memory-settings.js";
 import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import type { SettingsMemoryProvider } from "./memory-provider-descriptor.js";
 import { normalizeSerenityEndpoint } from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,
@@ -23,6 +28,7 @@ import {
   SERENITY_PROVIDER_ID,
   serenityRequiresPrivateEndpoint,
 } from "./serenity-memory-provider.js";
+import { serenityMemorySettings } from "./serenity-memory-settings.js";
 
 export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
@@ -33,6 +39,7 @@ import {
   SUPERMEMORY_PROVIDER_ID,
   supermemoryRequiresPrivateEndpoint,
 } from "./supermemory-memory-provider.js";
+import { supermemoryMemorySettings } from "./supermemory-memory-settings.js";
 
 export interface MemoryProviderConnectionInput {
   provider: string;
@@ -58,6 +65,8 @@ export interface MemoryProviderResolver {
 }
 
 interface MemoryProviderAdapter {
+  /** The settings form the provider asks for, and how it names a saved connection. */
+  settings: SettingsMemoryProvider;
   requiresPrivateEndpoint(settings: Record<string, string>): boolean;
   /** Async trust classification (e.g. DNS) without probing credentials. */
   classifySettings?(settings: Record<string, string>): Promise<Record<string, string>>;
@@ -117,6 +126,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   [
     SUPERMEMORY_PROVIDER_ID,
     {
+      settings: supermemoryMemorySettings,
       requiresPrivateEndpoint: supermemoryRequiresPrivateEndpoint,
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareSupermemoryConnection,
@@ -128,6 +138,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   [
     SERENITY_PROVIDER_ID,
     {
+      settings: serenityMemorySettings,
       requiresPrivateEndpoint: serenityRequiresPrivateEndpoint,
       classifySettings: classifySerenityConnectionSettings,
       prepare: (
@@ -142,6 +153,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   [
     HONCHO_PROVIDER_ID,
     {
+      settings: honchoMemorySettings,
       requiresPrivateEndpoint: honchoRequiresPrivateEndpoint,
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHonchoConnection,
@@ -152,6 +164,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   [
     HINDSIGHT_PROVIDER_ID,
     {
+      settings: hindsightMemorySettings,
       requiresPrivateEndpoint: hindsightRequiresPrivateEndpoint,
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHindsightConnection,
@@ -165,6 +178,52 @@ function memoryProviderAdapter(provider: string): MemoryProviderAdapter {
   const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
   if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
   return adapter;
+}
+
+/** Every provider's settings form, in the order a Space picks from; the first is offered first. */
+export function memoryProviderDescriptors(): MemoryProviderDescriptor[] {
+  return [...MEMORY_PROVIDER_ADAPTERS.values()].map(
+    ({ settings: { id, displayName, fields } }) => ({ id, displayName, fields }),
+  );
+}
+
+/** One line naming a saved connection, or nothing for a provider this build does not have. */
+export function memoryProviderConnectionLabel(
+  provider: string,
+  settings: Record<string, string>,
+): string | undefined {
+  return MEMORY_PROVIDER_ADAPTERS.get(provider)?.settings.connectionLabel(settings);
+}
+
+/**
+ * Refuses settings the provider's form would not send. Settings no field names are left to the
+ * provider, and so are secrets: only it knows whether a key is needed where it connects.
+ */
+export function assertMemoryProviderSettings(
+  provider: string,
+  settings: Record<string, string>,
+): void {
+  const { fields } = memoryProviderAdapter(provider).settings;
+  for (const field of visibleSettingsFields(fields, settings)) {
+    if (field.kind === "secret") continue;
+    const problem = settingsFieldProblem(field, settings);
+    if (!problem) continue;
+    if (problem.message) throw new Error(problem.message);
+    if (problem.rule === "required") throw new Error(`${field.key} is required`);
+    if (problem.rule === "length") throw new Error(`${field.key} is the wrong length`);
+    throw new Error(`${field.key} is not one of its choices`);
+  }
+}
+
+/** The stored settings an edit carries over because no field of the form holds them. */
+export function keptMemoryProviderSettings(
+  provider: string,
+  stored: Record<string, string>,
+): Record<string, string> {
+  const kept = memoryProviderAdapter(provider).settings.keptSettings ?? [];
+  return Object.fromEntries(
+    kept.flatMap((key) => (stored[key] === undefined ? [] : [[key, stored[key]]])),
+  );
 }
 
 /** Adapters classify their settings; callers enforce the deployment trust boundary. */

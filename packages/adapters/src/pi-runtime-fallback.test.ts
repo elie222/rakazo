@@ -17,6 +17,8 @@ import {
   MODEL_REQUEST_LIMIT_ERROR,
   normalizeRunError,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -766,7 +768,7 @@ describe("Pi runtime ordered model fallback", () => {
       void first.then(() => {
         started = true;
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(started).toBe(false);
       expect(providerState.stream.mock.lastCall?.[2]).toMatchObject(options);
       upstream.push({ type: "error", reason: "error", error: failure });
@@ -2413,13 +2415,11 @@ describe("Pi runtime ordered model fallback", () => {
 
   it("does not persist or start a backup when cancellation wins during credential resolution", async () => {
     const input = request([{ provider: backupA.provider, id: backupA.id }]);
-    let releaseResolution: ((model: AgentRunRequest["model"]) => void) | undefined;
-    input.resolveFallbackModel = vi.fn(
-      () =>
-        new Promise<AgentRunRequest["model"]>((resolve) => {
-          releaseResolution = resolve;
-        }),
-    );
+    let releaseResolution: Deferred<AgentRunRequest["model"]> | undefined;
+    input.resolveFallbackModel = vi.fn(() => {
+      releaseResolution = deferred<AgentRunRequest["model"]>();
+      return releaseResolution.promise;
+    });
     const onModelChange = vi.fn(async () => undefined);
     input.onModelChange = onModelChange;
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
@@ -2450,7 +2450,11 @@ describe("Pi runtime ordered model fallback", () => {
     const running = consume();
     await vi.waitFor(() => expect(input.resolveFallbackModel).toHaveBeenCalledOnce());
     controller.abort();
-    releaseResolution?.({ provider: backupA.provider, id: backupA.id, apiKey: "test-backup-key" });
+    releaseResolution?.resolve({
+      provider: backupA.provider,
+      id: backupA.id,
+      apiKey: "test-backup-key",
+    });
     await running;
 
     expect(onModelChange).not.toHaveBeenCalled();

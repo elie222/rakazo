@@ -1,7 +1,9 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
-import { settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
+import { MachineRecords, settleMachineCleanup, untilAborted } from "./sandbox-test-support.js";
 
 type Remove = Parameters<typeof deleteUnreferencedMachine>[2];
 
@@ -13,7 +15,7 @@ async function cleanup(remove: Remove) {
   let elapsedMs = 0;
   const outcome = await settleMachineCleanup(async () => {
     const startedAt = Date.now();
-    await deleteUnreferencedMachine("fake", "machine-1", remove);
+    await deleteUnreferencedMachine(undefined, machine, remove);
     elapsedMs = Date.now() - startedAt;
   });
   return { ...outcome, elapsedMs };
@@ -117,16 +119,14 @@ describe("deleting a machine nothing points at", () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     try {
-      let fail: (error: Error) => void = () => {};
-      const remove = vi.fn<Remove>(
-        () =>
-          new Promise((_resolve, reject) => {
-            fail = reject;
-          }),
-      );
+      let fail: Deferred | undefined;
+      const remove = vi.fn<Remove>(() => {
+        fail = deferred();
+        return fail.promise;
+      });
 
       await cleanup(remove);
-      fail(new Error("connection reset, long after"));
+      fail?.reject(new Error("connection reset, long after"));
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(unhandled).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("deleting a machine nothing points at", () => {
     vi.useFakeTimers();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      const done = deleteUnreferencedMachine("fake", "machine-1", () =>
+      const done = deleteUnreferencedMachine(undefined, machine, () =>
         Promise.reject(new Error("connection reset")),
       );
       await vi.advanceTimersByTimeAsync(BUDGET_MS);
@@ -158,5 +158,83 @@ describe("deleting a machine nothing points at", () => {
       vi.useRealTimers();
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
+  });
+
+  describe("with records to hand a machine to", () => {
+    /** Runs the cleanup on a faked clock, from a record made when the machine was created. */
+    async function cleanupRecorded(remove: Remove, records = new MachineRecords()) {
+      let startedAt = 0;
+      const outcome = await settleMachineCleanup(async () => {
+        startedAt = Date.now();
+        await recordUnreferencedMachine(records, machine);
+        await deleteUnreferencedMachine(records, machine, remove);
+      });
+      return { ...outcome, records, due: records.dueIn(startedAt) };
+    }
+
+    it("makes the delete due at once when it kept failing", async () => {
+      const { due, left } = await cleanupRecorded(
+        vi.fn<Remove>().mockRejectedValue(new Error("connection reset")),
+      );
+
+      expect(left).toEqual([machine]);
+      // When the tries ended, not the 16 minutes the record first allowed its creator.
+      expect(due).toMatchObject([machine]);
+      expect(due[0]?.dueInMs).toBeLessThanOrEqual(BUDGET_MS);
+    });
+
+    it("drops the record once the machine is deleted", async () => {
+      const { due, left } = await cleanupRecorded(vi.fn<Remove>().mockResolvedValue(undefined));
+
+      expect(left).toEqual([]);
+      expect(due).toEqual([]);
+    });
+
+    it("gives a new machine's creator its time before the delete is due", async () => {
+      const records = new MachineRecords();
+      const startedAt = Date.now();
+
+      await recordUnreferencedMachine(records, machine);
+      await recordUnreferencedMachine(records, { ...machine, machineId: "build-1" }, 30 * 60_000);
+
+      const due = records.dueIn(startedAt);
+      // A minute past the time given, so the creator's own delete can finish first.
+      expect(due[0]?.dueInMs).toBeGreaterThanOrEqual(16 * 60_000);
+      expect(due[0]?.dueInMs).toBeLessThan(17 * 60_000);
+      expect(due[1]?.dueInMs).toBeGreaterThanOrEqual(31 * 60_000);
+    });
+
+    it("writes a record again when the first write fails", async () => {
+      const records = new MachineRecords();
+      const write = records.record.bind(records);
+      const record = vi
+        .fn<typeof write>()
+        .mockRejectedValueOnce(new Error("database unavailable"))
+        .mockImplementation(write);
+      records.record = record;
+      const startedAt = Date.now();
+
+      await settleMachineCleanup(() => recordUnreferencedMachine(records, machine));
+
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(records.dueIn(startedAt)).toMatchObject([machine]);
+    });
+
+    it("never rejects when the records cannot be written", async () => {
+      const broken = new MachineRecords();
+      broken.record = () => Promise.reject(new Error("database unavailable"));
+      broken.clear = () => Promise.reject(new Error("database unavailable"));
+
+      await settleMachineCleanup(() => recordUnreferencedMachine(broken, machine));
+      const failed = await cleanupRecorded(
+        vi.fn<Remove>().mockRejectedValue(new Error("connection reset")),
+        broken,
+      );
+      const deleted = await cleanupRecorded(vi.fn<Remove>().mockResolvedValue(undefined), broken);
+
+      expect(failed.error).toBeUndefined();
+      expect(failed.left).toEqual([machine]);
+      expect(deleted.error).toBeUndefined();
+    });
   });
 });

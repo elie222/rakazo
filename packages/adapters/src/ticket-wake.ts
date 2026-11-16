@@ -8,6 +8,7 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { wakeRun } from "./wake-run.js";
+import { ticketWakePrompt } from "./wakes.prompt.js";
 
 /** Assignment wakes only its current owner, without posting a chat message. */
 export async function wakeTicketAssignee(
@@ -35,7 +36,7 @@ export async function wakeTicketAssignee(
         botId: bot.id,
         threadId: bot.thread.id,
         userId: bot.userId,
-        prompt: `Work on ticket ${ticket.board.ticketPrefix}-${ticket.number}. Read it with ticket_get. Keep progress in ticket comments and update its status with ticket_update. Use ask or approval cards when user input is needed.`,
+        prompt: ticketWakePrompt(`${ticket.board.ticketPrefix}-${ticket.number}`),
         status: "queued",
       },
     });

@@ -4,6 +4,8 @@ import { i18n } from "@lingui/core";
 import type { AgentSkillCatalogEntry, BillingStatus, ThreadMessage } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import { MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createRef } from "react";
 import type { Root } from "react-dom/client";
@@ -404,6 +406,19 @@ describe("Composer", () => {
     expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
+  it.each(["all", "所有"])("offers everyone for @%s, as the mobile picker does", (query) => {
+    const everyone: ComposerMention = {
+      kind: "everyone",
+      id: "everyone",
+      name: "everyone",
+      aliases: ["everyone", "all", "所有人"],
+    };
+    const textarea = renderComposer(vi.fn(), { mentionTargets: [bob, everyone] });
+    type(textarea, `ask @${query}`);
+    const options = [...(container?.querySelectorAll('[role="option"]') ?? [])];
+    expect(options.map((option) => option.getAttribute("aria-label"))).toEqual(["@everyone"]);
+  });
+
   it("replaces a selected bot without retaining its previous routing target", async () => {
     const bobby: ComposerMention = { kind: "bot", id: "bot-3", name: "Bobby" };
     const onSend = vi.fn().mockResolvedValue(true);
@@ -744,13 +759,11 @@ describe("Composer", () => {
   });
 
   it("restores the draft and its mentions when the send fails", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const onSend = vi.fn(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     const textarea = renderComposer(onSend);
     const mentionChips = () =>
       [...(container?.querySelectorAll("[data-testid='mention-chip']") ?? [])].map(
@@ -763,19 +776,17 @@ describe("Composer", () => {
     expect(onSend).toHaveBeenCalledWith("@Bob hello", [bob], expect.any(String));
     expect(textarea.value).toBe("");
     expect(mentionChips()).toEqual([]);
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("@Bob hello");
     expect(mentionChips()).toEqual(["@Bob"]);
   });
 
   it("restores the chosen skill when the send fails", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const onSend = vi.fn(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     const textarea = renderComposer(onSend);
     const skillChip = () => container?.querySelector("[data-testid='skill-chip']")?.textContent;
     type(textarea, "/sum");
@@ -786,39 +797,35 @@ describe("Composer", () => {
     pressEnter(textarea);
     expect(onSend).toHaveBeenCalledWith("/summarize\nthe notes", [], expect.any(String));
     expect(skillChip()).toBeUndefined();
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("the notes");
     expect(skillChip()).toBe("summarize");
   });
 
   it("keeps a newer draft when an earlier send fails", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const textarea = renderComposer(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     type(textarea, "hello");
     pressEnter(textarea);
     type(textarea, "newer");
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("newer");
   });
 
   it("does not restore after a newer draft was typed then cleared while sending", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const textarea = renderComposer(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     type(textarea, "hello");
     pressEnter(textarea);
     type(textarea, "newer");
     type(textarea, "");
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("");
   });
 
@@ -841,38 +848,34 @@ describe("Composer", () => {
   });
 
   it("does not restore after an attachment was picked while sending", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const textarea = renderComposer(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     type(textarea, "hello");
     pressEnter(textarea);
     pickAttachment();
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("");
   });
 
   it("restores after a rejected attachment pick and preserves the nonce on rejected retry picks", async () => {
-    let finishSend = (_sent: boolean) => {};
-    const onSend = vi.fn<ComponentProps<typeof Composer>["onSend"]>(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const onSend = vi.fn<ComponentProps<typeof Composer>["onSend"]>(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     const onAttachmentPick = vi.fn(() => false);
     const textarea = renderComposer(onSend, { onAttachmentPick });
     type(textarea, "hello");
     pressEnter(textarea);
     pickAttachment();
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("hello");
     pickAttachment();
     pressEnter(textarea);
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(onAttachmentPick).toHaveBeenCalledTimes(2);
     expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
   });
@@ -904,18 +907,18 @@ describe("Composer", () => {
   });
 
   it.each(replyChanges)("does not restore after a $name while sending", async ({ props }) => {
-    let finishSend = (_sent: boolean) => {};
+    let finishSend: Deferred<boolean> | undefined;
     const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
+      () => {
+        finishSend = deferred();
+        return finishSend.promise;
+      },
       { replyTarget: reply, replyQuote: "original" },
     );
     type(textarea, "hello");
     pressEnter(textarea);
     rerenderComposer(props);
-    await act(async () => finishSend(false));
+    await act(async () => finishSend?.resolve(false));
     expect(textarea.value).toBe("");
   });
 
@@ -1259,13 +1262,11 @@ describe("Composer", () => {
 it.each([true, false])(
   "keeps a pending draft recoverable across unmount (accepted: %s)",
   async (accepted) => {
-    let finishSend = (_accepted: boolean) => {};
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const onSend = vi.fn(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     const draftKey = "bot:pending-draft";
     const textarea = renderComposer(onSend, { draftKey });
     type(textarea, "pending text");
@@ -1274,7 +1275,7 @@ it.each([true, false])(
     expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("pending text");
     act(() => root?.unmount());
     container?.remove();
-    await act(async () => finishSend(accepted));
+    await act(async () => finishSend?.resolve(accepted));
     const restored = renderComposer(vi.fn(), { draftKey });
     expect(restored.value).toBe(accepted ? "" : "pending text");
   },
@@ -1283,17 +1284,15 @@ it.each([true, false])(
 it.each([true, false])(
   "preserves newer stored edits when a send settles (accepted: %s)",
   async (accepted) => {
-    let finishSend = (_accepted: boolean) => {};
-    const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
-    );
+    let finishSend: Deferred<boolean> | undefined;
+    const textarea = renderComposer(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
     type(textarea, "submitted text");
     pressEnter(textarea);
     type(textarea, "newer text");
-    await act(async () => finishSend(accepted));
+    await act(async () => finishSend?.resolve(accepted));
     expect(textarea.value).toBe("newer text");
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("newer text");
   },
@@ -1302,13 +1301,13 @@ it.each([true, false])(
 it.each([true, false])(
   "settles a submission after returning to its thread (accepted: %s)",
   async (accepted) => {
-    let finishSend = (_accepted: boolean) => {};
+    let finishSend: Deferred<boolean> | undefined;
     const draftKey = "bot:return-before-settle";
     const first = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishSend = resolve;
-        }),
+      () => {
+        finishSend = deferred();
+        return finishSend.promise;
+      },
       { draftKey },
     );
     type(first, "submitted text");
@@ -1317,7 +1316,7 @@ it.each([true, false])(
     container?.remove();
     const returned = renderComposer(vi.fn(), { draftKey });
     expect(returned.value).toBe("submitted text");
-    await act(async () => finishSend(accepted));
+    await act(async () => finishSend?.resolve(accepted));
     expect(returned.value).toBe(accepted ? "" : "submitted text");
     expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe(
       accepted ? null : "submitted text",
@@ -1326,13 +1325,13 @@ it.each([true, false])(
 );
 
 it("preserves edits made after returning, even when the text matches the submission", async () => {
-  let finishSend = (_accepted: boolean) => {};
+  let finishSend: Deferred<boolean> | undefined;
   const draftKey = "bot:identical-newer-edit";
   const first = renderComposer(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finishSend = resolve;
-      }),
+    () => {
+      finishSend = deferred();
+      return finishSend.promise;
+    },
     { draftKey },
   );
   type(first, "submitted text");
@@ -1342,23 +1341,21 @@ it("preserves edits made after returning, even when the text matches the submiss
   const returned = renderComposer(vi.fn(), { draftKey });
   type(returned, "edited text");
   type(returned, "submitted text");
-  await act(async () => finishSend(true));
+  await act(async () => finishSend?.resolve(true));
   expect(returned.value).toBe("submitted text");
   expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("submitted text");
 });
 
 it("clears accepted saved text when only an attachment was picked during the send", async () => {
-  let finishSend = (_accepted: boolean) => {};
-  const textarea = renderComposer(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finishSend = resolve;
-      }),
-  );
+  let finishSend: Deferred<boolean> | undefined;
+  const textarea = renderComposer(() => {
+    finishSend = deferred();
+    return finishSend.promise;
+  });
   type(textarea, "submitted text");
   pressEnter(textarea);
   pickAttachment();
-  await act(async () => finishSend(true));
+  await act(async () => finishSend?.resolve(true));
   expect(textarea.value).toBe("");
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
 });
@@ -1366,15 +1363,11 @@ it("clears accepted saved text when only an attachment was picked during the sen
 it.each([false, true])(
   "sends dictation at once and keeps a draft typed during its failing send (throws=%s)",
   async (throws) => {
-    let finish!: (value: boolean) => void;
-    let fail!: (error: Error) => void;
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve, reject) => {
-          finish = resolve;
-          fail = reject;
-        }),
-    );
+    let sending!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      sending = deferred();
+      return sending.promise;
+    });
     let onFinal!: (text: string) => void;
     const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
       onFinal = options.onFinal;
@@ -1391,8 +1384,8 @@ it.each([false, true])(
       expect(textarea.value).toBe("");
       type(textarea, "typed draft");
       await act(async () => {
-        if (throws) fail(new Error("offline"));
-        else finish(false);
+        if (throws) sending.reject(new Error("offline"));
+        else sending.resolve(false);
       });
       // The draft the user typed while the send was in flight stays theirs alone.
       expect(textarea.value).toBe("typed draft");
@@ -1411,15 +1404,11 @@ it.each([
 ])(
   "ignores a late dictation failure after remount (throws=%s, different chat=%s)",
   async (throws, differentChat) => {
-    let finish!: (accepted: boolean) => void;
-    let fail!: (error: Error) => void;
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve, reject) => {
-          finish = resolve;
-          fail = reject;
-        }),
-    );
+    let sending!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      sending = deferred();
+      return sending.promise;
+    });
     let onFinal!: (text: string) => void;
     const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
       onFinal = options.onFinal;
@@ -1440,8 +1429,8 @@ it.each([
       const saved = localStorage.getItem(`rakazo.composerDraft.${draftKey}`);
       const bindings = localStorage.getItem(`rakazo.composerBindings.${draftKey}`);
       await act(async () => {
-        if (throws) fail(new Error("offline"));
-        else finish(false);
+        if (throws) sending.reject(new Error("offline"));
+        else sending.resolve(false);
       });
       expect(returned.value).toBe("@Bob newer draft");
       expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe(saved);
@@ -1460,17 +1449,17 @@ it.each([
 );
 
 it("restores dictation to the previous chat after switching draft keys", async () => {
-  let finish!: (accepted: boolean) => void;
+  let finish!: Deferred<boolean>;
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
   });
   try {
     const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finish = resolve;
-        }),
+      () => {
+        finish = deferred();
+        return finish.promise;
+      },
       {
         phoneCallsEnabled: true,
       },
@@ -1480,7 +1469,7 @@ it("restores dictation to the previous chat after switching draft keys", async (
     act(() => onFinal("late dictation"));
     rerenderComposer({ draftKey: "bot:other-bot" });
     type(textarea, "newer draft");
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
     expect(textarea.value).toBe("newer draft");
     expect(localStorage.getItem("rakazo.composerDraft.bot:other-bot")).toBe("newer draft");
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("late dictation");
@@ -1553,13 +1542,11 @@ it("shows late dictated words in the chat's composer when the user came back fir
 });
 
 it("keeps only the late dictated words once the earlier send is accepted", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -1577,7 +1564,7 @@ it("keeps only the late dictated words once the earlier send is accepted", async
     act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
     act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
     act(() => onFinal("new words"));
-    await act(async () => finish(true));
+    await act(async () => finish.resolve(true));
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("new words");
   } finally {
     state.mockRestore();
@@ -1586,13 +1573,11 @@ it("keeps only the late dictated words once the earlier send is accepted", async
 });
 
 it("keeps the failed send's text with the late dictated words", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -1609,7 +1594,7 @@ it("keeps the failed send's text with the late dictated words", async () => {
     act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
     act(() => root?.render(<Composer {...composerProps} key="bot:bot-2" draftKey="bot:bot-2" />));
     act(() => onFinal("new words"));
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("not sent new words");
   } finally {
     state.mockRestore();
@@ -1618,13 +1603,11 @@ it("keeps the failed send's text with the late dictated words", async () => {
 });
 
 it("keeps late dictated words that landed during a send that then fails", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -1646,7 +1629,7 @@ it("keeps late dictated words that landed during a send that then fails", async 
     expect(onSend).toHaveBeenCalledTimes(1);
     act(() => onFinal("new words"));
     expect(returned.value).toBe("not sent new words");
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
     expect(returned.value).toBe("not sent new words");
     type(returned, "not sent new words please");
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(
@@ -1701,12 +1684,11 @@ it("retries an unchanged dictation with the same nonce after a failed send", asy
 
 it("does not retry a changed payload with a dictation's nonce", async () => {
   const nonces: string[] = [];
-  let finish!: (accepted: boolean) => void;
+  let finish!: Deferred<boolean>;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
-    return new Promise<boolean>((resolve) => {
-      finish = resolve;
-    });
+    finish = deferred();
+    return finish.promise;
   });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
@@ -1724,7 +1706,7 @@ it("does not retry a changed payload with a dictation's nonce", async () => {
       replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage,
     });
     await act(async () => {});
-    finish(false);
+    finish.resolve(false);
     await act(async () => {});
     pressEnter(textarea);
     await act(async () => {});
@@ -1828,12 +1810,11 @@ it.each(["a typed draft", "a chosen skill", "a pending attachment"])(
 
 it("keeps a reply-linked dictation's words without its nonce", async () => {
   const nonces: string[] = [];
-  let fail!: (error: Error) => void;
+  let fail!: Deferred<boolean>;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
-    return new Promise<boolean>((_resolve, reject) => {
-      fail = reject;
-    });
+    fail = deferred();
+    return fail.promise;
   });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
@@ -1852,7 +1833,7 @@ it("keeps a reply-linked dictation's words without its nonce", async () => {
     act(() => root?.unmount());
     container?.remove();
     await act(async () => {
-      fail(new Error("offline"));
+      fail.reject(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
     expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
@@ -1875,12 +1856,11 @@ it("keeps a reply-linked dictation's words without its nonce", async () => {
 
 it("reuses the stored nonce when a send that lost its answer is retried from the saved draft", async () => {
   const nonces: string[] = [];
-  let fail!: (error: Error) => void;
+  let fail!: Deferred<boolean>;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
-    return new Promise<boolean>((_resolve, reject) => {
-      fail = reject;
-    });
+    fail = deferred();
+    return fail.promise;
   });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
@@ -1896,7 +1876,7 @@ it("reuses the stored nonce when a send that lost its answer is retried from the
     act(() => root?.unmount());
     container?.remove();
     await act(async () => {
-      fail(new Error("offline"));
+      fail.reject(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
     expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBe(nonces[0]);
@@ -1917,12 +1897,11 @@ it("reuses the stored nonce when a send that lost its answer is retried from the
 
 it("recovers a dictation in a chat reopened before the send settles", async () => {
   const nonces: string[] = [];
-  let fail!: (error: Error) => void;
+  let fail!: Deferred<boolean>;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
-    return new Promise<boolean>((_resolve, reject) => {
-      fail = reject;
-    });
+    fail = deferred();
+    return fail.promise;
   });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
@@ -1946,7 +1925,7 @@ it("recovers a dictation in a chat reopened before the send settles", async () =
     );
     expect(reopened.value).toBe("spoken words");
     await act(async () => {
-      fail(new Error("offline"));
+      fail.reject(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBe(nonces[0]);
     pressEnter(reopened);
@@ -1958,13 +1937,11 @@ it("recovers a dictation in a chat reopened before the send settles", async () =
 });
 
 it("sends a dictation that finishes while an earlier send is in flight", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -1979,7 +1956,7 @@ it("sends a dictation that finishes while an earlier send is in flight", async (
     act(() => onFinal("second words"));
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
-    await act(async () => finish(true));
+    await act(async () => finish.resolve(true));
     rerenderComposer({ sending: false });
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(2);
@@ -1990,13 +1967,11 @@ it("sends a dictation that finishes while an earlier send is in flight", async (
 });
 
 it("keeps a dictation queued behind a send that fails with that send's words", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2012,7 +1987,7 @@ it("keeps a dictation queued behind a send that fails with that send's words", a
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
     // The first send fails; the dictation queued behind it must not go out alone.
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
     rerenderComposer({ sending: false });
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -2026,13 +2001,11 @@ it("keeps a dictation queued behind a send that fails with that send's words", a
 });
 
 it("keeps a newer draft typed after returning to the chat when the queued send fails", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2052,7 +2025,7 @@ it("keeps a newer draft typed after returning to the chat when the queued send f
     const returned = container?.querySelector("textarea");
     if (!returned) throw new Error("composer textarea not found");
     type(returned, "newer draft");
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(returned.value).toBe("newer draft");
@@ -2063,13 +2036,11 @@ it("keeps a newer draft typed after returning to the chat when the queued send f
 });
 
 it("recovers a queued dictation's failed send for a chat that was left and not edited", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2089,7 +2060,7 @@ it("recovers a queued dictation's failed send for a chat that was left and not e
     const returned = container?.querySelector("textarea");
     if (!returned) throw new Error("composer textarea not found");
     expect(returned.value).toBe("and a hotel");
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(returned.value).toBe("please book the flight and a hotel");
@@ -2103,13 +2074,11 @@ it("recovers a queued dictation's failed send for a chat that was left and not e
 });
 
 it("keeps a mention bound after reopening the chat when the queued send fails", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2137,7 +2106,7 @@ it("keeps a mention bound after reopening the chat when the queued send fails", 
     expect(saved).toBe("@Bob");
     expect(bindings).not.toBeNull();
 
-    await act(async () => finish(false));
+    await act(async () => finish.resolve(false));
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe(saved);
     expect(localStorage.getItem("rakazo.composerBindings.bot:bot-1")).toBe(bindings);
     expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
@@ -2147,13 +2116,11 @@ it("keeps a mention bound after reopening the chat when the queued send fails", 
 });
 
 it("does not auto-send a draft typed over a dictation queued behind an earlier send", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2168,7 +2135,7 @@ it("does not auto-send a draft typed over a dictation queued behind an earlier s
     act(() => onFinal("second words"));
     await act(async () => {});
     type(textarea, "half typed");
-    await act(async () => finish(true));
+    await act(async () => finish.resolve(true));
     rerenderComposer({ sending: false });
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -2179,13 +2146,11 @@ it("does not auto-send a draft typed over a dictation queued behind an earlier s
 });
 
 it("does not auto-send a queued dictation when a reply arms as the earlier send settles", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2199,7 +2164,7 @@ it("does not auto-send a queued dictation when a reply arms as the earlier send 
     rerenderComposer({ sending: true });
     act(() => onFinal("second words"));
     await act(async () => {});
-    await act(async () => finish(true));
+    await act(async () => finish.resolve(true));
     // The reply and the end of the earlier send land in one commit.
     rerenderComposer({
       sending: false,
@@ -2213,13 +2178,11 @@ it("does not auto-send a queued dictation when a reply arms as the earlier send 
 });
 
 it("does not auto-send a queued dictation into a page opened before the earlier send settles", async () => {
-  let finish!: (accepted: boolean) => void;
-  const onSend = vi.fn(
-    (_text: string) =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<boolean>;
+  const onSend = vi.fn((_text: string) => {
+    finish = deferred();
+    return finish.promise;
+  });
   let onFinal!: (text: string) => void;
   const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
     onFinal = options.onFinal;
@@ -2246,7 +2209,7 @@ it("does not auto-send a queued dictation into a page opened before the earlier 
     act(() => onFinal("second words"));
     await act(async () => {});
     act(() => session.dock.set({ page: { id: "page-1", title: "Plan" } }));
-    await act(async () => finish(true));
+    await act(async () => finish.resolve(true));
     renderInChat({ sending: false });
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -2258,12 +2221,11 @@ it("does not auto-send a queued dictation into a page opened before the earlier 
 
 it("does not keep the nonce when a reopened chat rebinds the same mention text", async () => {
   const nonces: string[] = [];
-  let fail!: (error: Error) => void;
+  let fail!: Deferred<boolean>;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
-    return new Promise<boolean>((_resolve, reject) => {
-      fail = reject;
-    });
+    fail = deferred();
+    return fail.promise;
   });
   const textarea = renderComposer(onSend);
   type(textarea, "@Bo");
@@ -2281,7 +2243,7 @@ it("does not keep the nonce when a reopened chat rebinds the same mention text",
   type(reopened, "@Bob hi");
   expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
   await act(async () => {
-    fail(new Error("offline"));
+    fail.reject(new Error("offline"));
   });
   expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
 });
@@ -2301,13 +2263,11 @@ function renderWithOpenPage(onSend: ComponentProps<typeof Composer>["onSend"]) {
 }
 
 it("does not store a retry nonce for a send made with a page open", async () => {
-  let fail!: (error: Error) => void;
-  const onSend = vi.fn(
-    () =>
-      new Promise<boolean>((_resolve, reject) => {
-        fail = reject;
-      }),
-  );
+  let fail!: Deferred<boolean>;
+  const onSend = vi.fn(() => {
+    fail = deferred();
+    return fail.promise;
+  });
   const { textarea } = renderWithOpenPage(onSend);
   type(textarea, "about the page");
   pressEnter(textarea);
@@ -2315,7 +2275,7 @@ it("does not store a retry nonce for a send made with a page open", async () => 
   act(() => root?.unmount());
   container?.remove();
   await act(async () => {
-    fail(new Error("offline"));
+    fail.reject(new Error("offline"));
   });
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("about the page");
   expect(localStorage.getItem("rakazo.composerNonce.bot:bot-1")).toBeNull();
@@ -2342,15 +2302,11 @@ it("renews the nonce when the page closes before a retry", async () => {
 it.each([false, true])(
   "restores dictation to the saved draft when the chat closes before the send fails (throws=%s)",
   async (throws) => {
-    let finish!: (accepted: boolean) => void;
-    let fail!: (error: Error) => void;
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve, reject) => {
-          finish = resolve;
-          fail = reject;
-        }),
-    );
+    let sending!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      sending = deferred();
+      return sending.promise;
+    });
     let onFinal!: (text: string) => void;
     const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
       onFinal = options.onFinal;
@@ -2363,8 +2319,8 @@ it.each([false, true])(
       act(() => root?.unmount());
       container?.remove();
       await act(async () => {
-        if (throws) fail(new Error("offline"));
-        else finish(false);
+        if (throws) sending.reject(new Error("offline"));
+        else sending.resolve(false);
       });
       expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
       const returned = renderComposer(vi.fn());
@@ -2378,15 +2334,11 @@ it.each([false, true])(
 it.each([false, true])(
   "keeps a mention typed while a dictation send fails (throws=%s)",
   async (throws) => {
-    let finish!: (accepted: boolean) => void;
-    let fail!: (error: Error) => void;
-    const onSend = vi.fn(
-      () =>
-        new Promise<boolean>((resolve, reject) => {
-          finish = resolve;
-          fail = reject;
-        }),
-    );
+    let sending!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      sending = deferred();
+      return sending.promise;
+    });
     let onFinal!: (text: string) => void;
     const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
       onFinal = options.onFinal;
@@ -2407,8 +2359,8 @@ it.each([false, true])(
         document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
       });
       await act(async () => {
-        if (throws) fail(new Error("offline"));
-        else finish(false);
+        if (throws) sending.reject(new Error("offline"));
+        else sending.resolve(false);
       });
       expect(textarea.value).toBe("@Bob");
       const record = JSON.parse(localStorage.getItem("rakazo.composerBindings.bot:bot-1")!);

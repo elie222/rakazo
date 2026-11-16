@@ -465,10 +465,7 @@ describe("private-host transport", () => {
         ok: false,
         error: expect.stringContaining("500"),
       });
-      const deadline = Date.now() + 1_000;
-      while (sockets.size > 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
+      await vi.waitFor(() => expect(sockets.size).toBe(0), { timeout: 1_000, interval: 20 });
       expect(sockets.size).toBe(0);
     } finally {
       for (const socket of sockets) socket.destroy();

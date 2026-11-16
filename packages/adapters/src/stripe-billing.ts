@@ -5,6 +5,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingPlanPayment,
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
@@ -515,15 +516,33 @@ export class StripeBillingProvider implements BillingProvider {
       sessionsPromise,
       invoicesPromise,
     ]);
-    const netPaid = new Map<string, number>();
-    for (const charge of charges) {
-      if (!charge.payment_intent || charge.currency !== "usd" || !charge.paid || !charge.captured)
-        continue;
-      netPaid.set(
-        charge.payment_intent,
-        (netPaid.get(charge.payment_intent) ?? 0) +
-          (charge.disputed ? 0 : Math.max(0, charge.amount - charge.amount_refunded)),
+    const settled = charges.filter(
+      (charge) =>
+        charge.payment_intent && charge.currency === "usd" && charge.paid && charge.captured,
+    );
+    // `disputed` stays set after a dispute is won, so each dispute's own status decides.
+    // One at a time, so an account with many disputes cannot burst the rate limit.
+    const disputes = new Map<string, Array<{ amount: number; status: string }>>();
+    for (const charge of settled.filter((charge) => charge.disputed))
+      disputes.set(
+        charge.id,
+        await this.listPages(
+          `/v1/disputes?charge=${encodeURIComponent(charge.id)}`,
+          z.object({ amount: z.number().int(), status: z.string() }),
+        ),
       );
+    const netPaid = new Map<string, NetPayment>();
+    for (const charge of settled) {
+      const sum = (statuses: readonly string[]) =>
+        (disputes.get(charge.id) ?? [])
+          .filter((dispute) => statuses.includes(dispute.status))
+          .reduce((total, dispute) => total + dispute.amount, 0);
+      const paid = Math.max(0, charge.amount - charge.amount_refunded - sum(LOST_DISPUTE));
+      const previous = netPaid.get(charge.payment_intent!) ?? NOTHING_PAID;
+      netPaid.set(charge.payment_intent!, {
+        paid: previous.paid + paid,
+        disputed: previous.disputed + Math.min(paid, sum(OPEN_DISPUTE)),
+      });
     }
     const purchases: BillingCreditPurchase[] = [];
     for (const session of sessions) {
@@ -537,10 +556,11 @@ export class StripeBillingProvider implements BillingProvider {
         !session.payment_intent
       )
         continue;
-      purchases.push({
-        id: session.id,
-        amountCents: Math.min(amount, netPaid.get(session.payment_intent) ?? 0),
-      });
+      purchases.push(
+        creditPurchase(session.id, netPaid.get(session.payment_intent) ?? NOTHING_PAID, (paid) =>
+          Math.min(amount, paid),
+        ),
+      );
     }
     for (const invoice of invoices) {
       const amount = creditAmount(
@@ -567,10 +587,10 @@ export class StripeBillingProvider implements BillingProvider {
               creditLineSchema,
             ),
       ]);
-      const paid = payments.reduce(
-        (sum, payment) => sum + (netPaid.get(payment.payment.payment_intent ?? "") ?? 0),
-        0,
-      );
+      const paid = payments.reduce((sum, payment) => {
+        const net = netPaid.get(payment.payment.payment_intent ?? "") ?? NOTHING_PAID;
+        return { paid: sum.paid + net.paid, disputed: sum.disputed + net.disputed };
+      }, NOTHING_PAID);
       const periods = lines.filter(
         (line) =>
           line.parent?.type === "subscription_item_details" &&
@@ -592,16 +612,96 @@ export class StripeBillingProvider implements BillingProvider {
           0,
         ),
       );
-      // Credits cover the subscription lines, excluding tax and other items. Refunds
-      // reduce that paid portion proportionally because charges do not identify a line.
-      const amountCents = Number(
-        (BigInt(Math.min(creditAmountCents, invoice.amount_paid)) *
-          BigInt(Math.min(paid, invoice.amount_paid))) /
-          BigInt(invoice.amount_paid),
-      );
-      purchases.push({ id: invoice.id, amountCents, expiresAt });
+      // Credits cover the subscription lines, excluding tax and other items. Refunds and
+      // disputes reduce that paid portion proportionally because charges do not identify a line.
+      const grant = (net: number) =>
+        Number(
+          (BigInt(Math.min(creditAmountCents, invoice.amount_paid)) *
+            BigInt(Math.min(net, invoice.amount_paid))) /
+            BigInt(invoice.amount_paid),
+        );
+      purchases.push({ ...creditPurchase(invoice.id, paid, grant), expiresAt });
     }
     return purchases;
+  }
+
+  async listPlanPayments(customerId: string, since: Date): Promise<BillingPlanPayment[]> {
+    const customer = encodeURIComponent(customerId);
+    const created = Math.floor(since.getTime() / 1000);
+    const [invoices, charges] = await Promise.all([
+      this.listPages(
+        `/v1/invoices?customer=${customer}&status=paid&created[gte]=${created}`,
+        z.object({
+          id: z.string(),
+          currency: z.string(),
+          amount_paid: z.number().int(),
+          created: z.number().int(),
+          total_taxes: z.array(z.object({ amount: z.number().int() })).nullish(),
+          parent: z
+            .object({
+              subscription_details: z
+                .object({ metadata: z.record(z.string(), z.string()).nullish() })
+                .nullish(),
+            })
+            .nullish(),
+        }),
+      ),
+      this.listPages(
+        `/v1/charges?customer=${customer}&created[gte]=${created}`,
+        z.object({
+          payment_intent: z.string().nullable(),
+          disputed: z.boolean(),
+          refunded: z.boolean(),
+        }),
+      ),
+    ]);
+    // A dispute counts once lost: one the business wins keeps the payment, and the program
+    // cannot take back a withdrawal.
+    const lostDisputeIntents = new Set<string>();
+    for (const intent of new Set(
+      charges.filter((charge) => charge.disputed).map((charge) => charge.payment_intent),
+    )) {
+      if (!intent) continue;
+      const disputes = await this.listPages(
+        `/v1/disputes?payment_intent=${encodeURIComponent(intent)}`,
+        z.object({ status: z.string() }),
+      );
+      if (disputes.some((dispute) => dispute.status === "lost")) lostDisputeIntents.add(intent);
+    }
+    const reversedIntents = new Set(
+      charges
+        .filter(
+          (charge) =>
+            charge.payment_intent &&
+            (charge.refunded || lostDisputeIntents.has(charge.payment_intent)),
+        )
+        .map((charge) => charge.payment_intent),
+    );
+    const payments: BillingPlanPayment[] = [];
+    for (const invoice of invoices) {
+      if (
+        invoice.amount_paid <= 0 ||
+        invoice.parent?.subscription_details?.metadata?.[BYOK_PLAN_METADATA] !== "byok"
+      )
+        continue;
+      const tax = (invoice.total_taxes ?? []).reduce((sum, item) => sum + item.amount, 0);
+      const intents = reversedIntents.size
+        ? await this.listPages(
+            `/v1/invoice_payments?invoice=${encodeURIComponent(invoice.id)}&status=paid`,
+            z.object({ payment: z.object({ payment_intent: z.string().optional() }) }),
+          )
+        : [];
+      payments.push({
+        invoiceId: invoice.id,
+        amountCents: Math.max(0, invoice.amount_paid - tax),
+        currency: invoice.currency,
+        createdAt: fromSeconds(invoice.created)!,
+        reversed:
+          intents.length > 0 &&
+          intents.every((paid) => reversedIntents.has(paid.payment.payment_intent ?? null)),
+      });
+    }
+    return payments;
   }
 
   private async listPages<T>(path: string, schema: z.ZodType<T>): Promise<T[]> {
@@ -710,6 +810,13 @@ export class StripeBillingProvider implements BillingProvider {
       },
       `rakazo-balance-${referenceId}`,
     );
+  }
+
+  async customerForPayment(paymentId: string): Promise<string | null> {
+    const charge = z
+      .object({ customer: z.union([z.string(), z.object({ id: z.string() })]).nullable() })
+      .parse(await this.request("GET", `/v1/charges/${encodeURIComponent(paymentId)}`));
+    return typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
   }
 
   parseWebhook(rawBody: string, headers: Headers) {
@@ -975,15 +1082,34 @@ const syncEventTypes = new Set([
   "charge.refunded",
   "charge.dispute.created",
   "charge.dispute.closed",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated",
 ]);
 
-/** Verifies a Stripe-signed webhook and extracts the customer to re-sync. */
+type NetPayment = { paid: number; disputed: number };
+const NOTHING_PAID: NetPayment = { paid: 0, disputed: 0 };
+// Inquiries (`warning_*`) withdraw no money, and a won dispute returns it.
+const OPEN_DISPUTE = ["needs_response", "under_review"] as const;
+const LOST_DISPUTE = ["lost"] as const;
+
+/** `disputedCents` is what open disputes hold back: the grant minus the grant without them. */
+function creditPurchase(
+  id: string,
+  payment: NetPayment,
+  grant: (paidCents: number) => number,
+): BillingCreditPurchase {
+  const amountCents = grant(payment.paid);
+  const disputedCents = amountCents - grant(payment.paid - payment.disputed);
+  return { id, amountCents, ...(disputedCents > 0 ? { disputedCents } : {}) };
+}
+
+/** Verifies a Stripe-signed webhook and extracts the customer, or disputed charge, to re-sync. */
 export function parseStripeWebhook(
   secret: string,
   rawBody: string,
   headers: Headers,
   nowMs: number,
-): { customerId: string } | "ignored" | null {
+): { customerId: string } | { paymentId: string } | "ignored" | null {
   const parts = (headers.get("stripe-signature") ?? "").split(",").map((part) => part.split("="));
   const timestamp = Number(parts.find(([key]) => key === "t")?.[1]);
   if (!Number.isFinite(timestamp)) return null;
@@ -1014,7 +1140,11 @@ export function parseStripeWebhook(
       : typeof (customer as { id?: unknown } | undefined)?.id === "string"
         ? (customer as { id: string }).id
         : undefined;
-  return customerId ? { customerId } : "ignored";
+  if (customerId) return { customerId };
+  // A dispute names only its charge.
+  return object?.object === "dispute" && typeof object.charge === "string"
+    ? { paymentId: object.charge }
+    : "ignored";
 }
 
 export function stripeBillingConfigFromEnv(env: {

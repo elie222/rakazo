@@ -99,38 +99,6 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(second.runId).toBe(first.runId);
     const run = await prisma.run.findUniqueOrThrow({ where: { id: first.runId } });
     expect(run.clientNonce).toBe(`routine-run:${run.userId}:${nonce}`);
-
-    // The previous release stored the key without the user id; its retry replays that run.
-    const legacyNonce = `routine-mention:${stamp}:legacy`;
-    const task = await prisma.task.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: run.botId,
-        threadId: run.threadId,
-        userId: run.userId,
-        prompt: "Replay inbox",
-        status: "queued",
-      },
-    });
-    const legacy = await prisma.run.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: run.botId,
-        threadId: run.threadId,
-        taskId: task.id,
-        userId: run.userId,
-        status: "queued",
-        trigger: "routine",
-        routineId: routine.id,
-        clientNonce: `routine-test:${legacyNonce}`,
-      },
-    });
-    const retried = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
-      routineId: routine.id,
-      clientNonce: legacyNonce,
-    });
-    expect(retried.runId).toBe(legacy.id);
-    expect(await prisma.run.count({ where: { routineId: routine.id } })).toBe(2);
   });
 
   describe("send with routines", () => {

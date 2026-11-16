@@ -3,7 +3,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
 import type { Actor, PageDetail, PageSummary, PageVisibility, SharedPage } from "@rakazo/contracts";
 import { pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
-import { escapeSearchWildcards } from "@rakazo/core";
+import { ClientError, escapeSearchWildcards } from "@rakazo/core";
 import type { PageShareSecret, Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, isRecordNotFound, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -66,9 +66,9 @@ async function requirePage(prisma: PrismaClient, actor: Actor, pageId: string) {
   return row;
 }
 
-export class PageListCursorError extends Error {
+export class PageListCursorError extends ClientError {
   constructor() {
-    super("Invalid page list cursor");
+    super("BAD_REQUEST", "Invalid page list cursor");
   }
 }
 
@@ -217,9 +217,9 @@ export async function pinPage(prisma: PrismaClient, actor: Actor, pageId: string
   );
 }
 
-export class PageShareConflictError extends Error {
+export class PageShareConflictError extends ClientError {
   constructor() {
-    super("The page's sharing changed at the same time; try again");
+    super("CONFLICT", "The page's sharing changed at the same time; try again");
   }
 }
 

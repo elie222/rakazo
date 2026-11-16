@@ -1,4 +1,12 @@
-import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ComputerRef,
+  PortableFile,
+  SandboxProvider,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
+} from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { expect, vi } from "vitest";
 
@@ -12,6 +20,27 @@ export function fakeDeadlineSignals() {
     );
     return controller.signal;
   });
+}
+
+/** The records a provider is built with, kept in memory: each machine's delete time, until cleared. */
+export class MachineRecords implements UnreferencedMachineRecords {
+  readonly due = new Map<string, { machine: UnreferencedMachine; deleteAt: Date }>();
+
+  async record(machine: UnreferencedMachine, deleteAt: Date) {
+    this.due.set(machine.machineId, { machine, deleteAt });
+  }
+
+  async clear(machine: UnreferencedMachine) {
+    this.due.delete(machine.machineId);
+  }
+
+  /** The recorded machines, each with how long after `since` its delete is due. */
+  dueIn(since = Date.now()) {
+    return [...this.due.values()].map(({ machine, deleteAt }) => ({
+      ...machine,
+      dueInMs: deleteAt.getTime() - since,
+    }));
+  }
 }
 
 /** A request answered only by its signal ending it, as one to a provider that stalls is. */
@@ -64,6 +93,25 @@ export async function provisionPrepared(
   return computer;
 }
 
+/** A size-limited read returns a file exactly at the limit and refuses a larger one by type. */
+export async function assertSandboxReadLimit(
+  provider: SandboxProvider,
+  computer: ComputerRef,
+  ctx: AdapterContext,
+  file: Pick<PortableFile, "path" | "content">,
+) {
+  const size = file.content.byteLength;
+  expect(await provider.readFile(computer, file.path, ctx, { maxBytes: size })).toEqual(
+    file.content,
+  );
+  const refusal = await provider.readFile(computer, file.path, ctx, { maxBytes: size - 1 }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(refusal).toBeInstanceOf(SandboxFileTooLargeError);
+  expect(refusal).toMatchObject({ maxBytes: size - 1 });
+}
+
 export async function assertSandboxWorkspaceContract(
   provider: SandboxProvider,
   computer: ComputerRef,
@@ -76,17 +124,15 @@ export async function assertSandboxWorkspaceContract(
     if (event.type === "exit") expect(event.code).toBe(0);
   }
   expect(stdout).toContain("graphical-ok");
-  await provider.writeFile(
-    computer,
-    { path: "notes/result.txt", content: new TextEncoder().encode("portable") },
-    ctx,
-  );
+  const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
+  await provider.writeFile(computer, note, ctx);
   expect(await provider.listFiles(computer, "notes", ctx)).toEqual([
     { path: "notes/result.txt", kind: "file", size: 8 },
   ]);
   expect(new TextDecoder().decode(await provider.readFile(computer, "notes/result.txt", ctx))).toBe(
     "portable",
   );
+  await assertSandboxReadLimit(provider, computer, ctx, note);
   const binary = Uint8Array.from([0, 255, 1, 128]);
   await provider.writeFile(computer, { path: "bin/tool", content: binary, executable: true }, ctx);
   expect(await provider.readFile(computer, "bin/tool", ctx)).toEqual(binary);

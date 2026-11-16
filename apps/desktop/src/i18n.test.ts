@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { IpcMainInvokeEvent, WebContents } from "electron";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CATALOGS,
@@ -51,12 +51,8 @@ function placeholders(message: string): string[] {
   return [...message.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1] ?? "").sort();
 }
 
-function appFrame(url = "https://app.example.com/bots") {
-  const frame = { url };
-  const contents = { mainFrame: frame, isDestroyed: () => false } as unknown as WebContents;
-  const event = { sender: contents, senderFrame: frame } as IpcMainInvokeEvent;
-  return { event, target: { webContents: contents, url: "https://app.example.com" } };
-}
+/** The handler never reads its caller: `handleIpc` has already checked who is calling. */
+const event = null;
 
 afterEach(() => {
   startDesktopLocale(null, "en-US");
@@ -104,10 +100,9 @@ describe("desktop language", () => {
 
   it("saves a language the app window reports and rebuilds the menus when it changes", async () => {
     startDesktopLocale(null, "en-US");
-    const { event, target } = appFrame();
     const save = vi.fn(async () => undefined);
     const onChange = vi.fn();
-    const handle = createLocaleHandler(() => target, save, onChange);
+    const handle = createLocaleHandler(save, onChange);
 
     await handle(event, "es");
     expect(desktopLocale()).toBe("es");
@@ -129,20 +124,12 @@ describe("desktop language", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
-  it("refuses reports from other windows, subframes, origins and non-tags", async () => {
+  it("refuses reports that are not language tags", async () => {
     startDesktopLocale(null, "en-US");
-    const { event, target } = appFrame();
     const save = vi.fn(async () => undefined);
     const onChange = vi.fn();
-    const handle = createLocaleHandler(() => target, save, onChange);
+    const handle = createLocaleHandler(save, onChange);
 
-    await handle({ ...event, sender: {} as WebContents }, "es");
-    await handle(
-      { ...event, senderFrame: { url: target.url } as IpcMainInvokeEvent["senderFrame"] },
-      "es",
-    );
-    await handle(appFrame("https://other.example.com").event, "es");
-    await createLocaleHandler(() => null, save, onChange)(event, "es");
     for (const value of [3, null, {}, "", "e", "es-", "../es", "es\nde", "x".repeat(36), "es;de"])
       await handle(event, value);
 
@@ -162,26 +149,18 @@ describe("desktop language", () => {
 
   it("keeps the last report when an earlier save finishes later", async () => {
     startDesktopLocale(null, "en-US");
-    const { event, target } = appFrame();
     const saved: string[] = [];
-    let releaseFirst!: () => void;
-    const firstWrite = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstWrite = deferred();
     const save = vi.fn(async (locale: string) => {
-      if (locale === "es") await firstWrite;
+      if (locale === "es") await firstWrite.promise;
       saved.push(locale);
     });
-    const handle = createLocaleHandler(
-      () => target,
-      save,
-      () => undefined,
-    );
+    const handle = createLocaleHandler(save, () => undefined);
 
     const first = handle(event, "es");
     await vi.waitFor(() => expect(save).toHaveBeenCalledWith("es"));
     const second = handle(event, "en");
-    releaseFirst();
+    firstWrite.resolve();
     await Promise.all([first, second]);
 
     expect(saved).toEqual(["es", "en"]);
@@ -190,15 +169,10 @@ describe("desktop language", () => {
 
   it("saves the same language again after a failed save", async () => {
     startDesktopLocale(null, "en-US");
-    const { event, target } = appFrame();
     const save = vi
       .fn(async (_locale: string) => undefined)
       .mockRejectedValueOnce(new Error("disk full"));
-    const handle = createLocaleHandler(
-      () => target,
-      save,
-      () => undefined,
-    );
+    const handle = createLocaleHandler(save, () => undefined);
 
     await handle(event, "es");
     await handle(event, "es");
@@ -208,13 +182,8 @@ describe("desktop language", () => {
 
   it("skips writing a report a later one already replaced", async () => {
     startDesktopLocale(null, "en-US");
-    const { event, target } = appFrame();
     const save = vi.fn(async (_locale: string) => undefined);
-    const handle = createLocaleHandler(
-      () => target,
-      save,
-      () => undefined,
-    );
+    const handle = createLocaleHandler(save, () => undefined);
 
     await Promise.all(["es", "en", "es", "en"].map((locale) => handle(event, locale)));
 
@@ -228,9 +197,7 @@ describe("desktop language", () => {
       const userData = await mkdtemp(path.join(tmpdir(), "rakazo-locale-"));
       try {
         await expect(readUiLocale(userData)).resolves.toBeNull();
-        const { event, target } = appFrame();
         const handle = createLocaleHandler(
-          () => target,
           (locale) => writeUiLocale(userData, locale),
           () => undefined,
         );

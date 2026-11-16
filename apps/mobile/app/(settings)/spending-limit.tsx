@@ -1,15 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import type {
-  SpendingCurrency,
-  SpendingLimit,
-  SpendingPayment,
-  SpendingPeriod,
-  SpendingStatus,
-} from "@rakazo/contracts";
+import type { SpendingCurrency, SpendingLimit, SpendingPeriod } from "@rakazo/contracts";
 import { SPENDING_CURRENCIES } from "@rakazo/contracts";
 import { formatMinorAmount, parseLimitInput } from "@rakazo/core";
+import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPickerMenu } from "../../components/menu-picker";
@@ -17,9 +12,11 @@ import { TextFieldDialog } from "../../components/name-dialog";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { formatActivityRelativeTime } from "../../lib/activity";
-import { rpc } from "../../lib/api";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
 import { native } from "../../lib/native";
+import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { spendingSpentSummary } from "../../lib/spending-limit";
 import { errorText } from "../../lib/user-error";
@@ -30,61 +27,55 @@ export default function SpendingLimitSettings() {
   const locale = useUiLocale();
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
-  const [status, setStatus] = useState<SpendingStatus | null>(null);
-  const [payments, setPayments] = useState<SpendingPayment[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // A change is built from the limit on screen, so each visit reads it afresh.
+  const statusRead = formRead(accountRpcQuery("spendingLimit/get"));
+  const paymentsRead = accountRpcQuery("spendingLimit/payments");
+  const statusQuery = useScreenQuery(statusRead);
+  // The list is extra: without it the limit can still be set.
+  const paymentsQuery = useScreenQuery(paymentsRead);
+  // A copy an earlier visit left is not what a change may be built from.
+  const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const payments = paymentsQuery.data ?? [];
+  // A failed read stays on screen while its retry is in flight, until that one answers.
+  const [loadFailure, setLoadFailure] = useState<Error | null>(null);
+  useEffect(() => {
+    if (statusQuery.error) setLoadFailure(statusQuery.error);
+    else if (statusQuery.data) setLoadFailure(null);
+  }, [statusQuery.error, statusQuery.data]);
+  const reads = useRef([statusRead, paymentsRead]);
+  reads.current = [statusRead, paymentsRead];
+  // A read still in flight when the screen is covered is dropped, so the return reads afresh.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        for (const { queryKey } of reads.current)
+          void queryClient.cancelQueries({ queryKey, exact: true });
+      },
+      [],
+    ),
+  );
+  // Starts each read over, so the answer comes from the latest tap.
+  const reload = () => {
+    for (const { queryKey } of reads.current)
+      void queryClient.resetQueries({ queryKey, exact: true });
+  };
   // The Android field's text while it is open; iOS uses the system prompt.
   const [draft, setDraft] = useState<string | null>(null);
-  // Bumped by saves, so a read started before one cannot overwrite its result.
-  const generation = useRef(0);
-  // Bumped by each reload and blur, so stale reads cannot replace current results.
-  const listReads = useRef(0);
-
-  const reload = useCallback(() => {
-    const started = generation.current;
-    const read = ++listReads.current;
-    void rpc("spendingLimit/get")
-      .then((next) => {
-        if (started !== generation.current || read !== listReads.current) return;
-        setStatus(next);
-        setLoadError(null);
-      })
-      .catch((err) => {
-        if (started !== generation.current || read !== listReads.current) return;
-        setLoadError(errorText(err, t`Something went wrong. Try again.`));
-      });
-    // The list is extra: without it the limit can still be set.
-    void rpc("spendingLimit/payments")
-      .then((next) => {
-        if (read === listReads.current) setPayments(next);
-      })
-      .catch(() => undefined);
-  }, [t]);
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-      return () => {
-        listReads.current += 1;
-      };
-    }, [reload]),
-  );
 
   const limit = status?.limit ?? null;
 
-  async function save(next: SpendingLimit | null) {
-    if (pending) return;
-    setPending(true);
-    generation.current += 1;
-    try {
-      setStatus(await rpc("spendingLimit/set", { limit: next }));
-      setDraft(null);
-    } catch (err) {
-      Alert.alert(errorText(err, t`Could not save that preference`));
-    } finally {
-      setPending(false);
-    }
-  }
+  const change = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (next: SpendingLimit | null, send) => {
+      const saved = await send("spendingLimit/set", { limit: next });
+      // A read that started before the change never puts back what it replaced.
+      await writeSaved(queryClient, statusRead.queryKey, () => saved);
+    },
+    onSaved: () => setDraft(null),
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not save that preference`)),
+  });
+  const pending = change.pending;
+  const save = change.run;
 
   function saveAmount(text: string) {
     const amount = parseLimitInput(text);
@@ -92,7 +83,7 @@ export default function SpendingLimitSettings() {
       Alert.alert(t`Enter an amount`);
       return;
     }
-    void save({ amount, currency: limit?.currency ?? "usd", period: limit?.period ?? "month" });
+    save({ amount, currency: limit?.currency ?? "usd", period: limit?.period ?? "month" });
   }
 
   function askAmount() {
@@ -162,7 +153,12 @@ export default function SpendingLimitSettings() {
         contentContainerStyle={[styles.content, stacked && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loadError && !status ? <LoadFailure message={loadError} onRetry={reload} /> : null}
+        {loadFailure && !status ? (
+          <LoadFailure
+            message={errorText(loadFailure, t`Something went wrong. Try again.`)}
+            onRetry={reload}
+          />
+        ) : null}
         {status ? (
           <SettingsGroup>
             <SettingsRow
@@ -178,19 +174,13 @@ export default function SpendingLimitSettings() {
               }
             />
             {limit
-              ? chooser(
-                  t`Currency`,
-                  limit.currency,
-                  currencies,
-                  (key) => void save({ ...limit, currency: key as SpendingCurrency }),
+              ? chooser(t`Currency`, limit.currency, currencies, (key) =>
+                  save({ ...limit, currency: key as SpendingCurrency }),
                 )
               : null}
             {limit
-              ? chooser(
-                  t`Resets`,
-                  limit.period,
-                  periods,
-                  (key) => void save({ ...limit, period: key as SpendingPeriod }),
+              ? chooser(t`Resets`, limit.period, periods, (key) =>
+                  save({ ...limit, period: key as SpendingPeriod }),
                 )
               : null}
           </SettingsGroup>
@@ -201,7 +191,7 @@ export default function SpendingLimitSettings() {
               accessibilityRole="button"
               destructive
               disabled={pending}
-              onPress={() => void save(null)}
+              onPress={() => save(null)}
               title={t`Remove`}
             />
           </SettingsGroup>

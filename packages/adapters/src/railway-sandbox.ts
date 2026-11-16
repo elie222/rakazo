@@ -12,7 +12,10 @@ import type {
   SandboxProvider,
   ScreenRequest,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type * as Railway from "railway";
@@ -34,7 +37,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
-import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -59,6 +62,7 @@ export interface RailwaySandboxOptions {
   environmentId: string;
   maxWorkspaceFileBytes?: string;
   region?: string;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }
 
 export class RailwaySandboxProvider implements SandboxProvider {
@@ -96,7 +100,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   private readonly region: string | undefined;
 
-  constructor({ maxWorkspaceFileBytes, region, ...options }: RailwaySandboxOptions) {
+  private readonly machines: UnreferencedMachineRecords | undefined;
+
+  constructor({
+    maxWorkspaceFileBytes,
+    region,
+    unreferencedMachines,
+    ...options
+  }: RailwaySandboxOptions) {
+    this.machines = unreferencedMachines;
     this.maxWorkspaceFileBytes = z.coerce
       .number()
       .int()
@@ -169,9 +181,18 @@ export class RailwaySandboxProvider implements SandboxProvider {
         ...this.options,
         fetch: async (input, init) => {
           // Finish the bounded request so cancellation cannot hide a created sandbox's ID.
+          let learned: string | undefined;
           const response = await railwayFetch(input, init, (id) => {
-            createdId = id;
+            createdId = learned = id;
           });
+          // Before the SDK waits for the sandbox to start, which can fail or outlive this process.
+          if (learned) {
+            await recordUnreferencedMachine(this.machines, {
+              provider: "railway",
+              machineId: learned,
+              homeKey: request.botId,
+            });
+          }
           context.signal.throwIfAborted();
           return response;
         },
@@ -204,11 +225,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
       ) {
         createdId = error.id;
       }
-      if (createdId) await this.deleteUnreferenced(createdId);
+      if (createdId) await this.deleteUnreferenced(createdId, request.botId);
       throw error;
     }
     if (context.signal.aborted) {
-      await this.deleteUnreferenced(sandbox.id);
+      await this.deleteUnreferenced(sandbox.id, request.botId);
       context.signal.throwIfAborted();
     }
     return this.ref(sandbox.id, request.botId, true);
@@ -330,7 +351,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     const maxBytes = options?.maxBytes ?? this.maxWorkspaceFileBytes;
     if (content.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return content;
   }
@@ -512,8 +533,16 @@ export class RailwaySandboxProvider implements SandboxProvider {
     }
   }
 
-  private deleteUnreferenced(id: string): Promise<void> {
-    return deleteUnreferencedMachine("railway", id, (signal) => this.delete(id, signal));
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.delete(machine.machineId, signal);
+  }
+
+  private deleteUnreferenced(id: string, homeKey: string): Promise<void> {
+    return deleteUnreferencedMachine(
+      this.machines,
+      { provider: "railway", machineId: id, homeKey },
+      (signal) => this.delete(id, signal),
+    );
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {

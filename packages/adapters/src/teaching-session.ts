@@ -19,6 +19,7 @@ import {
   createThreadMessageInTransaction,
   draftTeachingRecordingInTransaction,
   IsolationError,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { releaseComputerControlLease } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -320,11 +321,8 @@ async function findSkillDraftMessage(
     select: { id: true, blocks: true },
   });
   for (const message of messages) {
-    const blocks = message.blocks as MessageBlock[];
-    if (
-      Array.isArray(blocks) &&
-      blocks.some((block) => block.kind === "skill_draft" && block.skillId === skillId)
-    ) {
+    const blocks = storedMessageBlocks(message);
+    if (blocks.some((block) => block.kind === "skill_draft" && block.skillId === skillId)) {
       return { id: message.id, blocks };
     }
   }

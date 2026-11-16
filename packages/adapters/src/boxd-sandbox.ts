@@ -15,14 +15,17 @@ import type {
   SandboxProvider,
   ScreenRequest,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, withAbort } from "@rakazo/core";
 import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,
@@ -42,7 +45,7 @@ import {
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
-import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -128,6 +131,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
   });
   private readonly client: BoxdSandboxClient;
   private readonly org: string | undefined;
+  private readonly machines: UnreferencedMachineRecords | undefined;
   private readonly prepared = new Set<string>();
   private readonly preparations = new Map<string, Promise<void>>();
   private readonly screens = new Map<string, string>();
@@ -138,9 +142,13 @@ export class BoxdSandboxProvider implements SandboxProvider {
     warnMissingOnce: false,
   });
 
-  constructor(config: { org?: string }, client: BoxdSandboxClient) {
+  constructor(
+    config: { org?: string; unreferencedMachines?: UnreferencedMachineRecords },
+    client: BoxdSandboxClient,
+  ) {
     this.client = client;
     this.org = config.org;
+    this.machines = config.unreferencedMachines;
   }
 
   describe() {
@@ -196,11 +204,16 @@ export class BoxdSandboxProvider implements SandboxProvider {
         : this.client.machines.create(params));
     } catch (error) {
       // A lost reply can hide a machine created under this name; a refusal created none.
-      if (!(await createRefused(error))) await this.deleteUnreferenced(name);
+      if (!(await createRefused(error))) await this.deleteUnreferenced(name, request.botId);
       throw await providerError(error);
     }
+    await recordUnreferencedMachine(this.machines, {
+      provider: "boxd",
+      machineId: machine.id,
+      homeKey: request.botId,
+    });
     if (context.signal.aborted) {
-      await this.deleteUnreferenced(machine.id);
+      await this.deleteUnreferenced(machine.id, request.botId);
       context.signal.throwIfAborted();
     }
     return this.ref(machine.id, request.botId, true);
@@ -222,6 +235,11 @@ export class BoxdSandboxProvider implements SandboxProvider {
       isolated: true,
       config: { autoSuspendTimeout: 0 },
     });
+    await recordUnreferencedMachine(
+      this.machines,
+      { provider: "boxd", machineId: machine.id },
+      BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
+    );
     try {
       await this.ensureRunning(machine.id, signal);
       for (const command of BOXD_COMPUTER_SETUP) {
@@ -414,7 +432,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       workspacePath(WORKSPACE, filePath),
       { length: maxBytes + 1 },
     );
-    if (content.byteLength > maxBytes) throw new Error(`computer file exceeds ${maxBytes} bytes`);
+    if (content.byteLength > maxBytes) throw new SandboxFileTooLargeError(maxBytes);
     return content;
   }
 
@@ -508,9 +526,18 @@ export class BoxdSandboxProvider implements SandboxProvider {
     }
   }
 
+  /** By id, or by the name a create was sent under. The SDK's delete takes no signal. */
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await withAbort(this.delete(machine.machineId), signal);
+  }
+
   /** The SDK's delete takes no signal or deadline, so the cleanup stops waiting for it instead. */
-  private deleteUnreferenced(id: string): Promise<void> {
-    return deleteUnreferencedMachine("boxd", id, () => this.delete(id));
+  private deleteUnreferenced(id: string, homeKey?: string): Promise<void> {
+    return deleteUnreferencedMachine(
+      this.machines,
+      { provider: "boxd", machineId: id, ...(homeKey && { homeKey }) },
+      () => this.delete(id),
+    );
   }
 
   /** Brings the machine up, starting or waking it as needed, and says whether it was asleep. */
@@ -726,6 +753,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
 export async function createBoxdSandboxProvider(config: {
   apiKey: string;
   org?: string;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }): Promise<BoxdSandboxProvider> {
   const { Boxd } = await boxdSdk();
   return new BoxdSandboxProvider(config, new Boxd({ apiKey: config.apiKey }));

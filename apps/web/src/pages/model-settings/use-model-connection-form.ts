@@ -11,7 +11,13 @@ import {
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
-import { createModelProbe, initialModelProbeState, savedCompatibleModelIds } from "@rakazo/core";
+import {
+  createModelProbe,
+  initialModelProbeState,
+  modelConnectionFormSecrets,
+  sanitizeModelConnectionError,
+  savedCompatibleModelIds,
+} from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
@@ -22,6 +28,7 @@ import {
   unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
 import type { RpcClient } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
 
@@ -141,6 +148,14 @@ export function useModelConnectionForm({
     invalidatePreflight();
   }
 
+  /** A failed connection's message, without the credentials this form holds. */
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
+  }
+
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
     const revision = preflightRevisionRef.current;
@@ -178,7 +193,12 @@ export function useModelConnectionForm({
       },
       onError: (err) => {
         if (!stillCurrent()) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
+        setPreflightFailure(
+          classifyModelConnectionFailure(err, {
+            modelId,
+            secrets: modelConnectionFormSecrets({ apiKey, headerRows }),
+          }),
+        );
         setNotice(null);
       },
     });
@@ -227,6 +247,7 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     routingReady,
     enabledModelIds,
     error,

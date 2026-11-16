@@ -2,11 +2,11 @@ import type { BotAvatarSet, BotColorDef } from "@rakazo/contracts";
 import { BOT_COLOR_LIST, BOT_COLORS } from "@rakazo/contracts";
 import type { AvatarEyes, LogoAvatarActivity } from "@rakazo/core";
 import {
-  ACTIVE_RUN_STATUSES,
   avatarEyeRects,
   avatarIdentitySeed,
   botEyeTone,
   DEFAULT_BOT_AVATAR_COLOR,
+  isRunWorking,
   ORGANIC_AVATAR_EYES,
   ORGANIC_AVATAR_VIEWBOX,
   organicAvatarEyeTilt,
@@ -96,7 +96,7 @@ export const BotAvatar = memo(function BotAvatar({
   className,
 }: BotAvatarProps) {
   const id = useId().replace(/[^a-zA-Z0-9-_]/g, "");
-  const isWorking = ACTIVE_RUN_STATUSES.some((s) => s === status);
+  const isWorking = isRunWorking(status);
 
   const parsed = useMemo(() => parseBotAvatar(color, identity), [color, identity]);
   const effectiveId = identity || parsed.color || "agent";

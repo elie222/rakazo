@@ -45,8 +45,12 @@ import {
   availableInSpace,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  JsonColumnMismatchError,
+  readJsonColumn,
+  reportJsonColumnOnce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 
 type Reader = Pick<Prisma.TransactionClient, "memoryDocument" | "agentSkill" | "mcpServer">;
 type Stored = Awaited<ReturnType<SecretStore["put"]>> | null;
@@ -120,18 +124,21 @@ export type AgentImportServices<PreparedKey = unknown> = {
 };
 
 /** What the setup checklist checks for each imported MCP server. */
-type ImportRecord = {
+const ImportRecordSchema = z.object({
   /**
    * `credentials`/`env`: names that need values before the server works (its checklist);
    * `unverifiable`: it also needs a program or local paths, which cannot be checked.
    */
-  mcpServers: {
-    id: string;
-    credentials?: string[];
-    env?: string[];
-    unverifiable?: boolean;
-  }[];
-};
+  mcpServers: z.array(
+    z.object({
+      id: z.string(),
+      credentials: z.array(z.string()).optional(),
+      env: z.array(z.string()).optional(),
+      unverifiable: z.boolean().optional(),
+    }),
+  ),
+});
+type ImportRecord = z.infer<typeof ImportRecordSchema>;
 
 const BLOCKING: ReadonlySet<AgentImportWarning> = new Set(["unsupported_command"]);
 
@@ -731,14 +738,31 @@ export async function agentImportSetupState(
       where: { botId: input.botId, id: { in: input.routineIds }, bot: owner },
       select: { id: true, active: true },
     }),
-    db.agentImport.findMany({ where: { ...owner, botId: input.botId }, select: { created: true } }),
+    db.agentImport.findMany({
+      where: { ...owner, botId: input.botId },
+      select: { id: true, created: true },
+    }),
   ]);
   const needed = new Map(
-    imports.flatMap((row) =>
-      (row.created as unknown as ImportRecord).mcpServers.map(
-        (server) => [server.id, server] as const,
-      ),
-    ),
+    imports.flatMap((row) => {
+      // Setup is judged against this checklist, so a record in another shape is rejected. Only
+      // that import is left out: its servers read as not set up, and the others are judged.
+      try {
+        return readJsonColumn(
+          ImportRecordSchema,
+          row.created,
+          { table: "agent_imports", column: "created", id: row.id },
+          "reject",
+        ).mcpServers.map((server) => [server.id, server] as const);
+      } catch (error) {
+        if (!(error instanceof JsonColumnMismatchError)) throw error;
+        reportJsonColumnOnce(
+          "An import's checklist cannot be read; its setup is not judged",
+          error.row,
+        );
+        return [];
+      }
+    }),
   );
   const given = new Set(assigned.map((row) => row.serverId));
   const nonBlank = (value: string | undefined) => typeof value === "string" && value.trim() !== "";

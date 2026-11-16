@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -113,7 +114,7 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   const root = createRoot(container);
   await act(async () => {
     root.render(<BillingSettingsPanel client={createSpaceRpc("space-a")} />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   // The panel loaded this organization's status.
@@ -135,7 +136,7 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   expect(container.textContent).toMatch(/charged \$20(\.00)? today/);
   await act(async () => {
     button(container, "Start plan").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
@@ -154,7 +155,7 @@ it("acts on the window's space when another tab switched before the panel opened
   const root = createRoot(container);
   await act(async () => {
     root.render(<BillingSettingsPanel client={client} />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(requests[0]).toMatchObject({
     url: expect.stringContaining("/billing/status"),
@@ -166,7 +167,7 @@ it("acts on the window's space when another tab switched before the panel opened
   });
   await act(async () => {
     button(container, "Start plan").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
