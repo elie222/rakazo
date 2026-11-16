@@ -2322,32 +2322,33 @@ describe("mobile call recording without metering", () => {
     { os: "ios", dictating: false },
     { os: "android", dictating: true },
     { os: "android", dictating: false },
-  ])(
-    "passes native speech encoding options on $os (dictating=$dictating)",
-    async ({ os, dictating }) => {
-      device.os = os;
-      const stopped = new AbortController();
-      const clip = recordClip(new AbortController().signal, dictating ? stopped.signal : undefined);
-      await vi.advanceTimersByTimeAsync(0);
-      // Stop first, so a failed assertion leaves no recorder running.
-      stopped.abort();
-      await vi.advanceTimersByTimeAsync(1_000);
-      await clip;
-      expect(audio.options).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          extension: ".m4a",
-          sampleRate: 16_000,
-          numberOfChannels: 1,
-          bitRate: 48_000,
-          isMeteringEnabled: true,
-          ...(os === "ios"
-            ? { outputFormat: "aac ", audioQuality: 127, bitRateStrategy: "constant" }
-            : { outputFormat: "mpeg4", audioEncoder: "aac" }),
-        }),
-      );
-      expect(audio.release).toHaveBeenCalledOnce();
-    },
-  );
+    { os: "web", dictating: true },
+    { os: "web", dictating: false },
+  ])("passes speech encoding options on $os (dictating=$dictating)", async ({ os, dictating }) => {
+    device.os = os;
+    const stopped = new AbortController();
+    const clip = recordClip(new AbortController().signal, dictating ? stopped.signal : undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    // Stop first, so a failed assertion leaves no recorder running.
+    stopped.abort();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await clip;
+    expect(audio.options).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        extension: ".m4a",
+        sampleRate: 16_000,
+        numberOfChannels: 1,
+        bitRate: 48_000,
+        isMeteringEnabled: true,
+        ...(os === "ios"
+          ? { outputFormat: "aac ", audioQuality: 127, bitRateStrategy: "constant" }
+          : os === "android"
+            ? { outputFormat: "mpeg4", audioEncoder: "aac" }
+            : { mimeType: "audio/webm", bitsPerSecond: 48_000 }),
+      }),
+    );
+    expect(audio.release).toHaveBeenCalledOnce();
+  });
 
   it("switches recording on only for a dictated clip, never for a call turn", async () => {
     vi.mocked(setDictationAudio).mockClear();

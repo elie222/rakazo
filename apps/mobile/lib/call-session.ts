@@ -974,14 +974,16 @@ export async function recordClip(
     // The low-level constructor takes flat native options, unlike useAudioRecorder.
     const platformOptions =
       Platform.OS === "ios" ? preset.ios : Platform.OS === "android" ? preset.android : preset.web;
+    const bitRate = 48_000;
     recorder = new AudioModule.AudioRecorder({
       ...preset,
       ...platformOptions,
       // Speech clips should stay small enough to upload over a mobile connection.
       sampleRate: 16_000,
       numberOfChannels: 1,
-      bitRate: 48_000,
+      bitRate,
       ...(Platform.OS === "ios" ? { bitRateStrategy: "constant" } : {}),
+      ...(Platform.OS === "web" ? { bitsPerSecond: bitRate } : {}),
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
