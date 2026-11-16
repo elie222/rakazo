@@ -43,6 +43,8 @@ export default function NewBot() {
   const [look, setLook] = useState(newBotLook);
   // Once the screen is gone, a creation still in flight must not open the chat.
   const gone = useRef(false);
+  // Set with the Create tap: the header's Cancel can still be the one rendered before it.
+  const started = useRef(false);
   // Create waits for the check made as the screen opened, so the model prompt shows once.
   const modelCheck = useRef<Promise<boolean>>(Promise.resolve(false));
   const trimmed = name.trim();
@@ -64,6 +66,9 @@ export default function NewBot() {
         send,
         spaceId: params.spaceId,
       });
+    },
+    onFailed: () => {
+      started.current = false;
     },
     // A model is needed first, or the account or space changed: nothing is left to do here.
     onSaved: (outcome) => {
@@ -100,7 +105,9 @@ export default function NewBot() {
   }, [pending]);
 
   function create() {
-    if (trimmed) creation.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
+    if (!trimmed) return;
+    started.current = true;
+    creation.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
   }
 
   return (
@@ -108,7 +115,7 @@ export default function NewBot() {
       <Stack.Screen
         options={{
           ...cancelHeaderOptions(t`Cancel`, () => {
-            if (!pending) router.back();
+            if (!started.current) router.back();
           }),
           gestureEnabled: !pending,
         }}

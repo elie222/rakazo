@@ -12,16 +12,16 @@ import NewBot from "../app/new-bot";
 import type { SaveSend } from "./query";
 import { queryClient } from "./query";
 
-const { rpc, router, params, selected, createInboxBot, askForModelBeforeFirstBot } = vi.hoisted(
-  () => ({
+const { rpc, router, params, selected, header, createInboxBot, askForModelBeforeFirstBot } =
+  vi.hoisted(() => ({
     rpc: vi.fn(),
     selected: { spaceId: "space-1" },
     router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
     params: { current: {} as { spaceId?: string } },
+    header: { cancel: (): void => undefined },
     createInboxBot: vi.fn(),
     askForModelBeforeFirstBot: vi.fn(),
-  }),
-);
+  }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -73,7 +73,12 @@ vi.mock("react-native", () => {
 });
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/bot-look-picker", () => ({ BotLookPicker: () => null }));
-vi.mock("../components/sheet-header", () => ({ cancelHeaderOptions: () => ({}) }));
+vi.mock("../components/sheet-header", () => ({
+  cancelHeaderOptions: (_label: string, cancel: () => void) => {
+    header.cancel = cancel;
+    return {};
+  },
+}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -192,4 +197,15 @@ it("creates nothing while the opening check asks for a model", async () => {
   expect(router.back).toHaveBeenCalledOnce();
   await act(async () => button("Create")?.click());
   expect(createInboxBot).not.toHaveBeenCalled();
+});
+
+it("ignores Cancel from the Create tap on, before the screen shows it", async () => {
+  await start();
+  const cancelAsRendered = header.cancel;
+  await act(async () => {
+    button("Create")!.click();
+    cancelAsRendered();
+  });
+  expect(createInboxBot).toHaveBeenCalledOnce();
+  expect(router.back).not.toHaveBeenCalled();
 });
