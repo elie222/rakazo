@@ -68,7 +68,7 @@ export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale
   return (
     <h3
       data-testid="time-separator"
-      className="my-3 select-none text-center text-label font-normal text-muted-foreground"
+      className="mt-5 select-none text-center text-label font-normal text-muted-foreground"
     >
       {formatTimeSeparator(createdAt, locale, { today: t`Today`, yesterday: t`Yesterday` })}
     </h3>
@@ -109,6 +109,7 @@ export function ComposerReplyPreview({
   onDismiss: () => void;
 }) {
   const { t } = useLingui();
+  // Subscribed again whenever onDismiss changes, so it stays after Escape handlers mounted since.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (

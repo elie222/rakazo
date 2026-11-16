@@ -10,13 +10,18 @@ import type {
   ComputerObservation,
   ComputerRef,
   ControlLeaseRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
@@ -28,6 +33,8 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { installPageBrowserCommand, privatePageInput } from "./page-browser-install.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -38,6 +45,7 @@ const DISPLAY_START = 20;
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
 const DAYTONA_START_TIMEOUT_MS = 120_000;
 const DAYTONA_STOP_TIMEOUT_MS = 120_000;
+const DAYTONA_DELETE_TIMEOUT_MS = 60_000;
 /** Waking an archived sandbox first copies its disk back from object storage. */
 const DAYTONA_RESTORE_TIMEOUT_MS = 600_000;
 const DAYTONA_POLL_MS = 1_000;
@@ -64,7 +72,7 @@ export type DaytonaSandbox = Pick<
 > & {
   process: Pick<Sandbox["process"], "executeCommand">;
   fs: Pick<Sandbox["fs"], "listFiles" | "getFileDetails"> & {
-    uploadFile(file: Buffer, remotePath: string): Promise<void>;
+    uploadFile(file: Buffer, remotePath: string, timeout?: number): Promise<void>;
     downloadFile(remotePath: string): Promise<Buffer>;
   };
   computerUse: Pick<Sandbox["computerUse"], "stop">;
@@ -80,6 +88,8 @@ export interface DaytonaSandboxSdk {
   ): Promise<DaytonaSandbox>;
   get(sandboxIdOrName: string): Promise<DaytonaSandbox>;
 }
+
+type ProviderConfig = { snapshot?: string; unreferencedMachines?: UnreferencedMachineRecords };
 
 export class DaytonaSandboxProvider implements SandboxProvider {
   billsWhileRunning(): boolean {
@@ -118,6 +128,59 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       );
       return { code: result.exitCode, stdout: result.result, stderr: result.result };
     },
+    runWithInput: async (computer, command, input, timeoutMs, context) => {
+      context.signal.throwIfAborted();
+      const sandbox = await this.box(computer);
+      const page = privatePageInput();
+      const timeout = Math.max(1, Math.ceil(timeoutMs / 1_000));
+      const created = await sandbox.process.executeCommand(
+        page.create,
+        undefined,
+        undefined,
+        timeout,
+      );
+      if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
+      try {
+        context.signal.throwIfAborted();
+        try {
+          await sandbox.fs.uploadFile(Buffer.from(input), page.file, timeout);
+        } catch {
+          throw new Error("Could not transfer browser input");
+        }
+        context.signal.throwIfAborted();
+        try {
+          const result = await sandbox.process.executeCommand(
+            page.run(command),
+            undefined,
+            undefined,
+            timeout,
+          );
+          context.signal.throwIfAborted();
+          return { code: result.exitCode, stdout: result.result };
+        } catch (error) {
+          if (error instanceof (await daytonaSdk()).DaytonaProcessExecutionTimeoutError)
+            return { code: 124, stdout: "" };
+          context.signal.throwIfAborted();
+          throw new Error("Page browser unavailable or interrupted");
+        }
+      } finally {
+        let cleaned = false;
+        try {
+          const result = await sandbox.process.executeCommand(
+            page.cleanup,
+            undefined,
+            undefined,
+            10,
+          );
+          cleaned = result.exitCode === 0;
+        } catch {}
+        if (!cleaned)
+          getLogger().warn("sandbox.page_browser", {
+            provider: "daytona",
+            outcome: "input_cleanup_failed",
+          });
+      }
+    },
     screenUrl: async (computer, port, context) => {
       const preview = await this.screenPreview(
         await this.box(computer),
@@ -141,11 +204,13 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   /** Optional Daytona snapshot name for new bot computers; unset = server default. */
   private readonly snapshotName: string | undefined;
+  private readonly machines: UnreferencedMachineRecords | undefined;
 
-  constructor(config: { snapshot?: string }, client: DaytonaSandboxSdk) {
+  constructor(config: ProviderConfig, client: DaytonaSandboxSdk) {
     this.snapshotName =
       config.snapshot?.trim() || process.env.DAYTONA_SNAPSHOT?.trim() || undefined;
     this.client = client;
+    this.machines = config.unreferencedMachines;
   }
 
   describe() {
@@ -202,9 +267,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         { timeout: 120 },
       );
     } catch (error) {
-      await this.deleteAbandoned(name);
+      await this.deleteAbandoned(name, request.botId);
       throw error;
     }
+    const machine = { provider: "daytona", machineId: sandbox.id, homeKey: request.botId };
+    await recordUnreferencedMachine(this.machines, machine);
     this.boxes.set(sandbox.id, sandbox);
     this.checkedAt.set(sandbox.id, Date.now());
     return this.ref(sandbox, request.botId, true, false);
@@ -296,6 +363,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return this.desktops.act(computer, request, context);
   }
 
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    return this.desktops.pageBrowser(computer, request, context);
+  }
+
   async listFiles(
     computer: ComputerRef,
     directory: string,
@@ -329,7 +404,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (options?.maxBytes !== undefined) {
       const info = await sandbox.fs.getFileDetails(target);
       if (info.size > options.maxBytes) {
-        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(options.maxBytes);
       }
     }
     const content = await sandbox.fs.downloadFile(target);
@@ -499,13 +574,23 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async deleteAbandoned(name: string): Promise<void> {
+  private deleteAbandoned(name: string, homeKey: string): Promise<void> {
+    const machine = { provider: "daytona", machineId: name, homeKey };
+    return deleteUnreferencedMachine(this.machines, machine, (_signal, timeoutMs) =>
+      this.deleteNamed(name, timeoutMs),
+    );
+  }
+
+  /** By id, or by the name a create was sent under. */
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await withAbort(this.deleteNamed(machine.machineId, DAYTONA_DELETE_TIMEOUT_MS), signal);
+  }
+
+  private async deleteNamed(nameOrId: string, timeoutMs: number): Promise<void> {
     try {
-      await (await this.client.get(name)).delete(60);
+      await (await this.client.get(nameOrId)).delete(timeoutMs / 1_000);
     } catch (error) {
-      if (!(await isDaytonaSandboxMissing(error))) {
-        getLogger().error("delete Daytona sandbox left by a failed create", error);
-      }
+      if (!(await isDaytonaSandboxMissing(error))) throw error;
     }
   }
 
@@ -537,6 +622,19 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         300,
       );
       if (runtime.exitCode !== 0) throw new Error("could not prepare computer desktop tools");
+      const pageBrowser = await sandbox.process
+        .executeCommand(
+          `bash -c ${shellQuote(installPageBrowserCommand())}`,
+          undefined,
+          undefined,
+          120,
+        )
+        .catch(() => ({ exitCode: 1 }));
+      if (pageBrowser.exitCode !== 0)
+        getLogger().warn("sandbox.page_browser", {
+          provider: "daytona",
+          outcome: "install_failed",
+        });
       if (this.preparations.get(sandbox.id) !== preparation) {
         throw new Error("Daytona workspace preparation was invalidated during teardown");
       }
@@ -639,7 +737,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 }
 
 export async function createDaytonaSandboxProvider(
-  config: DaytonaConfig & { apiKey: string; snapshot?: string },
+  config: DaytonaConfig & ProviderConfig & { apiKey: string },
 ): Promise<DaytonaSandboxProvider> {
   const { Daytona } = await daytonaSdk();
   const { apiKey, apiUrl, target } = config;

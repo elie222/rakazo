@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Raise an app's existing window by WM_CLASS, else spawn its launcher.
 
 The control daemon only forwards allowlisted launchers here. A matched window

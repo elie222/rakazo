@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import { recordUsage, runAsSystem } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { runAutoReviewJudge } from "../../adapters/src/auto-review.js";
@@ -25,14 +26,8 @@ const usage = {
 
 describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
   it("accounts parent, independent subagent, failed and background calls once and retains spend after clear/delete", async () => {
-    let openedCancellation = () => {};
-    const cancellationStarted = new Promise<void>((resolve) => {
-      openedCancellation = resolve;
-    });
-    let openedDeletion = () => {};
-    const deletionStarted = new Promise<void>((resolve) => {
-      openedDeletion = resolve;
-    });
+    const cancellationStarted = deferred();
+    const deletionStarted = deferred();
     const model = await startModelEmulator({
       steps: [
         {
@@ -53,7 +48,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         { expect: () => {}, response: { type: "disconnect", text: " More." }, usage },
         {
           expect: () => {},
-          response: { type: "hold", text: "Still working.", onOpen: openedCancellation },
+          response: { type: "hold", text: "Still working.", onOpen: cancellationStarted.resolve },
           usage,
         },
         {
@@ -78,7 +73,11 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
         {
           expect: () => {},
-          response: { type: "hold", text: "Deleting while pending.", onOpen: openedDeletion },
+          response: {
+            type: "hold",
+            text: "Deleting while pending.",
+            onOpen: deletionStarted.resolve,
+          },
           usage,
         },
       ],
@@ -203,7 +202,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         botId: bot.id,
         text: "Inspect the cancellation fixture.",
       });
-      await cancellationStarted;
+      await cancellationStarted.promise;
       await rpc("threads/stop", { botId: bot.id });
       // The API marks durable cancellation; production workers may learn it at lease renewal.
       // Abort explicitly here to deterministically exercise the producer-side accounting boundary.
@@ -354,7 +353,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         botId: bot.id,
         text: "Inspect the deletion fixture.",
       });
-      await deletionStarted;
+      await deletionStarted.promise;
       await rpc("bots/remove", { botId: bot.id, deleteMemories: false });
       await handles.runtime.abort(deletedWhilePending.runId);
       await expect

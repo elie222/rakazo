@@ -1,8 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { OTHER_PLUGINS } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import type { PluginParams } from "../lib/plugin-marketplace";
 import { pluginParams, pluginSite } from "../lib/plugin-marketplace";
@@ -52,18 +52,18 @@ export function PluginSection({
   renderAppTile: (item: ConnectionCatalogItem) => ReactNode;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (pluginsState === "loading") {
     return catalogReady ? (
-      <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+      <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
     ) : null;
   }
   const failed =
     pluginsState === "partial" ? (
       <View style={styles.catalogStack}>
-        <Text style={styles.secondary}>{t("Some plugins could not be loaded.")}</Text>
+        <Text style={styles.secondary}>{t`Some plugins could not be loaded.`}</Text>
         <NativeActionButton
-          label={t("Retry")}
+          label={t`Retry`}
           fill={false}
           onPress={onRetry}
           prominence="secondary"
@@ -92,7 +92,7 @@ export function PluginSection({
           </View>
         ) : null}
         {pluginCount < pluginMatches.length ? (
-          <NativeActionButton label={t("Show more")} onPress={onShowMore} prominence="secondary" />
+          <NativeActionButton label={t`Show more`} onPress={onShowMore} prominence="secondary" />
         ) : null}
       </>
     );
@@ -114,7 +114,7 @@ export function PluginSection({
         <View key={name} testID="plugin-section" style={styles.catalogStack}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              {name === OTHER_PLUGINS ? t("More") : categoryLabel(name)}
+              {name === OTHER_PLUGINS ? t`More` : categoryLabel(name)}
             </Text>
             {entries.length > SECTION_SIZE ? (
               <Pressable
@@ -122,7 +122,7 @@ export function PluginSection({
                 hitSlop={8}
                 onPress={() => onViewCategory(name)}
               >
-                <Text style={styles.link}>{t("View all")}</Text>
+                <Text style={styles.link}>{t`View all`}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -155,7 +155,7 @@ function PluginRow({
   onOpen: (params: PluginParams) => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <Pressable
       accessibilityRole="button"
@@ -183,7 +183,7 @@ function PluginRow({
           </Text>
         ) : null}
       </View>
-      {installed ? <Text style={styles.secondary}>{t("Added")}</Text> : <Chevron />}
+      {installed ? <Text style={styles.secondary}>{t`Added`}</Text> : <Chevron />}
     </Pressable>
   );
 }

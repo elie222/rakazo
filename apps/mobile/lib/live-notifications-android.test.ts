@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { native } = vi.hoisted(() => ({
@@ -15,7 +17,7 @@ vi.mock("expo-notifications", () => ({
   dismissAllNotificationsAsync: vi.fn(),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
-vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
+vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de" }));
 const store = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => store.get(key) ?? null,
@@ -177,21 +179,17 @@ describe("Android open thread", () => {
     const { setOpenNotificationThread } = await openThread();
     const threadA = { botId: "bot-a", threadId: "thread-a" };
     const threadB = { botId: "bot-b", threadId: "thread-b" };
-    let rejectA!: (error: Error) => void;
-    let rejectB!: (error: Error) => void;
+    let rejectA!: Deferred;
+    let rejectB!: Deferred;
     native.setOpenThread
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_, reject) => {
-            rejectA = reject;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_, reject) => {
-            rejectB = reject;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        rejectA = deferred();
+        return rejectA.promise;
+      })
+      .mockImplementationOnce(() => {
+        rejectB = deferred();
+        return rejectB.promise;
+      });
 
     const reportA = setOpenNotificationThread(threadA);
     const reportB = setOpenNotificationThread(threadB);
@@ -199,8 +197,8 @@ describe("Android open thread", () => {
       expect(reportA).rejects.toThrow("a failed"),
       expect(reportB).rejects.toThrow("b failed"),
     ]);
-    rejectA(new Error("a failed"));
-    rejectB(new Error("b failed"));
+    rejectA.reject(new Error("a failed"));
+    rejectB.reject(new Error("b failed"));
     await asserted;
 
     await setOpenNotificationThread(threadA);
@@ -215,17 +213,15 @@ describe("Android open thread", () => {
     const { setOpenNotificationThread } = await openThread();
     const threadA = { botId: "bot-a", threadId: "thread-a" };
     const threadB = { botId: "bot-b", threadId: "thread-b" };
-    let resolveA!: () => void;
-    native.setOpenThread.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveA = resolve;
-        }),
-    );
+    let resolveA!: Deferred;
+    native.setOpenThread.mockImplementationOnce(() => {
+      resolveA = deferred();
+      return resolveA.promise;
+    });
 
     const reportA = setOpenNotificationThread(threadA);
     await setOpenNotificationThread(threadB);
-    resolveA();
+    resolveA.resolve();
     await reportA;
 
     await setOpenNotificationThread(threadA);
@@ -239,28 +235,24 @@ describe("Android open thread", () => {
   it("reports a close after a newer report rejects and an older report succeeds", async () => {
     const { setOpenNotificationThread } = await openThread();
     await setOpenNotificationThread(null);
-    let resolveA!: () => void;
-    let rejectB!: (error: Error) => void;
+    let resolveA!: Deferred;
+    let rejectB!: Deferred;
     native.setOpenThread
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            resolveA = resolve;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_, reject) => {
-            rejectB = reject;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        resolveA = deferred();
+        return resolveA.promise;
+      })
+      .mockImplementationOnce(() => {
+        rejectB = deferred();
+        return rejectB.promise;
+      });
 
     const reportA = setOpenNotificationThread({ botId: "bot-a", threadId: "thread-a" });
     const reportB = setOpenNotificationThread({ botId: "bot-b", threadId: "thread-b" });
     const rejected = expect(reportB).rejects.toThrow("b failed");
-    rejectB(new Error("b failed"));
+    rejectB.reject(new Error("b failed"));
     await rejected;
-    resolveA();
+    resolveA.resolve();
     await reportA;
 
     await setOpenNotificationThread(null);
@@ -283,13 +275,11 @@ describe("Android open thread", () => {
   it("reports a close while an open report is still pending after a confirmed close", async () => {
     const { setOpenNotificationThread } = await openThread();
     await setOpenNotificationThread(null);
-    let resolveOpen!: () => void;
-    native.setOpenThread.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveOpen = resolve;
-        }),
-    );
+    let resolveOpen!: Deferred;
+    native.setOpenThread.mockImplementationOnce(() => {
+      resolveOpen = deferred();
+      return resolveOpen.promise;
+    });
 
     const opening = setOpenNotificationThread({ botId: "bot-a", threadId: "thread-a" });
     await setOpenNotificationThread(null);
@@ -299,7 +289,7 @@ describe("Android open thread", () => {
       [null, null],
     ]);
 
-    resolveOpen();
+    resolveOpen.resolve();
     await opening;
   });
 });

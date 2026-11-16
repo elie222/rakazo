@@ -1,5 +1,6 @@
 import type { CompatibleEndpointPreset } from "@rakazo/contracts";
 import {
+  ConnectionSetupError,
   ipVersion,
   isCloudMetadataHost,
   isLinkLocalAddress,
@@ -36,6 +37,18 @@ export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
   return (process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS ?? "")
     .split(",")
     .some((entry) => entry.trim() !== "" && normalizeHost(entry.trim()) === normalized);
+}
+
+/**
+ * Inside a container, loopback is the container itself, so a server the person runs
+ * on their own computer is reached through the host address the deployment names.
+ */
+export function loopbackOnHost(url: URL): URL {
+  const host = process.env.RAKAZO_LOOPBACK_HOST?.trim();
+  if (!host || !isLoopbackHost(normalizeHost(url.hostname))) return url;
+  const target = new URL(url);
+  target.hostname = host;
+  return target;
 }
 
 function isBlockedHostname(hostname: string): boolean {
@@ -77,7 +90,7 @@ export function assertHttpsForKeyedOpenAiCompatibleUrl(
   if (url.protocol === "https:") return;
   const hostname = normalizeHost(url.hostname);
   if (isPrivateOpenAiCompatibleHostname(hostname)) return;
-  throw new Error(
+  throw new ConnectionSetupError(
     hasHeaders
       ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, or omit the API key and custom headers on a private HTTP endpoint."
       : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
@@ -92,27 +105,27 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   try {
     url = new URL(raw);
   } catch {
-    throw new Error("Model server URL must be an absolute HTTP(S) URL");
+    throw new ConnectionSetupError("Model server URL must be an absolute HTTP(S) URL");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Model server URL must use http or https");
+    throw new ConnectionSetupError("Model server URL must use http or https");
   }
   if (url.username || url.password) {
-    throw new Error("Model server URL must not contain credentials");
+    throw new ConnectionSetupError("Model server URL must not contain credentials");
   }
   const hostname = normalizeHost(url.hostname);
   if (isBlockedHostname(hostname)) {
-    throw new Error("Base URL targets a blocked metadata or link-local host");
+    throw new ConnectionSetupError("Base URL targets a blocked metadata or link-local host");
   }
   const allowPublic = opts?.allowPublic ?? openAiCompatAllowPublicHosts();
   if (isPrivateOpenAiCompatibleHostname(hostname)) {
-    if (opts?.allowPrivate !== true) throw new Error(PRIVATE_MODEL_ENDPOINT_MESSAGE);
+    if (opts?.allowPrivate !== true) throw new ConnectionSetupError(PRIVATE_MODEL_ENDPOINT_MESSAGE);
     return url;
   }
   const builtInPublicHost =
     url.protocol === "https:" && url.port === "" && BUILT_IN_PUBLIC_MODEL_HOSTS.has(url.hostname);
   if (!allowPublic && !builtInPublicHost) {
-    throw new Error("Public model endpoints are disabled on this server.");
+    throw new ConnectionSetupError("Public model endpoints are disabled on this server.");
   }
   return url;
 }

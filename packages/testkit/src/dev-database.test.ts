@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { branchDatabaseName, branchDatabaseOwner } from "../../../scripts/dev-branch-databases.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const exec = promisify(execFile);
@@ -23,6 +24,10 @@ async function fixture() {
   await exec("git", ["init", "-q", dir]);
   await copyFile(path.join(root, "scripts/dev.mjs"), path.join(dir, "scripts/dev.mjs"));
   await copyFile(path.join(root, "scripts/pnpm.mjs"), path.join(dir, "scripts/pnpm.mjs"));
+  await copyFile(
+    path.join(root, "scripts/dev-branch-databases.ts"),
+    path.join(dir, "scripts/dev-branch-databases.ts"),
+  );
   await symlink(
     path.join(root, "packages/db/node_modules"),
     path.join(dir, "packages/db/node_modules"),
@@ -43,6 +48,46 @@ async function fixture() {
 }
 
 describe("development database selection", () => {
+  it("rejects catalog names that do not match their repository and branch", () => {
+    const branch = "feature/example";
+    const owner = JSON.stringify({ repo: "fixture-repo", branch });
+    const name = branchDatabaseName("rakazo", branch);
+    expect(branchDatabaseOwner({ name, owner }, "rakazo", "fixture-repo")).toBe(branch);
+    for (const forged of [
+      'other"; SELECT 1; --',
+      "../../unrelated",
+      "..\\..\\unrelated",
+      branchDatabaseName("another_database", branch),
+      branchDatabaseName("rakazo", "another-branch"),
+    ]) {
+      expect(
+        branchDatabaseOwner({ name: forged, owner }, "rakazo", "fixture-repo"),
+      ).toBeUndefined();
+    }
+    for (const metadata of ["null", "{}", "invalid", JSON.stringify({ repo: "other", branch })]) {
+      expect(
+        branchDatabaseOwner({ name, owner: metadata }, "rakazo", "fixture-repo"),
+      ).toBeUndefined();
+    }
+  });
+
+  it("generates bounded path components even for unusual shared database names", () => {
+    for (const shared of [
+      "../../shared",
+      "..\\shared",
+      'shared"; SELECT 1; --',
+      "shared%22",
+      "db",
+    ]) {
+      const name = branchDatabaseName(shared, "feature/a.b");
+      expect(name).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(Buffer.byteLength(name)).toBeLessThanOrEqual(63);
+    }
+    expect(branchDatabaseName("a/b", "branch")).not.toBe(branchDatabaseName("a_b", "branch"));
+    expect(branchDatabaseName("db", "a/b")).not.toBe(branchDatabaseName("db", "a-b"));
+    expect(branchDatabaseName("rakazo", "main")).toBe("rakazo_main_0d6e4079");
+  });
+
   it("fails without starting another database when the configured one is unreachable", async () => {
     const { dir, env, marker } = await fixture();
     const server = net.createServer((socket) => socket.destroy());

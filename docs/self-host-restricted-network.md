@@ -3,12 +3,12 @@
 Use a mirror you control or pre-copy files when GitHub or container registries are unreachable.
 These settings change downloads; model and remote-computer providers still need network access.
 
-| Failure | Setting or action |
-| --- | --- |
-| Cannot fetch the installer | Download it from your mirror or copy it locally |
-| Cannot fetch Compose files | `RAKAZO_DOWNLOAD_BASE`, `--local`, or `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` |
+| Failure                            | Setting or action                                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| Cannot fetch the installer         | Download it from your mirror or copy it locally                                          |
+| Cannot fetch Compose files         | `RAKAZO_DOWNLOAD_BASE`, `--local`, or `RAKAZO_DOWNLOAD_SKIP_EXISTING=1`                  |
 | Cannot pull app or computer images | `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE`, `RAKAZO_COMPUTER_IMAGE_TAG` |
-| Cannot pull Postgres or busybox | `POSTGRES_IMAGE`, `BUSYBOX_IMAGE`, or Docker daemon `registry-mirrors` |
+| Cannot pull Postgres or busybox    | `POSTGRES_IMAGE`, `BUSYBOX_IMAGE`, or Docker daemon `registry-mirrors`                   |
 
 English | [简体中文](./zh-CN/self-host-restricted-network.md)
 

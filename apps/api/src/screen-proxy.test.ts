@@ -1,6 +1,5 @@
 import {
   addScreenProxyCapability,
-  resetRemoteScreenCapabilityReuse,
   SCREEN_TARGET_ENDPOINT,
 } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -92,14 +91,28 @@ describe("screen capability lifecycle authorization", () => {
     computer.screenGeneration++;
     expect((await request()).status).toBe(403);
   });
-  it("serves a booting computer and rejects one that is suspending or has no sandbox", async () => {
+  it("serves a booting or saving computer and rejects one with no sandbox", async () => {
     const { request, computer } = fixture();
     computer.state = "booting";
     expect((await request()).status).toBe(200);
     computer.state = "suspending";
-    expect((await request()).status).toBe(403);
+    expect((await request()).status).toBe(200);
     computer.state = "running";
+    expect((await request()).status).toBe(200);
     computer.providerRef = "";
+    expect((await request()).status).toBe(403);
+  });
+  it.each(["suspended", "stopped", "error"])("rejects a computer in %s", async (state) => {
+    const { request, computer } = fixture();
+    computer.state = state;
+    expect((await request()).status).toBe(403);
+  });
+  it.each(["generation", "control lease"])("still checks %s while saving", async (change) => {
+    const { request, computer } = fixture(true);
+    computer.state = "suspending";
+    expect((await request()).status).toBe(200);
+    if (change === "generation") computer.screenGeneration++;
+    else computer.controlLeaseExpiresAt = new Date(0);
     expect((await request()).status).toBe(403);
   });
   it("revokes archived, reassigned, and restored bots", async () => {
@@ -164,7 +177,6 @@ describe("screen capability lifecycle authorization", () => {
     }
   });
   it("reuses one remote capability across polls and still revokes it", async () => {
-    resetRemoteScreenCapabilityReuse();
     const upstream =
       "https://6100-sandbox.example/vnc.html?autoconnect=true&resize=scale&path=websockify%3Ftoken%3Dview-1&view_only=true";
     const { path, request, computer } = fixture(false, upstream);

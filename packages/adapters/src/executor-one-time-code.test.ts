@@ -2,7 +2,7 @@ import type { ComputerRef } from "@rakazo/adapter-kit";
 import { runCodeKind } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeRunCode } from "./bot-secrets.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import type * as RunNotificationsModule from "./run-notifications.js";

@@ -1,6 +1,7 @@
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 
 import { isComposeViewAvailable } from "./compose-available";
+import { showIOSActionSheet } from "./ios-action-sheet";
 import { showMessageActionSheet } from "./message-action-sheet-store";
 
 export function isMessageActionSheetAvailable() {
@@ -37,7 +38,7 @@ export function presentMessageActionSheet({
   colorScheme: "light" | "dark";
 }): void {
   if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(
+    showIOSActionSheet(
       {
         options: [...actions.map((action) => action.text), cancel],
         cancelButtonIndex: actions.length,

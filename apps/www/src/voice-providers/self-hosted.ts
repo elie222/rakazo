@@ -16,7 +16,7 @@ import {
   withPricingSources,
 } from "./shared";
 
-const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "openai", "fish", "elevenlabs", "cartesia"] as const;
+const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "xai", "openai", "fish", "elevenlabs", "cartesia"] as const;
 const COMPARED = ["selfHosted", "hostedKokoro", "macos", "openai", "fish", "elevenlabs"] as const;
 
 /** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
@@ -172,7 +172,7 @@ export const selfHosted: VoiceProvider = {
     {
       heading: "What you can do with self-hosted voice in Rakazo",
       paragraphs: [
-        "Rakazo sends both speech and transcription to the one **Server URL** you enter. If that server does both, you get every voice feature in the [voice and calls guide](/docs/voice-and-calls/).",
+        "Rakazo sends speech and transcription to the **Server URL** you enter, or transcription to a separate **Transcription server URL** if you set one. If your servers do both, you get every voice feature in the [voice and calls guide](/docs/voice-and-calls/).",
       ],
       bullets: [
         "Talk instead of typing. Hold the mic in the composer and your server transcribes what you say.",
@@ -186,7 +186,7 @@ export const selfHosted: VoiceProvider = {
       heading: "When to choose self-hosted voice",
       paragraphs: [
         "Choose it when you don't want a hosted vendor to process your voice, when you want voice with no vendor account or usage bill, or when you already run local models. It pairs naturally with a [self-hosted Rakazo](/self-hosted-ai-agent/) and a local model, so the whole assistant can work offline.",
-        "Hosted providers are less work and usually sound more polished. [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) offer cloning, [OpenAI](/voice-providers/openai/) reuses a key you may already have, and [Cartesia](/voice-providers/cartesia/) is tuned for low latency. If Rakazo runs directly on a Mac, [Server (Mac)](/voice-providers/macos/) speaks with nothing to install, but doesn't transcribe. See the [comparison](/voice-providers/) for all six.",
+        "Hosted providers are less work and usually sound more polished. [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) offer cloning, [OpenAI](/voice-providers/openai/) reuses a key you may already have, xAI can use the Grok sign-in you connect for models, and [Cartesia](/voice-providers/cartesia/) is tuned for low latency. If Rakazo runs directly on a Mac, [Server (Mac)](/voice-providers/macos/) speaks with nothing to install, but doesn't transcribe. See the [comparison](/voice-providers/) for every option.",
       ],
     },
     {
@@ -209,7 +209,7 @@ export const selfHosted: VoiceProvider = {
       steps: [
         "Start a speech server, for example the Kokoro-FastAPI Docker image, Speaches, or `mlx_audio.server` on a Mac.",
         "On the Rakazo API and worker, set `MCP_ALLOW_PRIVATE_ENDPOINT=true` for a server on your network, and `PHONE_CALLS_ENABLED=true` to turn on hold-to-talk and calls. Restart them.",
-        "Open **Settings → Voice**, set **Provider** to **Self-hosted** and enter the **Server URL**, such as `http://192.168.1.10:8880/v1`. Rakazo adds `/v1` if you leave it off. If Rakazo runs in Docker and the speech server is on the same machine, use `host.docker.internal` instead of `localhost`.",
+        "Open **Settings → Voice**, set **Provider** to **Self-hosted** and enter the **Server URL**, such as `http://192.168.1.10:8880/v1`. Rakazo adds `/v1` if you leave it off. A `localhost` URL reaches the computer running Rakazo, even when Rakazo runs in Docker.",
         "Add an **API key** only if your server needs one. Change **Speech model** and **Transcription model** if your server uses other names; Kokoro-FastAPI expects `kokoro`.",
         "Choose **Connect**, pick a **Voice** and choose **Hear a sample**.",
       ],
@@ -242,7 +242,7 @@ export const selfHosted: VoiceProvider = {
     {
       question: "Can I use a local Whisper server for speech to text?",
       answer:
-        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects.",
+        "Yes, if it answers `/v1/audio/transcriptions` the way OpenAI does. Speaches and mlx-audio both do. Set **Transcription model** to the model name your server expects. If it runs apart from your speech server, enter its address as **Transcription server URL** and, if it needs one, its **Transcription API key**.",
     },
     {
       question: "Is self-hosting Whisper cheaper than the Whisper API?",
@@ -257,7 +257,7 @@ export const selfHosted: VoiceProvider = {
     {
       question: "Why can't Rakazo reach my speech server on localhost?",
       answer:
-        "Private addresses are refused until the server sets `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. If Rakazo runs in Docker, `localhost` is the container itself, so use `host.docker.internal` or the machine's network address.",
+        "Private addresses are refused until the server sets `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. In Docker on Linux, the speech server must listen on an address the Docker bridge can reach, not only `127.0.0.1`.",
     },
   ],
   sources: withPricingSources(

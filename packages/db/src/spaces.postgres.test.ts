@@ -5,8 +5,7 @@ import { asSystem } from "./row-security.js";
 import { deleteClaimedSpace } from "./spaces.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("claimed Space deletion (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

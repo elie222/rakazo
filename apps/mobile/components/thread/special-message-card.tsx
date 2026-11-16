@@ -1,8 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
+import type { ViewInstance } from "react-native";
 import { Linking, Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -12,7 +14,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import type { MobileBot, MobileSnapshot } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import type { UserBubble } from "../../lib/user-bubble";
@@ -59,9 +60,9 @@ function HelperMessageCard({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t } = useI18n();
-  const helperHeader = useRef<View>(null);
-  const helperCard = useRef<View>(null);
+  const { t } = useLingui();
+  const helperHeader = useRef<ViewInstance>(null);
+  const helperCard = useRef<ViewInstance>(null);
   const helperReducedMotion = useReducedMotion();
   const [subagentOpen, setSubagentOpen] = useState(() => openHelpers.has(special.agentId));
   const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
@@ -131,7 +132,7 @@ function HelperMessageCard({
                 ...typeScale.cardTitle,
               }}
             >
-              {safeDisplayName(special.name, t("subagent"))}
+              {safeDisplayName(special.name, t`subagent`)}
             </Text>
             <Text
               style={{
@@ -146,13 +147,13 @@ function HelperMessageCard({
               }}
             >
               {running
-                ? t("Running")
+                ? t`Running`
                 : stopped
-                  ? t("Stopped")
+                  ? t`Stopped`
                   : special.status === "failed"
-                    ? t("Failed")
+                    ? t`Failed`
                     : special.status === "completed"
-                      ? t("Completed")
+                      ? t`Completed`
                       : special.status}
             </Text>
             <Animated.View style={helperChevronStyle}>
@@ -176,7 +177,7 @@ function HelperMessageCard({
       </Pressable>
       {running && stopHelper ? (
         <NativeActionButton
-          label={t("Stop")}
+          label={t`Stop`}
           prominence="secondary"
           size="compact"
           busy={stopping}
@@ -202,20 +203,20 @@ function HelperMessageCard({
 export function SpecialMessageCard(props: SpecialMessageCardProps) {
   const { special, actionProps, bots, members, onOpenBot, userBubble } = props;
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
   if (special.kind === "cloud_agent") {
-    const title = special.title || t("Cloud agent");
+    const title = special.title || t`Cloud agent`;
     const statusLabel =
       special.status === "running"
-        ? t("running")
+        ? t`running`
         : special.status === "finished"
-          ? t("finished")
+          ? t`finished`
           : special.status === "cancelled"
-            ? t("cancelled")
+            ? t`cancelled`
             : special.status === "expired"
-              ? t("expired")
-              : t("failed");
+              ? t`expired`
+              : t`failed`;
     const running = special.status === "running";
     const failed = special.status !== "running" && special.status !== "finished";
     const prHref = cloudAgentHttpsUrl(special.prUrl);
@@ -253,7 +254,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
         </View>
         {prHref ? (
           <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {t("Pull request")}
+            {t`Pull request`}
           </Text>
         ) : special.branch ? (
           <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
@@ -284,9 +285,9 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
           onOpenBot={onOpenBot}
         />
         {special.status === "archived"
-          ? ` ${t("archived")}`
+          ? ` ${t`archived`}`
           : special.status === "deleted"
-            ? ` ${t("deleted")}`
+            ? ` ${t`deleted`}`
             : null}
       </Text>
     );

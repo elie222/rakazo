@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// A sandboxed preload can only require electron, so channels are named here as literals.
+// ipc-channels.ts lists who may call each one; ipc-channels.test.ts fails when the two disagree.
+
 contextBridge.exposeInMainWorld("rakazoSetup", {
   platform: process.platform,
   // Read before the page runs, so its first paint is already in the app's language.

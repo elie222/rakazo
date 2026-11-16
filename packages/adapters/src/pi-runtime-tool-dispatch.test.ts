@@ -1,6 +1,7 @@
 import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 
 const fakeAgentState = vi.hoisted(() => ({
   mode: "dispatch" as
@@ -492,9 +493,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.
 import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -1084,6 +1085,48 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("creates a bot when the model leaves out the optional computer_mode", async () => {
+    const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
+    if (!spawnBotTool) throw new Error("missing spawn_bot");
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "spawn_bot", arguments: { name: "Scout" } },
+    };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "create a bot named Scout",
+        instructions: "",
+        history: [],
+        tools: [spawnBotTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "spawn_bot",
+      { name: "Scout", description: "", instructions: "", prompt: "" },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
   it("passes update_bot's read offset through the use_tool wrapper", async () => {
     const updateBotTool = builtinAgentTools.find((tool) => tool.name === "update_bot");
     if (!updateBotTool) throw new Error("missing update_bot");
@@ -1268,11 +1311,8 @@ describe("Pi connector tool dispatch", () => {
   });
 
   it("does not wait for a slow tool completion hook", async () => {
-    let resolveAudit!: () => void;
-    const audit = new Promise<void>((resolve) => {
-      resolveAudit = resolve;
-    });
-    const onToolCompleted = vi.fn(() => audit);
+    const audit = deferred();
+    const onToolCompleted = vi.fn(() => audit.promise);
     let settled = false;
     const runtime = new PiAgentRuntime();
     const run = (async () => {
@@ -1308,7 +1348,7 @@ describe("Pi connector tool dispatch", () => {
       expect(settled).toBe(true);
       expect(onToolCompleted).toHaveBeenCalledOnce();
     } finally {
-      resolveAudit();
+      audit.resolve();
       await run;
     }
   });
@@ -2216,8 +2256,8 @@ describe("Pi connector tool dispatch", () => {
       expect.objectContaining({
         name: "scout",
         task: "compare the venues",
-        model_provider: "test",
-        model_id: "dispatch-test-model",
+        model_provider: "",
+        model_id: "",
       }),
     ]);
     // No helper ran inside this turn.

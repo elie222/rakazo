@@ -89,10 +89,6 @@ vi.mock("./endpoint", async () => {
     usesCustomApiBase: () => server.custom,
   };
 });
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ locale: "en", t: (text: string) => text }),
-}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));

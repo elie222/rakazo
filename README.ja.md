@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear など数千のアプリに加え、自
 
 ### すべてのデバイスで
 
-Web、デスクトップ、iPhone、Android が同じサーバーにつながります。
+Web、デスクトップ、iPhone、iPad、Android が同じサーバーにつながります。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone のボット一覧とチャット" width="100%">
 
@@ -145,8 +145,8 @@ bash install-images.sh
 
 ## ローカル開発（ソースから実行）
 
-Node.js 22.x 系の 22.22.2 以降、Node.js 24.x、または Node.js 26 以降と、
-pnpm 12、Docker が必要です。Node.js 23.x と 25.x はサポートしていません。
+Node.js 24.x 系の 24.15.0 以降、または Node.js 26 以降と、
+pnpm 12、Docker が必要です。Node.js 25.x はサポートしていません。
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -168,13 +168,14 @@ Docker Desktop を使ってホスト側で開発する場合は、`.env` に `SA
 
 マネージドなアプリカタログは任意です。Composio を使う場合は `COMPOSIO_API_KEY` を、Pipedream
 Connect を使う場合は `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET`、`PIPEDREAM_PROJECT_ID` の 3 つを設定します。
-どちらのマネージドカタログも有効にしなくても、ユーザーは **Integrations**（連携）から HTTPS MCP サーバー、
-Treg エンドポイント、OpenAPI JSON ドキュメントを追加できます。コネクターの認証情報はサーバー上で暗号化され、
+どちらのマネージドカタログも有効にしなくても、ユーザーは **Integrations**（連携）から HTTPS MCP サーバーや
+OpenAPI JSON ドキュメントを追加できます。コネクターの認証情報はサーバー上で暗号化され、
 API から返されることはありません。
 
-Treg は従量課金です。セルフホストする場合は自分の Treg トークンを用意します。Treg をホスト型の製品に
-組み込む運営者は [Treg の連携規約](https://treg.to/integrate.md)を確認してください。ホスト型での再販には
-書面による契約が必要です。
+有料データサービス（地図の店舗情報、検索結果、勤務先メールアドレス、プロフィール、SEO データ）も任意です。
+`PAID_SERVICES_PROVIDER=treg` と、組織用の [Treg](https://treg.to) トークンを入れた `PAID_SERVICES_API_KEY` を設定すると、
+ボットがデプロイ側のアカウントでそれらを検索して呼び出せます。モデルクレジットが有効な場合、各呼び出しは
+提供元の費用に 20% を加えた額が組織のクレジットから差し引かれます。
 
 ```bash
 docker compose --env-file .env \
@@ -238,14 +239,21 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 初回起動時、デスクトップアプリは Rakazo をこのコンピューターで動かすか、既存のサーバーに接続するかを
-尋ねます。**This computer**（このコンピューター）を選ぶと、アプリのデータディレクトリに Docker Compose で公開イメージを
-インストールして起動します（`infra/compose/install-images.sh` と同じファイルを使います）。そのため Docker Desktop、
-OrbStack、Docker Engine のいずれかが必要です。インストールされていない場合、アプリからそれらへのリンクを案内します。インストール済みの
-ビルドはイメージタグを自身のバージョンに固定し、パッケージ化されていないビルドは `edge` を取得します。
+尋ねます。**This computer**（このコンピューター）は、macOS 26 以降の Apple シリコン搭載 Mac で、
+ビルドにサーバーバンドルが含まれていれば Docker なしで動作します。新規セットアップではこの方式を使い、
+必要なサーバーとコンピューターランタイムをアプリがダウンロードします。既存の Docker スタックがある場合は、
+Docker の稼働中に移行を提案します。**Keep Docker** を選ぶと Docker を使い続けます。
+
+その他のビルドやプラットフォームでは、アプリのデータディレクトリに Docker Compose で公開イメージを
+インストールして起動します（`infra/compose/install-images.sh` と同じファイルを使います）。この方式には Docker Desktop、
+OrbStack、Docker Engine のいずれかが必要です。未インストールの場合はダウンロードリンクを案内します。
+インストール済みのビルドはイメージタグを自身のバージョンに固定し、パッケージ化されていないビルドは `edge` を取得します。
+
 `pnpm dev` を実行している開発者は、代わりに **Existing instance**（既存のインスタンス）を選び `http://127.0.0.1:5173` を指定してください。公開サーバーは
 HTTPS を使う必要があります。HTTP はループバックとプライベート LAN のアドレスでのみ受け付けます（リンクローカルは除く）。
 アプリは保存前に Rakazo のヘルスチェックエンドポイントを確認し、以降の起動ではそのインスタンスに直接接続します。
-アプリを終了してもスタックは動き続けます。停止するには、アプリケーションメニューの **Stop Local Stack**（ローカルスタックを停止）を使います。
+Docker スタックはアプリを終了しても動き続けますが、Docker を使わないサーバーはアプリとともに停止します。
+アプリを終了せずに管理対象のスタックを停止するには、アプリケーションメニューの **Stop Local Stack**（ローカルスタックを停止）を使います。
 
 Linux では、デスクトップアプリは AppImage として配布されており、FUSE 2（`libfuse.so.2`）が必要です。Fedora Silverblue や
 Ubuntu 24.04 など、FUSE 3 しか含まないディストリビューションでは
@@ -258,7 +266,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** は `docker` CLI を探し、Podman は検出しません。`compose` コマンドに対応した別の
+**This computer** の Docker 方式は `docker` CLI を探し、Podman は検出しません。`compose` コマンドに対応した別の
 Docker 互換 CLI を試すには、アプリを起動する前に `RAKAZO_DOCKER_BINARY` にそのパスを設定してください。
 
 接続先を変えるには、アプリケーションメニューの **Change Rakazo Server…**（Rakazo サーバーを変更）を使います。保存せずに

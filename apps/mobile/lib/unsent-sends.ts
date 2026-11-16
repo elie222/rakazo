@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { isModelRequiredSendError } from "@rakazo/core";
 import { Alert, AppState } from "react-native";
 import type { RpcArgs } from "./api";
@@ -11,10 +12,9 @@ import {
   subscribeServerReachable,
 } from "./api";
 import { artifactCacheSession } from "./artifact-cache-session";
-import { t } from "./i18n";
 import { integrationsCacheScope } from "./integrations-cache";
 import { askToAddModel } from "./model-settings";
-import { outboxDisk } from "./outbox-disk";
+import { hasSavedUnsentSends, outboxDisk } from "./outbox-disk";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
@@ -57,7 +57,7 @@ async function loadUnsentSends(): Promise<void> {
       apiBase !== currentApiBase() ||
       spaceId !== selectedSpaceId()
     )
-      throw new Error(t("Failed to send message"));
+      throw new Error(t`Failed to send message`);
     activeScope = {
       apiBase,
       spaceId: spaceId ?? verified.spaceId,
@@ -85,12 +85,22 @@ export async function unsentSendsRestored(): Promise<boolean> {
     // A restore that could not read the saved queue leaves it unknown, not empty.
     if (!unsentSendsReadable()) return false;
     if (loaded) return true;
-    // Signed out, the queue was cleared with the session, so a failed restore hides nothing.
+    // Signed out, a failed restore hides nothing unless the queue outlived the session: a
+    // rejected session keeps it on disk for the sign-in warning, also across a restart.
     const signedOut = await snapshotSessionToken().then(
       (session) => session.ok && !session.value,
       () => false,
     );
-    if (attempt === restoreAttempt) return signedOut;
+    if (attempt === restoreAttempt) return signedOut && !savedQueueOnDisk();
+  }
+}
+
+function savedQueueOnDisk() {
+  try {
+    return hasSavedUnsentSends();
+  } catch {
+    // An unreadable queue is unknown, not empty.
+    return true;
   }
 }
 
@@ -120,12 +130,12 @@ configureUnsentSends({
   passwordChanging: passwordChangeInFlight,
   scope,
   disk: outboxDisk,
-  errorText: (error) => errorText(error, t("Failed to send message")),
+  errorText: (error) => errorText(error, t`Failed to send message`),
   notDelivered: (attempt) => {
     if (isModelRequiredSendError(attempt.error)) {
       askToAddModel();
     } else if (!attempt.imageConfirmation) {
-      Alert.alert(t("Failed to send message"), attempt.error);
+      Alert.alert(t`Failed to send message`, attempt.error);
     }
   },
 });

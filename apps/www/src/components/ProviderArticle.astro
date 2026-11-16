@@ -25,6 +25,11 @@ const { article, hub, others, updated, ogId, markdownPath } = Astro.props;
   title={article.title}
   description={article.description}
   faq={article.faq}
+  article={{
+    headline: article.h1,
+    crumb: article.name,
+    parents: [{ name: hub.label, path: hub.href }],
+  }}
   ogImage={ogPublicPath(ogId)}
   markdownAlternate={markdownPath}
 >

@@ -39,7 +39,6 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => state.selected,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 const work: Organization = {
   id: "org-work",

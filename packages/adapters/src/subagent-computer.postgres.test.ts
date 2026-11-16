@@ -6,8 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { releaseComputerExecutionLease, waitForRunComputerLease } from "./computer-lifecycle.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("subagent computer coordination", () => {
   let prisma: PrismaClient;
@@ -19,11 +18,10 @@ describePostgres("subagent computer coordination", () => {
     const db = createDb(url!);
     prisma = asSystem(db.prisma);
     identity = await runAsSystem("subagent computer fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address: `subagent-${randomUUID()}@example.test` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, {
+        provider: "email",
+        address: `subagent-${randomUUID()}@example.test`,
+      }),
     );
     computerId = (await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } }))
       .computerId!;

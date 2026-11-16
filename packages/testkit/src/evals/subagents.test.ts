@@ -7,7 +7,15 @@ function evidence(): Evidence {
   return {
     text: "I'll delegate that.",
     delegation: {
-      helpers: [{ status: "completed", tools: ["read_file", "write_file"] }],
+      helpers: [
+        {
+          status: "completed",
+          calls: [
+            { name: "read_file", args: { path: "inputs/shipment.json" }, succeeded: true },
+            { name: "write_file", args: { path: "results/shipment.json" }, succeeded: true },
+          ],
+        },
+      ],
       results: [{ status: "completed", text: "The shipment has 19 units and costs 151." }],
     },
     files: { "results/shipment.json": '{"units":19,"cost":151}' },
@@ -35,10 +43,21 @@ describe("subagent eval outcomes", () => {
   it("requires actual helper actions and a completed parent result, beyond a correct file", () => {
     const e = evidence();
     expect(passes(e)).toBe(true);
-    e.delegation!.helpers[0]!.tools = [];
+    const calls = e.delegation!.helpers[0]!.calls;
+    e.delegation!.helpers[0]!.calls = [];
     expect(passes(e)).toBe(false);
-    e.delegation!.helpers[0]!.tools = ["read_file", "write_file"];
+    e.delegation!.helpers[0]!.calls = calls;
     e.delegation!.results = [];
+    expect(passes(e)).toBe(false);
+  });
+
+  it("rejects successful calls to unrelated paths and failed calls to the target paths", () => {
+    const e = evidence();
+    const write = e.delegation!.helpers[0]!.calls[1]!;
+    write.args.path = "unrelated.json";
+    expect(passes(e)).toBe(false);
+    write.args.path = "results/shipment.json";
+    write.succeeded = false;
     expect(passes(e)).toBe(false);
   });
 
@@ -66,7 +85,13 @@ describe("subagent eval outcomes", () => {
   it("rejects a helper's duplicate write and collateral changes to another record", () => {
     const connector = SUBAGENT_EVAL_CASES.find((item) => item.id === "subagent-connector-action")!;
     const e = evidence();
-    e.delegation!.helpers[0]!.tools = ["CRM_UPDATE_RECORD"];
+    e.delegation!.helpers[0]!.calls = [
+      {
+        name: "CRM_UPDATE_RECORD",
+        args: { recordId: "customer-1", status: "active" },
+        succeeded: true,
+      },
+    ];
     e.records = [
       { id: "customer-1", name: "Example Bakery", status: "active", priority: "normal" },
       { id: "customer-2", name: "Example Books", status: "lead", priority: "normal" },
@@ -79,6 +104,13 @@ describe("subagent eval outcomes", () => {
       },
     ];
     expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(true);
+    const helperCall = e.delegation!.helpers[0]!.calls[0]!;
+    helperCall.succeeded = false;
+    expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(false);
+    helperCall.succeeded = true;
+    helperCall.args.recordId = "customer-2";
+    expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(false);
+    helperCall.args.recordId = "customer-1";
     e.calls.push({ ...e.calls[0]! });
     expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(false);
     e.calls.pop();

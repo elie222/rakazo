@@ -26,8 +26,7 @@ import { mountAccountExportRoute } from "./account-export.js";
 import { importAccount } from "./account-import.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("account export (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
@@ -501,6 +500,7 @@ describePostgres("account export (PostgreSQL)", () => {
           home: new LocalAgentHomeStore(root),
           sandbox: noop as SandboxProvider,
           jobs: noop as JobPublisher,
+          memoryProviders: { resolve: async () => null },
           dataDir: root,
           maxArtifactBytes: 1024 * 1024,
         },

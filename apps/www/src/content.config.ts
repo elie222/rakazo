@@ -9,6 +9,8 @@ const blog = defineCollection({
   loader: glob({ pattern: "**/*.md", base: "./src/content/blog" }),
   schema: z.object({
     title: z.string(),
+    /** A shorter title for the Open Graph card. */
+    ogTitle: z.string().optional(),
     description: z.string(),
     published: z.coerce.date(),
     updated: z.coerce.date(),

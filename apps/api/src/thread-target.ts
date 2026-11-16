@@ -5,8 +5,7 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { notifyMemberMessage } from "@rakazo/adapters";
+import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -15,8 +14,10 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
+  isQuestionAskBlock,
   MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
@@ -38,7 +39,6 @@ import {
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
-  primaryActiveRun,
   retireWaitingQuestionInTransaction,
   SpaceDeletionInProgressError,
   spaceTakesWork,
@@ -69,7 +69,8 @@ export type ThreadTarget =
       groupId: string;
       threadId: string;
       groupName: string;
-      members: GroupMember[];
+      // A member's status changes with thread events, so the snapshot reads it with its cursor.
+      members: Omit<GroupMember, "status">[];
       memberBotIds: string[];
     };
 
@@ -163,14 +164,7 @@ export async function enqueueRunsNeedingContinue(
   runs: Array<{ id: string; status: string }>,
 ) {
   await Promise.all(
-    runs
-      .filter((run) => RUNS_NEEDING_CONTINUE.has(run.status))
-      .map((run) =>
-        jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          // The queued run is durable; the reconciler repairs a missed immediate wake.
-          getLogger().error("thread send enqueue", error);
-        }),
-      ),
+    runs.filter((run) => RUNS_NEEDING_CONTINUE.has(run.status)).map((run) => wakeRun(jobs, run.id)),
   );
 }
 
@@ -403,7 +397,6 @@ export async function resolveThreadTarget(
       name: member.bot.name,
       color: member.bot.color,
       avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
-      status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
       kind: "group",
@@ -546,10 +539,18 @@ export async function sendThreadMessage(
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       let repliedBotId: string | undefined;
+      let repliedQuestionRunId: string | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true, blocks: true, role: true, botId: true, authorUserId: true },
+          select: {
+            id: true,
+            blocks: true,
+            role: true,
+            botId: true,
+            authorUserId: true,
+            runId: true,
+          },
         });
         // A missing target must not lose the send or retain an unverified id.
         // The empty server-owned quote preserves the unavailable state after reload.
@@ -562,6 +563,15 @@ export async function sendThreadMessage(
           const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
           replyPreview = null;
           if (parsed.success) {
+            if (
+              reply.role === "bot" &&
+              parsed.data.some(
+                (block) =>
+                  block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
+              )
+            ) {
+              repliedQuestionRunId = reply.runId ?? undefined;
+            }
             replyPreview = messageReplyPreview(
               parsed.data,
               reply.role as ReplyPreview["role"],
@@ -594,6 +604,25 @@ export async function sendThreadMessage(
           }
         }
       }
+
+      const composerAnswerInput = (message: { id: string; seq: number }) => ({
+        spaceId: actor.spaceId,
+        threadId: target.threadId,
+        answeredByUserId: actor.userId,
+        answer: input.text ?? "",
+        beforeMessageSeq: message.seq,
+        ...(replyToMessageId ? { replyToMessageId } : {}),
+        answerMessageId: message.id,
+      });
+      const targetedQuestionRun = (
+        runs: readonly { id: string; status: string; userId: string }[],
+      ) =>
+        runs.find(
+          (run) =>
+            run.id === repliedQuestionRunId &&
+            run.status === "waiting_input" &&
+            run.userId === actor.userId,
+        )?.id;
 
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
@@ -655,28 +684,24 @@ export async function sendThreadMessage(
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
+        const targetedRunId = targetedQuestionRun(activeRuns);
         // Someone else's question stays on its card; this message starts the sender's own run.
         for (const run of activeRuns.filter(
           (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
         )) {
+          if (targetedRunId && run.id !== targetedRunId) continue;
           if (
             await answerWaitingRunWithTextInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               runId: run.id,
-              answeredByUserId: actor.userId,
-              answer: input.text ?? "",
-              beforeMessageSeq: message.seq,
             })
           )
             answered.push({ ...run, status: "queued" });
           else
             await retireWaitingQuestionInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               botId: target.botId,
               runId: run.id,
-              answer: input.text ?? "",
             });
         }
         if (answered.length) {
@@ -886,21 +911,68 @@ export async function sendThreadMessage(
         replyQuote,
         clientNonce: input.clientNonce,
       });
+      // A bare "stop" while any member, or a helper it started, works is the Stop button,
+      // as in a bot's own chat.
+      const working =
+        !routineRuns.length && isStopMessage(input)
+          ? await tx.run.findFirst({
+              where: {
+                OR: [
+                  { threadId: target.threadId, botId: { in: memberBotIds } },
+                  {
+                    trigger: BACKGROUND_HELPER_TRIGGER,
+                    sourceMessage: { threadId: target.threadId },
+                  },
+                ],
+                status: { in: [...ACTIVE_RUN_STATUSES] },
+              },
+              select: { id: true, taskId: true, botId: true, status: true, userId: true },
+            })
+          : null;
+      if (working) {
+        await touchGroupUpdatedAt(tx, target.groupId);
+        const event = await appendEventInTransaction(tx, {
+          spaceId: actor.spaceId,
+          threadId: target.threadId,
+          botId: working.botId,
+          type: "thread.message.created",
+          payload: {
+            messageId: message.id,
+            seq: message.seq,
+            role: "user",
+            blocks,
+            author,
+            callId,
+            // The stopped run is the receipt a retry of this send replays.
+            runIds: [working.id],
+            replyToMessageId,
+            replyQuote,
+            replyPreview,
+          },
+        });
+        // Steering is cleared for the members locked above, not the earlier snapshot.
+        const stop = await cancelThreadRuns(
+          actor,
+          { ...target, memberBotIds },
+          { botId: working.botId },
+        )(tx);
+        return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
+      }
+      if (input.noModel) {
+        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+      }
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
+      const targetedRunId = targetedQuestionRun(activeRuns);
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
           // Someone else's question stays on its card; this message starts the sender's own run.
-          if (run.userId !== actor.userId) continue;
+          if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId)) continue;
           const answered = await answerWaitingRunWithTextInTransaction(tx, {
-            spaceId: actor.spaceId,
-            threadId: target.threadId,
+            ...composerAnswerInput(message),
             runId: run.id,
-            answeredByUserId: actor.userId,
-            answer: input.text ?? "",
-            beforeMessageSeq: message.seq,
           });
           if (answered) {
             const queuedForBot = answeredByBotId.get(run.botId) ?? [];
@@ -908,11 +980,9 @@ export async function sendThreadMessage(
             answeredByBotId.set(run.botId, queuedForBot);
           } else {
             await retireWaitingQuestionInTransaction(tx, {
-              spaceId: actor.spaceId,
-              threadId: target.threadId,
+              ...composerAnswerInput(message),
               botId: run.botId,
               runId: run.id,
-              answer: input.text ?? "",
             });
           }
           continue;
@@ -1059,6 +1129,8 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
+  if (committed.runs.length > 0 || committed.routineRuns.length > 0)
+    await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   if (
     memberMessageAlerts({
       callId,

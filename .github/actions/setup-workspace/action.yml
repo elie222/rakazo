@@ -20,12 +20,67 @@ inputs:
 runs:
   using: composite
   steps:
+    # Linux jobs reuse pnpm itself and the installed workspace from the last install of the same
+    # lockfile, so they skip pnpm's bootstrap and the install. Filtered and non-Linux installs (the
+    # native computer jobs) install as before.
+    - name: Cache keys
+      id: keys
+      shell: bash
+      env:
+        CACHEABLE: ${{ runner.os == 'Linux' && inputs.filter == '' }}
+      run: |
+        echo "cacheable=$CACHEABLE" >> "$GITHUB_OUTPUT"
+        echo "pnpm=$(node -p "require('./package.json').packageManager")" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pnpm
+      id: pnpm-cache
+      if: steps.keys.outputs.cacheable == 'true'
+      uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: ~/setup-pnpm
+        key: pnpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.keys.outputs.pnpm }}
+
     - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      if: steps.pnpm-cache.outputs.cache-hit != 'true'
+
+    - name: Save pnpm
+      if: steps.keys.outputs.cacheable == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: ~/setup-pnpm
+        key: pnpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.keys.outputs.pnpm }}
+
+    # What pnpm/action-setup exports: PNPM_HOME, and PNPM_HOME/bin (the self-updated pnpm) ahead of it.
+    - name: Use cached pnpm
+      if: steps.pnpm-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        echo "PNPM_HOME=$HOME/setup-pnpm/node_modules/.bin" >> "$GITHUB_ENV"
+        echo "$HOME/setup-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+        echo "$HOME/setup-pnpm/node_modules/.bin/bin" >> "$GITHUB_PATH"
+
+    # Saved right after `pnpm install` below, before anything else writes into node_modules, under a
+    # key that covers every input of the install, the manifests included: a hit skips the install,
+    # so a manifest the lockfile does not match must miss and fail `--frozen-lockfile` instead.
+    - name: Restore node_modules
+      id: node-modules
+      if: steps.keys.outputs.cacheable == 'true'
+      uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+          infra/updater/node_modules
+          infra/sandboxes/supervisor/node_modules
+        key: node-modules-v1-${{ runner.os }}-${{ runner.arch }}-node24-${{ steps.keys.outputs.pnpm }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'infra/updater/package.json', 'infra/sandboxes/supervisor/package.json') }}
 
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
-        node-version: 22
-        cache: pnpm
+        node-version: 24
+        # The pnpm store is only needed to install.
+        cache: ${{ steps.node-modules.outputs.cache-hit != 'true' && 'pnpm' || '' }}
 
     - name: Cache Electron binary
       if: inputs.electron == 'true'
@@ -54,41 +109,56 @@ runs:
           turbo-${{ inputs.turbo }}-
 
     - name: Install dependencies
+      if: steps.node-modules.outputs.cache-hit != 'true'
       shell: bash
       env:
-        SETUP_ELECTRON: ${{ inputs.electron }}
         SETUP_FILTER: ${{ inputs.filter }}
-        RUNNER_TEMP: ${{ runner.temp }}
       run: |
         set -euo pipefail
-        # Electron treats any set ELECTRON_SKIP_BINARY_DOWNLOAD as skip, so only
-        # export it when this job does not need the binary.
-        if [[ "${SETUP_ELECTRON}" == "true" ]]; then
-          export electron_config_cache="${RUNNER_TEMP}/electron-cache"
-          mkdir -p "$electron_config_cache"
-        else
-          export ELECTRON_SKIP_BINARY_DOWNLOAD=1
-          export pnpm_config_prefer_offline=true
-        fi
+        # Electron's own postinstall is not an allowed build, so the binary comes from the step below.
+        export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+        export pnpm_config_prefer_offline=true
         filter_args=()
         if [[ -n "${SETUP_FILTER}" ]]; then
           filter_args=(--filter "${SETUP_FILTER}" --filter rakazo)
         fi
-        pnpm install --frozen-lockfile "${filter_args[@]}"
-        if [[ "${SETUP_ELECTRON}" == "true" ]]; then
-          install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
-          if [[ -z "$install_js" ]]; then
-            echo "electron/install.js not found after pnpm install" >&2
+        # macOS's bash 3.2 treats an empty array as unset under `set -u`.
+        pnpm install --frozen-lockfile ${filter_args[@]+"${filter_args[@]}"}
+
+    - name: Save node_modules
+      if: steps.keys.outputs.cacheable == 'true' && steps.node-modules.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+          infra/updater/node_modules
+          infra/sandboxes/supervisor/node_modules
+        key: ${{ steps.node-modules.outputs.cache-primary-key }}
+
+    - name: Install Electron binary
+      if: inputs.electron == 'true'
+      shell: bash
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        export electron_config_cache="${RUNNER_TEMP}/electron-cache"
+        mkdir -p "$electron_config_cache"
+        install_js="$(pnpm --filter @rakazo/desktop exec node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")"
+        if [[ -z "$install_js" ]]; then
+          echo "electron/install.js not found after pnpm install" >&2
+          exit 1
+        fi
+        for attempt in 1 2 3 4; do
+          if node "$install_js"; then
+            break
+          fi
+          if [[ "$attempt" -eq 4 ]]; then
+            echo "Electron binary download failed after ${attempt} attempts" >&2
             exit 1
           fi
-          for attempt in 1 2 3 4; do
-            if node "$install_js"; then
-              break
-            fi
-            if [[ "$attempt" -eq 4 ]]; then
-              echo "Electron binary download failed after ${attempt} attempts" >&2
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
-        fi
+          sleep $((attempt * 10))
+        done

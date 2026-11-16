@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -37,18 +38,15 @@ describe("collapsed sections", () => {
 
   it("waits for a pending save before loading", async () => {
     store.set(COLLAPSED_SECTIONS_KEY, JSON.stringify({ userId: "user-1", keys: [] }));
-    let finishWrite!: () => void;
-    const writeReady = new Promise<void>((resolve) => {
-      finishWrite = resolve;
-    });
+    const writeReady = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async (key, value) => {
-      await writeReady;
+      await writeReady.promise;
       store.set(key, value);
     });
 
     saveCollapsedSections("user-1", new Set(["bot-1"]));
     const loaded = loadCollapsedSections();
-    finishWrite();
+    writeReady.resolve();
 
     expect(await loaded).toEqual({ userId: "user-1", keys: new Set(["bot-1"]) });
   });

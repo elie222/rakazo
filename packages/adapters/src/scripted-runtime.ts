@@ -16,7 +16,7 @@ import {
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
 
-import { BACKGROUND_HELPER_TASK_CUE } from "./background-helpers.js";
+import { BACKGROUND_HELPER_TASK_CUE } from "./background-helpers.prompt.js";
 
 const running = new Map<string, AbortController>();
 

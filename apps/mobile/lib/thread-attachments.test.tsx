@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act, Suspense, startTransition, use, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -19,10 +20,6 @@ vi.mock("./session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("./pick-attachments", () => ({
   pickDocuments: vi.fn(),
   pickFromLibrary: vi.fn(),
@@ -128,25 +125,17 @@ it("counts a read that settles before the next render against the attachment lim
     attachments: PickedAttachment[];
     skipped: Array<{ name: string; reason: string }>;
   };
-  let settleFirst!: (result: PickResult) => void;
-  let settleSecond!: (result: PickResult) => void;
-  vi.mocked(pickDocuments).mockReturnValueOnce(
-    new Promise((resolve) => {
-      settleFirst = resolve;
-    }),
-  );
-  vi.mocked(pickDocuments).mockReturnValueOnce(
-    new Promise((resolve) => {
-      settleSecond = resolve;
-    }),
-  );
+  const settleFirst = deferred<PickResult>();
+  const settleSecond = deferred<PickResult>();
+  vi.mocked(pickDocuments).mockReturnValueOnce(settleFirst.promise);
+  vi.mocked(pickDocuments).mockReturnValueOnce(settleSecond.promise);
   act(() => attachments.attachFrom("file"));
   act(() => attachments.attachFrom("file"));
 
   // Both reads settle in the same task, before React commits the first one's attachments.
   await act(async () => {
-    settleFirst({ attachments: [picked("d1")], skipped: [] });
-    settleSecond({ attachments: [picked("d2")], skipped: [] });
+    settleFirst.resolve({ attachments: [picked("d1")], skipped: [] });
+    settleSecond.resolve({ attachments: [picked("d2")], skipped: [] });
   });
 
   expect(attachments.activePendingAttachments.map((item) => item.id).sort()).toEqual([
@@ -155,8 +144,8 @@ it("counts a read that settles before the next render against the attachment lim
     "a3",
     "d1",
   ]);
-  // The identity i18n mock leaves the placeholder; before the fix there was no notice at all.
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  // Before the fix there was no notice at all.
+  expect(attachments.attachmentNotice).toBe("Skipped d2.txt (max 4 attachments)");
 });
 
 it("keeps a chat's unsent attachments when the chat is left and reopened", () => {
@@ -313,23 +302,23 @@ function slowShare() {
 }
 
 it("holds a share import to the attachment limit when a picker opened before it settles first", async () => {
-  let settlePicker!: (result: Read) => void;
-  vi.mocked(pickDocuments).mockReturnValueOnce(
-    new Promise((resolve) => {
-      settlePicker = resolve;
-    }),
-  );
+  const settlePicker = deferred<Read>();
+  vi.mocked(pickDocuments).mockReturnValueOnce(settlePicker.promise);
   // The picker opens before the share is taken; the new limits then start the import.
   mount(<ImportProbe botId="bot-share-picker" />);
   act(() => attachments.attachFrom("file"));
   const share = slowShare();
   act(() => root.render(<ImportProbe botId="bot-share-picker" uploadConfig={twoAttachments} />));
 
-  await act(async () => settlePicker({ attachments: [picked("d1"), picked("d2")], skipped: [] }));
+  await act(async () =>
+    settlePicker.resolve({ attachments: [picked("d1"), picked("d2")], skipped: [] }),
+  );
   await act(async () => share.settle());
 
   expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  expect(attachments.attachmentNotice).toBe(
+    "Skipped s1.txt (max 2 attachments), s2.txt (max 2 attachments)",
+  );
   // Files left out by the limit give their share copies back.
   expect(releaseIncomingShareFiles).toHaveBeenLastCalledWith(share.files);
 });
@@ -346,7 +335,9 @@ it("holds a share import to the attachment limit when files are dropped during i
   await act(async () => share.settle());
 
   expect(attachments.activePendingAttachments.map((item) => item.id)).toEqual(["d1", "d2"]);
-  expect(attachments.attachmentNotice).toBe("Skipped {items}");
+  expect(attachments.attachmentNotice).toBe(
+    "Skipped s1.txt (max 2 attachments), s2.txt (max 2 attachments)",
+  );
 });
 
 it("keeps the share copy an earlier unsent attachment still uses when a later share overflows", async () => {

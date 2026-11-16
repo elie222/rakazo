@@ -14,8 +14,7 @@ import {
 } from "./spending.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("spending limit (PostgreSQL)", () => {
   const db = databaseUrl ? createDb(databaseUrl, { poolMax: 6 }) : undefined;

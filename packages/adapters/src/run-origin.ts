@@ -1,5 +1,6 @@
 import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
 import type { PrismaClient, Run } from "@rakazo/db";
+import { storedMessageBlocks } from "@rakazo/db";
 
 type RunOrigin = Pick<
   Run,
@@ -31,7 +32,23 @@ export async function loadRunOrigin(prisma: PrismaClient, run: RunOrigin) {
         sourceMessage: true,
       },
     });
-    if (!origin || origin.status === "cancelled") return null;
+    if (!origin) return null;
+    if (origin.status === "cancelled") {
+      // Typing an answer retires a waiting parent, without revoking its delegated work.
+      const replies = await prisma.message.findMany({
+        where: { runId: origin.id, threadId: origin.threadId, role: "bot" },
+        select: { id: true, blocks: true },
+      });
+      if (
+        !replies.some((reply) =>
+          storedMessageBlocks(reply).some(
+            (block) =>
+              block.kind === "ask" && block.status === "answered" && Boolean(block.answerMessageId),
+          ),
+        )
+      )
+        return null;
+    }
     if (
       origin.thread?.groupId &&
       (!origin.thread.group ||

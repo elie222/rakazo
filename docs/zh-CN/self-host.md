@@ -36,8 +36,12 @@ bash install-images.sh
 
 `SANDBOX_PROVIDER` 默认为 `docker`，无需远程计算机服务账号即可使用本地 Docker 计算机。
 镜像版 Compose 会在内部网络运行沙箱监督服务，并拉取计算机镜像。
+可选远程提供商为 `e2b`、`novita`、`daytona`、`createos` 和 `boat`；选择后填写对应的 API 密钥。
 远程计算机的选择与密钥配置见[计算机提供商（英文）](../self-host-sandbox-providers.md)。
 无论选择哪种提供商，这套 Compose 都要求配置 `SANDBOX_SUPERVISOR_TOKEN`；留空会拒绝启动。
+
+也可以设置 `OPENROUTER_API_KEY`；如需使用插件，再设置 `COMPOSIO_API_KEY`。
+也可以注册后在界面中连接模型。
 
 默认镜像标签是 `edge`，随主分支更新；发布的镜像同时支持 `amd64` 和 `arm64`。
 不要假定仓库中一定存在 `latest` 标签。固定版本与更新方法见[升级](./self-host-upgrading.md)。
@@ -58,6 +62,9 @@ app.example.com {
 在 `.env` 中将 `BETTER_AUTH_URL`、`WEB_ORIGIN` 和 `API_URL` 都设为同一个 HTTPS 来源地址，
 并将 `RAKAZO_HOST` 设为其主机名，例如 `app.example.com`。Cookie 和跨域检查使用这些地址。
 网页服务会将 `/api` 和 `/rpc` 代理到后端，不要将 `3100` 端口暴露到公网。
+
+如果还要通过其他主机名访问（例如局域网 IP 或 tailnet 名称），请用逗号分隔写入
+`RAKAZO_ALLOWED_HOSTS`。否则网页服务会拒绝其他 `Host` 请求头，计算机屏幕可能保持空白。
 如需 Compose 内置 Caddy 或完整的主机加固流程，使用[生产部署指南（英文）](../self-host-production.md#public-single-vm-deployment)。
 
 ### 受限网络
@@ -67,7 +74,7 @@ app.example.com {
 
 ## 从源码运行
 
-需要 Node.js 22.x（至少 22.22.2）、24.x 或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 23.x 和 25.x。
+需要 Node.js 24.x（至少 24.15.0）或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 25.x。
 从仓库根目录开始：
 
 ```bash
@@ -86,13 +93,17 @@ pnpm dev
 ```
 
 打开终端打印的地址，默认是 `http://127.0.0.1:5173`。`pnpm dev` 会先准备数据库并应用迁移。
-开发服务运行时，可用 `pnpm --filter @rakazo/desktop dev` 启动桌面端，并选择“已有实例”。
-桌面端的“本机”选项会自行安装镜像版服务，默认使用 `45173` 端口，与开发服务不同。
+开发服务运行时，可用 `pnpm --filter @rakazo/desktop dev` 启动桌面端，并选择“现有实例”。
+桌面端的“这台电脑”选项会自行安装镜像版服务，默认使用 `45173` 端口，与开发服务不同。
 
 在 WSL 中开发时，将仓库和 `data` 放在 Linux 文件系统中，例如 `~/rakazo`，并以普通用户运行。
 宿主机运行的监督服务会让机器人容器使用该用户的 UID/GID。
 若无法访问 Docker Desktop 容器 IP，在 `.env` 中设置 `SANDBOX_CONTROL_VIA_LOOPBACK=true`；
 Compose 内运行监督服务时不要设置此项。
+
+在 Windows 上，如果旧克隆使用 `core.autocrlf=true`，计算机面板可能卡在启动阶段
+（沙箱日志出现 `bash\r`）：请在干净的工作树中运行 `git config core.autocrlf false`，
+再运行 `git add --renormalize . && git checkout -- .`，然后重新运行 `pnpm sandbox:build`。
 
 ## 使用源码版 Compose
 
@@ -105,7 +116,15 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml up --build
 Postgres 默认仅在 Compose 内部网络开放。密码宜使用无需 URI 转义的字符，例如随机十六进制字符串。
 已有数据卷保留首次初始化时的用户、密码和数据库；仅修改 `.env` 不会更改数据库中的密码。
 不要用 `docker compose down -v` 排障，它会删除数据库状态。需要从宿主机连接时，使用
-`infra/compose/docker-compose.postgres-host.yml` 叠加配置，仅开放回环端口，见[英文说明](../self-host.md#docker-compose-single-machine)。
+`infra/compose/docker-compose.postgres-host.yml` 叠加配置，仅开放 `127.0.0.1:5433`。
+也可以直接进入数据库容器：
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.yml \
+  exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+不要把 Postgres 发布到公网接口。
 
 ## 配置与运维
 
@@ -113,6 +132,7 @@ Postgres 默认仅在 Compose 内部网络开放。密码宜使用无需 URI 转
 - [备份与恢复](./self-host-backups.md)
 - [升级](./self-host-upgrading.md)
 - [受限网络与镜像下载](./self-host-restricted-network.md)
+- [无影云电脑](../wuying-computers.zh-CN.md)
 - [配置](../self-host-configuration.md)、[账号与登录](../self-host-accounts.md)、[工具集成](../self-host-integrations.md)（英文）
 - [存储与加密](../self-host-storage.md)、[日志与监控](../self-host-observability.md)、[客户端](../self-host-clients.md)（英文）
 

@@ -80,4 +80,35 @@ describe("APNs work activity", () => {
     reply.mockRejectedValueOnce(new Error("offline"));
     expect(await send()).toBe("unavailable");
   });
+
+  it("starts a card with the phone's start token, asking iOS for the card's own token", async () => {
+    const transport = vi.fn<ApnsTransport>().mockResolvedValue({ status: 200 });
+    const push = new ApnsActivityProvider(config, transport);
+    expect(
+      await push.start("fake-start-token", {
+        state: working,
+        ended: false,
+        urgent: true,
+        at: 1_000,
+      }),
+    ).toBe("sent");
+    const [, headers, body] = transport.mock.calls[0]!;
+    expect(headers).toMatchObject({
+      ":path": "/3/device/fake-start-token",
+      "apns-topic": "test.app.push-type.liveactivity",
+      "apns-push-type": "liveactivity",
+      "apns-priority": "10",
+    });
+    expect(JSON.parse(body)).toEqual({
+      aps: {
+        timestamp: 1_000,
+        event: "start",
+        "attributes-type": "WorkActivityAttributes",
+        attributes: {},
+        "content-state": working,
+        "input-push-token": 1,
+        alert: { title: "Planner", body: "Searching" },
+      },
+    });
+  });
 });

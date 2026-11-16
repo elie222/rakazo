@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEvent,
@@ -13,6 +14,7 @@ import {
   sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { destroyBot } from "../../../packages/adapters/src/child-bots.js";
 import { publishMessage } from "../../../packages/adapters/src/run-messages.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
@@ -53,11 +55,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
       await db.pool.end();
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address }),
     );
     ({ userId, spaceId, botId, threadId } = identity);
     actor = { spaceId, userId } as Actor;
@@ -81,26 +79,20 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
    * observed queued on this transaction, so connection checkout or replay delays
    * cannot shorten what the write actually waits.
    */
-  function holdThreadShare() {
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+  function holdThreadShare(heldThreadId = threadId) {
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const done = system.$transaction(
       async (tx) => {
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${heldThreadId} FOR SHARE`;
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
           SELECT pg_current_xact_id()::text AS "xactId"`;
-        locked(rows[0]?.xactId ?? "");
-        await opened;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
       },
       { timeout: 30_000 },
     );
-    return { lockTaken, open: () => open(), done };
+    return { lockTaken: lockTaken.promise, open: () => opened.resolve(), done };
   }
 
   async function connectProbe() {
@@ -154,8 +146,8 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
    * Runs one thread write behind a held snapshot read and checks it still waits after the
    * timed hold, then lets it finish and returns its result.
    */
-  async function writeBehindHold<T>(write: () => Promise<T>): Promise<T> {
-    const { lockTaken, open, done } = holdThreadShare();
+  async function writeBehindHold<T>(write: () => Promise<T>, heldThreadId = threadId): Promise<T> {
+    const { lockTaken, open, done } = holdThreadShare(heldThreadId);
     const xactId = await lockTaken;
     let probe: Probe | undefined;
     let work: Promise<T> | undefined;
@@ -399,6 +391,53 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
         await done.catch(() => undefined);
         await work.catch(() => undefined);
         probe?.release();
+      }
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
+    "deletes a bot whose thread a long read held",
+    async () => {
+      const removed = await runAsSystem("test fixture", () =>
+        provisionMessagingIdentity(prisma, { provider: "test", address: `${address}-removed` }),
+      );
+      try {
+        const bot = await system.bot.findUniqueOrThrow({
+          where: { id: removed.botId },
+          select: { id: true, spaceId: true, userId: true, name: true, archivedAt: true },
+        });
+        await writeBehindHold(
+          () =>
+            runAsSystem("account deletion", () =>
+              destroyBot(
+                {
+                  prisma: system,
+                  sandbox: {} as never,
+                  home: {} as never,
+                  jobs: { cancel: vi.fn() } as never,
+                },
+                bot,
+                {
+                  operationId: "thread-lock-budget",
+                  traceId: "thread-lock-budget",
+                  spaceId: bot.spaceId,
+                  userId: bot.userId,
+                  botId: bot.id,
+                  signal: new AbortController().signal,
+                },
+                { deleteMemories: true },
+              ),
+            ),
+          removed.threadId,
+        );
+        expect(await system.thread.findUnique({ where: { id: removed.threadId } })).toBeNull();
+      } finally {
+        await system.messagingIdentity.deleteMany({
+          where: { provider: "test", address: `${address}-removed` },
+        });
+        await system.organization.deleteMany({ where: { id: removed.spaceId } });
+        await system.user.deleteMany({ where: { id: removed.userId } });
       }
     },
     THREAD_LOCK_HOLD_MS * 4,

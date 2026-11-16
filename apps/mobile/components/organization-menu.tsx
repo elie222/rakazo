@@ -1,9 +1,9 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { OrganizationList } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { resolveMobileAppearance } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import {
   activeOrganization,
@@ -15,12 +15,12 @@ import { NativeSymbol } from "./native-symbol";
 
 /** Switches to the organization row picked from a menu. */
 export function useOrganizationMenuAction(list: OrganizationList | undefined) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (action: string) => {
     const target = organizationForAction(list, action);
     if (!target || !list) return;
     void switchOrganization(target, list.organizations).then((switched) => {
-      if (!switched) Alert.alert(t("Could not switch spaces"), t("Try again."));
+      if (!switched) Alert.alert(t`Could not switch spaces`, t`Try again.`);
     });
   };
 }

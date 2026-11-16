@@ -1,6 +1,6 @@
 import { ComputerStatusSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { executionBlocksUserTakeover, toComputerStatus } from "./computer-status.js";
+import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
 
 describe("toComputerStatus", () => {
   it("shows a quarantined computer as an error without making its screen available", () => {
@@ -13,6 +13,29 @@ describe("toComputerStatus", () => {
         homeRevision: "saved",
       }),
     ).toMatchObject({ state: "error", screenAvailable: false });
+  });
+  it("reads a computer whose provider this build does not have without throwing", () => {
+    const status = toComputerStatus("bot", {
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "saved",
+    });
+    expect(ComputerStatusSchema.parse(status)).toMatchObject({
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      screenAvailable: false,
+      terminalAvailable: false,
+    });
+    expect(status.runsOnUserMachine).toBeUndefined();
+  });
+  it("says when the computer is the person's own machine", () => {
+    const computer = { state: "running", scope: "team", controlHolder: "none", homeRevision: "r" };
+    expect(toComputerStatus("bot", { ...computer, kind: "desktop" }).runsOnUserMachine).toBe(true);
+    expect(toComputerStatus("bot", { ...computer, kind: "docker" })).not.toHaveProperty(
+      "runsOnUserMachine",
+    );
   });
   it("warns at 90% full until the user hides it, and again once the disk fills further", () => {
     const computer = {
@@ -32,24 +55,7 @@ describe("toComputerStatus", () => {
     expect(status({ diskDismissedPercent: 90 }).diskFullPercent).toBe(91);
     expect(status({ diskUsedBytes: null }).diskFullPercent).toBeUndefined();
   });
-  it("only marks control that is bound to a waiting run as a requested takeover", () => {
-    const computer = {
-      kind: "fake",
-      state: "running",
-      scope: "team",
-      controlHolder: "user",
-      controlBotId: "bot-1",
-      controlRunId: "run-1",
-      homeRevision: "revision-1",
-    };
-
-    expect(toComputerStatus("bot-1", computer).takeoverRequested).toBe(true);
-    expect(toComputerStatus("bot-1", { ...computer, controlRunId: null }).takeoverRequested).toBe(
-      false,
-    );
-  });
-
-  it("passes through the busy bot name when takeover is blocked", () => {
+  it("passes through what the bot is doing with its computer", () => {
     const computer = {
       kind: "fake",
       state: "running",
@@ -57,8 +63,37 @@ describe("toComputerStatus", () => {
       controlHolder: "none",
       homeRevision: "revision-1",
     };
-    expect(toComputerStatus("bot-1", computer).busyBotName).toBeNull();
-    expect(toComputerStatus("bot-1", computer, "Writer").busyBotName).toBe("Writer");
+    expect(toComputerStatus("bot-1", computer)).toMatchObject({
+      busyBotName: null,
+      takeoverRequested: false,
+    });
+    expect(
+      toComputerStatus("bot-1", computer, { busyBotName: "Writer", takeoverRequested: true }),
+    ).toMatchObject({ busyBotName: "Writer", takeoverRequested: true });
+  });
+
+  it("tells only the person holding control their own lease", () => {
+    const computer = {
+      kind: "fake",
+      state: "running",
+      scope: "team",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-1",
+      controlUserId: "user-1",
+      userId: "owner",
+      homeRevision: "revision-1",
+    };
+    expect(toComputerStatus("bot-1", computer, undefined, true, "user-1").controlLeaseId).toBe(
+      "lease-1",
+    );
+    // Another bot's screen on the same Team computer is not this lease's.
+    expect(
+      toComputerStatus("bot-2", computer, undefined, true, "user-1").controlLeaseId,
+    ).toBeUndefined();
+    const watcher = toComputerStatus("bot-1", computer, undefined, true, "user-2");
+    expect(watcher.controlLeaseId).toBeUndefined();
+    expect(watcher.controlledByOther).toBe(true);
   });
 
   it("sandbox-none-computer-status", () => {
@@ -92,6 +127,18 @@ describe("toComputerStatus", () => {
     });
   });
 
+  it.each(["boxd", "railway"])("offers the terminal on a %s computer", (kind) => {
+    expect(
+      toComputerStatus("bot-1", {
+        kind,
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).terminalAvailable,
+    ).toBe(true);
+  });
+
   it("hides update on desktop computers", () => {
     expect(
       toComputerStatus("bot-1", {
@@ -114,78 +161,57 @@ describe("toComputerStatus", () => {
   });
 });
 
-describe("executionBlocksUserTakeover", () => {
-  const now = Date.parse("2026-08-25T12:00:00.000Z");
+describe("resolveComputerWork", () => {
+  const work = (lease: { runId: string; live: boolean } | null, runStatus?: string) =>
+    resolveComputerWork(
+      {
+        computerExecutionLease: {
+          findUnique: async () =>
+            lease && {
+              runId: lease.runId,
+              expiresAt: new Date(Date.now() + (lease.live ? 60_000 : -60_000)),
+            },
+        },
+        run: {
+          findFirst: async () => (runStatus === "waiting_takeover" ? { id: "run-1" } : null),
+          findUnique: async () => (runStatus ? { status: runStatus } : null),
+        },
+      } as unknown as Parameters<typeof resolveComputerWork>[0],
+      { computerId: "computer-1", botId: "bot-1", botName: "Writer" },
+    );
 
-  it("allows takeover when there is no execution lease", () => {
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: false,
-        leaseExpiresAt: new Date(now + 60_000),
-        runStatus: "running",
-        now,
-      }),
-    ).toBe(false);
+  it.each(["queued", "running"])(
+    "names the bot while its %s run holds the computer",
+    async (status) => {
+      expect((await work({ runId: "run-1", live: true }, status)).busyBotName).toBe("Writer");
+      expect((await work({ runId: "run-1", live: false }, status)).busyBotName).toBe("Writer");
+    },
+  );
+
+  // The run row turns terminal before its executor releases the lease.
+  it.each(["completed", "failed", "cancelled"])(
+    "is free once the run is %s, even before its lease is released",
+    async (status) => {
+      expect(await work({ runId: "run-1", live: true }, status)).toEqual({
+        busyBotName: null,
+        takeoverRequested: false,
+      });
+    },
+  );
+
+  it("names the bot while a reset, update or teaching session holds the computer", async () => {
+    expect((await work({ runId: "reset:1", live: true })).busyBotName).toBe("Writer");
+    expect((await work({ runId: "reset:1", live: false })).busyBotName).toBeNull();
   });
 
-  it("allows takeover while the run is waiting for the user", () => {
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now + 60_000),
-        runStatus: "waiting_takeover",
-        now,
-      }),
-    ).toBe(false);
+  it("is free and asks for a person while the run waits on takeover", async () => {
+    expect(await work({ runId: "run-1", live: true }, "waiting_takeover")).toEqual({
+      busyBotName: null,
+      takeoverRequested: true,
+    });
   });
 
-  it("allows takeover while the waiting run continues for a chat message", () => {
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now + 60_000),
-        runStatus: "running",
-        now,
-        takeoverRequested: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("blocks takeover for an active lease or active run", () => {
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now + 60_000),
-        runStatus: "running",
-        now,
-      }),
-    ).toBe(true);
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now - 1),
-        runStatus: "running",
-        now,
-      }),
-    ).toBe(true);
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now + 60_000),
-        runStatus: "completed",
-        now,
-      }),
-    ).toBe(true);
-  });
-
-  it("allows takeover when both the lease and run are inactive", () => {
-    expect(
-      executionBlocksUserTakeover({
-        hasLease: true,
-        leaseExpiresAt: new Date(now - 1),
-        runStatus: "completed",
-        now,
-      }),
-    ).toBe(false);
+  it("is free with no lease", async () => {
+    expect((await work(null)).busyBotName).toBeNull();
   });
 });

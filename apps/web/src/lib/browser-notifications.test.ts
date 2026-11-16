@@ -1,3 +1,6 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrowserNotificationApi,
@@ -114,6 +117,31 @@ describe("browser notifications", () => {
     });
   });
 
+  it("tags a card that only asks for the computer like the takeover alert", () => {
+    const card = {
+      kind: "computer",
+      state: TAKEOVER_COMPUTER_PENDING_STATE,
+      text: "Sign in to continue.",
+    };
+    const tagFor = (blocks: unknown[], id: string) => {
+      const show = vi.fn();
+      deliverBrowserNotification(event({ id, payload: { role: "bot", blocks } }), "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds: new Set(),
+        show,
+      });
+      return show.mock.calls[0]?.[2];
+    };
+    expect(tagFor([card], "event-card")).toBe("thread-1:takeover");
+    expect(tagFor([card, { kind: "text", text: "Also this." }], "event-mixed")).toBe("thread-1");
+    expect(tagFor([{ kind: "computer", state: "Done", text: "Back." }], "event-done")).toBe(
+      "thread-1",
+    );
+  });
+
   it("puts the bot message in the native notification", () => {
     expect(browserNotificationMessage(event(), "Chief")).toEqual({
       title: "Chief",
@@ -138,6 +166,41 @@ describe("browser notifications", () => {
       title: "Chief stopped",
       body: "Stopped.",
     });
+  });
+
+  it("keeps an ask-card notification when a later message arrives", () => {
+    const show = vi.fn();
+    const notifiedEventIds = new Set<string>();
+    const deliver = (next: ReturnType<typeof event>) =>
+      deliverBrowserNotification(next, "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds,
+        show,
+      });
+    expect(
+      deliver(
+        event({
+          id: "ask-1",
+          payload: {
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Which repo?", status: "pending" }],
+          },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(
+      deliver(
+        event({
+          id: "plain-2",
+          payload: { role: "bot", blocks: [{ kind: "text", text: "Saturday works." }] },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(show).toHaveBeenNthCalledWith(1, "Chief", "Which repo?", "thread-1:ask");
+    expect(show).toHaveBeenNthCalledWith(2, "Chief", "Saturday works.", "thread-1");
   });
 
   it("dedupes a replay but delivers another message from the same run", () => {
@@ -167,20 +230,18 @@ describe("browser notifications", () => {
   });
 
   it("allows a later send gesture to retry a dismissed permission prompt", async () => {
-    let resolvePermission: ((permission: "default") => void) | undefined;
-    const requestPermission = vi.fn(
-      () =>
-        new Promise<"default">((resolve) => {
-          resolvePermission = resolve;
-        }),
-    );
+    let resolvePermission: Deferred<"default"> | undefined;
+    const requestPermission = vi.fn(() => {
+      resolvePermission = deferred();
+      return resolvePermission.promise;
+    });
     const api: BrowserNotificationApi = { permission: "default", requestPermission };
 
     requestBrowserNotificationPermission(api);
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(1);
 
-    resolvePermission?.("default");
+    resolvePermission?.resolve("default");
     await Promise.resolve();
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(2);

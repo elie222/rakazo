@@ -1,7 +1,11 @@
 import { createCipheriv, createHash } from "node:crypto";
 import { BUILTIN_TOOL_NAMES, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { agentConnectionTools, builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import {
+  agentConnectionTools,
+  builtinAgentTools,
+  DELEGATION_TOOL_NAMES,
+} from "./builtin.tool-definition.js";
 import { offersAgentConnectionTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -272,5 +276,12 @@ describe("builtin tools", () => {
         .map((tool) => tool.name)
         .filter((name) => purchaseNames.includes(name)),
     ).toEqual(purchaseNames);
+    const serviceNames = ["service_search", "service_call"];
+    const services = (extra: Partial<Parameters<typeof selectBuiltinToolsForRun>[0]>) =>
+      selectBuiltinToolsForRun({ ...options, ...extra })
+        .map((tool) => tool.name)
+        .filter((name) => serviceNames.includes(name));
+    expect(services({})).toEqual([]);
+    expect(services({ paidServicesEnabled: true })).toEqual(serviceNames);
   });
 });

@@ -16,15 +16,28 @@ import {
   GROK_ROUTINE_FIGURE,
   GROK_SOURCES,
   GROK_UPDATED,
-  grokAlternativeStructuredData,
+  GROK_ALTERNATIVE_PATH,
+  grokAlternativeNodes,
 } from "../grok-alternative";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
 import { SITE_URL } from "../site";
+import { pageArticleStructuredData } from "../structured-data";
 
 const starsLabel = await githubStarsLabel();
 const pageUrl = new URL(Astro.url.pathname, SITE_URL).toString();
-const structuredData = grokAlternativeStructuredData(pageUrl);
+const structuredData = pageArticleStructuredData(
+  {
+    path: GROK_ALTERNATIVE_PATH,
+    headline: GROK_ALTERNATIVE_H1,
+    description: GROK_ALTERNATIVE_DESCRIPTION,
+    crumb: "Grok Bot alternative",
+    parents: [{ name: "Alternatives", path: "/alternatives/" }],
+    image: ogPublicPath("grok-bot-alternative"),
+    faq: GROK_ALTERNATIVE_FAQ,
+  },
+  ...grokAlternativeNodes(pageUrl),
+);
 
 function externalAttrs(href: string) {
   if (!href.startsWith("http") || href.startsWith(SITE_URL)) return {};
@@ -37,7 +50,6 @@ function externalAttrs(href: string) {
   description={GROK_ALTERNATIVE_DESCRIPTION}
   ogImageAlt={GROK_ALTERNATIVE_H1}
   {structuredData}
-  localeAlternates={false}
   ogImage={ogPublicPath("grok-bot-alternative")}
 >
   <div class="container">

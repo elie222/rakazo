@@ -2,19 +2,18 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import {
   formatRoutineRunAt,
-  isRetryableError,
   mergeRoutineRunPages,
   normalizeRunError,
   routineHistoryPage,
   routineRunAt,
   routineRunLateness,
 } from "@rakazo/core";
+import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSpaceQueries } from "../lib/query";
-import { translateRunError } from "../lib/run-error";
 import { statusLabel, statusTone } from "./ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
@@ -25,12 +24,12 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
       input: (before: RoutineRunCursor | null) => routineHistoryPage(routineId, before),
       initialPageParam: null as RoutineRunCursor | null,
       getNextPageParam: (page) => page.nextCursor,
-      // Polls every loaded page together so they stay one coherent list; a refused request stops.
-      refetchInterval: (query) =>
-        query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
+      refetchOnWindowFocus: "always",
     }),
   );
   const runs = history.data ? mergeRoutineRunPages(history.data.pages) : null;
+  // A routine that has never run has no history to show.
+  if (runs?.length === 0 && !history.isError) return null;
 
   return (
     <section data-testid="routine-run-history" className="mt-10 text-body text-muted-foreground">
@@ -48,10 +47,6 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
             <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null
-      ) : runs.length === 0 ? (
-        <p className="mt-2 text-body">
-          <Trans>No runs yet</Trans>
-        </p>
       ) : (
         <ul className="mt-2 divide-y divide-border">
           {runs.map((run) => (

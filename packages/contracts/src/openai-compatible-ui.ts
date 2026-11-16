@@ -1,3 +1,4 @@
+import { ConnectionSetupError } from "./connection-setup-error.js";
 import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
 
 /** Every hosted service the catalog offers for compatible connections. */
@@ -24,9 +25,6 @@ export function matchCompatibleEndpointPreset(
   }
   return presets.find((preset) => preset.baseUrl === normalized);
 }
-
-export const OPENAI_COMPATIBLE_BASE_URL_HINT =
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
 /** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
@@ -55,13 +53,13 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new Error("Base URL must be an absolute HTTP(S) URL");
+    throw new ConnectionSetupError("Base URL must be an absolute HTTP(S) URL");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Base URL must use http or https");
+    throw new ConnectionSetupError("Base URL must use http or https");
   }
   if (url.username || url.password) {
-    throw new Error("Base URL must not contain credentials");
+    throw new ConnectionSetupError("Base URL must not contain credentials");
   }
   let path = url.pathname.replace(/\/+$/, "") || "";
   const VERSION_SEGMENT = /^v\d+[a-z]*$/;

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
@@ -22,15 +25,26 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.retain-turn": vi.fn(async () => undefined),
+    "memory.purge-history": vi.fn(async () => undefined),
+    "messaging.send": vi.fn(async () => undefined),
+    "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
+    "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "connection.cleanup": vi.fn(async () => undefined),
+    "computer.machine-cleanup": vi.fn(async () => undefined),
+    "team_chat.engage": vi.fn(async () => undefined),
+    "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
   };
 }
+
+const LAST_ATTEMPT = { number: 1, max: 1 };
 
 describe("InMemoryJobQueue", () => {
   afterEach(() => vi.useRealTimers());
@@ -94,7 +108,11 @@ describe("InMemoryJobQueue", () => {
     await vi.advanceTimersByTimeAsync(999);
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "run-1" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -117,7 +135,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
-    expect(target["computer.sleep"]).toHaveBeenCalledWith({ computerId: "new" });
+    expect(target["computer.sleep"]).toHaveBeenCalledWith(
+      { computerId: "new" },
+      undefined,
+      LAST_ATTEMPT,
+    );
 
     await queue.enqueue({
       name: "computer.sleep",
@@ -128,6 +150,28 @@ describe("InMemoryJobQueue", () => {
     await queue.cancel("computer.sleep:2");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
+    await queue.close();
+  });
+
+  it("keeps a transaction's jobs through a cancel its transaction may roll back", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const tx = { $executeRawUnsafe: vi.fn(async () => 0) };
+    await queue.start(target);
+    const dueAt = new Date(Date.now() + 1_000);
+    await queue.enqueueIn(tx, messagingSendJob("kept", dueAt));
+    await queue.cancelIn(tx, messagingSendJobKey("kept"));
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(target["messaging.send"]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    // Its handler finds the message settled, or sends it if that transaction rolled back.
+    expect(target["messaging.send"]).toHaveBeenCalledExactlyOnceWith(
+      { outboundId: "kept" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -152,7 +196,11 @@ describe("InMemoryJobQueue", () => {
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(4_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "backed-off" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -186,7 +234,11 @@ describe("InMemoryJobQueue", () => {
     expect(target["run.continue"]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(4_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "backed-off" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -218,7 +270,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "revived" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "revived" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -242,7 +298,11 @@ describe("InMemoryJobQueue", () => {
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["run.continue"]).toHaveBeenCalledTimes(1);
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "fresh" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "fresh" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     await queue.close();
   });
 
@@ -253,14 +313,11 @@ describe("InMemoryJobQueue", () => {
     ["close", "stop"],
   ] as const)("waits for an active handler before %s/%s", async (first, second) => {
     const queue = new InMemoryJobQueue();
-    let releaseHandler: () => void = () => undefined;
-    let markStarted: () => void = () => undefined;
+    let releaseHandler: Deferred | undefined;
     let nestedEnqueueFailed = false;
     let delayedEnqueueFailed = false;
     let chainedEnqueueFailed = false;
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
+    const started = deferred();
     const target = handlers();
     target["computer.sleep"] = vi.fn(async () => {
       try {
@@ -270,10 +327,9 @@ describe("InMemoryJobQueue", () => {
       }
     });
     target["run.continue"] = vi.fn(async () => {
-      markStarted();
-      await new Promise<void>((resolve) => {
-        releaseHandler = resolve;
-      });
+      started.resolve();
+      releaseHandler = deferred();
+      await releaseHandler.promise;
       try {
         await queue.enqueue({
           name: "computer.sleep",
@@ -301,14 +357,14 @@ describe("InMemoryJobQueue", () => {
     });
     await queue.start(target);
     await queue.enqueue({ name: "run.continue", payload: { runId: "run-1" } });
-    await started;
+    await started.promise;
 
     const closing = Promise.all([queue[first](), queue[second]()] as const);
     const closeState = await Promise.race([
       closing.then(() => "closed" as const),
       new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 5)),
     ]);
-    releaseHandler();
+    releaseHandler?.resolve();
     await closing;
     expect(closeState).toBe("waiting");
     expect(nestedEnqueueFailed).toBe(false);
@@ -322,16 +378,12 @@ describe("InMemoryJobQueue", () => {
 
   it("rejects a keyed enqueue that resumes after close", async () => {
     const queue = new InMemoryJobQueue();
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -339,9 +391,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.close();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is closed");
   });
@@ -349,16 +401,12 @@ describe("InMemoryJobQueue", () => {
   it("rejects a keyed enqueue that resumes after stop", async () => {
     const queue = new InMemoryJobQueue();
     await queue.start(handlers());
-    let releaseCancel: () => void = () => undefined;
-    let markCancelling: () => void = () => undefined;
-    const cancelling = new Promise<void>((resolve) => {
-      markCancelling = resolve;
-    });
+    let releaseCancel: Deferred | undefined;
+    const cancelling = deferred();
     vi.spyOn(queue, "cancel").mockImplementationOnce(async () => {
-      markCancelling();
-      await new Promise<void>((resolve) => {
-        releaseCancel = resolve;
-      });
+      cancelling.resolve();
+      releaseCancel = deferred();
+      await releaseCancel.promise;
     });
 
     const enqueue = queue.enqueue({
@@ -366,9 +414,9 @@ describe("InMemoryJobQueue", () => {
       payload: { computerId: "computer-1" },
       replaceKey: "computer:computer-1",
     });
-    await cancelling;
+    await cancelling.promise;
     await queue.stop();
-    releaseCancel();
+    releaseCancel?.resolve();
 
     await expect(enqueue).rejects.toThrow("Background job publisher is stopped");
   });
@@ -416,7 +464,11 @@ describe("InMemoryJobQueue", () => {
       },
     );
     await queue.close();
-    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "run-traced" });
+    expect(target["run.continue"]).toHaveBeenCalledWith(
+      { runId: "run-traced" },
+      undefined,
+      LAST_ATTEMPT,
+    );
     expect(sink.events.some((event) => event.message === "job.completed")).toBe(true);
     expect(
       sink.events.some(
@@ -452,9 +504,19 @@ describe("createDeadJobPruner", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rowCount: 1_000 })
-      .mockResolvedValueOnce({ rowCount: 3 })
-      .mockResolvedValue({ rowCount: 0 });
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "computer.sleep", removed: 600 },
+          { identifier: "run.interactive", removed: 400 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "run.continue", removed: 1 },
+          { identifier: "computer.sleep", removed: 2 },
+        ],
+      })
+      .mockResolvedValue({ rows: [] });
     const prune = createDeadJobPruner({ query } as never);
 
     await prune();
@@ -468,7 +530,11 @@ describe("createDeadJobPruner", () => {
     expect(sql).toContain("jobs.attempts >= jobs.max_attempts and jobs.locked_at is null");
     expect(sql).toContain("tasks.identifier <> 'routine.retry'");
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ message: "jobs.dead_pruned", "jobs.removed": 1_003 }),
+      expect.objectContaining({
+        message: "jobs.dead_pruned",
+        "jobs.removed": 1_003,
+        "jobs.removed_by_type": "computer.sleep=602,run.continue=401",
+      }),
     );
 
     now += 60 * 60 * 1000;

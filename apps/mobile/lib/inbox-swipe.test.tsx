@@ -6,6 +6,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
+import { NativeListRowContext } from "../components/native-list-row";
+// Activates the language the row actions are translated into, as the app does at startup.
+import "./i18n";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -24,20 +27,36 @@ const swift = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   PlatformColor: (name: string) => ({ semantic: [name] }),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, style }: { children: ReactNode; style?: { width?: number } }) => (
+    <div data-width={style?.width}>{children}</div>
+  ),
 }));
 vi.mock("./native", () => ({
   native: { page: "page", fill: "fill" },
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 // SwiftUI views render as plain DOM so tests can read the row's structure.
+// Tests load the shared module; the list rows are the iOS one.
+vi.mock("../components/native-row", () => import("../components/native-row.ios"));
 vi.mock("@expo/ui/swift-ui", async () => {
   const { Children, isValidElement } = await import("react");
   const box =
     (name: string) =>
     ({ children }: { children?: ReactNode }) => <div data-ui={name}>{children}</div>;
-  const SwipeActions = box("SwipeActions") as ReturnType<typeof box> & {
+  const SwipeActions = (({
+    children,
+    modifiers,
+  }: {
+    children?: ReactNode;
+    modifiers?: Array<{ name: string }>;
+  }) => (
+    <div
+      data-ui="SwipeActions"
+      data-row-modifiers={(modifiers ?? []).map((modifier) => modifier.name).join(" ")}
+    >
+      {children}
+    </div>
+  )) as ReturnType<typeof box> & {
     Actions: (props: {
       edge?: string;
       allowsFullSwipe?: boolean;
@@ -324,6 +343,38 @@ describe("iOS swipe row", () => {
       for (const button of buttons) button.click();
     });
     expect(onAction.mock.calls).toEqual([["read"], ["archive"], ["unpin"]]);
+    act(() => root.unmount());
+  });
+
+  it("joins the native inbox list as one of its rows, sized to its row", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <NativeListRowContext.Provider
+          value={{ modifiers: [{ name: "listRowInsets" } as never], width: 300 }}
+        >
+          <InboxSwipeRow
+            rowKey="bot:1"
+            sections={sections}
+            preview={{ title: "Ada", message: "Hi", avatar: <i /> }}
+            onAction={vi.fn()}
+            onOrganize={vi.fn()}
+            onEditSection={vi.fn()}
+          >
+            <span>Ada</span>
+          </InboxSwipeRow>
+        </NativeListRowContext.Provider>,
+      ),
+    );
+    // No list of its own: the row takes the list's row modifiers.
+    expect(container.querySelector('[data-ui="Host"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLElement>('[data-ui="SwipeActions"]')?.dataset.rowModifiers,
+    ).toBe("listRowInsets");
+    // Hosted content takes the width the list lays the row out at.
+    const trigger = container.querySelector('[data-ui="ContextMenu.Trigger"]');
+    expect(trigger?.querySelector("[data-width]")?.getAttribute("data-width")).toBe("300");
     act(() => root.unmount());
   });
 

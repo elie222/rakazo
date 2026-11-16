@@ -14,8 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRunExecutor } from "./executor.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 type Identity = { userId: string; spaceId: string; botId: string; threadId: string };
 
@@ -41,11 +40,10 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
 
   async function person(): Promise<Identity> {
     const { userId, spaceId, botId, threadId } = await runAsSystem("deactivation fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address: `deactivation-${randomUUID()}@rakazo.test` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, {
+        provider: "email",
+        address: `deactivation-${randomUUID()}@rakazo.test`,
+      }),
     );
     const identity = { userId, spaceId, botId, threadId };
     identities.push(identity);

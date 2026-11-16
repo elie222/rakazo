@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc, selectedSpaceId } from "./api";
 import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
@@ -378,18 +380,16 @@ describe("removeInboxSpace", () => {
   });
 
   it("awaits saving the server fallback before refreshing a deleted current space", async () => {
-    let finishSelection!: (saved: boolean) => void;
-    vi.mocked(selectSpace).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishSelection = resolve;
-        }),
-    );
+    let finishSelection!: Deferred<boolean>;
+    vi.mocked(selectSpace).mockImplementation(() => {
+      finishSelection = deferred<boolean>();
+      return finishSelection.promise;
+    });
     const refresh = vi.fn(async () => undefined);
     const removing = removeInboxSpace("space-work", refresh);
     await vi.waitFor(() => expect(selectSpace).toHaveBeenCalledWith("personal"));
     expect(refresh).not.toHaveBeenCalled();
-    finishSelection(true);
+    finishSelection.resolve(true);
     await expect(removing).resolves.toBeNull();
     expect(rpc).toHaveBeenCalledWith("spaces/remove", { spaceId: "space-work" });
     expect(refresh).toHaveBeenCalledOnce();

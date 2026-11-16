@@ -20,8 +20,7 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("computer runs (PostgreSQL)", () => {
   const stamp = randomUUID();
@@ -69,6 +68,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
       jobs: {
         enqueue: vi.fn().mockResolvedValue(undefined),
         cancel: vi.fn().mockResolvedValue(undefined),
+        cancelIn: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
       } as unknown as JobPublisher,
       events: { append: vi.fn().mockResolvedValue({}) } as unknown as ThreadEvents,

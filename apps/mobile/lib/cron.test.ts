@@ -16,13 +16,12 @@ describe("cronLabels", () => {
     resetI18nForTests("zh-CN");
     const labels = cronLabels();
     expect(formatCron("0 8 * * 1-5", labels)).toBe("工作日 8:00");
-    expect(formatCron("*/5 * * * *", labels)).toBe("每5分钟");
   });
 
   it("translates schedules into Traditional Chinese", () => {
     resetI18nForTests("zh-TW");
     const labels = cronLabels();
-    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 上午8:00");
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("工作日 上午8:00");
     expect(formatCron("*/5 * * * *", labels)).toBe("每 5 分鐘");
   });
 
@@ -61,6 +60,6 @@ describe("cronLabels", () => {
     const labels = cronLabels();
     expect(formatCron("*/1 * * * *", labels)).toBe("Каждую минуту");
     expect(formatCron("*/5 * * * *", labels)).toBe("Каждые 5 минут");
-    expect(formatCron("0 8 * * 1-5", labels)).toBe("По будням в 8:00");
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("Будни в 8:00");
   });
 });

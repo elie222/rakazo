@@ -1,5 +1,6 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { APPROVED_ACTION_NOT_RUN_ERROR, isConversationalRun } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycle from "../../adapters/src/computer-lifecycle.js";
 import { createRunExecutor } from "../../adapters/src/executor.js";
@@ -539,8 +540,11 @@ describe("executor paused transcript", () => {
           },
           {
             expect(request) {
-              const results = request.messages.filter((m) => m.tool_call_id === "reused");
-              expect(results).toHaveLength(2);
+              // The repeated id is renamed so each result stays paired with its own call.
+              const results = request.messages.filter(
+                (m) => m.tool_call_id === "reused" || m.tool_call_id === "reused_1",
+              );
+              expect(results.map((m) => m.tool_call_id)).toEqual(["reused", "reused_1"]);
               for (const result of results)
                 expect(result.content).toContain("fixture-approved-result");
             },
@@ -567,10 +571,9 @@ describe("executor paused transcript", () => {
             const pendingMessage = saved.messages.findLast(
               (message: { role: string }) => message.role === "assistant",
             );
-            pendingMessage.content.find((call: { id: string }) => call.id === "reused").arguments =
-              {
-                content: "different-content",
-              };
+            pendingMessage.content.find(
+              (call: { type: string }) => call.type === "toolCall",
+            ).arguments = { content: "different-content" };
             checkpoint.result = JSON.stringify(saved);
             state.task.prompt = "Write different-content instead.";
             state.run.status = "queued";
@@ -650,10 +653,7 @@ describe("executor paused transcript", () => {
     },
   );
   it("keeps parallel checkpoint captures bound to the pausing call on resume", async () => {
-    let releaseLate!: () => void;
-    const late = new Promise<void>((resolve) => {
-      releaseLate = resolve;
-    });
+    const late = deferred();
     const model = await startModelEmulator({
       steps: [
         {
@@ -688,12 +688,12 @@ describe("executor paused transcript", () => {
     try {
       const state = fixture(model.model);
       state.reads.mockImplementation(async (_computer, path) => {
-        if (path === "late.txt") await late;
+        if (path === "late.txt") await late.promise;
         return new TextEncoder().encode("unique-executor-evidence");
       });
       state.pauseRunForInput.mockImplementation(async () => {
         state.run.status = "waiting_input";
-        releaseLate();
+        late.resolve();
         return { continuationRunId: null };
       });
       await state.executor.continueRun(state.run.id, "fixture-worker");
@@ -712,7 +712,7 @@ describe("executor paused transcript", () => {
         expect.objectContaining({ outcome: "completed" }),
       );
     } finally {
-      releaseLate();
+      late.resolve();
       await model.close();
     }
   });

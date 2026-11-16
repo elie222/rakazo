@@ -87,7 +87,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "Configurar Rakazo",
   "Quit Rakazo": "Salir de Rakazo",
   "Welcome to Rakazo": "Te damos la bienvenida a Rakazo",
-  "Choose which server this app should use.": "Elige qué servidor debe usar esta app.",
+  "Choose where Rakazo runs.": "Elige dónde se ejecuta Rakazo.",
   Instance: "Instancia",
   "This computer": "Esta computadora",
   "Existing instance": "Instancia existente",
@@ -98,7 +98,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Name: value": "Nombre: valor",
   "Check connection": "Comprobar conexión",
   Continue: "Continuar",
-  "Check again": "Volver a comprobar",
   Retry: "Reintentar",
   "Getting ready…": "Preparando…",
   "Downloading Rakazo…": "Descargando Rakazo…",
@@ -162,15 +161,12 @@ export const ES_MESSAGES: Record<string, string> = {
     "Los servicios de Rakazo que administra la app no están listos. Vuelve a intentar la configuración.",
 
   // Docker
-  "Docker is not installed on this computer.": "Docker no está instalado en esta computadora.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker está instalado, pero falta Docker Compose. Instala Docker Desktop o docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "No se pudo comprobar Docker Compose. Revisa la salida de abajo y vuelve a intentarlo.",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Docker está instalado, pero no está en funcionamiento. Inicia Docker y vuelve a comprobar.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "Este usuario no puede acceder a Docker. Agrégalo al grupo docker (sudo usermod -aG docker $USER), cierra sesión, vuelve a iniciarla y vuelve a comprobar.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "Este usuario no puede acceder a Docker. Agrégalo al grupo docker (sudo usermod -aG docker $USER) y luego cierra sesión y vuelve a iniciarla.",
   "The start was interrupted. Retry to continue.":
     "Se interrumpió el inicio. Vuelve a intentarlo para continuar.",
   "Images for {tag} are not published yet. Try again in a few minutes.":
@@ -212,4 +208,37 @@ export const ES_MESSAGES: Record<string, string> = {
   "Chat Details": "Detalles del chat",
   Help: "Ayuda",
   "Keyboard Shortcuts": "Atajos de teclado",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "No se pudo descargar Rakazo. Revisa la conexión a internet y vuelve a intentarlo.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "No se pudieron mover tus datos desde Docker. Revisa la salida de abajo y vuelve a intentarlo.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "El entorno de ejecución de computadoras que ya está en marcha es demasiado antiguo. Actualízalo o ciérralo y vuelve a intentarlo.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Tus datos de Rakazo están en otro entorno de ejecución de computadoras. Cierra el que está en marcha y vuelve a intentarlo.",
+  "Run Rakazo without Docker?": "¿Usar Rakazo sin Docker?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Tus bots y datos se trasladan. Docker se detiene, no se elimina.",
+  Move: "Mover",
+  "Keep Docker": "Mantener Docker",
+  "Nothing to install.": "Nada que instalar.",
+  "Your data stays on this computer.": "Tus datos se quedan en esta computadora.",
+  "Connect to a server you or your team already run.":
+    "Conéctate a un servidor que tú o tu equipo ya ejecutan.",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "Rakazo necesita Docker Desktop para ejecutarse en esta computadora.",
+  "Rakazo needs Docker to run on this computer.":
+    "Rakazo necesita Docker para ejecutarse en esta computadora.",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop es una app gratuita que ejecuta Rakazo en segundo plano. Instálala y ábrela una vez.",
+  "Install Docker Engine and start it.": "Instala Docker Engine e inícialo.",
+  "Download Docker Desktop": "Descargar Docker Desktop",
+  "Install Docker": "Instalar Docker",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker está instalado pero no se está ejecutando. Ábrelo para continuar.",
+  "Starting {app}…": "Iniciando {app}…",
+  "Waiting for Docker Desktop…": "Esperando a Docker Desktop…",
+  "Waiting for Docker…": "Esperando a Docker…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker está instalado pero no se está ejecutando. Inicia el servicio de Docker para continuar.",
 };

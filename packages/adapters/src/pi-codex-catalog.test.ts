@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { parseModelSecret } from "./model-secret.js";
@@ -388,15 +390,16 @@ describe("CodexCatalogCache", () => {
 
   it("serves stale entries while revalidating in the background", async () => {
     let now = 1_000_000;
-    let resolveSecond: ((response: Response) => void) | undefined;
+    let resolveSecond: Deferred<Response> | undefined;
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockImplementationOnce(async () =>
         okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
       )
-      .mockImplementationOnce(
-        async () => new Promise<Response>((resolve) => (resolveSecond = resolve)),
-      )
+      .mockImplementationOnce(async () => {
+        resolveSecond = deferred<Response>();
+        return resolveSecond.promise;
+      })
       .mockImplementation(async () =>
         okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
       );
@@ -414,7 +417,7 @@ describe("CodexCatalogCache", () => {
     expect(stale?.map((model) => model.slug)).toEqual([SPARK]);
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
 
-    resolveSecond?.(
+    resolveSecond?.resolve(
       okResponse(
         catalogPayload([
           { slug: SPARK, visibility: "list", supported_in_api: true },
@@ -429,10 +432,11 @@ describe("CodexCatalogCache", () => {
   });
 
   it("single-flights concurrent cold reads", async () => {
-    let resolveFetch: ((response: Response) => void) | undefined;
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
-    );
+    let resolveFetch: Deferred<Response> | undefined;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      resolveFetch = deferred<Response>();
+      return resolveFetch.promise;
+    });
     const cache = new CodexCatalogCache({
       enabled: true,
       fetch: fetchImpl,
@@ -446,7 +450,7 @@ describe("CodexCatalogCache", () => {
       cache.read("user-1", account()),
     ]);
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    resolveFetch?.(
+    resolveFetch?.resolve(
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
     const results = await reads;
@@ -454,10 +458,11 @@ describe("CodexCatalogCache", () => {
   });
 
   it("bounds the cold read wait and caches the eventual result", async () => {
-    let resolveFetch: ((response: Response) => void) | undefined;
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
-    );
+    let resolveFetch: Deferred<Response> | undefined;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      resolveFetch = deferred<Response>();
+      return resolveFetch.promise;
+    });
     const cache = new CodexCatalogCache({
       enabled: true,
       fetch: fetchImpl,
@@ -468,7 +473,7 @@ describe("CodexCatalogCache", () => {
     const slow = await cache.read("user-1", account());
     expect(slow).toBeUndefined();
 
-    resolveFetch?.(
+    resolveFetch?.resolve(
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
     await vi.waitFor(async () => {
@@ -621,10 +626,11 @@ describe("CodexCatalogCache", () => {
   });
 
   it("waitMs 0 consults only settled cache state while still warming a miss", async () => {
-    let resolveFetch: ((response: Response) => void) | undefined;
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
-    );
+    let resolveFetch: Deferred<Response> | undefined;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      resolveFetch = deferred<Response>();
+      return resolveFetch.promise;
+    });
     const cache = new CodexCatalogCache({
       enabled: true,
       fetch: fetchImpl,
@@ -637,7 +643,7 @@ describe("CodexCatalogCache", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     // The kicked revalidation keeps running; a later zero-wait read sees it.
-    resolveFetch?.(
+    resolveFetch?.resolve(
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
     await vi.waitFor(async () => {

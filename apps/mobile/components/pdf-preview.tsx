@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import { requireNativeView, requireOptionalNativeModule } from "expo";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 
 type NativePdfViewProps = {
@@ -19,13 +19,13 @@ const NativePdfView = requireOptionalNativeModule("RakazoPdfView")
 
 /** A local PDF file shown in the app, so reading one never needs another app. */
 export function PdfPreview({ uri, name }: { uri: string; name: string }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const [failed, setFailed] = useState(false);
   if (failed || !NativePdfView) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.error}>{t("Could not open this PDF.")}</Text>
+        <Text style={styles.error}>{t`Could not open this PDF.`}</Text>
       </View>
     );
   }

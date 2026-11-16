@@ -1,12 +1,14 @@
+import { useLingui } from "@lingui/react/macro";
 import {
   defaultGroupName,
   GROUP_MEMBER_MAX,
   GROUP_MEMBER_MIN,
   GROUP_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { BotChipPicker } from "../components/bot-chip-picker";
@@ -14,34 +16,57 @@ import { GlassIconButton } from "../components/glass-icon-button";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
-import { rpc } from "../lib/api";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { hapticSuccess } from "../lib/haptics";
-import { useI18n } from "../lib/i18n";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const navigation = useNavigation();
   const headerHeight = useHeaderHeight();
-  const [bots, setBots] = useState<MobileBot[]>([]);
+  // Read as the sheet opens and never again: the picks are made from this list, and a copy an
+  // earlier visit left is not it.
+  const botsRead = useQuery(formRead(rpcQuery("bots/list")), queryClient);
+  const listed = botsRead.isFetchedAfterMount ? botsRead.data : undefined;
+  const bots = useMemo<MobileBot[]>(
+    () => (listed ?? []).filter((bot) => !bot.archivedAt),
+    [listed],
+  );
   const [step, setStep] = useState<"bots" | "name">("bots");
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const creating = useRef(false);
   const valid = selected.length >= GROUP_MEMBER_MIN && selected.length <= GROUP_MEMBER_MAX;
   const picked = selected.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
+  const creation = useSave({
+    save: async (
+      ask: { name: string; botIds: string[]; askedIn: ReturnType<typeof searchInboxSession> },
+      send,
+    ) => {
+      const group = await send("groups/create", { name: ask.name, botIds: ask.botIds });
+      if (navigation.isFocused() && isSearchInboxSession(ask.askedIn)) hapticSuccess();
+      // The group exists by now, so it is opened even when this sheet has been closed meanwhile.
+      addToSearchInbox({ kind: "group", group }, ask.askedIn);
+      router.replace({
+        pathname: "/group-thread",
+        params: { groupId: group.id, name: group.name },
+      });
+    },
+    closesScreen: true,
+  });
+  const pending = creation.pending;
+  const error = creation.error ? errorText(creation.error, t`Could not create group`) : null;
   const goBack = () => {
-    if (!creating.current) setStep("bots");
+    if (!pending) setStep("bots");
   };
   function close() {
     if (router.canDismiss()) router.dismiss();
@@ -49,48 +74,27 @@ export default function NewGroup() {
     else router.replace("/");
   }
   useEffect(() => {
-    void rpc("bots/list")
-      .then((nextBots) => setBots(nextBots.filter((bot) => !bot.archivedAt)))
-      .catch(() => undefined);
-  }, []);
-  useEffect(() => {
     if (step !== "name") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!creating.current) setStep("bots");
+      if (!pending) setStep("bots");
       return true;
     });
     return () => subscription.remove();
-  }, [step]);
+  }, [step, pending]);
 
-  async function create() {
-    if (!valid || creating.current) return;
-    creating.current = true;
-    setPending(true);
-    setError(null);
-    const askedIn = searchInboxSession();
-    try {
-      const group = await rpc("groups/create", {
-        name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
-        botIds: selected,
-      });
-      if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
-      addToSearchInbox({ kind: "group", group }, askedIn);
-      router.replace({
-        pathname: "/group-thread",
-        params: { groupId: group.id, name: group.name },
-      });
-    } catch (err) {
-      setError(errorText(err, t("Could not create group")));
-    } finally {
-      creating.current = false;
-      setPending(false);
-    }
+  function create() {
+    if (!valid) return;
+    creation.run({
+      name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
+      botIds: selected,
+      askedIn: searchInboxSession(),
+    });
   }
   return (
     <>
       <Stack.Screen
         options={{
-          title: t("New group chat"),
+          title: t`New group chat`,
           headerTransparent: true,
           headerStyle: { backgroundColor: "transparent" },
           headerBackVisible: false,
@@ -99,7 +103,7 @@ export default function NewGroup() {
               <SheetCloseButton onPress={close} />
             ) : (
               <GlassIconButton
-                accessibilityLabel={t("Back")}
+                accessibilityLabel={t`Back`}
                 ios="chevron.left"
                 android="chevron-back"
                 onPress={goBack}
@@ -108,7 +112,7 @@ export default function NewGroup() {
           headerRight: () =>
             step === "bots" ? (
               <NativeActionButton
-                label={t("Next")}
+                label={t`Next`}
                 disabled={!valid}
                 size="compact"
                 onPress={() => setStep("name")}
@@ -120,7 +124,7 @@ export default function NewGroup() {
                 unstable_headerLeftItems: () => [
                   {
                     type: "button" as const,
-                    label: step === "bots" ? t("Close") : t("Back"),
+                    label: step === "bots" ? t`Close` : t`Back`,
                     icon: {
                       type: "sfSymbol" as const,
                       name: step === "bots" ? "xmark" : "chevron.left",
@@ -134,7 +138,7 @@ export default function NewGroup() {
                     ? [
                         {
                           type: "button" as const,
-                          label: t("Next"),
+                          label: t`Next`,
                           icon: { type: "sfSymbol" as const, name: "chevron.right" },
                           variant: "prominent" as const,
                           tintColor: tokens.primary,
@@ -149,6 +153,7 @@ export default function NewGroup() {
       />
       {/* Shrinks above the keyboard so Skip/Create and the last bot rows stay reachable. */}
       <KeyboardAvoidingView
+        enabled={!call}
         behavior="padding"
         automaticOffset
         style={{ flex: 1, backgroundColor: tokens.background }}
@@ -185,10 +190,10 @@ export default function NewGroup() {
                 autoComplete="off"
                 textContentType="none"
                 editable={!pending}
-                placeholder={t("Ex: Project Falcon")}
+                placeholder={t`Ex: Project Falcon`}
                 placeholderTextColor={tokens.mutedForeground}
                 returnKeyType="done"
-                onSubmitEditing={() => void create()}
+                onSubmitEditing={create}
                 style={{
                   height: 56,
                   borderRadius: 11,
@@ -202,10 +207,10 @@ export default function NewGroup() {
               />
               <NativeActionButton
                 fill
-                label={pending ? t("Creating…") : name.trim() ? t("Create") : t("Skip")}
+                label={pending ? t`Creating…` : name.trim() ? t`Create` : t`Skip`}
                 prominence={name.trim() ? "primary" : "secondary"}
                 disabled={pending}
-                onPress={() => void create()}
+                onPress={create}
                 style={{ marginTop: 24, borderRadius: 28 }}
               />
               {error ? (

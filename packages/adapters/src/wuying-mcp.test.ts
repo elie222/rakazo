@@ -1,5 +1,6 @@
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { McpSession } from "./mcp-transport.js";
 import { WuyingMcpTools } from "./wuying-sandbox.js";
@@ -185,11 +186,8 @@ describe("Wuying gateway reconnection", () => {
 
   it("keeps the replacement when another call on the old session fails later", async () => {
     const { client, connect, call } = gateway();
-    let rejectOld!: (error: Error) => void;
-    const oldResponse = new Promise<never>((_, reject) => {
-      rejectOld = reject;
-    });
-    call.mockImplementationOnce(() => oldResponse).mockRejectedValueOnce(closed());
+    const oldResponse = deferred<never>();
+    call.mockImplementationOnce(() => oldResponse.promise).mockRejectedValueOnce(closed());
     const oldRead = expect(client.call("env_get", {}, signal)).resolves.toMatchObject({
       data: { ready: true },
     });
@@ -198,7 +196,7 @@ describe("Wuying gateway reconnection", () => {
     });
     await vi.advanceTimersByTimeAsync(500);
     await recovered;
-    rejectOld(closed());
+    oldResponse.reject(closed());
     await vi.advanceTimersByTimeAsync(500);
     await oldRead;
     expect(connect).toHaveBeenCalledTimes(2);

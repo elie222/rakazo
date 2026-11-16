@@ -1,6 +1,6 @@
 import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import type * as RuntimeContext from "./runtime-context.js";
 
 const fakeAgentState = vi.hoisted(() => ({

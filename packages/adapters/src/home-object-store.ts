@@ -8,6 +8,7 @@ import type {
   ObjectStorage,
   PortableFile,
 } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import type { ContentKeyRing, ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
 import {
   ContentDecryptionError,
@@ -20,6 +21,7 @@ import {
   sealArtifact,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { createObjectStorage } from "./create-object-storage.js";
 import { LocalAgentHomeStore, newRevision } from "./home.js";
 import type { HomeArchiveLimits } from "./home-archive.js";
 import {
@@ -28,7 +30,7 @@ import {
   packHome,
   unpackHome,
 } from "./home-archive.js";
-import { objectStorageConfigFromEnv, S3ObjectStorage } from "./s3-object-storage.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 const HOMES_PREFIX = "homes/";
 const SWEEP_INTERVAL_MS = 60 * 60_000;
@@ -40,6 +42,8 @@ const IDLE_CACHE_MS = 60 * 60_000;
 const READER_HEARTBEAT_MS = 5 * 60_000;
 /** Revisions left by a crashed save are removed once they are clearly not in progress. */
 const STALE_REVISION_MS = 24 * 60 * 60_000;
+/** Folder removal starts over this many times when another process saves the home meanwhile. */
+const REMOVE_FOLDERS_ATTEMPTS = 3;
 
 /** Where a home's revisions are stored and the key that seals them. */
 export interface StoredHome {
@@ -62,6 +66,13 @@ export interface AgentHomeRecords {
   revisions(storageIds: readonly string[]): Promise<Map<string, string | null>>;
   /** The computer kind of each home that still has a computer. */
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
+}
+
+class StaleHomeCacheError extends Error {
+  constructor() {
+    super("The cached home is older than its stored revision");
+    this.name = "StaleHomeCacheError";
+  }
 }
 
 export class HomeSaveConflictError extends Error {
@@ -177,8 +188,23 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     await this.revise(botId);
   }
 
-  /** Removes the folders from the stored copy too, so no host or later boot gets them back. */
+  /**
+   * Removes the folders from the stored copy too, so no host or later boot gets them back.
+   * A remote computer can save between the download and this save (deleting a bot stops its
+   * runs, which saves the computer); its files are then the stored copy, so removal starts
+   * over from them. A Docker computer's mounted copy is never replaced, so that still fails.
+   */
   override async removeFolders(botId: string, parent: string, names: readonly string[]) {
+    return retry(() => this.removeFoldersOnce(botId, parent, names), {
+      attempts: REMOVE_FOLDERS_ATTEMPTS,
+      delayMs: 0,
+      retryable: async (error) =>
+        (error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError) &&
+        !(await this.isLiveCache(botId)),
+    });
+  }
+
+  private async removeFoldersOnce(botId: string, parent: string, names: readonly string[]) {
     await this.hydrate(botId);
     const stored = Boolean((await this.records.load(botId))?.revision);
     const before = await this.localRevision(botId);
@@ -206,7 +232,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       const { stored, local } = await this.loadCacheRevision(botId);
       const base = stored?.revision ?? null;
       if (base && (local !== base || !(await this.hasCache(botId))))
-        throw new Error("The cached home is older than its stored revision");
+        throw new StaleHomeCacheError();
       return (await this.upload(botId, { base })).revision;
     });
   }
@@ -255,7 +281,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     let evicted = 0;
     for (const botId of homes) {
       const kind = kinds.get(botId);
-      if (!kind || kind === "docker") continue;
+      if (!kind || sandboxKindCapabilities(kind).serverHomeMount === "always") continue;
       if (await this.evictCache(botId, { idleBefore: now - IDLE_CACHE_MS })) evicted += 1;
     }
     return evicted;
@@ -352,7 +378,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 
   private async isLiveCache(botId: string) {
     const kind = (await this.records.kinds([botId])).get(botId);
-    return kind === undefined || kind === "docker";
+    return kind === undefined || sandboxKindCapabilities(kind).serverHomeMount === "always";
   }
 
   private async hasCache(botId: string) {
@@ -671,15 +697,11 @@ export function createAgentHomeStore(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
 ): LocalAgentHomeStore {
-  const config = objectStorageConfigFromEnv(env);
-  if (!config) return new LocalAgentHomeStore(dataDir);
+  const storage = createObjectStorage(env);
+  if (!storage) return new LocalAgentHomeStore(dataDir);
   const ring = contentEncryptionOf(prisma)?.ring;
   if (!ring) throw new Error("Storing homes in object storage needs content encryption keys");
-  return new ObjectAgentHomeStore(
-    dataDir,
-    new S3ObjectStorage(config),
-    new PrismaAgentHomeRecords(prisma, ring),
-  );
+  return new ObjectAgentHomeStore(dataDir, storage, new PrismaAgentHomeRecords(prisma, ring));
 }
 
 /**

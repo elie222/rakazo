@@ -1,4 +1,6 @@
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   billingAccountForOrganization,
@@ -13,8 +15,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const snapshot: BillingSubscriptionSnapshot = {
   subscriptionId: "sub_1",
@@ -133,26 +134,22 @@ describePostgres("billing accounts (PostgreSQL)", () => {
   });
 
   it("applies concurrent syncs in order so an older read cannot win", async () => {
-    let releaseOlder!: () => void;
-    let olderLoaded!: () => void;
-    const loaded = new Promise<void>((resolve) => {
-      olderLoaded = resolve;
-    });
+    let olderRead!: Deferred;
+    const loaded = deferred();
     const older = syncBillingSnapshot(prisma, customerId, async () => {
-      olderLoaded();
-      await new Promise<void>((release) => {
-        releaseOlder = release;
-      });
+      loaded.resolve();
+      olderRead = deferred();
+      await olderRead.promise;
       return { ...snapshot, status: "trialing" };
     });
-    await loaded;
+    await loaded.promise;
     const newer = syncBillingSnapshot(prisma, customerId, async () => ({
       ...snapshot,
       status: "active",
     }));
     // The newer sync writes first; the older one, which started earlier, must not land on top.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    releaseOlder();
+    olderRead.resolve();
     await Promise.all([older, newer]);
     await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
       status: "active",

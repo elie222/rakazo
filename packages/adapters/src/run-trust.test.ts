@@ -51,7 +51,9 @@ describe("delegated authorization provenance", () => {
     const findFirst = vi.fn();
     for (const row of rows) findFirst.mockResolvedValueOnce(row);
     const trust = createRunTrustLoaders(
-      { prisma: { run: { findFirst } } } as unknown as ExecutorDeps,
+      {
+        prisma: { run: { findFirst }, message: { findMany: vi.fn(async () => []) } },
+      } as unknown as ExecutorDeps,
       {
         run: { userId: "user", spaceId: "space", trigger, delegatedFromRunId: origin },
         runId: "run",

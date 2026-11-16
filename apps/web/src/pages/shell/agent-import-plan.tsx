@@ -134,6 +134,7 @@ export function AgentImportPlanReview({
       connected: t`Already connected`,
       invalid_file: t`Could not read these files`,
       default: defaultNote,
+      reconnect: t`Connect it again`,
     })[reason];
   const warningText = (warning: AgentImportWarning) =>
     warning === "runs_code"

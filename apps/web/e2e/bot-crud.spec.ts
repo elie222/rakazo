@@ -3,7 +3,8 @@ import {
   captureScreenshot,
   completeOnboarding,
   createBotFromPicker,
-  openBotPanelTab,
+  openBotPanel,
+  openBotSettings,
   openNewBot,
   rpc,
   signup,
@@ -11,6 +12,8 @@ import {
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
+  // Installed before the shell starts its roster poll, so the focus check below can hold it.
+  await page.clock.install();
   await signup(page, `bot-crud-${stamp}@rakazo.test`, "password12", "Bot CRUD");
   await completeOnboarding(page);
   await page.goto("/app");
@@ -59,12 +62,65 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
+  // A focus refresh that no longer knows the current bot redirects away from it; wait for
+  // that refresh's roster response, not a fixed delay an overloaded runner can beat. The
+  // request wait is armed before the event, so an in-flight overlapping poll cannot match
+  // it, and only the response of the matched request releases the wait. That response can
+  // arrive before `runFor` returns, so it is read from the request, which also returns one
+  // already received. The paused clock fires every pending timer now, so the 3 s poll is not
+  // due while the 50 ms focus debounce runs. The poll it fires schedules that same debounce,
+  // so its read is run and settled first; the page counts roster reads itself, so a read
+  // started inside `runFor` is counted when it returns. A fixed date makes the pause target
+  // the clock's current time, so a stalled runner cannot overshoot it.
+  await page.evaluate(() => {
+    const counted = window as typeof window & { rosterReads?: number };
+    counted.rosterReads = 0;
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.includes("/rpc/spaces/list")) return original(input, init);
+      counted.rosterReads = (counted.rosterReads ?? 0) + 1;
+      try {
+        const response = await original(input, init);
+        await response
+          .clone()
+          .arrayBuffer()
+          .catch(() => undefined);
+        return response;
+      } finally {
+        counted.rosterReads = (counted.rosterReads ?? 1) - 1;
+      }
+    };
+  });
+  const pausedAt = Date.now();
+  await page.clock.setFixedTime(pausedAt);
+  await page.clock.pauseAt(pausedAt);
+  await page.clock.setSystemTime(pausedAt);
+  await page.clock.fastForward(3_000);
+  await page.clock.runFor(50);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as typeof window & { rosterReads?: number }).rosterReads),
+    )
+    .toBe(0);
+  const nextListRequest = page.waitForRequest((request) =>
+    request.url().includes("/rpc/spaces/list"),
+  );
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.waitForTimeout(500);
+  await page.clock.runFor(50);
+  const focusResponse = await (await nextListRequest).response();
+  expect(focusResponse).not.toBeNull();
+  expect(focusResponse?.ok()).toBe(true);
+  // The response resolves on headers; the roster applies only once the body has arrived.
+  expect(await focusResponse?.finished()).toBeNull();
+  await page.clock.resume();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
   expect(new URL(page.url()).pathname).toBe(deletedBotPath);
   await captureScreenshot(page, testInfo, "27-created-bot");
 
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toBeVisible();
   async function editName(value: string) {
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
@@ -89,7 +145,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
 
   await page.getByRole("button", { name: "Close panel" }).click();
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText(
     "Researcher",
   );
@@ -101,71 +157,77 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(studio).toBeVisible();
   await expect(studio.getByRole("button", { name: "Color #FFAF38" })).toHaveClass(/ring-2/);
   await studio.getByRole("button", { name: "Done", exact: true }).click();
-  const modelSelect = settings.getByRole("combobox", { name: "Model", exact: true });
-  const teamComputer = settings.getByRole("button", { name: "Team" });
+  const modelRow = settings.getByRole("button", { name: /^Model/ });
   const openWork = settings.getByTestId("bot-scratchpad");
-  const notificationsHeading = settings.getByRole("heading", {
-    name: "Notifications",
-    exact: true,
-  });
-  await openBotPanelTab(page, "Computer");
-  await expect(notificationsHeading).toHaveCount(0);
-  await expect(modelSelect).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Export", exact: true })).toHaveCount(0);
-  await openBotPanelTab(page, "Advanced");
-  await expect(notificationsHeading).toBeVisible();
+  const notifications = settings.getByRole("switch", { name: "Notifications", exact: true });
+  // Settings fold away by default; the panel itself shows the profile, computer and routines.
+  await page.getByRole("button", { name: "Close panel" }).click();
+  await openBotPanel(page);
+  await expect(notifications).toHaveCount(0);
+  await expect(modelRow).toHaveCount(0);
+  await settings.getByRole("button", { name: "More actions", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Export", exact: true })).toBeVisible();
   await expect(
-    settings.getByRole("switch", { name: "When it finishes or needs input", exact: true }),
+    page.getByRole("menuitem", { name: "Clear conversation", exact: true }),
   ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await openBotSettings(page);
+  await expect(notifications).toBeVisible();
   await expect(openWork).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Export", exact: true })).toBeVisible();
-  await expect(settings.locator('label[for$="-model"]')).toHaveClass("sr-only");
-  await expect(modelSelect).toBeVisible();
-  const dailyCheckIns = settings.getByRole("switch", {
-    name: "Daily check-ins on unfinished work",
-    exact: true,
-  });
-  await dailyCheckIns.scrollIntoViewIfNeeded();
-  await expect(dailyCheckIns).toBeChecked();
-  await captureScreenshot(page, testInfo, "bot-settings-daily-check-ins");
+  await expect(modelRow).toBeVisible();
+  await expect(settings.getByRole("switch", { name: "Own computer", exact: true })).toBeVisible();
+  // Rarely changed settings show only once the bot has them changed from the default.
+  for (const name of [
+    "Read replies aloud",
+    "Daily check-ins on unfinished work",
+    "Allow cross-space bot communication",
+    "Manage other bots",
+  ])
+    await expect(settings.getByRole("switch", { name, exact: true })).toHaveCount(0);
+  await expect(settings.getByLabel("Disable a tool")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "bot-settings-sections-advanced");
   await rpc(page, "scratchpad/create", {
     botId: deletedBotPath.split("/").at(-1),
     title: "First fixture task",
   });
   await page.getByRole("button", { name: "Close panel" }).click();
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await expect(openWork.getByText("First fixture task", { exact: true })).toBeVisible();
   await openWork.getByRole("button", { name: "Add open work" }).click();
   await openWork.getByRole("textbox", { name: "New open-work item" }).fill("Second fixture task");
   await openWork.getByRole("button", { name: "Add", exact: true }).click();
   const workRows = openWork.locator(".group");
   await expect(workRows).toHaveCount(2);
+  await openWork.getByRole("button", { name: "Add open work" }).click();
+  const workDraft = openWork.getByRole("textbox", { name: "New open-work item" });
+  await workDraft.fill("Retained draft");
   for (let index = 0; index < 2; index += 1) {
     await workRows.first().hover();
     await workRows.first().getByRole("button", { name: "Remove" }).click();
   }
+  await expect(workRows).toHaveCount(0);
+  await expect(workDraft).toHaveValue("Retained draft");
+  await captureScreenshot(page, testInfo, "open-work-empty-list-draft");
+  await openWork.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(openWork.getByText("Retained draft", { exact: true })).toBeVisible();
+  await workRows.first().hover();
+  await workRows.first().getByRole("button", { name: "Remove" }).click();
   await expect(openWork).toHaveCount(0);
-  const disabledTools = settings.getByLabel("Disable a tool");
-  await expect(disabledTools).toBeVisible();
-  await disabledTools.selectOption("web_search");
+  // A bot that already has a tool turned off shows its tools, to turn it back on.
+  await rpc(page, "bots/update", {
+    botId: deletedBotPath.split("/").at(-1),
+    disabledBuiltinTools: ["web_search"],
+  });
+  await page.reload();
+  await openBotSettings(page);
   await expect(settings.getByRole("button", { name: "Enable Web search" })).toBeVisible();
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
-  await expect(teamComputer).toBeVisible();
-  await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
-  await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
-  const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
-  await replyMode.scrollIntoViewIfNeeded();
-  await expect(replyMode).toHaveValue("chat");
-  await replyMode.selectOption("messages");
-  await expect(replyMode).toHaveValue("messages");
-  await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
-  await expect(modelSelect).toBeVisible();
-  await expect(modelSelect).toContainText("Space default");
+  await expect(modelRow).toBeVisible();
+  await expect(modelRow).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
-  await openBotPanelTab(page, "Computer");
+  await openBotPanel(page);
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
+  await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
   // chrome, then wait until any overlay has cleared — avoid Locator.or() strict-mode multi-hits.
   const bootOverlay = page.getByText(/Booting up .* computer/);
@@ -175,13 +237,11 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(sidePanel.getByTestId("teach-start-button")).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
-  await expect(sidePanel.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Take control" })).toHaveCount(0);
-  await expect(sidePanel.getByTestId("computer-more-button")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27b-computer-panel");
 
   await editName("Atlas");
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await descriptionInput.fill("Builds durable, source-backed research briefs.");
   await descriptionInput.blur();
   await expect(botList.getByRole("button", { name: /^Atlas/ })).toBeVisible();
@@ -191,7 +251,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page.reload();
   await expect(botList.getByRole("button", { name: /^Atlas/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Atlas")).toBeVisible();
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Atlas");
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");

@@ -30,8 +30,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { useSpaceQueries } from "../lib/query";
-import { useSpaceRpc } from "../lib/space-rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 import { useListSearch } from "../lib/use-list-search";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
@@ -40,9 +40,13 @@ import { SpendingLimitSettings } from "./SpendingLimitSettings";
 const segmented = "rounded-lg bg-muted p-1";
 const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
 
+type Change =
+  | { kind: "mode"; mode: ApprovalMode }
+  | { kind: "rule"; rule: Pick<ActionApprovalRule, "effect" | "matchKind" | "matchValue"> }
+  | { kind: "remove"; rule: ActionApprovalRule };
+
 /** Approvals for the account, or for the bound Space when it customizes them. */
 export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
-  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -53,8 +57,24 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
-  const [saving, setSaving] = useState(false);
-  const [actionError, setError] = useState<string | null>(null);
+  const change = useSave({
+    save: async (next: Change, rpc) => {
+      if (next.kind === "mode") {
+        return setAutoReview(await rpc.autoReview.set({ scope, mode: next.mode }));
+      }
+      if (next.kind === "rule") return putRule(next.rule, rpc);
+      await rpc.approvalRules.remove({ scope, id: next.rule.id });
+      await setRules((current) => current.filter((other) => other.id !== next.rule.id));
+    },
+  });
+  const saving = change.pending;
+  const failures: Record<Change["kind"], string> = {
+    mode: t`Could not save Auto Review`,
+    rule: t`Could not save rule`,
+    remove: t`Could not remove rule`,
+  };
+  const actionError =
+    change.error && change.input ? errorText(change.error, failures[change.input.kind]) : null;
   const error =
     actionError ?? (loadFailed ? errorText(loadFailed, t`Could not load approval rules`) : null);
   const modes: Array<{ mode: ApprovalMode; label: string }> = [
@@ -76,26 +96,10 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
     return writeSaved(queryClient, queries.autoReview.get.queryKey({ input }), () => next);
   }
 
-  async function save(work: () => Promise<unknown>, failure: string) {
-    if (saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await work();
-    } catch (err) {
-      setError(errorText(err, failure));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const setMode = (mode: ApprovalMode) =>
-    save(
-      async () => setAutoReview(await rpc.autoReview.set({ scope, mode })),
-      t`Could not save Auto Review`,
-    );
-
-  async function putRule(rule: Pick<ActionApprovalRule, "effect" | "matchKind" | "matchValue">) {
+  async function putRule(
+    rule: Pick<ActionApprovalRule, "effect" | "matchKind" | "matchValue">,
+    rpc: RpcClient,
+  ) {
     if (rule.matchKind === "category") return;
     const saved = await rpc.approvalRules.set({
       scope,
@@ -113,27 +117,6 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       saved,
     ]);
   }
-
-  const setEffect = (rule: ActionApprovalRule, effect: ActionApprovalRule["effect"]) =>
-    save(() => putRule({ ...rule, effect }), t`Could not save rule`);
-
-  // An app or tool that already has a rule is not offered, so a pick always adds one.
-  const addRule = (choice: ApprovalRuleChoice) =>
-    save(
-      () =>
-        putRule({
-          effect: "require_approval",
-          matchKind: choice.matchKind,
-          matchValue: choice.matchValue,
-        }),
-      t`Could not save rule`,
-    );
-
-  const removeRule = (rule: ActionApprovalRule) =>
-    save(async () => {
-      await rpc.approvalRules.remove({ scope, id: rule.id });
-      await setRules((current) => current.filter((other) => other.id !== rule.id));
-    }, t`Could not remove rule`);
 
   const modeDetail =
     autoReview?.mode === "auto" && !autoReview.checkerAvailable
@@ -163,7 +146,8 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
               data-testid="approval-mode"
               value={autoReview ? [autoReview.mode] : []}
               onValueChange={([next]) => {
-                if (next && next !== autoReview?.mode) void setMode(next as ApprovalMode);
+                if (next && next !== autoReview?.mode)
+                  change.run({ kind: "mode", mode: next as ApprovalMode });
               }}
               disabled={loading || saving || !autoReview}
               spacing={1}
@@ -187,7 +171,10 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       <AddRulePicker
         choices={approvalRuleChoices(rules)}
         disabled={loading || Boolean(loadFailed) || saving}
-        onPick={(choice) => void addRule(choice)}
+        // An app or tool that already has a rule is not offered, so a pick always adds one.
+        onPick={({ matchKind, matchValue }) =>
+          change.run({ kind: "rule", rule: { effect: "require_approval", matchKind, matchValue } })
+        }
       />
       {groups.map(({ effect, title }) => {
         const matching = rules.filter((rule) => rule.effect === effect);
@@ -209,8 +196,8 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                     <RuleControls
                       rule={rule}
                       disabled={saving}
-                      onEffect={(next) => void setEffect(rule, next)}
-                      onRemove={() => void removeRule(rule)}
+                      onEffect={(effect) => change.run({ kind: "rule", rule: { ...rule, effect } })}
+                      onRemove={() => change.run({ kind: "remove", rule })}
                     />
                   }
                 />

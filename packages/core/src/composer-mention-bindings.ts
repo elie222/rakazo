@@ -8,6 +8,7 @@ import {
   completeComposerMention,
   mentionChipKey,
 } from "./composer-mentions.js";
+import { mentionStandsAlone } from "./group-mentions.js";
 
 export type ComposerMentionBinding = ComposerMentionRange & { mention: ComposerMention };
 export type ComposerMentionEditHints = {
@@ -24,8 +25,7 @@ function validBinding(text: string, binding: ComposerMentionBinding): boolean {
     binding.end <= text.length &&
     binding.end > binding.start &&
     text.slice(binding.start, binding.end) === `@${binding.mention.name}` &&
-    !/[\p{L}\p{N}_-]$/u.test(text.slice(0, binding.start)) &&
-    !/^[\p{L}\p{N}_-]/u.test(text.slice(binding.end))
+    mentionStandsAlone(text, binding.start, binding.end)
   );
 }
 

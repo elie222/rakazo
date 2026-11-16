@@ -1,5 +1,5 @@
 import type { IncomingBotCall } from "@rakazo/contracts";
-import { IncomingBotCallSchema } from "@rakazo/contracts";
+import { IncomingBotCallSchema, SpaceChangeKind } from "@rakazo/contracts";
 import {
   cancelResponseBody,
   displayIdentityEvent,
@@ -78,6 +78,28 @@ export async function subscribeIncomingCallEvents(
       if (event.type !== "incoming.calls") return;
       const calls = IncomingBotCallSchema.array().safeParse(event.payload?.calls);
       if (calls.success) onCalls(calls.data);
+    },
+    signal,
+    context,
+  );
+}
+/**
+ * Calls `onSignal` for each roster signal and `onSpaceChange` for each Space change signal: each
+ * kind once when the stream opens, then once per change. Kinds this build does not know are skipped.
+ */
+export async function subscribeRosterSignals(
+  onSignal: () => void,
+  signal: AbortSignal,
+  onSpaceChange: (kind: SpaceChangeKind) => void = () => {},
+) {
+  const context = await captureApiRequestContext();
+  return subscribeRpcEvents(
+    "notifications/subscribe",
+    {},
+    (event) => {
+      if (event.type === "roster") onSignal();
+      const kind = SpaceChangeKind.safeParse(event.type);
+      if (kind.success) onSpaceChange(kind.data);
     },
     signal,
     context,

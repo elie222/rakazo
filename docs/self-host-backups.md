@@ -13,14 +13,15 @@ English | [简体中文](./zh-CN/self-host-backups.md)
 
 This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. Backup
 directories have mode `0700`, and both artifacts have mode `0600`, including on reused paths.
-A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that restore treats
-as omitted homes. Database or archive errors fail the backup. Discard the output directory of
+A missing `data/` fails the backup; `RAKAZO_BACKUP_SKIP_HOMES=1` backs up only the database and
+writes an empty archive that restore treats as omitted homes. Database or archive errors fail the backup. Discard the output directory of
 any failed run.
 
 ## Restore
 
-For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
-Compose stack. The script validates and extracts the homes archive in a clean sibling directory
+For backups created by `scripts/backup.sh`, use an empty database in the development
+Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `POSTGRES_DB` settings
+(defaulting to `rakazo` in Compose). The script validates and extracts the homes archive in a clean sibling directory
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.
@@ -303,7 +304,11 @@ ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait"
 The restore uses the newest base backup that finished before the target, replays WAL up to it, and
 promotes the result, which starts a new timeline; the sidecar takes a fresh base backup for it. Pause
 CI deploys during recovery. Once the restored database checks out, remove the old cluster:
-`$COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf "$PGDATA".before-restore-*'`.
+
+```bash
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf \"\$PGDATA\".before-restore-*'"
+```
 
 To turn it off, remove `pitr` from `COMPOSE_PROFILES`, then run `sudo infra/compose/pitr.sh disable`.
 It removes the sidecar, the slot (so Postgres stops keeping WAL for it), the login and the

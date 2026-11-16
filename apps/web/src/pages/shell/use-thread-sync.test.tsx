@@ -2,10 +2,12 @@
 
 import type { ProductEvent, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { queryClient } from "../../lib/query";
+import { useComputerControls, useComputerState } from "./use-computer";
 import { useThreadSync } from "./use-thread-sync";
 
 vi.mock("@rakazo/core", async (original) => ({
@@ -23,13 +25,6 @@ vi.mock("@rakazo/core/query", () => ({ fetchFresh: vi.fn(async () => []) }));
 
 const ref = <T,>(current: T) => ({ current });
 const flush = () => act(async () => {});
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 function syncInput({
   inGroup,
@@ -75,6 +70,8 @@ function syncInput({
       computerOpenRef: ref(false),
       computerBotIdRef: ref(null),
       refreshComputerScreen: vi.fn(async () => {}),
+      isOwnControlEvent: vi.fn(() => false),
+      isOwnAnswer: vi.fn(() => false),
     },
     active: inGroup ? undefined : { id: "bot-1", name: "Bot", ...bot },
     activeGroup: inGroup ? { id: "group-1", name: "Group" } : undefined,
@@ -142,6 +139,169 @@ it.each([false, true])(
     expect(subscription.signal.aborted).toBe(true);
   },
 );
+
+it.each([false, true])(
+  "refreshes a group computer unless this tab initiated it: %s",
+  async (own) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const snapshot = {
+      threadId: "thread-1",
+      cursor: 1,
+      messages: [],
+      run: null,
+    } as unknown as ThreadSnapshot;
+    const get = vi.fn(() => Promise.resolve(snapshot));
+    const commitSnapshot = vi.fn();
+    const input = syncInput({ inGroup: true, get, commitSnapshot });
+    input.computerState.computerBotIdRef.current = "bot-computer";
+    vi.mocked(input.computerState.isOwnControlEvent).mockReturnValue(own);
+    vi.mocked(input.computerState.isOwnAnswer).mockReturnValue(own);
+    function Probe() {
+      useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    const released = (botId: string) =>
+      ({
+        type: "computer.takeover.released",
+        botId,
+        payload: { holder: "none" },
+      }) as unknown as ProductEvent;
+    subscription.onEvent(released("bot-computer"), snapshot);
+    await flush();
+    expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(own ? 0 : 1);
+    if (!own)
+      expect(input.computerState.refreshComputerScreen).toHaveBeenCalledWith("bot-computer");
+    subscription.onEvent(
+      {
+        ...released("bot-computer"),
+        payload: { answered: true, leaseId: null },
+      } as unknown as ProductEvent,
+      snapshot,
+    );
+    subscription.onEvent(released("bot-other"), snapshot);
+    await flush();
+    expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(own ? 0 : 2);
+    act(() => root.unmount());
+  },
+);
+
+it.each([
+  [true, 0],
+  [false, 1],
+])(
+  "reads the screen for a control event unless this tab asked for it (own: %s)",
+  async (own, reads) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const snapshot = {
+      threadId: "thread-1",
+      cursor: 1,
+      messages: [],
+      run: null,
+    } as unknown as ThreadSnapshot;
+    const input = syncInput({
+      inGroup: false,
+      get: vi.fn(async () => snapshot),
+      commitSnapshot: vi.fn(),
+    });
+    vi.mocked(input.computerState.isOwnControlEvent).mockReturnValue(own);
+    vi.mocked(input.computerState.isOwnAnswer).mockReturnValue(own);
+    function Probe() {
+      useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    vi.mocked(input.computerState.refreshComputerScreen).mockClear();
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    subscription.onEvent(
+      {
+        type: "computer.takeover.granted",
+        payload: { leaseId: "lease-1" },
+      } as unknown as ProductEvent,
+      snapshot,
+    );
+    await flush();
+    expect(input.computerState.isOwnControlEvent).toHaveBeenCalledWith(
+      "bot-1",
+      "computer.takeover.granted",
+      "lease-1",
+    );
+    expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(reads);
+    act(() => root.unmount());
+  },
+);
+
+it("reconciles a shared computer's own grant without reading the screen again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const snapshot = {
+    threadId: "thread-1",
+    cursor: 1,
+    messages: [],
+    run: null,
+  } as unknown as ThreadSnapshot;
+  const get = vi.fn(async () => snapshot);
+  const input = syncInput({ inGroup: false, get, commitSnapshot: vi.fn() });
+  input.computerState.computerRef.current = { shared: true } as never;
+  vi.mocked(input.computerState.isOwnControlEvent).mockReturnValue(true);
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  await flush();
+  get.mockClear();
+  vi.mocked(input.computerState.refreshComputerScreen).mockClear();
+  const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+  subscription.onEvent(
+    {
+      type: "computer.takeover.granted",
+      payload: { leaseId: "lease-1" },
+    } as unknown as ProductEvent,
+    snapshot,
+  );
+  await flush();
+  await flush();
+  // The grant may still be someone else's while this tab's call is out, so the snapshot says.
+  expect(get).toHaveBeenCalledTimes(1);
+  expect(input.computerState.refreshComputerScreen).not.toHaveBeenCalled();
+  act(() => root.unmount());
+});
+
+it("leaves the screen to a caller that reads it itself", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const snapshot = {
+    threadId: "thread-1",
+    cursor: 1,
+    messages: [],
+    run: null,
+  } as unknown as ThreadSnapshot;
+  const input = syncInput({
+    inGroup: false,
+    get: vi.fn(async () => snapshot),
+    commitSnapshot: vi.fn(),
+  });
+  let sync!: ReturnType<typeof useThreadSync>;
+  function Probe() {
+    sync = useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  vi.mocked(input.computerState.refreshComputerScreen).mockClear();
+  await act(async () => {
+    await sync.refreshThread("bot-1", undefined, { readScreen: false });
+  });
+  expect(input.computerState.refreshComputerScreen).not.toHaveBeenCalled();
+  await act(async () => {
+    await sync.refreshThread("bot-1");
+  });
+  expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+});
 
 it.each([
   ["running", { status: "running" }, true],
@@ -251,3 +411,288 @@ it("anchors Load earlier on the first visible row, not the whole height delta", 
   expect(scroller.scrollTop).toBe(900);
   act(() => root.unmount());
 });
+
+it.each([false, true])("snaps a remounted transcript for group=%s", async (inGroup) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // The reader is at the end of bot A when the refresh starts; the bot switch
+  // to A remounts the transcript before the response arrives, detaching the
+  // element the snap was queued against.
+  const detached = {
+    scrollTop: 900,
+    scrollHeight: 1000,
+    clientHeight: 100,
+    isConnected: true,
+  };
+  const mounted = {
+    scrollTop: 0,
+    scrollHeight: 1200,
+    clientHeight: 100,
+    isConnected: true,
+  };
+  const held = ref<HTMLDivElement | null>(detached as unknown as HTMLDivElement);
+  const snapshot = {
+    botId: "bot-1",
+    threadId: "thread-1",
+    messages: [],
+  } as unknown as ThreadSnapshot;
+  const input = syncInput({
+    inGroup,
+    get: () => Promise.resolve(snapshot),
+    commitSnapshot: vi.fn(),
+  });
+  input.thread = { ...input.thread, messageScroll: held } as never;
+  let controls!: ReturnType<typeof useThreadSync>;
+  function Probe() {
+    controls = useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+
+  // The switch remounts the transcript while the request is in flight: start
+  // the refresh, swap the scroller before its continuation runs.
+  const pending = inGroup
+    ? controls.refreshGroupThread("group-1")
+    : controls.refreshThread("bot-1");
+  detached.isConnected = false;
+  held.current = mounted as unknown as HTMLDivElement;
+  await act(async () => void (await pending));
+  await act(async () => {
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+  });
+
+  expect(mounted.scrollTop).toBe(1200);
+  act(() => root.unmount());
+});
+
+it.each([false, true])(
+  "preserves reader intent and cleans up frames for group=%s",
+  async (inGroup) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const runFrames = () => {
+      const queued = [...frames.values()];
+      frames.clear();
+      for (const callback of queued) callback(0);
+    };
+    const scroller = () => {
+      const element = document.createElement("div");
+      Object.defineProperties(element, {
+        scrollHeight: { value: 1200 },
+        clientHeight: { value: 100 },
+      });
+      document.body.append(element);
+      return element;
+    };
+    const held = ref<HTMLDivElement | null>(scroller());
+    held.current!.scrollTop = 1100;
+    const snapshot = {
+      botId: "bot-1",
+      threadId: "thread-1",
+      messages: [],
+    } as unknown as ThreadSnapshot;
+    let read = deferred<ThreadSnapshot>();
+    const input = syncInput({ inGroup, get: () => read.promise, commitSnapshot: vi.fn() });
+    input.thread = { ...input.thread, messageScroll: held };
+    let controls!: ReturnType<typeof useThreadSync>;
+    function Probe() {
+      controls = useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    const refresh = () =>
+      inGroup ? controls.refreshGroupThread("group-1") : controls.refreshThread("bot-1");
+    const replace = () => {
+      held.current?.remove();
+      held.current = scroller();
+    };
+    const finish = async () => {
+      await act(async () => {
+        read.resolve(snapshot);
+        await read.promise;
+      });
+      read = deferred<ThreadSnapshot>();
+    };
+
+    // A reader who scrolls the replacement while loading retains their position.
+    void refresh();
+    replace();
+    held.current!.scrollTop = 300;
+    held.current!.dispatchEvent(new Event("scroll"));
+    await finish();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(300);
+
+    // Starting above the end never opts into sticking.
+    void refresh();
+    await finish();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(300);
+
+    // Replacement after the response still snaps if the reader has not moved.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    replace();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(1200);
+
+    // Scrolling a replacement before the frame cancels that snap too.
+    void refresh();
+    await finish();
+    replace();
+    held.current!.scrollTop = 200;
+    held.current!.dispatchEvent(new Event("scroll"));
+    runFrames();
+    expect(held.current?.scrollTop).toBe(200);
+
+    // A response for a chat left during the async load must not queue a snap.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    input.activeBotId.current = "bot-2";
+    input.activeGroupId.current = "group-2";
+    replace();
+    await finish();
+    expect(frames.size).toBe(0);
+    expect(held.current?.scrollTop).toBe(0);
+    input.activeBotId.current = inGroup ? undefined : "bot-1";
+    input.activeGroupId.current = inGroup ? "group-1" : undefined;
+
+    // A queued frame cannot move a different chat.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    input.activeBotId.current = "bot-2";
+    input.activeGroupId.current = "group-2";
+    replace();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(0);
+
+    input.activeBotId.current = inGroup ? undefined : "bot-1";
+    input.activeGroupId.current = inGroup ? "group-1" : undefined;
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    expect(frames.size).toBe(1);
+    const lateRefresh = refresh();
+    act(() => root.unmount());
+    expect(frames.size).toBe(0);
+    await finish();
+    await lateRefresh;
+    expect(frames.size).toBe(0);
+    held.current?.remove();
+    vi.restoreAllMocks();
+  },
+);
+
+it.each([false, true])(
+  "keeps the takeover screen when the thread refresh fails: %s",
+  async (fails) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const running = { botId: "bot-1", state: "running", controlHolder: "none", controlBotId: null };
+    const held = {
+      ...running,
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-1",
+    };
+    const thread = (computer: object) =>
+      ({ threadId: "thread-1", cursor: 1, messages: [], run: null, computer }) as never;
+    const snapshot: ThreadSnapshot = thread(held);
+    const afterTake = deferred<ThreadSnapshot>();
+    const reads = [Promise.resolve(thread(running)), afterTake.promise];
+    const get = vi.fn(() => reads[get.mock.calls.length - 1] ?? Promise.resolve(snapshot));
+    const taken = deferred<{ url: string }>();
+    const screenUrl = vi.fn(async () => ({ url: "https://screen.test/before" }));
+    const rpc = {
+      threads: { get },
+      computer: {
+        screenUrl,
+        takeover: vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" })),
+        heartbeat: vi.fn(async () => ({ ok: true })),
+        release: vi.fn(async () => ({ ok: true })),
+      },
+    };
+    const bot = { id: "bot-1", name: "Bot", status: "idle", threadStatus: "idle" };
+    const input = syncInput({ inGroup: false, get, commitSnapshot: vi.fn() });
+    let state!: ReturnType<typeof useComputerState>;
+    let controls!: ReturnType<typeof useComputerControls>;
+    let sync!: ReturnType<typeof useThreadSync>;
+    function Probe() {
+      state = useComputerState({
+        rpc: rpc as never,
+        panel: "settings",
+        activeId: "bot-1",
+        activeBotId: input.activeBotId,
+      });
+      sync = useThreadSync({ ...input, rpc: rpc as never, computerState: state });
+      controls = useComputerControls({
+        rpc: rpc as never,
+        state,
+        panel: "settings",
+        active: bot as never,
+        bots: [bot as never],
+        botsRef: { current: [bot as never] },
+        activeBotId: input.activeBotId,
+        activeGroupId: input.activeGroupId,
+        runStatus: undefined,
+        sandboxProvider: undefined,
+        refreshThread: sync.refreshThread,
+        refreshGroupThread: vi.fn(),
+        onUpgrade: vi.fn(),
+      });
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    // The full computer window is open on the running computer, its screen read.
+    await act(async () => state.setComputerOpen(true));
+    await act(async () => {
+      await sync.refreshThread("bot-1");
+    });
+    await flush();
+    expect(state.screenUrl).toBe("https://screen.test/before");
+    // After the takeover's own read, any further read fails.
+    screenUrl.mockClear();
+    screenUrl.mockReturnValueOnce(taken.promise).mockRejectedValue(new Error("offline"));
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+
+    let took!: Promise<boolean>;
+    await act(async () => {
+      took = controls.openComputer("bot-1", true);
+    });
+    // The takeover's own screen read and thread refresh are out; the live grant arrives first.
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(screenUrl).toHaveBeenCalledTimes(1);
+    const granted = {
+      type: "computer.takeover.granted",
+      botId: "bot-1",
+      payload: { leaseId: "lease-1" },
+    } as unknown as ProductEvent;
+    await act(async () => {
+      subscription.applyEvent(granted);
+      subscription.onEvent(granted, snapshot);
+    });
+    await act(async () => {
+      taken.resolve({ url: "https://screen.test/taken" });
+      if (fails) afterTake.reject(new Error("offline"));
+      else afterTake.resolve(snapshot);
+      await took;
+    });
+    await flush();
+    expect(state.computer).toMatchObject({ controlHolder: "user", controlLeaseId: "lease-1" });
+    expect(state.screenUrl).toBe("https://screen.test/taken");
+    expect(state.computerError).toBeNull();
+    expect(screenUrl).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  },
+);

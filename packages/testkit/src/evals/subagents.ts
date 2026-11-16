@@ -1,6 +1,6 @@
 import type { EvalCase, Evidence } from "./cases.js";
 
-export const SUBAGENT_FIXTURE_VERSION = "subagents-v1";
+export const SUBAGENT_FIXTURE_VERSION = "subagents-v2";
 export const SUBAGENT_JUDGE_VERSION = "subagent-result-meaning-v1";
 
 const prompt =
@@ -43,7 +43,21 @@ function grade(e: Evidence) {
     },
     {
       id: "helper-read-and-wrote",
-      pass: helpers.some((r) => r.tools.includes("read_file") && r.tools.includes("write_file")),
+      pass: helpers.some(
+        (r) =>
+          r.calls.some(
+            (call) =>
+              call.succeeded &&
+              call.name === "read_file" &&
+              call.args.path === "inputs/shipment.json",
+          ) &&
+          r.calls.some(
+            (call) =>
+              call.succeeded &&
+              call.name === "write_file" &&
+              call.args.path === "results/shipment.json",
+          ),
+      ),
     },
     { id: "saved-correct-artifact", pass: result?.units === 19 && result.cost === 151 },
     {
@@ -123,7 +137,15 @@ export const SUBAGENT_EVAL_CASES: EvalCase[] = [
         {
           id: "helper-performed-update",
           pass: helpers.some(
-            (helper) => helper.status === "completed" && helper.tools.includes("CRM_UPDATE_RECORD"),
+            (helper) =>
+              helper.status === "completed" &&
+              helper.calls.some(
+                (call) =>
+                  call.succeeded &&
+                  call.name === "CRM_UPDATE_RECORD" &&
+                  call.args.recordId === "customer-1" &&
+                  call.args.status === "active",
+              ),
           ),
         },
         {

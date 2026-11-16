@@ -73,7 +73,6 @@ export function isThreadSnapshotEvent(event: { type: string }): boolean {
     event.type === "agent.tool.completed" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
-    event.type === "thread.message.reaction" ||
     event.type === "run.started" ||
     event.type === "run.waiting_input" ||
     event.type === "computer.takeover.requested" ||
@@ -95,6 +94,8 @@ export function reduceThreadSnapshot<S extends LiveThreadSnapshot>(
 }
 
 function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThreadSnapshot {
+  // A refresh can outrun the stream, which then delivers events the snapshot already holds.
+  if (event.seq !== undefined && prev.cursor !== undefined && event.seq <= prev.cursor) return prev;
   const payload = event.payload ?? {};
   // The replay cursor follows every applied event, including ones that change nothing visible.
   const cursor = event.seq ?? prev.cursor;
@@ -203,7 +204,9 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       ];
       const promoteWaiting =
         !prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
+        (waitingRun.trigger !== BACKGROUND_HELPER_TRIGGER &&
+          prev.run.status !== "waiting_input" &&
+          prev.run.status !== "waiting_takeover");
       return {
         ...prev,
         cursor,

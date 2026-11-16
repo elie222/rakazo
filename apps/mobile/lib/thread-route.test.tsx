@@ -43,10 +43,6 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => state.selected,
 }));
 vi.mock("./organizations", () => ({ selectSpaceAcrossOrganizations: state.selectSpace }));
-vi.mock("./i18n", () => {
-  const t = (text: string) => text;
-  return { t, useI18n: () => ({ t }) };
-});
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./session", () => ({

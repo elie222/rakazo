@@ -8,7 +8,11 @@ on:
     branches: [main]
     paths:
       - apps/web/src/**
-      - apps/web/lingui.config.ts
+      - apps/mobile/app/**
+      - apps/mobile/components/**
+      - apps/mobile/lib/**
+      - packages/i18n/src/**
+      - lingui.config.ts
   workflow_dispatch:
 
 # Extraction installs and runs dependency code, so it gets no repository-write credentials. Only
@@ -36,11 +40,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-workspace
-      - run: pnpm --filter @rakazo/web intl:extract
+      - run: pnpm intl:extract
       - name: Record catalog patch
         id: diff
         run: |
-          git diff --binary -- apps/web/src/locales > "$RUNNER_TEMP/catalogs.patch"
+          git diff --binary -- packages/i18n/locales > "$RUNNER_TEMP/catalogs.patch"
           if [ -s "$RUNNER_TEMP/catalogs.patch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -60,12 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     env:
       BRANCH: i18n/catalog-sync
       CHANGED: ${{ needs.extract.outputs.changed }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -77,6 +79,8 @@ jobs:
           path: ${{ runner.temp }}/translation-catalogs
       - name: Push branch and open, or close, the PR
         env:
+          # The workflow token can neither open PRs nor start CI on what it pushes.
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
           # The runner context exists only at step level.
           PATCH_DIR: ${{ runner.temp }}/translation-catalogs
         run: |
@@ -116,7 +120,7 @@ jobs:
           [ "${#files[@]}" -eq 1 ]
           [ "${files[0]}" = "$PATCH_DIR/catalogs.patch" ]
           [ -f "$PATCH_DIR/catalogs.patch" ] && [ ! -L "$PATCH_DIR/catalogs.patch" ]
-          git apply --index --include='apps/web/src/locales/*' "$PATCH_DIR/catalogs.patch"
+          git apply --index --include='packages/i18n/locales/*' "$PATCH_DIR/catalogs.patch"
           # Only edits to catalogs that already exist may be published: no renames, additions,
           # deletions, mode changes or other paths. Rename detection is off so every path a
           # change touches is listed, and paths are NUL-delimited so none can be forged.
@@ -124,7 +128,7 @@ jobs:
           while IFS= read -r -d '' meta && IFS= read -r -d '' file; do
             read -r old_mode new_mode _ _ status <<<"${meta#:}"
             if [ "$status" != M ] || [ "$old_mode" != 100644 ] || [ "$new_mode" != 100644 ] ||
-              ! [[ "$file" =~ ^apps/web/src/locales/[A-Za-z-]+/messages\.po$ ]]; then
+              ! [[ "$file" =~ ^packages/i18n/locales/[A-Za-z-]+/messages\.po$ ]]; then
               echo "::error::Refusing catalog change: $status $old_mode $new_mode $file"
               exit 1
             fi
@@ -141,7 +145,7 @@ jobs:
               --body "$(cat <<'EOF'
           ## What
 
-          Brings the web translation catalogs up to date with the strings on main: new strings
+          Brings the translation catalogs up to date with the web and mobile strings on main: new strings
           are added untranslated, removed ones are dropped. Nothing changes for users, because
           builds already show untranslated strings in English.
 
@@ -152,12 +156,9 @@ jobs:
 
           ## Translating
 
-          This pull request is rebuilt from main whenever main's web sources change. Fill
+          This pull request is rebuilt from main whenever main's web or mobile sources change. Fill
           translations here (the workflow then leaves the branch alone until it merges) or in a
           separate pull request after this one merges.
-
-          Opened with the workflow token, so checks do not start on their own: close and
-          reopen it to run CI.
           EOF
           )"
           fi

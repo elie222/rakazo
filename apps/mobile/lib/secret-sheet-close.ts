@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { TextInput } from "react-native";
+import type { TextInputInstance } from "react-native";
 
 /**
  * Closes a sheet that holds protected fields without iOS offering to save them. iOS offers to save
@@ -11,7 +11,7 @@ import type { TextInput } from "react-native";
  */
 export function useSecretSheetClose(
   /** The protected fields, in order; a sheet with fields added or removed keeps this current. */
-  inputs: RefObject<readonly (TextInput | null | undefined)[]>,
+  inputs: RefObject<readonly (TextInputInstance | null | undefined)[]>,
   clear: () => void,
   onClose: () => void,
 ) {

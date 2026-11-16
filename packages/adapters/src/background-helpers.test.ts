@@ -28,7 +28,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
   const tx = {
     $queryRaw: vi.fn(async () => []),
     message: {
-      findFirst: vi.fn(async (_args: unknown): Promise<{ blocks: unknown[] } | null> => null),
+      findMany: vi.fn(async (_args: unknown): Promise<{ id: string; blocks: unknown[] }[]> => []),
     },
     thread: { create: vi.fn(async () => ({ id: "helper-thread" })) },
     task: { create: vi.fn(async () => ({ id: "helper-task" })) },
@@ -86,14 +86,22 @@ describe("starting a background helper", () => {
       mimeType: "text/plain",
       size: 12,
     };
-    h.tx.message.findFirst.mockResolvedValue({
-      blocks: [{ kind: "text", text: "Summarize this" }, file],
-    });
+    h.tx.message.findMany.mockResolvedValue([
+      { id: "user-message", blocks: [{ kind: "text", text: "Summarize this" }, file] },
+    ]);
     await startBackgroundHelper(h.ctx, START);
-    expect(h.tx.message.findFirst).toHaveBeenCalledWith({
-      where: { id: "user-message", threadId: "chat", role: "user" },
-      select: { blocks: true },
-    });
+    expect(h.tx.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          threadId: "chat",
+          role: "user",
+          OR: [
+            { id: "user-message" },
+            { steeringMessages: { some: { runId: "run-1", claimedAt: { not: null } } } },
+          ],
+        }),
+      }),
+    );
     expect(createThreadMessageInTransaction).toHaveBeenCalledWith(
       h.tx,
       expect.objectContaining({
@@ -145,6 +153,21 @@ describe("starting a background helper", () => {
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it("inherits a model explicitly pinned on the parent run", async () => {
+    const h = harness();
+    Object.assign(h.ctx.run, { modelPinned: true, modelProvider: "fixture", modelId: "pinned" });
+    await startBackgroundHelper(h.ctx, START);
+    expect(h.createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          modelProvider: "fixture",
+          modelId: "pinned",
+          modelPinned: true,
+        }),
+      }),
+    );
+  });
+
   it("pins the model it was asked for, and needs both halves of it", async () => {
     const h = harness();
     await startBackgroundHelper(h.ctx, { ...START, modelProvider: "openai", modelId: "gpt-x" });
@@ -187,12 +210,17 @@ describe("returning a helper's outcome", () => {
 
 describe("passing a helper's result back in a shared space", () => {
   // The bot was made by "creator"; "member" shares the space and started the helper.
-  function shared(overrides: { member?: boolean; archived?: boolean } = {}) {
+  function shared(
+    overrides: { member?: boolean; archived?: boolean; attachments?: unknown[] } = {},
+  ) {
     const createRun = vi.fn(async (_args: unknown) => ({ id: "wake" }));
     const tx = {
       $queryRaw: vi.fn(async () => []),
       run: { updateMany: vi.fn(async () => ({ count: 1 })), create: createRun },
       message: {
+        findMany: vi.fn(async () =>
+          overrides.attachments ? [{ id: "helper-file", blocks: overrides.attachments }] : [],
+        ),
         findFirst: vi.fn(async () => ({
           id: "card",
           threadId: "chat",
@@ -235,6 +263,22 @@ describe("passing a helper's result back in a shared space", () => {
     );
     return { returned, createRun, enqueue };
   }
+
+  it("returns attached files to the conversation under the result run", async () => {
+    const file = {
+      kind: "file",
+      artifactId: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      size: 12,
+    };
+    const h = shared({ attachments: [file] });
+    await h.returned;
+    expect(createThreadMessageInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threadId: "chat", runId: "wake", blocks: [file] }),
+    );
+  });
 
   it("brings it back for a member who did not make the bot, as their own turn", async () => {
     const h = shared();

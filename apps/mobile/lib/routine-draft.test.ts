@@ -1,9 +1,7 @@
 import type { Routine } from "@rakazo/contracts";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { routineDraftChanged, routineSaveRequest } from "./routine-draft";
-
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 const routine: Routine = {
   id: "routine-1",
@@ -100,6 +98,37 @@ describe("routineSaveRequest", () => {
     });
     const removed = { ...draftFromRoutine(mailed), emailSenders: null };
     expect(routineSaveRequest(removed, mailed, "bot-1", "UTC")).toEqual({ error: "trigger" });
+  });
+
+  it("removes a trigger set up on web, and needs another once the last one goes", () => {
+    const hooked = { ...routine, crons: [], webhookEnabled: true, githubEnabled: true };
+    const opened = draftFromRoutine(hooked);
+    expect(
+      routineSaveRequest({ ...opened, webhookEnabled: false }, hooked, "bot-1", "UTC"),
+    ).toEqual({ update: { routineId: "routine-1", webhookEnabled: false } });
+    expect(
+      routineSaveRequest(
+        { ...opened, webhookEnabled: false, githubEnabled: false },
+        hooked,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ error: "trigger" });
+  });
+
+  it("preserves an HTTP watch when editing its routine from mobile", () => {
+    const watched: Routine = {
+      ...routine,
+      crons: [],
+      watch: { kind: "http", url: "https://example.com/status", everyMinutes: 5, loud: false },
+    };
+    const opened = draftFromRoutine(watched);
+    expect(routineSaveRequest({ ...opened, name: "Status" }, watched, "bot-1", "UTC")).toEqual({
+      update: { routineId: "routine-1", name: "Status" },
+    });
+    expect(routineSaveRequest({ ...opened, watch: null }, watched, "bot-1", "UTC")).toEqual({
+      error: "trigger",
+    });
   });
 
   it("never rewrites a one-shot's schedule", () => {
