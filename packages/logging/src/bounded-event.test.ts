@@ -70,6 +70,15 @@ describe("boundLogEvent", () => {
     });
   });
 
+  it("keeps the line when a field named toJSON answers something else", () => {
+    const bounded = boundLogEvent(event({ toJSON: () => null }));
+    expect(bounded).toMatchObject({
+      "log.unserializable": true,
+      message: "run.setup_failed",
+      "run.id": "run-a",
+    });
+  });
+
   it("shortens a very long integer like any other text", () => {
     const bounded = boundLogEvent(event({ "run.big": 10n ** 20_000n }));
     expect((bounded["run.big"] as string).length).toBeLessThanOrEqual(MAX_LOG_STRING_CHARS);

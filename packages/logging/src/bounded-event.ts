@@ -38,9 +38,14 @@ export function boundLogEvent(event: LogEvent): Record<string, unknown> {
   if (json.length > MAX_LOG_EVENT_CHARS - TRUNCATED_MARKER_CHARS) {
     return standIn(event, "log.oversized");
   }
-  const bounded: Record<string, unknown> = JSON.parse(json);
-  if (truncated) bounded["log.truncated"] = true;
-  return bounded;
+  const bounded: unknown = JSON.parse(json);
+  // A field named toJSON can turn the whole line into something that is not a line.
+  if (typeof bounded !== "object" || bounded === null || Array.isArray(bounded)) {
+    return standIn(event, "log.unserializable");
+  }
+  const line = bounded as Record<string, unknown>;
+  if (truncated) line["log.truncated"] = true;
+  return line;
 }
 
 function isEssential(key: string): boolean {
