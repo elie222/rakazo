@@ -207,10 +207,12 @@ export async function messageBot(
             spaceId: run.spaceId,
             archivedAt: null,
           },
-          select: { id: true },
+          select: { id: true, pausedAt: true },
         });
         if (!stillAddressable)
           return { ok: false as const, error: `${target.name} is no longer available` };
+        if (stillAddressable.pausedAt)
+          return { ok: false as const, error: `${target.name} is paused` };
 
         // Echo into the sender's chat in the same transaction so a failed notify
         // cannot leave one side delivered and the other blank.

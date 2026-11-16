@@ -704,6 +704,7 @@ function fixture({
         $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
         message: {
           create: vi.fn(async () => inboundMessage),

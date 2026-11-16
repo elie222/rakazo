@@ -3794,6 +3794,7 @@ describe("queue admission beside pending cards", () => {
       const tx = {
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn() },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 4 }) },
         message: {
           create: vi.fn().mockResolvedValue({ id: "message-new", seq: 2 }),
@@ -4002,6 +4003,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4138,6 +4140,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4199,6 +4202,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4267,6 +4271,7 @@ describe("sendUserMessage", () => {
       const tx = {
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn() },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         thread: {
           update: vi
             .fn()
@@ -4348,6 +4353,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4412,6 +4418,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4466,6 +4473,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4528,6 +4536,7 @@ describe("sendUserMessage", () => {
       const tx = {
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn() },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         thread: {
           update: vi
             .fn()
@@ -4588,6 +4597,7 @@ describe("sendUserMessage", () => {
   it("keeps another member's message pending instead of steering the busy run", async () => {
     const tx = {
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       $queryRaw: vi.fn(async () => []),
       thread: {
         update: vi
@@ -4642,6 +4652,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -4772,6 +4783,7 @@ describe("sendUserMessage", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn() },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       thread: {
         update: vi
           .fn()
@@ -5743,6 +5755,7 @@ describe("discardAnsweredSteering", () => {
 it("checks cross-space peer permission inside the message transaction before creating a run", async () => {
   const tx = {
     space: { findUnique: vi.fn() },
+    bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 1 })) },
     message: { create: vi.fn(async () => ({ id: "message-1", seq: 0 })) },
     task: { create: vi.fn() },

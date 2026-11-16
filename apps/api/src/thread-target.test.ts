@@ -1774,6 +1774,7 @@ describe("sendThreadMessage", () => {
       const olderReply = scenario === "reply";
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -1921,6 +1922,7 @@ describe("sendThreadMessage", () => {
     };
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2192,6 +2194,7 @@ describe("sendThreadMessage", () => {
     };
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2396,6 +2399,7 @@ describe("sendThreadMessage", () => {
         };
         const tx = {
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
           externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
           user: { findMany: vi.fn().mockResolvedValue([]) },
           spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2515,6 +2519,7 @@ describe("sendThreadMessage", () => {
   it("waits for the creation intro instead of starting a second run", async () => {
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -2606,6 +2611,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -2792,6 +2798,7 @@ describe("sendThreadMessage", () => {
   it("steers a waiting-takeover run instead of refusing the message", async () => {
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -2890,6 +2897,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -2995,6 +3003,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       thread: {
@@ -3093,6 +3102,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(2) },
       thread: {
@@ -3208,6 +3218,7 @@ describe("sendThreadMessage", () => {
       let nextRun = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         thread: {
           update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
             data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
@@ -3399,6 +3410,7 @@ describe("sendThreadMessage", () => {
     };
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -3497,6 +3509,7 @@ describe("sendThreadMessage", () => {
     };
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -3606,6 +3619,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -3710,6 +3724,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       thread: {
@@ -3852,6 +3867,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -3952,6 +3968,7 @@ describe("sendThreadMessage", () => {
     const clientNonce = callClientNonce("call-7");
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4028,6 +4045,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4096,6 +4114,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -4181,6 +4200,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4262,6 +4282,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4350,6 +4371,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -4466,6 +4488,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
+        bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -4557,6 +4580,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4651,6 +4675,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -4727,6 +4752,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const tx = {
       space: { findUnique: vi.fn(async () => null) },
+      bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       thread: {

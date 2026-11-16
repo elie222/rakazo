@@ -10,7 +10,7 @@ import {
 import type { MessageBlock } from "@rakazo/contracts";
 import { inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
-import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
+import { accountDeactivated, BotPausedError, SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -237,7 +237,10 @@ export async function webhookDeliveryResponse(
     return c.json(await delivery);
   } catch (error) {
     if (error instanceof SpaceDeletionInProgressError)
-      return c.json({ error: "Space deletion in progress" }, 409);
+      return c.json(
+        { error: error instanceof BotPausedError ? error.message : "Space deletion in progress" },
+        409,
+      );
     throw error;
   }
 }

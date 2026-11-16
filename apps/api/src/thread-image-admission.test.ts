@@ -1,5 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { BotPausedError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
@@ -34,7 +35,10 @@ function fixture(group = false) {
           { id: "image-1", name: "picture.png", mimeType: "image/png", size: 4 },
         ]),
     },
-    bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1", ...model }) },
+    bot: {
+      findFirst: vi.fn().mockResolvedValue({ id: "bot-1", ...model }),
+      findUnique: vi.fn().mockResolvedValue({ pausedAt: null }),
+    },
     userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
     userModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
     spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -355,6 +359,23 @@ describe("current image send admission", () => {
     ]);
     await expect(send()).resolves.toMatchObject({ runId: "run-1" });
     expect(tx.bot.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("refuses a group message only when every named member is paused", async () => {
+    const { tx, send, enqueue } = fixture(true);
+    tx.$queryRaw.mockImplementation(async (sql: TemplateStringsArray | { strings: string[] }) =>
+      (Array.isArray(sql) ? sql : (sql as { strings: string[] }).strings)
+        .join("?")
+        .includes('"pausedAt"')
+        ? [
+            { id: "bot-1", pausedAt: new Date() },
+            { id: "bot-2", pausedAt: new Date() },
+          ]
+        : [{ id: "group-1" }],
+    );
+    await expect(send()).rejects.toBeInstanceOf(BotPausedError);
+    expect(tx.message.create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("rejects a mixed-capability group atomically", async () => {

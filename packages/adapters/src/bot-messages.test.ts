@@ -26,6 +26,7 @@ function deps(
     senderRunning?: boolean;
     alreadyDelivered?: unknown;
     targetArchived?: boolean;
+    targetPaused?: boolean;
     requesterArchived?: boolean;
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
@@ -59,7 +60,13 @@ function deps(
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     bot: {
-      findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(
+          options.targetArchived
+            ? null
+            : { id: "bot-target", pausedAt: options.targetPaused ? new Date() : null },
+        ),
     },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
@@ -680,6 +687,17 @@ describe("hardening", () => {
       message: "chart it",
     });
     expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not wake a paused bot with a message from another bot", async () => {
+    const harness = deps({ targetPaused: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+    });
+    expect(sent).toMatchObject({ ok: false, error: "Analyst is paused" });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
     expect(harness.enqueue).not.toHaveBeenCalled();
   });

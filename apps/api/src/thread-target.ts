@@ -31,6 +31,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  BotPausedError,
   clearEndedRunState,
   createGroupRepos,
   createRepos,
@@ -39,6 +40,7 @@ import {
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
+  pausedBotIds,
   retireWaitingQuestionInTransaction,
   SpaceDeletionInProgressError,
   spaceTakesWork,
@@ -533,6 +535,12 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
+      if (
+        target.kind === "bot" &&
+        !input.noModel &&
+        (await pausedBotIds(tx, [target.botId])).size > 0
+      )
+        throw new BotPausedError();
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
@@ -847,6 +855,12 @@ export async function sendThreadMessage(
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
       let { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
+      if (!input.noModel && targetBotIds.length > 0) {
+        // A paused member starts no work; the others still answer.
+        const pausedIds = await pausedBotIds(tx, targetBotIds);
+        if (pausedIds.size === targetBotIds.length) throw new BotPausedError();
+        targetBotIds = targetBotIds.filter((id) => !pausedIds.has(id));
+      }
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
