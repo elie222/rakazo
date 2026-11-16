@@ -486,12 +486,17 @@ export function createBillingService(deps: {
             const result = await work(underLease(lease));
             // A cancellation that took the lease or the previous release's claim over expired the
             // sessions open at that moment, so a session created after it must not be handed back.
-            await prisma.$transaction(async (tx) => {
-              await assertLeaseHeld(tx, lease);
-              if (!(await lockCheckoutLease(tx, organizationId, claimId!))) {
-                throw new BillingBusyError();
-              }
-            });
+            await prisma
+              .$transaction(async (tx) => {
+                await assertLeaseHeld(tx, lease);
+                if (!(await lockCheckoutLease(tx, organizationId, claimId!))) {
+                  throw new BillingBusyError();
+                }
+              })
+              .catch((error: unknown) => {
+                if (isLockTimeout(error)) throw new BillingBusyError({ cause: error });
+                throw error;
+              });
             return result;
           } finally {
             const held = claimId;
