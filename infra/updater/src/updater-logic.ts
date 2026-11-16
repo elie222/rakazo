@@ -35,6 +35,8 @@ export interface UpdaterConfig {
   token: string;
   host: string;
   port: number;
+  /** Zero disables scheduled updates, including when the updater profile is enabled. */
+  autoUpdateIntervalMs: number;
 }
 
 /**
@@ -95,7 +97,15 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
     throw new Error("RAKAZO_UPDATER_PORT is not a port number.");
   }
+  const hours = Number(env.RAKAZO_AUTO_UPDATE_INTERVAL_HOURS?.trim() || "0");
+  if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
+    throw new Error("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS must be 0 (disabled) or 1–168.");
+  }
+  if (hours > 0 && image !== OFFICIAL_SERVER_IMAGE) {
+    throw new Error("Scheduled updates require the official stable release image.");
+  }
   return {
+    autoUpdateIntervalMs: hours * 60 * 60 * 1_000,
     deployDir,
     composeFiles: composeFiles.map((composeFile) => path.posix.join(deployDir, composeFile)),
     updateServices,

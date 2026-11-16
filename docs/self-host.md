@@ -44,8 +44,10 @@ Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it e
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup. Other providers,
 local models and approvals are covered in [models](./self-host-models.md).
 
-The example defaults to `edge` (main builds). Every publish is multi-arch (`amd64` + `arm64`), so
-arm64 hosts need no special tag. Do not assume `latest` is present until a stable release exists.
+The example defaults to `latest`, which follows stable releases only. Every publish is multi-arch
+(`amd64` + `arm64`), so arm64 hosts need no special tag. A stable release must exist; setup never
+falls back to a main build. Automatic updates are disabled by default; opt in to
+[scheduled stable updates](./self-host-upgrading.md#scheduled-stable-updates) if desired.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Signup never grants server-administration permissions. Put TLS in front of `:5173` for a public host and set the three public origins to
 that HTTPS URL.

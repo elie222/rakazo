@@ -23,6 +23,7 @@ import {
   imageRef,
   isGitCommit,
   normalizeUpdateBranch,
+  OFFICIAL_REPO_URL,
   PREVIOUS_IMAGE_TAG_ENV,
   parseGitNameOnly,
   parseGitStatusPorcelain,
@@ -40,6 +41,7 @@ import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { Hono } from "hono";
+import { startUpdateSchedule } from "./schedule.js";
 import type { UpdaterConfig } from "./updater-logic.js";
 import {
   missingSecretAssignments,
@@ -228,6 +230,7 @@ export function createUpdaterApp(
         imageRef: imageRef(config.image, tags.currentTag),
         running,
         lastRun,
+        autoUpdateIntervalHours: config.autoUpdateIntervalMs / 3_600_000,
         ...tags,
         checkout,
       });
@@ -804,6 +807,22 @@ export function createUpdaterApp(
   }
 }
 
+/** Scheduled checks have no branch or channel input: only official stable releases. */
+export async function applyStableUpdate(app: ReturnType<typeof createUpdaterApp>, token: string) {
+  const response = await app.request("/apply", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ repoUrl: OFFICIAL_REPO_URL, branch: "main" }),
+  });
+  const result = (await response.json()) as { ok?: boolean; error?: string };
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || "Scheduled update failed.");
+  }
+}
+
 async function startUpdater() {
   const logger = await createRootLogger(SERVICE_NAMES.updater);
   const config = resolveUpdaterConfig(process.env);
@@ -815,10 +834,19 @@ async function startUpdater() {
       "updater.deploy_dir": config.deployDir,
     });
   });
+  const stopSchedule = startUpdateSchedule(
+    config.autoUpdateIntervalMs,
+    async () => {
+      await applyStableUpdate(app, config.token);
+      logger.info("scheduled stable update check completed");
+    },
+    (error) => logger.error("scheduled stable update failed", { error }),
+  );
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;
+    await stopSchedule();
     await closeListeningServer(server);
     await logger.flush({ timeoutMs: 2_000 });
     process.exit(0);

@@ -6,6 +6,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it } from "vitest";
 import type { UpdaterCommandRunner } from "./index.js";
 import {
+  applyStableUpdate,
   commandEnvironment,
   createUpdaterApp,
   restoreCheckoutArgv,
@@ -124,6 +125,45 @@ describe("updater HTTP surface", () => {
     expect(response.status).toBe(400);
     const payload = (await response.json()) as { error: string };
     expect(payload.error).toMatch(/no \.git directory/);
+  });
+
+  it("scheduled updates deploy a stable release even when newer prereleases exist", async () => {
+    const fixture = await deployment();
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const run: UpdaterCommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      if (command === "git" && args.includes("ls-remote")) {
+        return ok(
+          [
+            `${targetCommit}\trefs/tags/v1.1.0`,
+            `${"3".repeat(40)}\trefs/tags/v2.0.0-beta.1`,
+            `${"4".repeat(40)}\trefs/heads/main`,
+          ].join("\n"),
+        );
+      }
+      return ok();
+    };
+    const subject = createUpdaterApp(fixture.config, { run });
+    await applyStableUpdate(subject, token);
+    expect(await readFile(fixture.config.envFile, "utf8")).toContain(
+      `RAKAZO_IMAGE_TAG=sha-${targetCommit}`,
+    );
+    expect(calls.find(({ args }) => args.includes("ls-remote"))?.args).toContain("--tags");
+    const deployments = calls.filter(({ command }) => command === "docker").length;
+    await applyStableUpdate(subject, token);
+    expect(calls.filter(({ command }) => command === "docker")).toHaveLength(deployments);
+  });
+
+  it("reports an unavailable stable release without deploying main as a fallback", async () => {
+    const fixture = await deployment();
+    const run = async (command: string) => {
+      expect(command).toBe("git");
+      return ok(`${targetCommit}\trefs/tags/v2.0.0-rc.1\n`);
+    };
+    await expect(
+      applyStableUpdate(createUpdaterApp(fixture.config, { run }), token),
+    ).rejects.toThrow(/no published release tags/);
+    expect(await readFile(fixture.config.envFile, "utf8")).toContain("RAKAZO_IMAGE_TAG=v1.0.0");
   });
 
   it("refuses a rollback when no previous tag was recorded", async () => {

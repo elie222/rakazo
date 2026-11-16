@@ -26,7 +26,35 @@ describe("resolveUpdaterConfig", () => {
       projectName: DEFAULT_COMPOSE_PROJECT_NAME,
       token: base.RAKAZO_UPDATER_TOKEN,
       port: DEFAULT_UPDATER_PORT,
+      autoUpdateIntervalMs: 0,
     });
+  });
+
+  it("only schedules when an operator explicitly selects a valid interval", () => {
+    expect(resolveUpdaterConfig({ ...base, RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6" })).toMatchObject(
+      { autoUpdateIntervalMs: 6 * 3_600_000 },
+    );
+    for (const hours of ["true", "-1", "0.5", "169", "Infinity"]) {
+      expect(() =>
+        resolveUpdaterConfig({ ...base, RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: hours }),
+      ).toThrow(/RAKAZO_AUTO_UPDATE_INTERVAL_HOURS/);
+    }
+  });
+
+  it("does not schedule official releases against a custom image repository", () => {
+    expect(() =>
+      resolveUpdaterConfig({
+        ...base,
+        RAKAZO_IMAGE: "registry.example.com/custom/app",
+        RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+      }),
+    ).toThrow(/official stable release/);
+    expect(() =>
+      resolveUpdaterConfig({
+        ...base,
+        RAKAZO_IMAGE: "registry.example.com/custom/app",
+      }),
+    ).not.toThrow();
   });
 
   it("uses the Compose-injected project name so -p matches the running stack", () => {

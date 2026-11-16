@@ -258,8 +258,8 @@ create_env() {
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
         ;;
-      "SANDBOX_SUPERVISOR_TOKEN=")
-        printf 'SANDBOX_SUPERVISOR_TOKEN=%s\n' "$(openssl rand -hex 32)"
+      "SANDBOX_SUPERVISOR_TOKEN="|"RAKAZO_UPDATER_TOKEN=")
+        printf '%s=%s\n' "${line%%=*}" "$(openssl rand -hex 32)"
         ;;
       *)
         printf '%s\n' "$line"

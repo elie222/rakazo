@@ -235,6 +235,62 @@ migrations — that ordering belongs to the API's dependency on the `migrate` se
 Only `https://` and `ssh://` git remotes are accepted. Merges are fast-forward only. A dirty or
 untracked source tree fails closed before anything runs (the application Dockerfile uses `COPY . .`).
 
+## Scheduled stable updates
+
+Both production Compose and the no-checkout `docker-compose.images.yml` offer the opt-in
+`updater` profile. Starting this profile alone does **not** enable scheduling. It grants
+root-equivalent Docker access, so leave it disabled unless you want update tooling.
+
+For a published-image installation on Linux, add these settings to the host's `.env`:
+
+```dotenv
+COMPOSE_PROFILES=updater
+RAKAZO_DEPLOY_DIR=/srv/rakazo
+RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=6
+```
+
+Use the actual absolute deployment directory for `RAKAZO_DEPLOY_DIR`; Docker Desktop paths need
+the mapping described below. The installer generates `RAKAZO_UPDATER_TOKEN` for new installs.
+For an older installation, append a dedicated token without printing it:
+
+```bash
+printf '\nRAKAZO_UPDATER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+```
+
+Keep an existing token. If your stack uses an overlay, set `RAKAZO_COMPOSE_FILE` to the same
+ordered file list you use manually, for example
+`docker-compose.images.yml:docker-compose.override.yml`. The images stack includes the supervisor
+in its update services by default. Then start the updater from the deployment directory:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml up -d updater
+docker compose --env-file .env -f docker-compose.images.yml logs --tail 50 updater
+```
+
+For a source checkout, use `-f infra/compose/docker-compose.prod.yml --profile updater` instead,
+and build or explicitly pull the updater image as described above. Do not enable scheduled
+updates on a server already managed by CI deployments.
+
+The first check runs six hours after startup, then six hours after each check completes. Valid
+intervals are 1–168 whole hours; `0` disables scheduling. Checks use the official repository's
+newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, and use the existing
+apply/health-check/recovery path. Prereleases and main builds are never scheduled. Custom image
+repositories are refused when scheduling is enabled. When already current, nothing is recreated.
+A failed check is logged and checked again after the configured interval; there is no tight retry loop.
+The updater waits for an in-flight scheduled update during graceful shutdown.
+
+To pause scheduling, set `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=0` in `.env`, then run the same
+`up -d updater` command. Set it back to `6` and recreate the updater to resume. Pause before a
+manual rollback, or the next scheduled check will apply the newer release again. `/state` reports
+`autoUpdateIntervalHours` alongside the last update result; the existing `/apply` and `/rollback`
+endpoints also work when scheduling is disabled.
+
+Application updates do not replace the updater itself, Compose files, Postgres major versions or
+existing bot computer containers. Review release notes for changes requiring manual setup and
+keep database backups: application-image recovery never reverses database migrations.
+An existing explicit `edge` pin is not changed by the installer; opting in to scheduled updates
+moves the application to stable releases. Cloud CI deployment triggers remain unchanged.
+
 ## The deploy directory must be one path
 
 `RAKAZO_DEPLOY_DIR` is bind-mounted into the updater at the same path it is read from
