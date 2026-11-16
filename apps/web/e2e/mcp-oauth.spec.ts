@@ -3,7 +3,13 @@ import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { MCP_OAUTH_CHANNEL } from "../src/lib/mcp-oauth-channel";
-import { captureScreenshot, completeOnboarding, openIntegrationsAdd, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openIntegrationsAdd,
+  signup,
+} from "./helpers";
 
 test("connects an MCP server through the OAuth popup callback", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -282,7 +288,7 @@ test("adds a custom MCP server and signs it in with OAuth", async ({ page }, tes
   const form = page.getByTestId("integrations-source-form");
   await form.getByLabel("Name", { exact: true }).fill("Custom MCP");
   await form.getByLabel("URL", { exact: true }).fill("https://mcp.custom.test/mcp");
-  await form.getByLabel("Authentication", { exact: true }).selectOption("oauth");
+  await chooseOption(form.getByLabel("Authentication", { exact: true }), "OAuth");
   // The browser sign-in replaces a typed credential.
   await expect(form.getByLabel("Credential", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "mcp-custom-oauth-form");
@@ -372,7 +378,7 @@ test("sends a custom MCP server without client registration to its settings", as
   const form = page.getByTestId("integrations-source-form");
   await form.getByLabel("Name", { exact: true }).fill("Custom MCP");
   await form.getByLabel("URL", { exact: true }).fill("https://mcp.custom.test/mcp");
-  await form.getByLabel("Authentication", { exact: true }).selectOption("oauth");
+  await chooseOption(form.getByLabel("Authentication", { exact: true }), "OAuth");
   await form.getByRole("button", { name: "Save and sign in", exact: true }).click();
 
   const server = page.getByTestId("registered-mcp-server");
