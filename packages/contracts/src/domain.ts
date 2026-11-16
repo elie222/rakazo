@@ -454,7 +454,8 @@ export const CreateBotInput = z.object({
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
-  computerMode: ComputerModeSchema.default("team"),
+  /** Unset follows the deployment's default computer. */
+  computerMode: ComputerModeSchema.optional(),
   /** Idempotency key within a space (unique with spaceId). */
   spawnKey: z.string().trim().min(1).max(120).optional(),
 });
@@ -1305,6 +1306,8 @@ export const SpaceMemoryConfigSchema = z.object({
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
+  /** One line naming the connection, written by the provider. Absent from older servers. */
+  connectionLabel: z.string().optional(),
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
@@ -1345,6 +1348,8 @@ export const VoiceCredentialSchema = z.object({
   transcribe: z.boolean(),
   /** Self-hosted server base URL and model ids (never the key). Empty for hosted providers. */
   endpoint: z.string().default(""),
+  /** A separate self-hosted transcription server; empty when `endpoint` transcribes. */
+  sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
 });
@@ -1553,6 +1558,8 @@ export const AppBootstrapSchema = z.object({
   spaces: z.array(SpaceSchema),
   /** Set when the requested bot is the caller's but lives in another of their Spaces. */
   botSpaceId: Id.optional(),
+  /** Set when the requested group is one the caller can open in another of their Spaces. */
+  groupSpaceId: Id.optional(),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 

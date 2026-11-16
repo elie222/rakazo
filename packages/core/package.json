@@ -24,6 +24,11 @@
       "development": "./src/screen-reconnect.ts",
       "default": "./src/screen-reconnect.ts"
     },
+    "./test-async": {
+      "types": "./src/async.test-support.ts",
+      "development": "./src/async.test-support.ts",
+      "default": "./src/async.test-support.ts"
+    },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
       "development": "./src/node/load-root-env.ts",

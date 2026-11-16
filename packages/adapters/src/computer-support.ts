@@ -2,17 +2,6 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
-import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-
-/** The boat image ships a 1080p screen; every other sandbox uses the core default. */
-const BOAT_COMPUTER_SCREEN = { width: 1920, height: 1080 } as const;
-
-export function computerScreenSize(kind: string | null | undefined): {
-  width: number;
-  height: number;
-} {
-  return kind === "boat" ? BOAT_COMPUTER_SCREEN : DEFAULT_COMPUTER_SCREEN;
-}
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -23,7 +12,7 @@ export function toComputerRef(computer: {
   return {
     id: computer.providerRef,
     botId: computer.homeKey,
-    kind: computer.kind as ComputerRef["kind"],
+    kind: computer.kind,
     providerRef: computer.providerRef,
   };
 }
@@ -73,11 +62,22 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
+/**
+ * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
+ * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
+ */
+export class WorkspacePathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspacePathError";
+  }
+}
+
 export function normalizeWorkspacePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const segments = normalized.split("/").filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   return segments.join("/");
 }
@@ -160,7 +160,7 @@ export function resolveBotUploadPath(
   ) {
     return normalized;
   }
-  throw new Error("Path escapes the bot workspace");
+  throw new WorkspacePathError("Path escapes the bot workspace");
 }
 
 export function displayBotWorkspacePath(

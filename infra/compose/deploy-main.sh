@@ -132,7 +132,8 @@ start_beside() {
 
 # A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
 # is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the new
-# worker takes new ones; killing it would leave each job locked for hours. A restart policy of
+# worker takes new ones; killing it would leave each job locked for hours. The runs it is
+# executing get a few minutes to end their turn (RUN_DRAIN_MS). A restart policy of
 # "no" keeps Docker from starting it again and marks it as draining for later runs. Prints the
 # worker containers that are live, or draining (still finishing, or exited and not yet removed).
 worker_containers() {
@@ -187,7 +188,8 @@ replace_worker() {
 # Replaces the API, web and worker without a gap: new containers start beside the running
 # ones, and the old ones stop only once those pass their health checks. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
-# the old one hands back the runs it was executing. Every other service is then reconciled
+# the old one ends the turns it was executing or, past RUN_DRAIN_MS, hands them back. The old API
+# hands its runs back at once. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
 # Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {

@@ -11,7 +11,13 @@ import {
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
-import { createModelProbe, initialModelProbeState, savedCompatibleModelIds } from "@rakazo/core";
+import {
+  createModelProbe,
+  initialModelProbeState,
+  modelConnectionFormSecrets,
+  sanitizeModelConnectionError,
+  savedCompatibleModelIds,
+} from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
@@ -22,6 +28,7 @@ import {
   unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
 import type { RpcClient } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
 
@@ -49,6 +56,8 @@ export function useModelConnectionForm({
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [region, setRegion] = useState("global");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -73,10 +82,16 @@ export function useModelConnectionForm({
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   // The catalog names the IDs a provider needs besides its key.
-  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
-    accountId,
-    gatewayId,
-  });
+  const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
+    selected?.routingFields,
+    {
+      accountId,
+      gatewayId,
+      projectId,
+      region,
+    },
+    credential,
+  );
 
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
@@ -85,6 +100,8 @@ export function useModelConnectionForm({
     setThinkingLevel(fields.thinkingLevel);
     setAccountId(fields.accountId);
     setGatewayId(fields.gatewayId);
+    setProjectId(fields.projectId ?? "");
+    setRegion(fields.region ?? "global");
   }
 
   function invalidatePreflight() {
@@ -131,6 +148,14 @@ export function useModelConnectionForm({
     invalidatePreflight();
   }
 
+  /** A failed connection's message, without the credentials this form holds. */
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
+  }
+
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
     const revision = preflightRevisionRef.current;
@@ -168,7 +193,12 @@ export function useModelConnectionForm({
       },
       onError: (err) => {
         if (!stillCurrent()) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
+        setPreflightFailure(
+          classifyModelConnectionFailure(err, {
+            modelId,
+            secrets: modelConnectionFormSecrets({ apiKey, headerRows }),
+          }),
+        );
         setNotice(null);
       },
     });
@@ -217,14 +247,18 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     routingReady,
     enabledModelIds,
     error,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
     needsGateway,
+    needsProject,
     isOpenAiCompatible,
     modelId,
     modelProbe,
@@ -247,6 +281,8 @@ export function useModelConnectionForm({
     setEnabledModelIds,
     setError,
     setGatewayId,
+    setProjectId,
+    setRegion,
     setHeaderRows,
     setModelId,
     setNotice,

@@ -4,13 +4,13 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStream, useRosterSignals } from "./roster-signals";
+import { useLiveStream, useRosterSignals, useSpaceChanges } from "./roster-signals";
 
 const streams = vi.hoisted(
   () =>
     [] as Array<{
       signal: () => void;
-      computerUpdates: () => void;
+      change: (kind: string) => void;
       end: () => void;
       fail: (error: unknown) => void;
     }>,
@@ -34,19 +34,27 @@ vi.mock("./session", () => ({
 }));
 
 vi.mock("react-native", () => ({
-  AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
+  AppState: {
+    get currentState() {
+      return appState.current;
+    },
+    addEventListener: (_event: string, listener: () => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
 }));
 
 vi.mock("./api-live", () => ({
   subscribeRosterSignals: (
     onSignal: () => void,
     signal: AbortSignal,
-    onComputerUpdates: () => void,
+    onSpaceChange: (kind: string) => void,
   ) =>
     new Promise<void>((resolve, reject) => {
       streams.push({
         signal: onSignal,
-        computerUpdates: onComputerUpdates,
+        change: onSpaceChange,
         end: resolve,
         fail: reject,
       });
@@ -54,9 +62,20 @@ vi.mock("./api-live", () => ({
     }),
 }));
 
-let live = false;
+const appState = vi.hoisted(() => ({
+  current: "active",
+  listeners: new Set<() => void>(),
+  set(next: string) {
+    this.current = next;
+    for (const listener of this.listeners) listener();
+  },
+}));
 function Harness({ onChange, enabled }: { onChange: () => void; enabled: boolean }) {
-  live = useRosterSignals(onChange, enabled);
+  useRosterSignals(onChange, enabled);
+  return null;
+}
+function Changes({ kind, onChange }: { kind: "runs" | "routines"; onChange: () => void }) {
+  useSpaceChanges(kind, onChange, true);
   return null;
 }
 function Stream() {
@@ -75,7 +94,7 @@ describe("useRosterSignals", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     streams.length = 0;
     vi.clearAllMocks();
-    live = false;
+    appState.current = "active";
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -88,31 +107,74 @@ describe("useRosterSignals", () => {
     vi.unstubAllGlobals();
   });
 
-  it("goes live on the first signal and reloads on each one after it", async () => {
+  it("reads once when shown, then on every signal and never on a timer", async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<Harness enabled onChange={onChange} />));
     expect(streams).toHaveLength(1);
-    await act(async () => streams[0]!.signal());
-    expect(live).toBe(true);
-    expect(onChange).not.toHaveBeenCalled();
-    await act(async () => streams[0]!.signal());
     expect(onChange).toHaveBeenCalledTimes(1);
+    await act(async () => streams[0]!.signal());
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(3);
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(onChange).toHaveBeenCalledTimes(3);
   });
 
-  it("drops back to polling when the stream ends, then reconnects", async () => {
+  it("re-reads on the opening signal of a reconnect", async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<Harness enabled onChange={onChange} />));
     await act(async () => streams[0]!.signal());
     await act(async () => streams[0]!.end());
-    expect(live).toBe(false);
     await act(() => vi.advanceTimersByTimeAsync(1_000));
     expect(streams).toHaveLength(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    await act(async () => streams[1]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("re-reads when the app returns to the foreground", async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<Harness enabled onChange={onChange} />));
+    await act(async () => appState.set("background"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await act(async () => appState.set("active"));
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it("passes computer update signals on", async () => {
     await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
-    await act(async () => streams[0]!.computerUpdates());
+    await act(async () => streams[0]!.change("computerUpdates"));
     expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+  });
+
+  it("holds the stream and reads on each change of its own kind", async () => {
+    const runs = vi.fn();
+    const routines = vi.fn();
+    await act(async () =>
+      root.render(
+        <>
+          <Changes kind="runs" onChange={runs} />
+          <Changes kind="routines" onChange={routines} />
+        </>,
+      ),
+    );
+    expect(streams).toHaveLength(1);
+    await act(async () => streams[0]!.change("runs"));
+    await act(async () => streams[0]!.change("runs"));
+    expect(runs).toHaveBeenCalledTimes(2);
+    expect(routines).not.toHaveBeenCalled();
+    await act(async () => streams[0]!.change("routines"));
+    expect(routines).toHaveBeenCalledOnce();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    expect(runs).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads again when the app returns to the foreground", async () => {
+    const runs = vi.fn();
+    await act(async () => root.render(<Changes kind="runs" onChange={runs} />));
+    await act(async () => appState.set("background"));
+    expect(runs).not.toHaveBeenCalled();
+    await act(async () => appState.set("active"));
+    expect(runs).toHaveBeenCalledOnce();
   });
 
   it("shares one stream, held open by the update progress off the inbox", async () => {
@@ -126,7 +188,6 @@ describe("useRosterSignals", () => {
       ),
     );
     await act(async () => streams[0]!.signal());
-    await act(async () => streams[0]!.signal());
     expect(onChange).not.toHaveBeenCalled();
     const other = vi.fn();
     await act(async () =>
@@ -139,9 +200,10 @@ describe("useRosterSignals", () => {
       ),
     );
     expect(streams).toHaveLength(1);
-    await act(async () => streams[0]!.signal());
     expect(onChange).toHaveBeenCalledOnce();
-    expect(other).toHaveBeenCalledOnce();
+    await act(async () => streams[0]!.signal());
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(other).toHaveBeenCalledTimes(2);
   });
 
   it("reopens for a newly selected Space, ignoring the old stream's late signals", async () => {
@@ -151,7 +213,7 @@ describe("useRosterSignals", () => {
       for (const listener of spaceSelection) listener();
     });
     expect(streams).toHaveLength(2);
-    await act(async () => old.computerUpdates());
+    await act(async () => old.change("computerUpdates"));
     expect(computerUpdates.signalled).not.toHaveBeenCalled();
     expect(spaceSelection.size).toBe(1);
   });

@@ -198,6 +198,191 @@ test("adds an MCP server with a pre-registered OAuth client", async ({ page }, t
   await expect(page.getByLabel("OAuth client secret (optional)")).toHaveValue("");
 });
 
+test("adds a custom MCP server and signs it in with OAuth", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-custom-oauth-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await completeOnboarding(page);
+
+  const browserOrigin = new URL(page.url()).origin;
+  const servers: McpServer[] = [];
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: servers }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/assignments/all", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ json: [] }) });
+  });
+  await page.context().route("**/rpc/mcp/servers/create", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: Record<string, unknown> };
+    expect(json).toMatchObject({
+      name: "Custom MCP",
+      transport: "streamable_http",
+      endpoint: "https://mcp.custom.test/mcp",
+      slug: expect.stringMatching(/^integration-/),
+    });
+    const created: McpServer = {
+      id: "mcp-custom-oauth-server",
+      spaceId: "mcp-oauth-workspace",
+      slug: String(json.slug),
+      name: "Custom MCP",
+      description: "",
+      transport: "streamable_http",
+      endpoint: "https://mcp.custom.test/mcp",
+      command: null,
+      hasArgs: false,
+      envKeys: [],
+      fileKeys: [],
+      headerKeys: [],
+      hasSecret: false,
+      oauthStatus: "none",
+      oauthClientId: null,
+      enabled: true,
+      verbatimResults: false,
+      revision: 1,
+      health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+    };
+    servers.push(created);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: created }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/oauth/begin", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      json: {
+        serverId: "mcp-custom-oauth-server",
+        redirectUri: `${browserOrigin}/mcp/oauth/callback`,
+      },
+    });
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          status: "authorization_required",
+          sessionId: "mcp-custom-oauth-session",
+          authorizationUrl: `${browserOrigin}/mcp/oauth/callback?code=fake-code&state=mcp-custom-oauth-session`,
+        },
+      }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/oauth/complete", async (route) => {
+    servers[0] = { ...servers[0], oauthStatus: "connected" } as McpServer;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: { ok: true } }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await openIntegrationsAdd(page, "MCP server");
+  const form = page.getByTestId("integrations-source-form");
+  await form.getByLabel("Name", { exact: true }).fill("Custom MCP");
+  await form.getByLabel("URL", { exact: true }).fill("https://mcp.custom.test/mcp");
+  await form.getByLabel("Authentication", { exact: true }).selectOption("oauth");
+  // The browser sign-in replaces a typed credential.
+  await expect(form.getByLabel("Credential", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "mcp-custom-oauth-form");
+
+  const popupPromise = page.waitForEvent("popup");
+  await form.getByRole("button", { name: "Save and sign in", exact: true }).click();
+  const popup = await popupPromise;
+  await expect.poll(() => popup.isClosed()).toBe(true);
+
+  const server = page.getByTestId("registered-mcp-server");
+  await expect(server.getByText("Custom MCP", { exact: true })).toBeVisible();
+  await expect(server.getByText("Connected", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "mcp-custom-oauth-connected");
+});
+
+test("sends a custom MCP server without client registration to its settings", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-custom-oauth-dcr-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await completeOnboarding(page);
+
+  const message = "Incompatible auth server: does not support dynamic client registration";
+  const servers: McpServer[] = [];
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: servers }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/assignments/all", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ json: [] }) });
+  });
+  await page.context().route("**/rpc/mcp/servers/create", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: Record<string, unknown> };
+    const created: McpServer = {
+      id: "mcp-custom-oauth-dcr-server",
+      spaceId: "mcp-oauth-workspace",
+      slug: String(json.slug),
+      name: "Custom MCP",
+      description: "",
+      transport: "streamable_http",
+      endpoint: "https://mcp.custom.test/mcp",
+      command: null,
+      hasArgs: false,
+      envKeys: [],
+      fileKeys: [],
+      headerKeys: [],
+      hasSecret: false,
+      oauthStatus: "none",
+      oauthClientId: null,
+      enabled: true,
+      verbatimResults: false,
+      revision: 1,
+      health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+    };
+    servers.push(created);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: created }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/oauth/begin", async (route) => {
+    servers[0] = {
+      ...servers[0],
+      health: {
+        status: "error",
+        message,
+        code: MCP_OAUTH_CLIENT_REQUIRED,
+        toolCount: null,
+        checkedAt: new Date().toISOString(),
+      },
+    } as McpServer;
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: { defined: false, code: MCP_OAUTH_CLIENT_REQUIRED, status: 400, message },
+      }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await openIntegrationsAdd(page, "MCP server");
+  const form = page.getByTestId("integrations-source-form");
+  await form.getByLabel("Name", { exact: true }).fill("Custom MCP");
+  await form.getByLabel("URL", { exact: true }).fill("https://mcp.custom.test/mcp");
+  await form.getByLabel("Authentication", { exact: true }).selectOption("oauth");
+  await form.getByRole("button", { name: "Save and sign in", exact: true }).click();
+
+  const server = page.getByTestId("registered-mcp-server");
+  await expect(server).toContainText("Needs an OAuth client ID");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Add one in Manage MCP servers" }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "mcp-custom-oauth-client-required");
+});
+
 test("asks for a client ID when the MCP server cannot register one", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `mcp-oauth-dcr-${stamp}@rakazo.test`, "password12", "MCP OAuth");

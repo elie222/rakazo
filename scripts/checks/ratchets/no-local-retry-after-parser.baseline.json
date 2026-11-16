@@ -1,0 +1,5 @@
+{
+  "packages/adapters/src/cursor-cloud-agent.ts": 1,
+  "packages/adapters/src/serenity-client.ts": 1,
+  "packages/adapters/src/stripe-billing.ts": 1
+}

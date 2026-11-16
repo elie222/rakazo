@@ -1,4 +1,4 @@
-import type { AutoReviewRequest } from "@rakazo/adapter-kit";
+import type { AutoReviewRequest, DecisionQuestion } from "@rakazo/adapter-kit";
 import { escapePromptData } from "@rakazo/core";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 
@@ -42,6 +42,27 @@ export const AUTO_REVIEW_PASS =
   "It plausibly serves what the owner asked for or the bot's job, including steps they did not spell out";
 export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
+
+/** The one question a decision checker is asked, with the criteria for this kind of action. */
+export function autoReviewDecisionQuestion(
+  input: Pick<AutoReviewRequest, "newSite" | "memoryWrite">,
+): DecisionQuestion {
+  return {
+    type: "choice",
+    instructions: "Should this bot action run without asking its owner first?",
+    criteria: input.newSite
+      ? {
+          pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
+          ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
+        }
+      : input.memoryWrite
+        ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
+        : {
+            pass: AUTO_REVIEW_PASS,
+            ask: AUTO_REVIEW_ASK,
+          },
+  };
+}
 
 export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
   const argsJson = JSON.stringify(input.args);

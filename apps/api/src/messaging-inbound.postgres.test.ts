@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
 import { MessagingDelivery } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -83,7 +84,6 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
       } as never,
       provision: vi.fn(),
       openSignup: false,
-      signupPolicy: { signupsEnabled: undefined, signupAllowlist: undefined },
     });
     handle = (event) => runAsSystem("test inbound", () => inbound(event));
     sideDb = createDb(databaseUrl!, { poolMax: 4 });
@@ -291,11 +291,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     const address = `${name}-${randomUUID()}`;
     addresses.push(address);
     const bot = await runAsSystem("connection fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "telegram", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "telegram", address }),
     );
     provisioned.push(bot);
     await system.bot.update({ where: { id: bot.botId }, data: { crossSpaceCommunication: true } });
@@ -367,7 +363,6 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
       sandbox: {} as never,
       provision: vi.fn(),
       openSignup: false,
-      signupPolicy: { signupsEnabled: undefined, signupAllowlist: undefined },
     });
     const handle = `in-${randomUUID()}`;
     const address = target.dmThreadId!.slice("telegram:".length);
@@ -431,13 +426,10 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     );
     const trustedConnection = await requestConnection(trusted, target);
     // The provider accepts the trusted request, but only after its send's transaction timed out.
-    let arrived!: () => void;
-    const reached = new Promise<void>((resolve) => {
-      arrived = resolve;
-    });
+    const reached = deferred();
     const sendToThread = vi.fn(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
-      arrived();
+      reached.resolve();
       return { handle: "h-trusted" };
     });
     squeezeMs = 500;
@@ -446,7 +438,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     } finally {
       squeezeMs = null;
     }
-    await reached;
+    await reached.promise;
     expect(
       await system.messagingOutbound.findUniqueOrThrow({
         where: { idempotencyKey: `connect:${trusted.botId}:${target.botId}` },

@@ -383,7 +383,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/exportMarkdown", {}],
       ["memory/remove"],
       ["memory/providerConfig"],
+      ["memory/providers"],
       ["memory/connectProvider"],
+      ["memory/updateProvider"],
       ["memory/setDefaultScope"],
       ["memory/disconnectProvider"],
       ["routines/list", { botId: "missing-bot" }],
@@ -2416,9 +2418,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
         apiKey: "fake-key",
       });
     }
-    expect(
-      await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
-    ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
 });
 

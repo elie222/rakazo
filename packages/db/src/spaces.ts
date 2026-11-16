@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { displayName } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, ownedOrganizationId } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import type { HeldLease } from "./leases.js";
+import { assertLeaseHeld } from "./leases.js";
 import type { PageShareSecret } from "./page-shares.js";
 import { deletePageShareSecrets } from "./page-shares.js";
 import { IsolationError } from "./scope.js";
@@ -12,58 +14,58 @@ import { withTransactionRetry } from "./transaction-retry.js";
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
 const MAX_SPACES_PER_MEMBER = 32;
 
-export class SpaceLimitError extends Error {
+export class SpaceLimitError extends ClientError {
   constructor() {
-    super("Space limit reached");
+    super("BAD_REQUEST", "Space limit reached");
     this.name = "SpaceLimitError";
   }
 }
 
-export class InvalidSpaceNameError extends Error {
+export class InvalidSpaceNameError extends ClientError {
   constructor() {
-    super("Space name must be readable and between 1 and 60 characters");
+    super("BAD_REQUEST", "Space name must be readable and between 1 and 60 characters");
     this.name = "InvalidSpaceNameError";
   }
 }
 
-export class SpaceNotFoundError extends Error {
+export class SpaceNotFoundError extends ClientError {
   constructor() {
-    super("Space not found");
+    super("NOT_FOUND", "Space not found");
     this.name = "SpaceNotFoundError";
   }
 }
 
-export class CannotDeleteDefaultSpaceError extends Error {
+export class CannotDeleteDefaultSpaceError extends ClientError {
   constructor() {
-    super("The default space cannot be deleted");
+    super("BAD_REQUEST", "The default space cannot be deleted");
     this.name = "CannotDeleteDefaultSpaceError";
   }
 }
 
-export class CannotDeleteLastSpaceError extends Error {
+export class CannotDeleteLastSpaceError extends ClientError {
   constructor() {
-    super("The last remaining space cannot be deleted");
+    super("BAD_REQUEST", "The last remaining space cannot be deleted");
     this.name = "CannotDeleteLastSpaceError";
   }
 }
 
-export class CannotDeleteSpaceAsNonOwnerError extends Error {
+export class CannotDeleteSpaceAsNonOwnerError extends ClientError {
   constructor() {
-    super("Only the space owner can delete it");
+    super("FORBIDDEN", "Only the space owner can delete it");
     this.name = "CannotDeleteSpaceAsNonOwnerError";
   }
 }
 
-export class CannotRenameSpaceAsNonOwnerError extends Error {
+export class CannotRenameSpaceAsNonOwnerError extends ClientError {
   constructor() {
-    super("Only the space owner can rename it");
+    super("FORBIDDEN", "Only the space owner can rename it");
     this.name = "CannotRenameSpaceAsNonOwnerError";
   }
 }
 
-export class SpaceDeletionInProgressError extends Error {
+export class SpaceDeletionInProgressError extends ClientError {
   constructor() {
-    super("Space deletion is already in progress");
+    super("CONFLICT", "Space deletion is already in progress");
     this.name = "SpaceDeletionInProgressError";
   }
 }
@@ -824,16 +826,24 @@ export async function claimSpaceForDeletion(
  * commit, but none when another claim has since taken the space over. With `soleMemberId`, a
  * space someone joined after the claim is released instead and null is returned. With
  * `organizationId`, the organization goes in the same transaction once its last Space does, so it
- * is never left without the claim that lets a retry find it.
+ * is never left without the claim that lets a retry find it. With `lease`, nothing commits unless
+ * the caller still holds it.
  */
 export async function deleteClaimedSpace(
   prisma: PrismaClient,
-  input: { spaceId: string; claimId: string; soleMemberId?: string; organizationId?: string },
+  input: {
+    spaceId: string;
+    claimId: string;
+    soleMemberId?: string;
+    organizationId?: string;
+    lease?: Pick<HeldLease, "key" | "fence">;
+  },
 ): Promise<{ artifactKeys: string[]; pageShareSecrets: PageShareSecret[] } | null> {
-  const { spaceId, claimId, soleMemberId, organizationId } = input;
+  const { spaceId, claimId, soleMemberId, organizationId, lease } = input;
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
+        if (lease) await assertLeaseHeld(tx, lease);
         await lockSpaceDeletion(tx, spaceId);
         const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
           soleMemberId ? tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) }) : 0,

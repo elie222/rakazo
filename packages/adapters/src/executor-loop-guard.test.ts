@@ -10,6 +10,7 @@ const provisionComputer = vi.hoisted(() => vi.fn());
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));
@@ -508,5 +509,35 @@ describe("repeated identical tool calls through the run loop", () => {
       6,
       await runLoop(() => ({ calls: [LISTING, LISTING] }), { listing: unreadable }),
     );
+  }, 30_000);
+});
+
+describe("one tool getting the same answer through the run loop", () => {
+  const REWORDED = ["Continuing.", "On it.", "Proceeding with both tasks.", "Still working."];
+
+  it("ends a reworded progress message that keeps getting the same answer at the 25th", async () => {
+    const run = await runLoop((n) => ({
+      calls: [
+        { name: "message_user", args: { message: `${REWORDED[n % REWORDED.length]} (${n})` } },
+      ],
+    }));
+
+    expect(run.requests.length).toBeGreaterThanOrEqual(25);
+    expect(run.requests.length).toBeLessThanOrEqual(26);
+    expect(run.finalText).toMatch(
+      /^I got stuck calling Message user with the same result 25 times in a row/,
+    );
+    expect(isLoopGuardStopText(run.finalText)).toBe(true);
+  }, 30_000);
+
+  it("keeps writing different files", async () => {
+    const { requests, finalText } = await runLoop((n) => ({
+      calls: [
+        { name: "write_file", args: { path: `notes/${REWORDED[n % 4]} ${n}.md`, content: "x" } },
+      ],
+    }));
+
+    expect(requests).toHaveLength(REQUEST_CAP + 1);
+    expect(isLoopGuardStopText(finalText)).toBe(false);
   }, 30_000);
 });

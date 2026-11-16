@@ -35,7 +35,8 @@
     "fflate": "0.8.3",
     "hono": "4.13.17",
     "mermaid": "11.17.2",
-    "tsx": "4.23.15"
+    "tsx": "4.23.15",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "typescript": "7.0.2",

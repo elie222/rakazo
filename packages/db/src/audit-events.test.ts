@@ -1,6 +1,11 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installAuditEventStore, listAuditEvents, recordAuditEvent } from "./audit-events.js";
+import {
+  auditEventDto,
+  installAuditEventStore,
+  listAuditEvents,
+  recordAuditEvent,
+} from "./audit-events.js";
 import { recordSecurityEvent, withSecurityRequest } from "./security-events.js";
 
 function fakeStore() {
@@ -399,5 +404,28 @@ describe("listAuditEvents", () => {
     const where = (db.auditEvent.findMany.mock.calls[0]![0] as { where: Record<string, unknown> })
       .where;
     expect(where).toMatchObject({ organizationId: "org-1", action: "space.created" });
+  });
+});
+
+describe("stored audit metadata", () => {
+  const row = (id: string, metadata: unknown) =>
+    ({ id, createdAt: new Date(0), actorType: "user", outcome: "success", metadata }) as never;
+
+  it("keeps every value it can read beside one in another shape", () => {
+    const metadata = { tool: "shell", attempts: 2, nested: { private: "detail" }, list: ["x"] };
+    for (let read = 0; read < 2; read += 1)
+      expect(auditEventDto(row("audit-mixed", metadata)).metadata).toEqual({
+        tool: "shell",
+        attempts: 2,
+      });
+    expect(sink.events).toMatchObject([
+      { level: "warn", table: "audit_events", column: "metadata", id: "audit-mixed", dropped: 2 },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("detail");
+  });
+
+  it("reads a value that is not an object as no metadata", () => {
+    expect(auditEventDto(row("audit-list", ["x"])).metadata).toEqual({});
+    expect(auditEventDto(row("audit-none", null)).metadata).toEqual({});
   });
 });

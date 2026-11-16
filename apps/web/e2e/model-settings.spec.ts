@@ -8,7 +8,8 @@ import {
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
-  openBotPanelTab,
+  modelConnectOption,
+  openBotSettings,
   openModelConnection,
   openUserSettings,
   pickReopenedModel,
@@ -348,32 +349,24 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await saved.getByRole("button", { name: "Back", exact: true }).click();
     await expect(saved).toBeHidden();
     await page.getByRole("button", { name: "Close model settings" }).click();
-    await openBotPanelTab(page, "Advanced");
+    await openBotSettings(page);
     const settings = page.getByTestId("bot-settings");
-    // The Model select sits inside its wrapping <label>, so the label text includes
-    // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
-    const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
-    await expect(botModel.locator("option")).toContainText([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
-    await botModel.selectOption(`openai-compatible::${LOCAL_MODEL_ID}`);
-    // Native select popups are outside Playwright's screenshots. Render the
-    // same options as an expanded native list for the CI screenshot, then restore.
-    // An expanded select is a listbox, so keep a role-independent handle.
-    const botModelSelect = settings.locator(`[id="${await botModel.getAttribute("id")}"]`);
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = select.options.length;
-      select.style.height = "auto";
-    });
-    await botModelSelect.scrollIntoViewIfNeeded();
+    // The model row names the model in use and opens the list; each change saves at once.
+    await settings.getByRole("button", { name: /^Model/ }).click();
+    const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
+    await expect(localModel).toBeVisible();
+    await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = 0;
-      select.style.removeProperty("height");
-    });
-    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
+    const modelSaved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+    );
+    await localModel.click();
+    await modelSaved;
+    await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await settings.getByRole("button", { name: "Save", exact: true }).click();
+    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
@@ -449,4 +442,33 @@ test("a refused private model server names the setting that allows it", async ({
     alert.getByText("Review provider settings and test again.", { exact: true }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "openai-compatible-private-endpoint-refused");
+});
+
+test("project-scoped model connection keeps its routing after reopening", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `model-project-${Date.now()}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  const dialog = await openModelConnection(page, "Google Vertex AI");
+  await expect(dialog.getByLabel("Project ID", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Region", { exact: true })).toHaveValue("global");
+  await dialog.getByLabel("Project ID", { exact: true }).fill("example-project");
+  await dialog.getByLabel("API key", { exact: true }).fill("fake-vertex-api-key");
+  await captureScreenshot(page, testInfo, "model-project-connection");
+  await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const credentials = await rpc<Array<{ provider: string; projectId?: string; region?: string }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(credentials.find((credential) => credential.provider === "google-vertex")).toMatchObject({
+    projectId: "example-project",
+    region: "global",
+  });
+  await pickReopenedModel(page, "Gemini 4 Hydrogen");
+  const saved = await manageModelConnection(page, "Google Vertex AI");
+  await expect(saved.getByLabel("Project ID", { exact: true })).toHaveValue("example-project");
+  await expect(saved.getByLabel("Region", { exact: true })).toHaveValue("global");
 });

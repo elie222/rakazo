@@ -1,5 +1,5 @@
 import type { IncomingBotCall } from "@rakazo/contracts";
-import { IncomingBotCallSchema } from "@rakazo/contracts";
+import { IncomingBotCallSchema, SpaceChangeKind } from "@rakazo/contracts";
 import {
   cancelResponseBody,
   displayIdentityEvent,
@@ -84,13 +84,13 @@ export async function subscribeIncomingCallEvents(
   );
 }
 /**
- * Calls `onSignal` for each roster signal and `onComputerUpdates` for each computer update signal:
- * each once when the stream opens, then once per change.
+ * Calls `onSignal` for each roster signal and `onSpaceChange` for each Space change signal: each
+ * kind once when the stream opens, then once per change. Kinds this build does not know are skipped.
  */
 export async function subscribeRosterSignals(
   onSignal: () => void,
   signal: AbortSignal,
-  onComputerUpdates: () => void = () => {},
+  onSpaceChange: (kind: SpaceChangeKind) => void = () => {},
 ) {
   const context = await captureApiRequestContext();
   return subscribeRpcEvents(
@@ -98,7 +98,8 @@ export async function subscribeRosterSignals(
     {},
     (event) => {
       if (event.type === "roster") onSignal();
-      else if (event.type === "computerUpdates") onComputerUpdates();
+      const kind = SpaceChangeKind.safeParse(event.type);
+      if (kind.success) onSpaceChange(kind.data);
     },
     signal,
     context,

@@ -49,6 +49,7 @@ import {
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
 import { isFilePaste } from "../../lib/pending-attachments";
+import { useEventListener } from "../../lib/use-event-listener";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -207,18 +208,24 @@ const ComposerBody = memo(function Composer({
     selectedSkill,
     setSelectedSkill,
     updatePickers,
+    updateSlashQuery,
     insertMention,
     insertSkill,
     runSlashAction,
     removeSkill,
     mentionListboxId,
+    slashListboxId,
     mentionOptions,
     activeMentionIndex,
     mentionPickerOpen,
-    activeMentionOptionId,
     slashSkillOptions,
     slashActionOptions,
     showSlashPicker,
+    slashOptionKeys,
+    setSlashHighlightKey,
+    activeSlashIndex,
+    activeOptionId,
+    pickSlashOption,
   } = useComposerTriggers({
     draft,
     mentionBindings,
@@ -340,27 +347,21 @@ const ComposerBody = memo(function Composer({
     talk,
     available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
   };
-  useEffect(() => {
-    const apple = isApplePlatform();
-    function onKey(event: KeyboardEvent) {
-      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
-        return;
-      if (!primaryModifier(event, apple)) return;
-      const { talk, available } = dictateKey.current;
-      if (talk.recording) {
-        // Pressed while typing elsewhere, it belongs to that field rather than this recording.
-        if (!talk.recording.locked || talk.transcribing) return;
-        if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
-        event.preventDefault();
-        talk.submit();
-      } else if (available && document.activeElement === textareaRef.current) {
-        event.preventDefault();
-        talk.startHandsFree();
-      }
+  useEventListener(window, "keydown", (event) => {
+    if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d") return;
+    if (!primaryModifier(event, isApplePlatform())) return;
+    const { talk, available } = dictateKey.current;
+    if (talk.recording) {
+      // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+      if (!talk.recording.locked || talk.transcribing) return;
+      if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+      event.preventDefault();
+      talk.submit();
+    } else if (available && document.activeElement === textareaRef.current) {
+      event.preventDefault();
+      talk.startHandsFree();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [textareaRef]);
+  });
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
     const selection = pendingCaret.current;
@@ -701,6 +702,9 @@ const ComposerBody = memo(function Composer({
       ) : null}
       {showSlashPicker ? (
         <SlashPicker
+          listboxId={slashListboxId}
+          activeIndex={activeSlashIndex}
+          onHighlight={setSlashHighlightKey}
           skills={slashSkillOptions}
           actions={slashActionOptions}
           onSkill={insertSkill}
@@ -794,6 +798,12 @@ const ComposerBody = memo(function Composer({
                     mentionBindings,
                   )?.query ?? null,
                 );
+                updateSlashQuery(
+                  field.value,
+                  field.selectionStart,
+                  field.selectionEnd,
+                  mentionBindings,
+                );
               }}
               onPaste={handlePaste}
               onKeyDown={(event) => {
@@ -808,11 +818,25 @@ const ComposerBody = memo(function Composer({
                   shiftKey: event.shiftKey,
                   ctrlKey: event.ctrlKey,
                   metaKey: event.metaKey,
+                  altKey: event.altKey,
                   enterToSend,
                   isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                  optionCount: mentionOptions.length,
-                  highlightedIndex: activeMentionIndex,
+                  optionCount: mentionPickerOpen ? mentionOptions.length : slashOptionKeys.length,
+                  highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
+                // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
+                if (showSlashPicker && action.type !== "none") {
+                  event.preventDefault();
+                  if (action.type === "complete" || action.type === "send")
+                    pickSlashOption(activeSlashIndex);
+                  else if (action.type === "move")
+                    setSlashHighlightKey(slashOptionKeys[action.index] ?? null);
+                  else {
+                    completedSelection.current = event.currentTarget.selectionStart;
+                    setSlashQuery(null);
+                  }
+                  return;
+                }
                 if (action.type === "complete") {
                   const mention = mentionOptions[action.index];
                   if (!mention) return;
@@ -848,12 +872,6 @@ const ComposerBody = memo(function Composer({
                   event.altKey
                 )
                   return;
-                // An open picker closes first; a held Escape never goes on to stop the reply.
-                if (showSlashPicker) {
-                  event.preventDefault();
-                  setSlashQuery(null);
-                  return;
-                }
                 if (running && !sending && !talk.recording?.locked) {
                   event.preventDefault();
                   void onStop();
@@ -871,9 +889,11 @@ const ComposerBody = memo(function Composer({
               role="combobox"
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={mentionPickerOpen}
-              aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
-              aria-activedescendant={activeMentionOptionId}
+              aria-expanded={mentionPickerOpen || showSlashPicker}
+              aria-controls={
+                mentionPickerOpen ? mentionListboxId : showSlashPicker ? slashListboxId : undefined
+              }
+              aria-activedescendant={activeOptionId}
               name="chat-message"
               autoComplete="off"
               dir="auto"

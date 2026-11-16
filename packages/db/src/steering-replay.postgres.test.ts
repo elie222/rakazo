@@ -37,11 +37,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     ({ userId, spaceId, botId, threadId } = identity);
     provisioned = true;
@@ -145,6 +141,114 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       }),
     );
   }
+
+  it.each(["app", "direct", "channel"] as const)(
+    "keeps private app steering out of a delegated result originating in %s",
+    async (surface) => {
+      await system.steeringMessage.deleteMany({ where: { botId } });
+      const { run: parent } = await runSteeredByMessage("running");
+      await system.steeringMessage.deleteMany({ where: { botId } });
+      const channelBlock = {
+        kind: "channel_message" as const,
+        provider: "sendblue",
+        channelId: "fixture-channel",
+        fromAddress: address,
+        fromLabel: "Fixture sender",
+        text: "Continue the shared task",
+      };
+      const source = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: userId,
+        blocks: surface === "channel" ? [channelBlock] : [{ kind: "text", text: "Start the task" }],
+      });
+      await system.run.update({
+        where: { id: parent.id },
+        data: {
+          status: "completed",
+          trigger: surface === "app" ? "user" : "messaging",
+          sourceMessageId: source.id,
+        },
+      });
+      const helper = await system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: parent.taskId,
+          status: "completed",
+          trigger: "helper",
+          delegatedFromRunId: parent.id,
+        },
+      });
+      const result = await system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: parent.taskId,
+          status: "running",
+          trigger: "helper_result",
+          delegatedFromRunId: helper.id,
+          leaseOwner: "result-worker",
+          leaseFence: 1,
+        },
+      });
+      const privateIds: string[] = [];
+      for (const addressed of [false, true]) {
+        const message = await createThreadMessage(system, {
+          threadId,
+          role: "user",
+          authorUserId: userId,
+          blocks: [{ kind: "text", text: "Private app instruction" }],
+        });
+        const steering = await system.steeringMessage.create({
+          data: {
+            botId,
+            userId,
+            messageId: message.id,
+            runId: addressed ? result.id : null,
+          },
+        });
+        privateIds.push(steering.id);
+      }
+      const externalMessage = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        blocks:
+          surface === "channel" ? [channelBlock] : [{ kind: "text", text: "Connected follow-up" }],
+      });
+      const externalSteering = await system.steeringMessage.create({
+        data: {
+          botId,
+          userId,
+          messageId: externalMessage.id,
+          originTrigger: "messaging",
+        },
+      });
+      const claimed = await asOwner(() =>
+        claimSteering(prisma, {
+          threadId,
+          botId,
+          runId: result.id,
+          leaseOwner: "result-worker",
+          leaseFence: 1,
+          seenIds: [],
+        }),
+      );
+      expect(claimed.map((row) => row.id)).toEqual(
+        surface === "app" ? privateIds : [externalSteering.id],
+      );
+      const rows = await system.steeringMessage.findMany({ where: { id: { in: privateIds } } });
+      expect(rows.every((row) => row.claimedAt === null)).toBe(surface !== "app");
+      const event = await system.event.findFirstOrThrow({
+        where: { runId: result.id, type: "run.steering.claimed" },
+      });
+      expect(event.payload).toMatchObject({ externalSafe: surface !== "app" });
+    },
+  );
 
   it("does not answer a message again after the failed run already replied to it", async () => {
     const fixture = await runSteeredByMessage("running");

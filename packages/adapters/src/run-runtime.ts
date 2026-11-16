@@ -42,6 +42,7 @@ import {
   pipedreamConfigFromEnv,
 } from "./pipedream-connector.js";
 import { reconcilePurchases } from "./purchase-poll.js";
+import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { TeamChat } from "./team-chat.js";
@@ -121,12 +122,23 @@ export interface ConnectorRuntimeOverrides {
 /** MCP, installed and integration connectors, in the one registry runs use. */
 export function createConnectorRuntime(
   env: RunRuntimeEnv,
-  deps: { prisma: PrismaClient; secrets: SecretStore; events: ThreadEvents },
+  deps: {
+    prisma: PrismaClient;
+    secrets: SecretStore;
+    events: ThreadEvents;
+    jobs: SecretCleanupDeps["jobs"];
+  },
   overrides: ConnectorRuntimeOverrides = {},
 ) {
   const { prisma, secrets } = deps;
   const { network, composio } = overrides;
-  const mcpOAuth = new McpOAuthBroker(prisma, secrets, network, env.mcpAllowPrivateEndpoint);
+  const mcpOAuth = new McpOAuthBroker(
+    prisma,
+    secrets,
+    network,
+    env.mcpAllowPrivateEndpoint,
+    deps.jobs,
+  );
   const mcp = new McpConnector(
     prisma,
     secrets,
@@ -288,6 +300,7 @@ export function createRunRuntime(
     deploymentModelConfigured: env.deploymentModelConfigured,
     messagingDelivery,
     teamChat,
+    connectors: connectors.stack.connector,
     cloudAgent: deps.cloudAgent,
     userCloudAgents: connectors.userCloudAgents,
     paymentWallet: deps.paymentWallet,

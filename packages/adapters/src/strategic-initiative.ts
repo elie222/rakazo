@@ -1,6 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, computerUsingRuns, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   isUniqueViolation,
@@ -11,6 +10,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { modelCreditBillingEnabled } from "./run-model.js";
 import { initiativePrompt } from "./strategic-initiative.prompt.js";
+import { wakeRun } from "./wake-run.js";
 
 const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // A failed check-in usually means the bot's model setup is broken; retrying daily only repeats it.
@@ -49,7 +49,7 @@ function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
       none: {
         OR: [
           // A background helper leaves its bot free, so it does not hold off the check-in.
-          { status: { in: [...ACTIVE_RUN_STATUSES] }, ...COMPUTER_USING_RUNS },
+          { status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
           {
             clientNonce: { startsWith: `${STRATEGIC_INITIATIVE_NONCE_PREFIX}:` },
             createdAt: { gt: new Date(now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) },
@@ -170,10 +170,7 @@ export async function reconcileStrategicInitiatives(deps: {
       const runId = await queueStrategicInitiativeRun(deps, { ...bot, scratchpadItems }, deps.now);
       if (!runId) continue;
       queued += 1;
-      await deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
-        // The queued run is durable; reconciliation will repair missed wakes.
-        getLogger().error("strategic initiative enqueue", error);
-      });
+      await wakeRun(deps.jobs, runId);
     }
   }
   return queued;

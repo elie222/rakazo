@@ -26,7 +26,7 @@ import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useTicketPriorityLabels } from "../lib/ticket-priority";
@@ -48,8 +48,6 @@ export function BoardPage() {
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
   const error = streamError || (loadFailed ? errorText(loadFailed) : "");
-  /** A read sent after a change, so an older one in flight cannot bring back the old board. */
-  const reload = () => fetchFresh(queryClient, ticketsOptions).then(() => undefined);
 
   useEffect(() => {
     let currentController: AbortController | undefined;
@@ -170,7 +168,6 @@ export function BoardPage() {
           ticket={selected === "new" ? null : selected}
           bots={bots}
           onClose={() => setSelected(null)}
-          onSaved={reload}
         />
       ) : null}
     </div>
@@ -181,12 +178,10 @@ function TicketDialog({
   ticket,
   bots,
   onClose,
-  onSaved,
 }: {
   ticket: Ticket | null;
   bots: Bot[];
   onClose: () => void;
-  onSaved: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const formId = useId();
@@ -205,14 +200,8 @@ function TicketDialog({
   const commentsQuery = useQuery(commentsOptions);
   const comments = commentsQuery.data ?? [];
   const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const shownError = error || (commentsQuery.error ? errorText(commentsQuery.error) : "");
-
-  async function save() {
-    setBusy(true);
-    setError("");
-    try {
+  const saving = useSave({
+    save: async (_input, rpc) => {
       if (ticket)
         await rpc.tickets.update({
           id: ticket.id,
@@ -231,36 +220,36 @@ function TicketDialog({
           assigneeBotId: owner,
           priority,
         });
-      await onSaved();
-      onClose();
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function comment() {
-    if (!ticket) return;
-    setBusy(true);
-    setError("");
-    try {
-      const row = await rpc.tickets.comment({ ticketId: ticket.id, body });
-      const options = queries.tickets.comments.queryOptions({ input: { ticketId: ticket.id } });
+    },
+    stale: [queries.tickets.list.key()],
+    closesScreen: true,
+    onSaved: () => onClose(),
+  });
+  const commenting = useSave({
+    save: async (text: string, rpc) => {
+      if (!ticket) return;
+      const row = await rpc.tickets.comment({ ticketId: ticket.id, body: text });
       // A list already on screen shows the comment at once, unless a read already brought it.
-      if (queryClient.getQueryData(options.queryKey)) {
-        await writeSaved(queryClient, options.queryKey, (previous = []) =>
+      if (queryClient.getQueryData(commentsOptions.queryKey)) {
+        await writeSaved(queryClient, commentsOptions.queryKey, (previous = []) =>
           previous.some((item) => item.id === row.id) ? previous : [...previous, row],
         );
+      } else {
+        // A first read still in flight was sent before the post, so it is not waited for.
+        await queryClient.cancelQueries({ queryKey: commentsOptions.queryKey, exact: true });
       }
+      // Listed now, so the box empties before the list is read again.
       setBody("");
-      // Saving cancelled any read in flight, so the whole list is read again after the post.
-      void fetchFresh(queryClient, options).catch(() => undefined);
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    stale: [commentsOptions.queryKey],
+  });
+  const busy = saving.pending || commenting.pending;
+  const failure = saving.error ?? commenting.error;
+  const shownError = failure
+    ? errorText(failure)
+    : commentsQuery.error
+      ? errorText(commentsQuery.error)
+      : "";
 
   return (
     <Dialog
@@ -277,7 +266,8 @@ function TicketDialog({
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            commenting.reset();
+            saving.run();
           }}
         >
           <label htmlFor={`${formId}-title`} className="block space-y-1 text-body">
@@ -379,7 +369,8 @@ function TicketDialog({
               className="space-y-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                void comment();
+                saving.reset();
+                commenting.run(body);
               }}
             >
               <Textarea

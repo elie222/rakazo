@@ -10,7 +10,14 @@ import { getLogger } from "@rakazo/logging";
 import type { ComposioProvider } from "./composio-connector.js";
 import { sanitizeIntegrationError } from "./composio-connector.js";
 
+/**
+ * The connector a request, card or tool call means when it names none. Stored cards and older
+ * clients predate connector ids, so this cannot change.
+ */
+export const DEFAULT_CONNECTOR_ID = "composio";
+
 export class ConnectorRegistry implements ConnectorProvider {
+  readonly defaultConnectorId = DEFAULT_CONNECTOR_ID;
   private readonly providers = new Map<string, ConnectorProvider>();
 
   constructor(providers: ConnectorProvider[]) {
@@ -80,7 +87,7 @@ export class ConnectorRegistry implements ConnectorProvider {
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    const connectorId = call.route?.connectorId ?? "composio";
+    const connectorId = call.route?.connectorId ?? this.defaultConnectorId;
     const provider = this.providers.get(connectorId);
     if (!provider) {
       yield { type: "error", message: `unknown connector ${connectorId}` };

@@ -539,7 +539,7 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
-  it("starts a screen's window manager with a wallpaper setter that cannot open an error dialog", () => {
+  it("starts a screen's window manager so it keeps its settings and cannot open a wallpaper error dialog", () => {
     const root = mkdtempSync(path.join(tmpdir(), "desktop-wallpaper-test-"));
     roots.push(root);
     const bin = path.join(root, "bin");
@@ -550,17 +550,23 @@ describe("shared Linux desktop lifecycle", () => {
     stub("Xvfb", "exit 0");
     stub("websockify", "exit 0");
     stub("xsetroot", `echo "xsetroot $*" >>"${log}"`);
-    // A stock image's style asks for its wallpaper like this.
+    // fluxbox replaces its -rc file with the system default when $HOME/.fluxbox is missing, and
+    // a stock image's style asks for its wallpaper like this.
     stub(
       "fluxbox",
-      `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"\nfbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg`,
+      [
+        `test -d "$HOME/.fluxbox" && echo "home settings folder" >>"${log}"`,
+        `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"`,
+        "fbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg",
+      ].join("\n"),
     );
     const script = ensureScreenCommand(0, "bot", "token", env)
       .replaceAll("/etc/rakazo/", path.join(root, "image/"))
       .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
       .replaceAll("/tmp/.X", path.join(root, ".X"))
       .replaceAll("/tmp/rakazo", root)
-      .replaceAll("/usr/share/novnc", root);
+      .replaceAll("/usr/share/novnc", root)
+      .replaceAll(env.homeDir, path.join(root, "home"));
     const result = spawnSync(
       "bash",
       [
@@ -580,7 +586,7 @@ describe("shared Linux desktop lifecycle", () => {
     );
     expect(result.status, result.stderr).toBe(0);
     expect(readFileSync(log, "utf8")).toBe(
-      `fbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
+      `home settings folder\nfbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
     );
   });
 

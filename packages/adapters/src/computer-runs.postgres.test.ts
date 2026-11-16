@@ -68,6 +68,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
       jobs: {
         enqueue: vi.fn().mockResolvedValue(undefined),
         cancel: vi.fn().mockResolvedValue(undefined),
+        cancelIn: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
       } as unknown as JobPublisher,
       events: { append: vi.fn().mockResolvedValue({}) } as unknown as ThreadEvents,

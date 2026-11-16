@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,7 +14,14 @@ import {
 } from "../evals/apps.js";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
+import {
+  EVAL_CASES,
+  HISTORY_EVAL_CASES,
+  HISTORY_JUDGE_CALIBRATION,
+  PRODUCT_JUDGE_CALIBRATION,
+  PRODUCT_JUDGE_VERSION,
+  wakesRoutines,
+} from "../evals/cases.js";
 import {
   DELIBERATION_EVAL_CASES,
   DELIBERATION_FIXTURE_VERSION,
@@ -25,8 +31,10 @@ import {
 import {
   caseFingerprint,
   caseKey,
+  codeRevision,
   firstRequestFetch,
   runFingerprint,
+  workingDiffHash,
 } from "../evals/fingerprint.js";
 import { regradeTrial } from "../evals/grading.js";
 import {
@@ -36,7 +44,7 @@ import {
   GROUP_JUDGE_VERSION,
 } from "../evals/group.js";
 import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
-import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
+import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
 import {
@@ -72,6 +80,12 @@ import {
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
+import {
+  SUBAGENT_EVAL_CASES,
+  SUBAGENT_FIXTURE_VERSION,
+  SUBAGENT_JUDGE_CALIBRATION,
+  SUBAGENT_JUDGE_VERSION,
+} from "../evals/subagents.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
@@ -149,8 +163,21 @@ async function main() {
       judge?: { version: string; calibration: Array<{ input: JudgeInput; pass: boolean }> };
     }
   > = {
-    product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
-    history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
+    product: {
+      cases: EVAL_CASES,
+      fixtureVersion: "product-v2",
+      judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
+    },
+    subagents: {
+      cases: SUBAGENT_EVAL_CASES,
+      fixtureVersion: SUBAGENT_FIXTURE_VERSION,
+      judge: { version: SUBAGENT_JUDGE_VERSION, calibration: SUBAGENT_JUDGE_CALIBRATION },
+    },
+    history: {
+      cases: HISTORY_EVAL_CASES,
+      fixtureVersion: HISTORY_FIXTURE_VERSION,
+      judge: { version: HISTORY_JUDGE_VERSION, calibration: HISTORY_JUDGE_CALIBRATION },
+    },
     silence: {
       cases: SILENCE_EVAL_CASES,
       fixtureVersion: SILENCE_FIXTURE_VERSION,
@@ -195,7 +222,7 @@ async function main() {
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
+      "Unknown suite; use product, subagents, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -315,7 +342,9 @@ async function main() {
     limitations: [
       "Does not evaluate browser perception, native recording perception, or real external services.",
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
-      "Silence replies and memory contents are graded by meaning with a calibrated LLM judge; other suites retain their existing task-specific graders.",
+      suiteJudge
+        ? "What replies, saved files and memory mean is graded by a calibrated LLM judge under the suite's rubric; effects, identifiers and structured output are checked deterministically."
+        : "This suite has no LLM judge: every criterion is a check in code.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
       "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
@@ -917,43 +946,6 @@ async function main() {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
-  }
-}
-
-function workingDiffHash(): string | null {
-  try {
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const options = {
-      cwd: root,
-      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
-      maxBuffer: 64 * 1024 * 1024,
-    };
-    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
-    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-      ...options,
-      encoding: "utf8",
-    })
-      .split("\0")
-      .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
-      .sort();
-    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
-    return hash.digest("hex");
-  } catch {
-    return null;
-  }
-}
-
-function codeRevision(): string | null {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return null;
   }
 }
 

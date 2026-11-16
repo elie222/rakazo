@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { LocalServiceHost, pinLocalServiceHost } from "./local-service-endpoint.js";
@@ -23,20 +25,18 @@ describe("private memory DNS deadlines", () => {
   });
 
   it("does not discard a shared bounded pin when one caller is cancelled", async () => {
-    let finish!: (addresses: ResolvedAddress[]) => void;
-    const resolveHostname = vi.fn(
-      () =>
-        new Promise<ResolvedAddress[]>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let finish!: Deferred<ResolvedAddress[]>;
+    const resolveHostname = vi.fn(() => {
+      finish = deferred<ResolvedAddress[]>();
+      return finish.promise;
+    });
     const host = new LocalServiceHost(baseUrl, resolveHostname);
     const cancelled = new AbortController();
     const first = host.block(cancelled.signal);
     const second = host.block();
     cancelled.abort(new Error("caller stopped"));
     expect(await first).toBe("caller stopped");
-    finish([{ address: "10.0.0.2", family: 4 }]);
+    finish.resolve([{ address: "10.0.0.2", family: 4 }]);
     expect(await second).toBeNull();
     expect(await host.block()).toBeNull();
     expect(resolveHostname).toHaveBeenCalledOnce();

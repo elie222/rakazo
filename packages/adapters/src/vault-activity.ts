@@ -99,7 +99,7 @@ export async function listVaultItemUses(
       }),
     );
     return events.map((event) => {
-      const site = (event.metadata as Record<string, unknown> | null)?.site;
+      const site = (event.metadata as { site?: unknown } | null)?.site;
       return {
         at: event.createdAt.toISOString(),
         botName: event.actorLabel ?? "",

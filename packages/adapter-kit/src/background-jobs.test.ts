@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  connectionCleanupJob,
+  connectionCleanupJobKey,
   dispatchBackgroundJob,
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  MACHINE_CLEANUP_MAX_ATTEMPTS,
   MESSAGING_SEND_MAX_ATTEMPTS,
+  machineCleanupJob,
+  machineCleanupJobKey,
   memoryPurgeHistoryJob,
   memoryRetainTurnJob,
   messagingSendJob,
@@ -33,7 +38,10 @@ function handlers(): BackgroundJobHandlers {
     "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
+    "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "connection.cleanup": vi.fn(async () => undefined),
+    "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -108,6 +116,17 @@ describe("background job contracts", () => {
     expect({ delayMs: error.delayMs, cause: error.cause }).toEqual({ delayMs: 30_000, cause });
   });
 
+  it("validates and dispatches a secret cleanup by reference and kind", async () => {
+    const target = handlers();
+    const payload = { kind: "secret_row", recordId: "secret-a", ref: "remote-reference" } as const;
+    await dispatchBackgroundJob(target, "secret.cleanup", payload);
+    expect(target["secret.cleanup"]).toHaveBeenCalledWith(payload);
+    const shared = { ...payload, kind: "secret_tables" };
+    expect(parseBackgroundJob("secret.cleanup", shared).payload).toEqual(shared);
+    expect(() => parseBackgroundJob("secret.cleanup", { ...payload, kind: "unknown" })).toThrow();
+    expect(() => parseBackgroundJob("secret.cleanup", { ...payload, recordId: "" })).toThrow();
+  });
+
   it("validates and dispatches retired messaging credential cleanup", async () => {
     const target = handlers();
     const payload = { installationId: "install-a", ref: "encrypted-reference" };
@@ -115,6 +134,49 @@ describe("background job contracts", () => {
     expect(target["messaging.credential-cleanup"]).toHaveBeenCalledWith(payload);
     expect(() =>
       parseBackgroundJob("messaging.credential-cleanup", { ref: "encrypted-reference" }),
+    ).toThrow();
+  });
+
+  it("keys connection cleanup by what it removes, so a retry replaces its backup", async () => {
+    const app = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+    };
+    const request = { ...app, ref: "request-1" };
+    const backup = connectionCleanupJob(request, new Date(60_000));
+    const retry = connectionCleanupJob(request);
+    expect(backup).toMatchObject({ payload: request, availableAt: new Date(60_000) });
+    expect(retry).not.toHaveProperty("availableAt");
+    expect(retry.replaceKey).toBe(backup.replaceKey);
+    expect(connectionCleanupJobKey(app)).not.toBe(backup.replaceKey);
+
+    const target = handlers();
+    await dispatchBackgroundJob(target, "connection.cleanup", app);
+    expect(target["connection.cleanup"]).toHaveBeenCalledWith(app);
+    expect(() => parseBackgroundJob("connection.cleanup", { ...app, userId: "" })).toThrow();
+  });
+
+  it("keys a machine's cleanup by provider and machine, so a new delete time replaces the old", async () => {
+    const machine = { provider: "provider-a", machineId: "machine-1", homeKey: "home-1" };
+    const backup = machineCleanupJob(machine, new Date(960_000));
+    const now = machineCleanupJob({ provider: "provider-a", machineId: "machine-1" }, new Date(0));
+    expect(backup).toMatchObject({
+      payload: machine,
+      availableAt: new Date(960_000),
+      maxAttempts: MACHINE_CLEANUP_MAX_ATTEMPTS,
+    });
+    expect(now.replaceKey).toBe(backup.replaceKey);
+    expect(backup.replaceKey).toBe(machineCleanupJobKey("provider-a", "machine-1"));
+    expect(machineCleanupJobKey("provider-a", "machine-2")).not.toBe(backup.replaceKey);
+    expect(machineCleanupJobKey("provider-b", "machine-1")).not.toBe(backup.replaceKey);
+
+    const target = handlers();
+    await dispatchBackgroundJob(target, "computer.machine-cleanup", machine);
+    expect(target["computer.machine-cleanup"]).toHaveBeenCalledWith(machine);
+    expect(() =>
+      parseBackgroundJob("computer.machine-cleanup", { provider: "provider-a", machineId: "" }),
     ).toThrow();
   });
 
