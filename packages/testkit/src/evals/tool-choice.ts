@@ -23,9 +23,15 @@ const some = (matcher: Matcher | undefined, test: (m: Matcher) => boolean): bool
     ? matcher.some((m) => some(m, test))
     : matcher !== undefined && test(matcher);
 
-/** `update_bot` without a `bot_id` saves the calling bot's own settings, which botMeans grades. */
-const changesOwnSettings = (call: { tool: string; args?: Record<string, Matcher> }) =>
-  call.tool === "update_bot" && call.args?.bot_id === undefined;
+/** `update_bot` without a `bot_id` (omitted, null or blank, as the tool reads it) saves the calling
+ * bot's own settings, which botMeans grades. */
+const changesOwnSettings = (call: { tool: string; args?: Record<string, Matcher> }) => {
+  const botId = call.args?.bot_id;
+  return (
+    call.tool === "update_bot" &&
+    (botId === undefined || botId === null || (typeof botId === "string" && botId.trim() === ""))
+  );
+};
 
 const CallSchema = z.object({
   tool: z.string().min(1),

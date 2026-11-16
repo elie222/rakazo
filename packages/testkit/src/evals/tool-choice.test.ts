@@ -227,6 +227,11 @@ describe("tool-choice grading", () => {
     const parses = (expect: object) => ToolChoiceCaseSchema.safeParse({ ...base, expect }).success;
     expect(parses({ bot: { instructions: "*" } })).toBe(false);
     expect(parses({ calls: [{ tool: "update_bot", args: { description: "*" } }] })).toBe(false);
+    // A null or blank bot_id still updates the calling bot, as the tool reads it.
+    for (const bot_id of [null, "", " "])
+      expect(parses({ calls: [{ tool: "update_bot", args: { bot_id, instructions: "*" } }] })).toBe(
+        false,
+      );
     expect(parses({ bot: { instructions: ["*", null] } })).toBe(false);
     const keepsName = { calls: [{ tool: "update_bot", args: { name: "Scout" } }] };
     expect(

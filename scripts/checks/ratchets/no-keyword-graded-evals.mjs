@@ -20,11 +20,11 @@ const capitalized = PROSE_WORDS.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const PROSE = new RegExp(
   `\\b(?:text|texts|body|content|said|${PROSE_WORDS})\\b|\\b(?:${PROSE_WORDS})[A-Z]|[a-z](?:${capitalized})\\b|\\bfiles?\\s*[([]`,
 );
-// A string search with a literal, or a matcher in an assertion; `?.` calls count the same as `.`.
+// A string search with a literal (a template literal without `${}` counts), or a matcher in an assertion; `?.` calls count the same as `.`.
 // A keyword held in a constant (`reply.includes(KEYWORD)`) is not followed: constants here also
 // hold the product's own fixed markers, which are not model prose.
 const STRING_SEARCH =
-  /\??\.(?:includes|startsWith|endsWith|indexOf|toContain|toMatch)\(\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
+  /\??\.(?:includes|startsWith|endsWith|indexOf|toContain|toMatch)\(\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`$\\\n]|\\.)*`|\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
 // A regex literal tested against or matched by something.
 const REGEX_TEST = /(\/(?:[^/\\\n*]|\\.)(?:[^/\\\n]|\\.)*\/[a-z]*)\??\.(?:test|exec)\(/g;
 const REGEX_MATCH = /\??\.(?:match|matchAll|search)\(\s*(\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
