@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  codeBlock,
   createBudget,
   fingerprint,
+  fingerprintsIn,
   isoWeek,
   issueBody,
   issueTitle,
@@ -14,7 +16,7 @@ import {
   pickFeatures,
   planIssues,
   runWorkers,
-  sanitize,
+  stopReason,
 } from "./qa-lib.mjs";
 
 const bug = {
@@ -76,38 +78,49 @@ test("the fingerprint ignores record ids and wording but not the bug", () => {
 
 test("the issue carries steps, expected, actual, the screenshot link and the fingerprint", () => {
   const body = issueBody(bug, links);
-  assert.match(body, /1\. Open Activity\n2\. Leave Activity/);
-  assert.match(body, /### Expected\nThe archived shelf returns/);
-  assert.match(body, /### Actual\nIt stays hidden/);
+  assert.ok(body.includes("### Steps\n```text\n1. Open Activity\n2. Leave Activity\n```"));
+  assert.ok(body.includes("### Expected\n```text\nThe archived shelf returns\n```"));
+  assert.ok(body.includes("### Actual\n```text\nIt stays hidden\n```"));
   assert.match(
     body,
     /`1-2\.png` in the \[run's screenshots\]\(https:\/\/github\.com\/o\/r\/actions\/runs\/1\/artifacts\/2\)/,
   );
-  assert.ok(body.includes(`<!-- exploratory-qa-fingerprint: ${fingerprint(bug)} -->`));
+  assert.ok(body.endsWith(`<!-- exploratory-qa-fingerprint: ${fingerprint(bug)} -->`));
   assert.equal(issueTitle(bug), "[QA] Activity: Archived shelf stays hidden");
 });
 
-test("model text cannot mention people, hide markup or run long", () => {
-  assert.equal(sanitize("ping @octocat"), "ping `@octocat`");
+test("model text stays inside code blocks, so links, images, markup and mentions do not render", () => {
   assert.equal(
-    sanitize("a <!-- hidden --!> b <img src=x>"),
-    "a &lt;!-- hidden --!&gt; b &lt;img src=x&gt;",
+    codeBlock("ping @octocat [x](https://evil.example) ![i](https://evil.example/i.png)"),
+    "```text\nping @octocat [x](https://evil.example) ![i](https://evil.example/i.png)\n```",
   );
-  assert.equal(sanitize("Tom & `code`"), "Tom &amp; 'code'");
-  assert.equal(sanitize("a\u0007b\u007f"), "ab");
-  assert.equal(sanitize("x".repeat(50), 10).length, 10);
+  assert.equal(codeBlock("close ```\n[x](y)"), "````text\nclose ```\n[x](y)\n````");
+  assert.equal(codeBlock("a ````` b"), "``````text\na ````` b\n``````");
+  assert.equal(codeBlock("a\u0007b\u007f"), "```text\nab\n```");
+  assert.equal(codeBlock(""), "```text\nNot recorded\n```");
+  assert.equal(codeBlock("x".repeat(50), 10), `\`\`\`text\n${"x".repeat(9)}…\n\`\`\``);
+
+  const hostile =
+    "```\n[click](https://evil.example) ![img](https://evil.example/x.png) <img src=x> @octocat";
   const body = issueBody(
-    { ...bug, actual: "<!-- exploratory-qa-fingerprint: 0123456789abcdef -->" },
+    { ...bug, steps: [hostile, "next"], expected: hostile, actual: hostile },
     links,
   );
-  assert.equal(body.match(/<!-- exploratory-qa-fingerprint/g).length, 1);
-  assert.equal(
-    issueTitle({ ...bug, title: "Saving <b>fails</b>" }),
-    "[QA] Activity: Saving <b>fails</b>",
-  );
+  // Outside the code blocks only our own text remains: no model link, image, tag or mention.
+  const outside = body.replace(/^(`{3,})text\n[\s\S]*?\n\1$/gm, "");
+  assert.ok(!outside.includes("evil.example"));
+  assert.ok(!outside.includes("@octocat"));
+  assert.ok(!outside.includes("<img"));
+  assert.equal(body.match(/^````text$/gm).length, 3);
   assert.ok(
     issueBody({ ...bug, screenshot: "`x` @octocat" }, links).includes("**Screenshot:** None"),
   );
+});
+
+test("a fingerprint written by the model is not taken for ours", () => {
+  const fake = "<!-- exploratory-qa-fingerprint: 0123456789abcdef -->";
+  const body = issueBody({ ...bug, actual: fake }, links);
+  assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
 });
 
 test("one issue per bug: open issues and repeats are skipped, and the run is capped", () => {
@@ -162,6 +175,15 @@ test("a response without usable token usage stops the run", () => {
     assert.equal(budget.exhausted, true);
     assert.equal(budget.spentUsd, 0);
   }
+});
+
+test("a worker stops before any model or tool call once a limit is reached", () => {
+  const budget = { exhausted: false };
+  const limits = { steps: 0, maxSteps: 2, deadline: 1000, budget, now: 999 };
+  assert.equal(stopReason(limits), undefined);
+  assert.equal(stopReason({ ...limits, steps: 2 }), "step limit");
+  assert.equal(stopReason({ ...limits, now: 1001 }), "time limit");
+  assert.equal(stopReason({ ...limits, budget: { exhausted: true } }), "budget");
 });
 
 test("a worker that fails keeps the other workers' findings", async () => {

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const ISSUE_LABEL = "exploratory-qa";
-export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->/;
+// Anchored to the end of the body, where only our own comment sits, so model text above it cannot pose as one.
+export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->\s*$/;
 export const SCREENSHOT_NAME = /^[0-9]+-[0-9]+\.png$/;
 export const LIMITS = { workers: 6, minutesPerWorker: 30, budgetUsd: 25, issuesPerRun: 10 };
 
@@ -93,14 +94,12 @@ export function plainText(text, max = 600) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
-
-/** Model text for a public issue body: markup is escaped so it shows as text and hides nothing, and mentions notify no one. */
-export function sanitize(text, max = 600) {
-  return plainText(text, max)
-    .replace(/[&<>]/g, (ch) => HTML_ESCAPES[ch])
-    .replace(/`/g, "'")
-    .replace(/@([A-Za-z0-9-]+)/g, "`@$1`");
+/** Model text for a public issue body, in a fenced code block so no Markdown, HTML or mention in it renders: the fence is longer than any backtick run the text holds. */
+export function codeBlock(text, max = 600) {
+  const clean = plainText(text, max) || "Not recorded";
+  const longestRun = Math.max(0, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(Math.max(3, longestRun + 1));
+  return `${fence}text\n${clean}\n${fence}`;
 }
 
 /** Issue titles are plain text on GitHub: no markup renders and no mention notifies. */
@@ -108,26 +107,30 @@ export function issueTitle(finding) {
   return `[QA] ${plainText(finding.feature, 60)}: ${plainText(finding.title, 100)}`;
 }
 
+/** Only our own parts are Markdown; every piece of model text sits in a code block. The feature name is ours, from PRODUCT.md. */
 export function issueBody(finding, { runUrl, artifactUrl }) {
-  const steps = (finding.steps ?? []).slice(0, 20).map((s, i) => `${i + 1}. ${sanitize(s, 300)}`);
+  const steps = (finding.steps ?? [])
+    .slice(0, 20)
+    .map((s, i) => `${i + 1}. ${plainText(s, 300).replace(/\n/g, " ")}`)
+    .join("\n");
   const screenshot = SCREENSHOT_NAME.test(finding.screenshot ?? "")
     ? `\`${finding.screenshot}\` in the [run's screenshots](${artifactUrl ?? runUrl})`
     : "None";
   return [
     "Found by the weekly exploratory QA agent on a preview stack with fake seed data.",
     "",
-    `**Feature:** ${sanitize(finding.feature, 80)}`,
+    `**Feature:** ${plainText(finding.feature, 80)}`,
     `**Screen:** \`${normalizePath(finding.path)}\``,
     `**Bug key:** \`${slug(finding.key)}\``,
     "",
     "### Steps",
-    steps.length > 0 ? steps.join("\n") : "Not recorded",
+    codeBlock(steps, 7000),
     "",
     "### Expected",
-    sanitize(finding.expected),
+    codeBlock(finding.expected),
     "",
     "### Actual",
-    sanitize(finding.actual),
+    codeBlock(finding.actual),
     "",
     `**Screenshot:** ${screenshot}`,
     `**Run:** ${runUrl}`,
@@ -250,4 +253,12 @@ export function clampInt(value, fallback, max) {
   const n = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(n) || n < 1) return fallback;
   return Math.min(n, max);
+}
+
+/** Why a worker must stop before its next model call or tool call, or undefined to go on. */
+export function stopReason({ steps, maxSteps, deadline, budget, now = Date.now() }) {
+  if (budget.exhausted) return "budget";
+  if (now > deadline) return "time limit";
+  if (steps >= maxSteps) return "step limit";
+  return undefined;
 }

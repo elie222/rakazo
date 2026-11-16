@@ -18,6 +18,7 @@ import {
   parseFeatures,
   pickFeatures,
   runWorkers,
+  stopReason,
 } from "./qa-lib.mjs";
 
 const MAX_STEPS = 80;
@@ -64,6 +65,11 @@ const openIssues = env.QA_KNOWN_ISSUES ? JSON.parse(readFileSync(env.QA_KNOWN_IS
 const requireFromWeb = createRequire(new URL("apps/web/package.json", root));
 const playwright = await import(requireFromWeb.resolve("@playwright/test"));
 const { chromium } = playwright.default ?? playwright;
+
+// Every finding is saved as it is reported, so a run cut off by the step timeout still files what it found.
+const reported = [];
+const findingsFile = join(outDir, "findings.json");
+const saveFindings = () => writeFileSync(findingsFile, `${JSON.stringify(reported, null, 2)}\n`);
 
 async function callModel(messages) {
   const response = await fetch(`${model.baseUrl}/chat/completions`, {
@@ -160,7 +166,10 @@ async function exploreFeature(browser, feature, index) {
     report_bug: async (bug) => {
       if (findings.length >= MAX_BUGS_PER_FEATURE) return "Bug limit reached; call finish.";
       const screenshot = taken.has(bug.screenshot) ? bug.screenshot : await tools.screenshot();
-      findings.push({ ...bug, screenshot, feature: feature.name });
+      const finding = { ...bug, screenshot, feature: feature.name };
+      findings.push(finding);
+      reported.push(finding);
+      saveFindings();
       return "Reported";
     },
     finish: async ({ summary: text }) => {
@@ -169,7 +178,9 @@ async function exploreFeature(browser, feature, index) {
     },
   };
 
-  let stopped = "step limit";
+  let stopped;
+  let steps = 0;
+  const limit = () => stopReason({ steps, maxSteps: MAX_STEPS, deadline, budget });
   try {
     // Stay on the stack: nothing the agent does may reach another site.
     await context.route("**/*", (route) =>
@@ -184,24 +195,22 @@ async function exploreFeature(browser, feature, index) {
       },
       { role: "user", content: await tools.snapshot() },
     ];
-    for (let step = 0; step < MAX_STEPS && !summary; step += 1) {
-      if (budget.exhausted) {
-        stopped = "budget";
-        break;
-      }
-      if (Date.now() > deadline) {
-        stopped = "time limit";
-        break;
-      }
+    while (!summary && !stopped) {
+      stopped = limit();
+      if (stopped) break;
       trimHistory(messages);
       const message = await callModel(messages);
       messages.push(message);
       const calls = message.tool_calls ?? [];
       if (calls.length === 0) {
+        steps += 1;
         messages.push({ role: "user", content: "Use a tool, or call finish." });
         continue;
       }
       for (const call of calls) {
+        stopped = limit();
+        if (stopped || summary) break;
+        steps += 1;
         let result;
         try {
           const run = tools[call.function.name];
@@ -229,8 +238,7 @@ try {
   await browser.close();
 }
 
-const findings = results.flatMap((r) => r.findings);
-writeFileSync(join(outDir, "findings.json"), `${JSON.stringify(findings, null, 2)}\n`);
+saveFindings();
 const lines = [
   "## Exploratory QA",
   "",

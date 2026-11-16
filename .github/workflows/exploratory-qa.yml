@@ -47,17 +47,20 @@ jobs:
     name: Explore features
     if: vars.EXPLORATORY_AGENT_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Step timeouts add up to 105 minutes, leaving room for checkout and runner overhead.
+    timeout-minutes: 120
     permissions:
       contents: read
       issues: read
     outputs:
       artifact_url: ${{ steps.upload.outputs.artifact-url }}
+      findings: ${{ steps.uploaded.outputs.findings }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-workspace
+        timeout-minutes: 10
         with:
           playwright: "true"
       - name: Install Chromium
@@ -66,12 +69,12 @@ jobs:
       # The same image a pull request preview runs: Postgres, the app and emulated services,
       # with the public demo account and fake data only.
       - name: Build the preview stack
-        timeout-minutes: 45
+        timeout-minutes: 40
         run: |
           docker build -f infra/compose/Dockerfile --build-arg GIT_SHA="$GITHUB_SHA" -t rakazo-server:preview .
           docker build --build-arg SERVER_IMAGE=rakazo-server:preview -t rakazo-preview infra/preview
       - name: Start the preview stack
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: |
           docker run -d --name preview -p 127.0.0.1:8080:8080 \
             -e PREVIEW_HOST=localhost:8080 -e PREVIEW_SCHEME=http rakazo-preview
@@ -80,6 +83,7 @@ jobs:
             sleep 3
           done
       - name: List known bugs
+        timeout-minutes: 2
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/exploratory-qa/file-issues.mjs --list "$RUNNER_TEMP/known.json"
@@ -103,21 +107,28 @@ jobs:
           cat "$QA_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload findings and screenshots
         id: upload
-        if: ${{ !cancelled() && hashFiles('exploratory-qa-out/findings.json') != '' }}
+        if: ${{ always() && hashFiles('exploratory-qa-out/findings.json') != '' }}
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: exploratory-qa-${{ github.run_id }}
           path: exploratory-qa-out
           retention-days: 90
+      # Set only once the findings are uploaded, so they are filed even when an earlier step failed.
+      - name: Mark findings uploaded
+        id: uploaded
+        if: ${{ always() && steps.upload.outcome == 'success' }}
+        run: echo "findings=true" >> "$GITHUB_OUTPUT"
       - name: Stop the preview stack
         if: always()
+        timeout-minutes: 3
         run: docker rm -f preview || true
 
   # Separate from the explorer so the job holding the model key never gets a token that can write.
   file-issues:
     name: File new bugs
     needs: explore
-    if: needs.explore.outputs.artifact_url != ''
+    if: ${{ always() && needs.explore.outputs.findings == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -170,7 +170,7 @@ Remove that variable to turn it off again.
 
 Every run is capped: a budget priced from the model's reported token usage
 (default $5, at most $25; it can overrun by at most one model call per worker),
-at most 6 workers, 30 minutes and 80 steps per worker, 3 bugs per feature and 10
+at most 6 workers, 30 minutes and 80 browser actions per worker, 3 bugs per feature and 10
 new issues per run. A manual run takes the budget, workers, minutes and feature
 names as inputs.
 
