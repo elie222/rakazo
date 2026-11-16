@@ -1,26 +1,26 @@
-import type { VoiceProvider } from "./types";
 import {
+  aboutTotal,
   CHARS_PER_HOUR,
   CHARS_PER_MINUTE,
-  PRICING_SOURCES,
-  RATES,
-  VOICE_DOC,
-  WORKLOAD,
-  WORKLOAD_COST,
-  WORKLOAD_DAILY_MINUTES,
-  aboutTotal,
+  cartesiaPerMillion,
   count,
   credits,
   homepage,
-  cartesiaPerMillion,
+  PRICING_SOURCES,
   perHourOfSpeech,
   priceVersus,
+  RATES,
   shareOf,
   usd,
-  withPricingSources,
+  VOICE_DOC,
   voicePriceTable,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_COST,
+  WORKLOAD_DAILY_MINUTES,
+  withPricingSources,
 } from "./shared";
+import type { VoiceProvider } from "./types";
 
 /** The worked example's ElevenLabs cost, scaled to another number of minutes a day. */
 function scaled(dailyMinutes: number, part: "speech" | "both"): number {
@@ -32,7 +32,14 @@ function scaled(dailyMinutes: number, part: "speech" | "both"): number {
 const PLANS = RATES.elevenlabsPlans;
 const FLASH = RATES.elevenlabsFlash;
 
-const WORKLOAD_SHOWN = ["elevenlabs", "openai", "cartesia", "fish", "selfHosted", "deepgram"] as const;
+const WORKLOAD_SHOWN = [
+  "elevenlabs",
+  "openai",
+  "cartesia",
+  "fish",
+  "selfHosted",
+  "deepgram",
+] as const;
 const COMPARED = [
   "elevenlabs",
   "elevenlabsV4",
@@ -103,27 +110,63 @@ export const elevenlabs: VoiceProvider = {
         rows: [
           {
             topic: "Free",
-            cells: [usd(PLANS.free.price), credits(PLANS.free.credits), "No, attribution required", "None", "2"],
+            cells: [
+              usd(PLANS.free.price),
+              credits(PLANS.free.credits),
+              "No, attribution required",
+              "None",
+              "2",
+            ],
           },
           {
             topic: "Starter",
-            cells: [usd(PLANS.starter.price), credits(PLANS.starter.credits), "Yes", "Instant", "3"],
+            cells: [
+              usd(PLANS.starter.price),
+              credits(PLANS.starter.credits),
+              "Yes",
+              "Instant",
+              "3",
+            ],
           },
           {
             topic: "Creator",
-            cells: [usd(PLANS.creator.price), credits(PLANS.creator.credits), "Yes", "Instant, 1 Professional", "5"],
+            cells: [
+              usd(PLANS.creator.price),
+              credits(PLANS.creator.credits),
+              "Yes",
+              "Instant, 1 Professional",
+              "5",
+            ],
           },
           {
             topic: "Pro",
-            cells: [usd(PLANS.pro.price), credits(PLANS.pro.credits), "Yes", "Instant, 1 Professional", "10"],
+            cells: [
+              usd(PLANS.pro.price),
+              credits(PLANS.pro.credits),
+              "Yes",
+              "Instant, 1 Professional",
+              "10",
+            ],
           },
           {
             topic: "Scale",
-            cells: [`${usd(PLANS.scale.price)}, 3 seats`, credits(PLANS.scale.credits), "Yes", "3 Professional", "15"],
+            cells: [
+              `${usd(PLANS.scale.price)}, 3 seats`,
+              credits(PLANS.scale.credits),
+              "Yes",
+              "3 Professional",
+              "15",
+            ],
           },
           {
             topic: "Business",
-            cells: [`${usd(PLANS.business.price)}, 10 seats`, credits(PLANS.business.credits), "Yes", "10 Professional", "25"],
+            cells: [
+              `${usd(PLANS.business.price)}, 10 seats`,
+              credits(PLANS.business.credits),
+              "Yes",
+              "10 Professional",
+              "25",
+            ],
           },
           { topic: "Enterprise", cells: ["Custom", "Custom", "Yes", "Custom", "Custom"] },
         ],
@@ -151,7 +194,10 @@ export const elevenlabs: VoiceProvider = {
             topic: "Eleven v4, v3, Multilingual v2",
             cells: [usd(RATES.elevenlabsV4 / 1000), usd(RATES.elevenlabsV4), V4_HOUR],
           },
-          { topic: "Scribe v2 transcription (Rakazo uses this)", cells: ["—", "—", `${usd(RATES.elevenlabsScribeHour)} of audio`] },
+          {
+            topic: "Scribe v2 transcription (Rakazo uses this)",
+            cells: ["—", "—", `${usd(RATES.elevenlabsScribeHour)} of audio`],
+          },
           {
             topic: "Scribe v2 Realtime",
             cells: ["—", "—", `${usd(RATES.elevenlabsScribeRealtimeHour)} of audio`],
@@ -203,7 +249,7 @@ export const elevenlabs: VoiceProvider = {
         "Talk instead of typing. Hold the mic in the composer, speak, and let go to send. When Rakazo transcribes on the server, as it does in a phone browser or the desktop app, it uses ElevenLabs' `scribe_v2`.",
         "Hear replies. Choose **Speak this reply** on any message, or turn on **Read replies aloud** in a bot's settings to hear everything it says.",
         "Call a bot. Choose **Call** at the top of a chat to talk in real time. You can cut in while the bot is speaking, and the transcript stays in the chat.",
-        "Get called. Ask \"call me at 5 to go over the day\" and the bot rings you then. A bot may also call if you've missed the same reminder several times.",
+        'Get called. Ask "call me at 5 to go over the day" and the bot rings you then. A bot may also call if you\'ve missed the same reminder several times.',
         "Give each bot its own voice. The **Voice** next to **Read replies aloud** overrides your default for that bot, so your inbox bot and your sales bot don't sound alike.",
         "Use your own voices. The voice picker lists the voices in your ElevenLabs account, including ones you cloned or saved from its library.",
         "Send voice notes from chat apps. A voice note sent to a bot through Telegram, for example, is transcribed with ElevenLabs before the bot reads it. See [messaging apps](/docs/messaging-apps/).",
@@ -253,13 +299,11 @@ export const elevenlabs: VoiceProvider = {
   faq: [
     {
       question: "How much does ElevenLabs cost?",
-      answer:
-        `As of November 2026, plans run from Free (${count(PLANS.free.credits)} credits, non-commercial) through Starter at ${usd(PLANS.starter.price)}, Creator at ${usd(PLANS.creator.price)}, Pro at ${usd(PLANS.pro.price)}, Scale at ${usd(PLANS.scale.price)} and Business at ${usd(PLANS.business.price)} a month. Through the API, Flash v2.5 costs ${usd(RATES.elevenlabsFlash / 1000)} per 1,000 characters (about ${FLASH_HOUR} per hour of speech) and Eleven v4 costs ${usd(RATES.elevenlabsV4 / 1000)}. Scribe v2 transcription is ${usd(RATES.elevenlabsScribeHour)} per hour.`,
+      answer: `As of November 2026, plans run from Free (${count(PLANS.free.credits)} credits, non-commercial) through Starter at ${usd(PLANS.starter.price)}, Creator at ${usd(PLANS.creator.price)}, Pro at ${usd(PLANS.pro.price)}, Scale at ${usd(PLANS.scale.price)} and Business at ${usd(PLANS.business.price)} a month. Through the API, Flash v2.5 costs ${usd(RATES.elevenlabsFlash / 1000)} per 1,000 characters (about ${FLASH_HOUR} per hour of speech) and Eleven v4 costs ${usd(RATES.elevenlabsV4 / 1000)}. Scribe v2 transcription is ${usd(RATES.elevenlabsScribeHour)} per hour.`,
     },
     {
       question: "How much does an ElevenLabs voice agent cost per month?",
-      answer:
-        `In Rakazo, a bot that reads 30 minutes of replies a day and transcribes 30 minutes of what you say costs ${aboutTotal("elevenlabs").toLowerCase()} a month in ElevenLabs usage. Rakazo doesn't add a voice charge. ElevenLabs' own Agents platform is priced separately, at ${usd(RATES.elevenlabsAgentsMinute)} a minute plus the language model.`,
+      answer: `In Rakazo, a bot that reads 30 minutes of replies a day and transcribes 30 minutes of what you say costs ${aboutTotal("elevenlabs").toLowerCase()} a month in ElevenLabs usage. Rakazo doesn't add a voice charge. ElevenLabs' own Agents platform is priced separately, at ${usd(RATES.elevenlabsAgentsMinute)} a minute plus the language model.`,
     },
     {
       question: "Can I talk to my AI agent with ElevenLabs?",
@@ -283,8 +327,7 @@ export const elevenlabs: VoiceProvider = {
     },
     {
       question: "Deepgram vs ElevenLabs: which is better?",
-      answer:
-        `Deepgram specializes in transcription and is a common choice for the listening side of voice agents, but per hour it is ${priceVersus(RATES.deepgramStreamHour, RATES.elevenlabsScribeRealtimeHour)} ElevenLabs: streaming Nova-3 costs ${usd(RATES.deepgramStreamHour)} against ${usd(RATES.elevenlabsScribeRealtimeHour)} for Scribe v2 Realtime, and batch ${usd(RATES.deepgramBatchHour)} against ${usd(RATES.elevenlabsScribeHour)}. ElevenLabs sounds more natural and clones voices; Deepgram's Aura-2 voices are ${priceVersus(RATES.deepgram, FLASH)} Flash v2.5. Many voice-agent builders use Deepgram to listen and ElevenLabs to speak. Rakazo connects to ElevenLabs but not Deepgram.`,
+      answer: `Deepgram specializes in transcription and is a common choice for the listening side of voice agents, but per hour it is ${priceVersus(RATES.deepgramStreamHour, RATES.elevenlabsScribeRealtimeHour)} ElevenLabs: streaming Nova-3 costs ${usd(RATES.deepgramStreamHour)} against ${usd(RATES.elevenlabsScribeRealtimeHour)} for Scribe v2 Realtime, and batch ${usd(RATES.deepgramBatchHour)} against ${usd(RATES.elevenlabsScribeHour)}. ElevenLabs sounds more natural and clones voices; Deepgram's Aura-2 voices are ${priceVersus(RATES.deepgram, FLASH)} Flash v2.5. Many voice-agent builders use Deepgram to listen and ElevenLabs to speak. Rakazo connects to ElevenLabs but not Deepgram.`,
     },
     {
       question: "Do I need ElevenLabs to use Rakazo?",
@@ -294,19 +337,19 @@ export const elevenlabs: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    { label: "ElevenLabs", href: "https://elevenlabs.io" },
-    PRICING_SOURCES.elevenlabs,
-    PRICING_SOURCES.elevenlabsApi,
-    { label: "ElevenLabs, models", href: "https://elevenlabs.io/docs/overview/models" },
-    {
-      label: "ElevenLabs, Pay As You Go",
-      href: "https://elevenlabs.io/docs/overview/administration/pay-as-you-go",
-    },
-    {
-      label: "ElevenLabs, zero retention mode",
-      href: "https://elevenlabs.io/docs/developers/resources/zero-retention-mode",
-    },
-    VOICE_DOC,
+      { label: "ElevenLabs", href: "https://elevenlabs.io" },
+      PRICING_SOURCES.elevenlabs,
+      PRICING_SOURCES.elevenlabsApi,
+      { label: "ElevenLabs, models", href: "https://elevenlabs.io/docs/overview/models" },
+      {
+        label: "ElevenLabs, Pay As You Go",
+        href: "https://elevenlabs.io/docs/overview/administration/pay-as-you-go",
+      },
+      {
+        label: "ElevenLabs, zero retention mode",
+        href: "https://elevenlabs.io/docs/developers/resources/zero-retention-mode",
+      },
+      VOICE_DOC,
     ],
     { prices: COMPARED, workload: WORKLOAD_SHOWN },
   ),

@@ -1,3 +1,4 @@
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor, BotSecretMetadata } from "@rakazo/contracts";
@@ -6,6 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
@@ -149,7 +151,10 @@ function botSecretDeps(seed: Row[] = []) {
     },
     dataDir: "/tmp/rakazo-router-test",
   } as unknown as RouterDeps;
-  const handler = new RPCHandler(createRouter(deps));
+  // Errors are answered as the app answers them, so a typed refusal keeps its status.
+  const handler = new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
   async function call(path: string, input: unknown) {
     const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/${path.includes("/") ? path : `botSecrets/${path}`}`, {

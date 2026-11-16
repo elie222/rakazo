@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { pageViewerCode } from "./compile.js";
@@ -18,7 +19,7 @@ it("mounts a page and reports its height where the browser has no ResizeObserver
   const page = (window as unknown as { RakazoPage: { mount: (boot: object) => void } }).RakazoPage;
   await act(async () => {
     page.mount({ code, theme: "light", errorTitle: "This page couldn't be shown." });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   // jsdom runs no inline scripts, so the page's own code shows its error panel; what matters is
   // that mounting got that far instead of throwing before anything drew.
@@ -45,7 +46,7 @@ it("runs a saved page that declares its own component under a kit component's na
   const page = (window as unknown as { RakazoPage: { mount: (boot: object) => void } }).RakazoPage;
   await act(async () => {
     page.mount({ code: checked.code, theme: "light", errorTitle: "This page couldn't be shown." });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(document.body.textContent).toBe("Own steps");
 });
