@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { Bot, BotAvatarSet, ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
+import type { Bot, BotAvatarSet, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -27,7 +27,6 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
-import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
 import type { MenuPickerChoice } from "../components/menu-picker";
@@ -89,7 +88,15 @@ export default function BotSettingsScreen() {
   const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
   const [fleetManagement, setFleetManagement] = useState(true);
-  const [replyMode, setReplyMode] = useState<ReplyMode>("chat");
+  // A setting this screen no longer offers still shows while the bot has it changed from the
+  // default, so it can be put back. Decided once, so the row stays to undo a change.
+  const [changed, setChanged] = useState<{
+    botId: string;
+    readAloud: boolean;
+    dailyCheckIns: boolean;
+    crossSpaceCommunication: boolean;
+    fleetManagement: boolean;
+  } | null>(null);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -136,18 +143,6 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, fleetManagement: value });
         },
         onChange: setFleetManagement,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
-  );
-
-  const replyModeSave = useMemo(
-    () =>
-      createQueuedSave<ReplyMode>("chat", {
-        save: async (value) => {
-          await rpc("bots/update", { botId, replyMode: value });
-        },
-        onChange: setReplyMode,
         onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
@@ -220,11 +215,19 @@ export default function BotSettingsScreen() {
         crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
-        setReplyMode(next.replyMode);
-        replyModeSave.reset(next.replyMode);
+        setChanged(
+          (current) =>
+            (current?.botId === next.id ? current : null) ?? {
+              botId: next.id,
+              readAloud: next.autoSpeak,
+              dailyCheckIns: next.dailyCheckIns === false,
+              crossSpaceCommunication: next.crossSpaceCommunication === false,
+              fleetManagement: !next.fleetManagement,
+            },
+        );
       })
       .catch((err) => setError(errorText(err, t`Could not load bot`)));
-  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, replyModeSave, notifySave, nameSave]);
+  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -457,7 +460,6 @@ export default function BotSettingsScreen() {
         dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
-        replyModeSave.flush(),
         notifySave.flush(),
         nameSave.flush(),
       ]);
@@ -587,7 +589,7 @@ export default function BotSettingsScreen() {
             />
           </SettingsGroup>
         </View>
-        {botId ? <BotContextCards key={botId} botId={botId} /> : null}
+        {botId ? <BotContextCards key={`${botId}-work`} botId={botId} section="work" /> : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t`Advanced`}
@@ -615,6 +617,9 @@ export default function BotSettingsScreen() {
                 scrollRef.current?.scrollTo({ y: modelY.current, animated: true });
             }}
           >
+            {botId ? (
+              <BotContextCards key={`${botId}-memory`} botId={botId} section="memory" />
+            ) : null}
             <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>
               <MenuPicker
                 choices={modelChoices}
@@ -641,65 +646,65 @@ export default function BotSettingsScreen() {
                 />
               ) : null}
             </SettingsGroup>
-            <SettingsGroup label={t`Computer`}>
-              <View style={styles.cardContent}>
-                <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
-              </View>
+            <SettingsGroup>
+              <SettingsSwitch
+                label={t`Own computer`}
+                value={computerMode === "dedicated"}
+                onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
+              />
               {computerMaintenanceRows}
             </SettingsGroup>
-            <SettingsGroup label={t`Voice`}>
-              <SettingsSwitch
-                label={t`Read replies aloud`}
-                onChange={setAutoSpeak}
-                value={autoSpeak}
-              />
-              {deviceVoiceEnabled ? voiceRow : null}
-            </SettingsGroup>
-            <SettingsGroup label={t`Permissions`}>
-              <SettingsSwitch
-                label={t`Daily check-ins on unfinished work`}
-                value={dailyCheckIns}
-                onChange={(value) => {
-                  if (!botId) return;
-                  setError(null);
-                  dailyCheckInsSave.update(value);
-                }}
-              />
-              <SettingsSwitch
-                label={t`Allow cross-space bot communication`}
-                value={crossSpaceCommunication}
-                onChange={(value) => {
-                  if (!botId) return;
-                  setError(null);
-                  crossSpaceSave.update(value);
-                }}
-              />
-              <SettingsSwitch
-                label={t`Manage other bots`}
-                onChange={(value) => {
-                  if (!botId) return;
-                  setError(null);
-                  fleetSave.update(value);
-                }}
-                value={fleetManagement}
-              />
-            </SettingsGroup>
-            <SettingsGroup label={t`Replies`}>
-              <MenuPicker
-                choices={[
-                  { key: "chat", label: t`Chat` },
-                  { key: "messages", label: t`Messages` },
-                ]}
-                label={t`Replies`}
-                showLabel={false}
-                onChange={(value) => {
-                  if (!botId) return;
-                  setError(null);
-                  replyModeSave.update(value as ReplyMode);
-                }}
-                value={replyMode}
-              />
-            </SettingsGroup>
+            {changed?.readAloud || deviceVoiceEnabled ? (
+              <SettingsGroup label={t`Voice`}>
+                {changed?.readAloud ? (
+                  <SettingsSwitch
+                    label={t`Read replies aloud`}
+                    onChange={setAutoSpeak}
+                    value={autoSpeak}
+                  />
+                ) : null}
+                {deviceVoiceEnabled ? voiceRow : null}
+              </SettingsGroup>
+            ) : null}
+            {changed?.dailyCheckIns ||
+            changed?.crossSpaceCommunication ||
+            changed?.fleetManagement ? (
+              <SettingsGroup label={t`Permissions`}>
+                {changed.dailyCheckIns ? (
+                  <SettingsSwitch
+                    label={t`Daily check-ins on unfinished work`}
+                    value={dailyCheckIns}
+                    onChange={(value) => {
+                      if (!botId) return;
+                      setError(null);
+                      dailyCheckInsSave.update(value);
+                    }}
+                  />
+                ) : null}
+                {changed.crossSpaceCommunication ? (
+                  <SettingsSwitch
+                    label={t`Allow cross-space bot communication`}
+                    value={crossSpaceCommunication}
+                    onChange={(value) => {
+                      if (!botId) return;
+                      setError(null);
+                      crossSpaceSave.update(value);
+                    }}
+                  />
+                ) : null}
+                {changed.fleetManagement ? (
+                  <SettingsSwitch
+                    label={t`Manage other bots`}
+                    onChange={(value) => {
+                      if (!botId) return;
+                      setError(null);
+                      fleetSave.update(value);
+                    }}
+                    value={fleetManagement}
+                  />
+                ) : null}
+              </SettingsGroup>
+            ) : null}
             <View style={{ gap: 7 }}>
               <View
                 style={{
@@ -898,6 +903,5 @@ export default function BotSettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  cardContent: { padding: 16 },
   voiceError: { flexShrink: 1, fontSize: 17 },
 });

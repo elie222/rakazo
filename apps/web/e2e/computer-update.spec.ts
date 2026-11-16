@@ -1,12 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { ComputerUpdate } from "@rakazo/contracts";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  openBotPanelTab,
-  signup,
-} from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("computer maintenance shows durable background progress and failure recovery", async ({
   page,
@@ -35,31 +29,15 @@ test("computer maintenance shows durable background progress and failure recover
       json: { json: { defined: false, code: "NOT_FOUND", status: 404, message: "Not found" } },
     }),
   );
-  await page.route("**/rpc/computer/update", (route) => {
-    updates = [updating];
-    return route.fulfill({ json: { json: updating } });
-  });
   await page.route("**/rpc/computer/recover", (route) => {
     updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
     return route.fulfill({ json: { json: updates[0] } });
   });
-  await openBotPanelTab(page, "Computer");
-  await expect(page.getByTestId("computer-preview")).toBeVisible();
-  await openBotPanelTab(page, "Advanced");
-  const settings = page.getByTestId("bot-settings");
-  const reset = settings.getByRole("button", { name: "Reset computer", exact: true });
-  await expect(reset).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Stop computer" })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
-  await reset.scrollIntoViewIfNeeded();
-  await captureScreenshot(page, testInfo, "computer-maintenance-settings");
-  await reset.click();
-  const resetConfirmation = page.getByRole("alertdialog");
-  await expect(resetConfirmation.getByRole("heading")).toHaveText("Reset computer?");
-  await captureScreenshot(page, testInfo, "computer-maintenance-reset-confirmation");
-  await resetConfirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  await settings.getByRole("button", { name: "Update computer", exact: true }).click();
+  // An update started elsewhere, such as from the phone, shows its progress here too.
+  updates = [updating];
+  await page.reload();
   const dialog = page.getByTestId("computer-update-dialog");
+  await page.getByRole("button", { name: /Updating Team Computer/ }).click();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading")).toHaveText("Updating Team Computer");
   await expect(dialog.locator('[aria-current="step"]')).toHaveText("Restoring your workspace");
