@@ -127,11 +127,15 @@ describePostgres("run secret cleanup (PostgreSQL)", () => {
         spaceId,
         kind,
         ciphertext: "fake-ciphertext",
-        createdAt: old,
       })),
     });
 
-    await expect(forgetIdleRunSecrets(prisma, new Date(now.getTime() - day), 100)).resolves.toBe(2);
+    const cutoff = new Date(now.getTime() - day);
+    await expect(forgetIdleRunSecrets(prisma, idle, cutoff)).resolves.toBeUndefined();
+    // Paused again since: look again a day after that pause.
+    const later = await forgetIdleRunSecrets(prisma, recent, cutoff);
+    expect(later?.retryAfter.getTime()).toBeGreaterThan(now.getTime() + day - 60_000);
+    await expect(forgetIdleRunSecrets(prisma, working, cutoff)).resolves.toBeUndefined();
 
     const left = await prisma.secret.findMany({
       where: { spaceId, kind: { in: kinds } },

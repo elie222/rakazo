@@ -48,7 +48,6 @@ function fakePrisma(
     run: { findMany: vi.fn(async () => runs) },
     routine: { findMany: vi.fn(async () => routines) },
     computer: { findMany: vi.fn(async () => controls) },
-    secret: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaClient;
 }
 

@@ -93,6 +93,7 @@ import {
   TOOL_STEPS_WITHOUT_RESPONSE,
 } from "./run-replies.prompt.js";
 import { scheduleRoutineRetry } from "./run-routines.js";
+import { scheduleRunSecretsExpiry } from "./run-secrets-expiry.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
@@ -456,6 +457,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   if (!paused) return;
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await reportBotMessageWait(deps, run, bot, safeText, ctx.attempt.id);
+  await scheduleRunSecretsExpiry(deps.jobs, runId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,

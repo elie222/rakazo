@@ -1,9 +1,6 @@
 import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
-
-const RUN_SECRET_PREFIXES = ["run-secret:", "run-login:", "run-code:", "run-code-spent:"];
 
 /** A secret card's answer waits under this kind until the resumed run reads it once. */
 export function runSecretKind(runId: string): string {
@@ -91,39 +88,27 @@ export async function clearEndedRunState(
 }
 
 /**
- * A question stays open, but what its run took to sign in does not: drop the run-only answers,
- * logins and codes of runs that have waited on someone since `olderThan`. The run resumes without
- * them and asks again if it still needs one. Returns how many were dropped.
+ * A question stays open, but what its run took to sign in does not: once the run has waited on
+ * someone since `olderThan`, drop its run-only answers, logins and codes. The run resumes without
+ * them and asks again if it still needs one. Returns when to look again if the run is still
+ * waiting but was paused more recently, or undefined when there is nothing left to do.
  */
 export async function forgetIdleRunSecrets(
   prisma: PrismaClient,
+  runId: string,
   olderThan: Date,
-  batchSize: number,
-): Promise<number> {
-  const held = await prisma.secret.findMany({
-    where: {
-      OR: RUN_SECRET_PREFIXES.map((prefix) => ({ kind: { startsWith: prefix } })),
-      createdAt: { lte: olderThan },
-    },
-    select: { id: true, kind: true },
-    orderBy: { createdAt: "asc" },
-    take: batchSize,
-  });
-  const byRun = new Map<string, string[]>();
-  for (const secret of held) {
-    const runId = secret.kind.split(":")[1];
-    if (runId) byRun.set(runId, [...(byRun.get(runId) ?? []), secret.id]);
-  }
-  if (byRun.size === 0) return 0;
+): Promise<{ retryAfter: Date } | undefined> {
   return prisma.$transaction(async (tx) => {
-    // Locking the waiting rows keeps an answer from resuming one mid-delete.
-    const waiting = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM runs
-      WHERE id IN (${Prisma.join([...byRun.keys()])}) AND status = 'waiting_input' AND "updatedAt" <= ${olderThan}
-      FOR UPDATE`;
-    const ids = waiting.flatMap((run) => byRun.get(run.id) ?? []);
-    if (ids.length === 0) return 0;
-    const { count } = await tx.secret.deleteMany({ where: { id: { in: ids } } });
-    return count;
+    // Locking the row keeps an answer from resuming the run mid-delete.
+    const [run] = await tx.$queryRaw<
+      Array<{ id: string; userId: string; spaceId: string; updatedAt: Date }>
+    >`SELECT id, "userId", "spaceId", "updatedAt" FROM runs
+      WHERE id = ${runId} AND status = 'waiting_input' FOR UPDATE`;
+    if (!run) return undefined;
+    if (run.updatedAt > olderThan) {
+      return { retryAfter: new Date(run.updatedAt.getTime() + (Date.now() - olderThan.getTime())) };
+    }
+    await deleteRunSecretsInTransaction(tx, [run]);
+    return undefined;
   });
 }

@@ -76,6 +76,7 @@ import {
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
+import { scheduleRunSecretsExpiry } from "./run-secrets-expiry.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
@@ -795,6 +796,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   }
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await reportBotMessageWait(deps, run, bot, `approve ${name}`, ctx.attempt.id);
+  await scheduleRunSecretsExpiry(deps.jobs, runId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

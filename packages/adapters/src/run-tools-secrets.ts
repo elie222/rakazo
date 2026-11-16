@@ -46,6 +46,7 @@ import {
   resolveMissingRunSecretAction,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { scheduleRunSecretsExpiry } from "./run-secrets-expiry.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 
 /** Saved credentials and protected input. */
@@ -417,6 +418,7 @@ export const secretTools: ToolHandlers = {
     }
     await enqueueSteeringContinuation(deps, paused.continuationRunId);
     await reportBotMessageWait(deps, run, bot, redactSecrets(askText, ctx.secrets), ctx.attempt.id);
+    await scheduleRunSecretsExpiry(deps.jobs, runId);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),
