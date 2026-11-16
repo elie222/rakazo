@@ -57,7 +57,7 @@ import type { RouterDeps } from "../router.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
-  loadDefaultVoiceCredential,
+  listConnectedVoices,
   loadVoiceCredential,
   persistVoiceCredential,
   prepareVoice,
@@ -620,16 +620,23 @@ export function accountRoutes(ctx: RouterContext) {
         updateVoiceSpeechModel(deps, context.actor, input),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
+        if (!input.provider) {
+          return listConnectedVoices(
+            deps,
+            context.actor,
+            input.scope,
+            input.language,
+            context.signal,
+          );
+        }
         // A named provider lists its voices even before the copy has a default voice.
-        const row = input.provider
-          ? await loadVoiceCredential(
-              deps,
-              context.actor,
-              input.provider,
-              input.scope,
-              context.signal,
-            )
-          : await loadDefaultVoiceCredential(deps, context.actor, input.scope, context.signal);
+        const row = await loadVoiceCredential(
+          deps,
+          context.actor,
+          input.provider,
+          input.scope,
+          context.signal,
+        );
         if (!row) return [];
         const provider = await voiceProviderFor(deps, row.cred.provider);
         return withVoiceConnection(row.cred.provider, row.linked, () =>

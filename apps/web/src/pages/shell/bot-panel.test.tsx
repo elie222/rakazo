@@ -862,6 +862,19 @@ describe("BotSettings avatar set persistence", () => {
 });
 
 describe("BotSettings cached data", () => {
+  it("keeps a legacy bot voice selected when connected providers are listed together", async () => {
+    vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
+      { id: "elevenlabs::voice-1", label: "Original voice" },
+      { id: "fish-audio::voice-2", label: "Fish voice" },
+    ]);
+    await render("Billing", { voiceId: "voice-1" });
+    await vi.waitFor(() =>
+      expect(container.querySelector<HTMLSelectElement>('[id$="-voice"]')?.value).toBe(
+        "elevenlabs::voice-1",
+      ),
+    );
+  });
+
   it("shows cached voices at once and refreshes them in the background", async () => {
     queryClient.setQueryData(spaceQueries(null, null).voice.voices.queryKey({ input: {} }), [
       { id: "cached-voice", label: "Cached voice" },

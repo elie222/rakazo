@@ -25,6 +25,14 @@ const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
 const FORMAT = "mp3_44100_64";
 const TRANSCRIBE_MODEL = "scribe_v2";
+const KIM_IVC_VOICE_ID = "XEETtD4VSdyjkKCeQImT";
+const KIM_IVC_SETTINGS = {
+  stability: 0.4,
+  similarity_boost: 0.6,
+  style: 0.25,
+  use_speaker_boost: true,
+  speed: 0.94,
+} as const;
 
 export class ElevenLabsVoiceProvider implements VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities> {
@@ -67,6 +75,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = deadlineSignal(60_000, request.signal ?? context.signal);
+    const kimIvc = request.voiceId === KIM_IVC_VOICE_ID;
     const res = await fetch(
       `${API}/text-to-speech/${encodeURIComponent(request.voiceId)}?output_format=${FORMAT}`,
       {
@@ -76,7 +85,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           "content-type": "application/json",
           accept: "audio/mpeg",
         },
-        body: JSON.stringify({ text: request.text, model_id: request.model?.trim() || MODEL }),
+        body: JSON.stringify({
+          text: request.text,
+          model_id: kimIvc ? "eleven_multilingual_v2" : request.model?.trim() || MODEL,
+          ...(kimIvc ? { voice_settings: KIM_IVC_SETTINGS } : {}),
+        }),
         signal,
       },
     );

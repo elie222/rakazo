@@ -650,6 +650,49 @@ describe("synthesizeVoice", () => {
     );
   });
 
+  it("uses the provider saved with a bot voice instead of the account default", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array(), mimeType: "audio/mpeg" });
+    const create = vi
+      .spyOn(adapters, "createVoiceProvider")
+      .mockReturnValue({ synthesize } as never);
+    const prisma = {
+      bot: { findFirst: vi.fn().mockResolvedValue({ voiceId: "fish-audio::fish-voice" }) },
+      spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
+      userVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: false,
+          voiceId: "fish-default",
+          speechModel: "s2.1-pro",
+          credential: {
+            id: "fish-credential",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "fish-secret",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "fish-secret", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
+    } as unknown as VoiceDeps;
+
+    await synthesizeVoice(deps, actor, { text: "Hello", botId: "bot-1" });
+
+    expect(create).toHaveBeenCalledWith("fish-audio", expect.anything());
+    expect(synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceId: "fish-voice", apiKey: "fish-key" }),
+      expect.anything(),
+    );
+  });
+
   it("omits the model when the connection has no override", async () => {
     const synthesize = vi
       .fn()

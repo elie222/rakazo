@@ -25,14 +25,23 @@ import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
-/** Top-scored public voices for the picker — not a full catalog crawl. */
-const PUBLIC_MODEL_PAGES = 5;
-const PUBLIC_MODEL_CONCURRENCY = 2;
 /** User-owned libraries are smaller; still hard-capped. */
 const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
 const DEFAULT_TTS_MODEL = "s2.1-pro";
 const UPSTREAM_DETAIL_LIMIT = 500;
+const SHOW_V2_REFERENCE_ID = "9c39bca0c6a24b8c865ff07972b838df";
+const SHOW_SOFT_CHAT = {
+  temperature: 0.66,
+  top_p: 0.7,
+  prosody: { speed: 0.98, volume: -1, normalize_loudness: true },
+} as const;
+const YIFEI_REFERENCE_ID = "cefd6b735801437ba1cda33b55958b98";
+const YIFEI_MANDARIN = {
+  temperature: 0.55,
+  top_p: 0.61,
+  prosody: { speed: 0.9, volume: -1, normalize_loudness: true },
+} as const;
 let invalidTtsModelWarned = false;
 /**
  * Fish's recommended, multilingual ASR model. Without the `model` header the endpoint
@@ -61,7 +70,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     });
   }
 
-  /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */
+  /** Keep the picker to this account's voices; the public catalog is too noisy here. */
   async listVoices(
     apiKey: string,
     context: AdapterContext,
@@ -76,12 +85,9 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     // Fish's catalog filter matches the lowercase primary subtag ("de-DE" → "de").
     const language = options.language?.split("-")[0]?.toLowerCase() || undefined;
     try {
-      const [publicModels, ownModels] = await Promise.all([
-        fetchModels(apiKey, listContext, false, language),
-        fetchModels(apiKey, listContext, true, undefined),
-      ]);
+      const ownModels = await fetchModels(apiKey, listContext, true, language);
       const seen = new Set<string>();
-      return [...ownModels, ...publicModels]
+      return ownModels
         .map(modelToVoice)
         .filter((voice): voice is VoiceInfo => {
           if (!voice || seen.has(voice.id)) return false;
@@ -96,7 +102,8 @@ export class FishAudioVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = deadlineSignal(60_000, request.signal ?? context.signal);
-    const model = resolveFishSpeechModel(request.model);
+    const yifei = request.voiceId === YIFEI_REFERENCE_ID;
+    const model = yifei ? "s2-pro" : resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
       headers: {
@@ -112,6 +119,8 @@ export class FishAudioVoiceProvider implements VoiceProvider {
         mp3_bitrate: 64,
         latency: "balanced",
         normalize: true,
+        ...(request.voiceId === SHOW_V2_REFERENCE_ID ? SHOW_SOFT_CHAT : {}),
+        ...(yifei ? YIFEI_MANDARIN : {}),
       }),
       signal,
     });
@@ -155,7 +164,7 @@ async function fetchModels(
   own: boolean,
   language?: string,
 ): Promise<Array<Record<string, unknown>>> {
-  const maxPages = own ? OWN_MODEL_PAGES : PUBLIC_MODEL_PAGES;
+  const maxPages = OWN_MODEL_PAGES;
   const models: Array<Record<string, unknown>> = [];
   let pageNumber = 1;
   let batchSize = 1;
@@ -177,14 +186,7 @@ async function fetchModels(
       models.push(...items);
       if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) return models;
       pageNumber++;
-      const total = (body as { total?: unknown } | null)?.total;
-      batchSize =
-        !own && typeof total === "number" && Number.isFinite(total)
-          ? Math.min(
-              PUBLIC_MODEL_CONCURRENCY,
-              Math.max(1, Math.ceil(total / MODEL_PAGE_SIZE) - pageNumber + 1),
-            )
-          : 1;
+      batchSize = 1;
     }
   }
   return models;

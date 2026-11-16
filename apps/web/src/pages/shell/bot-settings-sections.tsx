@@ -164,6 +164,10 @@ export function VoiceRow({
   onVoiceIdChange: (voiceId: string) => void;
 }) {
   const { t } = useLingui();
+  const selectedVoiceId =
+    voices?.find((voice) => voice.id === voiceId)?.id ??
+    voices?.find((voice) => voice.id.endsWith(`::${voiceId}`))?.id ??
+    voiceId;
   return (
     <label
       htmlFor={`${ids}-voice`}
@@ -173,7 +177,7 @@ export function VoiceRow({
       <OptionSelect
         id={`${ids}-voice`}
         className="w-fit max-w-2/3"
-        value={voiceId}
+        value={selectedVoiceId}
         onValueChange={onVoiceIdChange}
         options={[
           { value: "", label: t`Account default` },

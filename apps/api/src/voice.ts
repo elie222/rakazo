@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
-import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import type { AdapterContext, SecretStore, VoiceInfo } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError, VoiceAccountError } from "@rakazo/adapter-kit";
+import type { VoiceProviderId } from "@rakazo/adapters";
 import {
   createVoiceProvider,
   isModelConnectionVoiceSecret,
@@ -102,6 +103,71 @@ export function voiceContext(
     userId: actor.userId,
     signal: signal ?? new AbortController().signal,
   };
+}
+
+const VOICE_PROVIDER_SEPARATOR = "::";
+
+export function qualifiedVoiceId(provider: string, voiceId: string) {
+  return `${provider}${VOICE_PROVIDER_SEPARATOR}${voiceId}`;
+}
+
+export function parseQualifiedVoiceId(value: string) {
+  const separator = value.indexOf(VOICE_PROVIDER_SEPARATOR);
+  if (separator <= 0) return null;
+  const provider = value.slice(0, separator);
+  const voiceId = value.slice(separator + VOICE_PROVIDER_SEPARATOR.length);
+  return voiceId && isVoiceProviderId(provider) ? { provider, voiceId } : null;
+}
+
+type ConnectedVoice = { provider: VoiceProviderId; voice: VoiceInfo };
+
+async function connectedVoices(
+  deps: VoiceDeps,
+  actor: Actor,
+  scope?: SettingsScope,
+  language?: string,
+  signal?: AbortSignal,
+): Promise<ConnectedVoice[]> {
+  // Lightweight callers may supply only the default-voice tables.
+  if (!deps.prisma.userVoiceCredential?.findMany) return [];
+  const rows = await deps.prisma.userVoiceCredential.findMany({
+    where: { userId: actor.userId },
+    orderBy: newestVoiceCredentialOrder,
+  });
+  const providers = [...new Set(rows.map((row) => row.provider))].filter(isVoiceProviderId);
+  const listed = await Promise.all(
+    providers.map(async (provider): Promise<ConnectedVoice[]> => {
+      try {
+        const loaded = await loadVoiceCredential(deps, actor, provider, scope, signal);
+        if (!loaded) return [];
+        const adapter = await voiceProviderFor(deps, provider);
+        const voices = await withVoiceConnection(provider, loaded.linked, () =>
+          adapter.listVoices(loaded.apiKey, voiceContext(actor, signal), { language }),
+        );
+        return voices.map((voice) => ({ provider, voice }));
+      } catch (error) {
+        getLogger().warn("connected voice catalog unavailable", {
+          provider,
+          reason: error instanceof Error ? error.name : "unknown",
+        });
+        return [];
+      }
+    }),
+  );
+  return listed.flat();
+}
+
+/** All connected voice catalogs, with the provider carried in the opaque selection id. */
+export async function listConnectedVoices(
+  deps: VoiceDeps,
+  actor: Actor,
+  scope?: SettingsScope,
+  language?: string,
+  signal?: AbortSignal,
+): Promise<VoiceInfo[]> {
+  return (await connectedVoices(deps, actor, scope, language, signal)).map(
+    ({ provider, voice }) => ({ ...voice, id: qualifiedVoiceId(provider, voice.id) }),
+  );
 }
 
 export function catalogEntry(provider: string) {
@@ -344,9 +410,28 @@ export async function resolveVoiceTarget(
     if (!bot) throw new IsolationError();
     botVoiceId = bot.voiceId;
   }
-  const loaded = await loadDefaultVoiceCredential(deps, actor, input.scope, input.signal);
+  const selectedVoiceId = input.voiceId || botVoiceId;
+  let qualified = selectedVoiceId ? parseQualifiedVoiceId(selectedVoiceId) : null;
+  if (!qualified && selectedVoiceId) {
+    const matches = (
+      await connectedVoices(deps, actor, input.scope, undefined, input.signal)
+    ).filter(({ voice }) => voice.id === selectedVoiceId);
+    if (matches.length === 1) {
+      const inferred = { provider: matches[0]!.provider, voiceId: selectedVoiceId };
+      qualified = inferred;
+      if (input.botId && botVoiceId === selectedVoiceId) {
+        await deps.prisma.bot.updateMany({
+          where: { id: input.botId, spaceId: actor.spaceId, voiceId: selectedVoiceId },
+          data: { voiceId: qualifiedVoiceId(inferred.provider, inferred.voiceId) },
+        });
+      }
+    }
+  }
+  const loaded = qualified
+    ? await loadVoiceCredential(deps, actor, qualified.provider, input.scope, input.signal)
+    : await loadDefaultVoiceCredential(deps, actor, input.scope, input.signal);
   if (!loaded) throw new NoVoiceConfigured("key");
-  const voiceId = input.voiceId || botVoiceId || loaded.cred.voiceId;
+  const voiceId = qualified?.voiceId || selectedVoiceId || loaded.cred.voiceId;
   if (!voiceId) throw new NoVoiceConfigured("voice");
   return { ...loaded, voiceId };
 }
