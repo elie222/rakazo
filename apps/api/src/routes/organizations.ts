@@ -139,6 +139,11 @@ export function organizationsRoutes(ctx: RouterContext) {
                 { spaceId: departure.spaceId, userId: context.actor.userId },
                 departure,
               );
+            // Whoever took over one of their Spaces sees it change, as when they leave it.
+            if (departures.length)
+              void deps.events?.publishRosterChange?.({
+                spaceIds: departures.map((departure) => departure.spaceId),
+              });
             await forgetRevokedMember(deps.prisma, ref);
             await recordAuditEvent({
               action: "organization.member.removed",

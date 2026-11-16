@@ -4,6 +4,7 @@ import type { OrganizationInvitationPreview } from "@rakazo/contracts";
 import { Button, cn } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useSave } from "../lib/query";
 import { rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { AuthFrame, submitClass } from "./Auth";
@@ -28,8 +29,6 @@ export function JoinOrganizationPage() {
   const { invitationId = "" } = useParams();
   const navigate = useNavigate();
   const [state, setState] = useState<JoinState>({ kind: "loading" });
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -52,22 +51,20 @@ export function JoinOrganizationPage() {
     };
   }, [invitationId, attempt]);
 
-  async function join(event: React.FormEvent) {
-    event.preventDefault();
-    if (joining) return;
-    setJoining(true);
-    setJoinError(null);
-    try {
-      const { spaceId } = await rpc.organizations.invitations.accept({ invitationId }, NO_SPACE);
+  const join = useSave({
+    save: (id: string, client) =>
+      client.organizations.invitations.accept({ invitationId: id }, NO_SPACE),
+    closesScreen: true,
+    onSaved: ({ spaceId }) => {
       selectSpace(spaceId);
       navigate("/app", { replace: true });
-    } catch (err) {
-      const refused = refusal(err);
+    },
+    onFailed: (error) => {
+      const refused = refusal(error);
       if (refused) setState({ kind: "refused", ...refused });
-      else setJoinError(errorText(err));
-      setJoining(false);
-    }
-  }
+    },
+  });
+  const joinError = join.error && !refusal(join.error) ? errorText(join.error) : null;
 
   if (state.kind === "loading") {
     return (
@@ -100,7 +97,13 @@ export function JoinOrganizationPage() {
 
   const { organizationName, inviterName } = state.preview;
   return (
-    <AuthFrame title={<Trans>Join {organizationName}</Trans>} onSubmit={join}>
+    <AuthFrame
+      title={<Trans>Join {organizationName}</Trans>}
+      onSubmit={(event) => {
+        event.preventDefault();
+        join.run(invitationId);
+      }}
+    >
       <p className="-mt-6 text-center text-muted-foreground">
         <Trans>{inviterName} invited you</Trans>
       </p>
@@ -109,7 +112,7 @@ export function JoinOrganizationPage() {
           {joinError}
         </p>
       ) : null}
-      <Button type="submit" disabled={joining} className={cn(submitClass, "mt-6")}>
+      <Button type="submit" disabled={join.pending} className={cn(submitClass, "mt-6")}>
         <Trans>Join</Trans>
       </Button>
     </AuthFrame>

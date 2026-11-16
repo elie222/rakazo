@@ -11,6 +11,8 @@ import {
   createDb,
   createThreadEvents,
   installAuditEventStore,
+  leaveOrganizationSpaces,
+  OrganizationAdminRequiredError,
   OwnedOrganizationHasMembersError,
   revokeOrganizationMember,
 } from "@rakazo/db";
@@ -30,6 +32,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
   const syncSeats = vi.fn(async (_organizationId: string) => undefined);
+  const publishRosterChange = vi.fn(async (_change: unknown) => undefined);
   const sent: TransactionalEmail[] = [];
   const email = {
     send: vi.fn(async (message: TransactionalEmail) => {
@@ -141,7 +144,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       billing: { syncSeats },
       email,
       jobs: { cancel: vi.fn(async () => undefined), enqueue: vi.fn(async () => undefined) },
-      events: { ...createThreadEvents(prisma), notify: vi.fn(async () => undefined) },
+      events: {
+        ...createThreadEvents(prisma),
+        notify: vi.fn(async () => undefined),
+        publishRosterChange,
+      },
       env: {
         agentRuntime: "scripted",
         defaultProvider: "fake",
@@ -330,6 +337,16 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       }),
     ).resolves.toMatchObject({ organizationId: owner.organizationId });
     await expect(role(owner.organizationId, unverified.id)).resolves.toEqual({ role: "member" });
+
+    // Once the owner's account deletion claims the organization, nobody joins it.
+    const joiner = await person("joiner");
+    const claimedJoin = await invite(owner, owner.organizationId, joiner.email);
+    await system.space.update({ where: { id: owner.id }, data: { deletingAt: new Date() } });
+    expect(
+      (await call(joiner.actor, "organizations/invitations/accept", { invitationId: claimedJoin }))
+        .status,
+    ).toBe(404);
+    await expect(role(owner.organizationId, joiner.id)).resolves.toBeNull();
   });
 
   it("lets only the owner and admins manage members, and never the owner", async () => {
@@ -497,9 +514,59 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       system.bot.findUniqueOrThrow({ where: { id: bot.id }, select: { userId: true } }),
     ).resolves.toEqual({ userId: owner.id });
     expect(syncSeats).toHaveBeenCalledWith(organizationId);
+    // Whoever took over one of their Spaces is told, like everyone left in each.
+    expect(publishRosterChange).toHaveBeenCalledWith({
+      spaceIds: expect.arrayContaining([ownSpaceId, team]),
+    });
     expect((await call(memberActor, "organizations/members/list", { organizationId })).status).toBe(
       404,
     );
+  });
+
+  it("hands no Space to a remover who has stopped managing the organization", async () => {
+    const owner = await person("owner");
+    const admin = await person("admin");
+    const member = await person("member");
+    const organizationId = owner.organizationId;
+    await join(owner, admin);
+    await system.member.update({
+      where: { organizationId_userId: { organizationId, userId: admin.id } },
+      data: { role: "admin" },
+    });
+    const { spaceId: ownSpaceId } = await join(owner, member);
+
+    await revokeOrganizationMember(system, {
+      organizationId,
+      userId: admin.id,
+      memberUserId: member.id,
+    });
+    // Demoted before their Spaces change hands.
+    await system.member.update({
+      where: { organizationId_userId: { organizationId, userId: admin.id } },
+      data: { role: "member" },
+    });
+    await expect(
+      leaveOrganizationSpaces(prisma, { organizationId, userId: member.id, removedBy: admin.id }),
+    ).rejects.toBeInstanceOf(OrganizationAdminRequiredError);
+    await expect(
+      system.spaceMember.findMany({ where: { spaceId: ownSpaceId }, select: { userId: true } }),
+    ).resolves.toEqual([{ userId: member.id }]);
+
+    // The owner finishes the removal and keeps the Space.
+    expect(
+      (
+        await call(owner.actor, "organizations/members/remove", {
+          organizationId,
+          userId: member.id,
+        })
+      ).status,
+    ).toBe(200);
+    await expect(
+      system.spaceMember.findMany({
+        where: { spaceId: ownSpaceId },
+        select: { userId: true, role: true },
+      }),
+    ).resolves.toEqual([{ userId: owner.id, role: "owner" }]);
   });
 
   it("revokes a member before their Spaces change hands, so they cannot outrun the removal", async () => {

@@ -8,6 +8,7 @@ import { computerScopeKey, userControlHeldBy } from "./computers.js";
 import { appendEventInTransaction } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
+import { OrganizationAdminRequiredError, organizationRole } from "./organization-members.js";
 import { runAsSystem } from "./row-security.js";
 import {
   lockSpaceDeletion,
@@ -479,6 +480,15 @@ async function handOwnership(
     return successor.userId;
   }
   if (!fallbackOwnerId) return null;
+  // Only while they still manage the organization. Their row is locked, so a role change either
+  // waits for this handover or is seen by it.
+  const [remover] = await tx.$queryRaw<Array<{ role: string }>>`
+    SELECT role FROM "member"
+    WHERE "organizationId" = ${input.organizationId} AND "userId" = ${fallbackOwnerId}
+    FOR SHARE
+  `;
+  if (!remover || organizationRole(remover.role) === "member")
+    throw new OrganizationAdminRequiredError();
   // Nobody else full belongs to it: whoever removed its owner from the organization keeps it,
   // named after them so it stands apart from the new owner's own Spaces.
   const departing = await tx.user.findUnique({ where: { id: userId }, select: { name: true } });
@@ -502,8 +512,8 @@ async function handOwnership(
 /**
  * Takes someone being removed from an organization out of each of its Spaces, as a removal from
  * each Space would. A Space they own passes to its longest-standing full member, else to
- * `removedBy`, so their work stays with the organization. Returns each departure, already
- * committed, for the caller's follow-up.
+ * `removedBy` while they still manage the organization, so their work stays with it. Returns
+ * each departure, already committed, for the caller's follow-up.
  */
 export async function leaveOrganizationSpaces(
   prisma: PrismaClient,

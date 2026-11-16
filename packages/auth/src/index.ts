@@ -116,6 +116,8 @@ export interface AuthEnv {
   logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /** Runs once the account is gone. */
+  afterDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
   afterDeleteSession?: (session: AuthSession) => Promise<void>;
   /** Runs when a password change replaces the caller's own session instead of ending it. */
@@ -505,6 +507,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });
+          await env.afterDeleteUser?.(user.id);
         },
       },
     },

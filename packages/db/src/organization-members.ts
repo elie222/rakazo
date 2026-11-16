@@ -370,6 +370,15 @@ export async function acceptOrganizationInvitation(
         await lockOrganizationMembers(tx, organizationId);
         // A Space created here waits for, or is refused by, a deletion of the organization.
         await lockOrganizationSpaces(tx, organizationId);
+        // Row-locked, after the locks above as deletions take them. An owner's account deletion
+        // claims this Space before checking who else belongs, so its claim either waits for this
+        // join and then sees it, or this join sees the claim and is refused.
+        const [live] = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "spaces"
+          WHERE "organizationId" = ${organizationId} AND "isDefault" AND "deletingAt" IS NULL
+          FOR SHARE
+        `;
+        if (!live) throw new OrganizationInvitationNotFoundError();
         const claimed = await tx.invitation.updateMany({
           where: { id: invitation.id, status: PENDING, expiresAt: { gt: new Date() } },
           data: { status: "accepted" },
@@ -486,6 +495,20 @@ export async function forgetRevokedMember(
       spaceMemberships: { none: {} },
     },
   });
+}
+
+/** Organizations the user belongs to as a full member without owning them. */
+export async function joinedOrganizationIds(
+  prisma: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<string[]> {
+  const memberships = await prisma.member.findMany({
+    where: { userId, role: { not: GUEST_ROLE } },
+    select: { organizationId: true, role: true },
+  });
+  return memberships
+    .filter((membership) => !isOwnerRole(membership.role))
+    .map((membership) => membership.organizationId);
 }
 
 /**

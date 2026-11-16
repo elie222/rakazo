@@ -110,6 +110,7 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  joinedOrganizationIds,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
@@ -528,6 +529,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         onAccountChange: (change) => directoryChanges.getStore()?.push(change),
       })
     : undefined;
+  // Organizations an account being deleted joined, kept until it is gone to count their seats again.
+  const seatsAfterDeletion = new Map<string, string[]>();
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
@@ -589,6 +592,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await workActivities
         ?.endUser(userId)
         .catch((error) => getLogger().error("live status card removal failed", error));
+      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
+    },
+    // Its memberships went with it, so the organizations it joined stop paying for its seat.
+    afterDeleteUser: async (userId) => {
+      const organizationIds = seatsAfterDeletion.get(userId) ?? [];
+      seatsAfterDeletion.delete(userId);
+      for (const organizationId of organizationIds)
+        await bestEffort(
+          "seat count after an account deletion",
+          billing?.syncSeats(organizationId),
+        );
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
