@@ -13,7 +13,7 @@ import {
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { useSave } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** One model's own settings on the connection that runs it. */
@@ -21,12 +21,10 @@ export function ModelSettingsPanel({
   credential,
   modelId,
   entry,
-  onSaved,
 }: {
   credential: ModelCredential;
   modelId: string;
   entry: ModelCatalogEntry | undefined;
-  onSaved: () => Promise<unknown>;
 }) {
   const { t } = useLingui();
   const provider = credential.provider;
@@ -36,20 +34,12 @@ export function ModelSettingsPanel({
   const fields = edited ?? saved;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const queries = useSpaceQueries();
   const persist = useSave({
-    // The save stands even when reading it back fails, so that failure is not the save's.
-    save: async (settings: ModelSettings, rpc) => {
-      await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
-      return onSaved().then(
-        () => null,
-        (err: unknown) => err,
-      );
-    },
-    onSaved: (loadError) => {
-      if (loadError) {
-        setError(errorText(loadError, t`Could not load model settings`));
-        return;
-      }
+    save: (settings: ModelSettings, rpc) =>
+      rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings }),
+    stale: [queries.models.credentials.key(), queries.models.list.key()],
+    onSaved: () => {
       setEdited(null);
       setNotice(t`Saved.`);
     },

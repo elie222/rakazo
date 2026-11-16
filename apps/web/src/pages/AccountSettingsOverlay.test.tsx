@@ -404,6 +404,7 @@ async function renderNameEditor(name = "Alex Rivera") {
           .querySelector("form")!
           .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       }),
+    unmount: () => act(async () => root.unmount()),
     cleanup: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -423,6 +424,24 @@ it("saves a trimmed name and refreshes the account data", async () => {
     expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it("refreshes the account data when the name saves after settings closed", async () => {
+  let updated!: Deferred<{ data: { status: boolean }; error: null }>;
+  vi.mocked(authClient.updateUser).mockImplementation(() => {
+    updated = deferred();
+    return updated.promise as never;
+  });
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("Sam Rivera");
+    await editor.submit();
+    await editor.unmount();
+    await act(async () => updated.resolve({ data: { status: true }, error: null }));
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
   } finally {
     await editor.cleanup();
   }

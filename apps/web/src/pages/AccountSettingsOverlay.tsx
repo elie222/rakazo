@@ -88,13 +88,12 @@ export function GeneralSettingsPanels({
         throw new Error(t`Could not update name`);
       });
       if (result.error) throw new Error(authErrorText(result.error, t`Could not update name`));
-    },
-    onSaved: () => {
-      setEditingName(false);
+      // The shell shows the name too, so it refreshes even after this panel is gone.
       void Promise.resolve()
         .then(() => onNameSaved?.())
         .catch(() => undefined);
     },
+    onSaved: () => setEditingName(false),
   });
   const namePending = nameSave.pending;
   const nameId = useId();

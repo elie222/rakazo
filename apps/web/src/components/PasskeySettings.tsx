@@ -57,18 +57,15 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
 
   // Passkeys belong to the sign-in, not a space, so the change never needs the API client.
   const change = useSave({
-    save: async ({ action }: { action: () => Promise<{ error?: unknown }>; done?: () => void }) => {
+    save: async (action: () => Promise<{ error?: unknown }>) => {
       const result = await action().catch(() => {
         throw new Error(t`Could not reach the server`);
       });
       // A cancelled prompt fails without a message, so nothing is shown.
       if (result.error)
         throw new Error(passkeyErrorText(result.error, t`Could not continue`) ?? "");
-    },
-    onSaved: (_, { done }) => {
-      // Remounts this list with fresh data and closes the offer if it is open.
+      // Sent even after this list is gone: it remounts the list fresh and closes an open offer.
       passkeysChanged();
-      done?.();
     },
   });
   const pending = change.pending;
@@ -78,19 +75,14 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
     if (!renaming) return;
     const name = renaming.name.trim();
     if (!name) return;
-    change.run({
-      action: () => authClient.passkey.updatePasskey({ id: renaming.id, name }),
-      done: () => setRenaming(null),
-    });
+    const { id } = renaming;
+    change.run(() => authClient.passkey.updatePasskey({ id, name }));
   }
 
   function remove() {
     if (!deleting) return;
     const { id } = deleting;
-    change.run({
-      action: () => authClient.passkey.deletePasskey({ id }),
-      done: () => setDeleting(null),
-    });
+    change.run(() => authClient.passkey.deletePasskey({ id }));
   }
 
   return (
@@ -102,7 +94,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
             variant="secondary"
             size="sm"
             disabled={pending}
-            onClick={() => change.run({ action: () => authClient.passkey.addPasskey() })}
+            onClick={() => change.run(() => authClient.passkey.addPasskey())}
           >
             <Trans>Add passkey</Trans>
           </Button>
