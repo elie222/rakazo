@@ -29,9 +29,11 @@ const EXISTING = new Set([
   "HomeDeletionNotice.claimId",
   "HomeDeletionNotice.claimExpiresAt",
   "ComputerExecutionLease.fence",
-  "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
+  // Moved onto `withLease`; kept only while the previous release still claims them.
+  // A sign-in's column also still tells other processes it is alive, until reads move to the lease.
+  "ModelOAuthSession.leaseExpiresAt",
   // The primitive's own table.
   "Lease.fence",
 ]);

@@ -2341,6 +2341,9 @@ describe("PiOAuthLogins across API processes", () => {
           return { count: found.length };
         }),
       },
+      // Every sign-in's lease is taken and held; the database tests cover contention.
+      $queryRaw: vi.fn(async () => [{ fence: 1n }]),
+      $transaction: vi.fn(async (write: (tx: unknown) => Promise<unknown>) => write(prisma)),
     };
     // Reversible stand-in for the secret store's encryption.
     const secrets = {

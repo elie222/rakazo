@@ -409,7 +409,7 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
   });
 
   it("stops the starting process's provider wait when another process cancels", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const a = await apiProcess();
     const b = await apiProcess();
     const actor = await member(a);
@@ -432,7 +432,7 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
   });
 
   it("fails a sign-in whose process went away instead of leaving it pending", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const b = await apiProcess();
     const actor = await member(b);
 
@@ -502,6 +502,72 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
       value: { id: "connection-b", label: "exchanged-the-code" },
     });
     expect(saved).toEqual(["b"]);
+    await a.logins.abortAll();
+    await b.logins.abortAll();
+  });
+  /** The previous release taking a pasted code's exchange; it knows nothing of the lease. */
+  const previousReleaseClaim = async (
+    fixture: Awaited<ReturnType<typeof apiProcess>>,
+    loginId: string,
+  ) => {
+    const claimed = await fixture.system.modelOAuthSession.updateMany({
+      where: { id: loginId, status: "pending", leaseExpiresAt: null },
+      data: { leaseExpiresAt: new Date(Date.now() + 30_000) },
+    });
+    return claimed.count;
+  };
+
+  it("leaves a pasted code the previous release is exchanging to it", async () => {
+    const a = await apiProcess();
+    const b = await apiProcess();
+    const actor = await member(a);
+    const saved: string[] = [];
+    const started = await a.logins.begin({
+      ...actor,
+      provider: "anthropic",
+      persist: saveAs("a", saved),
+    });
+    expect(await previousReleaseClaim(a, started.loginId)).toBe(1);
+
+    await expect(
+      b.logins.submit(started.loginId, actor, "the-code", saveAs("b", saved)),
+    ).rejects.toThrow();
+    await expect(
+      a.logins.submit(started.loginId, actor, "the-code", saveAs("a", saved)),
+    ).resolves.toEqual({ ok: true });
+    await expect(a.logins.complete(started.loginId, actor)).resolves.toEqual({
+      status: "pending",
+    });
+    expect(saved).toEqual([]);
+    await a.logins.abortAll();
+  });
+
+  it("keeps the previous release out while it exchanges a pasted code", async () => {
+    const a = await apiProcess();
+    const b = await apiProcess();
+    const actor = await member(a);
+    const saving = deferred();
+    const saved = deferred();
+    const started = await a.logins.begin({ ...actor, provider: "anthropic", persist: saveAs("a") });
+
+    await b.logins.submit(started.loginId, actor, "the-code", async (login) => {
+      saving.resolve();
+      await saved.promise;
+      return { id: "connection-b", label: login.credential.access };
+    });
+    await saving.promise;
+    expect(await previousReleaseClaim(a, started.loginId)).toBe(0);
+    const [lease] = await a.system.$queryRaw<Array<{ live: boolean }>>`
+      SELECT "expiresAt" > clock_timestamp() AS live FROM "leases"
+      WHERE "key" = ${`model-sign-in:${started.loginId}`}`;
+    expect(lease?.live).toBe(true);
+    saved.resolve();
+    await vi.waitFor(async () =>
+      expect(await a.logins.complete(started.loginId, actor)).toEqual({
+        status: "connected",
+        provider: "anthropic",
+      }),
+    );
     await a.logins.abortAll();
     await b.logins.abortAll();
   });

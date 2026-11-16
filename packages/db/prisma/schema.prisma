@@ -2224,7 +2224,8 @@ model ModelOAuthSession {
   error          String?
   /// The saved connection, once connected.
   result         Json?
-  /// The process waiting on the provider renews this; a lapsed lease means it is gone.
+  /// Renewed with the sign-in's lease by the process waiting on the provider; a lapsed one means
+  /// it is gone. The previous release claims the sign-in here instead of taking the lease.
   leaseExpiresAt DateTime?
   createdAt      DateTime  @default(now())
 

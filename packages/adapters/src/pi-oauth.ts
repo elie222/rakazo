@@ -13,8 +13,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { ModelOAuthBegin, ModelOAuthSignInMode, SettingsScope } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { runAsSystem, runAsTenant } from "@rakazo/db";
+import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
+import { assertLeaseHeld, LeaseLostError, runAsSystem, runAsTenant, withLease } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { StoredModelSecret } from "./model-secret.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
@@ -70,7 +70,8 @@ const PASTED_CODE_TTL_SECONDS = 15 * 60;
 const SIGN_IN_ROW_RETENTION_MS = 60 * 60 * 1000;
 /** A sign-in whose process stops renewing this long is reported as interrupted. */
 const SIGN_IN_LEASE_MS = 30_000;
-export const SIGN_IN_LEASE_RENEW_MS = 10_000;
+/** `withLease` renews every fifth of the lease. */
+export const SIGN_IN_LEASE_RENEW_MS = SIGN_IN_LEASE_MS / 5;
 const SAVE_WAIT_POLL_MS = 250;
 const OUTCOME_WRITE_ATTEMPTS = 3;
 const SIGN_IN_NOT_FOUND = "Sign-in session not found. Start sign-in again.";
@@ -362,9 +363,12 @@ type HandedOffSignIn = Omit<BeginInput<unknown>, "userId" | "spaceId" | "signal"
  *  cancel one, and a pasted code can be exchanged by whichever process receives it.
  *  Without it sign-ins live in this process only. */
 export type PiOAuthHandoffStore = {
-  prisma: Pick<PrismaClient, "modelOAuthSession">;
+  prisma: PrismaClient;
   secrets: Pick<SecretStore, "put" | "load">;
 };
+
+/** The sign-in's lease, held from when it is taken until `end` is called. */
+type HeldSignIn = { taken: Promise<HeldLease | undefined>; end: () => void };
 
 type SessionState = "pending" | "finalizing" | "connected" | "failed";
 
@@ -393,8 +397,8 @@ type Session<T> = {
   codeSubmitted?: boolean;
   /** A row in the store holds this sign-in. */
   stored?: boolean;
-  /** This process exchanges with the provider and renews the row's lease. */
-  lease?: ReturnType<typeof setInterval>;
+  /** This process exchanges with the provider and holds the sign-in's lease. */
+  lease?: HeldSignIn;
   expiresTimer?: ReturnType<typeof setTimeout>;
   /** The expiry timer fired while the credential was being saved. */
   expired?: boolean;
@@ -838,7 +842,7 @@ export class PiOAuthLogins<T = unknown> {
       });
     });
     session.stored = true;
-    if (mode === "device-code") this.holdLease(session);
+    if (mode === "device-code") await this.holdLease(session);
     // Cancelled, replaced or disconnected while saving: no process may resume it.
     if (this.pending.get(session.id) !== session) await this.forgetRow(session);
   }
@@ -904,7 +908,7 @@ export class PiOAuthLogins<T = unknown> {
     const session = this.pending.get(loginId);
     if (session) {
       session.stored = true;
-      this.holdLease(session);
+      await this.holdLease(session);
       session.setup.resolve();
     }
     return session;
@@ -922,40 +926,60 @@ export class PiOAuthLogins<T = unknown> {
     );
     if (claimed.count !== 1) return false;
     const session = this.pending.get(ref.id);
-    if (session === ref) this.holdLease(session);
+    if (session === ref) await this.holdLease(session);
     return true;
   }
 
-  /** Renew the row's lease while this process exchanges with the provider. */
-  private holdLease(session: Session<T>): void {
-    if (session.lease || !this.handoff) return;
-    session.lease = setInterval(() => void this.renewLease(session), SIGN_IN_LEASE_RENEW_MS);
-    session.lease.unref?.();
-  }
-
-  private releaseLease(session: Session<T>): void {
-    if (session.lease) clearInterval(session.lease);
-    session.lease = undefined;
-  }
-
-  private async renewLease(session: Session<T>): Promise<void> {
+  /**
+   * Hold the sign-in's lease while this process exchanges with the provider. The row's lease
+   * column is renewed with it: other processes read it to tell a live sign-in from an
+   * interrupted one. Losing the lease, or finding the row gone, stops a sign-in still waiting on
+   * the provider. Resolves once the lease is taken, false when it could not be.
+   */
+  private async holdLease(session: Session<T>): Promise<boolean> {
     const handoff = this.handoff;
-    if (!handoff) return;
-    try {
-      const renewed = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
-        handoff.prisma.modelOAuthSession.updateMany({
-          where: { ...rowOf(session), status: { in: ["pending", "saving"] } },
-          data: { leaseExpiresAt: leaseEnd() },
-        }),
-      );
-      // Cancelled, replaced or disconnected on another process.
-      if (renewed.count === 0 && session.state === "pending") {
+    if (!handoff) return true;
+    if (session.lease) return Boolean(await session.lease.taken);
+    const taken = deferred<HeldLease | undefined>();
+    const ended = deferred<void>();
+    const hold: HeldSignIn = { taken: taken.promise, end: () => ended.resolve() };
+    session.lease = hold;
+    void withLease(
+      handoff.prisma,
+      `model-sign-in:${session.id}`,
+      { ttlMs: SIGN_IN_LEASE_MS, onRenew: () => this.renewRow(session) },
+      async (lease) => {
+        taken.resolve(lease);
+        await ended.promise;
+      },
+    ).catch((error: unknown) => {
+      taken.resolve(undefined);
+      if (session.lease !== hold) return;
+      if (!(error instanceof LeaseLostError)) getLogger().error("model sign-in lease lost", error);
+      if (session.state === "pending") {
         session.abort.abort(new Error("Sign-in cancelled."));
         this.detachSession(session);
       }
-    } catch (error) {
-      getLogger().error("model sign-in lease not renewed", error);
-    }
+    });
+    return Boolean(await taken.promise);
+  }
+
+  private releaseLease(session: Session<T>): void {
+    session.lease?.end();
+    session.lease = undefined;
+  }
+
+  /** False once the sign-in was cancelled, replaced or disconnected on another process. */
+  private async renewRow(session: Session<T>): Promise<boolean> {
+    const handoff = this.handoff;
+    if (!handoff) return true;
+    const renewed = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+      handoff.prisma.modelOAuthSession.updateMany({
+        where: { ...rowOf(session), status: { in: ["pending", "saving"] } },
+        data: { leaseExpiresAt: leaseEnd() },
+      }),
+    );
+    return renewed.count > 0 || session.state !== "pending";
   }
 
   private async finalize(session: Session<T>, credential: OAuthCredential): Promise<void> {
@@ -1026,13 +1050,23 @@ export class PiOAuthLogins<T = unknown> {
   private async markSaving(session: Session<T>): Promise<boolean> {
     const handoff = this.handoff;
     if (!handoff) return true;
-    const marked = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
-      handoff.prisma.modelOAuthSession.updateMany({
-        where: { ...rowOf(session), status: "pending" },
-        data: { status: "saving", leaseExpiresAt: leaseEnd() },
-      }),
-    );
-    return marked.count === 1;
+    const lease = await session.lease?.taken;
+    if (!lease) return false;
+    try {
+      const marked = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+        handoff.prisma.$transaction(async (tx) => {
+          await assertLeaseHeld(tx, lease);
+          return tx.modelOAuthSession.updateMany({
+            where: { ...rowOf(session), status: "pending" },
+            data: { status: "saving", leaseExpiresAt: leaseEnd() },
+          });
+        }),
+      );
+      return marked.count === 1;
+    } catch (error) {
+      if (error instanceof LeaseLostError) return false;
+      throw error;
+    }
   }
 
   private async writeOutcome(
