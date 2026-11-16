@@ -27,6 +27,7 @@ import { createRunExecutor } from "./executor.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
+import type * as RunLifecycle from "./run-lifecycle.js";
 import {
   drainRuns,
   RUN_DRAIN_MS,
@@ -39,6 +40,28 @@ import { EncryptedSecretStore } from "./secrets.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import { wakeRun } from "./wake-run.js";
+
+/** Arms the next workspace flush to fail, as a sandbox that cannot save its files would. */
+const workspaceFlush = vi.hoisted(() => ({ failNext: false }));
+vi.mock("./run-lifecycle.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof RunLifecycle>();
+  return {
+    ...actual,
+    createRunWorkspaceCheckpoint: (
+      ...args: Parameters<typeof actual.createRunWorkspaceCheckpoint>
+    ) => {
+      const checkpoint = actual.createRunWorkspaceCheckpoint(...args);
+      return {
+        ...checkpoint,
+        flush: async () => {
+          if (!workspaceFlush.failNext) return checkpoint.flush();
+          workspaceFlush.failNext = false;
+          throw new Error("Workspace flush failed");
+        },
+      };
+    },
+  };
+});
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -201,10 +224,14 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
         const resumedAt = request.turnCheckpoint
           ? (JSON.parse(request.turnCheckpoint) as TurnCheckpoint).messages.length
           : 0;
+        let handBackFailed = false;
         for (let step = resumedAt; step < steps; step++) {
-          if (step > resumedAt && request.yieldSignal?.aborted) {
-            yield { type: "yielded" as const, checkpoint: checkpointAfter(step) };
-            return;
+          if (step > resumedAt && request.yieldSignal?.aborted && !handBackFailed) {
+            const answer = deferred<boolean>();
+            const checkpoint = checkpointAfter(step);
+            yield { type: "yielded" as const, checkpoint, answer: answer.resolve };
+            if (await answer.promise) return;
+            handBackFailed = true;
           }
           const turn = { runId: context.runId!, step, signal: context.signal, finish: deferred() };
           turns.push(turn);
@@ -425,6 +452,34 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
       expect(stepsOf(leaving, run.id)).toEqual([0]);
       expect(await savedTurns(run.id)).toBe(0);
       // The step done before the hand-back is in the reply and its history, as if never stopped.
+      expect(await replyOf(run.id)).toEqual(everyStep);
+    });
+
+    it("goes on in the stopping process when its hand-back fails, keeping the saved turn", async () => {
+      const { createRun } = await seedBot();
+      const run = await createRun();
+      const leaving = startProcess("leaving", { drains: true, steps: 3 });
+      await leaving.start();
+      const first = await runInFlight(leaving, run);
+
+      workspaceFlush.failNext = true;
+      leaving.signalStop();
+      first.finish.resolve();
+
+      await wait(() => expect(stepsOf(leaving, run.id)).toEqual([0, 1]));
+      expect(workspaceFlush.failNext).toBe(false);
+      // Saved before the flush failed, so a cut at the drain limit would not repeat step 0.
+      expect(await savedTurns(run.id)).toBe(1);
+      expect((await runRow(run.id)).status).toBe("running");
+      for (const step of [1, 2]) {
+        await wait(() => expect(stepsOf(leaving, run.id)).toContain(step));
+        leaving.turnsOf(run.id)[step]!.finish.resolve();
+      }
+      await wait(async () => expect((await runRow(run.id)).status).toBe("completed"));
+
+      expect(await attemptsOf(run.id)).toEqual([{ fence: 1, status: "completed" }]);
+      expect(stepsOf(leaving, run.id)).toEqual([0, 1, 2]);
+      expect(await repliesOf(run.id)).toBe(1);
       expect(await replyOf(run.id)).toEqual(everyStep);
     });
 

@@ -1,5 +1,5 @@
 import { MessageBlock, storedImageMimeType, ToolStepCallSchema } from "@rakazo/contracts";
-import { reportJsonColumnOnce } from "@rakazo/db";
+import { reportJsonColumnOnce, runTurnCheckpointRow } from "@rakazo/db";
 import { z } from "zod";
 import type { ReplyState } from "./run-context.js";
 
@@ -91,7 +91,7 @@ export function restoreReply(reply: ReplyState, saved: unknown, runId: string): 
   if (!parsed.success) {
     reportJsonColumnOnce(
       "saved reply of a handed-back turn is unreadable; resuming with an empty reply",
-      { table: "runs", column: "checkpoint.reply", id: runId },
+      runTurnCheckpointRow(runId),
       describeMismatch(saved, parsed.error.issues),
     );
     return;

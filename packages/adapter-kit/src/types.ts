@@ -858,10 +858,12 @@ export type AgentRuntimeEvent =
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
-   * The turn stopped between steps because `yieldSignal` aborted. Every step so far is in
+   * The turn reached a step boundary after `yieldSignal` aborted. Every step so far is in
    * `checkpoint`; a run resumed with it as `turnCheckpoint` continues with the next model call.
+   * The consumer calls `answer(true)` once it saved the turn and handed the run back, and the
+   * turn ends; `answer(false)` keeps the turn going here.
    */
-  | { type: "yielded"; checkpoint: string }
+  | { type: "yielded"; checkpoint: string; answer: (handedBack: boolean) => void }
   | {
       type: "subagent";
       agentId: string;

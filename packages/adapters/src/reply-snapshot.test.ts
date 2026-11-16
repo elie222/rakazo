@@ -124,9 +124,9 @@ describe("a reply saved with a handed-back turn", () => {
       expect(logs.error).toHaveBeenCalledOnce();
       const [, detail] = logs.error.mock.calls[0] ?? [];
       expect(detail).toEqual({
-        table: "runs",
-        column: "checkpoint.reply",
-        id: runId,
+        table: "external_effects",
+        column: "result",
+        id: JSON.stringify(["runtime_checkpoint", runId]),
         ...expected,
       });
       expect(JSON.stringify(detail)).not.toContain("private");

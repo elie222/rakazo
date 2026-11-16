@@ -116,6 +116,7 @@ import {
 } from "./turn-checkpoint.js";
 
 const MAX_REJECTED_REQUESTS = 5;
+const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
@@ -223,7 +224,23 @@ export class PiAgentRuntime implements AgentRuntime {
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
-      let yielded: string | undefined;
+      let yielded = false;
+      let handBackFailed = false;
+      // Ends the turn only once the run's executor has saved it and handed the run back.
+      const handBack = (checkpoint: string) =>
+        new Promise<boolean>((resolve) => {
+          if (signal.aborted) return resolve(false);
+          const stop = () => resolve(false);
+          signal.addEventListener("abort", stop, { once: true });
+          queue.push({
+            type: "yielded",
+            checkpoint,
+            answer: (handedBack) => {
+              signal.removeEventListener("abort", stop);
+              resolve(handedBack);
+            },
+          });
+        });
       let resumeHost: ToolHost | undefined;
       try {
         const saved = request.turnCheckpoint
@@ -646,12 +663,15 @@ export class PiAgentRuntime implements AgentRuntime {
             // Between steps a stopping process hands the turn back, so the next process resumes
             // here instead of repeating a step cut off at the drain limit. A running shell's
             // output would only reach this process, so the turn keeps going until it is read.
+            // The hand-back is only a shortcut: when it fails, the turn goes on here as before.
             if (
               request.yieldSignal?.aborted &&
+              !handBackFailed &&
               turn.toolResults.length > 0 &&
               !turnSignal?.aborted &&
               !host.pausePending &&
               !terminatedReply &&
+              !joinCutReply &&
               host.pendingShells.length === 0
             ) {
               const checkpoint = turnCheckpointAt("");
@@ -661,8 +681,11 @@ export class PiAgentRuntime implements AgentRuntime {
                   content: finishedShells,
                   timestamp: Date.now(),
                 });
-              yielded = serializeTurnCheckpoint(checkpoint);
-              return { action: "end" };
+              if (await handBack(serializeTurnCheckpoint(checkpoint))) {
+                yielded = true;
+                return { action: "end" };
+              }
+              handBackFailed = true;
             }
             // Steered, so the output reaches the next model request like a tool result. A
             // follow-up waits until the model stops and then costs one model turn each.
@@ -754,6 +777,17 @@ export class PiAgentRuntime implements AgentRuntime {
                   call.type === "toolCall" &&
                   tools.find((tool) => tool.name === call.name)?.executionMode === "sequential",
               ));
+          // A turn paused on a question or takeover gets its answer on resume without running
+          // the call again, so the count it resumes with already includes that call.
+          const answeredOnResume =
+            assistant?.role === "assistant" &&
+            assistant.content.some(
+              (call) =>
+                call.type === "toolCall" &&
+                call.id === pendingToolCallId &&
+                ANSWERED_ON_RESUME.has(call.name),
+            );
+          const toolCallCount = host.toolCallBudget.count + (answeredOnResume ? 1 : 0);
           return {
             version: 1 as const,
             ...(computerMode
@@ -770,7 +804,7 @@ export class PiAgentRuntime implements AgentRuntime {
             model: activeStreamTarget.model.id,
             systemPrompt,
             pendingToolCallId,
-            ...(host.toolCallBudget.count > 0 && { toolCallCount: host.toolCallBudget.count }),
+            ...(toolCallCount > 0 && { toolCallCount }),
             executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
             messages: messages as Message[],
             historyMessageIds: [...representedHistoryIds],
@@ -1059,8 +1093,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 const tool = tools.find((candidate) => candidate.name === call.name);
                 if (!tool) throw new Error("Pending checkpoint tool is no longer available");
                 const interaction =
-                  call.id === restored.pendingToolCallId &&
-                  (call.name === "ask_user" || call.name === "request_takeover");
+                  call.id === restored.pendingToolCallId && ANSWERED_ON_RESUME.has(call.name);
                 let result: AgentToolResult<JsonValue | undefined>;
                 try {
                   signal.throwIfAborted();
@@ -1173,10 +1206,7 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         // A continuation that failed or stopped early still hands over what it wrote.
         releaseJoin();
-        if (yielded) {
-          queue.push({ type: "yielded", checkpoint: yielded });
-          return;
-        }
+        if (yielded) return;
 
         // Budget abort stops the agent underneath the model, which leaves
         // errorMessage set. Treat that as a soft stop so the turn still ends
@@ -1312,7 +1342,7 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.close();
         if (trackedBudget) {
           const keepForResume =
-            (signal.aborted || Boolean(resumeHost?.pausePending) || Boolean(yielded)) &&
+            (signal.aborted || Boolean(resumeHost?.pausePending) || yielded) &&
             !trackedBudget.exceeded;
           releaseToolCallBudget(request.runId, keepForResume);
         }

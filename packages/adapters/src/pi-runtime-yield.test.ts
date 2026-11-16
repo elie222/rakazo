@@ -1,4 +1,4 @@
-import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
@@ -33,18 +33,25 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { releaseToolCallBudget } from "./pi-runtime-tools.js";
 
-/** Each model call answers with the next step: a call to list_files at `path`, or the reply. */
+/**
+ * Each model call answers with the next step: a call to list_files at `path`, a question for
+ * "ask", or the reply.
+ */
 function script(steps: Array<string | undefined>) {
   fake.stream.mockImplementation((target: Model<"openai-completions">) => {
     if (steps.length === 0) throw new Error("Unexpected model call");
     const path = steps.shift();
+    const call: Pick<ToolCall, "name" | "arguments"> =
+      path === "ask"
+        ? { name: "ask_user", arguments: { question: "Which?", options: ["a", "b"] } }
+        : { name: "list_files", arguments: { path: path ?? "" } };
     const message: AssistantMessage = {
       role: "assistant",
       api: target.api,
       provider: target.provider,
       model: target.id,
       content: path
-        ? [{ type: "toolCall", id: `call-${path}`, name: "list_files", arguments: { path } }]
+        ? [{ type: "toolCall", id: `call-${path}`, ...call }]
         : [{ type: "text", text: "Done." }],
       stopReason: path ? "toolUse" : "stop",
       timestamp: 1,
@@ -72,7 +79,7 @@ function request(stopping: AbortController, stopAt?: string): AgentRunRequest {
     prompt: "Look through the folders",
     instructions: "",
     history: [],
-    tools: builtinAgentTools.filter((tool) => tool.name === "list_files"),
+    tools: builtinAgentTools.filter((tool) => ["list_files", "ask_user"].includes(tool.name)),
     model: { provider: "test", id: "main", apiKey: "fake-key" },
     yieldSignal: stopping.signal,
     executeTool: vi.fn(async (_name: string, args: Record<string, unknown>) => {
@@ -83,9 +90,13 @@ function request(stopping: AbortController, stopAt?: string): AgentRunRequest {
   };
 }
 
-async function run(input: AgentRunRequest) {
+/** Runs the turn; its executor hands the run back when asked unless `handBack` is false. */
+async function run(input: AgentRunRequest, handBack = true) {
   const events: AgentRuntimeEvent[] = [];
-  for await (const event of new PiAgentRuntime().run(input, {})) events.push(event);
+  for await (const event of new PiAgentRuntime().run(input, {})) {
+    events.push(event);
+    if (event.type === "yielded") event.answer(handBack);
+  }
   return events;
 }
 
@@ -215,6 +226,17 @@ describe("a turn whose process starts stopping", () => {
     }
   });
 
+  it("goes on in this process when the hand-back fails", async () => {
+    const input = request(new AbortController(), "a");
+    script(["a", "b", undefined]);
+
+    const events = await run(input, false);
+
+    expect(events.filter((event) => event.type === "yielded")).toHaveLength(1);
+    expect(calledPaths(input)).toEqual(["a", "b"]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+  });
+
   it("finishes a turn whose last step is in flight instead of handing it back", async () => {
     const stopping = new AbortController();
     stopping.abort();
@@ -226,6 +248,35 @@ describe("a turn whose process starts stopping", () => {
     expect(events.some((event) => event.type === "yielded")).toBe(false);
     expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
   });
+});
+
+it("counts a question the turn paused on toward the per-turn limit on another process", async () => {
+  vi.stubEnv("MAX_TOOL_CALLS_PER_TURN", "2");
+  try {
+    const input = request(new AbortController());
+    let checkpoint = "";
+    input.onCheckpoint = async (capture) => {
+      checkpoint = capture();
+    };
+    script(["a", "ask", "b", "c", undefined]);
+    expect(await run(input)).toContainEqual(expect.objectContaining({ type: "ask" }));
+    releaseToolCallBudget(input.runId, false);
+
+    const resumed = { ...request(new AbortController()), runId: input.runId };
+    const events = await run({
+      ...resumed,
+      turnCheckpoint: checkpoint,
+      resumeToolResult: { content: [{ type: "text", text: "a" }] },
+    });
+
+    expect(calledPaths(resumed)).toEqual([]);
+    expect(events).toContainEqual({
+      type: "progress",
+      text: "Stopped: more than 2 tool calls in one turn.",
+    });
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 it("runs every step of a turn whose process is not stopping", async () => {
