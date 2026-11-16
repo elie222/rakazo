@@ -2,7 +2,12 @@
 type IssuanceState = { pending: object | null; listeners: Set<() => void> };
 const states = new WeakMap<object, Map<string | number, IssuanceState>>();
 
-/** Shared issuance rules; screens own their RPC, rendering, and navigation lifecycle. */
+/**
+ * Link issuance is a narrow exception to useSave: its slot must survive screen remounts,
+ * while picker changes invalidate picker-bound results but preserve workspace-bound codes.
+ * The save hooks own one mounted screen and cannot coordinate that credential lifetime.
+ * Screens keep RPC, rendering and navigation lifecycle; this guard does not retry or cancel writes.
+ */
 export function createMessagingLinkGuard(scope: object = {}, session: string | number = "") {
   let sessions = states.get(scope);
   if (!sessions) {

@@ -1,11 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import {
-  createMessagingLinkGuard,
-  deadlineSignal,
-  isRetryableError,
-  messagingConnectOptions,
-} from "@rakazo/core";
+import { createMessagingLinkGuard, isRetryableError, messagingConnectOptions } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -239,7 +234,7 @@ export function MessagingSettingsPanel() {
     setError(null);
     setLinkRequest(null);
     try {
-      const issued = await rpc.messaging.link.start({ botId }, { signal: deadlineSignal(8_000) });
+      const issued = await rpc.messaging.link.start({ botId });
       request.finish();
       if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
