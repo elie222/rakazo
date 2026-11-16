@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -28,13 +29,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (value: unknown) => value;
   return { disabled: modifier, labelsHidden: modifier, pickerStyle: modifier, tag: modifier };
 });
-const loading = vi.hoisted(() => {
-  let resolve: () => void = () => {};
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-});
+const loading = deferred();
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {

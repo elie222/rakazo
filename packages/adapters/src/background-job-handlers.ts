@@ -176,7 +176,8 @@ export function createBackgroundJobHandlers(deps: {
     "computer.machine-cleanup": async (machine, _execution, attempt) => {
       await retryMachineCleanup(deps, machine, attempt);
     },
-    // The previous release's jobs, drained once by this one.
+    // The previous release's jobs, drained by this one. Jobs under this name can stay queued
+    // across releases, so it goes only once none are left.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await retrySecretCleanup(cleanupDeps, {
         kind: "messaging_installation",

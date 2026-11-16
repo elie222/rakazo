@@ -1,5 +1,6 @@
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -340,7 +341,7 @@ describe("MCP OAuth", () => {
       ...tables,
       $transaction: async <T>(callback: (tx: unknown) => Promise<T>, options?: unknown) => {
         transactionOptions.push(options);
-        let release: (() => void) | undefined;
+        let release: Deferred | undefined;
         const created: string[] = [];
         const tx = {
           ...tables,
@@ -356,9 +357,8 @@ describe("MCP OAuth", () => {
             lockSettings.push(sql.join("?"));
             if (!sql.join("").includes("pg_advisory_xact_lock") || release) return 1;
             const held = lock;
-            lock = new Promise<void>((resolve) => {
-              release = resolve;
-            });
+            release = deferred();
+            lock = release.promise;
             await held;
             credentialLocked = true;
             return 1;
@@ -372,7 +372,7 @@ describe("MCP OAuth", () => {
           throw error;
         } finally {
           if (release) credentialLocked = false;
-          release?.();
+          release?.resolve();
         }
       },
     };
