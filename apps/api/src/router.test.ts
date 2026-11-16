@@ -3589,6 +3589,20 @@ describe("connections.begin", () => {
     expect(integrationSettings.resolve).not.toHaveBeenCalled();
   });
 
+  it("returns the normalized sign-in URL that it validated", async () => {
+    const { call, tx, jobs } = lostBegin(
+      {},
+      "request-1",
+      "  https://provider.test/sign in?state=a b  ",
+    );
+    tx.connection.updateMany.mockResolvedValue({ count: 1 });
+    await expect(call()).resolves.toEqual({
+      connectionId: "conn-1",
+      authorizationUrl: "https://provider.test/sign%20in?state=a%20b",
+    });
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
   it.each(["example-app", "javascript:alert(1)", "file:///tmp/fixture", "custom-app:signin"])(
     "rejects an invalid sign-in URL before returning it to clients: %s",
     async (url) => {

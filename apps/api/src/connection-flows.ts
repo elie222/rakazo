@@ -241,10 +241,14 @@ export async function beginConnection(
     auth.state,
   );
   // Never send an opaque provider reference or a non-web URI to native URL handlers.
-  if (auth.authorizationUrl && !normalizedHttpUrl(auth.authorizationUrl)) {
-    await markFailed();
-    if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
-    throw new ClientError("SERVICE_UNAVAILABLE", "The app returned an invalid sign-in URL.");
+  if (auth.authorizationUrl) {
+    const authorizationUrl = normalizedHttpUrl(auth.authorizationUrl);
+    if (!authorizationUrl) {
+      await markFailed();
+      if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
+      throw new ClientError("SERVICE_UNAVAILABLE", "The app returned an invalid sign-in URL.");
+    }
+    auth = { ...auth, authorizationUrl };
   }
   // Re-take the provider lock and only advance the row while it is still this attempt's, so
   // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
