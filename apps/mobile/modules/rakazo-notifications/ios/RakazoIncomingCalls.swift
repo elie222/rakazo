@@ -248,8 +248,8 @@ public class RakazoNotificationsModule: Module {
     Events("onIncomingCallChanged", "onWorkActivityToken", "onWorkActivityStartToken")
     OnCreate {
       if #available(iOS 18.0, *) {
-        WorkActivities.shared.onToken = { [weak self] token in
-          self?.sendEvent("onWorkActivityToken", ["token": token])
+        WorkActivities.shared.onToken = { [weak self] token, request in
+          self?.sendEvent("onWorkActivityToken", ["token": token, "request": request])
         }
         WorkActivities.shared.onStartToken = { [weak self] token in
           self?.sendEvent("onWorkActivityStartToken", ["token": token])
@@ -292,6 +292,9 @@ public class RakazoNotificationsModule: Module {
     }.runOnQueue(.main)
     AsyncFunction("endWorkActivity") {
       if #available(iOS 18.0, *) { WorkActivities.shared.end() }
+    }.runOnQueue(.main)
+    AsyncFunction("endUnfollowedWorkActivity") { (request: Int) in
+      if #available(iOS 18.0, *) { WorkActivities.shared.endUnfollowed(request) }
     }.runOnQueue(.main)
   }
 }

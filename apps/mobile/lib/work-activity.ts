@@ -17,8 +17,14 @@ type NativeWorkActivities = {
   ): Promise<void>;
   refreshWorkActivity(): Promise<void>;
   endWorkActivity(): Promise<void>;
+  /** Ends the card unless a request newer than this one asked whether it is followed. */
+  endUnfollowedWorkActivity(request: number): Promise<void>;
   addListener(
-    name: "onWorkActivityToken" | "onWorkActivityStartToken",
+    name: "onWorkActivityToken",
+    callback: (event: { token: string; request: number }) => void,
+  ): { remove(): void };
+  addListener(
+    name: "onWorkActivityStartToken",
     callback: (event: { token: string }) => void,
   ): { remove(): void };
 };
@@ -39,14 +45,15 @@ export function startWorkActivities(): () => void {
   const card = activities;
   // The token arrives after the card starts, again whenever iOS changes it, and on each refresh,
   // so the server can say the work the card shows has ended.
-  const tokens = card.addListener("onWorkActivityToken", ({ token }) => {
+  const tokens = card.addListener("onWorkActivityToken", ({ token, request }) => {
     const generation = currentSessionGeneration();
     rpc("notifications/followWorkActivity", { token })
       .then(({ following }) => {
         // A reply for an account signed out since speaks for no card shown now.
         if (generation !== currentSessionGeneration()) return;
-        // Nothing would update it: no bot is at work or this server cannot reach the phone.
-        if (!following) return card.endWorkActivity();
+        // Nothing would update it: no bot is at work or this server cannot reach the phone. The
+        // native side skips an answer a newer request has overtaken, from here or the background.
+        if (!following) return card.endUnfollowedWorkActivity(request);
       })
       // An unanswered request proves nothing; the next open asks again.
       .catch(() => undefined);
