@@ -5,6 +5,7 @@ import { test } from "node:test";
 const SCHEMA = new URL("../../packages/db/prisma/schema.prisma", import.meta.url);
 
 // Hand-written leases and claims from before `withLease`. Move one onto it, then drop it here.
+// The groups commented below as not for `withLease` stay: they are not long work in one process.
 const EXISTING = new Set([
   "ScimConnectionBinding.decommissionLeaseId",
   "ScimConnectionBinding.decommissionLeaseExpiresAt",
