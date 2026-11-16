@@ -970,8 +970,18 @@ export async function recordClip(
       recordingTurn = signal;
       await setDictationAudio(true);
     }
+    const preset = RecordingPresets.HIGH_QUALITY;
+    // The low-level constructor takes flat native options, unlike useAudioRecorder.
+    const platformOptions =
+      Platform.OS === "ios" ? preset.ios : Platform.OS === "android" ? preset.android : preset.web;
     recorder = new AudioModule.AudioRecorder({
-      ...RecordingPresets.HIGH_QUALITY,
+      ...preset,
+      ...platformOptions,
+      // Speech clips should stay small enough to upload over a mobile connection.
+      sampleRate: 16_000,
+      numberOfChannels: 1,
+      bitRate: 48_000,
+      ...(Platform.OS === "ios" ? { bitRateStrategy: "constant" } : {}),
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();

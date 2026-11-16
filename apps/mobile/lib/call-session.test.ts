@@ -89,6 +89,7 @@ const audio = vi.hoisted(() => ({
   permission: Promise.resolve({ granted: true }),
   prepared: Promise.resolve(),
   record: vi.fn(),
+  options: vi.fn(),
   release: vi.fn(),
   setAudioMode: vi.fn(),
   status: {} as { metering?: number },
@@ -98,6 +99,9 @@ const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
+      constructor(options: unknown) {
+        audio.options(options);
+      }
       uri = audio.uri;
       prepareToRecordAsync = () => audio.prepared;
       record = audio.record;
@@ -106,7 +110,17 @@ const expoAudioMock = vi.hoisted(() => () => ({
       getStatus = () => audio.status;
     },
   },
-  RecordingPresets: { HIGH_QUALITY: {} },
+  RecordingPresets: {
+    HIGH_QUALITY: {
+      extension: ".m4a",
+      sampleRate: 44_100,
+      numberOfChannels: 2,
+      bitRate: 128_000,
+      android: { outputFormat: "mpeg4", audioEncoder: "aac" },
+      ios: { outputFormat: "aac ", audioQuality: 127 },
+      web: { mimeType: "audio/webm", bitsPerSecond: 128_000 },
+    },
+  },
   setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
 }));
 vi.mock("expo-audio", () => expoAudioMock());
@@ -2286,6 +2300,7 @@ describe("mobile call recording without metering", () => {
     audio.permission = Promise.resolve({ granted: true });
     audio.prepared = Promise.resolve();
     audio.record.mockClear();
+    audio.options.mockClear();
     audio.release.mockClear();
     audio.setAudioMode.mockClear();
     // A healthy recorder that never reports a level: pure silence is indistinguishable.
@@ -2294,12 +2309,45 @@ describe("mobile call recording without metering", () => {
     files.base64 = async () => "c2lsZW5jZQ==";
   });
   afterEach(() => {
+    device.os = "ios";
     endCall();
     vi.useRealTimers();
     audio.status = {};
     audio.uri = null;
     files.base64 = async () => "";
   });
+
+  it.each([
+    { os: "ios", dictating: true },
+    { os: "ios", dictating: false },
+    { os: "android", dictating: true },
+    { os: "android", dictating: false },
+  ])(
+    "passes native speech encoding options on $os (dictating=$dictating)",
+    async ({ os, dictating }) => {
+      device.os = os;
+      const stopped = new AbortController();
+      const clip = recordClip(new AbortController().signal, dictating ? stopped.signal : undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      // Stop first, so a failed assertion leaves no recorder running.
+      stopped.abort();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await clip;
+      expect(audio.options).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          extension: ".m4a",
+          sampleRate: 16_000,
+          numberOfChannels: 1,
+          bitRate: 48_000,
+          isMeteringEnabled: true,
+          ...(os === "ios"
+            ? { outputFormat: "aac ", audioQuality: 127, bitRateStrategy: "constant" }
+            : { outputFormat: "mpeg4", audioEncoder: "aac" }),
+        }),
+      );
+      expect(audio.release).toHaveBeenCalledOnce();
+    },
+  );
 
   it("switches recording on only for a dictated clip, never for a call turn", async () => {
     vi.mocked(setDictationAudio).mockClear();
