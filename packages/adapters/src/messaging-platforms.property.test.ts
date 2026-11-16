@@ -4,7 +4,7 @@ import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "ch
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { splitOutboundBody } from "./messaging-platforms.js";
-import { telegramFallbackText } from "./telegram-messaging.js";
+import { telegramFallbackText } from "./providers/messaging/telegram/telegram-messaging.js";
 
 const LIMIT = 4096;
 

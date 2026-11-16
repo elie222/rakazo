@@ -6,7 +6,7 @@ import {
   asRecord,
   defineMessagingPlatform,
   stringField,
-} from "./messaging-platform-descriptor.js";
+} from "../../../messaging-platform-descriptor.js";
 
 export const whatsappMessaging = defineMessagingPlatform({
   env: {
