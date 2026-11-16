@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
@@ -110,6 +110,9 @@ async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
       </MemoryRouter>,
     ),
   );
+}
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
 }
 async function enter(input: Element | null, value: string) {
   await act(async () => {
@@ -427,4 +430,32 @@ it("leaves the password form unchanged without email codes", async () => {
   expect(host.querySelector('input[type="password"]')).not.toBeNull();
   expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.required).toBe(true);
   expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
+});
+
+it.each(["in", "up"] as const)(
+  "signs in to a demo server's shared account in one click on %s",
+  async (mode) => {
+    const demoAccount = { email: "demo@example.com", password: "demo-password" };
+    vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
+    vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={["/sign-up"]}>
+          <AuthPage mode={mode} />
+          <LocationProbe />
+        </MemoryRouter>,
+      ),
+    );
+    await act(async () => button("Sign in with demo account").click());
+    expect(authClient.signIn.email).toHaveBeenCalledWith(demoAccount);
+    expect(host.querySelector("[data-testid=location]")!.textContent).toBe(
+      mode === "up" ? "/sign-in" : "/sign-up",
+    );
+  },
+);
+
+it("offers no demo sign-in on other servers", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  await render();
+  expect(button("Sign in with demo account")).toBeUndefined();
 });
