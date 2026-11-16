@@ -628,6 +628,12 @@ export function humanizeToolName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
+/** "GMAIL_SEND_EMAIL" on Gmail's page reads as "Send email": the app is already the page title. */
+export function appToolLabel(name: string, appSlug: string): string {
+  const prefix = `${appSlug}_`.toLowerCase();
+  return humanizeToolName(name.toLowerCase().startsWith(prefix) ? name.slice(prefix.length) : name);
+}
+
 /** Reverses humanizeToolName for a typed name; rules match tool names ignoring case. */
 export function toolNameFromLabel(label: string): string {
   return label.trim().replace(/\s+/g, "_");
@@ -688,7 +694,7 @@ function protectedValues(secrets: Iterable<string>): string[] {
  * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
  * leave the rest readable; matches that only touch stay separate.
  */
-function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
+export function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
   // Count matches starting and ending at each offset rather than listing every match, so a value
   // that repeats or overlaps itself across a long text costs no more than two counters per offset.
   let starts: Int32Array | undefined;

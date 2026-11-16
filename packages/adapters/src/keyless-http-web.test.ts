@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { FakeWebProvider } from "./fake-web.js";
 import {
@@ -150,16 +151,13 @@ describe("keyless HTTP web provider", () => {
 
   it.each(["text/plain", "application/json"])("cancels an ongoing %s read", async (contentType) => {
     const controller = new AbortController();
-    let bodyStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      bodyStarted = resolve;
-    });
+    const started = deferred();
     const provider = new KeylessHttpWebProvider({
       fetch: async () =>
         new Response(
           new ReadableStream({
             start() {
-              bodyStarted();
+              started.resolve();
             },
           }),
           {
@@ -173,7 +171,7 @@ describe("keyless HTTP web provider", () => {
       { ...ctx, signal: controller.signal },
       { url: "https://example.test/doc" },
     );
-    await started;
+    await started.promise;
     controller.abort(new Error("cancelled"));
     await expect(pending).resolves.toEqual({ error: "cancelled" });
   });
@@ -220,6 +218,55 @@ describe("keyless HTTP web provider", () => {
       { title: "Alpha", url: "https://example.test/a", snippet: "Snippet A" },
       { title: "Beta", url: "https://example.test/b", snippet: "Snippet B" },
     ]);
+  });
+
+  it("keeps surrogate pairs intact across fetch-tool pages", async () => {
+    const body = `${"a".repeat(99)}😀${"b".repeat(99)}🚀tail`;
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () => new Response(body, { headers: { "content-type": "text/plain" } }),
+      resolveHostname: publicResolver,
+    });
+    let offset = 0;
+    let combined = "";
+    for (let page = 0; page < 10; page += 1) {
+      const result = await webFetchFromTool(provider, ctx, {
+        url: "https://example.test/doc",
+        maxChars: 100,
+        offset,
+      });
+      if ("error" in result) throw new Error(result.error);
+      expect(result.text).not.toMatch(/[\uD800-\uDFFF]/u);
+      if (!result.truncated) {
+        combined += result.text;
+        break;
+      }
+      const content = result.text.split("\n\n[Content truncated;")[0] ?? "";
+      expect(content.length).toBeLessThanOrEqual(100);
+      combined += content;
+      const next = Number(result.text.match(/continue with offset (\d+)/)?.[1]);
+      expect(next).toBe(offset + content.length);
+      expect(next).toBeGreaterThan(offset);
+      offset = next;
+    }
+    expect(combined).toBe(body);
+  });
+
+  it("uses the actual Unicode window length for the read limit", () => {
+    expect(pageWindow("a😀tail", 2, 9, 10)).toEqual({
+      text: "a\n\n[Content truncated; continue with offset 10]",
+      truncated: true,
+    });
+    expect(pageWindow("a😀tail", 2, 10, 10)).toEqual({
+      text: "a\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
+  });
+
+  it("does not suggest the same offset when no complete character fits", () => {
+    expect(pageWindow("😀tail", 1, 4)).toEqual({
+      text: "\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
   });
 
   it("fetches readable page text with truncation", async () => {

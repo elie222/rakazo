@@ -14,11 +14,12 @@ import {
   withToolStepOutcomes,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
+import { storedMessageBlocks } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
-import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
+import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.prompt.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
@@ -77,12 +78,11 @@ export async function createReplyState(
   const priorProgress = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },
     orderBy: { seq: "asc" },
-    select: { blocks: true, clientNonce: true },
+    select: { id: true, blocks: true, clientNonce: true },
   });
   for (const message of priorProgress) {
     if (!isUserProgressClientNonce(message.clientNonce)) continue;
-    const blocks = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
-    const text = messageBlocksText(blocks).trim();
+    const text = messageBlocksText(storedMessageBlocks(message)).trim();
     if (!text) continue;
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;

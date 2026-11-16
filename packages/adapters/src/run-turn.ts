@@ -5,7 +5,6 @@ import {
   ModelAccountError,
   ModelOutputError,
   memoryRetainTurnJob,
-  runContinueJob,
   SandboxAllowanceUsedError,
   SandboxProviderAccountError,
   SandboxRateLimitError,
@@ -26,7 +25,12 @@ import {
   userRunError,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
-import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
+import {
+  isDatabaseUnavailable,
+  RunHistoryWriteError,
+  recordUsage,
+  retryWhileDatabaseUnavailable,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
@@ -51,7 +55,13 @@ import {
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
-import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
+import {
+  computerRetryDelay,
+  enqueueSteeringContinuation,
+  renewRunLease,
+  requeueComputerRun,
+  requeueInterruptedRun,
+} from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
   completionMarksUnread,
@@ -82,7 +92,7 @@ import {
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   TOOL_STEPS_WITHOUT_RESPONSE,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
@@ -126,6 +136,7 @@ import {
   STEERING_RESETS_MAX_PER_RUN,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
 } from "./user-progress.js";
+import { wakeRun } from "./wake-run.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
 
@@ -514,9 +525,7 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
   });
   if (!paused) return;
   if (typeof paused === "object") {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("takeover continuation enqueue", error));
+    await wakeRun(deps.jobs, paused.continuationRunId);
     return;
   }
   ctx.state.lease.retainComputer = true;
@@ -693,6 +702,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
   if (!stopped) return;
   await enqueueConversationRetention(ctx, answeredMessageIds);
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+  const loop = loopGuardStop(ctx.state.toolCallStreak);
   logLoopGuardStop(
     {
       spaceId: run.spaceId,
@@ -703,8 +713,12 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     },
     {
       tool: toolName,
-      reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
-      count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
+      reason: stoppedForOverLimit
+        ? "over_limit_actions"
+        : loop.kind === "same_result"
+          ? "repeated_results"
+          : "repeated_calls",
+      count: stoppedForOverLimit ? overLimit : loop.count,
       failures: ctx.state.toolCallStreak.failures ?? 0,
       ...(refusal ? { refusal } : {}),
     },
@@ -1092,6 +1106,28 @@ function runFailureFingerprint(provider: string, message: string): string[] {
 function requestDetails(error: unknown): { "error.details"?: string } {
   const rejected = rejectedRequestsOf(error);
   return rejected ? { "error.details": JSON.stringify({ providerRequests: rejected }) } : {};
+}
+
+/**
+ * The database went away mid-turn, which is no fault of the turn. Once the database answers
+ * again, hand the run back as a stopping worker does, keeping its turn on the computer; it
+ * starts again here and resumes. Its fence spaces out repeats, so a database that is only
+ * saturated is not hammered. An outage longer than the wait leaves the run to lease expiry.
+ */
+export async function requeueRunAfterDatabaseOutage(ctx: RunContext): Promise<void> {
+  const { deps, runId, workerId, fence } = ctx;
+  if (!ctx.state.terminalCheckpointComplete) {
+    await ctx.computer.checkpoint.flush().catch(() => undefined);
+  }
+  const wakeAt = new Date(Date.now() + computerRetryDelay(fence));
+  try {
+    ctx.state.lease.handedBack = await retryWhileDatabaseUnavailable(
+      () => requeueInterruptedRun(deps, runId, workerId, fence, wakeAt),
+      { source: "run requeue", signal: deps.shutdownSignal },
+    );
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
 }
 
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */

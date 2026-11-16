@@ -131,9 +131,7 @@ export async function assertMcpRemoteEndpoint(
     });
     assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "MCP endpoint is invalid",
-    });
+    throw new ORPCError("BAD_REQUEST", { message: endpointRefusal(error) });
   }
 }
 
@@ -371,4 +369,10 @@ export function createMcpServers(
     insertMcpServer,
     announceMcpServer,
   };
+}
+
+function endpointRefusal(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "ENOTFOUND" || code === "ENODATA") return "Connector URL host could not be found";
+  return error instanceof Error ? error.message : "MCP endpoint is invalid";
 }

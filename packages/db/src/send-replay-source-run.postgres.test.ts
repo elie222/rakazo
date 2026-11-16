@@ -56,7 +56,6 @@ function trackSourceRunReads(pool: Pool): SqlRead[] {
 describePostgres("replaying a sent message reads its first run (PostgreSQL)", () => {
   const provider = "sendblue";
   const address = `+1559${String(Date.now()).slice(-7)}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let system: PrismaClient;
   let owner: PrismaClient;
@@ -81,7 +80,7 @@ describePostgres("replaying a sent message reads its first run (PostgreSQL)", ()
       await ownerDb.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address }, signup),
+      provisionMessagingIdentity(prisma, { provider, address }),
     );
     ({ userId, spaceId, botId, threadId } = provisioned);
     await system.run.updateMany({

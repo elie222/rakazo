@@ -1,6 +1,6 @@
 import { OPENCLAW_H1 } from "./guide";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
-import { DOCS_URL, GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH } from "./site";
+import { GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
 
 export const ROUNDUP_UPDATED = "October 24, 2026";
 
@@ -640,7 +640,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         question: "Can Rakazo use my Claude subscription?",
         answer:
-          "Use an Anthropic API key for Claude models. Pro and Max subscriptions do not include API credit. See Model subscriptions in the docs for provider restrictions.",
+          "Yes, when you self-host Rakazo from a source checkout for yourself. It runs Claude through the official Claude Code CLI, signed in with your Pro or Max account. On a shared server or the hosted plan, use an Anthropic API key. See Model subscriptions in the docs for details.",
       },
       {
         question: "Is Claude Duet open source or self-hosted?",
@@ -809,29 +809,6 @@ export const HUB_CARDS: readonly HubCard[] = [
   OPENCLAW_HUB_CARD,
 ];
 
-/** FAQ answers can carry `code`, **bold** and [links](/path/); structured data wants plain text. */
-function plainText(value: string): string {
-  return value
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replaceAll("**", "")
-    .replaceAll("`", "");
-}
-
-export function faqPageSchema(faq: readonly FaqItem[]) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faq.map((item) => ({
-      "@type": "Question",
-      name: plainText(item.question),
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: plainText(item.answer),
-      },
-    })),
-  };
-}
-
 function cell(value: string): string {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
@@ -864,7 +841,7 @@ export function alternativeMarkdown(alternative: Alternative): string {
     "",
     GET_STARTED.copy,
     "",
-    `- [${GET_STARTED.docsLabel}](${DOCS_URL})`,
+    `- [${GET_STARTED.docsLabel}](${SITE_URL}${SELF_HOST_GUIDE_PATH})`,
     `- [${GET_STARTED.githubLabel}](${GITHUB_URL})`,
     "",
     "## FAQ",

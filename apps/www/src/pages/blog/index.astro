@@ -3,16 +3,16 @@ import { getCollection } from "astro:content";
 import type { BlogCategory } from "../../blog/categories";
 import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
 import { formatPostDate } from "../../blog/format";
+import { BLOG_DESCRIPTION, sortPosts } from "../../blog/markdown";
 import SiteFrame from "../../components/SiteFrame.astro";
 
-const posts = (await getCollection("blog")).sort(
-  (a, b) => b.data.updated.getTime() - a.data.updated.getTime(),
-);
+const posts = sortPosts(await getCollection("blog"));
 ---
 
 <SiteFrame
   title="Blog – Rakazo"
-  description="Notes on running an open source AI agent yourself, including setup and how Rakazo compares with other projects."
+  description={BLOG_DESCRIPTION}
+  markdownAlternate="/blog.md"
 >
   <h1>Blog</h1>
   <nav class="blog-cats" aria-label="Categories">

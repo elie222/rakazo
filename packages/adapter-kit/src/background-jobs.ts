@@ -6,6 +6,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobName,
   BackgroundJobPayloads,
+  UnreferencedMachine,
 } from "./types.js";
 
 const payloadSchemas = {
@@ -59,9 +60,35 @@ const payloadSchemas = {
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
+  "secret.cleanup": z.object({
+    kind: z.enum([
+      "secret_row",
+      "secret_tables",
+      "messaging_installation",
+      "deployment_computer_provider",
+      "purchase_request",
+      "purchase_card",
+      "purchase_token",
+      "payment_wallet",
+    ]),
+    recordId: z.string().min(1),
+    ref: z.string().min(1),
+  }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
     ref: z.string().min(1),
+  }),
+  "connection.cleanup": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
+  "computer.machine-cleanup": z.object({
+    provider: z.string().min(1),
+    machineId: z.string().min(1),
+    homeKey: z.string().min(1).optional(),
   }),
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
@@ -291,6 +318,54 @@ export function memoryPurgeHistoryJob(
     payload,
     replaceKey: `memory.purge-history:${JSON.stringify([payload.spaceId, payload.botId, payload.threadId, payload.generations, payload.connectionIdentity])}`,
     maxAttempts: 12,
+  };
+}
+
+export function connectionCleanupJobKey(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+): string {
+  return `connection.cleanup:${JSON.stringify([payload.spaceId, payload.userId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
+}
+
+/**
+ * Tries of one cleanup before it is given up and reported. An authorization nobody removes
+ * stays active at the provider, so the job has to outlast a long provider outage: the queue's
+ * backoff grows to about six hours between tries, which makes this many span about a month.
+ */
+export const CONNECTION_CLEANUP_MAX_ATTEMPTS = 125;
+
+/** Without `availableAt` it runs now, which is how a failed direct attempt hands over. */
+export function connectionCleanupJob(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+  availableAt?: Date,
+): BackgroundJob {
+  return {
+    name: "connection.cleanup",
+    payload,
+    ...(availableAt ? { availableAt } : {}),
+    replaceKey: connectionCleanupJobKey(payload),
+    maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+  };
+}
+
+export function machineCleanupJobKey(provider: string, machineId: string): string {
+  return `computer.machine-cleanup:${JSON.stringify([provider, machineId])}`;
+}
+
+/**
+ * The queue's backoff spreads these tries over almost three days, which outlasts a long provider
+ * outage; the last one to fail reports the machine.
+ */
+export const MACHINE_CLEANUP_MAX_ATTEMPTS = 20;
+
+/** The record of one machine no stored computer points at: its delete, due at `availableAt`. */
+export function machineCleanupJob(machine: UnreferencedMachine, availableAt: Date): BackgroundJob {
+  return {
+    name: "computer.machine-cleanup",
+    payload: machine,
+    availableAt,
+    replaceKey: machineCleanupJobKey(machine.provider, machine.machineId),
+    maxAttempts: MACHINE_CLEANUP_MAX_ATTEMPTS,
   };
 }
 

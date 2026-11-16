@@ -8,13 +8,14 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
+import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
 import {
-  canonicalPiProviderId,
-  connectedBackupOptions,
-  MAX_MODEL_BACKUPS,
-  modelRoleChoiceKey,
-} from "@rakazo/contracts";
-import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
+  catalogEntryFor,
+  connectionForModelChoice,
+  createModelRoleSettings,
+  modelRoleListPatch,
+  modelThinkingLevels,
+} from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -62,6 +63,8 @@ type Props = {
   onConnect: (provider: ConnectableProvider, intent: ModelRoleConnectIntent) => void;
   /** Opens one connection's dialog. */
   onManage: (provider: string, credentialId: string) => void;
+  /** Opens one model's settings on the connection that runs it. */
+  onManageModel?: (choice: { provider: string; modelId: string; credentialId: string }) => void;
   /** Offer effort for the first row when its model can think. */
   thinking?: boolean;
   onChanged?: () => void;
@@ -112,6 +115,7 @@ export function ModelRoleSettings({
   providerLabel,
   onConnect,
   onManage,
+  onManageModel,
   thinking,
   onChanged,
   panel,
@@ -172,15 +176,7 @@ export function ModelRoleSettings({
   const backups = settings?.backups ?? [];
   const rows = primary ? [primary, ...backups] : backups;
   const entryFor = (choice: ModelBackupChoice) =>
-    state.catalog.find(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
-        entry.id === choice.modelId,
-    );
-  const thinkingLevels =
-    thinking && primary
-      ? (entryFor(primary)?.thinkingLevels ?? []).filter((level) => level !== "off")
-      : [];
+    catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   // Grouped by the connection that runs them.
   const options: RoleModelOption[] = connectedBackupOptions(
     state.catalog,
@@ -197,13 +193,13 @@ export function ModelRoleSettings({
     ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
   }));
   // A pinned row runs on its connection; others on the provider's newest.
-  const connectionFor = (choice: ModelRoleChoice) =>
-    choice.credentialId
-      ? credentials.find((entry) => entry.id === choice.credentialId)
-      : credentials.find(
-          (entry) =>
-            canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
-        );
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
+  const thinkingLevels =
+    thinking && primary
+      ? modelThinkingLevels(connectionFor(primary), entryFor(primary), primary.modelId).filter(
+          (level) => level !== "off",
+        )
+      : [];
   const providerName = (choice: ModelRoleChoice) =>
     (choice.credentialId &&
       options.find((option) => option.credentialId === choice.credentialId)?.providerName) ||
@@ -463,9 +459,22 @@ export function ModelRoleSettings({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
+                  {connection && onManageModel ? (
+                    <DropdownMenuItem
+                      onClick={() =>
+                        onManageModel({
+                          provider: choice.provider,
+                          modelId: choice.modelId,
+                          credentialId: connection.id,
+                        })
+                      }
+                    >
+                      <Trans>Manage model</Trans>
+                    </DropdownMenuItem>
+                  ) : null}
                   {connection ? (
                     <DropdownMenuItem onClick={() => onManage(connection.provider, connection.id)}>
-                      <Trans>Manage {providerName(choice)}</Trans>
+                      <Trans>Manage provider</Trans>
                     </DropdownMenuItem>
                   ) : null}
                   <DropdownMenuItem variant="destructive" onClick={() => remove(index)}>

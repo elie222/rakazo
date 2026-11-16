@@ -9,11 +9,11 @@ import { computerUpdates } from "../lib/computer-updates";
 import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
-/** Update and Reset rows for a bot's Computer settings group. */
+/** The one repair a bot's computer offers, and only while that computer is broken. */
 export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
-  const [pending, setPending] = useState<"reset" | "update" | null>(null);
+  const [pending, setPending] = useState<"reset" | "recover" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const latestRead = useRef(0);
@@ -33,16 +33,20 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   // A queued update or recovery reports progress here; its status changes with it.
   useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
 
-  if (!botId || !computer || computer.botId !== botId) return [];
-  const busy = Boolean(computer.busyBotName) || computer.state === "booting" || pending !== null;
+  if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
+  const busy = Boolean(computer.busyBotName) || pending !== null;
 
-  async function run(action: "reset" | "update") {
+  // Recover rebuilds the system where the computer can update in place; otherwise Reset
+  // restores the last saved workspace.
+  const action = computer.canUpdate ? "recover" : "reset";
+
+  async function run() {
     if (!botId || busy) return;
     setPending(action);
     setError(null);
     try {
       if (action === "reset") await rpc("computer/reset", { botId });
-      else await computerUpdates.start(botId);
+      else await computerUpdates.start(botId, "recover");
       await refresh();
     } catch (err) {
       setError(errorText(err, t`Could not update computer`));
@@ -52,34 +56,35 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   }
 
   return [
-    ...(computer.canUpdate
-      ? [
-          <SettingsRow
-            key="update"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
-            disabled={busy}
-            dimmed={busy}
-            title={pending === "update" ? t`Updating…` : t`Update computer`}
-            onPress={() => void run("update")}
-          />,
-        ]
-      : []),
     <SettingsRow
-      key="reset"
+      key="repair"
       accessibilityRole="button"
       accessibilityState={{ disabled: busy }}
       disabled={busy}
       dimmed={busy}
       destructive
-      title={pending === "reset" ? t`Resetting…` : t`Reset computer`}
+      title={
+        action === "recover"
+          ? pending
+            ? t`Recovering…`
+            : t`Recover computer`
+          : pending
+            ? t`Resetting…`
+            : t`Reset computer`
+      }
       onPress={() =>
         Alert.alert(
-          t`Reset computer?`,
-          t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
+          action === "recover" ? t`Recover computer?` : t`Reset computer?`,
+          action === "recover"
+            ? t`Recovery restores the last saved workspace. Unsaved work may be lost.`
+            : t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
           [
             { text: t`Cancel`, style: "cancel" },
-            { text: t`Reset`, style: "destructive", onPress: () => void run("reset") },
+            {
+              text: action === "recover" ? t`Recover computer` : t`Reset`,
+              style: "destructive",
+              onPress: () => void run(),
+            },
           ],
         )
       }

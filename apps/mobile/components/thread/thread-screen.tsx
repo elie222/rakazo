@@ -11,7 +11,6 @@ import {
   isRunWorking,
   liveActivityLine,
   liveMessageComposing,
-  memberName,
   newClientId,
   newestPageCards,
   otherAuthor,
@@ -21,7 +20,7 @@ import {
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,8 +29,10 @@ import { rpc } from "../../lib/api";
 import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
+import { useContentBottomInset } from "../../lib/content-bottom-inset";
 import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
@@ -52,6 +53,7 @@ import { useThreadSnapshot } from "../../lib/thread-history";
 import { threadKeyboardAvoidance } from "../../lib/thread-keyboard-offset";
 import { useThreadListScroll } from "../../lib/thread-list-scroll";
 import { useThreadMentionCatalog } from "../../lib/thread-mention-catalog";
+import { botDisplayName } from "../../lib/thread-message-text";
 import { useThreadPaging } from "../../lib/thread-paging";
 import { useThreadRead } from "../../lib/thread-read";
 import {
@@ -133,11 +135,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
   const call = useCallSession();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
+  const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
-  const bottomInset = Math.max(dockHeight, readOnly ? insets.bottom : 0);
+  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
@@ -184,12 +188,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     }, []),
   );
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots } = useThreadBots({
-    botId,
-    groupId,
-    name,
-    activeBotId,
-  });
+  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
+    useThreadBots({
+      botId,
+      groupId,
+      name,
+      activeBotId,
+    });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -222,12 +227,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const visibleMessages = transcript.visibleMessages;
   const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
+  // The group's members in its order, once the chat or its group list has loaded them; the
+  // title seats the inbox's copy until then.
+  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        groupMemberNames: groupMembers?.map((member) => member.name),
         bots: mentionBots.map((bot) => ({
           id: bot.id,
           name: bot.name,
@@ -245,7 +254,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         connectors: mentionConnectors,
         cronLabels: cronLabels(locale),
       }),
-    [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
+    [
+      groupId,
+      groupMembers,
+      inGroup,
+      locale,
+      mentionBots,
+      mentionConnectors,
+      mentionGroups,
+      mentionRoutines,
+    ],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
@@ -272,9 +290,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         : undefined,
       botId,
     );
-  // The group's members in its order, once the chat or its group list has loaded them; the
-  // title seats the inbox's copy until then.
-  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   // Only reply text being written replaces the footer; earlier sentences above a tool call don't.
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
@@ -359,7 +374,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     botId,
     readOnly,
     notificationThreadId,
-    refreshMentionBots,
+    refreshMentionBots: refreshMentionRoster,
     markReadIfVisible,
     speakFinishedReplyRef,
   });
@@ -595,6 +610,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
+        enabled={!rootAvoidsKeyboard}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
@@ -649,7 +665,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                 ? (otherAuthor(replyTarget.author, userId)?.name ??
                   channelMessageSender(replyTarget.blocks) ??
                   t`You`)
-                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t`Bot`)
+                : (botDisplayName(snap?.members, mentionBots, replyTarget?.botId) ??
+                  displayName ??
+                  t`Bot`)
             }
             replyQuote={replyQuote}
             threadTarget={artifactTarget}

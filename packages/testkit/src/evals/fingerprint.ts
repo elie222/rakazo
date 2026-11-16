@@ -1,4 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { ModelConnectInput } from "@rakazo/contracts";
 import type { EvalCase } from "./cases.js";
 
@@ -170,5 +173,42 @@ function isFor(input: Parameters<typeof fetch>[0], body: string, modelId: string
     return (JSON.parse(body) as { model?: unknown }).model === modelId;
   } catch {
     return false;
+  }
+}
+
+export function workingDiffHash(): string | null {
+  try {
+    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const options = {
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    };
+    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
+    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      ...options,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
+      .sort();
+    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
+    return hash.digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+export function codeRevision(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
   }
 }

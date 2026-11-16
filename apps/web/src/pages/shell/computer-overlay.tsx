@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { TeachCaptureOverlay } from "../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../../components/teach/TeachRecordingChrome";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import {
   DARWIN_WINDOW_CONTROLS_WIDTH_PX,
@@ -178,7 +179,7 @@ export function ComputerOverlay({
           </div>
         ) : null}
         <div className="relative min-h-0 flex-1 bg-background">
-          {computer?.kind === "desktop" ? (
+          {runsOnUserMachine(computer) ? (
             <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-body text-muted-foreground/80" />
           ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
             <>

@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
 
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
+
+import { i18n } from "@lingui/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -114,6 +119,8 @@ describe("archived chat read failures", () => {
   let container: HTMLDivElement;
   let unregister: () => void;
   beforeEach(async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
     vi.clearAllMocks();
     unregister = registerSettingsSheet(closeSettingsSheet);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -180,13 +187,11 @@ describe("archived chat read failures", () => {
   it.each(["left", "left and came back"])(
     "does not close settings or open the chat when its read finishes after the page was %s",
     async (path) => {
-      let finishRead!: (value: unknown) => void;
-      rpc.mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finishRead = resolve;
-          }),
-      );
+      let finishRead!: Deferred<unknown>;
+      rpc.mockImplementationOnce(() => {
+        finishRead = deferred<unknown>();
+        return finishRead.promise;
+      });
       await act(async () => container.querySelector("button")!.click());
       if (path === "left") await act(async () => root.render(null));
       else
@@ -194,7 +199,7 @@ describe("archived chat read failures", () => {
           focus.current!()?.();
           focus.current!();
         });
-      await act(async () => finishRead({}));
+      await act(async () => finishRead.resolve({}));
       expect(closeSettingsSheet).not.toHaveBeenCalled();
       expect(push).not.toHaveBeenCalled();
     },
@@ -203,22 +208,18 @@ describe("archived chat read failures", () => {
   it.each(["resolve", "reject"])(
     "ignores a stale read that %ss after dismissing and reopening the sheet",
     async (outcome) => {
-      let finishRead!: (value: unknown) => void;
-      let failRead!: (cause: Error) => void;
-      rpc.mockImplementationOnce(
-        () =>
-          new Promise((resolve, reject) => {
-            finishRead = resolve;
-            failRead = reject;
-          }),
-      );
+      let read!: Deferred<unknown>;
+      rpc.mockImplementationOnce(() => {
+        read = deferred<unknown>();
+        return read.promise;
+      });
       await act(async () => container.querySelector("button")!.click());
       await act(async () => root.render(null));
       await act(async () => root.render(<ArchivedBots />));
       expect(container.textContent).toContain(bot.name);
       await act(async () => {
-        if (outcome === "resolve") finishRead({});
-        else failRead(new Error("Request timed out"));
+        if (outcome === "resolve") read.resolve({});
+        else read.reject(new Error("Request timed out"));
       });
       expect(closeSettingsSheet).not.toHaveBeenCalled();
       expect(push).not.toHaveBeenCalled();
@@ -232,19 +233,17 @@ describe("archived chat read failures", () => {
   );
 
   it("ignores a failed read after blur and permits a new read on refocus", async () => {
-    let failRead!: (cause: Error) => void;
-    rpc.mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          failRead = reject;
-        }),
-    );
+    let failRead!: Deferred<never>;
+    rpc.mockImplementationOnce(() => {
+      failRead = deferred<never>();
+      return failRead.promise;
+    });
     await act(async () => container.querySelector("button")!.click());
     await act(async () => {
       focus.current!()?.();
       focus.current!();
     });
-    await act(async () => failRead(new Error("Request timed out")));
+    await act(async () => failRead.reject(new Error("Request timed out")));
     expect(alert).not.toHaveBeenCalled();
     rpc.mockResolvedValueOnce({});
     await act(async () => container.querySelector("button")!.click());
@@ -302,17 +301,16 @@ describe("archived chat read failures", () => {
   });
 
   it.each(["Restore", "Delete"])("ignores a stale refresh after %s succeeds", async (action) => {
-    let finishRefresh!: (bots: MobileBot[]) => void;
-    rpc.mockImplementationOnce(
-      () =>
-        new Promise<MobileBot[]>((resolve) => {
-          finishRefresh = resolve;
-        }),
-    );
+    let finishRefresh!: Deferred<MobileBot[]>;
+    rpc.mockImplementationOnce(() => {
+      finishRefresh = deferred<MobileBot[]>();
+      return finishRefresh.promise;
+    });
     await act(async () => {
       focus.current!();
     });
     // The stale refresh is restarted after the change, and the server no longer lists the bot.
+    if (action === "Delete") rpc.mockResolvedValueOnce([]);
     rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === action,
@@ -322,7 +320,7 @@ describe("archived chat read failures", () => {
       await act(async () => alert.mock.calls[0]![2][1].onPress());
     }
     expect(container.textContent).toBe("No archived chats");
-    await act(async () => finishRefresh([bot]));
+    await act(async () => finishRefresh.resolve([bot]));
     expect(container.textContent).toBe("No archived chats");
   });
 
@@ -430,36 +428,32 @@ describe("archived chat read failures", () => {
     await act(async () => {
       focus.current!();
     });
-    let finishRestore!: (value: unknown) => void;
-    groupRpc.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishRestore = resolve;
-        }),
-    );
+    let finishRestore!: Deferred<unknown>;
+    groupRpc.mockImplementationOnce(() => {
+      finishRestore = deferred<unknown>();
+      return finishRestore.promise;
+    });
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore Crew",
     )!;
     await act(async () => restore.click());
-    let finishList!: (value: MobileBot[]) => void;
+    let finishList!: Deferred<MobileBot[]>;
     // Leaving runs one more load that is aborted at once; the return visit's load stays open
     // until the restore finishes and refreshes it.
     rpc
       .mockResolvedValueOnce([bot])
-      .mockImplementationOnce(
-        () =>
-          new Promise<MobileBot[]>((resolve) => {
-            finishList = resolve;
-          }),
-      )
+      .mockImplementationOnce(() => {
+        finishList = deferred<MobileBot[]>();
+        return finishList.promise;
+      })
       .mockResolvedValueOnce([]);
     groupRpc.mockResolvedValueOnce([group]).mockResolvedValueOnce([]);
     await act(async () => {
       focus.current!()?.();
       focus.current!();
     });
-    await act(async () => finishRestore({ ok: true }));
-    await act(async () => finishList([]));
+    await act(async () => finishRestore.resolve({ ok: true }));
+    await act(async () => finishList.resolve([]));
     expect(container.textContent).toBe("No archived chats");
   });
 
@@ -512,13 +506,11 @@ describe("archived chat read failures", () => {
     rpc.mockRejectedValueOnce(new Error(""));
     groupRpc.mockResolvedValueOnce([group]);
     await act(async () => root.render(<ArchivedBots />));
-    let finishRetry!: (value: MobileBot[]) => void;
-    rpc.mockImplementationOnce(
-      () =>
-        new Promise<MobileBot[]>((resolve) => {
-          finishRetry = resolve;
-        }),
-    );
+    let finishRetry!: Deferred<MobileBot[]>;
+    rpc.mockImplementationOnce(() => {
+      finishRetry = deferred<MobileBot[]>();
+      return finishRetry.promise;
+    });
     groupRpc.mockResolvedValueOnce([group]);
     const retry = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Try again",
@@ -529,7 +521,7 @@ describe("archived chat read failures", () => {
       (item) => item.textContent === "Restore Crew",
     )!;
     await act(async () => restore.click());
-    await act(async () => finishRetry([bot]));
+    await act(async () => finishRetry.resolve([bot]));
     expect(container.textContent).toContain(bot.name);
     expect(container.textContent).not.toContain("Could not load chats");
     expect(container.textContent).not.toContain("Restore Crew");
@@ -539,13 +531,11 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(null));
     groupRpc.mockResolvedValueOnce([group]);
     await act(async () => root.render(<ArchivedBots />));
-    let finishRestore!: (value: unknown) => void;
-    groupRpc.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishRestore = resolve;
-        }),
-    );
+    let finishRestore!: Deferred<unknown>;
+    groupRpc.mockImplementationOnce(() => {
+      finishRestore = deferred<unknown>();
+      return finishRestore.promise;
+    });
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore Crew",
     )!;
@@ -556,7 +546,7 @@ describe("archived chat read failures", () => {
       focus.current!();
     });
     expect(container.textContent).toContain("Restore Crew");
-    await act(async () => finishRestore({ ok: true }));
+    await act(async () => finishRestore.resolve({ ok: true }));
     expect(container.textContent).not.toContain("Restore Crew");
     expect(container.textContent).toContain(bot.name);
   });
@@ -565,19 +555,17 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(null));
     groupRpc.mockResolvedValueOnce([group]);
     await act(async () => root.render(<ArchivedBots />));
-    let failRestore!: (cause: Error) => void;
-    groupRpc.mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          failRestore = reject;
-        }),
-    );
+    let failRestore!: Deferred<never>;
+    groupRpc.mockImplementationOnce(() => {
+      failRestore = deferred<never>();
+      return failRestore.promise;
+    });
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore Crew",
     )!;
     await act(async () => restore.click());
     await act(async () => root.render(null));
-    await act(async () => failRestore(new Error("offline")));
+    await act(async () => failRestore.reject(new Error("offline")));
     expect(alert).not.toHaveBeenCalled();
   });
 
@@ -587,18 +575,17 @@ describe("archived chat read failures", () => {
       await act(async () => root.render(null));
       groupRpc.mockRejectedValueOnce(new Error(""));
       await act(async () => root.render(<ArchivedBots />));
-      let finishRetry!: (value: MobileGroup[]) => void;
-      groupRpc.mockImplementationOnce(
-        () =>
-          new Promise<MobileGroup[]>((resolve) => {
-            finishRetry = resolve;
-          }),
-      );
+      let finishRetry!: Deferred<MobileGroup[]>;
+      groupRpc.mockImplementationOnce(() => {
+        finishRetry = deferred<MobileGroup[]>();
+        return finishRetry.promise;
+      });
       rpc.mockResolvedValueOnce([bot]);
       const retry = [...container.querySelectorAll("button")].find(
         (item) => item.textContent === "Try again",
       )!;
       await act(async () => retry.click());
+      if (action === "Delete") rpc.mockResolvedValueOnce([]);
       rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
       groupRpc.mockResolvedValueOnce([group]);
       const button = [...container.querySelectorAll("button")].find(
@@ -606,7 +593,7 @@ describe("archived chat read failures", () => {
       )!;
       await act(async () => button.click());
       if (action === "Delete") await act(async () => alert.mock.calls[0]![2][1].onPress());
-      await act(async () => finishRetry([group]));
+      await act(async () => finishRetry.resolve([group]));
       expect(container.textContent).toBe("Restore Crew");
     },
   );
@@ -614,17 +601,15 @@ describe("archived chat read failures", () => {
   it.each(["Restore", "Delete"])(
     "refreshes a later visit when a bot %s from an earlier visit finishes",
     async (action) => {
-      let finish!: (value: unknown) => void;
+      let finish!: Deferred<unknown>;
       const button = [...container.querySelectorAll("button")].find(
         (item) => item.textContent === action,
       )!;
       if (action === "Delete") await act(async () => button.click());
-      rpc.mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finish = resolve;
-          }),
-      );
+      rpc.mockImplementationOnce(() => {
+        finish = deferred<unknown>();
+        return finish.promise;
+      });
       if (action === "Delete") await act(async () => alert.mock.calls[0]![2][1].onPress());
       else await act(async () => button.click());
       await act(async () => {
@@ -633,7 +618,7 @@ describe("archived chat read failures", () => {
       });
       expect(container.textContent).toContain(bot.name);
       rpc.mockResolvedValueOnce([]);
-      await act(async () => finish({ ok: true }));
+      await act(async () => finish.resolve({ ok: true }));
       expect(container.textContent).toBe("No archived chats");
     },
   );
@@ -641,22 +626,20 @@ describe("archived chat read failures", () => {
   it.each(["Restore", "Delete"])(
     "doesn't alert for a bot %s that fails after leaving",
     async (action) => {
-      let fail!: (cause: Error) => void;
+      let fail!: Deferred<never>;
       const button = [...container.querySelectorAll("button")].find(
         (item) => item.textContent === action,
       )!;
       if (action === "Delete") await act(async () => button.click());
-      rpc.mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            fail = reject;
-          }),
-      );
+      rpc.mockImplementationOnce(() => {
+        fail = deferred<never>();
+        return fail.promise;
+      });
       if (action === "Delete") await act(async () => alert.mock.calls[0]![2][1].onPress());
       else await act(async () => button.click());
       const alerts = alert.mock.calls.length;
       await act(async () => root.render(null));
-      await act(async () => fail(new Error("offline")));
+      await act(async () => fail.reject(new Error("offline")));
       expect(alert).toHaveBeenCalledTimes(alerts);
     },
   );

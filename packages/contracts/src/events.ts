@@ -192,9 +192,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answerId: z.string().optional(),
   }),
   z.object({
-    /** Inline app authorization card (Composio-backed): logo, name, one-line
+    /** Inline app authorization card: logo, name, one-line
         description, and an Authorize button that flips to connected. */
     kind: z.literal("app_connect"),
+    /** Absent on cards stored before connector ids; the server reads those as its default. */
     connectorId: z.string().optional(),
     provider: z.string(),
     name: z.string(),
@@ -492,7 +493,6 @@ export function hasThinkingActivityMarker(payload: Record<string, unknown>): pay
   const activity = payload.activity;
   return activity !== null && typeof activity === "object" && "thinking" in activity;
 }
-export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
 
 export const ProductEventSchema = z
   .object({

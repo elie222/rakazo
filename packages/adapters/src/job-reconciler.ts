@@ -8,7 +8,7 @@ import {
   stuckWorkStatusMessages,
 } from "@rakazo/core";
 import type { DatabaseOutage, Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { databaseOutage, reconcileComputerRuns } from "@rakazo/db";
+import { databaseOutage, reconcileComputerRuns, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { returnHelperOutcome } from "./background-helpers.js";
@@ -569,8 +569,8 @@ async function botRunOutcomeText(
       findMany: (args: {
         where: { runId: string; role: "bot" };
         orderBy: { seq: "asc" };
-        select: { blocks: true; clientNonce: true };
-      }) => Promise<Array<{ blocks: unknown; clientNonce: string | null }>>;
+        select: { id: true; blocks: true; clientNonce: true };
+      }) => Promise<Array<{ id: string; blocks: unknown; clientNonce: string | null }>>;
     };
   },
   runId: string,
@@ -578,12 +578,12 @@ async function botRunOutcomeText(
   const messages = await prisma.message.findMany({
     where: { runId, role: "bot" },
     orderBy: { seq: "asc" },
-    select: { blocks: true, clientNonce: true },
+    select: { id: true, blocks: true, clientNonce: true },
   });
   const progressParts: string[] = [];
   const finalParts: string[] = [];
   for (const message of messages) {
-    const text = messageText(message.blocks);
+    const text = messageBlocksText(storedMessageBlocks(message)).trim();
     if (!text) continue;
     if (isUserProgressClientNonce(message.clientNonce)) progressParts.push(text);
     else finalParts.push(text);
@@ -595,9 +595,4 @@ async function botRunOutcomeText(
     return { text: finalParts[finalParts.length - 1]!, progressOnly: false };
   }
   return { text: progressParts.join("\n\n"), progressOnly: progressParts.length > 0 };
-}
-
-function messageText(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return "";
-  return messageBlocksText(blocks as MessageBlock[]).trim();
 }

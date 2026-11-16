@@ -14,6 +14,7 @@ import {
   INDEXED_MESSAGE,
   LISTED_ARTIFACT,
   Prisma,
+  storedMessageBlocks,
   UNINDEXED_MESSAGE,
 } from "@rakazo/db";
 
@@ -97,6 +98,7 @@ export async function querySpaceSearch(
   prisma: PrismaClient,
   actor: Actor,
   q: string,
+  signal?: AbortSignal,
 ): Promise<SearchHit[]> {
   const query = q.trim();
   if (!query) return [];
@@ -124,6 +126,7 @@ export async function querySpaceSearch(
     bucket.push(hit);
   }
 
+  signal?.throwIfAborted();
   const bots = await prisma.bot.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -152,6 +155,7 @@ export async function querySpaceSearch(
   // Only groups that can actually be opened: not archived, and still holding
   // enough active-member bots (archiving bots can empty a group below the
   // minimum — those land on the Archived list instead of opening).
+  signal?.throwIfAborted();
   const openableGroups = await prisma.$queryRaw<Array<{ id: string }>>(
     Prisma.sql`
       SELECT g.id FROM chat_groups g
@@ -190,6 +194,7 @@ export async function querySpaceSearch(
   const contentBudget = Math.max(0, SEARCH_LIMIT - conversationHits.length);
   const full = () => contentHits.length >= contentBudget;
 
+  signal?.throwIfAborted();
   const artifacts = await prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -232,6 +237,7 @@ export async function querySpaceSearch(
 
   if (full()) return [...conversationHits, ...contentHits];
 
+  signal?.throwIfAborted();
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -272,6 +278,7 @@ export async function querySpaceSearch(
 
   if (full()) return [...conversationHits, ...contentHits];
 
+  signal?.throwIfAborted();
   const routines = await prisma.routine.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -301,6 +308,7 @@ export async function querySpaceSearch(
 
   if (full()) return [...conversationHits, ...contentHits];
 
+  signal?.throwIfAborted();
   const match = await messageMatch(prisma, actor.spaceId, query);
   for (let page = 0; page < match.pages && !full(); page += 1) {
     const messageRows = await openMessages(
@@ -328,7 +336,7 @@ export async function querySpaceSearch(
     `,
     );
     for (const row of messageRows) {
-      pushMessageHits(row.blocks as MessageBlock[], {
+      pushMessageHits(storedMessageBlocks(row), {
         botId: row.botId,
         botName: row.botName,
         messageId: row.id,
@@ -367,7 +375,7 @@ export async function querySpaceSearch(
     `,
     );
     for (const row of groupMessageRows) {
-      pushMessageHits(row.blocks as MessageBlock[], {
+      pushMessageHits(storedMessageBlocks(row), {
         groupId: row.groupId,
         groupName: row.groupName,
         messageId: row.id,

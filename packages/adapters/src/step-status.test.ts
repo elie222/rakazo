@@ -6,7 +6,7 @@ import {
   longWorkProgressGuidance,
   replyGuidanceForOfferedTools,
   runReplyGuidance,
-} from "./run-replies.js";
+} from "./run-replies.prompt.js";
 
 /** Tools this runtime offered the `live_status` field to. */
 const narrated = new Set(["shell", "use_tool", "create_space"]);

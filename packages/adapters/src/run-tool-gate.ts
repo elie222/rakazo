@@ -15,6 +15,7 @@ import {
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   displayName,
+  HELPER_RESULT_TRIGGER,
   humanizeToolName,
   memoryWriteNeedsApproval,
   newSiteOutcome,
@@ -48,7 +49,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
-import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
+import { RAKAZO_DOCS_URLS } from "./builtin-skills.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { findConnectedModelCredential } from "./model-selection.js";
@@ -180,22 +181,6 @@ export async function gateToolCall(
     toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
-  // A background helper only reads, whatever the approval mode or rules: a connector call
-  // runs only when every action it names is declared read-only.
-  if (
-    run.trigger === BACKGROUND_HELPER_TRIGGER &&
-    viaConnector &&
-    !catalogControlRead &&
-    (unidentifiedAction ||
-      approvalToolNames.some((toolName) => declaredReadOnlyFor(toolName) !== true))
-  ) {
-    return {
-      result: refusal(
-        "helper_read_only",
-        `${name} can change something, and a background helper may only read. Don't retry; say in your result what the bot should do.`,
-      ),
-    };
-  }
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
@@ -445,6 +430,7 @@ export async function gateToolCall(
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
   const applied =
     READ_ONLY_AGENT_TOOLS.has(name) &&
+    plan === "allow" &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
     !approvedEffectKey
@@ -562,21 +548,6 @@ export async function gateToolCall(
   }
 
   const needsApproval = gateDecision === "ask";
-  // Nobody sees a background helper's thread, so a card there would wait forever.
-  if (needsApproval && run.trigger === BACKGROUND_HELPER_TRIGGER) {
-    if (applied) {
-      await deps.prisma.externalEffect.updateMany({
-        where: { id: applied.effect.id, status: "intended" },
-        data: { status: "denied" },
-      });
-    }
-    return {
-      result: refusal(
-        "helper_cannot_ask_approval",
-        `${name} needs the owner's approval, and a background helper cannot ask. Don't retry; say in your result what the bot should ask for.`,
-      ),
-    };
-  }
   const call = createToolCall(ctx, {
     name,
     args,
@@ -845,6 +816,11 @@ async function reviewToolCall(
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
+    const delegated =
+      run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER;
+    const userTask = delegated ? await ctx.trust.loadOwnerWords() : ctx.task.prompt;
+    // Older helpers and deleted origins cannot establish authorization from their brief.
+    if (delegated && !userTask.trim()) return { decision: "ask", reason: undefined };
     const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
     // A webhook run's task prompt carries the delivery, which someone else wrote, so the checker
     // gets only the owner's routine. With no routine to judge against, a person decides.
@@ -862,11 +838,7 @@ async function reviewToolCall(
           ? { url: redactSecrets(fetchUrl, ctx.secrets) }
           : redactToolArgsForReview(args, ctx.secrets),
       userTask: redactSecrets(
-        outsideRun
-          ? ownerWords
-          : ownerWordsOnly
-            ? await ctx.trust.loadOwnerWords()
-            : ctx.task.prompt,
+        outsideRun ? ownerWords : ownerWordsOnly ? await ctx.trust.loadOwnerWords() : userTask,
         ctx.secrets,
       ),
       botDescription,

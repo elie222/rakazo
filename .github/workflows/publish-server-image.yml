@@ -19,6 +19,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/publish-server-image.yml"
       - ".github/actions/publish-image/**"
+      - ".github/actions/setup-trivy/**"
       - "infra/compose/**"
       - "infra/sandboxes/**"
       - "infra/updater/**"
@@ -83,11 +84,13 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: type=sha,prefix=sha-
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
@@ -97,6 +100,26 @@ jobs:
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
+      - uses: ./.github/actions/setup-trivy
+      # Keep all findings, including unfixed distro advisories, for applicability review.
+      # Dependency security separately gates High/Critical workspace advisories.
+      - name: Scan the built image
+        env:
+          IMAGE_ID: ${{ steps.image.outputs.imageid }}
+        run: |
+          trivy image --scanners vuln --format json --output image-vulnerabilities.json "$IMAGE_ID"
+          trivy version --format json > scanner-version.json
+          trivy convert --format cyclonedx --output image-sbom.json image-vulnerabilities.json
+      - name: Retain image security reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-security-${{ matrix.name }}
+          path: |
+            image-vulnerabilities.json
+            scanner-version.json
+            image-sbom.json
+          if-no-files-found: warn
 
   build:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}

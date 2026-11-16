@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   BackgroundJob,
   JobTransaction,
+  MessagingInstallProvider,
   MessagingPlatformDescriptor,
   MessagingSendRequest,
   MessagingSendResult,
@@ -14,11 +15,18 @@ import {
   messagingSendJobKey,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
+import {
+  CHAT_APP_ASK_NOTE,
+  CHAT_APP_TAKEOVER_NOTE,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+} from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
+import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
 import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
@@ -42,6 +50,7 @@ type OutboundRecord = {
   body: string;
   status: string;
   providerHandle: string | null;
+  claimedAt?: Date | null;
   sourceMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -193,11 +202,12 @@ function matchesValue(value: unknown, condition: unknown): boolean {
   );
 }
 
-/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR and NOT. */
+/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR, AND and NOT. */
 function matches(record: object, where: Where = {}): boolean {
   const fields = record as Record<string, unknown>;
   return Object.entries(where).every(([key, condition]) => {
     if (key === "OR") return (condition as Where[]).some((part) => matches(record, part));
+    if (key === "AND") return (condition as Where[]).every((part) => matches(record, part));
     if (key === "NOT") return !matches(record, condition as Where);
     return matchesValue(fields[key], condition);
   });
@@ -342,6 +352,9 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
       }),
     },
     event: {
+      findMany: vi.fn(async ({ where }: { where: Where }) =>
+        world.events.filter((event) => matches(event, where)).map(copy),
+      ),
       create: vi.fn(async ({ data }: { data: Where }) => {
         const event = { id: `evt-${world.events.length + 1}`, createdAt: new Date(), ...data };
         world.events.push(event);
@@ -701,14 +714,6 @@ const backupJob = (t: Setup, outboundId: string) =>
 const sendJobs = (t: Setup) =>
   [...t.jobs.scheduled.values()].filter((job) => job.name === "messaging.send");
 
-function gate() {
-  let open!: () => void;
-  const opened = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return { opened, open };
-}
-
 describe("deliverRun to a 1:1 chat", () => {
   it("sends a chat run's reply to its owner's conversation and settles its jobs", async () => {
     const t = setup();
@@ -936,6 +941,143 @@ describe("deliverRun to a 1:1 chat", () => {
     expect(t.sendToThread).not.toHaveBeenCalled();
   });
 
+  it("sends a question the run waits on as text, with its options numbered", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        text("m-1", "Two places are open."),
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Which one should I book?",
+              detail: "Both are free at 7pm.",
+              status: "pending",
+              actions: [
+                { id: "a", label: "Luigi's" },
+                { id: "b", label: "Noodle Bar" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([
+      "Two places are open.",
+      [
+        "Which one should I book?",
+        "Both are free at 7pm.",
+        "1. Luigi's",
+        "2. Noodle Bar",
+        CHAT_APP_ASK_NOTE,
+      ].join("\n"),
+    ]);
+  });
+
+  it("sends an approval's question without its card buttons, and nothing for an answered one", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Old question",
+              status: "answered",
+              actions: [{ id: "a", label: "Yes" }],
+            },
+          ],
+        },
+        {
+          id: "ask-2",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Send the email to Sam?",
+              approvalEffectId: "effect-1",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([`Send the email to Sam?\n${CHAT_APP_ASK_NOTE}`]);
+  });
+
+  it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {
+    const approval = setup();
+    addRun(approval.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Run this command?",
+              detail: "rm -rf ~/projects/old",
+              approvalEffectId: "effect-1",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    });
+    await approval.delivery.deliverRun("run-1");
+    expect(bodies(approval)).toEqual([`Run this command?\n${CHAT_APP_ASK_NOTE}`]);
+
+    const cancelled = setup();
+    addRun(cancelled.world, {
+      status: "cancelled",
+      replies: [
+        text("m-1", "Two places are open."),
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Which one should I book?", status: "pending" }],
+        },
+      ],
+    });
+    await cancelled.delivery.deliverRun("run-1");
+    expect(bodies(cancelled)).toEqual(["Two places are open."]);
+  });
+
+  it("sends a request to take over the bot's screen as text", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "takeover-1",
+          blocks: [
+            {
+              kind: "computer",
+              state: TAKEOVER_COMPUTER_PENDING_STATE,
+              text: "Please solve the captcha.",
+            },
+          ],
+        },
+      ],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([`Please solve the captcha.\n${CHAT_APP_TAKEOVER_NOTE}`]);
+  });
+
   it("leaves in-app runs and bots without a linked chat in the app", async () => {
     const inApp = setup();
     addRun(inApp.world, { trigger: "user", replies: [text("m-1", "Hello")] });
@@ -1057,6 +1199,128 @@ describe("deliverRun to a 1:1 chat", () => {
 
     expect(t.sendToThread).not.toHaveBeenCalled();
     expect(t.world.outbound.map((row) => row.status)).toEqual(["failed", "failed"]);
+  });
+});
+
+describe("independent subagent delivery", () => {
+  function delegated(source: unknown[] = [{ kind: "text", text: "Research" }]) {
+    const t = setup();
+    addRun(t.world, {
+      trigger: "helper_result",
+      replies: [text("result-message", "The findings")],
+    });
+    const origin = {
+      id: "parent",
+      botId: "bot-1",
+      spaceId: "ws-1",
+      userId: "user-1",
+      trigger: "messaging",
+      threadId: "thread-1",
+      status: "completed",
+      thread: {},
+      sourceMessage: { blocks: source },
+    };
+    Object.assign(t.prisma.run, { findFirst: vi.fn(async () => origin) });
+    Object.assign(t.world.runs[0]!, { delegatedFromRunId: "parent", spaceId: "ws-1" });
+    return t;
+  }
+
+  it("returns a helper result to the originating direct chat", async () => {
+    const t = delegated();
+    await t.delivery.deliverRun("run-1");
+    expect(t.sendToThread).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "The findings" }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps private answers in delegated work out of an external group", async () => {
+    const t = delegated([
+      {
+        kind: "channel_message",
+        channelId: "ch-1",
+        provider: "sendblue",
+        fromAddress: "sender",
+        fromLabel: "Sender",
+        text: "Research",
+        hop: 0,
+      },
+    ]);
+    t.world.messages.push({
+      id: "private-answer",
+      runId: "parent",
+      threadId: "thread-1",
+      role: "bot",
+      seq: 4,
+      clientNonce: null,
+      replyToMessageId: null,
+      blocks: [{ kind: "ask", text: "Private", status: "answered", answer: "Private answer" }],
+    });
+    await t.delivery.deliverRun("run-1");
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(t.world.outbound).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "keeps a result influenced by private app steering out of external delivery (team: %s)",
+    async (team) => {
+      const t = delegated();
+      if (team) {
+        Object.assign(t.prisma.run, {
+          findFirst: vi.fn(async () => ({
+            id: "parent",
+            trigger: "messaging",
+            thread: { externalConversationId: "team-conversation" },
+          })),
+        });
+      }
+      t.world.events.push({
+        id: "steering-claim",
+        runId: "run-1",
+        type: "run.steering.claimed",
+        payload: { steeringIds: ["already-deleted-private-steering"], nextMessageSeq: 2 },
+      });
+      await t.delivery.deliverRun("run-1");
+      expect(t.sendToThread).not.toHaveBeenCalled();
+      expect(t.world.outbound).toEqual([]);
+    },
+  );
+
+  it("delivers a result when every consumed steering claim has external provenance", async () => {
+    const t = delegated();
+    t.world.events.push({
+      id: "safe-claim",
+      runId: "run-1",
+      type: "run.steering.claimed",
+      payload: { externalSafe: true },
+    });
+    await t.delivery.deliverRun("run-1");
+    expect(t.sendToThread).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "The findings" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([false, "true", null])(
+    "refuses an unsafe or malformed steering delivery proof: %j",
+    async (externalSafe) => {
+      const t = delegated();
+      t.world.events.push({
+        id: "unsafe-claim",
+        runId: "run-1",
+        type: "run.steering.claimed",
+        payload: { externalSafe },
+      });
+      await t.delivery.deliverRun("run-1");
+      expect(t.sendToThread).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not guess a destination when delegation provenance is missing", async () => {
+    const t = delegated();
+    Object.assign(t.prisma.run, { findFirst: vi.fn(async () => null) });
+    await t.delivery.deliverRun("run-1");
+    expect(t.sendToThread).not.toHaveBeenCalled();
   });
 });
 
@@ -1282,6 +1546,60 @@ describe("deliverRun to a group", () => {
     expect(t.sendToThread).not.toHaveBeenCalled();
     expect(peerContext(t)).toEqual([]);
     expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  // Entries a stored message holds that are not blocks: readers drop them and keep the rest.
+  const stray = [{ text: "no kind" }, null];
+
+  it("posts to the group when the channel message is stored beside entries that are not blocks", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "found it")]);
+    t.world.messages.find((message) => message.id === "src-run-1")!.blocks.push(...stray);
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:grp-1", body: "Alice's agent: found it", idempotencyKey: "msg:m-1" },
+    ]);
+  });
+
+  it.each([
+    ["lost entries and shows no channel message", stray],
+    ["is not a list", { kind: "channel_message", channelId: "ch-1" }],
+  ])("keeps the reply in the app when the source message %s", async (_case, source) => {
+    const t = setup();
+    addRun(t.world, { source: source as unknown[], replies: [text("m-1", "for the group")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("keeps a privately answered run out of the group when the ask is stored beside entries that are not blocks", async () => {
+    const t = setup();
+    groupRun(t.world, [
+      {
+        id: "ask-1",
+        blocks: [
+          { kind: "ask", text: "Details?", status: "answered", answer: "Private detail" },
+          ...stray,
+        ],
+      },
+      text("reply-1", "Reply containing private detail"),
+    ]);
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(peerContext(t)).toEqual([]);
+  });
+
+  it("keeps a run out of the group when a reply lost entries that may have been its answered ask", async () => {
+    const t = setup();
+    groupRun(t.world, [{ id: "reply-1", blocks: [{ kind: "text", text: "An update" }, ...stray] }]);
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
   });
 
   it("still posts a reply alongside an unanswered ask", async () => {
@@ -1729,6 +2047,57 @@ describe("a claimed send and its backup job", () => {
     });
   });
 
+  it("holds the conversation behind its own stale claim until the backup job resends it", async () => {
+    const t = setup();
+    const stale = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1_000);
+    // This release claimed the first message, then its sender died.
+    seedRow(t.world, {
+      id: "a-1",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: stale,
+      updatedAt: stale,
+    });
+    seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
+    await t.delivery.send([threadLane("t-a")]);
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: [],
+      status: ["in-flight", "pending"],
+    });
+
+    await t.delivery.sendJob("a-1", attempt(1));
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: ["a-1", "a-2"],
+      status: ["sent", "sent"],
+    });
+    expect(t.world.outbound.map((row) => row.claimedAt)).toEqual([null, null]);
+  });
+
+  it("gives its own stale claim whose job gave up a new job, never the previous release's", async () => {
+    const t = setup();
+    const old = new Date(Date.now() - 10 * 60_000);
+    seedRow(t.world, {
+      id: "ours",
+      threadId: "t-a",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: old,
+      updatedAt: old,
+    });
+    seedRow(t.world, {
+      id: "theirs",
+      threadId: "t-b",
+      status: "sent",
+      providerHandle: null,
+      updatedAt: old,
+    });
+    await t.delivery.sweepStalled();
+    expect(sendJobs(t).map((job) => job.payload)).toEqual([{ outboundId: "ours" }]);
+
+    await t.delivery.sendJob("ours", attempt(1));
+    expect(bodies(t)).toEqual(["ours"]);
+  });
+
   it("retries the bookkeeping of a message that went out instead of leaving it to be sent again", async () => {
     vi.useFakeTimers();
     const t = setup();
@@ -1825,12 +2194,13 @@ describe("a claimed send and its backup job", () => {
 describe("when a send fails", () => {
   it("moves a cleanly failed message's backup job up to now and holds the rest of the conversation", async () => {
     const t = setup();
+    const before = Date.now();
     const [first, second] = await t.record(threadLane("t-a"), [
       post("t-a", "a-1"),
       post("t-a", "a-2"),
     ]);
     t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
-    const before = Date.now();
+    const secondBackupAt = backupJob(t, second!)!.availableAt!.getTime();
     await t.delivery.send([threadLane("t-a")]);
 
     expect(t.sendToThread).toHaveBeenCalledOnce();
@@ -1839,9 +2209,7 @@ describe("when a send fails", () => {
     const retry = backupJob(t, first!)!.availableAt!.getTime();
     expect(retry).toBeGreaterThanOrEqual(before);
     expect(retry).toBeLessThanOrEqual(Date.now());
-    expect(backupJob(t, second!)!.availableAt!.getTime()).toBeGreaterThanOrEqual(
-      before + MESSAGING_SEND_BACKUP_MS,
-    );
+    expect(backupJob(t, second!)!.availableAt!.getTime()).toBe(secondBackupAt);
   });
 
   it("moves the backup job to the provider's retry-after", async () => {
@@ -1873,6 +2241,23 @@ describe("when a send fails", () => {
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["failed", "sent"]);
     expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("fails a team-chat reply whose workspace was removed on its first try, without retries", async () => {
+    const surface = vi.fn();
+    const installed = new InstalledMessagingSurface(
+      { get: vi.fn(async () => null), getById: vi.fn(async () => null), removeWorkspace: vi.fn() },
+      { provider: "slack", surface } as unknown as MessagingInstallProvider,
+    );
+    const t = setup({ messaging: installed });
+    const lane = threadLane("slack~removed:C1:1700.1");
+    const [id] = await t.record(lane, [post("slack~removed:C1:1700.1", "could not complete")]);
+
+    await t.delivery.sendJob(id!, attempt(1));
+
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
+    expect(surface).not.toHaveBeenCalled();
   });
 
   it("hands a failure inside the backup job back to the job queue", async () => {
@@ -2046,6 +2431,34 @@ describe("conversation order", () => {
     expect(t.world.outbound.every((row) => row.sourceMessageId === "m-1")).toBe(true);
   });
 
+  it("adds no parts to a reply the previous release split at other points", async () => {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    const queued = { kind: "dm", identityId: "mi-1", threadId: null, sourceMessageId: "m-1" };
+    seedRow(t.world, {
+      ...queued,
+      id: "first half",
+      idempotencyKey: "msg:m-1",
+      status: "sent",
+      providerHandle: "42",
+    });
+    seedRow(t.world, {
+      ...queued,
+      id: "second half",
+      idempotencyKey: "msg:m-1:2",
+      createdAt: new Date(1_001),
+    });
+    addRun(t.world, { replies: [text("m-1", longReply), text("m-2", "Done.")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(inSendOrder(t).map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "first half"],
+      ["msg:m-1:2", "second half"],
+      ["msg:m-2", "Done."],
+    ]);
+    expect(bodies(t)).toEqual(["second half", "Done."]);
+  });
+
   it("re-sends only the parts that failed, in order", async () => {
     const t = setup();
     linkProvider(t.world, WHATSAPP);
@@ -2118,16 +2531,16 @@ describe("conversation order", () => {
     const t = setup();
     await t.record(threadLane("t-slow"), [post("t-slow", "slow-1")]);
     await t.record(threadLane("t-fast"), [post("t-fast", "fast-1")]);
-    const slow = gate();
+    const slow = deferred();
     t.sendToThread.mockImplementation(async (request) => {
-      if (request.body === "slow-1") await slow.opened;
+      if (request.body === "slow-1") await slow.promise;
       return { handle: `handle-${request.body}` };
     });
 
     const sending = t.delivery.send([threadLane("t-slow"), threadLane("t-fast")]);
     // The fast conversation is out before the slow one answers.
     await vi.waitFor(() => expect(statuses(t)).toEqual(["in-flight", "sent"]));
-    slow.open();
+    slow.resolve();
     await sending;
 
     expect(statuses(t)).toEqual(["sent", "sent"]);
@@ -2136,9 +2549,9 @@ describe("conversation order", () => {
   it("keeps one conversation in order while its first send is running", async () => {
     const t = setup();
     await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
-    const first = gate();
+    const first = deferred();
     t.sendToThread.mockImplementationOnce(async () => {
-      await first.opened;
+      await first.promise;
       return { handle: "h-1" };
     });
 
@@ -2149,7 +2562,7 @@ describe("conversation order", () => {
     await t.delivery.send([threadLane("t-a")]);
     expect(t.sendToThread).toHaveBeenCalledOnce();
 
-    first.open();
+    first.resolve();
     await sending;
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["sent", "sent"]);

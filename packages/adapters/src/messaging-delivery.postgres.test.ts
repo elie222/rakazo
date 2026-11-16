@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { MessagingSurface } from "@rakazo/adapter-kit";
 import { messagingReplyJobKey, messagingSendJobKey, RetryJobLaterError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -45,11 +46,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     system = asSystem(db.prisma);
     jobs = new GraphileJobPublisher(db.pool);
     const provisioned = await runAsSystem("delivery fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "telegram", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "telegram", address }),
     );
     identity = {
       userId: provisioned.userId,
@@ -312,13 +309,10 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
   it("sends each message once when two processes send one conversation at the same time", async () => {
     const target = lane();
     await record(target, ["a", "b", "c"]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const sent: string[] = [];
     const slow = surface(async (body) => {
-      if (body === "a") await gate;
+      if (body === "a") await gate.promise;
       sent.push(body);
       return { handle: `handle-${body}` };
     });
@@ -332,7 +326,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     );
     // The second process finds the head in flight and leaves the conversation to it.
     await delivery(fast.messaging).send([target]);
-    release();
+    gate.resolve();
     await first;
     expect(sent).toEqual(["a", "b", "c"]);
     expect(await statuses(target.threadId)).toEqual(["a:sent", "b:sent", "c:sent"]);
@@ -407,6 +401,72 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
       "claimed by the old release:in-flight",
       "queued by the old release:sent",
     ]);
+  });
+
+  it("holds a conversation behind its own dead send until that send's job resends it, then sends the rest", async () => {
+    const target = lane();
+    const [first] = await record(target, ["died mid-send", "behind it"]);
+    // This release claimed the first message, then its process died: stale, but still its own.
+    await owner.query(
+      `UPDATE messaging_outbound
+       SET status = 'sent', "claimedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes',
+         "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes'
+       WHERE id = $1`,
+      [first],
+    );
+    await owner.query(`DELETE FROM graphile_worker._private_jobs WHERE key = $1`, [
+      messagingSendJobKey(first!),
+    ]);
+    const { messaging, sent } = surface();
+    const current = delivery(messaging);
+    await current.send([target]);
+    expect(sent).toEqual([]);
+
+    // Its job gave up, so the safety sweep gives it a new one, which sends both in order.
+    for (let page = 0; page < 50 && !(await job(messagingSendJobKey(first!))); page += 1)
+      await current.sweepStalled();
+    expect((await job(messagingSendJobKey(first!)))?.identifier).toBe("messaging.send");
+    await current.sendJob(first!);
+    expect(sent).toEqual(["died mid-send", "behind it"]);
+    expect(await statuses(target.threadId)).toEqual(["died mid-send:sent", "behind it:sent"]);
+  });
+
+  it("works beside the previous release, which takes over and settles a marked send without the mark", async () => {
+    const target = lane();
+    const [first] = await record(target, ["taken over", "next"]);
+    const stale = await owner.query<{ at: Date }>(
+      `UPDATE messaging_outbound
+       SET status = 'sent', "claimedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes',
+         "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '10 minutes'
+       WHERE id = $1 RETURNING "updatedAt" AS at`,
+      [first],
+    );
+    // The previous release's backup job takes the stale claim over and settles it, as it writes
+    // both: compare-and-sets that never touch the mark.
+    const claimed = await owner.query<{ at: Date }>(
+      `UPDATE messaging_outbound SET status = 'sent', "updatedAt" = now() AT TIME ZONE 'UTC'
+       WHERE id = $1 AND status = 'sent' AND "providerHandle" IS NULL AND "updatedAt" = $2
+       RETURNING "updatedAt" AS at`,
+      [first, stale.rows[0]!.at],
+    );
+    expect(claimed.rowCount).toBe(1);
+    await owner.query(
+      `UPDATE messaging_outbound SET "providerHandle" = 'h-previous'
+       WHERE id = $1 AND status = 'sent' AND "providerHandle" IS NULL AND "updatedAt" = $2`,
+      [first, claimed.rows[0]!.at],
+    );
+    await owner.query(`DELETE FROM graphile_worker._private_jobs WHERE key = $1`, [
+      messagingSendJobKey(first!),
+    ]);
+
+    // A settled row that kept a stale mark holds nothing and is never sent again.
+    const { messaging, sent } = surface();
+    const current = delivery(messaging);
+    await current.send([target]);
+    expect(sent).toEqual(["next"]);
+    for (let page = 0; page < 50; page += 1) await current.sweepStalled();
+    expect(await job(messagingSendJobKey(first!))).toBeUndefined();
+    expect(await statuses(target.threadId)).toEqual(["taken over:sent", "next:sent"]);
   });
 
   async function dmRun(status: "running" | "completed", reply: string) {
@@ -523,12 +583,9 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
   it("marks its own sends in flight the way the previous release recognises them", async () => {
     const target = lane();
     const [first, second] = await record(target, ["in flight", "behind it"]);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const slow = surface(async () => {
-      await gate;
+      await gate.promise;
       return { handle: "h-1" };
     });
     const sending = delivery(slow.messaging).send([target]);
@@ -544,7 +601,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
       [target.threadId, second],
     );
     expect(rows.map((row) => row.id)).toEqual([first]);
-    release();
+    gate.resolve();
     await sending;
     expect(await statuses(target.threadId)).toEqual(["in flight:sent", "behind it:sent"]);
   });

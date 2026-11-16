@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -19,7 +19,6 @@ import { PluginIcon } from "../../components/plugin-icon";
 import { Chevron } from "../../components/row-accessories";
 import { SkillSymbol } from "../../components/skill-symbol";
 import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
 import {
   gitImportParams,
@@ -29,13 +28,13 @@ import {
   skillPacks,
 } from "../../lib/plugin-marketplace";
 import { queryClient, rpcQuery } from "../../lib/query";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 
 const LOGO_SIZE = 32;
 
 /** Your skills in this space, the skills plugins added, and skill packs to browse. */
 export default function SkillsScreen() {
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -74,27 +73,13 @@ export default function SkillsScreen() {
         ? "partial"
         : "ready";
 
-  useLayoutEffect(() => {
-    const toggle = () => setImporting((open) => !open);
-    navigation.setOptions(
-      iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              { type: "button" as const, label: t`From GitHub`, onPress: toggle },
-            ],
-          }
-        : {
-            headerRight: () => (
-              <NativeActionButton
-                fill={false}
-                label={t`From GitHub`}
-                onPress={toggle}
-                prominence="secondary"
-              />
-            ),
-          },
-    );
-  }, [navigation, t]);
+  useScreenHeader({
+    action: {
+      label: t`From GitHub`,
+      prominence: "secondary",
+      onPress: () => setImporting((open) => !open),
+    },
+  });
 
   const installed = new Set(installs.map((row) => row.source));
   const packs = skillPacks(entries, query);

@@ -22,3 +22,5 @@ export function speakerColorFor(
     members?.find((member) => member.botId === botId)?.color;
   return resolvePersonaColorDef(botId, raw).hex;
 }
+
+export { botDisplayName } from "@rakazo/core";

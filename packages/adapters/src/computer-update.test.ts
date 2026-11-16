@@ -5,6 +5,7 @@ import {
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -93,8 +94,9 @@ function fixture(status = "queued") {
     $transaction: vi.fn(async (fn) => fn(prisma)),
   };
   const jobs = { enqueue: vi.fn(async () => {}) };
-  const deps = { prisma, jobs } as unknown as Parameters<typeof performComputerUpdate>[0];
-  return { row, rows, computer, computerUpdate, deps, jobs };
+  const events = { publishSpaceChange: vi.fn(async (_spaceId: string, _kind: string) => {}) };
+  const deps = { prisma, jobs, events } as unknown as Parameters<typeof performComputerUpdate>[0];
+  return { row, rows, computer, computerUpdate, deps, jobs, events };
 }
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
@@ -115,6 +117,44 @@ describe("background computer maintenance", () => {
     );
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
+  });
+  it("signals the Space when the update starts, at each stage, and when it ends", async () => {
+    const { row, deps, events } = fixture();
+    const signalledAt: string[] = [];
+    events.publishSpaceChange.mockImplementation(async (spaceId) => {
+      expect(spaceId).toBe("space");
+      signalledAt.push(`${row.status}:${row.stage}`);
+    });
+    replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
+      for (const stage of ["saving", "recreating"] as const) await progress?.(stage);
+      return {} as Awaited<ReturnType<typeof replaceComputer>>;
+    });
+    await performComputerUpdate(deps, row.id);
+    expect(signalledAt).toEqual([
+      "running:preparing",
+      "running:saving",
+      "running:recreating",
+      "completed:recreating",
+    ]);
+    await performComputerUpdate(deps, row.id);
+    expect(events.publishSpaceChange).toHaveBeenCalledTimes(4);
+  });
+  it("signals the Space only when reconciliation changes an update", async () => {
+    const { row, deps, events } = fixture();
+    await reconcileComputerUpdates(deps);
+    expect(events.publishSpaceChange).not.toHaveBeenCalled();
+    row.status = "running";
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(events.publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "computerUpdates");
+  });
+  it("still signals committed reconciliation changes when a later step fails", async () => {
+    const { row, rows, deps, events, jobs } = fixture("running");
+    rows.push({ ...row, id: "update-2", status: "queued" });
+    jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("interrupted");
+    expect(events.publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "computerUpdates");
   });
   it("records a failure without exposing the provider error or replaying replacement", async () => {
     const { row, deps } = fixture();
@@ -167,12 +207,9 @@ describe("background computer maintenance", () => {
   });
   it("releases an interrupted reservation only after the worker has settled", async () => {
     const { row, deps, computer } = fixture();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
-      await pending;
+      await pending.promise;
       await progress?.("recreating");
       return {} as Awaited<ReturnType<typeof replaceComputer>>;
     });
@@ -181,7 +218,7 @@ describe("background computer maintenance", () => {
     await reconcileComputerUpdates(deps);
     expect(row.status).toBe("interrupted");
     expect(computer.updateMany).not.toHaveBeenCalled();
-    release();
+    pending.resolve();
     await work;
     expect(row.status).toBe("failed");
     expect(computer.updateMany).toHaveBeenCalledOnce();
@@ -529,11 +566,8 @@ describe("background computer maintenance", () => {
 
   it("gives an idle takeover back while provider release is still pending", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
 
@@ -555,7 +589,7 @@ describe("background computer maintenance", () => {
       }),
     );
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
     expect(harness.computer.updateMany).toHaveBeenCalledWith({
@@ -580,16 +614,13 @@ describe("background computer maintenance", () => {
 
   it("clears a lease the provider released after reconciliation gave it back", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
 
     const clearOrder = harness.computer.updateMany.mock.invocationCallOrder.at(-1) ?? 0;
@@ -617,17 +648,14 @@ describe("background computer maintenance", () => {
 
   it("keeps takeover expiry when a late release cannot clear the lease", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
     harness.computerRow.controlLeaseId = "lease-replaced";
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
 
     expect(harness.jobs.cancel).not.toHaveBeenCalled();
@@ -801,9 +829,11 @@ function takeoverQueue(
   const events = {
     append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })),
     draftRecordingsOfLease: vi.fn(async (): Promise<string[]> => []),
+    publishSpaceChange: vi.fn(async () => {}),
   };
   const deps = { prisma, jobs, sandbox: { setScreenControl }, events } as unknown as Parameters<
     typeof queueComputerUpdate
-  >[0];
+  >[0] &
+    Parameters<typeof reconcileComputerUpdates>[0];
   return { computer, computerRow, computerUpdate, deps, events, jobs, run, setScreenControl };
 }

@@ -1,13 +1,13 @@
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
-import { sharedMemorySaveError } from "./builtin-tools.js";
+import { sharedMemorySaveError } from "./builtin.tool-definition.js";
 import { redactConnectorPayload } from "./connector-safety.js";
-import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
+import { MAX_RECALLED_MEMORIES } from "./history-compaction.prompt.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
 import { markReadOutsideContent } from "./run-context.js";
@@ -46,13 +46,14 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const crossChat =
     name === "search_history"
       ? args.scope === "my_chats"
-      : typeof args.threadId === "string" && args.threadId !== run.threadId;
+      : typeof args.threadId === "string" &&
+        args.threadId !== (ctx.source.conversationThreadId ?? run.threadId);
   // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
   const allowMyChats =
     crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
-    threadId: run.threadId,
+    threadId: ctx.source.conversationThreadId ?? run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
@@ -128,8 +129,7 @@ export const memoryTools: ToolHandlers = {
         );
         return call.finish({ ok: true });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= 3) throw error;
+        if (!(error instanceof MemoryRevisionConflictError) || attempt >= 3) throw error;
       }
     }
   },
@@ -157,8 +157,8 @@ export const memoryTools: ToolHandlers = {
       );
       return call.finish({ ok: true, path: saved.path, revision: saved.revision });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save shared memory.";
-      if (message === MEMORY_REVISION_CONFLICT_ERROR) return call.finish({ error: message });
+      if (error instanceof MemoryRevisionConflictError)
+        return call.finish({ error: error.message });
       throw error;
     }
   },

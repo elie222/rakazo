@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
@@ -74,15 +76,30 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
+vi.mock("../lib/auth-capabilities", () => ({
+  fetchAuthCapabilities: vi.fn(async () => ({
+    providers: [{ id: "social-one", name: "Provider" }],
+  })),
+}));
+vi.mock("../lib/passkeys", () => ({
+  usePasskeysSupported: () => false,
+  usePasskeysVersion: () => 0,
+}));
 const accountPolicy = vi.hoisted(() => ({
+  hasPassword: true,
+  linkedProviderIds: undefined as string[] | undefined,
   passwordChangeEnabled: undefined as boolean | undefined,
 }));
 vi.mock("../components/AccountAccess", () => ({
+  LinkSsoRow: ({ provider }: { provider: { name: string } }) => (
+    <button type="button">Link {provider.name}</button>
+  ),
   AccountAccess: ({ onSecurity }: { onSecurity: (value: AccountSecurity) => void }) => {
     useEffect(
       () =>
         onSecurity({
-          hasPassword: true,
+          hasPassword: accountPolicy.hasPassword,
+          linkedProviderIds: accountPolicy.linkedProviderIds,
           passwordChangeEnabled: accountPolicy.passwordChangeEnabled,
           freshOidcAuth: false,
           ssoLinked: false,
@@ -595,13 +612,11 @@ it.each(["response", "network"])(
 it("closes the name editor before refresh finishes and ignores a refresh failure", async () => {
   vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
   const editor = await renderNameEditor();
-  let rejectRefresh!: (error: Error) => void;
-  editor.onNameSaved.mockImplementation(
-    () =>
-      new Promise<void>((_resolve, reject) => {
-        rejectRefresh = reject;
-      }),
-  );
+  let rejectRefresh!: Deferred;
+  editor.onNameSaved.mockImplementation(() => {
+    rejectRefresh = deferred();
+    return rejectRefresh.promise;
+  });
   try {
     await editor.change("Sam Rivera");
     await editor.submit();
@@ -609,7 +624,7 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.button("Edit").disabled).toBe(false);
-    await act(async () => rejectRefresh(new Error("offline")));
+    await act(async () => rejectRefresh.reject(new Error("offline")));
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {
@@ -641,3 +656,24 @@ it("keeps bot style available without a saved value and saves an explicit Origin
     vi.unstubAllGlobals();
   }
 });
+
+it.each([undefined, ["social-one"], []])(
+  "gates the Security group on loaded, available contents (%s)",
+  async (linkedProviderIds) => {
+    accountPolicy.hasPassword = false;
+    accountPolicy.linkedProviderIds = linkedProviderIds;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<GeneralSettingsPanels name="Test" />));
+      expect(container.textContent?.includes("Security")).toBe(linkedProviderIds?.length === 0);
+      expect(container.textContent?.includes("Link Provider")).toBe(
+        linkedProviderIds?.length === 0,
+      );
+    } finally {
+      await act(async () => root.unmount());
+      accountPolicy.hasPassword = true;
+      accountPolicy.linkedProviderIds = undefined;
+    }
+  },
+);

@@ -26,6 +26,7 @@ import type {
   UserDeviceGateway,
 } from "@rakazo/adapters";
 import {
+  BillingEmulator,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
@@ -36,6 +37,7 @@ import {
   createArtifactStore,
   createCloudAgentConnection,
   createConnectorRuntime,
+  createDubPartnerProgram,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -45,6 +47,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  drainRuns,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -52,6 +55,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  machineCleanupRecords,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -59,6 +63,7 @@ import {
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
   piSessionsRoot,
+  RUN_DRAIN_MS,
   RunJobPublisher,
   RunStarter,
   removePiUserSessions,
@@ -84,6 +89,7 @@ import {
   createAuth,
   createDirectory,
   isBlockedAuthPath,
+  publicSignInProviders,
 } from "@rakazo/auth";
 import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
@@ -91,7 +97,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
+import { encryptionKeyWarning } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -99,6 +105,7 @@ import {
   createDb,
   createPool,
   createThreadEvents,
+  databaseOutage,
   describeRowSecurity,
   IsolationError,
   installAuditEventStore,
@@ -113,6 +120,7 @@ import {
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
 import {
+  bestEffort,
   createServiceLogger,
   enrichLogContext,
   getLogger,
@@ -145,6 +153,7 @@ import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv } from "./env.js";
+import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
 import { startHourlySweep } from "./hourly-sweep.js";
@@ -158,13 +167,20 @@ import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
-import { handleRpcError } from "./rpc-errors.js";
+import {
+  DATABASE_RETRY_AFTER_SECONDS,
+  failedOnDatabaseOutage,
+  handleHttpError,
+  handleRpcError,
+  requestHitDatabaseOutage,
+} from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
+import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
 import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -183,7 +199,7 @@ export const MOBILE_AUTH_ORIGINS = [
   "http://127.0.0.1:19006",
 ];
 
-// Deploys give the old API 30 seconds to stop before killing it.
+// A stop that hands runs back is allowed 30 seconds before the process is killed.
 const REQUEST_DRAIN_MS = 20_000;
 
 export interface AppHandles {
@@ -202,7 +218,13 @@ export interface AppHandles {
   backgroundFailures?: () => Array<{ name: string; count: number }>;
   /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
   handleUpgrade?: UserDeviceHub["handleUpgrade"];
-  stop: () => Promise<void>;
+  /**
+   * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
+   * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
+   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
+   * for `connectionsClosed`, which settles once the server has stopped taking requests.
+   */
+  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -303,7 +325,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  // The queue is built from this client below; a secret dropped before then gets no retry.
+  let secretCleanupJobs: JobPublisher | undefined;
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -312,28 +336,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
+  const partnerProgram = env.dubApiKey ? createDubPartnerProgram(env.dubApiKey) : undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
-  const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
-  const environmentSignupPolicy = signupPolicyFromEnv(env);
-  // Mirror the env policy for the previous release during a rolling deploy.
-  await prisma.deploymentSettings.upsert({
-    where: { id: "default" },
-    create: {
-      id: "default",
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-    update: {
-      signupsEnabled: environmentSignupPolicy.enabled,
-      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
-      signupPolicyInitialized: true,
-    },
-  });
 
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
@@ -347,6 +355,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   }
   const jobPool = created.pool ?? ownedJobPool;
   const shutdown = new AbortController();
+  const runDrain = drainRuns(shutdown.signal, RUN_DRAIN_MS);
   // Chat starts in the process that receives it; the worker only takes what this one can't.
   const runs = inMemoryJobs ? undefined : new RunStarter(realtime, { signal: shutdown.signal });
   const jobs =
@@ -362,11 +371,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
+  secretCleanupJobs = jobs;
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
   });
   const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
@@ -386,6 +396,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       dataDir: env.dataDir,
       prisma,
       secrets,
+      unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
@@ -433,8 +444,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   };
   const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
+  const localBillingEmulator =
+    !billingOverride && !stripeBilling && env.billingEmulator
+      ? new BillingEmulator({ modelCredits: true })
+      : undefined;
+  if (localBillingEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
+    throw new Error("BILLING_EMULATOR requires API_HOST to be a loopback host");
+  }
   const billingProvider: BillingProvider | undefined =
-    billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
+    billingOverride ??
+    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
   const billing = billingProvider
     ? createBillingService({
         prisma,
@@ -443,6 +462,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
+        experiments: createExperiments(env.experiments),
+        partnerProgram,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -456,7 +477,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,
-    { prisma, secrets, events },
+    { prisma, secrets, events, jobs },
     {
       network: remoteConnectors,
       composio: composioOverride,
@@ -466,7 +487,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
   const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
     connectors;
-  const runtime =
+  const baseRuntime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
       ? new ScriptedAgentRuntime()
@@ -510,9 +531,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
+    partnerProgram,
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
     oidc: env.oidc,
+    social: env.social,
     secret: env.authSecret,
     baseURL: env.authUrl,
     webOrigin: env.webOrigin,
@@ -616,7 +639,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
@@ -624,7 +647,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       mediaGeneration,
       contextStrategy,
       prisma,
-      runtime,
+      runtime: baseRuntime,
       codexCatalog,
       sandbox,
       memory,
@@ -652,7 +675,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           token: hostComputer.hostComputerToken,
         }),
       paymentWallet,
-      shutdownSignal: shutdown.signal,
+      stoppingSignal: shutdown.signal,
+      shutdownSignal: runDrain.signal,
       now,
     },
   );
@@ -786,9 +810,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
+      deploymentLabs: env.deploymentLabs,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
-      ticketBoardEnabled,
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,
@@ -817,6 +841,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     clientInterceptors: [onError((error, { path, signal }) => handleRpcError(error, path, signal))],
   });
   const app = new Hono();
+  app.onError(handleHttpError);
   const inFlight = trackInFlightRequests();
   app.use("*", inFlight.middleware);
   app.use("*", requestLogging(logger));
@@ -831,9 +856,37 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         return isTrustedOrigin(origin, env) ? origin : "";
       },
       credentials: true,
-      exposeHeaders: [SERVER_BUILD_HEADER],
+      exposeHeaders: [SERVER_BUILD_HEADER, "x-voice-id"],
     }),
   );
+  // Reading a session here can renew it. The browser must get the renewed cookie too,
+  // or it keeps the one from sign-in and is signed out when that one expires.
+  const renewedSessionCookies = new WeakMap<Request, string[]>();
+  const readSession = async (request: Request, disableRefresh = false) => {
+    const { headers, response } = await auth.api.getSession({
+      headers: request.headers,
+      returnHeaders: true,
+      query: { disableRefresh },
+    });
+    // A native client signs in with a bearer token and keeps no cookie.
+    const incomingCookieNames = new Set(
+      (request.headers.get("cookie") ?? "").split(";").map((cookie) => cookie.trim().split("=")[0]),
+    );
+    const cookies = headers
+      .getSetCookie()
+      .filter((cookie) => incomingCookieNames.has(cookie.split("=")[0]));
+    if (cookies.length > 0) renewedSessionCookies.set(request, cookies);
+    return response;
+  };
+  app.use("*", async (c, next) => {
+    const request = c.req.raw;
+    await next();
+    for (const cookie of renewedSessionCookies.get(request) ??
+      renewedSessionCookies.get(c.req.raw) ??
+      []) {
+      c.header("set-cookie", cookie, { append: true });
+    }
+  });
   // Session and account replies must never be stored by a client or an HTTP cache.
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
@@ -846,6 +899,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }
         : null,
+      providers: publicSignInProviders(env.social, env.oidc),
       passwordAuth: env.passwordAuth !== false,
       passwordReset: env.passwordAuth !== false && Boolean(email),
       resetUrl:
@@ -872,7 +926,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     monitoringRoutes(
       env.browserMonitoring,
       fetch,
-      async (request) => (await auth.api.getSession({ headers: request.headers }))?.user.id,
+      async (request) => (await readSession(request))?.user.id,
     ),
   );
   app.route("/", cspReportRoutes(requestClientIp));
@@ -893,15 +947,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
-  // Account and session tables, signup bootstrap and account deletion span tenants;
-  // webhooks authenticate a bot or provider, then resolve the tenant from it.
-  for (const [path, reason] of [
-    ["/api/auth/*", "authentication"],
-    ["/api/v1/bots/*", "bot webhook"],
-    ["/api/v1/email/*", "inbound email"],
-    ["/api/v1/messaging/*", "messaging webhook"],
-    ["/api/v1/phone/*", "messaging webhook"],
-  ] as const) {
+  for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
   }
   if (directory) {
@@ -966,16 +1012,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     sandboxProvider: env.sandboxProvider,
     prisma,
   });
-  const requestSession = async (request: Request) => {
+  const requestSession = async (request: Request, disableRefresh = false) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await readSession(request, disableRefresh);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(
         prisma,
-        session.user.id,
+        session.user,
         request.headers.get("x-rakazo-space-id"),
-        session.session.id,
+        session.session,
       ),
     );
     return actor && { actor, sessionId: session.session.id };
@@ -988,7 +1034,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       devices: userDevices,
       forwardSecret: userDeviceSecret,
       session: async (request) => {
-        const found = await auth.api.getSession({ headers: request.headers });
+        const found = await readSession(request);
         return found ? { userId: found.user.id, sessionId: found.session.id } : null;
       },
       trustedOrigin: (origin) => isTrustedOrigin(origin, env),
@@ -1027,15 +1073,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         // Same user in the same space, so leaving the space also ends a stream.
         // A database failure rejects this check; only a missing membership is unauthorized.
         stillAuthorized: async () => {
-          const current = await sessionActor(c.req.raw);
+          const current = (await requestSession(c.req.raw, true))?.actor;
           return Boolean(
             actor && current?.userId === actor.userId && current.spaceId === actor.spaceId,
           );
         },
       },
     });
-    if (matched) return c.newResponse(response.body, response);
-    await next();
+    if (!matched) return next();
+    const reply = c.newResponse(response.body, response);
+    if (requestHitDatabaseOutage())
+      reply.headers.set("Retry-After", String(DATABASE_RETRY_AFTER_SECONDS));
+    // A signed-in request that went through reached the database, so any outage is over.
+    else if (actor && reply.status < 500) databaseOutage.succeeded();
+    return reply;
   });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
@@ -1127,6 +1178,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ),
   );
 
+  let stopped: Promise<void> | undefined;
   return {
     app,
     prisma,
@@ -1142,38 +1194,46 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
     handleUpgrade: userDeviceHub?.handleUpgrade,
-    stop: async () => {
-      // Handlers still running would otherwise query the pool after it ends.
-      const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
-      // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
-      // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
-      auth.disposeOidcDiscovery();
-      shutdown.abort();
-      // Aborted runs hand themselves back while realtime is still open to announce them.
-      const runsStopped = runs?.stop();
-      await userDeviceHub?.close();
-      await oauthLogins.abortAll();
-      await messagingRuntime?.stop();
-      await stopReferralEmails?.();
-      await stopHomeRetention?.();
-      await stopOrganizationDeletions();
-      await reconciler?.stop();
-      await oauthTokenUpgrade;
-      await mcpArgsMove;
-      await runsStopped;
-      await requestsSettled;
-      await botEmail?.drain?.();
-      await email?.drain?.();
-      await jobs.close();
-      await secrets.close();
-      await realtime.close();
-      await mcp.close();
-      await installed.close();
-      await prisma.$disconnect().catch(() => undefined);
-      await created.pool?.end().catch(() => undefined);
-      await ownedJobPool?.end().catch(() => undefined);
-      await analytics?.flush();
-      await logger.flush({ timeoutMs: 2_000 });
+    stop: (options = {}) => {
+      if (!options.letRunsFinish) runDrain.end();
+      stopped ??= (async () => {
+        // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
+        // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
+        // It also ends run claims at once, while ordinary requests still finish.
+        shutdown.abort();
+        // Aborted runs hand themselves back while realtime is still open to announce them.
+        const runsStopped = runs?.stop();
+        // The next release polls for chat messages now; replies from turns still running send.
+        await messagingRuntime?.stopReceiving();
+        await options.connectionsClosed;
+        // Handlers still running would otherwise query the pool after it ends.
+        const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
+        auth.disposeOidcDiscovery();
+        await userDeviceHub?.close();
+        await oauthLogins.abortAll();
+        await stopReferralEmails?.();
+        await stopHomeRetention?.();
+        await stopOrganizationDeletions();
+        await reconciler?.stop();
+        await oauthTokenUpgrade;
+        await mcpArgsMove;
+        await runsStopped;
+        await messagingRuntime?.stop();
+        await requestsSettled;
+        await botEmail?.drain?.();
+        await email?.drain?.();
+        await jobs.close();
+        await secrets.close();
+        await realtime.close();
+        await mcp.close();
+        await installed.close();
+        await bestEffort("disconnect database client", prisma.$disconnect());
+        await bestEffort("close database pool", created.pool?.end());
+        await bestEffort("close job database pool", ownedJobPool?.end());
+        await analytics?.flush();
+        await logger.flush({ timeoutMs: 2_000 });
+      })();
+      return stopped;
     },
   };
 }
@@ -1223,11 +1283,10 @@ export function authLibraryLogger(event: string) {
   return {
     level: "error" as const,
     log: (_level: string, message: string, ...args: unknown[]) => {
-      const failure = {
-        event,
-        message,
-        error: args.find((arg): arg is Error => arg instanceof Error),
-      };
+      const error = args.find((arg): arg is Error => arg instanceof Error);
+      // The request answers 503, and the outage logs once for all of them.
+      if (error && failedOnDatabaseOutage(error)) return;
+      const failure = { event, message, error };
       const held = authLibraryFailures.getStore();
       if (held) held.push(failure);
       else logAuthLibraryFailure(failure, true);
@@ -1242,6 +1301,14 @@ export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
   try {
     const response = await authLibraryFailures.run(failures, handle);
     crashed = response.status >= 500;
+    // The library answers its own 500 when the database is down; ask the client to retry.
+    if (response.status === 500 && requestHitDatabaseOutage())
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: { "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS) },
+      });
+    // An auth request that went through read the database, so any outage is over.
+    if (response.status < 400 && !requestHitDatabaseOutage()) databaseOutage.succeeded();
     return response;
   } finally {
     for (const failure of failures) logAuthLibraryFailure(failure, crashed);

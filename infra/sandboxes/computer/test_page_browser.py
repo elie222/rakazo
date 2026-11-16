@@ -584,6 +584,15 @@ class PurchaseTest(unittest.TestCase):
         # An API that sends no total is not held to one.
         self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
 
+    def test_ambiguous_prices_never_authorize_a_purchase(self):
+        for key in ("amount", "total"):
+            buying = {**PAY, key: "?"}
+            step = {"approved": True, "site": "shop.example.test", **buying}
+            result = helper.purchase_refusal(step, "shop.example.test", buying, 0)
+            self.assertFalse(result["ok"])
+            self.assertNotIn("purchase", result)
+            self.assertIn("manually", result["error"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)

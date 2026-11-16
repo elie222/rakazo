@@ -3,8 +3,8 @@ import {
   continueRunClaimFence,
   refreshTakeoverContinuePlan,
   takeoverContinuePlan,
-  takeoverResumeFromRelease,
 } from "./takeover-resume.js";
+import { takeoverResumeFromRelease } from "./takeover-resume.prompt.js";
 
 const HANDED_BACK_NOTE =
   "The user finished on the computer. Take a fresh screenshot before acting on the screen. Do not request takeover again for this same step.";

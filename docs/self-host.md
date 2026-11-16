@@ -1,6 +1,7 @@
 # Self-hosting Rakazo
 
 Run the API, worker, web app, database and bot computers on a machine you control.
+Other self-hosted AI agents are compared on the [self-hosted AI agent](https://rakazo.com/self-hosted-ai-agent/#other-agents) page.
 
 The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
@@ -128,6 +129,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.
+- [Kubernetes / k3s installation](./self-host-kubernetes.md): a staged single-node recipe,
+  computer isolation and login-gate troubleshooting ([한국어](./ko-KR/self-host-kubernetes.md)).
 - [Storage and encryption](./self-host-storage.md): content encryption, object storage and upload
   limits.
 - [Production deployment](./self-host-production.md): a public single-VM install with automatic

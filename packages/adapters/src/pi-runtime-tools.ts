@@ -1,4 +1,4 @@
-import type { Agent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
@@ -25,7 +25,8 @@ import {
   loginFieldLabelsArgument,
   oneTimeCodeArgument,
 } from "./bot-secrets.js";
-import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
+import { FIND_TOOL, USE_TOOL } from "./builtin.tool-definition.js";
+import { findTools, partitionTools } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
@@ -36,12 +37,12 @@ import {
   TOOL_RESULT_TEXT_LIMIT,
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
-import { executeSubagent } from "./pi-runtime-subagent.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { providerToolCallId } from "./tool-call-ids.js";
 import { textContentArg } from "./tool-text.js";
 import { narrationStatusLine, openingAcknowledgementEnabled } from "./user-progress.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
@@ -108,7 +109,11 @@ function useToolAgentTool(
           type: "tool",
           name: USE_TOOL,
           args: params as Record<string, unknown>,
-          executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+          executionId: JSON.stringify([
+            "pi-tool",
+            host.agentNamespace ?? "main",
+            providerToolCallId(host.providerToolCallIds, toolCallId),
+          ]),
           response: host.modelResponses,
         });
         throw new Error(`${name} is not available. Use a name find_tool lists.`);
@@ -552,9 +557,8 @@ function buildAgentTool(
           name: String(raw.name ?? "helper"),
           task: String(raw.task ?? ""),
           instructions: raw.instructions ? String(raw.instructions) : "",
-          model_provider: raw.model_provider ? String(raw.model_provider) : "",
-          model_id: raw.model_id ? String(raw.model_id) : "",
-          ...(raw.background === true ? { background: true } : {}),
+          model_provider: String(raw.model_provider ?? ""),
+          model_id: String(raw.model_id ?? ""),
         };
       }
       if (tool.name === "spawn_bot") {
@@ -592,7 +596,7 @@ function buildAgentTool(
           if (
             host.computerModeAllowed &&
             COMPUTER_MODE_TOOLS.has(tool.name) &&
-            (host.depth !== 0 || !host.computerModeAllowed())
+            !host.computerModeAllowed()
           )
             throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
@@ -601,14 +605,15 @@ function buildAgentTool(
             isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
-            toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
+            providerToolCallId(host.providerToolCallIds, toolCallId) ||
+            `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
           // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
           const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
           // A sequential tail cannot start after its preceding call pauses.
           // This makes the saved sequential tail safe to resolve on resume.
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
-          if (host.depth === 0) await host.captureCheckpoint?.(rawCallId, executionId);
+          await host.captureCheckpoint?.(toolCallId || rawCallId, executionId);
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
           if (!beginToolCall(host)) {
@@ -710,21 +715,13 @@ function buildAgentTool(
               if (tool.name === FIND_TOOL) {
                 // Outside computer mode, screen tools are reached by entering it, not by search.
                 const findable =
-                  host.computerModeAllowed && (host.depth !== 0 || !host.computerModeAllowed())
+                  host.computerModeAllowed && !host.computerModeAllowed()
                     ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
                     : deferred;
                 const found = findTools(findable, args);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,
-                };
-              }
-              // A background helper is its own run, which the executor starts like any tool effect.
-              if (tool.name === "run_subagent" && args.background !== true) {
-                const result = await executeSubagent(host, executionId, args);
-                return {
-                  content: [{ type: "text", text: result }],
-                  details: { result },
                 };
               }
               if (host.request.executeTool) {
@@ -908,14 +905,13 @@ export interface ToolHost {
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;
-  nestedAgents: Set<Agent>;
-  subagentGate: { acquire(): Promise<void>; release(): void };
   toolCallBudget: ToolCallBudget;
-  /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
+  /** Fallback uniqueness when the model omits toolCallId. */
   toolCallSeq: { value: number };
+  /** Transcript tool call ids renamed for uniqueness, mapped to the id the provider sent. */
+  providerToolCallIds: Map<string, string>;
   abortTurn(): void;
   signal: AbortSignal;
-  depth: number;
   agentNamespace?: string;
   pausePending: boolean;
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
@@ -1054,25 +1050,6 @@ function beginToolCall(host: ToolHost): boolean {
 function endToolCall(host: ToolHost) {
   host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
   maybeAbortToolCallBudget(host);
-}
-
-export function createGate(max: number) {
-  let active = 0;
-  const waiters: Array<() => void> = [];
-  return {
-    async acquire() {
-      if (active >= max) {
-        await new Promise<void>((resolve) => {
-          waiters.push(resolve);
-        });
-      }
-      active += 1;
-    },
-    release() {
-      active = Math.max(0, active - 1);
-      waiters.shift()?.();
-    },
-  };
 }
 
 export function createQueue(): EventQueue {

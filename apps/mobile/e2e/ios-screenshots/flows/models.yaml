@@ -18,16 +18,28 @@ name: Models
 - takeScreenshot: 02-model-picker
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
+    visible: ".*Claude Fable 5.1.*"
+    timeout: 15000
+- tapOn: "Claude Fable 5.1.* options"
+- tapOn: "Manage model"
+- extendedWaitUntil:
+    visible: "Context limit"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-model-settings
+- openLink: "rakazo:///models"
+- extendedWaitUntil:
     visible: "Add provider"
     timeout: 15000
 - tapOn: "Add provider"
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 03-add-provider
+- takeScreenshot: 04-add-provider
 - tapOn: ".*OpenRouter.*"
 - extendedWaitUntil:
     visible: "API key"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 04-model-connection
+- takeScreenshot: 05-model-connection

@@ -113,7 +113,7 @@ callbacks.
 
 | Variable               | Default         | Effect                                                                                                                                                  |
 | ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TICKET_BOARD_ENABLED` | `false`         | Turns on the ticket board. Set it on the API and worker.                                                                                                |
+| `TICKET_BOARD_ENABLED` | `false`         | Turns the ticket board on for every account. Otherwise each person turns it on in **Settings → Labs**. Set it on the API and worker.                    |
 | `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
 | `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
 | `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
@@ -170,6 +170,12 @@ through a transaction pooler. It defaults to `DATABASE_URL`.
 `GRAPHILE_WORKER_CONCURRENCY` (default `4`) caps concurrent deliveries from the older interactive
 job queue during rolling upgrades. New agent runs dispatch straight from Postgres and do not take
 those slots.
+
+`RUN_DRAIN_ENABLED=true` lets a stopping worker end the turns it is running, for up to five
+minutes, before it hands them back; otherwise it hands them back at once and the next worker
+repeats the model call that was in flight. `docker-compose.prod.yml` turns it on. Turn it on only
+where a stopping worker is left alone for longer than that, as Compose's `stop_grace_period` does:
+a worker killed sooner leaves a run mid-turn waiting for its lease to expire.
 
 ## API and worker memory
 

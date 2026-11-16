@@ -1,6 +1,8 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as setupStore from "./setup-store.js";
 import type { DeviceTokenCipher } from "./user-device.js";
@@ -200,8 +202,8 @@ describe("remote computer access", () => {
   });
 
   it("asks once on the first request, keeps the answer, and lets waiting requests share it", async () => {
-    let answer: (allowed: boolean) => void = () => undefined;
-    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    const answer = deferred<boolean>();
+    const confirm = vi.fn(() => answer.promise);
     const { access, clients } = setup({ confirm });
     await access.select(origin);
     await access.pair();
@@ -209,7 +211,7 @@ describe("remote computer access", () => {
     const second = clients[0]!.authorize();
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(confirm).toHaveBeenCalledWith("rakazo.example.com");
-    answer(true);
+    answer.resolve(true);
     expect(await Promise.all([first, second])).toEqual([true, true]);
     expect(await clients[0]!.authorize()).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -271,22 +273,25 @@ describe("remote computer access", () => {
   });
 
   it("ignores a prompt answered after access was turned off or revoked", async () => {
-    let answer: (allowed: boolean) => void = () => undefined;
-    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    let answer!: Deferred<boolean>;
+    const confirm = vi.fn(() => {
+      answer = deferred<boolean>();
+      return answer.promise;
+    });
     const { access, clients, requests } = setup({ confirm });
     await access.select(origin);
     await access.pair();
     const waiting = clients[0]!.authorize();
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     await access.setAllowed(origin, false);
-    answer(true);
+    answer.resolve(true);
     expect(await waiting).toBe(false);
     expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
 
     const turningOn = access.setAllowed(origin, true);
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
     clients[0]!.revoke();
-    answer(true);
+    answer.resolve(true);
     await turningOn;
     expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
@@ -335,21 +340,18 @@ describe("remote computer access", () => {
   it("ignores a page asking for a server it no longer shows", async () => {
     const confirm = vi.fn(async () => true);
     let respond = () => {};
-    let pairingStarted = () => {};
-    const started = new Promise<void>((resolve) => {
-      pairingStarted = resolve;
-    });
+    const started = deferred();
     const fetch = vi.fn(
       () =>
         new Promise<Response>((resolve) => {
           respond = () => resolve(Response.json({ deviceId: "device-1", token: "device-token" }));
-          pairingStarted();
+          started.resolve();
         }),
     );
     const { access, clients } = setup({ confirm, fetch });
     await access.select(origin);
     const pairing = access.pair();
-    await started;
+    await started.promise;
     try {
       await access.setAllowed(other, true);
       expect(confirm).not.toHaveBeenCalled();
@@ -426,12 +428,12 @@ describe("remote computer access", () => {
       cipher,
     );
     const statuses = [401, 403, 500];
-    let release: () => void = () => undefined;
+    const release = deferred();
     const { access, requests } = setup({
       fetch: async (url, init) => {
         requests.push({ url, init });
         // The first request is still out when the window signs in.
-        if (requests.length === 1) await new Promise<void>((resolve) => (release = resolve));
+        if (requests.length === 1) await release.promise;
         return new Response(null, { status: statuses.shift() ?? 204 });
       },
     });
@@ -446,7 +448,7 @@ describe("remote computer access", () => {
       },
     });
     await access.pair();
-    release();
+    release.resolve();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
 
     await access.pair();
@@ -557,8 +559,11 @@ describe("remote computer access", () => {
 
   it("ignores a prompt from a sign-in that ended before it was answered", async () => {
     const { server, fetch } = accountServer();
-    let answer: (allowed: boolean) => void = () => undefined;
-    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    let answer!: Deferred<boolean>;
+    const confirm = vi.fn(() => {
+      answer = deferred<boolean>();
+      return answer.promise;
+    });
     const { access, clients } = setup({ fetch, confirm });
     server.account = "alice";
     await access.select(origin);
@@ -570,7 +575,7 @@ describe("remote computer access", () => {
     clients[0]!.revoke("session-ended");
     server.account = "bob";
     await access.pair();
-    answer(true);
+    answer.resolve(true);
     expect(await waiting).toBe(false);
     expect(access.state(origin)).toEqual({ deviceId: "device-2", allowed: false });
     expect(await readDeviceConsent(userData, origin)).toBeNull();

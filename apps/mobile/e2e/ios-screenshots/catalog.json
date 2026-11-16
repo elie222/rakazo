@@ -59,6 +59,7 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "computers",
       "general",
       "profile",
       "change-password",
@@ -66,6 +67,7 @@
       "integrations",
       "voice",
       "ai-data-sharing",
+      "labs",
       "routine",
       "routine-runs",
       "bot-settings",
@@ -79,7 +81,7 @@
     "id": "models",
     "title": "Models",
     "flow": "flows/models.yaml",
-    "screens": ["models", "model-picker", "model-connection"]
+    "screens": ["models", "model-picker", "model-settings", "model-connection"]
   },
   {
     "id": "bots",

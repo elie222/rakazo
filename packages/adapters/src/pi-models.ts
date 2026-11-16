@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
+  ConnectionSetupError,
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
@@ -41,8 +42,12 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
+  /** The model card's context window and output ceiling. */
+  contextWindow?: number;
+  maxTokens?: number;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -61,7 +66,8 @@ const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   openai: "gpt-6-luna",
   openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
-  google: "gemini-3.8-flash",
+  google: "gemini-4-hydrogen",
+  "google-vertex": "gemini-4-hydrogen",
   groq: "openai/gpt-oss-120b",
   minimax: "MiniMax-M3",
 };
@@ -207,7 +213,7 @@ export async function verifyCatalogProviderApiKey(
     });
   } catch {
     // Transport errors may contain the request's credential. Never forward them.
-    if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+    if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
     return;
   }
   const rejected =
@@ -216,9 +222,9 @@ export async function verifyCatalogProviderApiKey(
       : response.status === 401 || response.status === 403;
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
-    throw new Error(MODEL_KEY_REJECTED_ERROR);
+    throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
   }
-  if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+  if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
 }
 
 /**
@@ -232,7 +238,7 @@ export async function probeCatalogProviderModels(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = catalogProviderProbeBaseUrl(input.provider);
-  if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  if (!baseUrl) throw new ConnectionSetupError("This provider cannot be tested without saving.");
   await verifyCatalogProviderApiKey(input, fetchImpl, signal);
   return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
     allowPublic: true,
@@ -314,7 +320,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
-    const routingFields = cloudflareRoutingFields(provider.id);
+    const routingFields =
+      provider.id === "google-vertex"
+        ? (["projectId", "region"] as ("projectId" | "region")[])
+        : cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       if (maximumModelCallCost(model.cost, 0, 0) !== undefined)
@@ -340,7 +349,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
-          : { images: model.input.includes("image") }),
+          : {
+              images: model.input.includes("image"),
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
       });

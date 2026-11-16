@@ -1,5 +1,6 @@
 import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import type * as Db from "@rakazo/db";
+import { recordSecurityEvent } from "@rakazo/db";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, AuthEnv } from "./index.js";
@@ -12,6 +13,7 @@ vi.mock("better-auth/adapters/prisma", () => ({ prismaAdapter: () => memoryAdapt
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   bootstrapUserSpace: vi.fn(),
+  recordSecurityEvent: vi.fn(),
 }));
 
 const issuer = "https://identity.example.test";
@@ -307,6 +309,56 @@ afterEach(() => {
   auth?.disposeOidcDiscovery();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+it("refuses implicit Google linking even when a third-party mailbox claim is verified", async () => {
+  setup({
+    social: {
+      providers: [
+        {
+          id: "google",
+          name: "Google",
+          clientId: "offline-client",
+          clientSecret: "offline-secret",
+        },
+      ],
+    },
+  });
+  expect(
+    (
+      await request("/sign-up/email", {
+        email: "mailbox@example.test",
+        password: "test-password-123",
+        name: "Local",
+      })
+    ).status,
+  ).toBe(200);
+  rows("user")[0]!.emailVerified = true;
+  cookies = "";
+  state.db.session = [];
+  const context = await auth.$context;
+  const provider = context.socialProviders.find((item) => item.id === "google")!;
+  // Keep the real sign-in/link policy; replace only the provider network boundary.
+  provider.idToken = { verify: async () => true };
+  provider.getUserInfo = async () => ({
+    user: {
+      email: "mailbox@example.test",
+      emailVerified: true,
+      name: "Former owner",
+    },
+    data: { sub: "former-mailbox-owner", email: "mailbox@example.test", email_verified: true },
+  });
+  const response = await request("/sign-in/social", {
+    provider: "google",
+    idToken: { token: "offline-token" },
+    callbackURL: `${origin}/app`,
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ message: "Browser sign-in required" });
+  expect(rows("user")).toHaveLength(1);
+  expect(rows("account")).toHaveLength(1);
+  expect(rows("account")[0]?.providerId).toBe("credential");
+  expect(rows("session")).toHaveLength(0);
 });
 
 describe("OIDC callbacks", () => {
@@ -1671,3 +1723,543 @@ describe("directory accounts", () => {
     expect(rows("account")).toHaveLength(0);
   });
 });
+
+it("uses a signed Apple secret on Better Auth's first and renewed token exchanges", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+    .privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString();
+  setup({
+    social: {
+      providers: [
+        {
+          id: "apple",
+          name: "Apple",
+          clientId: "service",
+          teamId: "team",
+          keyId: "key",
+          privateKey: pem,
+        },
+      ],
+    },
+  });
+  const secrets: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url, init) => {
+      const sentSecret = new URLSearchParams(init.body).get("client_secret");
+      if (sentSecret) secrets.push(sentSecret);
+      return Response.json({
+        access_token: "offline-access",
+        token_type: "Bearer",
+        expires_in: 3600,
+      });
+    }),
+  );
+  const exchange = async () => {
+    const response = await request("/sign-in/social", {
+      provider: "apple",
+      callbackURL: `${origin}/app`,
+    });
+    const url = new URL(((await response.json()) as { url: string }).url);
+    await request(`/callback/apple?code=offline-code&state=${url.searchParams.get("state")}`);
+  };
+  await exchange();
+  vi.setSystemTime(new Date("2026-05-20T00:00:00Z"));
+  await exchange();
+  expect(secrets).toHaveLength(2);
+  for (const token of secrets) {
+    expect(token.split(".")).toHaveLength(3);
+    expect(JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString())).toMatchObject({
+      sub: "service",
+      iss: "team",
+    });
+  }
+  expect(secrets[1]).not.toBe(secrets[0]);
+});
+
+it.each([
+  ["google", "", true],
+  ["google", "former@example.test", true],
+  ["apple", "", false],
+  ["apple", "former@example.test", false],
+  ["apple", "", true],
+  ["apple", "former@example.test", true],
+])(
+  "rejects unproven %s mailbox ownership with allowlist %j",
+  async (providerId, signupAllowlist, verifiedClaim) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      signupAllowlist,
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    expect(
+      (
+        await request("/sign-in/social", {
+          provider: providerId,
+          idToken: {
+            token: jwt({ sub: "unbound", email: "former@example.test", email_verified: true }),
+          },
+        })
+      ).status,
+    ).toBe(403);
+    const initiation = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+    });
+    const authorization = new URL(((await initiation.json()) as { url: string }).url);
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
+        sub: "former-owner",
+        email: "former@example.test",
+        email_verified: verifiedClaim,
+        nonce: authorization.searchParams.get("nonce"),
+        name: "Test",
+      }),
+    });
+    const response = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    expect(response.headers.get("location")).toContain("error=EMAIL_VERIFICATION_REQUIRED");
+    expect(rows("user")).toHaveLength(0);
+    expect(rows("account")).toHaveLength(0);
+    expect(rows("session")).toHaveLength(0);
+  },
+);
+
+it.each([
+  ["google", "local@example.test"],
+  ["google", "other@example.test"],
+  ["apple", "local@example.test"],
+  ["apple", "relay@privaterelay.example.test"],
+])(
+  "links %s only for the authenticated account's verified email (%s)",
+  async (providerId, email) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const input = { provider: providerId, callbackURL: `${origin}/app` };
+    expect((await request("/link-social", input)).status).toBe(401);
+    expect(
+      (
+        await request("/sign-up/email", {
+          email: "local@example.test",
+          password: "test-password-123",
+          name: "Test",
+        })
+      ).status,
+    ).toBe(200);
+    const linked = await request("/link-social", input);
+    expect(linked.status).toBe(200);
+    expect(new URL(((await linked.json()) as { url: string }).url).origin).toBe(
+      providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+    );
+    rows("user")[0]!.emailVerified = true;
+    const rawLink = await request("/link-social", {
+      ...input,
+      idToken: { token: jwt({ sub: "unbound", email, email_verified: true }) },
+    });
+    expect(rawLink.status).toBe(403);
+    expect(await rawLink.json()).toMatchObject({ message: "Browser sign-in required" });
+    expect(rows("account")).toHaveLength(1);
+    expect(rows("account")[0]!.providerId).toBe("credential");
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        sub: "linked-subject",
+        email,
+        email_verified: true,
+        name: "Test",
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
+        nonce: authorization.searchParams.get("nonce"),
+      }),
+    });
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    const retry = await request("/link-social", input);
+    const authorization = new URL(((await retry.json()) as { url: string }).url);
+    const callback = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    const matches = email === "local@example.test";
+    if (matches) expect(callback.headers.get("location")).toBe(`${origin}/app`);
+    else expect(callback.headers.get("location")).toContain("error=email_does_not_match");
+    expect(rows("account").some((account) => account.providerId === providerId)).toBe(matches);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("user")[0]!.email).toBe("local@example.test");
+    expect(
+      (await request("/link-social", { ...input, callbackURL: "https://accounts.google.com/" }))
+        .status,
+    ).toBe(403);
+    expect(
+      (await request("/link-social", input, undefined, { origin: "https://accounts.google.com" }))
+        .status,
+    ).toBe(403);
+  },
+);
+
+it("reports only the authenticated user's linked provider ids", async () => {
+  setup();
+  expect((await request("/account-security")).status).toBe(401);
+  await signIn();
+  const account = rows("account")[0]!;
+  state.db.account!.push({
+    ...account,
+    id: "other-provider-account",
+    providerId: "social-example",
+  });
+  state.db.account!.push({
+    ...account,
+    id: "other-user-account",
+    userId: "different-user",
+    providerId: "private-provider",
+  });
+  const response = await request("/account-security");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    linkedProviderIds: ["oidc", "social-example"],
+  });
+});
+
+describe.each(["google", "apple"] as const)("%s ordinary OAuth boundary", (providerId) => {
+  async function linked() {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      email: undefined,
+      social: {
+        providers: [
+          providerId === "google"
+            ? {
+                id: "google",
+                name: "Google",
+                clientId: "offline-client",
+                clientSecret: "offline-secret",
+              }
+            : {
+                id: "apple",
+                name: "Apple",
+                clientId: "offline-client",
+                teamId: "team",
+                keyId: "key",
+                privateKey: pem,
+              },
+        ],
+      },
+    });
+    await request("/sign-up/email", {
+      email: "owner@example.test",
+      password: "test-password-123",
+      name: "Test",
+    });
+    rows("user")[0]!.emailVerified = true;
+    Object.assign(rows("account")[0]!, { providerId, accountId: "own-subject", password: null });
+    const provider = (await auth.$context).socialProviders.find((p) => p.id === providerId)!;
+    // Replace only remote signing-key retrieval; verify signature, issuer, audience and nonce.
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    return String(rows("session")[0]!.token);
+  }
+  async function begin() {
+    const response = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+    });
+    expect(response.status).toBe(200);
+    return new URL(((await response.json()) as { url: string }).url);
+  }
+  async function callback(
+    url: URL,
+    subject = "own-subject",
+    extra: Record<string, unknown> = {},
+    callbackProvider = providerId,
+  ) {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const endpoint = new URL(input instanceof Request ? input.url : String(input));
+        if (
+          endpoint.hostname === "oauth2.googleapis.com" ||
+          endpoint.hostname === "appleid.apple.com"
+        )
+          return json({
+            access_token: "offline-access",
+            token_type: "Bearer",
+            expires_in: 300,
+            id_token: jwt({
+              iss:
+                providerId === "google"
+                  ? "https://accounts.google.com"
+                  : "https://appleid.apple.com",
+              aud: "offline-client",
+              sub: subject,
+              email: "owner@example.test",
+              email_verified: true,
+              nonce: url.searchParams.get("nonce"),
+              ...extra,
+            }),
+          });
+        return originalFetch(input, init);
+      }),
+    );
+    return request(
+      `/callback/${callbackProvider}?code=offline-code&state=${url.searchParams.get("state")}`,
+    );
+  }
+  it.each([undefined, 1])(
+    "cached OAuth with auth_time %s never grants sensitive proof",
+    async (authTime) => {
+      await linked();
+      const url = await begin();
+      expect(
+        (await callback(url, "own-subject", authTime ? { auth_time: authTime } : {})).headers.get(
+          "location",
+        ),
+      ).toBe(`${origin}/app`);
+      const session = rows("session").at(-1)!;
+      expect(
+        await auth.hasRecentIdentityConfirmation({
+          sessionId: String(session.id),
+          userId: String(session.userId),
+        }),
+      ).toBe(false);
+      expect(await (await request("/account-security")).json()).toMatchObject({
+        freshOidcAuth: false,
+        emailDeletion: false,
+        ssoLinked: false,
+      });
+      expect((await request("/delete-user", {})).status).toBe(403);
+      expect(rows("user")).toHaveLength(1);
+      expect(recordSecurityEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "auth.identity.confirmed" }),
+      );
+    },
+  );
+  it("refuses social step-up before issuing an OAuth challenge", async () => {
+    await linked();
+    for (const idToken of [undefined, { token: "unbound" }]) {
+      expect(
+        (
+          await request("/sign-in/social", {
+            provider: providerId,
+            callbackURL: `${origin}/app`,
+            additionalData: { reauthenticate: true },
+            ...(idToken ? { idToken } : {}),
+          })
+        ).status,
+      ).toBe(403);
+    }
+  });
+  it("never takes over a verified local account by matching a provider email", async () => {
+    await linked();
+    rows("account")[0]!.providerId = "credential";
+    const sessions = rows("session").length;
+    cookies = "";
+    const response = await request("/sign-in/social", {
+      provider: providerId,
+      callbackURL: `${origin}/app`,
+    });
+    const url = new URL(((await response.json()) as { url: string }).url);
+    expect((await callback(url, "former-owner")).headers.get("location")).toContain("error=");
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toHaveLength(1);
+    expect(rows("account")[0]!.providerId).toBe("credential");
+    expect(rows("session")).toHaveLength(sessions);
+    expect(await (await request("/get-session")).json()).toBeNull();
+  });
+  it.each([6, 11])(
+    "allows ordinary sign-in only within the OAuth window (%i minutes)",
+    async (minutes) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      await linked();
+      const response = await request("/sign-in/social", {
+        provider: providerId,
+        callbackURL: `${origin}/app`,
+      });
+      const url = new URL(((await response.json()) as { url: string }).url);
+      vi.setSystemTime(Date.now() + minutes * 60_000);
+      const result = await callback(url);
+      if (minutes < 10) expect(result.headers.get("location")).toBe(`${origin}/app`);
+      else expect(result.headers.get("location")).toContain("error=");
+      expect((await request("/delete-user", {})).status).toBe(403);
+    },
+  );
+  it.each(["wrong nonce", "wrong issuer", "wrong audience"])(
+    "rejects %s during ordinary sign-in",
+    async (failure) => {
+      await linked();
+      const url = await begin();
+      const extra =
+        failure === "wrong nonce"
+          ? { nonce: "borrowed" }
+          : failure === "wrong issuer"
+            ? { iss: "https://attacker.example.test" }
+            : { aud: "other-client" };
+      expect((await callback(url, "own-subject", extra)).headers.get("location")).toContain(
+        "error=",
+      );
+      expect((await request("/delete-user", {})).status).toBe(403);
+    },
+  );
+  it("consumes concurrent callbacks once and rejects replay", async () => {
+    await linked();
+    const url = await begin();
+    const results = await Promise.all([callback(url), callback(url)]);
+    expect(results.filter((r) => r.headers.get("location") === `${origin}/app`)).toHaveLength(1);
+    expect((await callback(url)).headers.get("location")).toContain("error=");
+  });
+});
+
+it.each([
+  ["google", "ios", "open"],
+  ["apple", "android", "open"],
+  ["google", "ios", "closed"],
+  ["apple", "android", "closed"],
+  ["google", "ios", "allowlist"],
+  ["apple", "android", "allowlist"],
+])(
+  "preserves %s %s attribution and enforces %s signup policy",
+  async (providerId, surface, policy) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      signupsEnabled: policy === "closed" ? "false" : "true",
+      signupAllowlist: policy === "allowlist" ? "allowed@example.test" : "",
+      oidc: {
+        issuer,
+        clientId: "test-client",
+        clientSecret: "test-secret",
+        name: "SSO",
+        allowSignupBypass: true,
+        scopes: ["openid", "email", "profile"],
+      },
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const originalAttribution = encodeURIComponent(
+      JSON.stringify({ surface: "web", utmSource: "example", utmCampaign: "signup" }),
+    );
+    const initiation = await request(
+      "/sign-in/social",
+      {
+        provider: providerId,
+        callbackURL: `${origin}/app`,
+        additionalData: {
+          serverContext: { signupAttribution: { surface: "desktop", utmSource: "untrusted" } },
+        },
+      },
+      undefined,
+      {
+        "x-rakazo-signup-surface": surface,
+        cookie: `rakazo_signup_attribution=${originalAttribution}`,
+      },
+    );
+    const authorization = new URL(((await initiation.json()) as { url: string }).url);
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        sub: "new-subject",
+        email: providerId === "google" ? "new@gmail.com" : "new@icloud.com",
+        email_verified: true,
+        name: "Test",
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
+        nonce: authorization.searchParams.get("nonce"),
+      }),
+    });
+    // The returning browser sends no native header or attribution cookie.
+    const response = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    if (policy !== "open") {
+      expect(response.headers.get("location")).toContain(
+        policy === "closed" ? "error=REGISTRATION_CLOSED" : "error=EMAIL_NOT_ALLOWED",
+      );
+      expect(rows("user")).toHaveLength(0);
+      expect(rows("account")).toHaveLength(0);
+      expect(rows("session")).toHaveLength(0);
+      return;
+    }
+    expect(response.headers.get("location")).toBe(`${origin}/app`);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("user")[0]).toMatchObject({
+      signupSurface: surface,
+      signupUtmSource: "example",
+      signupUtmCampaign: "signup",
+    });
+  },
+);

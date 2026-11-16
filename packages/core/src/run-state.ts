@@ -32,6 +32,7 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
   "created",
   "tickets",
   "bot_message",
+  "helper",
 ]);
 
 /**
@@ -127,8 +128,15 @@ export function helperCardState(block: { status: string; result?: string; progre
   };
 }
 
-/** Runs that may use their bot's computer: a background helper never does. */
-export const COMPUTER_USING_RUNS = { trigger: { not: BACKGROUND_HELPER_TRIGGER } } as const;
+/** A helper only holds up computer operations after a worker claimed that computer. */
+export function computerUsingRuns(now: Date = new Date()) {
+  return {
+    OR: [
+      { trigger: { not: BACKGROUND_HELPER_TRIGGER } },
+      { computerUseStartedAt: { not: null }, leaseExpiresAt: { gt: now } },
+    ],
+  };
+}
 
 /** Prompt of a run created to answer messages that waited behind another turn. */
 export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";

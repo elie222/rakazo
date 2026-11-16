@@ -2,12 +2,18 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { InferRouterInitialContext } from "@orpc/server";
-import { createRouterClient } from "@orpc/server";
+import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import type { BackgroundJob, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import {
   ConnectorAuthUnavailableError,
+  connectionCleanupJob,
+  connectionCleanupJobKey,
+  MEMORY_REVISION_CONFLICT_ERROR,
+  MemoryRevisionConflictError,
+  MessagingInstallRefusedError,
   routineWakeupJob,
+  SandboxFileTooLargeError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
 import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
@@ -26,6 +32,7 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  providerScopeKey,
   SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
@@ -34,6 +41,7 @@ import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
   BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
@@ -44,13 +52,15 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
   configureProviderTransactionPool,
+  IsolationError,
   Prisma,
   runProviderTransaction,
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
-import { providerScopeKey } from "./connection-flows.js";
+import { beginConnection } from "./connection-flows.js";
+import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -59,12 +69,18 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
   return deps;
 };
 const createRouter = (deps: RouterDeps) => createRouterWith(withRoleDeps(deps));
+/** A handler that answers errors as the app does, so a domain error keeps its own status. */
+const appHandler = (deps: RouterDeps) =>
+  new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
 const enqueueBotIntroRun = (deps: RouterDeps, ...rest: [Actor, Bot]) =>
   enqueueBotIntroRunWith(withRoleDeps(deps), ...rest);
 
@@ -183,11 +199,19 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(actor.userId, {
-      name: "screen_viewed",
-      screen: "chat",
-      surface: "desktop",
-    });
+    expect(capture).toHaveBeenCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "chat", surface: "desktop" },
+      undefined,
+      undefined,
+    );
+    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
+    expect(capture).toHaveBeenLastCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
+      undefined,
+      { "plan-layout": "tiers" },
+    );
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -199,7 +223,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -215,10 +239,18 @@ describe("account preferences", () => {
         throw new SecretStoreUnavailableError();
       }),
     } as never;
-    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
-    await expect(client.models.credentials()).rejects.toMatchObject({
-      code: "SERVICE_UNAVAILABLE",
-      status: 503,
+    const response = await handle(
+      appHandler(deps),
+      new Request("http://127.0.0.1/rpc/models/credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      json: { code: "SERVICE_UNAVAILABLE", status: 503, message: "Service Unavailable" },
     });
   });
 
@@ -593,6 +625,82 @@ describe("account preferences", () => {
     },
   );
 
+  it.each([false, true])("checks work-card support before a token exists (%s)", async (enabled) => {
+    const { deps, actor } = preferencesDeps("robot");
+    const register = vi.fn().mockResolvedValue(false);
+    deps.workActivities = enabled ? { register, registerStarts: vi.fn() } : undefined;
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+
+    await expect(phone.notifications.followWorkActivity({})).resolves.toEqual({
+      following: enabled,
+    });
+    expect(register).not.toHaveBeenCalled();
+
+    // Token registration still reports whether there is work to follow.
+    const token = "ab".repeat(32);
+    await expect(phone.notifications.followWorkActivity({ token })).resolves.toEqual({
+      following: false,
+    });
+    if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
+    else expect(register).not.toHaveBeenCalled();
+  });
+
+  describe("registering a device from a session that was signed out meanwhile", () => {
+    const registrations = [
+      ["notifications/registerPush", { token: "ExponentPushToken[fake-token]" }],
+      [
+        "notifications/registerCallPush",
+        {
+          deviceId: "11111111-1111-4111-8111-111111111111",
+          platform: "android",
+          expoToken: "ExponentPushToken[fake-token]",
+        },
+      ],
+    ] as const;
+    const register = (deps: RouterDeps, actor: Actor, path: string, body: unknown) =>
+      handle(
+        appHandler(deps),
+        new Request(`http://127.0.0.1/rpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor, sessionId: "session-phone" } as never },
+      );
+    const failingStore = (error: Error) => ({
+      load: vi.fn(async () => undefined),
+      save: vi.fn().mockRejectedValue(error),
+      saveDevice: vi.fn().mockRejectedValue(error),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+    });
+
+    it.each(registrations)("answers %s as unauthorized", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new adapters.PushSessionEndedError());
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        json: { defined: false, code: "UNAUTHORIZED", status: 401, message: "Unauthorized" },
+      });
+    });
+
+    it.each(registrations)("reports any other %s failure as a server fault", async (path, body) => {
+      const { deps, actor } = preferencesDeps("robot");
+      deps.pushTokens = failingStore(new Error("token table is locked"));
+
+      const response = await register(deps, actor, path, body);
+
+      expect(response.status).toBe(500);
+      expect(JSON.stringify(await response.json())).not.toContain("token table");
+    });
+  });
+
   it("ends only the calling session's push registration, keeping another session's", async () => {
     const { deps, actor } = preferencesDeps("robot");
     const calls: string[] = [];
@@ -675,7 +783,7 @@ describe("billing", () => {
       code: "NOT_FOUND",
     });
     await expect(
-      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+      client.billing.purchaseCredits({ amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -1053,7 +1161,9 @@ describe("thread answer delivery", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "run wake failed", "run.id": "run-1" }),
+    );
     installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });
@@ -1109,7 +1219,7 @@ describe("answers the server can't save", () => {
     } satisfies Actor;
     const answer = `fake-code-${"x".repeat(16_400)}`;
     const response = await handle(
-      new RPCHandler(createRouter(deps)),
+      appHandler(deps),
       new Request("http://127.0.0.1/rpc/threads/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3275,15 +3385,26 @@ describe("connections.begin", () => {
         displayName: "Gmail",
         status: "pending",
         providerRef: null,
-        metadata: {},
+        metadata: { attempt: expect.any(String) },
       },
+    });
+    // The result is saved, and a failure recorded, only while the row is still this attempt's
+    // and holds nothing yet.
+    const { attempt } = update.mock.calls[0]![0].data.metadata;
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "conn-old",
+        status: "pending",
+        metadata: { equals: { attempt } },
+      }),
+      data: expect.objectContaining({ providerRef: "gmail-state" }),
     });
     await expect(response.json()).resolves.toMatchObject({
       json: { connectionId: "conn-old" },
     });
   });
 
-  it("cancels the remote authorization when its result cannot be saved before the slot frees", async () => {
+  it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {
     vi.useFakeTimers();
     let releaseSlot = () => {};
     let holder: Promise<void> = Promise.resolve();
@@ -3300,6 +3421,10 @@ describe("connections.begin", () => {
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
     });
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      cancelIn: vi.fn(async () => undefined),
+    };
     const rootUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -3316,6 +3441,7 @@ describe("connections.begin", () => {
     const handler = new RPCHandler(
       createRouter({
         prisma,
+        jobs,
         connectors: { managed: vi.fn(() => ({ begin, cancelAuthorizationRequest })) },
         env: {
           defaultProvider: "fake",
@@ -3349,13 +3475,20 @@ describe("connections.begin", () => {
           },
         },
       );
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(70_000);
       const response = await handled;
 
       expect(response.status).not.toBe(200);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.connection.updateMany).not.toHaveBeenCalled();
-      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+      // A removal needs the scope as much as the save did: without it nothing is removed, and
+      // the recorded job stays for when the scope is free.
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+      expect(jobs.enqueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({ payload: LEFTOVER_REQUEST, availableAt: expect.any(Date) }),
+      );
+      expect(jobs.cancelIn).not.toHaveBeenCalled();
       expect(rootUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: "error" } }),
       );
@@ -3364,6 +3497,450 @@ describe("connections.begin", () => {
       await holder;
       vi.useRealTimers();
     }
+  });
+
+  const LEFTOVER_REQUEST = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    connectorId: "composio",
+    provider: "gmail",
+    ref: "request-1",
+  };
+  const { ref: _ref, ...LEFTOVER_APP } = LEFTOVER_REQUEST;
+
+  /** A begin whose row a revoke took while the provider was answering. */
+  function lostBegin(connector: Record<string, unknown>, state: string) {
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
+      // A finished removal deletes its backup job in the transaction that holds the scope's lock.
+      cancelIn: vi.fn(async (_tx: unknown, _key: string) => undefined),
+    };
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      // The scope's lock, free unless a test says another flow holds it.
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: true }]),
+      connection: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: "conn-1", status: "pending" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        // Active rows that have saved the authorization a removal names.
+        count: vi.fn().mockResolvedValue(0),
+      },
+    };
+    const root = {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      count: vi.fn().mockResolvedValue(0),
+    };
+    const prisma = {
+      connection: root,
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaClient;
+    const begin = vi.fn(async () => ({ state, authorizationUrl: "https://provider.test/go" }));
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const call = () =>
+      beginConnection(
+        {
+          prisma,
+          jobs,
+          connectors: { managed: () => ({ begin, ...connector }) },
+          env: { webOrigin: "http://127.0.0.1:5173" },
+        } as unknown as RouterDeps,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId: "composio", provider: "gmail", displayName: "Gmail" },
+      );
+    const logged = (level: string) =>
+      sink.events
+        .filter((event) => event.level === level && event.message.startsWith("connections."))
+        .map((event) => event.message);
+    const errors = () => logged("error");
+    const warnings = () => logged("warn");
+    const events = () => sink.events.filter((event) => event.level === "error");
+    return { call, jobs, tx, root, prisma, errors, warnings, events };
+  }
+
+  it("answers a connector this build does not have with a client error", async () => {
+    const managed = vi.fn(() => undefined);
+    const begin = (deps: object, connectorId?: string) =>
+      beginConnection(
+        { connectors: { defaultConnectorId: "first-connector", managed }, ...deps } as never,
+        { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+        { connectorId, provider: "gmail", displayName: "Gmail" },
+      );
+    const refusal = { name: "ClientError", kind: "BAD_REQUEST" };
+    await expect(begin({}, "a-provider-since-removed")).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector a-provider-since-removed is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("a-provider-since-removed");
+    // A request that names no connector means the one the server's registry calls the default.
+    await expect(begin({})).rejects.toMatchObject({
+      ...refusal,
+      message: "Connector first-connector is not configured",
+    });
+    expect(managed).toHaveBeenLastCalledWith("first-connector");
+    // Saved integration settings answer only for the providers they have.
+    const integrationSettings = { has: vi.fn(() => false), resolve: vi.fn() };
+    await expect(begin({ integrationSettings }, "a-provider-since-removed")).rejects.toMatchObject(
+      refusal,
+    );
+    expect(integrationSettings.resolve).not.toHaveBeenCalled();
+  });
+
+  it("records the removal with the lost race and deletes the record once it is done", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        name: "connection.cleanup",
+        payload: LEFTOVER_REQUEST,
+        availableAt: expect.any(Date),
+      }),
+    );
+    expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
+    // Removed as the job would: holding the scope's lock, after reading who refers to it.
+    expect(tx.connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({ providerRef: "request-1" }),
+    });
+    const [locked, read, removed] = [
+      tx.$queryRaw.mock.invocationCallOrder[0]!,
+      tx.connection.count.mock.invocationCallOrder[0]!,
+      cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+    ];
+    expect(locked).toBeLessThan(read);
+    expect(read).toBeLessThan(removed);
+  });
+
+  it("saves its result only while the row is still its own attempt's", async () => {
+    // A revoke took the row and a later begin reused it: pending again, but not this attempt's.
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    const { attempt } = tx.connection.create.mock.calls[0]![0].data.metadata;
+    expect(attempt).toEqual(expect.any(String));
+    expect(tx.connection.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "conn-1",
+        status: "pending",
+        metadata: { equals: { attempt } },
+      }),
+      data: expect.objectContaining({ providerRef: "request-1" }),
+    });
+    // Its own authorization is removed, and the other attempt's row is not marked failed.
+    expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+    expect(root.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("never removes an authorization that an active row has saved", async () => {
+    // The provider answered begin with an account a sibling connection already uses.
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const revoke = vi.fn(async () => undefined);
+    for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+      const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
+      tx.connection.count.mockResolvedValue(1);
+
+      await expect(call()).rejects.toBeInstanceOf(IsolationError);
+      // Nothing is left to remove, so the recorded job goes.
+      expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+      expect(errors()).toEqual([]);
+    }
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps the backup job, removing nothing, when it cannot read who refers to the authorization", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => undefined);
+    const { call, jobs, tx } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+    tx.connection.count.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+  });
+
+  it("hands a failed removal to its backup job and answers the lost race as before", async () => {
+    const cancelAuthorizationRequest = vi.fn(async () => {
+      throw new Error("provider unavailable");
+    });
+    const { call, jobs, errors, warnings } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    // Enqueued again with no run-at: the queue retries it now.
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    // A job has it, so nobody has to act: not an error.
+    expect(warnings()).toEqual(["connections.begin leftover cleanup failed; retrying"]);
+    expect(errors()).toEqual([]);
+  });
+
+  it("retries instead of skipping the revoke when the provider cannot be asked for the account", async () => {
+    const revoke = vi.fn(async () => undefined);
+    const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => {
+      throw new Error("provider unavailable");
+    });
+    const unreachable = lostBegin({ revoke, resolveConnectedAccountId }, "request-1");
+
+    await expect(unreachable.call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(unreachable.jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+    expect(unreachable.jobs.cancelIn).not.toHaveBeenCalled();
+
+    // The provider answering that it holds no such account is the normal outcome.
+    resolveConnectedAccountId.mockResolvedValue(undefined);
+    const absent = lostBegin({ revoke, resolveConnectedAccountId }, "request-1");
+    await expect(absent.call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(absent.jobs.enqueue).not.toHaveBeenCalled();
+    expect(absent.jobs.cancelIn).toHaveBeenCalledWith(
+      absent.tx,
+      connectionCleanupJobKey(LEFTOVER_REQUEST),
+    );
+  });
+
+  it("retries the unreferenced-account cleanup when its database read fails", async () => {
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+    tx.connection.findMany
+      // begin's own lookup of rows to reuse
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ name: "connection.cleanup", payload: LEFTOVER_APP }),
+    );
+    expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(LEFTOVER_APP));
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
+  });
+
+  it("keeps the backup job while a sibling's unfinished connection may own the accounts", async () => {
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+    tx.connection.findMany
+      .mockResolvedValueOnce([])
+      // A sibling that has not saved its account id yet.
+      .mockResolvedValueOnce([{ providerRef: "account-1" }, { providerRef: "gmail" }]);
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
+    );
+    expect(errors()).toEqual([]);
+  });
+
+  it("leaves a scope another flow holds to its backup job instead of waiting or failing", async () => {
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+    tx.$queryRaw.mockResolvedValue([{ locked: false }]);
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
+    );
+    expect(errors()).toEqual([]);
+  });
+
+  it("starts a leftover app cleanup's time budget once it holds the scope", async () => {
+    const budget = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+      const { call, tx } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+
+      await expect(call()).rejects.toBeInstanceOf(IsolationError);
+      expect(revokeUnreferencedAccounts).toHaveBeenCalledTimes(1);
+      expect(budget).toHaveBeenCalledTimes(1);
+      expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        budget.mock.invocationCallOrder[0]!,
+      );
+    } finally {
+      budget.mockRestore();
+    }
+  });
+
+  describe("when saving the result fails after the provider answered", () => {
+    it("removes the authorization and still reports the failure", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      // The lost race's job write fails, which fails its transaction.
+      jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      // Recorded, removed, and only then is the record deleted.
+      expect(jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: LEFTOVER_REQUEST, availableAt: expect.any(Date) }),
+      );
+      expect(jobs.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
+        cancelAuthorizationRequest.mock.invocationCallOrder[0]!,
+      );
+      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+      expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+      // The row is marked failed only while it is exactly what this begin first wrote, and
+      // before the removal, which would otherwise wait for it as for a connection in flight.
+      const { attempt } = tx.connection.create.mock.calls[0]![0].data.metadata;
+      expect(root.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          id: "conn-1",
+          status: "pending",
+          metadata: { equals: { attempt } },
+        }),
+        data: { status: "error" },
+      });
+      expect(root.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.$queryRaw.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it("hands the removal to a job when the provider cannot be reached either", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => {
+        throw new Error("provider unavailable");
+      });
+      const { call, jobs, tx, prisma } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      // Begin's first transaction creates the row; the one that saves the result fails.
+      const transaction = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+      transaction
+        .mockImplementationOnce(async (fn: (client: unknown) => Promise<unknown>) => fn(tx))
+        .mockRejectedValueOnce(new Error("Transaction already closed"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      expect(cancelAuthorizationRequest).toHaveBeenCalledTimes(1);
+      expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+      expect(jobs.cancelIn).not.toHaveBeenCalled();
+    });
+
+    it("still removes the authorization when the queue cannot be reached, and says so if it cannot", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const reachable = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      reachable.jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+      reachable.jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+
+      await expect(reachable.call()).rejects.toBeInstanceOf(ORPCError);
+      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+      expect(reachable.errors()).toEqual([]);
+
+      // Neither the provider nor the queue: nothing will retry, so the log names what to remove.
+      cancelAuthorizationRequest.mockRejectedValue(new Error("provider unavailable"));
+      const unreachable = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      unreachable.jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+      unreachable.jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+      await expect(unreachable.call()).rejects.toBeInstanceOf(ORPCError);
+      expect(unreachable.errors()).toEqual([
+        "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
+      ]);
+      expect(unreachable.events().at(-1)).toMatchObject({
+        userId: "user-1",
+        connectorId: "composio",
+        provider: "gmail",
+        providerRef: "request-1",
+      });
+    });
+
+    it("leaves a result that was saved after all to its row", async () => {
+      // The save committed without its answer arriving: the row holds the authorization.
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const revoke = vi.fn(async () => undefined);
+      for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+        const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
+        jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+        tx.connection.count.mockResolvedValue(1);
+
+        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        // The removal reads the rows under the scope's lock, as the job would, and finds it in use.
+        expect(tx.connection.count).toHaveBeenCalledWith({
+          where: expect.objectContaining({ providerRef: "request-1" }),
+        });
+        expect(jobs.cancelIn).toHaveBeenCalledWith(tx, connectionCleanupJobKey(LEFTOVER_REQUEST));
+        expect(errors()).toEqual([]);
+      }
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+    });
+
+    it("removes nothing itself when it cannot read whether the result was saved", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const revoke = vi.fn(async () => undefined);
+      for (const connector of [{ cancelAuthorizationRequest }, { revoke }]) {
+        const { call, jobs, tx, errors } = lostBegin(connector, "request-1");
+        jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+        tx.connection.count.mockRejectedValue(new Error("database unavailable"));
+
+        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        // The job decides later, under the lock, once it can read the row.
+        expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
+        expect(jobs.cancelIn).not.toHaveBeenCalled();
+        expect(errors()).toEqual([]);
+      }
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+    });
+
+    it("leaves the authorization and names it when neither the database nor the queue answers", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, tx, errors, events } = lostBegin(
+        { cancelAuthorizationRequest },
+        "request-1",
+      );
+      jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
+      jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+      tx.connection.count.mockRejectedValue(new Error("database unavailable"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      // An authorization nothing may refer to is the lesser harm next to deleting one in use.
+      expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
+      expect(errors()).toEqual([
+        "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
+      ]);
+      expect(events().at(-1)).toMatchObject({
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "composio",
+        provider: "gmail",
+        providerRef: "request-1",
+      });
+    });
+
+    it("still removes the authorization when its row cannot be marked failed", async () => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, root } = lostBegin({ cancelAuthorizationRequest }, "request-1");
+      jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+      root.updateMany.mockRejectedValue(new Error("database unavailable"));
+
+      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
+    });
+  });
+
+  it("leaves the job shared by an app's cleanups for the queue to run", async () => {
+    // Every cleanup of an app's accounts in one scope shares a job key. Deleting the job after
+    // this removal could take the record another begin made since the accounts were listed.
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    const { call, jobs, tx, errors } = lostBegin({ revokeUnreferencedAccounts }, "gmail");
+
+    await expect(call()).rejects.toBeInstanceOf(IsolationError);
+    expect(revokeUnreferencedAccounts).toHaveBeenCalledTimes(1);
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ payload: LEFTOVER_APP, availableAt: expect.any(Date) }),
+    );
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
   });
 
   it("answers with the connector auth code when the app has no usable sign-in", async () => {
@@ -3897,18 +4474,36 @@ describe("connections.complete", () => {
       $executeRaw: vi.fn(async () => undefined),
       $queryRaw: vi.fn(async () => [{ locked: true }]),
     };
+    const transaction = { open: false };
     const prisma = {
       ...client,
-      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+      // A transaction that rejects leaves the row as it found it.
+      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => {
+        const before = { ...row };
+        transaction.open = true;
+        try {
+          return await fn(client);
+        } catch (error) {
+          Object.assign(row, before);
+          throw error;
+        } finally {
+          transaction.open = false;
+        }
+      }),
     } as unknown as PrismaClient;
     const connector = {
       complete: vi.fn(),
       revoke: vi.fn(),
       connectionReady: vi.fn(async () => true),
     };
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
+    };
     const handler = new RPCHandler(
       createRouter({
         prisma,
+        jobs,
         connectors: { managed: () => connector },
         env: {
           defaultProvider: "fake",
@@ -3951,28 +4546,130 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, revoke, connector, connection, securityEvents, row, sink };
+    return {
+      complete,
+      revoke,
+      connector,
+      connection,
+      client,
+      jobs,
+      securityEvents,
+      row,
+      sink,
+      transaction,
+    };
   }
 
+  const ACCOUNT_CLEANUP = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    connectorId: "composio",
+    provider: "gmail",
+    ref: "account-1",
+  };
+
   it.each([
-    ["the caller cancelled", true, "warn"],
-    ["an uncertain remote failure", false, "error"],
-  ])("keeps the row revoked after %s and logs it at %s", async (_case, cancelled, level) => {
-    const { revoke, connector, row, sink } = pollFixture("connected");
+    ["the caller cancelled", true],
+    ["an uncertain remote failure", false],
+  ])(
+    "keeps the row revoked after %s, with a job to finish the removal",
+    async (_case, cancelled) => {
+      const { revoke, connector, row, sink, jobs, client } = pollFixture("connected");
+      row.providerRef = "account-1";
+      const request = new AbortController();
+      connector.revoke.mockImplementation(async () => {
+        if (cancelled) request.abort();
+        throw new Error("Request was cancelled by the caller: Request was aborted.");
+      });
+
+      await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+      expect(row.status).toBe("revoked");
+      // A job has the removal, so nobody has to act: not an error.
+      expect(
+        sink.events
+          .filter((event) => event.message.startsWith("connections.revoke"))
+          .map((event) => event.level),
+      ).toEqual(["warn"]);
+      // No row can remove the account any more, so the job that does commits with the revoked row.
+      expect(jobs.enqueueIn).toHaveBeenCalledWith(client, connectionCleanupJob(ACCOUNT_CLEANUP));
+      expect(jobs.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("removes the account inside the transaction that revokes the row", async () => {
+    // A process that dies around the provider call rolls the row back, so it stays the record.
+    const { revoke, connector, row, jobs, transaction } = pollFixture("connected");
     row.providerRef = "account-1";
-    const request = new AbortController();
     connector.revoke.mockImplementation(async () => {
-      if (cancelled) request.abort();
-      throw new Error("Request was cancelled by the caller: Request was aborted.");
+      expect(transaction.open).toBe(true);
+      expect(row.status).toBe("revoked");
     });
 
-    await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+    await expect(revoke()).resolves.toMatchObject({ status: 200 });
+    expect(connector.revoke).toHaveBeenCalledWith("account-1", expect.anything());
     expect(row.status).toBe("revoked");
-    expect(
-      sink.events
-        .filter((event) => event.message.startsWith("connections.revoke"))
-        .map((event) => event.level),
-    ).toEqual([level]);
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not start the provider call when waiting for the lock used up its time", async () => {
+    const { revoke, connector, connection, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // The transaction has run for 50 of its 60 seconds by the time the call would start.
+      connection.count.mockImplementation((async () => {
+        vi.setSystemTime(Date.now() + 50_000);
+        return 0;
+      }) as never);
+
+      expect((await revoke()).status).not.toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(row.status).toBe("connected");
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row as it was when the provider clearly removed nothing", async () => {
+    const { revoke, connector, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connector.revoke.mockRejectedValue(new Error("403 forbidden"));
+
+    await expect(revoke()).resolves.toMatchObject({ status: 400 });
+    // Still connected, so removing it again is how the authorization goes.
+    expect(row.status).toBe("connected");
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row when an uncertain removal's job cannot be recorded", async () => {
+    const { revoke, connector, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connector.revoke.mockRejectedValue(new Error("fetch failed"));
+    jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
+
+    expect((await revoke()).status).not.toBe(200);
+    expect(row.status).toBe("connected");
+  });
+
+  it("leaves the account at the provider while another active row has saved it", async () => {
+    const { revoke, connector, connection, row, jobs } = pollFixture("connected");
+    row.providerRef = "account-1";
+    connection.count.mockImplementation((async ({ where }: { where: { providerRef?: string } }) =>
+      where.providerRef === "account-1" ? 1 : 0) as never);
+
+    await expect(revoke()).resolves.toMatchObject({ status: 200 });
+    expect(connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        providerRef: "account-1",
+        status: { in: ["connected", "pending", "error"] },
+      }),
+    });
+    expect(row.status).toBe("revoked");
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
   });
 
   it("records nothing but keeps the account id when the catalog connected the row first", async () => {
@@ -4034,6 +4731,143 @@ describe("connections.complete", () => {
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
+  });
+
+  it("leaves the row for the next poll when the provider cannot be asked for the account", async () => {
+    const { complete, connector, row, sink } = pollFixture("pending");
+    const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => {
+      throw new Error("provider unavailable");
+    });
+    Object.assign(connector, { resolveConnectedAccountId });
+
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { status: "pending" } },
+    });
+    expect(row).toMatchObject({ status: "pending", providerRef: "gmail" });
+    // A warning: an outage repeats it on every poll, and the next poll asks again.
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([
+      expect.objectContaining({
+        message: "connections.complete could not resolve the connected account",
+        connectionId: "conn-1",
+      }),
+    ]);
+
+    resolveConnectedAccountId.mockResolvedValue("account-1");
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+  });
+
+  const REQUEST_CLEANUP = { ...ACCOUNT_CLEANUP, ref: "request-1" };
+  const { ref: _account, ...APP_CLEANUP } = ACCOUNT_CLEANUP;
+
+  it("records a job when a superseded row's authorization cannot be removed", async () => {
+    const { complete, connector, row, sink, jobs } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      resolveConnectedAccountId: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    // Still revoked, and reported so, which ends the polling: the job has the removal now.
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { status: "revoked" } },
+    });
+    expect(row.status).toBe("revoked");
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(REQUEST_CLEANUP));
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([
+      expect.objectContaining({
+        message: "connections.complete remote cleanup failed for revoked row",
+      }),
+    ]);
+  });
+
+  it("records a job when a superseded row's unreferenced accounts cannot be removed", async () => {
+    const { complete, connector, row, jobs } = pollFixture("revoked");
+    Object.assign(connector, {
+      revokeUnreferencedAccounts: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
+    expect(row.status).toBe("revoked");
+    expect(jobs.enqueue).toHaveBeenCalledWith(connectionCleanupJob(APP_CLEANUP));
+  });
+
+  it("names what to remove by hand when a superseded row's failed removal cannot be recorded", async () => {
+    const { complete, connector, row, sink, jobs } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    connector.revoke.mockRejectedValue(new Error("provider unavailable"));
+    jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+
+    // Reported as a failure, so the next poll tries the removal again.
+    expect((await complete()).status).not.toBe(200);
+    expect(row.status).toBe("revoked");
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([
+      expect.objectContaining({
+        message:
+          "connections.complete could not record its cleanup; remove the authorization at the provider by hand",
+        connectionId: "conn-1",
+        providerRef: "request-1",
+      }),
+    ]);
+  });
+
+  it("leaves a superseded row's account alone once an active row has saved it", async () => {
+    const { complete, connector, connection, row, jobs } = pollFixture("revoked");
+    row.providerRef = "account-1";
+    connection.count.mockResolvedValue(1 as never);
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
+    expect(connection.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        providerRef: "account-1",
+        status: { in: ["connected", "pending", "error"] },
+      }),
+    });
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("records a cleanup job when a superseded row's accounts cannot be told apart yet", async () => {
+    const { complete, connector, connection, jobs, client } = pollFixture("revoked");
+    const revokeUnreferencedAccounts = vi.fn(async () => undefined);
+    Object.assign(connector, { revokeUnreferencedAccounts });
+    // A sibling is still connecting and has only the app's name for a reference.
+    connection.findMany.mockResolvedValue([{ providerRef: "gmail" }] as never);
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
+    expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({
+        name: "connection.cleanup",
+        payload: {
+          spaceId: "workspace-1",
+          userId: "user-1",
+          connectorId: "composio",
+          provider: "gmail",
+        },
+        availableAt: expect.any(Date),
+      }),
+    );
+
+    // With every sibling's account known, the poll removes the rest itself and records nothing.
+    jobs.enqueueIn.mockClear();
+    connection.findMany.mockResolvedValue([{ providerRef: "account-1" }] as never);
+    await complete();
+    expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
+      "gmail",
+      ["account-1"],
+      expect.anything(),
+    );
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
   });
 
   it("reports a superseded connection as revoked instead of failing", async () => {
@@ -4303,7 +5137,7 @@ describe("computer screen url", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const response = await handle(
       handler,
       new Request("http://127.0.0.1/rpc/computer/screenUrl", {
@@ -4346,6 +5180,20 @@ describe("computer screen url", () => {
     });
   });
 
+  it("says a screen signs in once, and names the view beside what it shows", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "embedded-screen://desktop?code=once",
+      singleUseSignIn: { screen: "desktop-1" },
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: {
+        url: "embedded-screen://desktop?code=once&view_only=true",
+        singleUseSignIn: { screen: "desktop-1:view" },
+      },
+    });
+  });
+
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
     const { response, updateMany, endRun } = await callScreenUrl(() =>
       Promise.reject(
@@ -4363,6 +5211,31 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
+  it("returns the team screen limit", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(new ComputerScreenUnavailableError(4)),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure that only mentions the screen limit as a fault", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.not.toContain("private provider detail");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
@@ -4373,11 +5246,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new ComputerScreenUnavailableError(
-          "cannot allocate another screen: private provider detail",
-        ),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError()),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -4473,7 +5342,7 @@ describe("computer terminal and file transfer", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const call = async (procedure: string, json: Record<string, unknown>) => {
       const response = await handle(
         handler,
@@ -4815,10 +5684,10 @@ describe("computer terminal and file transfer", () => {
 
   it("answers 400 when a running computer's file is too large or not text to preview", async () => {
     const large = setup();
-    large.sandbox.readFile.mockRejectedValueOnce(new Error("computer file exceeds 2097152 bytes"));
+    large.sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(2 * 1024 * 1024));
     await expect(large.call("readFile", { path: "big.log" })).resolves.toMatchObject({
       status: 400,
-      body: { json: { message: "file is too large to preview" } },
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
     });
 
     const binary = setup();
@@ -4848,6 +5717,25 @@ describe("computer terminal and file transfer", () => {
     }
   });
 
+  it("answers 400 when a stopped computer's file is too large to preview", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(new SandboxFileTooLargeError(1024));
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
+    });
+  });
+
+  it("reports a stopped computer's read failure that only mentions a size as a fault", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(
+      new Error("agent home file exceeds 1024 bytes"),
+    );
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({ status: 500 });
+  });
+
   it("downloads bytes from a running computer", async () => {
     const { sandbox, call } = setup();
     await expect(call("downloadFile", { path: "notes.txt" })).resolves.toEqual({
@@ -4865,6 +5753,26 @@ describe("computer terminal and file transfer", () => {
       status: 409,
     });
   });
+
+  it("answers 400 when a running computer's file is over the download limit", async () => {
+    const { sandbox, call } = setup();
+    sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(10 * 1024 * 1024));
+    await expect(call("downloadFile", { path: "big.zip" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "File exceeds the 10 MiB download limit." } },
+    });
+  });
+
+  it.each(["readFile", "downloadFile"] as const)(
+    "reports a computer failure that only mentions a size as a fault from %s",
+    async (route) => {
+      for (const message of ["request entity too large", "command output exceeds the buffer"]) {
+        const { sandbox, call } = setup();
+        sandbox.readFile.mockRejectedValueOnce(new Error(message));
+        await expect(call(route, { path: "notes.txt" })).resolves.toMatchObject({ status: 500 });
+      }
+    },
+  );
 });
 
 describe("integration setup authorization", () => {
@@ -5052,10 +5960,89 @@ describe("OpenAI-compatible model probes", () => {
     const client = createRouterClient(createRouter(deps), {
       context: { actor: options.actor ?? actor } as never,
     });
-    return { client, fetch, credentials, findCredential, findCredentials, findSecret, load };
+    return { client, deps, fetch, credentials, findCredential, findCredentials, findSecret, load };
   }
 
   afterEach(() => vi.restoreAllMocks());
+
+  /** The answer a client receives, through the app's error translation. */
+  const probeOverHttp = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  it("tells the member what the server answered when it refuses the probe", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockResolvedValue(new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: {
+        code: "BAD_REQUEST",
+        message: "Model server returned 401. You can still Connect with an explicit model id.",
+      },
+    });
+  });
+
+  it("tells the member the server could not be reached", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new TypeError("fetch failed"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "fetch failed" },
+    });
+  });
+
+  it("reports a probe that fails for a reason of our own as a server fault", async () => {
+    const { deps, fetch } = fixture();
+    fetch.mockRejectedValue(new Error("egress proxy pool exhausted"));
+
+    const response = await probeOverHttp(deps, "models/probeOpenAiCompatible", { baseUrl });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("egress proxy");
+  });
+
+  it("tells the member a catalog provider rejected the key", async () => {
+    const { deps } = fixture();
+    deps.modelConnectionFetch = vi.fn(async () => new Response("no", { status: 401 }));
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      json: { code: "BAD_REQUEST", message: "API key was rejected by the provider." },
+    });
+  });
+
+  it("reports a catalog probe that fails for a reason of our own as a server fault", async () => {
+    const { deps } = fixture();
+    vi.spyOn(adapters, "probeCatalogProviderModels").mockRejectedValue(
+      new Error("catalog registry failed to load"),
+    );
+
+    const response = await probeOverHttp(deps, "models/probeCatalog", {
+      provider: "deepseek",
+      apiKey: "fake-typed-key",
+    });
+
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("catalog registry");
+  });
 
   it("does not inject the connection transport into non-Ollama probes", async () => {
     const { client } = fixture();
@@ -5116,6 +6103,26 @@ describe("OpenAI-compatible model probes", () => {
       "fake-session-secret",
     );
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
+  });
+
+  it("hides the saved key and headers in a failed probe's message", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiKey: "fake-saved-key",
+        headers: { "x-session": "fake-session-secret" },
+      }),
+    );
+    fetch.mockRejectedValue(
+      new TypeError(
+        'Headers.append: "Bearer fake-saved-key" after fake-session-secret is invalid.',
+      ),
+    );
+    await expect(client.models.probeOpenAiCompatible({ baseUrl })).rejects.toThrow(
+      'Headers.append: "Bearer •••" after ••• is invalid.',
+    );
   });
 
   it("sends a saved key with Anthropic headers for the Anthropic Messages protocol", async () => {
@@ -5372,7 +6379,7 @@ describe("model credential persistence", () => {
         deploymentModelConfigured: options?.deploymentModelConfigured ?? false,
       },
     } as unknown as RouterDeps;
-    return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
+    return { upsert, finish, deps, handler: appHandler(deps) };
   }
 
   /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
@@ -5528,6 +6535,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -5945,6 +6953,7 @@ describe("model credential persistence", () => {
           userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
           userModelPreference: deps.prisma.userModelPreference,
           secret: {
+            findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: "new-secret" }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
@@ -6178,6 +7187,289 @@ describe("model disconnect", () => {
     expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, id: { in: ["personal", "work"] } },
     });
+  });
+});
+
+describe("model settings", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  it.each(["settings", "connection"])(
+    "rejects a connection save when its source %s changes before commit",
+    async (change) => {
+      let secretId = "secret-original";
+      let ciphertext = "sealed-original";
+      const connection = () => ({ id: "connection-1", provider: "zai", secretId });
+      const readSecret = vi.fn(async () => ({ ciphertext }));
+      const create = vi.fn();
+      const tx = {
+        userModelCredential: { findFirst: vi.fn(async () => connection()) },
+        secret: { findFirst: readSecret, create },
+      };
+      const deps = {
+        prisma: {
+          userModelCredential: { findFirst: vi.fn(async () => connection()) },
+          secret: { findFirst: readSecret },
+          $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        },
+        secrets: {
+          load: vi.fn(async () =>
+            JSON.stringify({
+              kind: "api_key",
+              key: "fake-original-key",
+              models: { "model-fixture": { maxTokens: 2000 } },
+            }),
+          ),
+          put: vi.fn(async () => {
+            if (change === "settings") ciphertext = "sealed-new-settings";
+            else secretId = "secret-new-connection";
+            return { id: "secret-prepared", ciphertext: "sealed-stale-replacement" };
+          }),
+        },
+        env: { defaultModel: "model-fixture" },
+      } as unknown as RouterDeps;
+      const connector = createModelConnector(deps, { read: vi.fn() } as never);
+      await expect(
+        connector.connectModelCredential(
+          actor,
+          { provider: "zai", credentialId: "connection-1", modelId: "model-fixture" },
+          undefined,
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
+
+  function settingsDeps(stored: string, defaultModel = "served", provider = "zai") {
+    let plaintext = stored;
+    const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      secret: {
+        findFirst: vi.fn(async () => ({ ciphertext: "sealed" })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+    const deps = {
+      prisma: {
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        userModelCredential: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+            where.id === "connection-1"
+              ? {
+                  id: "connection-1",
+                  secretId: "secret-1",
+                  provider,
+                  userPreferences: [{ modelId: defaultModel }],
+                }
+              : null,
+          ),
+        },
+      },
+      secrets: {
+        load: vi.fn(async () => plaintext),
+        put: vi.fn(async (next: string) => {
+          plaintext = next;
+          return { id: "secret-1", ciphertext: "sealed-again" };
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = appHandler(deps);
+    const call = (body: unknown) =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/models/saveModelSettings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { deps, tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
+  }
+
+  it("reports a secret store outage as unavailable and keeps settings it could not read", async () => {
+    const { deps, call } = settingsDeps("sk-synthetic-key");
+    deps.secrets.load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "glm-5.3-flashx",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(503);
+    Object.assign(deps.prisma, {
+      secret: { findFirst: vi.fn(async () => ({ ciphertext: "sealed" })) },
+    });
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).rejects.toBeInstanceOf(SecretStoreUnavailableError);
+    deps.secrets.load = vi.fn(async () => "not json {");
+    await expect(
+      prepareModelReconnectSettings(deps, actor, { secretId: "secret-1" }),
+    ).resolves.toEqual({
+      settings: {},
+      expectedSecret: { id: "secret-1", ciphertext: "sealed" },
+    });
+  });
+
+  it("saves one model's settings on the connection without touching its key", async () => {
+    const { tx, call, stored } = settingsDeps("sk-synthetic-key");
+    const response = await call({
+      credentialId: "connection-1",
+      modelId: "glm-5.3-flashx",
+      settings: { images: true, maxTokens: 8000 },
+    });
+    expect(response.status).toBe(200);
+    expect(stored()).toEqual({
+      kind: "api_key",
+      key: "sk-synthetic-key",
+      models: { "glm-5.3-flashx": { images: true, maxTokens: 8000 } },
+    });
+    expect(tx.secret.update).toHaveBeenCalledWith({
+      where: { id: "secret-1" },
+      data: { ciphertext: "sealed-again" },
+    });
+  });
+
+  it("rejects output-only overrides that fill the model's default context", async () => {
+    const known = listPiCatalog().find((entry) => entry.provider === "zai" && entry.contextWindow)!;
+    for (const input of [
+      {
+        provider: "zai",
+        modelId: known.id,
+        window: known.contextWindow!,
+        secret: "sk-synthetic-key",
+      },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        window: 262144,
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { maxTokens: input.window },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a context-only override below the model's default output cap", async () => {
+    const known = listPiCatalog().find(
+      (entry) => entry.provider === "zai" && entry.contextWindow && entry.maxTokens,
+    )!;
+    for (const input of [
+      { provider: "zai", modelId: known.id, secret: "sk-synthetic-key" },
+      {
+        provider: "openai-compatible",
+        modelId: "served",
+        secret: JSON.stringify({
+          kind: "openai_compatible",
+          apiKey: "fake-key",
+          baseUrl: "https://example.com/v1",
+        }),
+      },
+    ]) {
+      const { call, deps } = settingsDeps(input.secret, input.modelId, input.provider);
+      const response = await call({
+        credentialId: "connection-1",
+        modelId: input.modelId,
+        settings: { contextWindow: 1 },
+      });
+      expect(response.status).toBe(400);
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("caps how many models on one connection keep their own settings", async () => {
+    const models = Object.fromEntries(
+      Array.from({ length: MAX_MODEL_SETTINGS_PER_CONNECTION }, (_, index) => [
+        `model-${index}`,
+        { images: true },
+      ]),
+    );
+    const { call } = settingsDeps(
+      JSON.stringify({ kind: "api_key", key: "sk-synthetic-key", models }),
+    );
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-new",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "model-0",
+          settings: { maxTokens: 10 },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "model-new", settings: {} })).status,
+    ).toBe(200);
+  });
+
+  it("refuses another member's connection, a model the server does not serve, and no room for input", async () => {
+    const compatible = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "https://models.example.test/v1",
+      enabledModelIds: ["served"],
+    });
+    const { call } = settingsDeps(compatible);
+    expect(
+      (await call({ credentialId: "connection-2", modelId: "served", settings: {} })).status,
+    ).toBe(404);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "unlisted",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(400);
+    // Clearing a model that left the connection still works.
+    expect(
+      (await call({ credentialId: "connection-1", modelId: "unlisted", settings: {} })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "served",
+          settings: { contextWindow: 1000, maxTokens: 1000 },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 
@@ -6501,8 +7793,8 @@ describe("codex live catalog", () => {
         : {
             userModelCredential: {
               findMany: vi.fn().mockResolvedValue([
-                { provider: "openai-codex", secretId: "secret-api" },
-                { provider: "openai-codex", secretId: "secret-oauth" },
+                { id: "credential-api", provider: "openai-codex", secretId: "secret-api" },
+                { id: "credential-oauth", provider: "openai-codex", secretId: "secret-oauth" },
               ]),
             },
             userModelPreference: {
@@ -6516,6 +7808,10 @@ describe("codex live catalog", () => {
               findMany: vi
                 .fn()
                 .mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+              findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+                id: where.id,
+                ciphertext: where.id === "secret-oauth" ? "cipher-oauth" : "cipher-api",
+              })),
             },
           };
     const deps = {
@@ -6639,6 +7935,10 @@ describe("codex live catalog", () => {
           { id: "secret-a", ciphertext: "cipher-a" },
           { id: "secret-b", ciphertext: "cipher-b" },
         ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id === "secret-a" ? "cipher-a" : "cipher-b",
+        })),
       },
     };
     const secrets = {
@@ -6914,7 +8214,7 @@ describe("codex live catalog", () => {
         codexCatalog: { read },
         refreshExpiredModelCredential,
       } as unknown as RouterDeps;
-      const handler = new RPCHandler(createRouter(deps));
+      const handler = appHandler(deps);
 
       const response = await call(handler, "models/setDefault", {
         provider: "openai-codex",
@@ -7463,7 +8763,7 @@ describe("bot model auth on save", () => {
       preferenceFindFirst,
       secretFindFirst,
       botUpdate,
-      handler: new RPCHandler(createRouter(deps)),
+      handler: appHandler(deps),
     };
   }
 
@@ -7621,6 +8921,10 @@ describe("bot restore computer quota", () => {
     };
     const handler = new RPCHandler(
       createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+      {
+        // As the app does, so a domain error answers with its own status.
+        clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+      },
     );
     const call = async () =>
       handle(
@@ -7696,6 +9000,10 @@ describe("group restore with archived bots", () => {
     };
     const handler = new RPCHandler(
       createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+      {
+        // As the app does, so a domain error answers with its own status.
+        clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+      },
     );
     const call = async () =>
       handle(
@@ -8000,14 +9308,12 @@ describe("routines.update", () => {
         ),
       },
     };
-    const handler = new RPCHandler(
-      createRouter({
-        prisma,
-        env: { sandboxProvider: "fake" },
-        events: { append: vi.fn(async () => undefined) },
-        jobs: { enqueue, cancel },
-      } as unknown as RouterDeps),
-    );
+    const handler = appHandler({
+      prisma,
+      env: { sandboxProvider: "fake" },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue, cancel },
+    } as unknown as RouterDeps);
     const call = (patch: Record<string, unknown> = {}) =>
       handle(
         handler,
@@ -9870,8 +11176,9 @@ describe("boards.rename", () => {
         updateManyAndReturn,
       },
       ticket: { count },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10012,8 +11319,9 @@ describe("boards.tickets.list", () => {
         })),
       },
       ticket: { findMany },
+      user: { findUnique: vi.fn(async () => ({ labs: ["board"] })) },
     } as unknown as PrismaClient;
-    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    const deps = { prisma, env: {} } as unknown as RouterDeps;
     return { findMany, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -10337,17 +11645,37 @@ describe("routine watch creation boundaries", () => {
       crons: [],
       watch: null,
     }));
-    const client = createRouterClient(
-      createRouter({
-        prisma: {
-          bot: { findFirst: findBot },
-          routine: { findFirst: findRoutine, create, update },
-        },
-        env: { sandboxProvider: "fake" },
-      } as unknown as RouterDeps),
-      { context: { actor } as never },
-    );
-    return { client, create, update, findBot, findRoutine };
+    const deps = {
+      prisma: {
+        bot: { findFirst: findBot },
+        routine: { findFirst: findRoutine, create, update },
+      },
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    const handler = appHandler(deps);
+    /** What the app answers, for the create and then the update of a routine with this watch. */
+    const answers = async (watch: Record<string, unknown>) => {
+      const calls = [
+        ["create", { botId: "bot-1", name: "Check", prompt: "Check changes", watch }],
+        ["update", { routineId: "routine-1", watch }],
+      ] as const;
+      const responses = [];
+      for (const [procedure, json] of calls) {
+        const response = await handle(
+          handler,
+          new Request(`http://127.0.0.1/rpc/routines/${procedure}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        );
+        responses.push({ status: response.status, body: await response.text() });
+      }
+      return responses;
+    };
+    return { client, create, update, findBot, findRoutine, answers };
   }
 
   it("rejects team file escapes on create and update before writing", async () => {
@@ -10363,6 +11691,32 @@ describe("routine watch creation boundaries", () => {
       code: "BAD_REQUEST",
       message: expect.stringContaining("inside the bot's folder"),
     });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("answers a watched path outside the bot's folder as the caller's to fix", async () => {
+    const { answers, create, update } = fixture();
+    const watch = { kind: "files", paths: ["/etc"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(400);
+      expect(JSON.parse(body).json).toMatchObject({
+        code: "BAD_REQUEST",
+        message: "The watched path must stay inside the bot's folder.",
+      });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure to check the watch as a server fault, without its message", async () => {
+    const { answers, create, update, findBot } = fixture();
+    findBot.mockResolvedValue({ id: "bot-1", computer: { scope: "mainframe" } });
+    const watch = { kind: "files", paths: ["notes"], everyMinutes: 5, loud: false };
+    for (const { status, body } of await answers(watch)) {
+      expect(status).toBe(500);
+      expect(body).not.toContain("mainframe");
+    }
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
@@ -10623,4 +11977,164 @@ describe("quarantined computer stop", () => {
       }
     },
   );
+});
+
+describe("connection tool listing", () => {
+  it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
+    const findFirst = vi.fn(async () => ({
+      id: "connection-1",
+      displayName: "Example",
+      providerRef: "account-1",
+    }));
+    const tools = [{ name: "example_action", description: "An action" }];
+    const listAppTools = vi.fn(async () => tools);
+    const discoverTools = vi.fn(async () => tools);
+    const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst } },
+        connectors: { managed: () => connector },
+      } as unknown as RouterDeps),
+      {
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      tools,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "example",
+        provider: "example",
+        status: "connected",
+      },
+    });
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
+      expect(discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectedConnections: [
+            {
+              id: "connection-1",
+              connectorId: "example",
+              externalId: "example",
+              displayName: "Example",
+              providerRef: "account-1",
+            },
+          ],
+          connectedProviders: ["example"],
+        }),
+      );
+    }
+  });
+});
+
+describe("adapter refusals answered by type", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const call = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  describe("saving a memory document", () => {
+    const save = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            memoryDocument: {
+              findFirst: vi.fn().mockResolvedValue({ id: "doc-1", scope: "user", path: "a.md" }),
+            },
+          },
+          memory: { commit: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "memory/update",
+        { documentId: "doc-1", content: "new", expectedRevision: 1 },
+      );
+
+    it("answers a lost revision race as a conflict", async () => {
+      const response = await save(new MemoryRevisionConflictError());
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        json: { code: "CONFLICT", message: MEMORY_REVISION_CONFLICT_ERROR },
+      });
+    });
+
+    it("reports another failure as a fault, even one quoting the conflict", async () => {
+      const response = await save(new Error(MEMORY_REVISION_CONFLICT_ERROR));
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(MEMORY_REVISION_CONFLICT_ERROR);
+    });
+  });
+
+  describe("finishing a chat workspace install", () => {
+    const complete = (failure: Error) =>
+      call(
+        {
+          prisma: {},
+          messagingInstallations: { complete: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "messaging/installations/complete",
+        { state: "s".repeat(43), code: "code" },
+      );
+
+    it("answers a refused install as a bad request", async () => {
+      const response = await complete(new MessagingInstallRefusedError("Authorization expired"));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "Bad Request" },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await complete(new Error("Authorization expired: database unreachable"));
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe("linking a chat identity to a bot", () => {
+    const link = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            messagingIdentity: {
+              findFirst: vi.fn().mockResolvedValue({ id: "identity-1", userId: "user-1" }),
+              update: vi.fn().mockRejectedValue(failure),
+            },
+            bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1" }) },
+          },
+        } as unknown as RouterDeps,
+        "messaging/identities/setBot",
+        { identityId: "identity-1", botId: "bot-1" },
+      );
+
+    it("answers a bot already linked elsewhere as a bad request", async () => {
+      const response = await link(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "That bot is already linked to a chat app." },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await link(new Error("connection reset"));
+      expect(response.status).toBe(500);
+    });
+  });
 });

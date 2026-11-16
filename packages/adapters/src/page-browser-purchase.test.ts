@@ -144,6 +144,37 @@ describe("purchase detection in the page helper", () => {
     expect(intent("Notify me", true)?.reason).toBe("payment_page");
   });
 
+  it("does not treat payment-method tabs and radios as purchases, but still guards a submit", () => {
+    const { intent, helper } = page(`<form>
+      <input autocomplete="cc-number" aria-label="Card number">
+      <button type="button" role="tab">Pay using Gift Card</button>
+      <button type="button" role="radio" aria-checked="false">Pay with card</button>
+      <button role="tab">Place order</button>
+      </form><p>Total: $0.00</p>`);
+    expect(intent("Pay using Gift Card")).toBeNull();
+    expect(intent("Pay with card", true)).toBeNull();
+    expect(intent("Place order")).toMatchObject({ reason: "card_form", amount: "$0.00" });
+    expect(helper.paymentPage().purchase?.label).toBe("Place order");
+  });
+
+  it("does not mistake method choices for a payment page or exempt a form submit", () => {
+    const choices = page(`<button type="button" role="tab">Pay using Gift Card</button>
+      <button type="button" role="radio">Pay with card</button>`);
+    expect(choices.helper.paymentPage().purchase).toBeNull();
+    const submit = page(`<form id="checkout"></form>
+      <button form="checkout" role="radio">Pay using Gift Card</button>`);
+    expect(submit.intent("Pay using Gift Card")?.reason).toBe("final_step");
+  });
+
+  it("keeps explicit final-payment labels guarded on script-driven tabs and radios", () => {
+    const { intent, helper } = page(`<button type="button" role="tab"
+      onclick="this.dataset.submitted = 'true'">Place order</button>
+      <button type="button" role="radio">Confirm and pay</button>`);
+    expect(intent("Place order")?.reason).toBe("final_step");
+    expect(intent("Confirm and pay")?.reason).toBe("final_step");
+    expect(helper.paymentPage().purchase?.label).toBe("Place order");
+  });
+
   it("flags a final-step label even when nothing on the page is a card", () => {
     const { intent } =
       page(`<button>Pay $50.00</button><a href="/order" role="button">Place order</a>
@@ -338,6 +369,35 @@ describe("purchase detection in the page helper", () => {
     expect(grouped.intent("Pay now")?.amount).toBe("1 234,56 €");
     const none = page(`<button>Pay now</button>`);
     expect(none.intent("Pay now")?.amount).toBe("");
+  });
+
+  it.each([
+    "$100, fee .99 USD",
+    `$${"0".repeat(40)}1, total $100`,
+    "\n.99 USD $100",
+    `.99 USD ${"x".repeat(220)} $100`,
+    ".".repeat(10000),
+  ])("refuses an ambiguous total: %s", (total) => {
+    const checkout = page(`<p>Total: ${total}</p><button>Pay now</button>`);
+    expect(checkout.intent("Pay now")?.amount).toBe("?");
+  });
+
+  it.each(["Pay $.99 now; $100 due on click", "Pay $100"])(
+    "refuses conflicting prices in button descriptions: %s",
+    (title) => {
+      const checkout = page(`<button title="${title}">Pay $.99</button>`);
+      expect(checkout.intent(title)?.amount).toBe("?");
+    },
+  );
+
+  it("keeps the separator of an amount with no whole part", () => {
+    expect(page(`<button>Pay $.99</button>`).intent("Pay $.99")?.amount).toBe("$.99");
+    const after = page(`<p>Total: .99 USD</p><button>Pay now</button>`);
+    expect(after.intent("Pay now")?.amount).toBe(".99 USD");
+    const comma = page(`<p>Total: ,50 €</p><button>Pay now</button>`);
+    expect(comma.intent("Pay now")?.amount).toBe(",50 €");
+    const before = page(`<p>Total: €,50</p><button>Pay now</button>`);
+    expect(before.intent("Pay now")?.amount).toBe("€,50");
   });
 
   it("flags a script-driven control worded as a final step on a page with no card", () => {
