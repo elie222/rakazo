@@ -218,25 +218,32 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     expect(capped.json).toEqual({ url: third.json.url, emailed: false });
     expect(sent.length).toBe(sentBefore + 2);
-    // Cancelling does not reset the count.
+    // Each email is on record, and only a hash names the address.
+    const records = await system.securityEvent.findMany({
+      where: { type: "organization.invitation.sent", userId: owner.id },
+      select: { metadata: true },
+    });
+    expect(records).toHaveLength(3);
+    expect(JSON.stringify(records)).not.toContain(invitee.email);
+    const latest = new URL(third.json.url as string).pathname.split("/").at(-1)!;
+    // Cancelling does not reset the count either.
+    const other = `other-${invitee.email}`;
+    for (let count = 0; count < 3; count += 1) await invite(owner, organizationId, other);
+    const pendingOther = await system.invitation.findFirstOrThrow({
+      where: { organizationId, email: other, status: "pending" },
+    });
     await call(owner.actor, "organizations/invitations/cancel", {
       organizationId,
-      invitationId: new URL(third.json.url as string).pathname.split("/").at(-1)!,
+      invitationId: pendingOther.id,
     });
     expect(
       (
         await call(owner.actor, "organizations/invitations/create", {
           organizationId,
-          email: invitee.email,
+          email: other,
         })
       ).status,
     ).toBe(429);
-    // A fresh invitation for the rest of the test, as if a day had passed.
-    await system.invitation.updateMany({
-      where: { organizationId, email: invitee.email },
-      data: { createdAt: new Date(Date.now() - 2 * 24 * 3600_000) },
-    });
-    const latest = await invite(owner, organizationId, invitee.email);
 
     // Someone else holding the link learns nothing and cannot join.
     for (const path of ["preview", "accept"]) {

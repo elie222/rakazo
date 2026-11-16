@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { OrganizationRole } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
@@ -11,11 +11,14 @@ import { withTransactionRetry } from "./transaction-retry.js";
 export const ORGANIZATION_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Pending invitations per organization, so a mistaken or abusive batch of email stays small. */
 export const MAX_PENDING_INVITATIONS = 50;
-/** Invitation emails to one address from one organization per day, resends included. */
-export const MAX_INVITATIONS_PER_RECIPIENT_PER_DAY = 3;
+/** Invitation emails one address receives per day, from every organization together. */
+export const MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY = 3;
 /** Invitation emails one person sends per day across every organization they manage. */
-export const MAX_INVITATIONS_PER_INVITER_PER_DAY = 100;
+export const MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Each invitation email, kept in the security log: no foreign keys, so deleting an
+ * organization, an invitation or an account never resets the counts. */
+const INVITATION_SENT = "organization.invitation.sent";
 /** The Space each person gets when they join, theirs alone until they share it. */
 const OWN_SPACE_NAME = "Personal";
 
@@ -199,28 +202,46 @@ export async function listOrganizationMembers(
   return { members, invitations, canManage };
 }
 
+/** Names an address in the security log without storing it. */
+function recipientKey(email: string): string {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+async function lockKey(tx: Prisma.TransactionClient, key: string) {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text AS "lock"
+  `);
+}
+
 /**
  * Owner and admins. Inviting the same address again replaces its pending invitation with a new
- * one, which is how a lost email is resent. Every email is its own row, so the daily limits count
- * resends too and cancelling cannot reset them. Past an address's limit the pending invitation is
- * returned unsent, for its link to be shared by hand.
+ * one, which is how a lost email is resent. With `sendsEmail`, each email is recorded as it is
+ * allowed, in the same transaction, and the daily limits count those records: resending,
+ * cancelling or deleting the organization never resets them. Past an address's limit its pending
+ * invitation is returned unsent, for its link to be shared by hand.
  */
 export async function createOrganizationInvitation(
   prisma: PrismaClient,
-  input: { organizationId: string; userId: string; email: string },
+  input: { organizationId: string; userId: string; email: string; sendsEmail: boolean },
 ): Promise<{
   id: string;
   email: string;
   organizationName: string;
   inviterName: string;
-  /** False when the address already got as many invitations today as it may. */
+  /** False past the address's limit, when the pending invitation comes back unchanged. */
+  created: boolean;
+  /** Whether to email it now; false past the address's limit or without email delivery. */
   send: boolean;
 }> {
   const email = normalizeEmail(input.email);
+  const recipient = recipientKey(email);
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await lockOrganizationMembers(tx, input.organizationId);
       await requireManager(tx, input.organizationId, input.userId);
+      // So two invitations at once cannot both take the last email allowed.
+      await lockKey(tx, `invitation-sender:${input.userId}`);
+      await lockKey(tx, `invitation-recipient:${recipient}`);
       const existing = await tx.member.findFirst({
         where: {
           organizationId: input.organizationId,
@@ -247,23 +268,30 @@ export async function createOrganizationInvitation(
           },
           select: { id: true },
         }),
-        tx.invitation.count({
-          where: { organizationId: input.organizationId, email, createdAt: today },
+        tx.securityEvent.count({
+          where: {
+            type: INVITATION_SENT,
+            createdAt: today,
+            metadata: { path: ["recipient"], equals: recipient },
+          },
         }),
-        tx.invitation.count({ where: { inviterId: input.userId, createdAt: today } }),
+        tx.securityEvent.count({
+          where: { type: INVITATION_SENT, userId: input.userId, createdAt: today },
+        }),
         tx.invitation.count({
           where: { organizationId: input.organizationId, status: PENDING, expiresAt: { gt: now } },
         }),
       ]);
       const names = { organizationName: organization.name, inviterName: inviter.name };
-      if (toRecipient >= MAX_INVITATIONS_PER_RECIPIENT_PER_DAY) {
-        if (pending) return { id: pending.id, email, ...names, send: false };
+      const send = input.sendsEmail;
+      if (send && toRecipient >= MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY) {
+        if (pending) return { id: pending.id, email, ...names, created: false, send: false };
         throw new OrganizationInvitationRateError();
       }
-      if (byInviter >= MAX_INVITATIONS_PER_INVITER_PER_DAY)
+      if (send && byInviter >= MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY)
         throw new OrganizationInvitationRateError();
       if (!pending && open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();
-      // Its link stops working: the new email carries the new one.
+      // Its link stops working: the new invitation carries the new one.
       await tx.invitation.updateMany({
         where: { organizationId: input.organizationId, email, status: PENDING },
         data: { status: "canceled" },
@@ -281,7 +309,15 @@ export async function createOrganizationInvitation(
           inviterId: input.userId,
         },
       });
-      return { id, email, ...names, send: true };
+      if (send)
+        await tx.securityEvent.create({
+          data: {
+            type: INVITATION_SENT,
+            userId: input.userId,
+            metadata: { organizationId: input.organizationId, recipient },
+          },
+        });
+      return { id, email, ...names, created: true, send };
     }),
   );
 }

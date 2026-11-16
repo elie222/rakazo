@@ -162,9 +162,10 @@ export function organizationsRoutes(ctx: RouterContext) {
               organizationId: input.organizationId,
               userId: context.actor.userId,
               email: input.email,
+              sendsEmail: Boolean(deps.email),
             });
             // Past an address's daily limit the pending invitation comes back unchanged.
-            if (invitation.send)
+            if (invitation.created)
               await recordAuditEvent({
                 action: "organization.invitation.created",
                 actor: { type: "user", id: context.actor.userId },
