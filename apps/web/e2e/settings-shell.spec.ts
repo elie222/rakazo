@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 test("changing language updates settings overflow without resizing", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -163,7 +169,7 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   const memory = settings.getByTestId("memory-settings");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await expect(memory.getByLabel("Provider")).toBeVisible();
-  await memory.getByLabel("Provider").selectOption("serenity");
+  await chooseOption(memory.getByLabel("Provider"), "Serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
   await expect(memory.getByLabel("Bearer token")).toBeVisible();
   await expect(memory.getByRole("button", { name: "Recall only" })).not.toBeVisible();
@@ -177,7 +183,7 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
   const voice = settings.getByTestId("voice-settings");
-  await voice.getByLabel("Provider", { exact: true }).selectOption("xai");
+  await chooseOption(voice.getByLabel("Provider", { exact: true }), "xAI");
   await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
@@ -200,7 +206,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByLabel("Provider")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "memory-default");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
-  await memory.getByLabel("Provider").selectOption("honcho");
+  await chooseOption(memory.getByLabel("Provider"), "Honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("Workspace", { exact: true })).not.toBeVisible();
   await captureScreenshot(page, testInfo, "memory-honcho-simple");
@@ -250,7 +256,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
     memory.locator(".rk-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
-  await memory.getByLabel("Provider").selectOption("supermemory");
+  await chooseOption(memory.getByLabel("Provider"), "Supermemory");
   await scrollToTop();
   await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
@@ -260,7 +266,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-local");
 
-  await memory.getByLabel("Provider").selectOption("hindsight");
+  await chooseOption(memory.getByLabel("Provider"), "Hindsight");
   await scrollToTop();
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("Recall from banks", { exact: true })).not.toBeVisible();
@@ -310,7 +316,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await memory.getByLabel("Provider").selectOption("honcho");
+  await chooseOption(memory.getByLabel("Provider"), "Honcho");
   await scrollToTop();
   await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(

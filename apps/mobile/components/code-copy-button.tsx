@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
@@ -11,16 +12,14 @@ const COPIED_MS = 2000;
 export function CodeCopyButton({ code }: { code: string }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(resetTimer.current), []);
+  // A new object keeps the check for another COPIED_MS.
+  const [copied, setCopied] = useState<object | null>(null);
+  useTimeout(() => setCopied(null), copied ? COPIED_MS : null, copied);
 
   const copy = () => {
     void Clipboard.setStringAsync(code)
       .then(() => {
-        setCopied(true);
-        clearTimeout(resetTimer.current);
-        resetTimer.current = setTimeout(() => setCopied(false), COPIED_MS);
+        setCopied({});
       })
       .catch(() => undefined);
   };
