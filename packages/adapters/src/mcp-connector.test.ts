@@ -2308,6 +2308,15 @@ describe("MCP connector session cache", () => {
       expect(tools.map((tool) => tool.name)).toContain("mcp__demo__echo");
       expect(state.initializations).toBe(2);
       expect(state.headers.at(-1)?.authorization).toBe("Bearer new-token");
+      // A follow-up operation sharing the assignment must retain the recovered session.
+      const again = await connector.discoverTools({
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never);
+      expect(again.map((tool) => tool.name)).toContain("mcp__demo__echo");
+      expect(state.initializations).toBe(2);
     } finally {
       await connector.close();
     }

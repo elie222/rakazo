@@ -927,7 +927,9 @@ export class McpConnector implements ConnectorProvider {
           select: { secretId: true },
         });
         if (!current) throw error;
-        server = { ...server, secretId: current.secretId };
+        // Keep the caller's snapshot current too: execute reads the app resource
+        // with this same object after the tool call has recovered its session.
+        server.secretId = current.secretId;
         continue;
       }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
