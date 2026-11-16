@@ -9,6 +9,7 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODE_ALREADY_TYPED,
+  canonicalSecretValue,
   cardRedactionForms,
   credentialArgument,
   encodeRunCode,
@@ -37,6 +38,7 @@ import {
   responsePaging,
   sameSecretDestination,
   storeBotSecret,
+  VaultItemRefusedError,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { recordVaultUse } from "./run-context.js";
@@ -1097,6 +1099,27 @@ describe("credentialArgument", () => {
       expect(collapsed).toEqual(destination);
       expect(JSON.stringify(collapsed)).not.toContain(plantedSecret);
     }
+  });
+});
+
+describe("vault refusals", () => {
+  const login = { name: "site", origin: "https://example.test", auth: { type: "login" } } as const;
+
+  it("names what is wrong with what was given as a refusal, without quoting it", () => {
+    for (const [destination, value] of [
+      [login, "{not json fake-value"],
+      [{ ...login, auth: { type: "card" } }, "fake-value"],
+    ] as const) {
+      let caught: unknown;
+      try {
+        canonicalSecretValue(destination as BotSecretDestination, value);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(VaultItemRefusedError);
+      expect((caught as Error).message).not.toContain("fake-value");
+    }
+    expect(() => normalizeSecretDestination({ name: "x" })).toThrow(VaultItemRefusedError);
   });
 });
 
