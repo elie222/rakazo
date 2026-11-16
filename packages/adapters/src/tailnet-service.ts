@@ -7,6 +7,7 @@ import type { AdapterContext, PrivateNetworkProvider, SecretStore } from "@rakaz
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
 import { tailnetNodeAttributes, tailnetNodeHostname } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -20,6 +21,8 @@ import { TailscaledNodeHost } from "./tailscaled-node-host.js";
 /** A node with no open connection for this long leaves the tailnet; the next dial rejoins. */
 const DEFAULT_IDLE_MS = 10 * 60_000;
 const SWEEP_MS = 60_000;
+/** Longer than a node host's own start timeout, so the host reports a slow join itself. */
+const JOIN_TIMEOUT_MS = 90_000;
 
 export const TAILNET_UNAVAILABLE_MESSAGE = "This server can't put bots on a tailnet.";
 export const TAILNET_NOT_CONNECTED_MESSAGE =
@@ -37,6 +40,8 @@ type Node = {
   lastUsed: number;
   /** Connections still open through it; a node carrying any is not idle. */
   open: number;
+  /** Aborted when it leaves, which also stops a join still in progress, such as minting its key. */
+  stopped: AbortController;
 };
 
 /**
@@ -95,37 +100,51 @@ export class TailnetService {
     const config = await this.access(run);
     if (!config) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
     const nodeId = tailnetNodeId(run);
-    // A node still leaving must be gone before this one joins, or the dial would reuse it.
-    for (let leaving = this.leaving.get(nodeId); leaving; leaving = this.leaving.get(nodeId)) {
-      await leaving;
-    }
-    let node = this.nodes.get(nodeId);
-    if (node && node.clientKey !== clientKey(config)) {
-      await this.leave(node);
-      node = undefined;
+    const key = clientKey(config);
+    let node: Node | undefined;
+    // Re-read after every wait: another dial may have replaced or joined the node meanwhile.
+    for (;;) {
+      // A node still leaving must be gone before this one joins, or the dial would reuse it.
+      const leaving = this.leaving.get(nodeId);
+      if (leaving) {
+        await leaving;
+        continue;
+      }
+      node = this.nodes.get(nodeId);
+      if (node && node.clientKey !== key) {
+        await this.leave(node);
+        continue;
+      }
+      break;
     }
     if (!node) {
       node = {
         nodeId,
         scope: { userId: run.userId, spaceId: run.spaceId },
         botId: run.botId,
-        clientKey: clientKey(config),
+        clientKey: key,
         network: new TailscaleNetwork(this.api(config), nodeHost),
         lastUsed: this.now(),
         open: 0,
+        stopped: new AbortController(),
       };
       this.nodes.set(nodeId, node);
     }
     node.lastUsed = this.now();
     try {
+      // The join is shared by every dial for this bot, so no one caller's cancel stops it; only
+      // the node leaving does.
       await node.network.join(
         {
           nodeId,
           hostname: tailnetNodeHostname({ name: run.botName, id: run.botId }),
           attributes: tailnetNodeAttributes(run),
         },
-        context,
+        { ...context, signal: deadlineSignal(JOIN_TIMEOUT_MS, node.stopped.signal) },
       );
+      if (node.stopped.signal.aborted) {
+        throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
+      }
       const socket = await node.network.dial(nodeId, destination, context);
       const used = node;
       used.open += 1;
@@ -222,6 +241,7 @@ export class TailnetService {
 
   private async leave(node: Node): Promise<void> {
     if (this.nodes.get(node.nodeId) === node) this.nodes.delete(node.nodeId);
+    node.stopped.abort(new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE));
     const stopping = this.stop(node);
     this.leaving.set(node.nodeId, stopping);
     try {

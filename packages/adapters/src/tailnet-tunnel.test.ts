@@ -407,6 +407,28 @@ describe("tailnet tunnels from a computer's browsers", () => {
     await once(socket, "close");
   });
 
+  it("keeps a run's shell tunnels when its screen's browser tunnels close", async () => {
+    let holder: TailnetPrincipal | undefined = { kind: "run", run: { ...RUN, runId: "run1" } };
+    let runChecks = 0;
+    const { open, connect } = await browser(async () => holder, {
+      activeRun: async (claims) => {
+        runChecks += 1;
+        return claims.runId === "run1" ? RUN : undefined;
+      },
+    });
+    const browsing = open();
+    await once(browsing, "open");
+    const shell = connect();
+    await once(shell, "open");
+    // A member takes the screen: the browser's tunnel closes, the run's command keeps its own.
+    holder = { kind: "member", member: MEMBER };
+    await once(browsing, "close");
+    const checked = runChecks;
+    await vi.waitFor(() => expect(runChecks).toBeGreaterThan(checked + 2));
+    expect(shell.readyState).toBe(shell.OPEN);
+    shell.close();
+  });
+
   it("refuses a screen nobody is using, a forged pass and a missing bot", async () => {
     const { open, dial } = await browser(async () => undefined);
     const idle = await refusal(open());

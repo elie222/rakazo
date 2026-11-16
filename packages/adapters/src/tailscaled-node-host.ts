@@ -58,9 +58,10 @@ export class TailscaledNodeHost implements TailnetNodeHost {
     node: { nodeId: string; hostname: string; authKey: string },
     signal: AbortSignal,
   ): Promise<void> {
-    if (this.nodes.has(node.nodeId)) return;
+    // A node is listed from its spawn, before it has joined: a start in progress comes first.
     const pending = this.starting.get(node.nodeId);
     if (pending) return await pending.done;
+    if (this.nodes.has(node.nodeId)) return;
     const cancel = new AbortController();
     const done = this.launch(node, anySignal([signal, cancel.signal]));
     const entry = { cancel, done };

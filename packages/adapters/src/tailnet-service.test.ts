@@ -51,11 +51,16 @@ async function setup(options: { nodeHost?: false } = {}) {
     socket.once("data", (chunk) => socket.write(`${from.hostname}:${chunk}`));
   });
   const db = tailnetDatabase([{ id: "helper", spaceId: "home" }]);
+  // Set to hold the next auth key request open, as a slow tailnet API would.
+  const keys: { held?: Promise<void> } = {};
   const service = new TailnetService({
     prisma: db.prisma,
     secretStore,
     nodeHost: options.nodeHost === false ? undefined : nodes,
-    fetch: emulator.fetch,
+    fetch: async (input, init) => {
+      if (keys.held && input.endsWith("/keys") && init.method === "POST") await keys.held;
+      return emulator.fetch(input, init);
+    },
     now: () => now,
     idleMs: 60_000,
     sweepMs: 0,
@@ -68,7 +73,7 @@ async function setup(options: { nodeHost?: false } = {}) {
     verify: (config) => service.verify(config, AbortSignal.timeout(5_000)),
   });
   await setTailnetBotAccess({ prisma: db.prisma, scope: ALICE, botId: "helper", enabled: true });
-  return { db, emulator, nodes, service, advance: (ms: number) => (now += ms) };
+  return { db, emulator, nodes, service, keys, advance: (ms: number) => (now += ms) };
 }
 
 const RUN = { ...ALICE, botId: "helper", botName: "Home Lab Helper" };
@@ -228,6 +233,20 @@ describe("TailnetService", () => {
     await leaving;
     await closed(await dialing);
     expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("never joins a bot taken off while its key was still being made", async () => {
+    const { emulator, nodes, service, keys } = await setup();
+    const minting = deferred();
+    keys.held = minting.promise;
+    const start = vi.spyOn(nodes, "start");
+    const dialing = service.dial(RUN, NAS, context()).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(emulator.requests.at(-1)?.path).toBe("/api/v2/oauth/token"));
+    await service.disconnect(ALICE, "helper");
+    minting.resolve();
+    expect(await dialing).toBeInstanceOf(Error);
+    expect(start).not.toHaveBeenCalled();
+    expect(emulator.devices.size).toBe(0);
   });
 
   it("forgets an OAuth client once no node uses it", async () => {

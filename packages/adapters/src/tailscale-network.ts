@@ -274,6 +274,8 @@ export class TailscaleNetwork implements PrivateNetworkProvider {
       signal,
     );
     try {
+      // Stopped while the key was being made: the key is revoked below, and nothing joins.
+      signal.throwIfAborted();
       await this.nodes.start(
         { nodeId: node.nodeId, hostname: node.hostname, authKey: key.key },
         signal,

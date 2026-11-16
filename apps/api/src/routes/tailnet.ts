@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import type { TailnetCommandAccess, TailnetRoute, TailnetService } from "@rakazo/adapters";
 import {
   botTailnetRoute,
@@ -38,9 +37,7 @@ export function tailnetRoutes(ctx: RouterContext) {
       status: authed.tailnet.status.handler(({ context }) => status(context.actor)),
       connect: authed.tailnet.connect.handler(async ({ context, input, signal }) => {
         if (!tailnet || (await unavailable(tailnet))) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "This server can't put bots on a tailnet.",
-          });
+          throw new ClientError("BAD_REQUEST", "This server can't put bots on a tailnet.");
         }
         await saveTailnetConnection({
           prisma: deps.prisma,
@@ -65,8 +62,7 @@ export function tailnetRoutes(ctx: RouterContext) {
           botId: input.botId,
           enabled: input.enabled,
         });
-        if (!updated)
-          throw new ORPCError("BAD_REQUEST", { message: "Connect your tailnet first." });
+        if (!updated) throw new ClientError("BAD_REQUEST", "Connect your tailnet first.");
         if (!input.enabled) await tailnet?.service.disconnect(scope(context.actor), input.botId);
         // A screen the member already controls can browse the tailnet from now on.
         else prepareTailnetBrowser(ctx, context.actor, input.botId);

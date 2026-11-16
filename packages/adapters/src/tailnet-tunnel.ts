@@ -178,7 +178,11 @@ type TunnelGroup = {
 };
 
 /** Who opened a tunnel, and how to tell later that they still may. */
-type Opened = { principal: TailnetPrincipal; current: () => Promise<boolean> };
+/**
+ * Who opened a tunnel, how to tell later that they still may, and the group it counts in: one per
+ * opener and credential, so one group's recheck never closes tunnels another credential opened.
+ */
+type Opened = { principal: TailnetPrincipal; current: () => Promise<boolean>; key: string };
 
 /**
  * Serves tunnel upgrades from bots' computers. Before upgrading it checks the token, that its run
@@ -239,20 +243,23 @@ export class TailnetTunnelGateway {
       if (!botId || !screen) return undefined;
       const principal = await screen(pass, botId);
       if (!principal) return undefined;
-      const key = groupKey(principal);
+      const holder = groupKey(principal);
       return {
         principal,
+        key: `screen:${pass.computerId}:${pass.boot}:${holder}`,
         current: async () => {
           const still = await screen(pass, botId);
-          return Boolean(still && groupKey(still) === key);
+          return Boolean(still && groupKey(still) === holder);
         },
       };
     }
     const claims = openTailnetTunnelToken(token, this.deps.key, now());
     const run = claims ? await this.deps.activeRun(claims) : undefined;
     if (!claims || !run) return undefined;
+    const principal: TailnetPrincipal = { kind: "run", run: { ...run, runId: claims.runId } };
     return {
-      principal: { kind: "run", run: { ...run, runId: claims.runId } },
+      principal,
+      key: `token:${createHmac("sha256", this.deps.key).update(token).digest("base64url")}:${groupKey(principal)}`,
       current: async () =>
         openTailnetTunnelToken(token, this.deps.key, now()) !== undefined &&
         (await this.deps.activeRun(claims)) !== undefined,
@@ -303,7 +310,7 @@ export class TailnetTunnelGateway {
         ...extra,
       });
     };
-    const key = groupKey(principal);
+    const { key } = opened;
     const opening = this.opening.get(key) ?? 0;
     if (
       (this.open.get(key)?.tunnels.size ?? 0) + opening >=
