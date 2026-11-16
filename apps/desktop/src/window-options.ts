@@ -98,23 +98,25 @@ type StatefulWindow = {
 };
 
 /**
- * Reads a window's state to save. Electron's normal bounds are only trusted while the window is
- * normal: macOS overwrites a maximized window's normal bounds when it is minimized, and keeps the
- * wrong value after a restore. So each window's normal bounds are kept from the last time it was
- * normal, and its whole state from before it was minimized (Windows reports a minimized window as
- * not maximized). Read it on every change so both stay current.
+ * Reads a window's state to save, keeping its whole state from before it was minimized (Windows
+ * reports a minimized window as not maximized). On macOS, Electron's normal bounds are wrong for a
+ * window that is not normal (after a minimize, even once restored, or after the user drags it), and
+ * a move or resize can come in the middle of a maximize animation. So there the normal bounds are
+ * taken only from a `settled` read of a normal window; elsewhere they stay current, for example
+ * when Windows moves a maximized window to another display. Read it on every change too.
  */
-export function windowStateReader<W extends StatefulWindow>() {
+export function windowStateReader<W extends StatefulWindow>(platform: NodeJS.Platform) {
   const lastNormalBounds = new WeakMap<W, Bounds>();
   const beforeMinimize = new WeakMap<W, SavedWindow>();
-  return (win: W): SavedWindow => {
+  return (win: W, settled: boolean): SavedWindow => {
     const kept = beforeMinimize.get(win);
     if (win.isMinimized() && kept) return kept;
     const maximized = win.isMaximized();
     const fullScreen = win.isFullScreen();
-    if (!win.isMinimized() && !maximized && !fullScreen)
+    if (platform !== "darwin" || (settled && !win.isMinimized() && !maximized && !fullScreen))
       lastNormalBounds.set(win, win.getNormalBounds());
     const state = {
+      // A window never seen normal, such as one opened full screen, has only Electron's value.
       ...(lastNormalBounds.get(win) ?? win.getNormalBounds()),
       maximized,
       fullScreen,

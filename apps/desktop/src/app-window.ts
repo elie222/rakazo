@@ -65,14 +65,14 @@ async function readSavedWindow(): Promise<SavedWindow | null> {
   const raw = await readPrivateFile(savedWindowFile(), 1024);
   return raw === null ? null : parseSavedWindow(raw);
 }
-const windowState = windowStateReader<BrowserWindow>();
+const windowState = windowStateReader<BrowserWindow>(process.platform);
 /** How long after a move or resize the window is saved, so a drag writes the file once. */
 const WINDOW_SAVE_DELAY_MS = 1_000;
 function saveWindow(win: BrowserWindow) {
   // While a server switch is pending, the new window may still be dropped for the old one.
   if (win.isDestroyed() || desktop.replacedAppWindow !== null) return;
   try {
-    writePrivateFileSync(savedWindowFile(), JSON.stringify(windowState(win)));
+    writePrivateFileSync(savedWindowFile(), JSON.stringify(windowState(win, true)));
   } catch {
     // Losing the size only means the next launch opens at the default.
   }
@@ -194,11 +194,11 @@ export async function createWindow(url: string, partition: string | null) {
     },
   });
   // Read once while the window still has its normal bounds, before it is maximized.
-  windowState(win);
+  windowState(win, true);
   // Saved soon after each change too, so a crash or force quit keeps the last layout.
   let saveTimer: NodeJS.Timeout | undefined;
   const saveSoon = () => {
-    windowState(win);
+    windowState(win, false);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveWindow(win), WINDOW_SAVE_DELAY_MS);
   };

@@ -238,59 +238,91 @@ describe("window state to save", () => {
   const normal = { x: 10, y: 20, width: 900, height: 700 };
 
   it("keeps the state from before a maximized window was minimized", () => {
-    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    for (const platform of ["darwin", "win32"] as const) {
+      const read = windowStateReader<ReturnType<typeof fakeWindow>>(platform);
+      const win = fakeWindow();
+      win.maximized = true;
+      read(win, true);
+      // macOS overwrites the normal bounds with the maximized frame, and Windows reports a
+      // minimized window as not maximized.
+      win.minimized = true;
+      win.maximized = false;
+      win.normal = { x: 0, y: 0, width: 1440, height: 875 };
+      expect(read(win, true)).toEqual({ ...normal, maximized: true, fullScreen: false });
+    }
+  });
+
+  it("follows a maximized window that Windows moves to another display", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("win32");
     const win = fakeWindow();
+    read(win, true);
     win.maximized = true;
-    read(win);
-    // macOS overwrites the normal bounds with the maximized frame, and Windows reports a
-    // minimized window as not maximized.
-    win.minimized = true;
-    win.maximized = false;
-    win.normal = { x: 0, y: 0, width: 1440, height: 875 };
-    expect(read(win)).toEqual({ ...normal, maximized: true, fullScreen: false });
+    read(win, true);
+    win.normal = { x: 1600, y: 100, width: 900, height: 700 };
+    expect(read(win, true)).toEqual({ ...win.normal, maximized: true, fullScreen: false });
   });
 
   it("keeps the normal bounds of a maximized window restored from minimized", () => {
-    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
     const win = fakeWindow();
-    read(win);
+    read(win, true);
     win.maximized = true;
-    read(win);
+    read(win, true);
     win.minimized = true;
     win.normal = { x: 0, y: 0, width: 1440, height: 875 };
-    read(win);
+    read(win, true);
     // macOS keeps reporting the maximized frame as the normal bounds after the restore.
     win.minimized = false;
-    expect(read(win)).toEqual({ ...normal, maximized: true, fullScreen: false });
+    expect(read(win, true)).toEqual({ ...normal, maximized: true, fullScreen: false });
     win.maximized = false;
     win.normal = { x: 30, y: 40, width: 800, height: 600 };
-    expect(read(win)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
+    expect(read(win, true)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
+  });
+
+  it("ignores frames from the middle of a macOS maximize animation", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
+    const win = fakeWindow();
+    read(win, true);
+    // The resize events of the animation report a window that is not yet maximized.
+    win.normal = { x: 5, y: 10, width: 1300, height: 820 };
+    read(win, false);
+    win.maximized = true;
+    expect(read(win, true)).toEqual({ ...normal, maximized: true, fullScreen: false });
+  });
+
+  it("takes the normal bounds of a macOS window once it settles", () => {
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
+    const win = fakeWindow();
+    read(win, true);
+    win.normal = { x: 30, y: 40, width: 800, height: 600 };
+    read(win, false);
+    expect(read(win, true)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
   });
 
   it("keeps the normal bounds from before full screen", () => {
-    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
     const win = fakeWindow();
-    read(win);
+    read(win, true);
     win.fullScreen = true;
     win.normal = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(read(win)).toEqual({ ...normal, maximized: false, fullScreen: true });
+    expect(read(win, true)).toEqual({ ...normal, maximized: false, fullScreen: true });
   });
 
   it("reads the current state once the window is restored", () => {
-    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
     const win = fakeWindow();
-    read(win);
+    read(win, true);
     win.minimized = true;
-    read(win);
+    read(win, true);
     win.minimized = false;
     win.normal = { x: 30, y: 40, width: 800, height: 600 };
-    expect(read(win)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
+    expect(read(win, true)).toEqual({ ...win.normal, maximized: false, fullScreen: false });
   });
 
   it("reads a window first seen minimized as it is", () => {
-    const read = windowStateReader<ReturnType<typeof fakeWindow>>();
+    const read = windowStateReader<ReturnType<typeof fakeWindow>>("darwin");
     const win = fakeWindow();
     win.minimized = true;
-    expect(read(win)).toEqual({ ...normal, maximized: false, fullScreen: false });
+    expect(read(win, true)).toEqual({ ...normal, maximized: false, fullScreen: false });
   });
 });
