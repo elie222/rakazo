@@ -1,6 +1,9 @@
 import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
+
+const RUN_SECRET_PREFIXES = ["run-secret:", "run-login:", "run-code:", "run-code-spent:"];
 
 /** A secret card's answer waits under this kind until the resumed run reads it once. */
 export function runSecretKind(runId: string): string {
@@ -85,4 +88,42 @@ export async function clearEndedRunState(
     select: { id: true, userId: true, spaceId: true },
   });
   await deleteRunSecretsInTransaction(prisma, runs);
+}
+
+/**
+ * A question stays open, but what its run took to sign in does not: drop the run-only answers,
+ * logins and codes of runs that have waited on someone since `olderThan`. The run resumes without
+ * them and asks again if it still needs one. Returns how many were dropped.
+ */
+export async function forgetIdleRunSecrets(
+  prisma: PrismaClient,
+  olderThan: Date,
+  batchSize: number,
+): Promise<number> {
+  const held = await prisma.secret.findMany({
+    where: {
+      OR: RUN_SECRET_PREFIXES.map((prefix) => ({ kind: { startsWith: prefix } })),
+      createdAt: { lte: olderThan },
+    },
+    select: { id: true, kind: true },
+    orderBy: { createdAt: "asc" },
+    take: batchSize,
+  });
+  const byRun = new Map<string, string[]>();
+  for (const secret of held) {
+    const runId = secret.kind.split(":")[1];
+    if (runId) byRun.set(runId, [...(byRun.get(runId) ?? []), secret.id]);
+  }
+  if (byRun.size === 0) return 0;
+  return prisma.$transaction(async (tx) => {
+    // Locking the waiting rows keeps an answer from resuming one mid-delete.
+    const waiting = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM runs
+      WHERE id IN (${Prisma.join([...byRun.keys()])}) AND status = 'waiting_input' AND "updatedAt" <= ${olderThan}
+      FOR UPDATE`;
+    const ids = waiting.flatMap((run) => byRun.get(run.id) ?? []);
+    if (ids.length === 0) return 0;
+    const { count } = await tx.secret.deleteMany({ where: { id: { in: ids } } });
+    return count;
+  });
 }

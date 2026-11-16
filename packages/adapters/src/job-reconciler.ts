@@ -1,9 +1,18 @@
 import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import { BACKGROUND_HELPER_TRIGGER, stuckWorkStatusMessages } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  idleRunSecretsAfterMs,
+  stuckWorkStatusMessages,
+} from "@rakazo/core";
 import type { DatabaseOutage, Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { databaseOutage, reconcileComputerRuns, storedMessageBlocks } from "@rakazo/db";
+import {
+  databaseOutage,
+  forgetIdleRunSecrets,
+  reconcileComputerRuns,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { returnHelperOutcome } from "./background-helpers.js";
@@ -215,6 +224,15 @@ export function createJobReconciler(
         });
       } catch (error) {
         report("stuck work reconciliation", error);
+      }
+      try {
+        await forgetIdleRunSecrets(
+          deps.prisma,
+          new Date(now.getTime() - idleRunSecretsAfterMs()),
+          batchSize,
+        );
+      } catch (error) {
+        report("idle run secrets", error);
       }
       const runCursorFilter = runCursor
         ? {

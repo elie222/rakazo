@@ -22,6 +22,11 @@ function stuckWorkMsFromEnv(raw: string | undefined, fallback: number): number {
     : fallback;
 }
 
+/** How long a run waiting on an answer keeps the logins and codes it took for itself. */
+export function idleRunSecretsAfterMs(): number {
+  return stuckWorkMsFromEnv(process.env.STUCK_WORK_EXPIRE_AFTER_MS, STUCK_WORK_EXPIRE_AFTER_MS);
+}
+
 function stuckWorkNotifyAfterMs(): number {
   return stuckWorkMsFromEnv(process.env.STUCK_WORK_NOTIFY_AFTER_MS, STUCK_WORK_NOTIFY_AFTER_MS);
 }
@@ -138,7 +143,5 @@ function botLabel(name: string): string {
 }
 
 function stuckWorkExpireAfterMs(status: StuckWorkStatus): number {
-  return status === "waiting_takeover"
-    ? TAKEOVER_WAIT_EXPIRE_AFTER_MS
-    : stuckWorkMsFromEnv(process.env.STUCK_WORK_EXPIRE_AFTER_MS, STUCK_WORK_EXPIRE_AFTER_MS);
+  return status === "waiting_takeover" ? TAKEOVER_WAIT_EXPIRE_AFTER_MS : idleRunSecretsAfterMs();
 }
