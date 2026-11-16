@@ -1,10 +1,10 @@
 import type { DemoBot } from "../demo";
 import { DEMO_BOTS } from "../demo";
-import type { DemoMessages } from "./demo-text";
+import type { DemoMessages, DemoTextKey, DemoTranslations } from "./demo-text";
 import { fillDemoText } from "./demo-text";
 import type { Locale } from "./locales";
 
-const ZH_DEMO_TEXT: Record<string, string> = {
+const ZH_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "昨天",
   "Monday": "周一",
   "Today": "今天",
@@ -263,7 +263,7 @@ const ZH_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "马上处理。告诉我任务，我就开始。",
 };
 
-const JA_DEMO_TEXT: Record<string, string> = {
+const JA_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "昨日",
   "Monday": "月曜日",
   "Today": "今日",
@@ -522,7 +522,7 @@ const JA_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "対応します。仕事の内容を教えてもらえれば始めます。",
 };
 
-const DE_DEMO_TEXT: Record<string, string> = {
+const DE_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Gestern",
   "Monday": "Montag",
   "Today": "Heute",
@@ -781,7 +781,7 @@ const DE_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "Mach ich. Sag mir die Aufgabe, dann lege ich los.",
 };
 
-const KO_DEMO_TEXT: Record<string, string> = {
+const KO_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "어제",
   "Monday": "월요일",
   "Today": "오늘",
@@ -1040,7 +1040,7 @@ const KO_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "맡겨 주세요. 할 일을 알려 주시면 바로 시작할게요.",
 };
 
-const ES_DEMO_TEXT: Record<string, string> = {
+const ES_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Ayer",
   "Monday": "Lunes",
   "Today": "Hoy",
@@ -1299,7 +1299,7 @@ const ES_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "Voy. Dime el trabajo y empiezo.",
 };
 
-const FR_DEMO_TEXT: Record<string, string> = {
+const FR_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Hier",
   "Monday": "Lundi",
   "Today": "Aujourd’hui",
@@ -1558,7 +1558,7 @@ const FR_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "Je m’en occupe. Dites-moi la mission et je commence.",
 };
 
-const PT_BR_DEMO_TEXT: Record<string, string> = {
+const PT_BR_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Ontem",
   "Monday": "Segunda",
   "Today": "Hoje",
@@ -1817,7 +1817,7 @@ const PT_BR_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "Pode deixar. Me diga o trabalho e eu começo.",
 };
 
-const NL_DEMO_TEXT: Record<string, string> = {
+const NL_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Gisteren",
   "Monday": "Maandag",
   "Today": "Vandaag",
@@ -2076,7 +2076,7 @@ const NL_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "komt goed. vertel me de taak en ik ga aan de slag.",
 };
 
-const RU_DEMO_TEXT: Record<string, string> = {
+const RU_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Вчера",
   "Monday": "Понедельник",
   "Today": "Сегодня",
@@ -2335,7 +2335,7 @@ const RU_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "на связи. расскажите, что нужно сделать, и я начну.",
 };
 
-const TR_DEMO_TEXT: Record<string, string> = {
+const TR_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "Dün",
   "Monday": "Pazartesi",
   "Today": "Bugün",
@@ -2594,7 +2594,7 @@ const TR_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "hazırım. işi söyle, hemen başlayayım.",
 };
 
-const HE_DEMO_TEXT: Record<string, string> = {
+const HE_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "אתמול",
   "Monday": "יום שני",
   "Today": "היום",
@@ -2853,7 +2853,7 @@ const HE_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "על זה. אפשר לספר לי מה המשימה ואתחיל.",
 };
 
-const HI_DEMO_TEXT: Record<string, string> = {
+const HI_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "कल",
   "Monday": "सोमवार",
   "Today": "आज",
@@ -3112,7 +3112,7 @@ const HI_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "हाज़िर हूँ। काम बताइए, मैं शुरू कर दूँगा।",
 };
 
-const ZH_TW_DEMO_TEXT: Record<string, string> = {
+const ZH_TW_DEMO_TEXT: DemoTranslations = {
   "Yesterday": "昨天",
   "Monday": "週一",
   "Today": "今天",
@@ -3371,7 +3371,7 @@ const ZH_TW_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "馬上處理。告訴我要做什麼，我就開始。",
 };
 
-const PL_DEMO_TEXT: Record<string, string> = {
+const PL_DEMO_TEXT: DemoTranslations = {
   Yesterday: "Wczoraj",
   Monday: "Poniedziałek",
   Today: "Dzisiaj",
@@ -3659,7 +3659,7 @@ const PL_DEMO_TEXT: Record<string, string> = {
   "on it. tell me the job and i’ll get started.": "już się tym zajmuję. powiedz, co zrobić, a zacznę.",
 };
 
-const DEMO_TEXT: Partial<Record<Locale, Record<string, string>>> = {
+const DEMO_TEXT: Partial<Record<Locale, DemoTranslations>> = {
   pl: PL_DEMO_TEXT,
   zh: ZH_DEMO_TEXT,
   ja: JA_DEMO_TEXT,
@@ -3684,7 +3684,7 @@ export function demoMessages(locale: Locale): DemoMessages {
 
 export function getDemoBots(locale: Locale): DemoBot[] {
   const messages = demoMessages(locale);
-  const text = (value: string) => fillDemoText(messages, value);
+  const text = (value: DemoTextKey) => fillDemoText(messages, value);
   return DEMO_BOTS.map((bot) => ({
     ...bot,
     time: text(bot.time),
