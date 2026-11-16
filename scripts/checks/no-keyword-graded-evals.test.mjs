@@ -26,6 +26,11 @@ const graders = [
   'const told = e.memory\n  .toLowerCase()\n  .includes("the user said");',
   "pass: /^.*bullet points.*$/i.test(reply),",
   "pass: /^[^.]*next step[\\s\\S]+$/.test(reply),",
+  'pass: reply?.includes("next step"),',
+  "pass: finalReply?.match(/order placed/i) !== null,",
+  "pass: e.text?.search(/bullet points/) >= 0,",
+  "pass: /next step/i?.test(reply),",
+  'const told = e.memory\n  ?.toLowerCase()\n  ?.includes("the user said");',
 ].join("\n");
 
 const deterministic = [
@@ -40,6 +45,7 @@ const deterministic = [
   'pass: replyText.includes("ZD-1842 filed"),',
   'expect(messageIds).toContain("msg_1"),',
   'expect: { bot: { instructions: null, description: "" } },',
+  'pass: reply?.includes("ZD-1842"),',
 ].join("\n");
 
 const sources = {
@@ -61,7 +67,7 @@ test("counts word matches on model prose in eval code, not in grader tests or pr
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
       "packages/testkit/src/evals/graders.ts": [
-        1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 19, 20, 21,
+        1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 19, 20, 21, 22, 23, 24, 25, 28,
       ],
       "packages/testkit/src/flows/shopping.ts": [1],
     },

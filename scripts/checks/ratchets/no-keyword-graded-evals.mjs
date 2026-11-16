@@ -20,12 +20,14 @@ const capitalized = PROSE_WORDS.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const PROSE = new RegExp(
   `\\b(?:text|texts|body|content|said|${PROSE_WORDS})\\b|\\b(?:${PROSE_WORDS})[A-Z]|[a-z](?:${capitalized})\\b|\\bfiles?\\s*[([]`,
 );
-// A string search with a literal, or a matcher in an assertion.
+// A string search with a literal, or a matcher in an assertion; `?.` calls count the same as `.`.
+// A keyword held in a constant (`reply.includes(KEYWORD)`) is not followed: constants here also
+// hold the product's own fixed markers, which are not model prose.
 const STRING_SEARCH =
-  /\.(?:includes|startsWith|endsWith|indexOf|toContain|toMatch)\(\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
+  /\??\.(?:includes|startsWith|endsWith|indexOf|toContain|toMatch)\(\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
 // A regex literal tested against or matched by something.
-const REGEX_TEST = /(\/(?:[^/\\\n*]|\\.)(?:[^/\\\n]|\\.)*\/[a-z]*)\.(?:test|exec)\(/g;
-const REGEX_MATCH = /\.(?:match|matchAll|search)\(\s*(\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
+const REGEX_TEST = /(\/(?:[^/\\\n*]|\\.)(?:[^/\\\n]|\\.)*\/[a-z]*)\??\.(?:test|exec)\(/g;
+const REGEX_MATCH = /\??\.(?:match|matchAll|search)\(\s*(\/(?:[^/\\\n]|\\.)+\/[a-z]*)/g;
 // A tool-choice matcher (`"~words"`) on a setting the bot writes in its own words.
 const PROSE_MATCHER = /\b(?:instructions|description)\s*:\s*["']~/g;
 
@@ -64,7 +66,8 @@ function receiver(text, index) {
   for (let lines = 0; start > 0 && lines < 4; lines += 1) {
     const previousStart = text.lastIndexOf("\n", start - 2) + 1;
     const previous = text.slice(previousStart, start - 1).trimEnd();
-    if (!/^[.)\]]/.test(text.slice(start, index + 1).trimStart()) && !/[(=]$/.test(previous)) break;
+    if (!/^\??[.)\]]/.test(text.slice(start, index + 2).trimStart()) && !/[(=]$/.test(previous))
+      break;
     start = previousStart;
   }
   return text.slice(start, index);

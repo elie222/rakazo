@@ -13,7 +13,14 @@ import {
 import { regradeTrial } from "./grading.js";
 import { HISTORY_JUDGE_VERSION } from "./history-fixtures.js";
 import type { EvalJudge } from "./judge.js";
-import { emptyTrial, holdBackJudged, redact, summarize, validateControls } from "./report.js";
+import {
+  emptyTrial,
+  holdBackJudged,
+  redact,
+  stopRemaining,
+  summarize,
+  validateControls,
+} from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
 import { EvalServices } from "./services.js";
@@ -509,6 +516,15 @@ describe("eval run controls and reporting", () => {
     }
     expect(heldBack.size).toBeLessThan(trials.length);
     expect(summarize(trials).every((row) => row.passed === 0)).toBe(true);
+  });
+
+  it("keeps the missing-judge reason on held-back trials when a graceful stop marks the rest", () => {
+    const trials = [emptyTrial("judged", 1), emptyTrial("plain", 1), emptyTrial("plain", 2)];
+    const heldBack = holdBackJudged(trials, new Set(["judged"]), "needs a judge");
+    stopRemaining(trials, heldBack);
+    expect(trials[0]!.reason).toBe("needs a judge");
+    expect(trials[1]!.reason).toMatch(/graceful stop/);
+    expect(trials[2]!.reason).toBe(trials[1]!.reason);
   });
 
   it("keeps not-run trials separate from failures and first attempt from later success", () => {

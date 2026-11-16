@@ -75,6 +75,7 @@ import {
   emptyTrial,
   holdBackJudged,
   redact,
+  stopRemaining,
   summarize,
   validateControls,
 } from "../evals/report.js";
@@ -730,9 +731,7 @@ async function main() {
     for (let i = 0; i < trials.length; i++) {
       if (heldBack.has(trials[i]!.caseId)) continue;
       if (stopRequested) {
-        for (const remaining of trials.slice(i))
-          remaining.reason =
-            "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
+        stopRemaining(trials.slice(i), heldBack);
         Object.assign(report, { termination: "graceful-stop-after-workflow" });
         save();
         process.exitCode = 130;
