@@ -54,11 +54,7 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
       }
     };
     ({ userId, spaceId, botId, threadId } = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     ));
     provisioned = true;
     const startRun = async (trigger: string) => {

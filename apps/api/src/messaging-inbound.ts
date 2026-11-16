@@ -18,7 +18,6 @@ import type {
   Prisma,
   PrismaClient,
   ProvisionedMessagingIdentity,
-  SignupPolicyEnv,
   ThreadEvents,
 } from "@rakazo/db";
 import {
@@ -46,16 +45,12 @@ export interface MessagingInboundDeps {
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
-  provision: (
-    request: MessagingIdentityRequest,
-    env: SignupPolicyEnv,
-  ) => Promise<ProvisionedMessagingIdentity>;
+  provision: (request: MessagingIdentityRequest) => Promise<ProvisionedMessagingIdentity>;
   /**
    * Poke-style open line: unknown senders auto-provision their own account.
    * Off by default — strangers' runs would bill the deployment model key.
    */
   openSignup: boolean;
-  signupPolicy: SignupPolicyEnv;
   acknowledge?: MessagingReceipts["acknowledge"];
   storeAttachment?: InboundAttachmentStore;
   /**
@@ -188,15 +183,12 @@ async function handleDirectEvent(
       created: false,
     };
   } else {
-    ids = await deps.provision(
-      {
-        provider: event.provider,
-        address: event.from,
-        dmThreadId: event.threadId,
-        displayName: event.fromLabel ? sanitizeMessagingLabel(event.fromLabel) : null,
-      },
-      deps.signupPolicy,
-    );
+    ids = await deps.provision({
+      provider: event.provider,
+      address: event.from,
+      dmThreadId: event.threadId,
+      displayName: event.fromLabel ? sanitizeMessagingLabel(event.fromLabel) : null,
+    });
   }
 
   const stored = await storeInboundMedia(deps, ids, event);

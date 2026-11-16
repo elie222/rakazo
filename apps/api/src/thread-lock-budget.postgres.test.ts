@@ -54,11 +54,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
       await db.pool.end();
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address }),
     );
     ({ userId, spaceId, botId, threadId } = identity);
     actor = { spaceId, userId } as Actor;
@@ -409,11 +405,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
     "deletes a bot whose thread a long read held",
     async () => {
       const removed = await runAsSystem("test fixture", () =>
-        provisionMessagingIdentity(
-          prisma,
-          { provider: "test", address: `${address}-removed` },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma, { provider: "test", address: `${address}-removed` }),
       );
       try {
         const bot = await system.bot.findUniqueOrThrow({

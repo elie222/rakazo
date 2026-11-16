@@ -50,11 +50,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       await db.pool.end();
     };
     identity = await runAsSystem("lease fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const bot = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
     computerId = bot.computerId!;
