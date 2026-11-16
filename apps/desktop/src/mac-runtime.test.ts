@@ -223,16 +223,21 @@ describe("installers", () => {
 describe("resolveContainerRuntime", () => {
   const ourCli = () => path.join(dir, "container-1.7.1", "bin", "container");
   const theirRoot = "/usr/local/";
+  const appRoot = "/opt/container-data";
+  const kernelFile = path.join(appRoot, "kernels", "default.kernel-arm64");
   const status = (installRoot: string, version = "1.7.1", state = "running") =>
-    JSON.stringify({ status: state, server: { version }, paths: { installRoot } });
+    JSON.stringify({ status: state, server: { version }, paths: { installRoot, appRoot } });
 
   function fakeRuntime(input: {
     running?: { root: string; version?: string };
     launchdRoot?: string;
     userVersion?: string;
+    /** Whether the running system has its default kernel; true unless said otherwise. */
+    kernel?: boolean;
   }) {
     const calls: string[][] = [];
     const installed = new Set<string>();
+    if (input.kernel !== false) installed.add(kernelFile);
     if (input.userVersion) installed.add(USER_CONTAINER_CLI);
     const run: RunDocker = async (binary, args) => {
       calls.push([binary, ...args]);
@@ -357,6 +362,48 @@ describe("resolveContainerRuntime", () => {
       ours: true,
     });
     expect(stopped.calls.at(-1)?.slice(0, 3)).toEqual([ourCli(), "system", "start"]);
+  });
+
+  it.each([
+    ["one someone else runs", () => theirRoot],
+    ["our own copy", () => path.join(dir, "container-1.7.1")],
+  ])("installs the kernel a running system lacks, in %s", async (_, root) => {
+    const running = { root: root() };
+    const launchdRoot = root();
+    const fake = fakeRuntime({ running, launchdRoot, kernel: false });
+    const { deps, lines } = runtimeDeps(fake.run, { exists: fake.exists });
+    const runtime = await resolveContainerRuntime(deps, async () => ourCli());
+    expect(fake.calls.at(-1)).toEqual([
+      runtime.cli,
+      "system",
+      "kernel",
+      "set",
+      "--recommended",
+      "--force",
+    ]);
+    expect(lines).toContain("Installing the computer kernel");
+    expect(fake.calls.some((call) => call.includes("start") || call.includes("stop"))).toBe(false);
+  });
+
+  it("leaves the kernel of a running system alone when it has one", async () => {
+    const fake = fakeRuntime({ running: { root: theirRoot }, launchdRoot: theirRoot });
+    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+    await resolveContainerRuntime(deps, async () => ourCli());
+    expect(fake.calls.some((call) => call.includes("kernel"))).toBe(false);
+  });
+
+  it("fails the start when the missing kernel cannot be installed", async () => {
+    const fake = fakeRuntime({
+      running: { root: theirRoot },
+      launchdRoot: theirRoot,
+      kernel: false,
+    });
+    const failing: RunDocker = async (binary, args, options) =>
+      args[1] === "kernel" ? fail(1) : fake.run(binary, args, options);
+    const { deps } = runtimeDeps(failing, { exists: fake.exists });
+    await expect(resolveContainerRuntime(deps, async () => ourCli())).rejects.toThrow(
+      "container system kernel exited with code 1",
+    );
   });
 
   it("never stops a running system that is not ours", async () => {
