@@ -176,12 +176,13 @@ class ChangedAreasTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(areas(write(path)), expected)
 
-    def test_repo_checks_and_unrelated_workflows_run_no_suites(self):
+    def test_repo_checks_and_unrelated_workflows_skip_the_product_suites(self):
         # Lint and typecheck runs the repo checks' own tests on every pull request.
         cases = [
             ("scripts/checks/import-boundaries.test.mjs", expect(unit="[]")),
             ("scripts/checks/bundle-size.budgets.json", expect("web", unit="[]")),
-            (".github/workflows/release-mobile.yml", expect(unit="[]")),
+            # Unit and script tests read the release workflows, but no product suite builds them.
+            (".github/workflows/release-mobile.yml", expect("all_packages")),
         ]
         for path, expected in cases:
             with self.subTest(path=path):

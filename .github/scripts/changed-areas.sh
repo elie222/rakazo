@@ -43,8 +43,9 @@ while IFS= read -r file; do
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) unit_packages=true ;;
     .agents/skills/pr-watch/* | .agents/skills/translate/*) all_packages=true ;;
     .agents/* | .claude/*) ;;
-    # Repo checks run in every Lint and typecheck job, and other workflows test nothing here.
-    scripts/checks/* | .github/workflows/*) ;;
+    # Repo checks run in every Lint and typecheck job. Workflows stay below: unit and script tests
+    # read the release and publish workflows directly.
+    scripts/checks/*) ;;
     */*) all_packages=true ;;
     *.md) ;;
     *) all_packages=true ;;
@@ -83,6 +84,7 @@ while IFS= read -r file; do
     # The production build checks the bundle budget; the other repo checks run on every pull request.
     scripts/checks/bundle-size*) web=true; continue ;;
     scripts/checks/*) continue ;;
+    # Other workflows build or run nothing the product suites test; their own tests run above.
     .github/workflows/ci.yml | .github/workflows/playwright.yml) ;;
     .github/workflows/*) continue ;;
     apps/www/* | docs/*) continue ;;
