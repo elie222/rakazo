@@ -20,6 +20,7 @@ import {
   voiceRequestError,
   voiceUnreachable,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 export const XAI_VOICE_PROVIDER_ID = "xai";
 const API = "https://api.x.ai/v1";
@@ -136,3 +137,13 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
     status = 402;
   return voiceRequestError(status, PROVIDER, what, body);
 }
+
+export const xaiVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "xAI",
+    description: "Expressive Grok voices and transcription, with a key or a Grok sign-in.",
+    transcribe: true,
+    modelConnection: true,
+  },
+  create: () => new XaiVoiceProvider(),
+};

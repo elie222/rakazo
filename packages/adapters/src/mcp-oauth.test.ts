@@ -1571,7 +1571,15 @@ describe("MCP OAuth", () => {
     expect(onAuthorization).toHaveBeenCalledWith(authorizationUrl);
   });
 
-  it("clears stale tokens when runtime authorization URL validation fails", async () => {
+  it.each([
+    ["an unsafe", new URL("http://auth.example.test/authorize")],
+    [
+      "an over-long",
+      new URL(
+        `https://auth.example.test/authorize?scope=${"x".repeat(MAX_AUTHORIZATION_URL_LENGTH)}`,
+      ),
+    ],
+  ])("asks for a reconnect at runtime even with %s authorization URL", async (_, url) => {
     const persisted: { oauth?: { tokens?: unknown } }[] = [];
     const provider = new StoredMcpOAuthProvider(
       "server-1",
@@ -1581,9 +1589,9 @@ describe("MCP OAuth", () => {
       },
     );
 
-    await expect(
-      provider.redirectToAuthorization(new URL("http://auth.example.test/authorize")),
-    ).rejects.toThrow(/HTTPS/i);
+    await expect(provider.redirectToAuthorization(url)).rejects.toBeInstanceOf(
+      McpReauthorizationRequiredError,
+    );
 
     expect(await provider.tokens()).toBeUndefined();
     expect(persisted.at(-1)?.oauth?.tokens).toBeUndefined();
