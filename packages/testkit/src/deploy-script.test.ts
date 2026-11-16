@@ -54,7 +54,6 @@ const rolloutSteps = (revision: string) => [
   ...startBeside("worker"),
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
-  `${COMPOSE} config --services`,
   `${COMPOSE} up -d --no-deps --remove-orphans web`,
 ];
 // After a healthy deploy, the deploy waits for the old worker and API to finish and removes them.

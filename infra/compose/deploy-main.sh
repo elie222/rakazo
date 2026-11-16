@@ -139,8 +139,8 @@ start_beside() {
 # executing get a few minutes to end their turn (RUN_DRAIN_MS). A replaced API does the same with
 # its chat turns once it has stopped taking requests (see retire_api). A restart policy of "no"
 # keeps Docker from starting one again and marks it as draining for later runs. Prints the
-# containers of a service that are live (running and not draining), or draining (still finishing,
-# or exited and not yet removed).
+# containers of a service that are live (not draining), serving (live and running), or draining
+# (still finishing, or exited and not yet removed).
 service_containers() {
   local ids
   ids="$(compose 1m ps --all --quiet "$1")"
@@ -149,7 +149,8 @@ service_containers() {
   sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}' ${ids} |
     awk -v wanted="$2" '
       $2 == "no" && wanted == "draining" { print $1 }
-      $2 != "no" && $3 == "true" && wanted == "live" { print $1 }'
+      $2 != "no" && wanted == "live" { print $1 }
+      $2 != "no" && $3 == "true" && wanted == "serving" { print $1 }'
 }
 
 # Waits for draining containers to exit and removes them, the worker's and then the API's unless
@@ -266,7 +267,7 @@ roll_out() {
   done
   replace_worker
   # A second migration run would consume a deferred drop before the old worker has drained.
-  others="$(compose 1m config --services | grep -Ev '^(api|worker|migrate)$' || true)"
+  others="$(grep -Ev '^(api|worker|migrate)$' <<<"${services}" || true)"
   # Without services, Compose would reconcile all of them, the draining ones too.
   # shellcheck disable=SC2086 # one service name per word
   [[ -z "${others}" ]] || compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans ${others}
@@ -327,7 +328,7 @@ app_image=""
 # The image the running API uses, which can differ from the configured tag if someone pulled a
 # newer one without recreating the containers.
 previous_app_image=""
-api_container="$(service_containers api live 2>/dev/null | head -n 1 || true)"
+api_container="$(service_containers api serving 2>/dev/null | head -n 1 || true)"
 if [[ -n "${api_container}" ]]; then
   previous_app_image="$(sudo docker inspect --format '{{.Image}}' "${api_container}" 2>/dev/null || true)"
 fi
