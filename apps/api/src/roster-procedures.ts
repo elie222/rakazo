@@ -50,6 +50,8 @@ export const ROSTER_PROCEDURES: Record<string, RosterScope> = {
   "threads.markRead": actorOnly,
   "threads.markUnread": actorOnly,
   "threads.snooze": actorOnly,
+  "threads.mute": actorOnly,
+  "threads.hide": actorOnly,
   "spaces.create": actorOnly,
   "spaces.rename": namedSpace,
   "spaces.remove": namedSpace,

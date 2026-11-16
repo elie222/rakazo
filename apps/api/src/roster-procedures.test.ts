@@ -33,6 +33,11 @@ describe("rosterChangeFor", () => {
     expect(rosterChangeFor(["threads", "markRead"], actor, { botId: "bot-1" }, undefined)).toEqual({
       userIds: ["user-1"],
     });
+    // Muting or hiding a chat is the person's own, so their other devices hear of it.
+    for (const procedure of ["mute", "hide"])
+      expect(rosterChangeFor(["threads", procedure], actor, { botId: "bot-1" }, undefined)).toEqual(
+        { userIds: ["user-1"] },
+      );
   });
 
   it("tells a named Space and the people it removes or admits", () => {
