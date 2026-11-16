@@ -1640,6 +1640,17 @@ export interface BillingCreditPurchase {
   expiresAt?: string;
 }
 
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
+}
+
 export interface BillingCreditCheckoutRequest {
   customerId: string;
   amountCents: number;

@@ -518,6 +518,32 @@ describe("Stripe billing HTTP boundary", () => {
     expect(parseStripeWebhook("whsec_fake", body, headers, now)).toEqual({ customerId: "cus_1" });
   });
 
+  it("names the disputed charge, since a dispute carries no customer", () => {
+    const now = Date.UTC(2026, 0, 1);
+    const body = JSON.stringify({
+      type: "charge.dispute.closed",
+      data: { object: { id: "dp_1", object: "dispute", charge: "ch_1", status: "lost" } },
+    });
+    const headers = new Headers({
+      "stripe-signature": signStripeWebhook("whsec_fake", body, now / 1000),
+    });
+    expect(parseStripeWebhook("whsec_fake", body, headers, now)).toEqual({ paymentId: "ch_1" });
+  });
+
+  it("finds the customer a disputed charge belongs to", async () => {
+    const provider = new StripeBillingProvider({
+      secretKey: "sk_test_fake",
+      webhookSecret: "whsec_fake",
+      fetch: vi.fn(async (input) =>
+        Response.json(
+          String(input).endsWith("/v1/charges/ch_1") ? { customer: "cus_1" } : { customer: null },
+        ),
+      ),
+    });
+    expect(await provider.customerForPayment("ch_1")).toBe("cus_1");
+    expect(await provider.customerForPayment("ch_guest")).toBeNull();
+  });
+
   it("accepts any matching v1 signature and ignores malformed JSON", () => {
     const now = Date.UTC(2026, 0, 1);
     const t = now / 1000;
