@@ -109,7 +109,7 @@ describe("IncusSandboxProvider", () => {
     const fake = new FakeIncus();
     await providerFor(fake).provision({ botId: "bot-a", homePath: "/unused" }, context);
     expect(fake.requests.find((entry) => entry.method === "POST")?.body).toMatchObject({
-      source: { server: "https://ghcr.io", alias: "elie222/rakazo/computer:edge" },
+      source: { server: "https://ghcr.io", alias: "elie222/rakazo/computer:latest" },
       config: { "limits.cpu": "2", "limits.memory": "2GiB", "limits.processes": "2048" },
     });
   });

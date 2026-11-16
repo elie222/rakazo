@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import type { ServerUpdateRun } from "@rakazo/contracts";
-import type { ComposeUpdateStep } from "@rakazo/core";
+import type { ComposeUpdateStep, RemoteRelease } from "@rakazo/core";
 import {
   chooseUpdateStrategy,
   commitImageTag,
@@ -444,17 +444,58 @@ export function createUpdaterApp(
     if (!listed.ok) {
       throw new UpdateRefused(`Could not read releases from ${repoUrl}: ${listed.output}`);
     }
-    const release = selectLatestRelease(parseLsRemoteReleases(listed.stdout));
+    const releases = parseLsRemoteReleases(listed.stdout);
+    const release = selectLatestRelease(releases);
     if (release === null) {
       throw new UpdateRefused(
         `${repoUrl} has no published release tags, so there is no image to pull.`,
       );
     }
     return {
+      releases,
       releaseTag: release.tag,
       commit: release.commit,
       imageTag: commitImageTag(release.commit),
     };
+  }
+
+  /** Never infer running code from a moving tag in .env: inspect each running API instead. */
+  async function requireStableRunningImage(releases: readonly RemoteRelease[]) {
+    const containers = await run(
+      "docker",
+      [
+        "ps",
+        "--filter",
+        `label=com.docker.compose.project=${config.projectName}`,
+        "--filter",
+        "label=com.docker.compose.service=api",
+        "--format",
+        "{{.ID}}",
+      ],
+      { cwd: config.deployDir, timeoutMs: DEFAULT_TIMEOUT_MS },
+    );
+    const ids = containers.stdout.trim().split(/\s+/);
+    if (!containers.ok || ids.length === 0 || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id))) {
+      throw new UpdateRefused(
+        "Could not identify the running API; scheduled updates were refused.",
+      );
+    }
+    for (const id of ids) {
+      const source = await run("docker", ["exec", id, "node", "-p", "process.env.GIT_SHA"], {
+        cwd: config.deployDir,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+      });
+      const commit = source.stdout.trim();
+      if (
+        !source.ok ||
+        !isGitCommit(commit) ||
+        selectLatestRelease(releases.filter((release) => release.commit === commit)) === null
+      ) {
+        throw new UpdateRefused(
+          "The running API could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.",
+        );
+      }
+    }
   }
 
   /** The branch head on the remote, read without fetching, so a plan does not mutate the checkout. */
@@ -517,6 +558,7 @@ export function createUpdaterApp(
     let releaseTag: string | null = null;
     if (decision.strategy === "pull") {
       const target = await resolveRelease(request.repoUrl);
+      if (config.autoUpdateIntervalMs > 0) await requireStableRunningImage(target.releases);
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
@@ -817,9 +859,22 @@ export async function applyStableUpdate(app: ReturnType<typeof createUpdaterApp>
     },
     body: JSON.stringify({ repoUrl: OFFICIAL_REPO_URL, branch: "main" }),
   });
-  const result = (await response.json()) as { ok?: boolean; error?: string };
+  const result = (await response.json()) as Partial<ServerUpdateRun>;
   if (!response.ok || !result.ok) {
-    throw new Error(result.error || "Scheduled update failed.");
+    const diagnostics = result.steps
+      ?.filter((step) => !step.ok)
+      .map((step) => `${step.label}: ${step.output}`)
+      .join("\n");
+    throw new Error(
+      [
+        result.error || "Scheduled update failed.",
+        result.restart ? `Recovery status: ${result.restart}.` : "",
+        result.restartAdvice,
+        diagnostics ? truncateOutput(diagnostics) : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
 }
 

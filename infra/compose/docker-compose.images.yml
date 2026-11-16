@@ -654,7 +654,7 @@ services:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo}
       RAKAZO_DEPLOY_DIR: ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
       RAKAZO_COMPOSE_FILE: ${RAKAZO_COMPOSE_FILE:-docker-compose.images.yml}
-      RAKAZO_UPDATE_SERVICES: ${RAKAZO_UPDATE_SERVICES:-supervisor}
+      RAKAZO_UPDATE_SERVICES: ${RAKAZO_UPDATE_SERVICES:-supervisor,computer}
       COMPOSE_PATH_SEPARATOR: ${COMPOSE_PATH_SEPARATOR:-}
       # Starting the updater does not enable scheduling. Set 6 to check every six hours.
       RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}

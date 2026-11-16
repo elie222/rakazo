@@ -108,7 +108,7 @@ describe("the images compose file", () => {
       interpolated("RAKAZO_COMPOSE_FILE", "docker-compose.images.yml"),
     );
     expect(updater?.environment?.RAKAZO_UPDATE_SERVICES).toBe(
-      interpolated("RAKAZO_UPDATE_SERVICES", "supervisor"),
+      interpolated("RAKAZO_UPDATE_SERVICES", "supervisor,computer"),
     );
     expect(updater?.volumes).toContain(
       `${interpolated("RAKAZO_DEPLOY_DIR", "/srv/rakazo")}:${interpolated("RAKAZO_DEPLOY_DIR", "/srv/rakazo")}`,

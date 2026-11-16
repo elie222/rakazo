@@ -37,7 +37,7 @@ const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // The Compose stack's default image. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
 // production so every pod runs the image the API was tested against.
-const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
+const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:latest";
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const CONTAINER_NAME = "computer";

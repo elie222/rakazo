@@ -259,8 +259,9 @@ printf '\nRAKAZO_UPDATER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
 
 Keep an existing token. If your stack uses an overlay, set `RAKAZO_COMPOSE_FILE` to the same
 ordered file list you use manually, for example
-`docker-compose.images.yml:docker-compose.override.yml`. The images stack includes the supervisor
-in its update services by default. Then start the updater from the deployment directory:
+`docker-compose.images.yml:docker-compose.override.yml`. The images stack pulls the computer
+image and recreates its one-shot pull stub along with the supervisor by default; existing bot
+computers keep running. Then start the updater from the deployment directory:
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml up -d updater
@@ -276,7 +277,8 @@ intervals are 1–168 whole hours; `0` disables scheduling. Checks use the offic
 newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, and use the existing
 apply/health-check/recovery path. Prereleases and main builds are never scheduled. Custom image
 repositories are refused when scheduling is enabled. When already current, nothing is recreated.
-A failed check is logged and checked again after the configured interval; there is no tight retry loop.
+A failed check logs its recovery status, recovery advice and failed-step diagnostics, then checks
+again after the configured interval; there is no tight retry loop.
 The updater waits for an in-flight scheduled update during graceful shutdown.
 
 To pause scheduling, set `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=0` in `.env`, then run the same
@@ -288,8 +290,11 @@ endpoints also work when scheduling is disabled.
 Application updates do not replace the updater itself, Compose files, Postgres major versions or
 existing bot computer containers. Review release notes for changes requiring manual setup and
 keep database backups: application-image recovery never reverses database migrations.
-An existing explicit `edge` pin is not changed by the installer; opting in to scheduled updates
-moves the application to stable releases. Cloud CI deployment triggers remain unchanged.
+Scheduling verifies the source commit of every running API against the official stable release
+tags before pulling or recreating anything. An `edge`, prerelease or unknown build cannot be
+unattendedly replaced by an older stable release, even if `.env` was edited to say `latest`.
+Existing edge installations must review release notes and migrate to a compatible stable release
+manually before scheduling can proceed. Cloud CI deployment triggers remain unchanged.
 
 ## The deploy directory must be one path
 

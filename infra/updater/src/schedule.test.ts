@@ -1,4 +1,4 @@
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startUpdateSchedule } from "./schedule.js";
 
@@ -40,7 +40,9 @@ describe("scheduled updates", () => {
     const shutdown = stop().then(() => {
       stopped = true;
     });
-    await Promise.resolve();
+    const flushed = flush();
+    await vi.advanceTimersByTimeAsync(0);
+    await flushed;
     expect(stopped).toBe(false);
     work.resolve();
     await shutdown;

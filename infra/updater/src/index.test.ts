@@ -127,20 +127,27 @@ describe("updater HTTP surface", () => {
     expect(payload.error).toMatch(/no \.git directory/);
   });
 
-  it("scheduled updates deploy a stable release even when newer prereleases exist", async () => {
+  it("scheduled updates deploy a stable release and refresh the computer image", async () => {
     const fixture = await deployment();
+    fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
+    fixture.config.updateServices = ["api", "worker", "web", "supervisor", "computer"];
+    let runningCommit = currentCommit;
     const calls: Array<{ command: string; args: string[] }> = [];
     const run: UpdaterCommandRunner = async (command, args) => {
       calls.push({ command, args });
       if (command === "git" && args.includes("ls-remote")) {
         return ok(
           [
+            `${currentCommit}\trefs/tags/v1.0.0`,
             `${targetCommit}\trefs/tags/v1.1.0`,
             `${"3".repeat(40)}\trefs/tags/v2.0.0-beta.1`,
             `${"4".repeat(40)}\trefs/heads/main`,
           ].join("\n"),
         );
       }
+      if (command === "docker" && args[0] === "ps") return ok("a".repeat(12));
+      if (command === "docker" && args[0] === "exec") return ok(runningCommit);
+      if (args.includes("up")) runningCommit = targetCommit;
       return ok();
     };
     const subject = createUpdaterApp(fixture.config, { run });
@@ -149,9 +156,62 @@ describe("updater HTTP surface", () => {
       `RAKAZO_IMAGE_TAG=sha-${targetCommit}`,
     );
     expect(calls.find(({ args }) => args.includes("ls-remote"))?.args).toContain("--tags");
-    const deployments = calls.filter(({ command }) => command === "docker").length;
+    expect(calls.find(({ args }) => args.includes("pull"))?.args).toContain("computer");
+    expect(calls.find(({ args }) => args.includes("up"))?.args).toContain("computer");
+    const deployments = () =>
+      calls.filter(({ args }) => args.includes("up") || args.includes("pull"));
+    const deployed = deployments().length;
     await applyStableUpdate(subject, token);
-    expect(calls.filter(({ command }) => command === "docker")).toHaveLength(deployments);
+    expect(deployments()).toHaveLength(deployed);
+  });
+
+  it.each(["edge", `sha-${"3".repeat(40)}`, "latest", "v1.0.0"])(
+    "refuses an unverified running build even when the environment pin is %s",
+    async (tag) => {
+      const fixture = await deployment(`RAKAZO_IMAGE_TAG=${tag}\n`);
+      fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
+      const run: UpdaterCommandRunner = async (command, args) => {
+        if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+        if (args[0] === "ps") return ok("a".repeat(12));
+        if (args[0] === "exec") return ok("3".repeat(40));
+        throw new Error("An unverified source must not pull or recreate containers");
+      };
+      await expect(
+        applyStableUpdate(createUpdaterApp(fixture.config, { run }), token),
+      ).rejects.toThrow(/avoid downgrading an edge or unknown build/);
+      expect(await readFile(fixture.config.envFile, "utf8")).toBe(`RAKAZO_IMAGE_TAG=${tag}\n`);
+    },
+  );
+
+  it.each([true, false])("logs whether image recovery succeeded: %s", async (recovered) => {
+    const fixture = await deployment();
+    const run: UpdaterCommandRunner = async (command, args, options) => {
+      if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+      if (args.includes("up")) {
+        if (options.env?.RAKAZO_IMAGE_TAG === "v1.0.0" && recovered) return ok();
+        return failed("container health check failed");
+      }
+      return ok();
+    };
+    const error = await applyStableUpdate(createUpdaterApp(fixture.config, { run }), token).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toHaveProperty(
+      "message",
+      expect.stringContaining(
+        recovered ? "Recovery status: not-required" : "Recovery status: manual",
+      ),
+    );
+    expect(error).toHaveProperty(
+      "message",
+      expect.stringContaining(
+        recovered ? "restored the previously running" : "runtime may contain a mix of versions",
+      ),
+    );
+    expect(error).toHaveProperty(
+      "message",
+      expect.stringContaining("container health check failed"),
+    );
   });
 
   it("reports an unavailable stable release without deploying main as a fallback", async () => {
