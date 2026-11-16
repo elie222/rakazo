@@ -61,7 +61,7 @@ export function ComposerModelPicker({
       }
       disabled={disabled || save.pending}
       onChange={(key) => {
-        if (key !== savedKey) save.run(key);
+        if (key !== selectedModelKey) save.run(key);
       }}
     />
   );
