@@ -41,7 +41,7 @@ const DESKTOP_PORT_START = 6100;
 const READY_PORT = 6080;
 const DEFAULT_PROJECT = "default";
 // Pin a release tag or digest with INCUS_SANDBOX_COMPUTER_IMAGE in production.
-const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:latest";
+const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 // The Docker computer's default ceilings, in Incus units.
 const DEFAULT_CPU_LIMIT = "2";
 const DEFAULT_MEMORY_LIMIT = "2GiB";

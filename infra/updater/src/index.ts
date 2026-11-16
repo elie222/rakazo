@@ -24,6 +24,7 @@ import {
   isGitCommit,
   normalizeUpdateBranch,
   OFFICIAL_REPO_URL,
+  OFFICIAL_SERVER_IMAGE,
   PREVIOUS_IMAGE_TAG_ENV,
   parseGitNameOnly,
   parseGitStatusPorcelain,
@@ -231,6 +232,7 @@ export function createUpdaterApp(
         running,
         lastRun,
         autoUpdateIntervalHours: config.autoUpdateIntervalMs / 3_600_000,
+        autoUpdateDisabledReason: config.autoUpdateDisabledReason,
         ...tags,
         checkout,
       });
@@ -298,7 +300,16 @@ export function createUpdaterApp(
     }
   });
 
-  return app;
+  return Object.assign(app, {
+    // In-process entry point: scheduled work cannot weaken its safeguards or choose a fork.
+    applyScheduledUpdate: () =>
+      withRunLock(async () => {
+        if (config.image !== OFFICIAL_SERVER_IMAGE) {
+          throw new UpdateRefused("Scheduled updates require the official stable release image.");
+        }
+        return apply({ repoUrl: OFFICIAL_REPO_URL, branch: "main", official: true }, true);
+      }),
+  });
 
   async function body(request: Request): Promise<unknown> {
     try {
@@ -528,7 +539,10 @@ export function createUpdaterApp(
     return currentTag === forkImageTag(commit);
   }
 
-  async function apply(request: { repoUrl: string; branch: string; official: boolean }) {
+  async function apply(
+    request: { repoUrl: string; branch: string; official: boolean },
+    scheduled = false,
+  ) {
     const decision = chooseUpdateStrategy(request);
     const tags = readTagState(await readEnvFile());
     const checkout = await readCheckout();
@@ -561,7 +575,7 @@ export function createUpdaterApp(
     let releaseTag: string | null = null;
     if (decision.strategy === "pull") {
       const target = await resolveRelease(request.repoUrl);
-      if (config.autoUpdateIntervalMs > 0) {
+      if (scheduled) {
         const running = await requireStableRunningImage(target.releases);
         if (running.every((commit) => commit === target.commit)) {
           return rememberRun(upToDateRecord(request, tags.currentTag, "pull", target.commit));
@@ -858,17 +872,9 @@ export function createUpdaterApp(
 }
 
 /** Scheduled checks have no branch or channel input: only official stable releases. */
-export async function applyStableUpdate(app: ReturnType<typeof createUpdaterApp>, token: string) {
-  const response = await app.request("/apply", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ repoUrl: OFFICIAL_REPO_URL, branch: "main" }),
-  });
-  const result = (await response.json()) as Partial<ServerUpdateRun>;
-  if (!response.ok || !result.ok) {
+export async function applyStableUpdate(app: ReturnType<typeof createUpdaterApp>) {
+  const result = await app.applyScheduledUpdate();
+  if (!result.ok) {
     const diagnostics = result.steps
       ?.filter((step) => !step.ok)
       .map((step) => `${step.label}: ${step.output}`)
@@ -890,6 +896,7 @@ async function startUpdater() {
   const logger = await createRootLogger(SERVICE_NAMES.updater);
   const config = resolveUpdaterConfig(process.env);
   const app = createUpdaterApp(config, { logger });
+  if (config.autoUpdateDisabledReason) logger.warn(config.autoUpdateDisabledReason);
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => {
     logger.info("updater listening", {
       "http.host": config.host,
@@ -900,7 +907,7 @@ async function startUpdater() {
   const stopSchedule = startUpdateSchedule(
     config.autoUpdateIntervalMs,
     async () => {
-      await applyStableUpdate(app, config.token);
+      await applyStableUpdate(app);
       logger.info("scheduled stable update check completed");
     },
     (error) => logger.error("scheduled stable update failed", { error }),

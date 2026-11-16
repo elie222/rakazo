@@ -41,20 +41,17 @@ describe("resolveUpdaterConfig", () => {
     }
   });
 
-  it("does not schedule official releases against a custom image repository", () => {
-    expect(() =>
-      resolveUpdaterConfig({
-        ...base,
-        RAKAZO_IMAGE: "registry.example.com/custom/app",
-        RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
-      }),
-    ).toThrow(/official stable release/);
-    expect(() =>
-      resolveUpdaterConfig({
-        ...base,
-        RAKAZO_IMAGE: "registry.example.com/custom/app",
-      }),
-    ).not.toThrow();
+  it("disables unsupported mirror scheduling without taking down manual controls", () => {
+    const config = resolveUpdaterConfig({
+      ...base,
+      RAKAZO_IMAGE: "registry.example.com/custom/app",
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+    });
+    expect(config.autoUpdateIntervalMs).toBe(0);
+    expect(config.autoUpdateDisabledReason).toMatch(/manual controls remain available/);
+    expect(
+      resolveUpdaterConfig({ ...base, RAKAZO_IMAGE: "registry.example.com/custom/app" }),
+    ).toMatchObject({ autoUpdateIntervalMs: 0, autoUpdateDisabledReason: null });
   });
 
   it("uses the Compose-injected project name so -p matches the running stack", () => {

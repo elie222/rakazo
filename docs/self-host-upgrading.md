@@ -275,8 +275,9 @@ updates on a server already managed by CI deployments.
 The first check runs six hours after startup, then six hours after each check completes. Valid
 intervals are 1–168 whole hours; `0` disables scheduling. Checks use the official repository's
 newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, and use the existing
-apply/health-check/recovery path. Prereleases and main builds are never scheduled. Custom image
-repositories are refused when scheduling is enabled. When already current, nothing is recreated.
+apply/health-check/recovery path. Prereleases and main builds are never scheduled. Scheduling is
+disabled for custom image repositories, with a startup warning and an `autoUpdateDisabledReason`
+in `/state`; manual controls remain available. When already current, nothing is recreated.
 A failed check logs its recovery status, recovery advice and failed-step diagnostics, then checks
 again after the configured interval; there is no tight retry loop.
 The updater waits for an in-flight scheduled update during graceful shutdown.
@@ -319,7 +320,9 @@ For a manual stable update using the second command, change the path to `/apply`
 `body: JSON.stringify({repoUrl: "https://github.com/elie222/rakazo", branch: "main"})` to its
 fetch options. The official repository still selects stable releases; `main` here does not select
 a main-build image. Keep the updater profile running with an interval of `0` to use only these
-manual controls. Review the result's recovery advice if an update or rollback fails; neither
+manual controls. Operator-initiated `/apply` does not use the scheduler's stable-source gate,
+so review release notes and database compatibility before manually moving an edge or unknown
+build to stable. Review the result's recovery advice if an update or rollback fails; neither
 operation reverses database migrations.
 
 Application updates do not replace the updater itself, Compose files, Postgres major versions or

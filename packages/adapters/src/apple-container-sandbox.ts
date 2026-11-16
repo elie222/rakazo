@@ -28,7 +28,7 @@ import { sandboxNotFoundError } from "./sandbox-errors.js";
 const DISPLAY_START = 20;
 const DESKTOP_PORT_START = 6100;
 const READY_PORT = 6080;
-const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:latest";
+const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_CPUS = "2";
 const DEFAULT_MEMORY = "2g";
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
