@@ -231,7 +231,10 @@ describe("finalizeRun", () => {
       outcome: "failed",
       error: "terminated",
       partialReply,
+      forBot: true,
     });
+    // Written for another bot, the kept text alerts nobody; the failure event still does.
+    expect(tx.event.create.mock.calls[0]?.[0].data.payload).toMatchObject({ forBot: true });
 
     expect(tx.message.create).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({

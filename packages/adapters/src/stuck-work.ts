@@ -397,9 +397,7 @@ async function expireOne(
   });
   await deps.events?.publishSpaceChange?.(run.spaceId, "runs");
   if (expired.continuationRunId) await wakeRun(deps.jobs, expired.continuationRunId);
-  await owner.reveal().catch((error) => {
-    getLogger().error("stuck work unhide", error);
-  });
+  await bestEffort("stuck work unhide", owner.reveal());
   if (!owner.hears) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
   const message = {

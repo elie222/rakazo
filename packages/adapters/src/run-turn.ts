@@ -1205,6 +1205,8 @@ export async function failRun(
     outcome: "failed",
     error: message,
     ...(partialReply.length > 0 ? { partialReply } : {}),
+    // Text written for another bot alerts nobody, as its finished reply wouldn't.
+    ...(run.trigger === "bot_message" ? { forBot: true } : {}),
   });
   if (!failed) return;
   if (
