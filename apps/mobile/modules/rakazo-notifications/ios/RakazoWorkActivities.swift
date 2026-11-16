@@ -69,7 +69,9 @@ final class WorkActivities {
   /// work, such as when the app opens after its last update went missing. False with no card.
   @discardableResult
   func refresh() -> Bool {
-    guard let current = Activity<WorkActivityAttributes>.activities.first(where: {
+    // iOS lists cards oldest first, so the newest stays. Either way the server follows the one kept
+    // from its token and brings it up to date.
+    guard let current = Activity<WorkActivityAttributes>.activities.last(where: {
       $0.activityState == .active && !ending.contains($0.id)
     }) else { return false }
     // Cards left from work the server could not follow would show it forever.

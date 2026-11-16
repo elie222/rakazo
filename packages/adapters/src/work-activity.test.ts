@@ -186,12 +186,19 @@ function fakeDatabase() {
           if (digestMatches && ownerMatches && sessionMatches) phones.delete(digest);
         }
       },
-      updateMany: async (input: { where: Partial<Phone>; data: Partial<Phone> }) => {
+      updateMany: async (input: {
+        where: { [K in keyof Phone]?: Phone[K] | { not: null } | { lt: Date } };
+        data: Partial<Phone>;
+      }) => {
         let count = 0;
         for (const phone of phones.values()) {
-          const matches = Object.entries(input.where).every(
-            ([key, value]) => phone[key as keyof Phone] === value,
-          );
+          const matches = Object.entries(input.where).every(([key, value]) => {
+            const field = phone[key as keyof Phone];
+            if (value && typeof value === "object" && "not" in value) return field != null;
+            if (value && typeof value === "object" && "lt" in value)
+              return field instanceof Date && field < value.lt;
+            return field === value;
+          });
           if (matches) {
             Object.assign(phone, input.data);
             count += 1;
@@ -669,13 +676,36 @@ describe("live status card of the user's bots at work", () => {
       phone.unfollowedStartAt = new Date(Date.now() - 9 * 60 * 60_000);
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(2);
-      // The app ran and handed over its tokens: the next stretch starts a card at once.
+      // A start just claimed may still be on its way: the phone registering meanwhile, before
+      // the card shows, keeps it held.
       nextStretch("3");
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(2);
+      expect(phone.unfollowedStartAt).not.toBeNull();
+      // Later, the app ran and handed over its tokens: the next stretch starts a card at once.
+      phone.unfollowedStartAt = new Date(Date.now() - 2 * 60_000);
       await activities.registerStarts("user-1", "session-1", START_TOKEN);
       await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(3));
       // So does a phone whose started card registered.
       expect(await activities.register("user-1", "session-1", TOKEN)).toBe(true);
       expect(phone.unfollowedStartAt).toBeNull();
+    });
+
+    it("releases a started card whose token comes back after the work ended", async () => {
+      const { activities, phones, runs, run, start } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      const phone = [...phones.values()][0]!;
+      // The work ends before the card's token arrives: the phone is told to end the card.
+      for (const old of runs) old.status = "completed";
+      expect(await activities.register("user-1", "session-1", TOKEN)).toBe(false);
+      expect(phone.unfollowedStartAt).toBeNull();
+      // So work set going from another device shows on this phone again.
+      run("2", { createdAt: new Date(Date.now() - 20_000) });
+      phone.startedAt = new Date(Date.now() - 30_000);
+      await activities.sync("user-1");
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
     });
 
     it("starts no card for a routine, which a card showing still lists", async () => {

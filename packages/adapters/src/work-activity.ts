@@ -65,6 +65,11 @@ const START_GRACE_MS = 10_000;
  * on that phone while it may still show, so such cards never pile up on the Lock Screen.
  */
 const UNFOLLOWED_START_MS = 8 * 60 * 60_000;
+/**
+ * A start claimed this recently may still be on its way to the phone, so the phone registering
+ * meanwhile says nothing of the card it is about to show.
+ */
+const START_IN_FLIGHT_MS = 60_000;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
@@ -110,7 +115,16 @@ export class WorkActivities {
    * their bots is at work.
    */
   async register(userId: string, sessionId: string, token: string): Promise<boolean> {
-    if ((await this.state(userId)).count === 0) return false;
+    if ((await this.state(userId)).count === 0) {
+      // The phone ends the card on this answer, so one started there by push no longer shows.
+      await runAsSystem("release a phone's ended live status card", () =>
+        this.prisma.workActivityStartToken.updateMany({
+          where: { userId, sessionId, unfollowedStartAt: { not: null } },
+          data: { unfollowedStartAt: null },
+        }),
+      );
+      return false;
+    }
     const tokenDigest = credentialDigest(token);
     // A card another account registered on this phone starts over, with nothing of that account's.
     await runAsSystem("drop a live status card another account registered", () =>
@@ -179,14 +193,26 @@ export class WorkActivities {
         where: { tokenDigest, userId: { not: userId } },
       }),
     );
-    // The app runs, and hands over the token of each card it shows or ends it: no card started on
-    // this phone is left that the server cannot reach.
     const { count } = await runAsSystem("refresh a phone registered for live status cards", () =>
       this.prisma.workActivityStartToken.updateMany({
         where: { tokenDigest, userId },
-        data: { sessionId, createdAt: new Date(), unfollowedStartAt: null },
+        data: { sessionId, createdAt: new Date() },
       }),
     );
+    // The app runs, and hands over the token of each card it shows or ends it: no card started on
+    // this phone earlier is left that the server cannot reach. One whose push may still be on its
+    // way is not shown yet, so it stays held until its own token comes back.
+    if (count)
+      await runAsSystem("release a phone's earlier live status card start", () =>
+        this.prisma.workActivityStartToken.updateMany({
+          where: {
+            tokenDigest,
+            userId,
+            unfollowedStartAt: { lt: new Date(Date.now() - START_IN_FLIGHT_MS) },
+          },
+          data: { unfollowedStartAt: null },
+        }),
+      );
     if (!count) {
       // iOS gave this phone a new token: it replaces the old one and keeps its last start, so a
       // card the user dismissed is not started again for the same work.
