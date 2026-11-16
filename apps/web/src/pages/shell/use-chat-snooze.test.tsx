@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { Bot, Group, Space } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -61,8 +62,8 @@ it("puts a chat back to what the server saved when a snooze and its quick undo b
 
 it("mutes a group and hides a bot at once, and puts a failed hide back", async () => {
   const mute = vi.fn(async () => ({ ok: true }));
-  let rejectHide: (error: Error) => void = () => undefined;
-  const hide = vi.fn(() => new Promise((_resolve, reject) => (rejectHide = reject)));
+  const hidden = deferred();
+  const hide = vi.fn(() => hidden.promise);
   const rpc = { threads: { mute, hide } } as unknown as ReturnType<typeof createSpaceRpc>;
   const refreshBots = vi.fn(async () => undefined);
   let state: { bots: Bot[]; groups: Group[]; mute: ToggleChat; hide: ToggleChat } | undefined;
@@ -86,7 +87,7 @@ it("mutes a group and hides a bot at once, and puts a failed hide back", async (
   );
   expect(hide).toHaveBeenCalledWith({ botId: "bot", hidden: true });
   expect(state!.bots[0]!.hidden).toBe(true);
-  await act(async () => rejectHide(new Error("offline")));
+  await act(async () => hidden.reject(new Error("offline")));
   expect(state!.bots[0]!.hidden).toBe(false);
   expect(toast.error).toHaveBeenCalled();
   await act(async () => root.unmount());

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flush } from "./async.test-support.js";
+import { deferred, flush } from "./async.test-support.js";
 import {
   chatListed,
   chatSnoozed,
@@ -150,14 +150,14 @@ describe("chat choice queue", () => {
   it("rolls a failed mute back to the saved one", async () => {
     const queue = createChatChoiceQueue<boolean>();
     const shown: boolean[] = [];
-    let reject: (error: Error) => void = () => undefined;
+    const save = deferred();
     queue("group:a", true, false, {
-      send: () => new Promise<void>((_, fail) => (reject = fail)),
+      send: () => save.promise,
       apply: (muted) => shown.push(muted),
       settled: () => undefined,
     });
     await flush();
-    reject(new Error("offline"));
+    save.reject(new Error("offline"));
     await flush();
     expect(shown).toEqual([true, false]);
   });
