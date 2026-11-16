@@ -32,8 +32,12 @@ test("an owner invites someone to the organization, who joins with a private Spa
     return (await matching()).at(-1)!;
   }
 
-  await signup(ownerPage, `org-owner-${stamp}@rakazo.test`, "password12", "Ada Owner");
+  const ownerEmail = `org-owner-${stamp}@rakazo.test`;
+  await signup(ownerPage, ownerEmail, "password12", "Ada Owner");
   await completeOnboarding(ownerPage);
+  // Invitations are emailed only by someone whose own address is verified.
+  const ownerVerification = await lastEmailTo(ownerEmail, /Verify/);
+  await ownerPage.goto(ownerVerification.text.match(/https?:\/\/\S+/)![0]);
   const { activeOrganizationId } = await rpc<OrganizationList>(ownerPage, "organizations/list", {});
   await rpc(ownerPage, "organizations/rename", {
     organizationId: activeOrganizationId,

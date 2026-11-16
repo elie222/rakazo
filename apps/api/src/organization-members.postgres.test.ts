@@ -339,6 +339,16 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         .status,
     ).toBe(403);
     await expect(role(owner.organizationId, unverified.id)).resolves.toBeNull();
+    // An unverified account sends no invitation email; its link is shared by hand.
+    const sentBefore = sent.length;
+    const unsentInvite = await call(unverified.actor, "organizations/invitations/create", {
+      organizationId: unverified.organizationId,
+      email: cancelled.email,
+    });
+    expect(unsentInvite.status).toBe(200);
+    expect(unsentInvite.json.emailed).toBe(false);
+    expect(sent.length).toBe(sentBefore);
+
     // A server that sends no email verifies nobody, so the link sent to the address is the proof.
     await expect(
       acceptOrganizationInvitation(system, {

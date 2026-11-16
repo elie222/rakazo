@@ -271,7 +271,10 @@ export async function createOrganizationInvitation(
           where: { id: input.organizationId },
           select: { name: true },
         }),
-        tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { name: true } }),
+        tx.user.findUniqueOrThrow({
+          where: { id: input.userId },
+          select: { name: true, emailVerified: true },
+        }),
         tx.invitation.findFirst({
           where: {
             organizationId: input.organizationId,
@@ -298,8 +301,11 @@ export async function createOrganizationInvitation(
       const names = { organizationName: organization.name, inviterName: inviter.name };
       // Past the address's limit nothing is emailed, but the inviter still gets a link to share:
       // the pending one, or a new one when another organization's invitations used the limit up.
-      const send = input.sendsEmail && toRecipient < MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY;
-      if (input.sendsEmail && !send && pending)
+      // Only someone whose own address is proven sends mail in the server's name; anyone else
+      // shares the link by hand.
+      const mayEmail = input.sendsEmail && inviter.emailVerified;
+      const send = mayEmail && toRecipient < MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY;
+      if (mayEmail && !send && pending)
         return { id: pending.id, email, ...names, created: false, send: false };
       if (send && byInviter >= MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY)
         throw new OrganizationInvitationRateError();
