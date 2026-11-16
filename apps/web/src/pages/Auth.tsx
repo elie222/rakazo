@@ -105,7 +105,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         if (!active) return;
         setReset(capabilities);
         const demo = capabilities.demoAccount;
-        if (demo && mode === "in") {
+        // A demo server has one account and no sign-ups, so it always lands on sign-in.
+        if (demo && mode === "up") {
+          navigate(`/sign-in${nextQuery}`, { replace: true });
+        } else if (demo && mode === "in") {
           setEmail((current) => current || demo.email);
           setPassword((current) => current || demo.password);
         }
@@ -417,6 +420,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
+                      if (reset?.demoAccount && password === reset.demoAccount.password) {
+                        setPassword("");
+                      }
                       setEmailBlurred(false);
                     }}
                     onBlur={() => setEmailBlurred(true)}

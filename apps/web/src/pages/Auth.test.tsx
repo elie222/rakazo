@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
@@ -429,15 +429,31 @@ it("leaves the password form unchanged without email codes", async () => {
   expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
 });
 
-it("fills in a demo server's shared login on sign-in only", async () => {
+it("sends a demo server's visitors to sign-in with its shared login filled in", async () => {
   const demoAccount = { email: "demo@example.com", password: "demo-password" };
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
   vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
-  await render("up");
-  expect(host.querySelector<HTMLInputElement>('input[name="email"]')!.value).toBe("");
-  await act(async () => root.unmount());
-  root = createRoot(host);
-  await render();
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/sign-up"]}>
+        <Routes>
+          <Route path="/sign-up" element={<AuthPage mode="up" />} />
+          <Route path="/sign-in" element={<AuthPage mode="in" />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  expect(host.querySelector<HTMLInputElement>('input[name="email"]')!.value).toBe(
+    demoAccount.email,
+  );
   await submit();
   expect(authClient.signIn.email).toHaveBeenCalledWith(demoAccount);
+});
+
+it("drops the demo password once someone types their own email", async () => {
+  const demoAccount = { email: "demo@example.com", password: "demo-password" };
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
+  await render();
+  await enter(host.querySelector('input[name="email"]'), "person@example.com");
+  expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe("");
 });
