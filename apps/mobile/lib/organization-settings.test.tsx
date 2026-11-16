@@ -60,7 +60,9 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
+vi.mock("./roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => true,
   useRouter: () => ({}),
   useLocalSearchParams: () => ({ delete: "1" }),
 }));

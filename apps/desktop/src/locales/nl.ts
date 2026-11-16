@@ -225,8 +225,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker is geïnstalleerd maar draait niet. Open het om door te gaan.",
   "Starting {app}…": "{app} wordt gestart…",
-  "Waiting for Docker Desktop…": "Wachten op Docker Desktop…",
-  "Waiting for Docker…": "Wachten op Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker is geïnstalleerd maar draait niet. Start de Docker-service om door te gaan.",
 };

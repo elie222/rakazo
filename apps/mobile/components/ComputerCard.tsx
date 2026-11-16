@@ -7,21 +7,13 @@ import {
   TAKEOVER_COMPUTER_SKIPPED_STATE,
 } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ViewProps } from "react-native";
-import {
-  Alert,
-  AppState,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { rpc } from "../lib/api";
+import { Alert, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -78,7 +70,6 @@ export function ComputerCard({
   const { width: windowWidth } = useWindowDimensions();
   const pending = block.state === TAKEOVER_COMPUTER_PENDING_STATE;
   const [expanded, setExpanded] = useState(false);
-  const [releasing, setReleasing] = useState(false);
   const image = useComputerPreview(pending && !readOnly && runId ? botId : undefined, runId);
   const label =
     block.state === TAKEOVER_COMPUTER_PENDING_STATE
@@ -91,16 +82,16 @@ export function ComputerCard({
   const open = pending || expanded;
   const canAct = Boolean(onOpen) && !readOnly;
 
-  async function release(reason: ComputerReleaseReason) {
-    if (!botId) return;
-    setReleasing(true);
-    // An answer that went through stays busy until the card settles, so it cannot be sent twice.
-    try {
-      await rpc("computer/release", { botId, runId, reason });
-    } catch (error) {
-      setReleasing(false);
-      Alert.alert(t`Could not continue`, errorText(error));
-    }
+  // An answer that went through stays busy until the card settles, so it cannot be sent twice.
+  const releaseSave = useSave({
+    save: (input: { botId: string; runId?: string; reason: ComputerReleaseReason }, send) =>
+      send("computer/release", input),
+    onFailed: (error) => Alert.alert(t`Could not continue`, errorText(error)),
+    closesScreen: true,
+  });
+  const releasing = releaseSave.pending;
+  function release(reason: ComputerReleaseReason) {
+    if (botId) releaseSave.run({ botId, runId, reason });
   }
 
   const header = (
@@ -181,14 +172,14 @@ export function ComputerCard({
                     prominence="secondary"
                     size="compact"
                     busy={releasing}
-                    onPress={() => void release("skipped")}
+                    onPress={() => release("skipped")}
                   />
                   <NativeActionButton
                     label={t`I’m done`}
                     prominence="secondary"
                     size="compact"
                     busy={releasing}
-                    onPress={() => void release("done")}
+                    onPress={() => release("done")}
                   />
                 </>
               ) : null}
@@ -212,30 +203,9 @@ export function ComputerCard({
 
 /** A still of the bot's screen while the card waits, read again when the app returns. */
 function useComputerPreview(botId: string | undefined, runId: string | undefined) {
-  const [image, setImage] = useState<string | null>(null);
-  useEffect(() => {
-    // A card that turns read-only or moves to another run never keeps the earlier screen.
-    setImage(null);
-    if (!botId) return;
-    let live = true;
-    // Only the latest read may draw, so a slow earlier capture never covers a newer one.
-    let latest = 0;
-    const load = () => {
-      const request = ++latest;
-      return rpc("computer/preview", { botId, runId })
-        .then((result) => {
-          if (live && request === latest) setImage(result.image);
-        })
-        .catch(() => undefined);
-    };
-    void load();
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void load();
-    });
-    return () => {
-      live = false;
-      subscription.remove();
-    };
-  }, [botId, runId]);
-  return image;
+  // A still is only worth keeping while the card shows it.
+  const read = { ...rpcQuery("computer/preview", { botId: botId ?? "", runId }), gcTime: 0 };
+  const preview = useScreenQuery(read, { enabled: Boolean(botId) });
+  // A card that turns read-only or moves to another run never keeps the earlier screen.
+  return (botId && preview.data?.image) || null;
 }

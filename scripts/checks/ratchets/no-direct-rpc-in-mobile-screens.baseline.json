@@ -3,7 +3,6 @@
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
   "apps/mobile/app/(settings)/billing.tsx": 10,
   "apps/mobile/app/(settings)/integrations.tsx": 17,
-  "apps/mobile/app/(settings)/memory-note.tsx": 3,
   "apps/mobile/app/(settings)/messaging.tsx": 14,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
   "apps/mobile/app/(settings)/models.tsx": 2,
@@ -18,14 +17,8 @@
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
   "apps/mobile/app/paywall.tsx": 5,
-  "apps/mobile/app/peer-chat.tsx": 1,
   "apps/mobile/app/routine.tsx": 1,
-  "apps/mobile/app/sign-in.tsx": 1,
   "apps/mobile/components/AppConnectCard.tsx": 3,
-  "apps/mobile/components/ComputerCard.tsx": 2,
-  "apps/mobile/components/ImportSetupCard.tsx": 1,
   "apps/mobile/components/model-role-settings.tsx": 1,
-  "apps/mobile/components/space-bots-model.tsx": 1,
-  "apps/mobile/components/thread/special-message-card.tsx": 1,
-  "apps/mobile/components/thread/thread-screen.tsx": 2
+  "apps/mobile/components/space-bots-model.tsx": 1
 }

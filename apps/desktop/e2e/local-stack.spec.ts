@@ -250,7 +250,6 @@ test("without Docker the app offers the download and continues once Docker is in
   );
   // Installing Docker is a step, not a failure.
   await expect(setup.locator("#stack-phase")).not.toHaveAttribute("data-tone");
-  await expect(setup.locator("#stack-waiting")).toHaveText(`Waiting for ${docker}…`);
   const download = setup.getByRole("button", {
     name: process.platform === "linux" ? "Install Docker" : "Download Docker Desktop",
   });
@@ -329,7 +328,6 @@ test("a stopped Docker daemon is reported and setup keeps asking Docker on its o
       ? "Docker is installed but not running. Start the Docker service to continue."
       : "Docker is installed but not running. Open it to continue.",
   );
-  await expect(setup.locator("#stack-waiting")).toBeVisible();
   // Setup looks again on its own, so there is no button to press.
   await expect(setup.locator("#continue")).toBeHidden();
   await setup.screenshot({
@@ -354,7 +352,6 @@ test("a failed Compose check shows diagnostics instead of installation help", as
   await expect(setup.locator("#stack-output")).toContainText("Access is denied.");
   await expect(setup.locator("#stack-output")).toContainText("exited with code 7");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-waiting")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "11-setup-compose-check-failed.png"),
   });
@@ -371,7 +368,6 @@ test("unpublished images show the docker output and a Retry button", async () =>
   );
   await expect(setup.locator("#stack-output")).toContainText("manifest unknown");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-waiting")).toBeHidden();
   expect((await readLog()).some((line) => line.endsWith(" up -d --wait --wait-timeout 300"))).toBe(
     false,
   );

@@ -10,6 +10,7 @@ import {
   moveDockerStack,
   pipeCommands,
   readStackChoice,
+  settleStackWhenNeeded,
   stackExists,
   writeStackChoice,
 } from "./docker-move.js";
@@ -70,6 +71,60 @@ describe("chooseStack", () => {
   it("detects each stack from its own files", async () => {
     const exists = (file: string) => file.endsWith("docker-compose.images.yml");
     expect(stackExists(dir, exists)).toEqual({ dockerStack: true, nativeStack: false });
+  });
+});
+
+describe("settleStackWhenNeeded", () => {
+  it("asks only when This computer is first needed, once, and uses the answer", async () => {
+    let asked = 0;
+    const used: string[] = [];
+    const settle = settleStackWhenNeeded(
+      "ask",
+      async () => {
+        asked += 1;
+        return "native";
+      },
+      async (choice) => {
+        used.push(choice);
+      },
+    );
+    expect(asked).toBe(0);
+    await Promise.all([settle(), settle()]);
+    await settle();
+    expect(asked).toBe(1);
+    expect(used).toEqual(["native"]);
+  });
+
+  it("asks again after a failed attempt", async () => {
+    let asked = 0;
+    const settle = settleStackWhenNeeded(
+      "ask",
+      async () => {
+        asked += 1;
+        if (asked === 1) throw new Error("dialog failed");
+        return "docker";
+      },
+      async () => {},
+    );
+    await expect(settle()).rejects.toThrow("dialog failed");
+    await settle();
+    await settle();
+    expect(asked).toBe(2);
+  });
+
+  it("keeps a stack already decided at launch", async () => {
+    const used: string[] = [];
+    const settle = settleStackWhenNeeded(
+      "docker",
+      async () => {
+        throw new Error("must not ask");
+      },
+      async (choice) => {
+        used.push(choice);
+      },
+    );
+    await settle();
+    expect(used).toEqual([]);
   });
 });
 
