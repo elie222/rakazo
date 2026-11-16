@@ -21,8 +21,6 @@ const EXISTING = new Set([
   "Attempt.fence",
   "Computer.executionLeaseExpiresAt",
   "Computer.executionFence",
-  "HomeDeletionNotice.claimId",
-  "HomeDeletionNotice.claimExpiresAt",
   "ComputerExecutionLease.fence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
@@ -30,6 +28,8 @@ const EXISTING = new Set([
   // Moved onto `withLease`; kept only while the previous release still claims them.
   "CloudAgent.leaseToken",
   "CloudAgent.leaseExpiresAt",
+  "HomeDeletionNotice.claimId",
+  "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
   "Lease.fence",
   // Not long work in one process, so not for `withLease`: a person's page holds computer control
