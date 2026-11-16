@@ -35,6 +35,15 @@ describe("sink failure diagnostics", () => {
       error: { toString: (): string => sensitive },
       expected: redacted,
     },
+    {
+      name: "rejection that cannot be printed",
+      error: {
+        toString: (): string => {
+          throw new Error("no text");
+        },
+      },
+      expected: "unprintable error",
+    },
   ])("redacts the $name before writing to the console", ({ error, expected }) => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 

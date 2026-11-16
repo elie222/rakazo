@@ -27,9 +27,17 @@ function throttledReporter(label: string): (error: unknown) => void {
     const extra = suppressed > 0 ? ` (${suppressed} suppressed)` : "";
     suppressed = 0;
     lastReportAt = now;
-    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const message = describeError(error);
     console.error(`${label}${extra}`, redactSensitiveText(message));
   };
+}
+
+function describeError(error: unknown): string {
+  try {
+    return error instanceof Error ? (error.stack ?? error.message) : String(error);
+  } catch {
+    return "unprintable error";
+  }
 }
 
 const reportSinkFailure = throttledReporter("log sink failed");
