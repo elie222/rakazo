@@ -2,6 +2,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "
 import os from "node:os";
 import path from "node:path";
 import type { ServerUpdateRun } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it } from "vitest";
 import type { UpdaterCommandRunner } from "./index.js";
 import {
@@ -186,29 +187,23 @@ describe("updater HTTP surface", () => {
 describe("updater orchestration", () => {
   it("serializes updates before their asynchronous preflight can race", async () => {
     const fixture = await deployment();
-    let releaseGate: ((result: ReturnType<typeof ok>) => void) | undefined;
-    const pendingRelease = new Promise<ReturnType<typeof ok>>((resolve) => {
-      releaseGate = resolve;
-    });
-    let reachedRemote!: () => void;
-    const atRemote = new Promise<void>((resolve) => {
-      reachedRemote = resolve;
-    });
+    const pendingRelease = deferred<ReturnType<typeof ok>>();
+    const atRemote = deferred();
     const run: UpdaterCommandRunner = async (command, args) => {
       if (command === "git" && args.includes("ls-remote")) {
-        reachedRemote();
-        return pendingRelease;
+        atRemote.resolve();
+        return pendingRelease.promise;
       }
       return ok();
     };
     const subject = createUpdaterApp(fixture.config, { run });
     const input = { repoUrl: "https://github.com/elie222/rakazo", branch: "main" };
     const first = request(subject, "/apply", input);
-    await atRemote;
+    await atRemote.promise;
     const second = await request(subject, "/apply", input);
     expect(second.status).toBe(400);
     await expect(second.json()).resolves.toEqual({ error: "An update is already running." });
-    releaseGate?.(ok(`${targetCommit}\trefs/tags/v1.1.0\n`));
+    pendingRelease.resolve(ok(`${targetCommit}\trefs/tags/v1.1.0\n`));
     expect((await first).status).toBe(200);
   });
 
