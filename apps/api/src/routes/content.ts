@@ -205,11 +205,12 @@ export function contentRoutes(ctx: RouterContext) {
         });
         const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
         const rollingDays = { "7d": 7, "30d": 30 }[input.range as "7d" | "30d"];
+        const since = rollingDays ? new Date(now.getTime() - rollingDays * 86_400_000) : null;
         const rangeFilter =
           input.range === "today"
             ? Prisma.sql`AND u."createdAt" >= (date_trunc('day', now() AT TIME ZONE ${timezone}) AT TIME ZONE ${timezone}) AT TIME ZONE 'UTC'`
             : rollingDays
-              ? Prisma.sql`AND u."createdAt" >= ${new Date(now.getTime() - rollingDays * 86_400_000)}::timestamp(3)`
+              ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
               : Prisma.empty;
         const modelFilter =
           input.provider && input.model
@@ -234,7 +235,7 @@ export function contentRoutes(ctx: RouterContext) {
           costComplete: boolean;
         };
         type ModelRow = TotalsRow & { provider: string; model: string };
-        type TimeRow = Omit<TotalsRow, "runs"> & { bucket: Date };
+        type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
 
         const toNum = (v: bigint | number | null | undefined) =>
@@ -281,7 +282,7 @@ export function contentRoutes(ctx: RouterContext) {
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
           deps.prisma.$queryRaw<TimeRow[]>(Prisma.sql`
-            SELECT date_trunc('day', u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}) AS bucket,
+            SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
               BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
@@ -300,7 +301,7 @@ export function contentRoutes(ctx: RouterContext) {
           // The selectors list everything used in the range, so any bot/model pair stays selectable.
           deps.prisma.$queryRaw<BotRow[]>(Prisma.sql`
             SELECT u."botId" AS "botId",
-              COALESCE(b.name, bd.name, 'Deleted bot') AS name,
+              COALESCE(b.name, bd.name) AS name,
               (b.id IS NULL) AS deleted,
               ${totalsSelect}
             FROM usage_records u
@@ -356,6 +357,78 @@ export function contentRoutes(ctx: RouterContext) {
           });
         })();
 
+        const localDay = (at: Date) =>
+          new Intl.DateTimeFormat("en-CA", {
+            timeZone: timezone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(at);
+        const nextDay = (day: string) =>
+          new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+        const points = new Map(
+          timeRows.map((row) => {
+            const t = totalsOf({ ...row, runs: 0 });
+            return [
+              row.bucket,
+              {
+                modelCalls: t.modelCalls,
+                inputTokens: t.inputTokens,
+                outputTokens: t.outputTokens,
+                totalTokens: t.totalTokens,
+                costUsd: t.costUsd,
+              },
+            ] as const;
+          }),
+        );
+        const firstDay = since
+          ? localDay(since)
+          : input.range === "today"
+            ? localDay(now)
+            : timeRows[0]?.bucket;
+        const lastDay = [localDay(now), timeRows.at(-1)?.bucket ?? ""].sort().at(-1) ?? "";
+        const overTimeUnit =
+          input.range === "all" &&
+          firstDay &&
+          Date.parse(lastDay) - Date.parse(firstDay) > 60 * 86_400_000
+            ? "month"
+            : "day";
+        type Point = {
+          modelCalls: number;
+          inputTokens: number | null;
+          outputTokens: number | null;
+          totalTokens: number | null;
+          costUsd: number | null;
+        };
+        const empty: Point = {
+          modelCalls: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+        };
+        const add = (a: number | null, b: number | null) => (a == null || b == null ? null : a + b);
+        const overTime: ({ date: string } & Point)[] = [];
+        // Every day or month in the range gets a point, so quiet stretches show as gaps.
+        for (
+          let day = timeRows.length > 0 ? firstDay : undefined;
+          day && day <= lastDay;
+          day = nextDay(day)
+        ) {
+          const date = overTimeUnit === "month" ? `${day.slice(0, 7)}-01` : day;
+          const point = points.get(day) ?? empty;
+          const last = overTime.at(-1);
+          if (last?.date !== date) {
+            overTime.push({ date, ...point });
+            continue;
+          }
+          last.modelCalls += point.modelCalls;
+          last.inputTokens = add(last.inputTokens, point.inputTokens);
+          last.outputTokens = add(last.outputTokens, point.outputTokens);
+          last.totalTokens = add(last.totalTokens, point.totalTokens);
+          last.costUsd = add(last.costUsd, point.costUsd);
+        }
+
         return {
           range: input.range,
           totals,
@@ -372,20 +445,11 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: t.costUsd,
             };
           }),
-          overTime: timeRows.map((row) => {
-            const t = totalsOf({ ...row, runs: 0 });
-            return {
-              date: row.bucket.toISOString(),
-              modelCalls: t.modelCalls,
-              inputTokens: t.inputTokens,
-              outputTokens: t.outputTokens,
-              totalTokens: t.totalTokens,
-              costUsd: t.costUsd,
-            };
-          }),
+          overTimeUnit,
+          overTime,
           bots: botRows.map((row) => ({
             id: row.botId,
-            name: row.name ?? "Deleted bot",
+            name: row.name,
             deleted: row.deleted,
             ...totalsOf(row),
           })),

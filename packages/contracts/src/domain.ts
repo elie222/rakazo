@@ -1187,14 +1187,15 @@ export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 
 export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
-  /** Start of the UTC bucket, ISO 8601. */
+  /** The bucket's first day in the member's timezone, YYYY-MM-DD. */
   date: z.string(),
 });
 export type UsageBreakdownPoint = z.infer<typeof UsageBreakdownPointSchema>;
 
 export const UsageBreakdownBotSchema = z.object({
   id: Id,
-  name: z.string(),
+  /** Null for a bot removed without a record of its name. */
+  name: z.string().nullable(),
   deleted: z.boolean(),
   runs: z.number(),
   inputTokens: z.number().nullable(),
@@ -1213,6 +1214,8 @@ export const UsageBreakdownSchema = z.object({
   modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
   totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
   models: z.array(UsageBreakdownModelSchema),
+  /** One point per day, or per month for an all-time history longer than two months. */
+  overTimeUnit: z.enum(["day", "month"]),
   overTime: z.array(UsageBreakdownPointSchema),
 });
 export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;

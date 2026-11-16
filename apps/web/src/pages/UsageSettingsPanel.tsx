@@ -61,6 +61,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const bots = data?.bots ?? [];
   const models = fresh?.models ?? [];
   const overTime = fresh?.overTime ?? [];
+  const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
   const modelNames = data?.modelOptions ?? [];
   const modelOptions = modelNames.map((m) => ({
@@ -100,7 +101,11 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             <NativeSelectOption value="all">{t`All bots`}</NativeSelectOption>
             {bots.map((bot) => (
               <NativeSelectOption key={bot.id} value={bot.id}>
-                {bot.deleted ? t`${bot.name} (deleted)` : bot.name}
+                {bot.name == null
+                  ? t`Deleted bot`
+                  : bot.deleted
+                    ? t`${bot.name} (deleted)`
+                    : bot.name}
               </NativeSelectOption>
             ))}
           </NativeSelect>
@@ -169,14 +174,16 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             <Trans>Usage over time</Trans>
           </p>
           <div className="flex h-28 items-end gap-1">
-            {overTime.map((point) => {
+            {overTime.map((point, index) => {
               const value = point.totalTokens ?? 0;
               const height = Math.max(4, Math.round((value / maxTokens) * 100));
-              const day = new Date(point.date).toLocaleDateString(i18n.locale, {
-                month: "short",
-                day: "numeric",
-                timeZone: "UTC",
-              });
+              const day = new Date(`${point.date}T00:00:00Z`).toLocaleDateString(
+                i18n.locale,
+                monthly
+                  ? { month: "short", year: "numeric", timeZone: "UTC" }
+                  : { month: "short", day: "numeric", timeZone: "UTC" },
+              );
+              const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
               return (
                 <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                   <div className="flex w-full flex-1 items-end">
@@ -187,7 +194,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                     />
                   </div>
                   <span className="w-full truncate text-center text-caption text-muted-foreground">
-                    {day}
+                    {labelled ? day : null}
                   </span>
                 </div>
               );

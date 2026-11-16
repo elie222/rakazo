@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { UsageBreakdown, UsageBreakdownInput } from "@rakazo/contracts";
+import { abortableDelay } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
@@ -16,12 +17,12 @@ process.env.AGENT_RUNTIME = "scripted";
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeBreakdown = hasDb ? describe : describe.skip;
 const DAY = 24 * 60 * 60 * 1000;
-const utcMidnight = (at: number) => new Date(at - (at % DAY)).toISOString();
+const utcDay = (at: number) => new Date(at).toISOString().slice(0, 10);
 
 // The "today" range is read when the endpoint runs: never seed across a UTC midnight.
 async function pastUtcMidnight() {
   const left = DAY - (Date.now() % DAY);
-  if (left < 90_000) await new Promise((resolve) => setTimeout(resolve, left + 1000));
+  if (left < 90_000) await abortableDelay(left + 1000);
 }
 
 describeBreakdown("usage.breakdown", () => {
@@ -169,16 +170,20 @@ describeBreakdown("usage.breakdown", () => {
       ["m2", 2, 1160],
       ["m1", 4, 155],
     ]);
-    expect(month.overTime.map((p) => [p.modelCalls, p.totalTokens])).toEqual([
+    // Every day of the range is a point; quiet days are zero.
+    expect(month.overTimeUnit).toBe("day");
+    expect(month.overTime).toHaveLength(31);
+    const active = month.overTime.filter((p) => p.modelCalls > 0);
+    expect(active.map((p) => [p.modelCalls, p.totalTokens])).toEqual([
       [1, 1100],
       [1, 15],
       [4, 200],
     ]);
     // Days are UTC days whatever timezone the database session runs in.
-    expect(month.overTime.map((p) => p.date)).toEqual([
-      utcMidnight(now - 20 * DAY),
-      utcMidnight(now - 2 * DAY),
-      utcMidnight(now),
+    expect(active.map((p) => p.date)).toEqual([
+      utcDay(now - 20 * DAY),
+      utcDay(now - 2 * DAY),
+      utcDay(now),
     ]);
 
     expect(summary(await get({ range: "today" }))).toEqual({ runs: 2, calls: 4, tokens: 200 });
@@ -238,7 +243,7 @@ describeBreakdown("usage.breakdown", () => {
   it("cuts today and day buckets at the member's own midnight", async () => {
     const offset = 14 * 60 * 60 * 1000;
     const left = DAY - ((Date.now() + offset) % DAY);
-    if (left < 90_000) await new Promise((resolve) => setTimeout(resolve, left + 1000));
+    if (left < 90_000) await abortableDelay(left + 1000);
     const cookie = await signup(app, `usage-breakdown-tz-${stamp}@rakazo.test`, "Zoned");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Zoned",
@@ -272,7 +277,18 @@ describeBreakdown("usage.breakdown", () => {
     const today = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "today" });
     expect(today.totals.modelCalls).toBe(1);
     const all = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
-    expect(all.overTime.map((p) => p.modelCalls)).toEqual([1, 1]);
+    expect(all.overTime.map((p) => [p.date, p.modelCalls])).toEqual([
+      [utcDay(localMidnight + offset - DAY), 1],
+      [utcDay(localMidnight + offset), 1],
+    ]);
+
+    // A history longer than two months is drawn by month, quiet months included.
+    await prisma.usageRecord.create({ data: record(localMidnight - 100 * DAY) });
+    const long = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
+    expect(long.overTimeUnit).toBe("month");
+    expect(long.overTime.reduce((sum, p) => sum + p.modelCalls, 0)).toBe(3);
+    expect(long.overTime.length).toBeGreaterThanOrEqual(4);
+    expect(long.overTime.every((p) => p.date.endsWith("-01"))).toBe(true);
   });
 });
 

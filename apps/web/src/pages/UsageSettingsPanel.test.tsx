@@ -72,7 +72,8 @@ const usageFor = (input: Input) => ({
   models: [
     { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
   ],
-  overTime: [{ date: "2026-11-10T00:00:00.000Z", ...point(3, 400, 0.04) }],
+  overTimeUnit: "day",
+  overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
 });
 
 const settle = () => act(flush);

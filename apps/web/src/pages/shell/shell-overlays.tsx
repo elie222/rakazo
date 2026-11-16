@@ -189,6 +189,7 @@ export function SettingsOverlays({
           onTimezoneChange={async (timezone) => {
             const nextMe = await rpc.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+            void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
