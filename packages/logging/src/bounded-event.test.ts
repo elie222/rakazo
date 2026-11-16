@@ -70,6 +70,12 @@ describe("boundLogEvent", () => {
     });
   });
 
+  it("shortens a very long integer like any other text", () => {
+    const bounded = boundLogEvent(event({ "run.big": 10n ** 20_000n }));
+    expect((bounded["run.big"] as string).length).toBeLessThanOrEqual(MAX_LOG_STRING_CHARS);
+    expect(bounded["log.truncated"]).toBe(true);
+  });
+
   it("returns a line that serializes when a field is a BigInt", () => {
     const bounded = boundLogEvent(event({ "run.steps": 12345678901234567890n }));
 

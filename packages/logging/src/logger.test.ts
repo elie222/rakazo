@@ -203,6 +203,11 @@ describe("error serialization", () => {
     expect(serialized.message).toContain("[Redacted]");
   });
 
+  it("redacts secrets in error names", () => {
+    const error = Object.assign(new Error("failed"), { name: "Bearer supersecret" });
+    expect(serializeError(error).name).not.toContain("supersecret");
+  });
+
   it("redacts user profile paths in error messages and stacks", () => {
     const error = new Error("cannot open /home/example-user/app.db");
     error.stack = `Error: cannot open /home/example-user/app.db\n    at run (/Users/example-user/app/index.js:1:1)\n    at load (C:\\Users\\example-user\\app\\index.js:2:1)`;

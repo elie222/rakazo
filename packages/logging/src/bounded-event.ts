@@ -25,8 +25,8 @@ export function boundLogEvent(event: LogEvent): Record<string, unknown> {
   let truncated = false;
   let json: unknown;
   try {
-    json = JSON.stringify(event, (_key, value: unknown) => {
-      if (typeof value === "bigint") return value.toString();
+    json = JSON.stringify(event, (_key, raw: unknown) => {
+      const value = typeof raw === "bigint" ? raw.toString() : raw;
       if (typeof value !== "string" || value.length <= MAX_LOG_STRING_CHARS) return value;
       truncated = true;
       return cap(value, MAX_LOG_STRING_CHARS);
@@ -43,6 +43,10 @@ export function boundLogEvent(event: LogEvent): Record<string, unknown> {
   return bounded;
 }
 
+function isEssential(key: string): boolean {
+  return ESSENTIAL_FIELDS.has(key) || key.endsWith(".id");
+}
+
 /** At most `limit` characters, the note saying how much was cut included. */
 function cap(value: string, limit: number): string {
   if (value.length <= limit) return value;
@@ -54,10 +58,6 @@ function cap(value: string, limit: number): string {
  * The line's plain top-level fields and its error's name and message, each shortened; if even
  * that is too large, only its message, level, service, ids and error name.
  */
-function isEssential(key: string): boolean {
-  return ESSENTIAL_FIELDS.has(key) || key.endsWith(".id");
-}
-
 function standIn(event: LogEvent, flag: string): Record<string, unknown> {
   const fields: Array<[string, unknown]> = [];
   if (event.error) {
