@@ -38,8 +38,6 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async (spaceId: string) => ({
     apiBase: "https://example.invalid",

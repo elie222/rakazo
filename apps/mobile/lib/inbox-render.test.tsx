@@ -154,9 +154,8 @@ vi.mock("expo-router", () => {
     },
   };
 });
+// The real server client reads React Native's __DEV__ global, which tests do not define.
 vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: ui.rpc,
   captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({

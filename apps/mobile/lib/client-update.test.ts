@@ -27,9 +27,6 @@ const rn = vi.hoisted(() => {
 
 vi.mock("expo-updates", () => updates);
 vi.mock("react-native", () => rn);
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ configureClientBuild: vi.fn() }));
 
 import { IOS_APP_STORE_URL } from "@rakazo/contracts";
