@@ -1,4 +1,5 @@
 import { parseRetryAfter } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 
 /** kosa8 Cloud's own API, used directly: no SDK to load. */
 export const KOSA8_DEFAULT_API_URL = "https://api.kosa8.com";
@@ -129,6 +130,19 @@ export function nativeKosa8Api(
     (await (
       await send(method, path, { ...(payload === undefined ? {} : { json: payload }), timeoutMs })
     ).json()) as T;
+  /** For calls whose answer is not needed: a success with no body is still a success. */
+  const call = async (
+    method: string,
+    path: string,
+    payload?: unknown,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ): Promise<void> => {
+    const response = await send(method, path, {
+      ...(payload === undefined ? {} : { json: payload }),
+      timeoutMs,
+    });
+    await bestEffort("release a kosa8 response body", response.body?.cancel());
+  };
   const sandbox = (id: string) => `/v1/sandboxes/${encodeURIComponent(id)}`;
   const file = (id: string, path: string) =>
     `${sandbox(id)}/files/raw?path=${encodeURIComponent(path)}`;
@@ -144,15 +158,11 @@ export function nativeKosa8Api(
         })
       ).sandbox,
     get: async (id) => (await json<{ sandbox: Kosa8Sandbox }>("GET", sandbox(id))).sandbox,
-    sleep: async (id) => {
-      await json("POST", `${sandbox(id)}/sleep`);
-    },
-    wake: async (id) => {
-      await json("POST", `${sandbox(id)}/wake`);
-    },
+    sleep: (id) => call("POST", `${sandbox(id)}/sleep`),
+    wake: (id) => call("POST", `${sandbox(id)}/wake`),
     delete: async (id, timeoutMs) => {
       try {
-        await json("DELETE", sandbox(id), undefined, timeoutMs);
+        await call("DELETE", sandbox(id), undefined, timeoutMs);
         return true;
       } catch (error) {
         if (error instanceof Kosa8ApiError && error.status === 404) return false;
@@ -194,9 +204,7 @@ export function nativeKosa8Api(
         .snapshot,
     snapshots: async () =>
       (await json<{ snapshots: Kosa8Snapshot[] }>("GET", "/v1/snapshots")).snapshots,
-    deleteSnapshot: async (id) => {
-      await json("DELETE", `/v1/snapshots/${encodeURIComponent(id)}`);
-    },
+    deleteSnapshot: (id) => call("DELETE", `/v1/snapshots/${encodeURIComponent(id)}`),
   };
 }
 
@@ -226,30 +234,34 @@ export async function readExecStream(response: Response): Promise<Kosa8ExecResul
   let pending = "";
   const reader = response.body?.getReader();
   if (!reader) throw new Error("kosa8 sent no command output");
-  for (;;) {
-    const { done, value } = await reader.read();
-    pending += decoder.decode(value, { stream: !done });
-    const lines = pending.split("\n");
-    pending = done ? "" : (lines.pop() ?? "");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const frame = JSON.parse(line) as {
-        stream?: string;
-        data?: string;
-        done?: boolean;
-        exit?: number;
-        error?: string;
-      };
-      if (frame.done) {
-        await reader.cancel();
-        if (typeof frame.exit === "number")
-          return { exitCode: frame.exit, stdout: out.stdout.text(), stderr: out.stderr.text() };
-        throw new Error(`kosa8 command failed: ${frame.error ?? "no exit status"}`);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split("\n");
+      pending = done ? "" : (lines.pop() ?? "");
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const frame = JSON.parse(line) as {
+          stream?: string;
+          data?: string;
+          done?: boolean;
+          exit?: number;
+          error?: string;
+        };
+        if (frame.done) {
+          if (typeof frame.exit === "number")
+            return { exitCode: frame.exit, stdout: out.stdout.text(), stderr: out.stderr.text() };
+          throw new Error(`kosa8 command failed: ${frame.error ?? "no exit status"}`);
+        }
+        if (frame.data && (frame.stream === "stdout" || frame.stream === "stderr"))
+          out[frame.stream].add(Buffer.from(frame.data, "base64"));
       }
-      if (frame.data && (frame.stream === "stdout" || frame.stream === "stderr"))
-        out[frame.stream].add(Buffer.from(frame.data, "base64"));
+      if (done) throw new Error("kosa8 command output ended before the command exited");
     }
-    if (done) throw new Error("kosa8 command output ended before the command exited");
+  } finally {
+    // Every way out releases the connection: an exit, a bad frame, or a stream cut short.
+    await bestEffort("release a kosa8 command stream", reader.cancel());
   }
 }
 

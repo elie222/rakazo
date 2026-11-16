@@ -148,6 +148,18 @@ describe("kosa8 computer backend", () => {
     const events = await run(provider, computer, 50);
     expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
     expect(emulator.computers.get(computer.id)!.state).toBe("running");
+    // What the command moved out of `timeout`'s process group is ended too.
+    expect(emulator.ended).toHaveLength(1);
+  });
+
+  it("puts the computer to sleep when a command past its deadline cannot be ended", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.hangs = (command) => command.includes("infinity");
+    emulator.endRun = () => new Error("connection reset");
+    await expect(run(provider, computer, 50)).rejects.toMatchObject({
+      name: "SandboxUnsafeStopError",
+    });
+    expect(emulator.computers.get(computer.id)!.state).toBe("sleeping");
   });
 
   it("ends a cancelled command and everything it started, not only its stream", async () => {
@@ -198,6 +210,33 @@ describe("kosa8 computer backend", () => {
     );
   });
 
+  it("runs a short script full of quotes from a file, since quoting grows it past kosa8's limit", async () => {
+    const { provider, computer } = await started();
+    const quoted = "'".repeat(2_000);
+    let stdout = "";
+    for await (const event of provider.execute(computer, { argv: ["echo", quoted] }, ctx))
+      if (event.type === "stdout") stdout += event.data;
+    expect(stdout.trim()).toBe(quoted);
+  });
+
+  it("returns a cancelled result when cancelled while a long script uploads, leaving no script", async () => {
+    const { emulator, provider, computer } = await started();
+    const controller = new AbortController();
+    vi.spyOn(emulator, "writeFile").mockImplementationOnce(async () => {
+      controller.abort();
+      throw new DOMException("aborted", "AbortError");
+    });
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["echo", "y".repeat(9_000)] },
+      { ...ctx, signal: controller.signal },
+    ))
+      events.push(event);
+    expect(events.at(-1)).toEqual({ type: "exit", code: 130 });
+    expect(emulator.commands.at(-1)).toMatch(/^rm -f -- '\/workspace\/\.rakazo-transfer\//);
+  });
+
   it("moves files outside /workspace through it", async () => {
     const emulator = new Kosa8Emulator();
     const { id } = await emulator.create({
@@ -220,6 +259,26 @@ describe("kosa8 computer backend", () => {
       path.startsWith("/workspace/.rakazo-transfer/"),
     );
     expect(staged).toEqual([]);
+  });
+
+  it("removes the staged copy of a file whose move failed", async () => {
+    const emulator = new Kosa8Emulator();
+    const { id } = await emulator.create({
+      name: "n",
+      labels: {},
+      sleepAfterS: 0,
+      snapshot: "snap_standard",
+    });
+    const files = emulator.computers.get(id)!.files;
+    const desktop = kosa8Desktop(emulator, id, "host.test", async () => {});
+    emulator.fails = (command) => command.includes("mv -f");
+    await expect(
+      desktop.files.write(
+        [{ path: "/tmp/in", data: new TextEncoder().encode("secret").buffer }],
+        {},
+      ),
+    ).rejects.toThrow("permission denied");
+    expect([...files.keys()]).toEqual([]);
   });
 
   it("keeps the computer when a liveness check is rate limited", async () => {
@@ -253,6 +312,25 @@ describe("kosa8 computer snapshots and sizes", () => {
     );
     // The build computer is deleted once its snapshot is saved.
     await vi.waitFor(() => expect(emulator.computers.size).toBe(1));
+    // Once the build settles, the next computer starts from the snapshot this process just saved.
+    await vi.waitFor(async () => {
+      const next = await kosa8.provision({ ...request, botId: "bot-2" }, ctx);
+      expect(emulator.computers.get(next.id)!.snapshot).toBe(emulator.saved[0]!.id);
+    });
+  });
+
+  it("deletes a snapshot whose save failed, so it does not hold off the next build", async () => {
+    const emulator = new Kosa8Emulator({ snapshots: false });
+    vi.spyOn(emulator, "snapshot").mockResolvedValue({
+      id: "snap_lost",
+      name: kosa8ComputerSnapshot("standard"),
+      state: "creating",
+    });
+    await expect(buildKosa8ComputerSnapshot(emulator, "standard")).rejects.toThrow(
+      "could not save",
+    );
+    expect(emulator.requests).toContain("delete snapshot snap_lost");
+    expect(emulator.computers.size).toBe(0);
   });
 
   it("builds a snapshot from a fresh computer once, and not again when it is saved", async () => {
@@ -349,6 +427,27 @@ describe("kosa8 API client", () => {
       "host lost",
     );
     await expect(readExecStream(stream([]))).rejects.toThrow("ended before the command exited");
+  });
+
+  it("releases the command stream when it breaks", async () => {
+    const released = vi.fn();
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("not json\n"));
+      },
+      cancel: released,
+    });
+    await expect(readExecStream(new Response(broken))).rejects.toThrow(SyntaxError);
+    expect(released).toHaveBeenCalled();
+  });
+
+  it("takes a successful lifecycle call with no body as done", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = nativeKosa8Api("test-key", "https://kosa8.test", fetcher as typeof fetch);
+    await expect(api.sleep("sbx_1")).resolves.toBeUndefined();
+    await expect(api.wake("sbx_1")).resolves.toBeUndefined();
+    await expect(api.delete("sbx_1")).resolves.toBe(true);
+    await expect(api.deleteSnapshot("snap_1")).resolves.toBeUndefined();
   });
 
   it("sends the key, starts persistent computers or from a snapshot, and reads kosa8's errors", async () => {

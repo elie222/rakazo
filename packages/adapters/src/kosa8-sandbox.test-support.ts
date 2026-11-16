@@ -141,6 +141,11 @@ export class Kosa8Emulator implements Kosa8Api {
       computer.running.delete(ending);
       return { exitCode: 0, stdout: "", stderr: "" };
     }
+    // Cleanup the adapter sends bare, outside a run.
+    if (!script.startsWith("exec timeout ")) {
+      this.commands.push(script);
+      return this.shell(computer, script, options.env);
+    }
     const [, , , , seconds, , , inner] = parse(script) as string[];
     let command = inner!;
     const fromFile = command.match(/^status=0; bash (\S+) \|\|/)?.[1];

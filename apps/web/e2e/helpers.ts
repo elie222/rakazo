@@ -9,8 +9,7 @@ export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
     provider === "daytona" ||
     provider === "boat" ||
     provider === "boxd" ||
-    provider === "instabox" ||
-    provider === "kosa8"
+    provider === "instabox"
   );
 }
 

@@ -9,6 +9,7 @@ import {
 import type { ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
 import { pollUntil, retry, withAbort } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,
@@ -46,8 +47,8 @@ const HOME_IN_WORKSPACE = "/workspace/user";
 const LINK_HOME = `mkdir -p ${HOME_IN_WORKSPACE} && { [ -e /home/user ] || ln -s ${HOME_IN_WORKSPACE} /home/user; }`;
 /** Where files bound for paths outside /workspace pass through. */
 const TRANSFER_DIR = "/workspace/.rakazo-transfer";
-/** kosa8 takes each argument up to 8 KiB; longer scripts run from a file. */
-const MAX_INLINE_SCRIPT_BYTES = 6_000;
+/** kosa8 takes each argument up to 8 KiB; a quoted command longer than this runs from a file. */
+const MAX_INLINE_COMMAND_BYTES = 8_000;
 /** Parallel file transfers per batch. */
 const FILE_CONCURRENCY = 8;
 /** A command without a deadline of its own still ends: a day, kosa8's longest exec. */
@@ -58,6 +59,41 @@ const SLEEP_AFTER_S = 1_800;
 const SETUP_TIMEOUT_MS = 15 * 60_000;
 /** Every process a command started carries this, so a cancelled command can be ended. */
 const RUN_MARKER = "RAKAZO_KOSA8_RUN";
+
+/**
+ * Ends every process of a run, given `m` as its marker: each process whose environment carries
+ * the marker, and every descendant of one, since a command may unset the marker in its children.
+ * It looks again after each signal, so a process forked meanwhile is caught too, and exits 3 when
+ * any survive KILL.
+ */
+const END_RUN = `scan() {
+  pids=" "
+  local p line rest state grew=1
+  local -A parent=()
+  cd /proc || return 0
+  for p in [0-9]*; do
+    read -r line < "$p/stat" 2>/dev/null || continue
+    rest=\${line##*) }
+    state=\${rest%% *}; rest=\${rest#* }
+    [ "$state" = Z ] && continue
+    parent[$p]=\${rest%% *}
+    grep -qzxF -- "$m" "$p/environ" 2>/dev/null && pids="$pids$p "
+  done
+  [ "$pids" = " " ] && { pids=""; return 0; }
+  while [ -n "$grew" ]; do
+    grew=""
+    for p in "\${!parent[@]}"; do
+      case "$pids" in *" $p "*) continue ;; esac
+      case "$pids" in *" \${parent[$p]} "*) pids="$pids$p "; grew=1 ;; esac
+    done
+  done
+}
+scan; [ -n "$pids" ] || exit 0
+kill -TERM $pids 2>/dev/null
+for i in 1 2 3 4 5 6 7 8; do sleep 0.25; scan; [ -n "$pids" ] || exit 0; done
+for i in 1 2 3; do kill -KILL $pids 2>/dev/null; sleep 0.2; scan; [ -n "$pids" ] || exit 0; done
+echo "processes survived KILL:$pids" >&2
+exit 3`;
 
 const PREPARE_KOSA8_DESKTOP = [PREPARE_LINUX_DESKTOP, INSTALL_LINUX_BROWSER].join("\n");
 
@@ -142,6 +178,8 @@ export function kosa8Sdk(
   };
   const snapshots = new Map<ComputerSize, BaseSnapshotCache>();
   const snapshotIds = new Map<string, string>();
+  /** When a snapshot was first seen saving; one saving longer than a build is abandoned. */
+  const savingSince = new Map<string, number>();
   const baseSnapshot = (size: ComputerSize) => {
     let cache = snapshots.get(size);
     if (!cache) {
@@ -154,17 +192,35 @@ export function kosa8Sdk(
       snapshots.set(size, cache);
     }
     return cache.current(AbortSignal.timeout(30_000), async () => {
-      const found = newest(await api.snapshots(), kosa8ComputerSnapshot(size));
-      if (found?.state === "ready") snapshotIds.set(kosa8ComputerSnapshot(size), found.id);
-      return found?.state === "ready" ? "ready" : found?.state === "creating" ? "saving" : "absent";
+      const name = kosa8ComputerSnapshot(size);
+      const found = newest(await api.snapshots(), name);
+      if (found?.state === "ready") {
+        snapshotIds.set(name, found.id);
+        savingSince.delete(name);
+        return "ready";
+      }
+      if (found?.state !== "creating") return "absent";
+      const since = savingSince.get(name) ?? Date.now();
+      savingSince.set(name, since);
+      return Date.now() - since > BASE_SNAPSHOT_BUILD_TIMEOUT_MS ? "absent" : "saving";
     });
+  };
+  /** A build in this process saves the snapshot without its id, so a missing id is looked up. */
+  const snapshotId = async (name: string): Promise<string | undefined> => {
+    const known = snapshotIds.get(name);
+    if (known) return known;
+    const snapshots = await bestEffort("look up the kosa8 computer snapshot", api.snapshots());
+    const found = snapshots && newest(snapshots, name);
+    if (found?.state !== "ready") return undefined;
+    snapshotIds.set(name, found.id);
+    return found.id;
   };
   const open = (id: string, setup: boolean, fresh = false) =>
     openDesktop(api, id, setup, fresh, () => safetySleep(id));
   return {
     create: async (template, options, size = "standard") => {
       const name = await baseSnapshot(size);
-      const snapshot = name ? snapshotIds.get(name) : undefined;
+      const snapshot = name ? await snapshotId(name) : undefined;
       const request = {
         name: "rakazo-computer",
         labels: { ...options.metadata },
@@ -180,6 +236,7 @@ export function kosa8Sdk(
           } catch (error) {
             if (!(error instanceof Kosa8ApiError) || ![404, 409].includes(error.status))
               throw error;
+            if (name) snapshotIds.delete(name);
             snapshots.get(size)?.lost();
             id = (await api.create({ ...request, template: sizedTemplate(template, size) })).id;
           }
@@ -263,16 +320,18 @@ export async function buildKosa8ComputerSnapshot(
   });
   const machine = { provider: "kosa8", machineId: id };
   await recordUnreferencedMachine(machines, machine, BASE_SNAPSHOT_BUILD_TIMEOUT_MS);
+  let saved: { id: string } | undefined;
   try {
     for (const command of KOSA8_COMPUTER_SETUP) {
       const result = await runCommand(api, id, command, { timeoutMs: SETUP_TIMEOUT_MS, signal });
       if (result.exitCode !== 0)
         throw new Error(`could not prepare the kosa8 computer snapshot: ${failure(result)}`);
     }
-    const saved = await api.snapshot(id, name);
+    saved = await api.snapshot(id, name);
+    const savedId = saved.id;
     await pollUntil(
       async () => {
-        const found = (await api.snapshots()).find((entry) => entry.id === saved.id);
+        const found = (await api.snapshots()).find((entry) => entry.id === savedId);
         if (!found || found.state === "error" || found.state === "deleted")
           throw new Error(`kosa8 could not save snapshot ${name}`);
         return found.state === "ready";
@@ -280,6 +339,10 @@ export async function buildKosa8ComputerSnapshot(
       { intervalMs: 2_000, timeoutMs: BASE_SNAPSHOT_BUILD_TIMEOUT_MS, signal, waitingFor: name },
     );
     return { name, built: true };
+  } catch (error) {
+    // A save that stalled or failed would otherwise read as one still saving, holding off builds.
+    if (saved) await bestEffort("delete an unsaved kosa8 snapshot", api.deleteSnapshot(saved.id));
+    throw error;
   } finally {
     await deleteUnreferencedMachine(machines, machine, async (_signal, timeoutMs) =>
       api.delete(id, timeoutMs),
@@ -399,13 +462,24 @@ export function kosa8Desktop(
               const direct = inWorkspace(file.path);
               if (direct) return writeFile(api, id, direct, data, options.signal);
               const staged = `${TRANSFER_DIR}/${randomUUID()}`;
-              await writeFile(api, id, staged, data, options.signal);
-              await checked(
-                api,
-                id,
-                `mkdir -p -- "$(dirname -- ${shellQuote(file.path)})" && mv -f -- ${shellQuote(staged)} ${shellQuote(file.path)}`,
-                sleep,
-              );
+              try {
+                await writeFile(api, id, staged, data, options.signal);
+                await checked(
+                  api,
+                  id,
+                  `mkdir -p -- "$(dirname -- ${shellQuote(file.path)})" && mv -f -- ${shellQuote(staged)} ${shellQuote(file.path)}`,
+                  sleep,
+                  undefined,
+                  options.signal,
+                );
+              } catch (error) {
+                // The staged copy may hold anything, saved logins included; it never outlives the write.
+                await bestEffort(
+                  "remove a staged kosa8 file",
+                  checked(api, id, `rm -f -- ${shellQuote(staged)}`, sleep),
+                );
+                throw error;
+              }
             }),
           );
         }
@@ -450,8 +524,10 @@ async function checked(
   command: string,
   sleep: () => Promise<void>,
   timeoutMs = 60_000,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const result = await runCommand(api, id, command, { timeoutMs }, sleep);
+  const result = await runCommand(api, id, command, { timeoutMs, signal }, sleep);
+  signal?.throwIfAborted();
   if (result.exitCode !== 0) throw new Error(`kosa8 command failed: ${failure(result)}`);
 }
 
@@ -475,18 +551,22 @@ export async function runCommand(
   const run = randomUUID();
   const seconds =
     timeoutMs === undefined ? LONGEST_COMMAND_S : Math.max(1, Math.ceil(timeoutMs / 1000));
-  let script = cwd ? `cd -- ${shellQuote(cwd)} && ${command}` : command;
+  const script = cwd ? `cd -- ${shellQuote(cwd)} && ${command}` : command;
+  const wrap = (body: string) => `exec timeout -k 5 ${seconds} bash -c ${shellQuote(body)}`;
+  let wrapped = wrap(script);
   let file: string | undefined;
-  if (Buffer.byteLength(script) > MAX_INLINE_SCRIPT_BYTES) {
+  // Quoting grows the script, so the limit applies to the argument kosa8 is sent.
+  if (Buffer.byteLength(wrapped) > MAX_INLINE_COMMAND_BYTES) {
     file = `${TRANSFER_DIR}/${run}.sh`;
     try {
       await api.writeFile(id, file, new TextEncoder().encode(script), signal);
     } catch (error) {
+      await removeScript(api, id, file);
+      if (signal?.aborted) return ABORTED;
       throw translate(error, id);
     }
-    script = `status=0; bash ${file} || status=$?; rm -f -- ${file}; exit "$status"`;
+    wrapped = wrap(`status=0; bash ${file} || status=$?; rm -f -- ${file}; exit "$status"`);
   }
-  const wrapped = `exec timeout -k 5 ${seconds} bash -c ${shellQuote(script)}`;
   const started = Date.now();
   let result: Kosa8ExecResult;
   try {
@@ -497,6 +577,7 @@ export async function runCommand(
   } catch (error) {
     if (signal?.aborted) {
       await endRun(api, id, run, sleep, error);
+      if (file) await removeScript(api, id, file);
       return ABORTED;
     }
     const translated = translate(error, id);
@@ -504,6 +585,7 @@ export async function runCommand(
       throw translated;
     // The command may still be running on a connection that dropped.
     await endRun(api, id, run, sleep, error);
+    if (file) await removeScript(api, id, file);
     throw translated;
   }
   const timedOut =
@@ -511,10 +593,21 @@ export async function runCommand(
     (result.exitCode === 124 || result.exitCode === 137) &&
     Date.now() - started >= timeoutMs;
   if (timedOut) {
+    // `timeout` ends its own process group; what the command moved out of it ends here.
+    await endRun(api, id, run, sleep, new Error(`command timed out after ${timeoutMs} ms`));
+    if (file) await removeScript(api, id, file);
     const message = `command timed out after ${timeoutMs} ms\n`;
     return { exitCode: 124, stdout: result.stdout, stderr: message, error: message };
   }
   return result;
+}
+
+/** A script file whose run was cut short; its own `rm` never ran. */
+async function removeScript(api: Kosa8Api, id: string, file: string): Promise<void> {
+  await bestEffort(
+    "remove a kosa8 command script",
+    api.exec(id, `rm -f -- ${shellQuote(file)}`, { env: {} }),
+  );
 }
 
 /** Ends every process carrying the run's marker; puts the computer to sleep if it cannot. */
@@ -525,19 +618,16 @@ async function endRun(
   sleep: (() => Promise<void>) | undefined,
   cause: unknown,
 ): Promise<void> {
-  const script = [
-    `m=${shellQuote(`${RUN_MARKER}=${run}`)}`,
-    'pids=""',
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-    'for d in /proc/[0-9]*; do tr "\\0" "\\n" < "$d/environ" 2>/dev/null | grep -qxF "$m" && pids="$pids ${d#/proc/}"; done',
-    '[ -n "$pids" ] || exit 0',
-    "kill -TERM $pids 2>/dev/null",
-    "sleep 2",
-    "kill -KILL $pids 2>/dev/null",
-    "exit 0",
-  ].join("\n");
+  const script = `m=${shellQuote(`${RUN_MARKER}=${run}`)}\n${END_RUN}`;
   try {
-    await retry(() => api.exec(id, script, { env: {} }), { attempts: 3 });
+    await retry(
+      async () => {
+        const result = await api.exec(id, script, { env: {} });
+        if (result.exitCode !== 0)
+          throw new Error(`kosa8 could not end the command: ${failure(result)}`);
+      },
+      { attempts: 3 },
+    );
     return;
   } catch (error) {
     if (isSandboxGoneError(translate(error, id))) return;
