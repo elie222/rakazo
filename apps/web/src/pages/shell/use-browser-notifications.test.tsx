@@ -420,6 +420,28 @@ describe("useBrowserNotifications chat alerts", () => {
     }
   });
 
+  it("reads a bot's own switch as its mute from a server without per-member mutes", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-older",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    const before = { ...bots[0]! };
+    delete (bots[0] as { muted?: boolean }).muted;
+    bots[0]!.notifyOnFinish = false;
+    try {
+      act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
+      expect(shown()).toEqual([]);
+    } finally {
+      bots[0] = before;
+    }
+  });
+
   it("drops a group's notification held for permission once the group is muted or hidden", async () => {
     visible = false;
     await open({ groupId: "group-g" });

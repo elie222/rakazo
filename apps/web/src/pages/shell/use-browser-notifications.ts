@@ -61,6 +61,12 @@ function snoozedOrdinaryReply(
   );
 }
 
+/** Muted for this member; a server without per-member mutes reports a bot's own switch. */
+function chatMuted(chat: Bot | Group): boolean {
+  if (chat.muted !== undefined && chat.muted !== null) return chat.muted;
+  return "notifyOnFinish" in chat ? !chat.notifyOnFinish : false;
+}
+
 // A click must not reach a shell that has gone, so the shell closes what it showed.
 function openChatOnClick(
   notification: Notification,
@@ -168,7 +174,7 @@ export function useBrowserNotifications(
       pending.event,
       currentBot.name || pending.botName,
       {
-        enabled: Boolean(chat && !chat.muted && !chat.hidden),
+        enabled: Boolean(chat && !chatMuted(chat) && !chat.hidden),
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
