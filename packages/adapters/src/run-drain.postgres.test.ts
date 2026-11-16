@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AdapterContext, BackgroundJobHandlers, JobPublisher } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  AgentRunRequest,
+  BackgroundJobHandlers,
+  JobPublisher,
+} from "@rakazo/adapter-kit";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -151,7 +156,12 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     const starter = new RunStarter(realtime, { signal: stopping.signal });
     const jobs = new RunJobPublisher(
       prisma,
-      { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() } as unknown as JobPublisher,
+      {
+        enqueue: vi.fn(),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+        close: vi.fn(),
+      } as unknown as JobPublisher,
       starter,
     );
     const turns: Turn[] = [];
@@ -161,7 +171,8 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
         capabilities: { streaming: true, compaction: false, tools: true, scripted: false },
       }),
       abort: async () => undefined,
-      async *run(_request: unknown, context: AdapterContext) {
+      async *run(request: AgentRunRequest, context: AdapterContext) {
+        await request.executeTool!("list_files", { path: "drain-fixture" }, "drain-computer-use");
         const turn = { runId: context.runId!, signal: context.signal, finish: deferred() };
         turns.push(turn);
         const aborted = deferred();

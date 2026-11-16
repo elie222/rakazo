@@ -37,6 +37,13 @@ export type Step =
   | { fromPeer: string };
 export type Evidence = {
   text: string;
+  delegation?: {
+    helpers: Array<{
+      status: string;
+      calls: Array<{ name: string; args: Record<string, unknown>; succeeded: boolean }>;
+    }>;
+    results: Array<{ status: string; text: string }>;
+  };
   /** For a case whose history is compacted first, the summary the bot read in its place. */
   historySummary?: string;
   replies?: string[];
@@ -96,6 +103,8 @@ export type Criterion = { id: string; pass: boolean };
 export type EvalCase = {
   id: string;
   purpose: string;
+  /** Observe independent helpers and their result turns before grading. */
+  delegation?: true;
   steps: Step[];
   files?: string[];
   approvalTool?: string;
