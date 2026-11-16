@@ -12,7 +12,7 @@ instead.
 
 **With object storage from the first start**, nothing under `DATA_DIR` needs to be shared or to
 survive a restart, so each API and worker replica can use its own scratch directory (a Pod's
-`emptyDir`, for example):
+`emptyDir`, for example), except for Docker computers, described below the table:
 
 | Path                                           | What it holds with object storage                                                                                                           |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
