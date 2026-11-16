@@ -41,9 +41,12 @@ export const exploreTools = [
       steps: { type: "array", items: { type: "string" } },
       expected: { type: "string" },
       actual: { type: "string" },
-      screenshot: { type: "string", description: "File name returned by screenshot" },
+      screenshot: {
+        type: "string",
+        description: "File name returned by screenshot that shows the bug",
+      },
     },
-    ["title", "key", "path", "steps", "expected", "actual"],
+    ["title", "key", "path", "steps", "expected", "actual", "screenshot"],
   ),
   tool("finish", "Stop exploring this feature.", { summary: { type: "string" } }, ["summary"]),
 ];

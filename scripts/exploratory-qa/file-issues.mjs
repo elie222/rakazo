@@ -24,7 +24,7 @@ async function github(path, init = {}) {
 
 async function openQaIssues() {
   const issues = [];
-  for (let page = 1; page <= 5; page += 1) {
+  for (let page = 1; ; page += 1) {
     const response = await github(
       `/issues?state=open&labels=${ISSUE_LABEL}&per_page=100&page=${page}`,
     );

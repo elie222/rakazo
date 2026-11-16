@@ -16,8 +16,7 @@ HOST=${PREVIEW_HOST:-${FLY_APP_NAME:?Set PREVIEW_HOST or FLY_APP_NAME}.fly.dev}
 SCHEME=${PREVIEW_SCHEME:-https}
 [[ $SCHEME == https || ($SCHEME == http && $HOST == localhost:*) ]] || { echo "PREVIEW_SCHEME=http needs a localhost PREVIEW_HOST" >&2; exit 1; }
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-OWNER_EMAIL=preview@example.com
-OWNER_PASSWORD=rakazo-preview-demo
+source "$ROOT/infra/preview/demo-account.env"
 PGDATA="$DATA/postgres"
 IMAGE_ID=$(cat "$ROOT/infra/preview/image-id" 2> /dev/null || true)
 INITIALIZED_IMAGE="$PGDATA/.preview-image"

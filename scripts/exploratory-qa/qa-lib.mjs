@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 export const ISSUE_LABEL = "exploratory-qa";
 export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->/;
+export const SCREENSHOT_NAME = /^[0-9]+-[0-9]+\.png$/;
 export const LIMITS = { workers: 6, minutesPerWorker: 30, budgetUsd: 25, issuesPerRun: 10 };
 
 // Sections that describe documents or server operation rather than something a browser can use.
@@ -80,29 +81,37 @@ export function fingerprint(finding) {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
-/** Text from the model goes into a public issue: no mentions, no hidden markup, bounded length. */
-export function sanitize(text, max = 600) {
-  const printable = [...String(text ?? "")]
+/** Model text with control characters removed and its length bounded. */
+export function plainText(text, max = 600) {
+  const clean = [...String(text ?? "")]
     .filter((ch) => {
       const code = ch.codePointAt(0);
       return code === 9 || code === 10 || (code >= 32 && code !== 127);
     })
-    .join("");
-  const clean = printable
-    .replace(/<!--|-->|`/g, "")
-    .replace(/@([A-Za-z0-9-]+)/g, "`@$1`")
+    .join("")
     .trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+
+/** Model text for a public issue body: markup is escaped so it shows as text and hides nothing, and mentions notify no one. */
+export function sanitize(text, max = 600) {
+  return plainText(text, max)
+    .replace(/[&<>]/g, (ch) => HTML_ESCAPES[ch])
+    .replace(/`/g, "'")
+    .replace(/@([A-Za-z0-9-]+)/g, "`@$1`");
+}
+
+/** Issue titles are plain text on GitHub: no markup renders and no mention notifies. */
 export function issueTitle(finding) {
-  return `[QA] ${sanitize(finding.feature, 60)}: ${sanitize(finding.title, 100)}`;
+  return `[QA] ${plainText(finding.feature, 60)}: ${plainText(finding.title, 100)}`;
 }
 
 export function issueBody(finding, { runUrl, artifactUrl }) {
   const steps = (finding.steps ?? []).slice(0, 20).map((s, i) => `${i + 1}. ${sanitize(s, 300)}`);
-  const screenshot = finding.screenshot
-    ? `\`${sanitize(finding.screenshot, 100)}\` in the [run's screenshots](${artifactUrl ?? runUrl})`
+  const screenshot = SCREENSHOT_NAME.test(finding.screenshot ?? "")
+    ? `\`${finding.screenshot}\` in the [run's screenshots](${artifactUrl ?? runUrl})`
     : "None";
   return [
     "Found by the weekly exploratory QA agent on a preview stack with fake seed data.",
@@ -146,7 +155,7 @@ export function knownBugs(issues, featureName) {
         .startsWith(prefix),
     )
     .map((issue) => ({
-      title: sanitize(issue.title.slice(prefix.length), 120),
+      title: plainText(issue.title.slice(prefix.length), 120),
       key: /\*\*Bug key:\*\* `([a-z0-9-]+)`/.exec(issue.body ?? "")?.[1],
       screen: /\*\*Screen:\*\* `([^`\n]+)`/.exec(issue.body ?? "")?.[1] ?? "/",
     }))
@@ -178,7 +187,7 @@ export function planIssues(findings, openIssues, maxIssues = LIMITS.issuesPerRun
   return planned;
 }
 
-/** Spend from token usage at the prices the run was given; stops before the next call once reached. */
+/** Spend from token usage at the prices the run was given; stops before the next call once reached. A response without usable token counts stops the whole run, since its cost is unknown. */
 export function createBudget({ limitUsd, inputUsdPerMTok, outputUsdPerMTok }) {
   for (const [name, value] of Object.entries({ limitUsd, inputUsdPerMTok, outputUsdPerMTok })) {
     if (!Number.isFinite(value) || value < 0)
@@ -186,10 +195,16 @@ export function createBudget({ limitUsd, inputUsdPerMTok, outputUsdPerMTok }) {
   }
   if (limitUsd > LIMITS.budgetUsd) throw new Error(`The budget is capped at $${LIMITS.budgetUsd}`);
   let spentUsd = 0;
+  let unpriced = false;
+  const isCount = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
   return {
     charge(usage) {
-      const input = Number(usage?.prompt_tokens ?? 0);
-      const output = Number(usage?.completion_tokens ?? 0);
+      const input = usage?.prompt_tokens;
+      const output = usage?.completion_tokens;
+      if (!isCount(input) || !isCount(output)) {
+        unpriced = true;
+        throw new Error("The model response had no usable token usage, so its cost is unknown");
+      }
       spentUsd += (input * inputUsdPerMTok + output * outputUsdPerMTok) / 1_000_000;
       return spentUsd;
     },
@@ -197,9 +212,38 @@ export function createBudget({ limitUsd, inputUsdPerMTok, outputUsdPerMTok }) {
       return spentUsd;
     },
     get exhausted() {
-      return spentUsd >= limitUsd;
+      return unpriced || spentUsd >= limitUsd;
     },
   };
+}
+
+/** Runs every worker to the end: one that throws is reported as stopped, never losing the others' findings. */
+export async function runWorkers(features, work) {
+  const settled = await Promise.allSettled(features.map((feature, i) => work(feature, i)));
+  return settled.map((outcome, i) =>
+    outcome.status === "fulfilled"
+      ? outcome.value
+      : {
+          feature: features[i].name,
+          findings: [],
+          stopped: `error: ${String(outcome.reason?.message ?? outcome.reason).slice(0, 200)}`,
+          summary: "",
+        },
+  );
+}
+
+/** The preview stack's demo account, from the same file its start script reads. */
+export function parseDemoAccount(text) {
+  const values = Object.fromEntries(
+    text
+      .split("\n")
+      .map((line) => /^([A-Z_]+)=(.*)$/.exec(line.trim()))
+      .filter(Boolean)
+      .map(([, key, value]) => [key, value]),
+  );
+  if (!values.OWNER_EMAIL || !values.OWNER_PASSWORD)
+    throw new Error("The demo account file needs OWNER_EMAIL and OWNER_PASSWORD");
+  return { email: values.OWNER_EMAIL, password: values.OWNER_PASSWORD };
 }
 
 export function clampInt(value, fallback, max) {

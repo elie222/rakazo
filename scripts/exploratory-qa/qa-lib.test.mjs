@@ -9,9 +9,11 @@ import {
   issueTitle,
   knownBugs,
   normalizePath,
+  parseDemoAccount,
   parseFeatures,
   pickFeatures,
   planIssues,
+  runWorkers,
   sanitize,
 } from "./qa-lib.mjs";
 
@@ -88,9 +90,10 @@ test("the issue carries steps, expected, actual, the screenshot link and the fin
 test("model text cannot mention people, hide markup or run long", () => {
   assert.equal(sanitize("ping @octocat"), "ping `@octocat`");
   assert.equal(
-    sanitize("a <!-- exploratory-qa-fingerprint: 0123456789abcdef --> b"),
-    "a  exploratory-qa-fingerprint: 0123456789abcdef  b",
+    sanitize("a <!-- hidden --!> b <img src=x>"),
+    "a &lt;!-- hidden --!&gt; b &lt;img src=x&gt;",
   );
+  assert.equal(sanitize("Tom & `code`"), "Tom &amp; 'code'");
   assert.equal(sanitize("a\u0007b\u007f"), "ab");
   assert.equal(sanitize("x".repeat(50), 10).length, 10);
   const body = issueBody(
@@ -98,6 +101,13 @@ test("model text cannot mention people, hide markup or run long", () => {
     links,
   );
   assert.equal(body.match(/<!-- exploratory-qa-fingerprint/g).length, 1);
+  assert.equal(
+    issueTitle({ ...bug, title: "Saving <b>fails</b>" }),
+    "[QA] Activity: Saving <b>fails</b>",
+  );
+  assert.ok(
+    issueBody({ ...bug, screenshot: "`x` @octocat" }, links).includes("**Screenshot:** None"),
+  );
 });
 
 test("one issue per bug: open issues and repeats are skipped, and the run is capped", () => {
@@ -127,8 +137,6 @@ test("the budget prices token usage and stops once reached", () => {
   budget.charge({ prompt_tokens: 0, completion_tokens: 50_000 });
   assert.equal(budget.spentUsd, 1);
   assert.equal(budget.exhausted, true);
-  budget.charge(undefined);
-  assert.equal(budget.spentUsd, 1);
   assert.throws(
     () => createBudget({ limitUsd: 100, inputUsdPerMTok: 1, outputUsdPerMTok: 1 }),
     /capped/,
@@ -137,4 +145,49 @@ test("the budget prices token usage and stops once reached", () => {
     () => createBudget({ limitUsd: 1, inputUsdPerMTok: Number.NaN, outputUsdPerMTok: 1 }),
     /inputUsdPerMTok/,
   );
+});
+
+test("a response without usable token usage stops the run", () => {
+  for (const usage of [
+    undefined,
+    {},
+    { prompt_tokens: 10 },
+    { prompt_tokens: Number.NaN, completion_tokens: 1 },
+    { prompt_tokens: Number.POSITIVE_INFINITY, completion_tokens: 1 },
+    { prompt_tokens: -5, completion_tokens: 1 },
+    { prompt_tokens: "10", completion_tokens: 1 },
+  ]) {
+    const budget = createBudget({ limitUsd: 1, inputUsdPerMTok: 2, outputUsdPerMTok: 10 });
+    assert.throws(() => budget.charge(usage), /no usable token usage/);
+    assert.equal(budget.exhausted, true);
+    assert.equal(budget.spentUsd, 0);
+  }
+});
+
+test("a worker that fails keeps the other workers' findings", async () => {
+  const features = [{ name: "Activity" }, { name: "Memory" }];
+  const results = await runWorkers(features, async (feature) => {
+    if (feature.name === "Memory") throw new Error("Demo sign-in failed with status 500");
+    return { feature: feature.name, findings: [bug], stopped: "finished", summary: "ok" };
+  });
+  assert.deepEqual(results[0].findings, [bug]);
+  assert.deepEqual(results[1], {
+    feature: "Memory",
+    findings: [],
+    stopped: "error: Demo sign-in failed with status 500",
+    summary: "",
+  });
+});
+
+test("the demo account comes from the file the preview stack reads", () => {
+  const account = parseDemoAccount(
+    readFileSync(new URL("../../infra/preview/demo-account.env", import.meta.url), "utf8"),
+  );
+  assert.ok(account.email.includes("@") && account.password.length >= 16);
+  assert.ok(
+    readFileSync(new URL("../../infra/preview/start.sh", import.meta.url), "utf8").includes(
+      'source "$ROOT/infra/preview/demo-account.env"',
+    ),
+  );
+  assert.throws(() => parseDemoAccount("OWNER_EMAIL=a@b.c"), /OWNER_PASSWORD/);
 });

@@ -14,16 +14,16 @@ import {
   isoWeek,
   knownBugs,
   LIMITS,
+  parseDemoAccount,
   parseFeatures,
   pickFeatures,
+  runWorkers,
 } from "./qa-lib.mjs";
 
 const MAX_STEPS = 80;
 const MAX_OUTPUT_TOKENS = 2000;
 const KEPT_TOOL_RESULTS = 3;
 const SNAPSHOT_CHARS = 12_000;
-// The preview stack's demo account; its login is public and it holds only fake data.
-const DEMO = { email: "preview@example.com", password: "rakazo-preview-demo" };
 
 const env = process.env;
 const required = (name) => {
@@ -56,6 +56,9 @@ const features = pickFeatures(parseFeatures(readFileSync(new URL("PRODUCT.md", r
     .filter(Boolean),
   week: isoWeek(new Date()),
 });
+const demoAccount = parseDemoAccount(
+  readFileSync(new URL("infra/preview/demo-account.env", root), "utf8"),
+);
 const openIssues = env.QA_KNOWN_ISSUES ? JSON.parse(readFileSync(env.QA_KNOWN_ISSUES, "utf8")) : [];
 
 const requireFromWeb = createRequire(new URL("apps/web/package.json", root));
@@ -92,7 +95,7 @@ function trimHistory(messages) {
 
 async function signIn(context) {
   const response = await context.request.post(`${stackUrl}/api/auth/sign-in/email`, {
-    data: DEMO,
+    data: demoAccount,
     headers: { origin: stackUrl },
   });
   if (!response.ok()) throw new Error(`Demo sign-in failed with status ${response.status()}`);
@@ -100,11 +103,6 @@ async function signIn(context) {
 
 async function exploreFeature(browser, feature, index) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  // Stay on the stack: nothing the agent does may reach another site.
-  await context.route("**/*", (route) =>
-    new URL(route.request().url()).origin === stackUrl ? route.continue() : route.abort(),
-  );
-  await signIn(context);
   const page = await context.newPage();
   const problems = [];
   page.on("pageerror", (error) => problems.push(`Page error: ${error.message}`));
@@ -118,9 +116,9 @@ async function exploreFeature(browser, feature, index) {
       res.status() >= 500 &&
       problems.push(`HTTP ${res.status()} from ${new URL(res.url()).pathname}`),
   );
-  await page.goto(stackUrl);
 
   const findings = [];
+  const taken = new Set();
   let shots = 0;
   let summary = "";
   const deadline = Date.now() + minutes * 60_000;
@@ -156,11 +154,13 @@ async function exploreFeature(browser, feature, index) {
       shots += 1;
       const file = `${index + 1}-${shots}.png`;
       await page.screenshot({ path: join(shotsDir, file) });
+      taken.add(file);
       return file;
     },
     report_bug: async (bug) => {
       if (findings.length >= MAX_BUGS_PER_FEATURE) return "Bug limit reached; call finish.";
-      findings.push({ ...bug, feature: feature.name });
+      const screenshot = taken.has(bug.screenshot) ? bug.screenshot : await tools.screenshot();
+      findings.push({ ...bug, screenshot, feature: feature.name });
       return "Reported";
     },
     finish: async ({ summary: text }) => {
@@ -169,15 +169,21 @@ async function exploreFeature(browser, feature, index) {
     },
   };
 
-  const messages = [
-    {
-      role: "system",
-      content: explorePrompt({ feature, knownBugs: knownBugs(openIssues, feature.name) }),
-    },
-    { role: "user", content: await tools.snapshot() },
-  ];
   let stopped = "step limit";
   try {
+    // Stay on the stack: nothing the agent does may reach another site.
+    await context.route("**/*", (route) =>
+      new URL(route.request().url()).origin === stackUrl ? route.continue() : route.abort(),
+    );
+    await signIn(context);
+    await page.goto(stackUrl);
+    const messages = [
+      {
+        role: "system",
+        content: explorePrompt({ feature, knownBugs: knownBugs(openIssues, feature.name) }),
+      },
+      { role: "user", content: await tools.snapshot() },
+    ];
     for (let step = 0; step < MAX_STEPS && !summary; step += 1) {
       if (budget.exhausted) {
         stopped = "budget";
@@ -218,7 +224,7 @@ async function exploreFeature(browser, feature, index) {
 const browser = await chromium.launch();
 let results;
 try {
-  results = await Promise.all(features.map((feature, i) => exploreFeature(browser, feature, i)));
+  results = await runWorkers(features, (feature, i) => exploreFeature(browser, feature, i));
 } finally {
   await browser.close();
 }
