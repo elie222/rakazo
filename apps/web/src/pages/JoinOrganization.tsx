@@ -22,7 +22,8 @@ type JoinState =
 /** The server refusing: used, expired or unknown (no message), or another address's invitation. */
 function refusal(error: unknown): { message: string | null } | null {
   if (!(error instanceof ORPCError) || error.status < 400 || error.status >= 500) return null;
-  return { message: error.status === 403 ? errorText(error) : null };
+  // Only "not found" means the invitation is gone; any other refusal says why in its own words.
+  return { message: error.status === 404 ? null : errorText(error) };
 }
 
 export function JoinOrganizationPage() {

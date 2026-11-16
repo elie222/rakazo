@@ -191,17 +191,19 @@ export function organizationsRoutes(ctx: RouterContext) {
         ),
         cancel: authed.organizations.invitations.cancel.handler(({ context, input }) =>
           runAsSystem("cancel an organization invitation", async () => {
-            await cancelOrganizationInvitation(deps.prisma, {
+            const cancelled = await cancelOrganizationInvitation(deps.prisma, {
               organizationId: input.organizationId,
               userId: context.actor.userId,
               invitationId: input.invitationId,
             });
-            await recordAuditEvent({
-              action: "organization.invitation.cancelled",
-              actor: { type: "user", id: context.actor.userId },
-              organizationId: input.organizationId,
-              target: { type: "invitation", id: input.invitationId },
-            });
+            // Only a pending invitation of this organization's is recorded as cancelled.
+            if (cancelled)
+              await recordAuditEvent({
+                action: "organization.invitation.cancelled",
+                actor: { type: "user", id: context.actor.userId },
+                organizationId: input.organizationId,
+                target: { type: "invitation", id: input.invitationId },
+              });
             return { ok: true as const };
           }),
         ),

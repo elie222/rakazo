@@ -339,14 +339,15 @@ export async function createOrganizationInvitation(
 export async function cancelOrganizationInvitation(
   prisma: PrismaClient,
   input: { organizationId: string; userId: string; invitationId: string },
-): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
     await lockOrganizationMembers(tx, input.organizationId);
     await requireManager(tx, input.organizationId, input.userId);
-    await tx.invitation.updateMany({
+    const { count } = await tx.invitation.updateMany({
       where: { id: input.invitationId, organizationId: input.organizationId, status: PENDING },
       data: { status: "canceled" },
     });
+    return count > 0;
   });
 }
 
