@@ -920,6 +920,14 @@ export class McpConnector implements ConnectorProvider {
         context.signal.throwIfAborted();
         if (retriedRotation || !(error instanceof McpSecretChangedError)) throw error;
         retriedRotation = true;
+        // Cleanup may leave the old secret row readable after the server moved on.
+        // Retry from its current pointer, rather than reconnecting with that old row.
+        const current = await this.prisma.mcpServer.findFirst({
+          where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+          select: { secretId: true },
+        });
+        if (!current) throw error;
+        server = { ...server, secretId: current.secretId };
         continue;
       }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);

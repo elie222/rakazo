@@ -264,7 +264,7 @@ describe("MCP connector session cache", () => {
       const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "secret-1" } };
       const connector = new McpConnector(
         {
-          mcpServer: NO_SHARED_SERVERS,
+          mcpServer: { ...NO_SHARED_SERVERS, findFirst: async () => ({ secretId: "secret-1" }) },
           botMcpServer: { findMany: async () => [assignment], findFirst: async () => assignment },
           secret: { findFirst: async () => ({ id: "secret-1", ciphertext: "secret-ref" }) },
         } as never,
@@ -2256,6 +2256,61 @@ describe("MCP connector session cache", () => {
     expect(state.calls).toEqual(["echo"]);
 
     await connector.close();
+  });
+
+  it("reloads the current secret after rotation even while the old row still exists", async () => {
+    const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+    let current = "old";
+    let changed: ((ref: string) => void) | undefined;
+    const fetch = mcpFetch(state);
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (
+        request.method === "POST" &&
+        request.headers.get("authorization") === "Bearer old-token"
+      ) {
+        current = "new";
+        changed?.("old");
+      }
+      return fetch(input, init);
+    });
+    const prisma = {
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([assignment]) },
+      mcpServer: { ...NO_SHARED_SERVERS, findFirst: vi.fn(async () => ({ secretId: current })) },
+      // Cleanup of the superseded row is asynchronous; both rows can still be read.
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id,
+        })),
+      },
+    };
+    const connector = new McpConnector(
+      prisma as never,
+      {
+        onChange: (listener: (ref: string) => void) => {
+          changed = listener;
+          return () => {};
+        },
+        load: async (ref: string) =>
+          JSON.stringify({ headers: { Authorization: `Bearer ${ref}-token` } }),
+      } as never,
+      { network: TEST_NETWORK },
+    );
+    try {
+      const tools = await connector.discoverTools({
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never);
+      expect(tools.map((tool) => tool.name)).toContain("mcp__demo__echo");
+      expect(state.initializations).toBe(2);
+      expect(state.headers.at(-1)?.authorization).toBe("Bearer new-token");
+    } finally {
+      await connector.close();
+    }
   });
 
   it("reconnects with the rotated secret when a session expires during refresh", async () => {
