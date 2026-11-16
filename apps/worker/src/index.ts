@@ -77,6 +77,7 @@ import {
   pushSessionExpiresAt,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import { bestEffort, SERVICE_NAMES } from "@rakazo/logging";
@@ -107,6 +108,8 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await timeZoneWarning(prisma);
+  if (timeZone) logger.warn(timeZone);
   // Set once push delivery is configured below; thread changes before then have no cards.
   let workActivities: WorkActivities | undefined;
   // Every thread change this process commits also updates its users' live status cards.
