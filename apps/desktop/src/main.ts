@@ -449,11 +449,6 @@ function deviceTokenCipher() {
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
   syncHostComputerAccess();
-  stopStackLeftBehind({
-    mode: desktop.currentSetup?.mode,
-    stack: desktop.localStack,
-    rebuildMenu: () => installApplicationMenu(),
-  });
   const previous = desktop.replacedAppWindow;
   desktop.replacedAppWindow = null;
   if (previous !== null && !previous.isDestroyed() && previous !== desktop.mainWindow)
@@ -903,6 +898,12 @@ app.whenReady().then(async () => {
     commitPendingAppSwitch,
     abandonPendingAppSwitch,
     recoverFromCrashedSave,
+    stopStackLeftBehind: () =>
+      stopStackLeftBehind({
+        mode: desktop.currentSetup?.mode,
+        stack: desktop.localStack,
+        rebuildMenu: () => installApplicationMenu(),
+      }),
   });
 
   // Register before startup awaits so macOS dock clicks during probe/open are handled.

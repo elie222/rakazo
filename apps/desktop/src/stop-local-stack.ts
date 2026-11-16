@@ -33,6 +33,10 @@ export function quitAndStopBotsItem(input: {
     visible: stackStopAvailable(input.mode, input.stackRunning),
     // A plain quit leaves the stack running (bots are always on); this is the explicit off switch.
     click: () => {
+      if (!input.stackRunning) {
+        input.quit();
+        return;
+      }
       const stopped = input.stop();
       // Immediate rebuild: deactivating computer access changes other menu items.
       input.rebuildMenu();
@@ -48,13 +52,24 @@ export function quitAndStopBotsItem(input: {
   };
 }
 
+const STARTING = new Set<DesktopLocalStackPhase>([
+  "checking-docker",
+  "docker-not-running",
+  "preparing",
+  "pulling",
+  "starting",
+  "waiting-healthy",
+]);
+
 /** Bots on a stack the user switched away from would keep running out of sight. */
 export function stopStackLeftBehind(input: {
   mode: DesktopInstanceMode | null | undefined;
-  stack: Pick<StackController, "managedStackRunning" | "stop">;
+  stack: Pick<StackController, "managedStackRunning" | "state" | "stop">;
   rebuildMenu: () => void;
 }): void {
-  if (input.mode === "new" || !input.stack.managedStackRunning()) return;
+  if (input.mode === "new") return;
+  // A start still pulling or waiting for Docker has not launched anything yet, but would.
+  if (!input.stack.managedStackRunning() && !STARTING.has(input.stack.state().phase)) return;
   // A stop that only ended a reused stack changes no phase, so the settled state rebuilds the menu.
   void input.stack
     .stop()

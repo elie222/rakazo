@@ -1,4 +1,4 @@
-import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { reportDesktopError } from "./monitoring.js";
@@ -39,6 +39,14 @@ describe("quit and stop bots menu item", () => {
   it("is hidden when no app-managed stack exists", () => {
     expect(item({ stackRunning: false }).visible).toBe(false);
     expect(item({ mode: null, stackRunning: false }).visible).toBe(false);
+  });
+
+  it("quits straight away when no stack is running, even without Docker", () => {
+    const stop = vi.fn(async () => failed);
+    const quit = vi.fn();
+    click(item({ mode: "new", stackRunning: false, stop, quit }));
+    expect(stop).not.toHaveBeenCalled();
+    expect(quit).toHaveBeenCalledOnce();
   });
 
   it("quits only after the stack has stopped", async () => {
@@ -85,8 +93,16 @@ describe("quit and stop bots menu item", () => {
 });
 
 describe("stop stack left behind", () => {
-  function stack(running: boolean, stop = vi.fn(async () => stopped)) {
-    return { managedStackRunning: () => running, stop };
+  function stack(
+    running: boolean,
+    stop = vi.fn(async () => stopped),
+    phase: DesktopLocalStackPhase = "idle",
+  ) {
+    return {
+      managedStackRunning: () => running,
+      state: () => ({ phase }) as DesktopLocalStackState,
+      stop,
+    };
   }
 
   it("stops a running stack once the app switches to another server", async () => {
@@ -98,9 +114,18 @@ describe("stop stack left behind", () => {
     await vi.waitFor(() => expect(rebuildMenu).toHaveBeenCalledOnce());
   });
 
+  it("stops a start that has not launched anything yet", () => {
+    const pulling = stack(false, undefined, "pulling");
+    stopStackLeftBehind({ mode: "existing", stack: pulling, rebuildMenu: vi.fn() });
+    expect(pulling.stop).toHaveBeenCalledOnce();
+  });
+
   it("leaves the stack alone on This computer or when none is running", () => {
     const connected = stack(true);
     const idle = stack(false);
+    const missing = stack(false, undefined, "docker-missing");
+    stopStackLeftBehind({ mode: "existing", stack: missing, rebuildMenu: vi.fn() });
+    expect(missing.stop).not.toHaveBeenCalled();
     stopStackLeftBehind({ mode: "new", stack: connected, rebuildMenu: vi.fn() });
     stopStackLeftBehind({ mode: "existing", stack: idle, rebuildMenu: vi.fn() });
     expect(connected.stop).not.toHaveBeenCalled();
