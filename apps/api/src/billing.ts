@@ -123,8 +123,11 @@ export interface BillingService {
   reportPartnerSales(customerId: string): Promise<void>;
   /** Syncs the actor's organization, e.g. on return from checkout before the webhook lands. */
   syncForActor(actor: Actor): Promise<void>;
-  /** Pushes the organization's member count to the provider. Call when members change. */
-  syncSeats(organizationId: string): Promise<void>;
+  /**
+   * Pushes the organization's member count to the provider. Call when members change. Resolves
+   * to the count it billed, or null for an organization not billed by seat.
+   */
+  syncSeats(organizationId: string): Promise<number | null>;
   cancelForDeletedUser(userId: string): Promise<void>;
   cancelForDeletedOrganization(organizationId: string): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
@@ -904,11 +907,12 @@ export function createBillingService(deps: {
 
     async syncSeats(organizationId) {
       const account = await billingAccountForOrganization(prisma, organizationId);
-      if (!account || account.creditAmountCents) return;
+      if (!account || account.creditAmountCents) return null;
       const seats = await organizationSeatCount(prisma, organizationId);
-      if (account.seats === seats) return;
+      if (account.seats === seats) return seats;
       await provider.updateSeats(account.customerId, seats);
       await sync(account.customerId);
+      return seats;
     },
 
     async claimReferral(actor, code) {

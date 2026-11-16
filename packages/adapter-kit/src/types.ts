@@ -1029,6 +1029,8 @@ export interface BackgroundJobPayloads {
   "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
+  /** Backup for billing an organization for the members it has now. Only the API runs it. */
+  "billing.seats": { organizationId: string };
 }
 
 /** What held a secret-store reference before it was replaced or dropped. */

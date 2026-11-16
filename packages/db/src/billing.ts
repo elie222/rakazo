@@ -439,7 +439,7 @@ export async function syncBillingSnapshot(
 
 /** Billable seats: every organization member but guests, never fewer than one. */
 export async function organizationSeatCount(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "member">,
   organizationId: string,
 ): Promise<number> {
   const members = await prisma.member.count({

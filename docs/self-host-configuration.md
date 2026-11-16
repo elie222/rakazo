@@ -160,7 +160,8 @@ Run `pg_dump` as the owner. The app login would only dump rows it is allowed to 
 
 The API keeps a pool of 4 Postgres connections and the worker a pool of 8. `DB_POOL_MAX` sets both
 to the same value, so size it for the worker: Graphile Worker needs at least 6, and the worker also
-holds three listening connections and a leadership connection.
+holds three listening connections and a leadership connection. With billing configured, each API
+also keeps 2 more for the seat count's background jobs.
 
 `REALTIME_DATABASE_URL` sends the long-lived `LISTEN` connections that carry live updates to a
 different address than `DATABASE_URL`, for example a direct connection when `DATABASE_URL` goes

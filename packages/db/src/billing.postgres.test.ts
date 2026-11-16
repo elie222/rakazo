@@ -13,6 +13,7 @@ import {
 } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
+import { whileSeatsAre } from "./organization-members.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -154,6 +155,15 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
       status: "active",
     });
+  });
+
+  it("settles a seat count only while the organization still has that many seats", async () => {
+    const settled: Array<number | null> = [];
+    for (const seats of [2, 3, null])
+      await whileSeatsAre(prisma, organizationId, seats, async () => {
+        settled.push(seats);
+      });
+    expect(settled).toEqual([2, null]);
   });
 
   it("deletes the account with its organization", async () => {

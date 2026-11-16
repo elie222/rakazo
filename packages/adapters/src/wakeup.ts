@@ -28,7 +28,10 @@ export {
 } from "./job-give-up.js";
 
 type RunLookup = Pick<PrismaClient, "run">;
-type Workload = "interactive" | "background" | "maintenance";
+type Workload = "interactive" | "background" | "maintenance" | "api";
+
+/** Jobs that need credentials only the API holds, so only its host takes them. */
+const API_JOBS: ReadonlySet<BackgroundJobName> = new Set(["billing.seats"]);
 
 async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boolean> {
   const run = await prisma.run.findUnique({ where: { id: runId }, select: { trigger: true } });
@@ -412,7 +415,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     const taskList = Object.fromEntries(
       (Object.keys(handlers) as BackgroundJobName[])
         .filter((name) => {
-          if (this.options.workload === "maintenance") return name !== "run.continue";
+          if (this.options.workload === "api") return API_JOBS.has(name);
+          if (this.options.workload === "maintenance")
+            return name !== "run.continue" && !API_JOBS.has(name);
           if (this.options.workload) return name === "run.continue";
           return true;
         })

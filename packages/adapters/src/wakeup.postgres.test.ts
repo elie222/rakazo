@@ -4,6 +4,7 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
+  billingSeatsJob,
   CONNECTION_CLEANUP_MAX_ATTEMPTS,
   connectionCleanupJob,
   connectionCleanupJobKey,
@@ -69,6 +70,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
+    "billing.seats": vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -206,6 +208,46 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       release.resolve();
       await host.stop();
       await publisher.close();
+    }
+  });
+
+  it("leaves the API's jobs to the API's host", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const worker = createReservedGraphileJobWorkerHost(testPool(), { pollInterval: 25 });
+    // Its own pool, as in the API, since the worker's runners hold most of the test pool.
+    const apiPool = new Pool({ connectionString: databaseUrl, max: 2 });
+    const api = new GraphileJobWorkerHost(apiPool, {
+      workload: "api",
+      concurrency: 1,
+      pollInterval: 25,
+    });
+    const recounted: string[] = [];
+    const woken: string[] = [];
+    const recount =
+      (host: string) =>
+      async ({ organizationId }: { organizationId: string }) => {
+        recounted.push(`${host}:${organizationId}`);
+      };
+    try {
+      await worker.start(
+        handlers({
+          "billing.seats": recount("worker"),
+          "routine.wakeup": async ({ routineId }) => {
+            woken.push(routineId);
+          },
+        }),
+      );
+      await publisher.enqueue(billingSeatsJob("organization-a"));
+      await publisher.enqueue(routineWakeupJob("routine-after-seats", new Date()));
+      await waitFor(() => expect(woken).toEqual(["routine-after-seats"]));
+      expect(recounted).toEqual([]);
+      await api.start(handlers({ "billing.seats": recount("api") }));
+      await waitFor(() => expect(recounted).toEqual(["api:organization-a"]));
+    } finally {
+      await worker.stop();
+      await api.stop();
+      await publisher.close();
+      await apiPool.end();
     }
   });
 

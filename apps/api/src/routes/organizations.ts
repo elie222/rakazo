@@ -20,9 +20,9 @@ import {
   runAsSystem,
   setOrganizationMemberRole,
 } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
 import { deleteOrganization } from "../account-deletion.js";
 import type { RouterDeps } from "../router.js";
+import { recordSeatChange, syncSeatsAfterChange } from "../seat-sync.js";
 import { afterSpaceDeparture } from "../space-departure.js";
 import type { RouterContext } from "./context.js";
 
@@ -124,12 +124,9 @@ export function organizationsRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               memberUserId: input.userId,
             };
-            await revokeOrganizationMember(deps.prisma, ref);
+            await revokeOrganizationMember(deps.prisma, ref, recordSeatChange(deps));
             // Their seat ends with their membership, before their Spaces change hands.
-            await bestEffort(
-              "seat count after a removal",
-              deps.billing?.syncSeats(input.organizationId),
-            );
+            await syncSeatsAfterChange(deps, input.organizationId);
             await leaveOrganizationSpaces(
               deps.prisma,
               {
@@ -228,21 +225,22 @@ export function organizationsRoutes(ctx: RouterContext) {
         ),
         accept: authed.organizations.invitations.accept.handler(({ context, input }) =>
           runAsSystem("join an organization by invitation", async () => {
-            const joined = await acceptOrganizationInvitation(deps.prisma, {
-              invitationId: input.invitationId,
-              userId: context.actor.userId,
-              requireVerifiedEmail: Boolean(deps.email),
-            });
+            const joined = await acceptOrganizationInvitation(
+              deps.prisma,
+              {
+                invitationId: input.invitationId,
+                userId: context.actor.userId,
+                requireVerifiedEmail: Boolean(deps.email),
+              },
+              recordSeatChange(deps),
+            );
             await recordAuditEvent({
               action: "organization.member.joined",
               actor: { type: "user", id: context.actor.userId },
               organizationId: joined.organizationId,
               target: { type: "invitation", id: input.invitationId },
             });
-            await bestEffort(
-              "seat count after a join",
-              deps.billing?.syncSeats(joined.organizationId),
-            );
+            await syncSeatsAfterChange(deps, joined.organizationId);
             return { spaceId: joined.spaceId };
           }),
         ),
