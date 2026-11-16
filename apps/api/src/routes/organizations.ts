@@ -126,47 +126,51 @@ export function organizationsRoutes(ctx: RouterContext) {
               memberUserId: input.userId,
             };
             await revokeOrganizationMember(deps.prisma, ref);
-            // Their seat ends with their membership, before their Spaces change hands.
-            await bestEffort(
-              "seat count after a removal",
-              deps.billing?.syncSeats(input.organizationId),
-            );
-            await leaveOrganizationSpaces(
-              deps.prisma,
-              {
-                organizationId: input.organizationId,
-                userId: input.userId,
-                removedBy: context.actor.userId,
-              },
-              async (departure) => {
-                await afterSpaceDeparture(
-                  deps,
-                  { spaceId: departure.spaceId, userId: context.actor.userId },
-                  departure,
-                );
-                // Whoever took the Space over sees it change, as when they leave it.
-                void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });
-              },
-            );
-            await forgetRevokedMember(deps.prisma, ref);
-            // Someone who accepted a new invitation meanwhile stays, and is not recorded as removed.
-            const rejoined = await deps.prisma.member.findFirst({
-              where: {
-                organizationId: input.organizationId,
-                userId: input.userId,
-                role: { not: GUEST_ROLE },
-              },
-              select: { id: true },
-            });
-            if (!rejoined)
-              await recordAuditEvent({
-                action: "organization.member.removed",
-                actor: { type: "user", id: context.actor.userId },
-                organizationId: input.organizationId,
-                target: { type: "user", id: input.userId },
+            // The members changed once the revocation committed, so they hear it even if a later
+            // step fails; the removed person's own list loses the organization too.
+            try {
+              // Their seat ends with their membership, before their Spaces change hands.
+              await bestEffort(
+                "seat count after a removal",
+                deps.billing?.syncSeats(input.organizationId),
+              );
+              await leaveOrganizationSpaces(
+                deps.prisma,
+                {
+                  organizationId: input.organizationId,
+                  userId: input.userId,
+                  removedBy: context.actor.userId,
+                },
+                async (departure) => {
+                  await afterSpaceDeparture(
+                    deps,
+                    { spaceId: departure.spaceId, userId: context.actor.userId },
+                    departure,
+                  );
+                  // Whoever took the Space over sees it change, as when they leave it.
+                  void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });
+                },
+              );
+              await forgetRevokedMember(deps.prisma, ref);
+              // Someone who accepted a new invitation meanwhile stays, and is not recorded as removed.
+              const rejoined = await deps.prisma.member.findFirst({
+                where: {
+                  organizationId: input.organizationId,
+                  userId: input.userId,
+                  role: { not: GUEST_ROLE },
+                },
+                select: { id: true },
               });
-            // The removed person's own list loses the organization too.
-            void deps.events?.publishOrganizationChange?.(input.organizationId, [input.userId]);
+              if (!rejoined)
+                await recordAuditEvent({
+                  action: "organization.member.removed",
+                  actor: { type: "user", id: context.actor.userId },
+                  organizationId: input.organizationId,
+                  target: { type: "user", id: input.userId },
+                });
+            } finally {
+              void deps.events?.publishOrganizationChange?.(input.organizationId, [input.userId]);
+            }
             return { ok: true as const };
           }),
         ),
