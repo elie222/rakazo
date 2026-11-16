@@ -115,6 +115,8 @@ describeRunsList("runs.list activity tracker", () => {
       quietHours,
     });
     expect(me.quietHours).toEqual(quietHours);
+    // Nor can the timezone be cleared while they are on.
+    expect((await raw(app, cookie, "preferences/update", { timezone: null })).status).toBe(400);
     expect(await notified()).toEqual({ Done: false, Broken: true });
 
     await rpc(app, cookie, "preferences/update", { quietHours: null });
