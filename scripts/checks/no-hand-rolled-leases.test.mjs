@@ -24,11 +24,12 @@ const EXISTING = new Set([
   "CloudAgent.leaseExpiresAt",
   "Computer.executionLeaseExpiresAt",
   "Computer.executionFence",
-  "HomeDeletionNotice.claimId",
-  "HomeDeletionNotice.claimExpiresAt",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
+  // Moved onto `withLease`; kept only while the previous release still claims them.
+  "HomeDeletionNotice.claimId",
+  "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
   "Lease.fence",
   // Not long work in one process, so not for `withLease`: a person's page holds computer control
