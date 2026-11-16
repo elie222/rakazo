@@ -207,7 +207,9 @@ export function contentRoutes(ctx: RouterContext) {
         } else if (input.range === "30d") {
           since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         }
-        const rangeFilter = since ? Prisma.sql`AND u."createdAt" >= ${since}` : Prisma.empty;
+        const rangeFilter = since
+          ? Prisma.sql`AND u."createdAt" >= ${since}::timestamp(3)`
+          : Prisma.empty;
         const modelFilter =
           input.provider && input.model
             ? Prisma.sql`AND u.provider = ${input.provider} AND u.model = ${input.model}`
