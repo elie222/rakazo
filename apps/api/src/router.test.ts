@@ -36,6 +36,8 @@ import {
   SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
+  VaultItemRefusedError,
+  VaultRetryError,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
@@ -1174,17 +1176,22 @@ describe("answers the server can't save", () => {
   it.each([
     ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
     // The person blocked bots from the item while the request waited.
-    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for a blocked item",
+      new VaultItemRefusedError(BLOCKED_ITEM_ANSWER),
+      BLOCKED_ITEM_ANSWER,
+      400,
+    ],
     [
       "for an item chosen for other bots",
-      new Error(UNCHOSEN_ITEM_ANSWER),
+      new VaultItemRefusedError(UNCHOSEN_ITEM_ANSWER),
       UNCHOSEN_ITEM_ANSWER,
       400,
     ],
     // The saved login it replaces can't be read for now: a retry may save it.
     [
       "held back by a saved login it can't read",
-      new Error(SAVED_LOGIN_UNREADABLE),
+      new VaultRetryError(SAVED_LOGIN_UNREADABLE),
       SAVED_LOGIN_UNREADABLE,
       409,
     ],
@@ -1272,7 +1279,7 @@ describe("secret request dismissal", () => {
       email: "user@example.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = appHandler(deps);
     const send = (json: Record<string, unknown>) =>
       handle(
         handler,
@@ -1378,7 +1385,7 @@ describe("secret request dismissal", () => {
   it("reports a credential its destination cannot carry as a bad request", async () => {
     const h = setup(true);
     h.answerRunInput.mockRejectedValue(
-      new Error("Credential cannot be used with this authentication method"),
+      new VaultItemRefusedError("Credential cannot be used with this authentication method"),
     );
     const response = await h.send({ answer: "example\nvalue" });
 
@@ -1389,9 +1396,13 @@ describe("secret request dismissal", () => {
     expect(h.enqueue).not.toHaveBeenCalled();
   });
 
-  it("keeps unexpected answer failures as server errors", async () => {
+  it.each([
+    ["an unexpected failure", "database unavailable"],
+    // Only the vault's own refusal is the person's to fix, whatever another error says.
+    ["one that reads like a refusal", "Invalid credential destination — name: x"],
+  ])("keeps %s as a server error", async (_case, message) => {
     const h = setup(true);
-    h.answerRunInput.mockRejectedValue(new Error("database unavailable"));
+    h.answerRunInput.mockRejectedValue(new Error(message));
     const response = await h.send({ answer: "Paris" });
 
     expect(response.status).toBe(500);
