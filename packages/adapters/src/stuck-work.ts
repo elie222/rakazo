@@ -20,7 +20,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
 import { notificationIdentity } from "./notification-identity.js";
 import { publishChatAlert, readOwnerHold } from "./run-notifications.js";
@@ -233,7 +233,8 @@ async function remindStuckRun(
     ),
   );
   if (!claimId) return;
-  await owner.reveal();
+  // A chat that can't be brought back still gets its reminder, which opens it.
+  await bestEffort("stuck work unhide", owner.reveal());
   const reminder = stuckWorkReminder(run.status, run.bot.name);
   const message = {
     kind: reminder.kind,
