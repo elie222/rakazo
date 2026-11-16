@@ -1031,7 +1031,9 @@ const SHARED_ACCESS_SCOPE = /\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)*\.Shared\b/;
 export function withSharedAccessHint(message: string): string {
   const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
   if (!scope) return message;
-  return `${message.replace(/[.\s]+$/, "")}. This call needs the ${scope} permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.`;
+  let end = message.length;
+  while (end > 0 && (message[end - 1] === "." || message[end - 1]?.trim() === "")) end--;
+  return `${message.slice(0, end)}. This call needs the ${scope} permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {

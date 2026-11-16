@@ -1223,6 +1223,15 @@ describe("composio tool mapping", () => {
     expect(withSharedAccessHint("Shared folder not found")).toBe("Shared folder not found");
   });
 
+  it("ends the message cleanly before the hint, however it was punctuated", () => {
+    const hinted = withSharedAccessHint(`requires Mail.Read.Shared.. \t\n`);
+    expect(hinted.startsWith("requires Mail.Read.Shared. This call needs")).toBe(true);
+    const long = `requires Mail.Read.Shared${"\t".repeat(100_000)}`;
+    expect(withSharedAccessHint(long).startsWith("requires Mail.Read.Shared. This call")).toBe(
+      true,
+    );
+  });
+
   it("reports a call the provider marked failed even when its error text is empty", async () => {
     composioSdkState.executions.length = 0;
     composioSdkState.sessions.clear();
