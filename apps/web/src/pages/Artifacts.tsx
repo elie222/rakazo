@@ -30,7 +30,9 @@ import {
 } from "@rakazo/ui-web";
 import { skipToken, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   ChevronLeft,
+  Copy,
   Download,
   FileCode2,
   FileText,
@@ -54,7 +56,9 @@ import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
+import { useCopyText } from "../lib/copy-text";
 import { desktopBridge } from "../lib/desktop";
+import { selectFilePreviewContents } from "../lib/file-preview-selection";
 import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { createStoredPreference } from "../lib/stored-preference";
@@ -880,6 +884,7 @@ function PreviewPane({
   onToggleMaximize: () => void;
 }) {
   const { t } = useLingui();
+  const [copied, copy] = useCopyText();
   const queries = useSpaceQueries();
   const versionsQuery = useQuery(
     queries.artifacts.listVersions.queryOptions({
@@ -914,7 +919,16 @@ function PreviewPane({
         : { status: "loading" };
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <section
+      aria-label={state.status === "ready" ? state.artifact.name : t`Loading…`}
+      onKeyDown={(event) =>
+        selectFilePreviewContents(
+          event,
+          event.currentTarget.querySelector("[data-file-preview-body]"),
+        )
+      }
+      className="flex min-w-0 flex-1 flex-col"
+    >
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-body-lg font-semibold">
@@ -942,6 +956,23 @@ function PreviewPane({
         ) : null}
         {state.status === "ready" ? (
           <>
+            {["markdown", "text"].includes(artifactPreviewKind(state.artifact.mimeType)) ? (
+              <IconTooltip label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="text-muted-foreground"
+                  aria-label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}
+                  onClick={() => void copy(new TextDecoder("utf-8").decode(state.bytes))}
+                >
+                  {copied ? (
+                    <Check size={15} strokeWidth={1.9} />
+                  ) : (
+                    <Copy size={15} strokeWidth={1.9} />
+                  )}
+                </Button>
+              </IconTooltip>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -994,7 +1025,7 @@ function PreviewPane({
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1007,7 +1038,12 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "markdown":
       return (
         <div className="h-full overflow-y-auto bg-background">
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground">
+          <article
+            data-file-preview-body
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
+            tabIndex={0}
+            className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground"
+          >
             <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
           </article>
         </div>
@@ -1015,7 +1051,12 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "text":
       return (
         <div className="h-full overflow-auto bg-background">
-          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground">
+          <pre
+            data-file-preview-body
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
+            tabIndex={0}
+            className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground"
+          >
             {new TextDecoder("utf-8").decode(bytes)}
           </pre>
         </div>

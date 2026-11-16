@@ -5,11 +5,13 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { fileSizeParts } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
-import { Code2, Download, FileText, Play, X } from "lucide-react";
+import { Check, Code2, Copy, Download, FileText, Play, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
+import { useCopyText } from "../lib/copy-text";
+import { selectFilePreviewContents } from "../lib/file-preview-selection";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
 import { IconTooltip } from "./IconTooltip";
@@ -126,6 +128,12 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
       </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent
+          onKeyDown={(event) =>
+            selectFilePreviewContents(
+              event,
+              event.currentTarget.querySelector("[data-file-preview-body]"),
+            )
+          }
           showCloseButton={false}
           initialFocus={closeButton}
           finalFocus={previewButton}
@@ -152,6 +160,7 @@ function FilePreview({
     | { status: "ready"; bytes: Uint8Array; text?: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
+  const [copied, copy] = useCopyText();
   const targetBotId = "botId" in target ? target.botId : undefined;
   const targetGroupId = "groupId" in target ? target.groupId : undefined;
 
@@ -192,6 +201,21 @@ function FilePreview({
         <DialogTitle className="min-w-0 flex-1 truncate text-body font-medium text-foreground">
           {name}
         </DialogTitle>
+        {state.status === "ready" &&
+        state.text !== undefined &&
+        (kind === "markdown" || kind === "text") ? (
+          <IconTooltip label={copied ? t`Copied` : t`Copy ${name}`}>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="rounded-full text-muted-foreground"
+              aria-label={copied ? t`Copied` : t`Copy ${name}`}
+              onClick={() => void copy(state.text!)}
+            >
+              {copied ? <Check /> : <Copy />}
+            </Button>
+          </IconTooltip>
+        ) : null}
         <IconTooltip label={t`Download ${name}`}>
           <Button
             variant="ghost"
@@ -244,11 +268,17 @@ function FilePreview({
         ) : kind === "pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
         ) : state.text !== undefined && kind === "text" ? (
-          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12">
+          <pre
+            data-file-preview-body
+            className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12"
+          >
             {state.text}
           </pre>
         ) : state.text !== undefined ? (
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground sm:px-12 sm:py-12">
+          <article
+            data-file-preview-body
+            className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground sm:px-12 sm:py-12"
+          >
             <ChatMarkdown>{state.text}</ChatMarkdown>
           </article>
         ) : null}
