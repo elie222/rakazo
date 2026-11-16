@@ -218,6 +218,14 @@ describe("background computer maintenance", () => {
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual(["error"]);
   });
+  it("still records the failure when it cannot tell whether the computer runs", async () => {
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockRejectedValueOnce(new Error("database unavailable"));
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+  });
   it("still records the failure when the too-large note cannot be posted", async () => {
     const { row, deps, computer } = fixture();
     computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);

@@ -564,14 +564,17 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
       const keptUnsaved =
         error instanceof WorkspaceTooLargeError &&
         update.computer.providerRef !== null &&
-        (await deps.prisma.computer.findFirst({
-          where: {
-            id: update.computerId,
-            state: "running",
-            providerRef: update.computer.providerRef,
-          },
-          select: { id: true },
-        }))
+        (await bestEffort(
+          "check whether a computer too large to save is still running",
+          deps.prisma.computer.findFirst({
+            where: {
+              id: update.computerId,
+              state: "running",
+              providerRef: update.computer.providerRef,
+            },
+            select: { id: true },
+          }),
+        ))
           ? error
           : undefined;
       const expected =
