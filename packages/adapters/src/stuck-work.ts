@@ -1,7 +1,6 @@
 import type { JobPublisher, NotificationMessage, NotificationProvider } from "@rakazo/adapter-kit";
 import type { ExpirableWaitStatus, StuckWorkStatus } from "@rakazo/core";
 import {
-  idleRunSecretsAfterMs,
   isStuckWorkStatus,
   STUCK_WORK_NOTICE,
   STUCK_WORK_STATUSES,
@@ -10,6 +9,7 @@ import {
   stuckWorkDueAfterMs,
   stuckWorkReminder,
   stuckWorkStoppedNotification,
+  waitExpireAfterMs,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -347,7 +347,7 @@ export async function expireWaitHoldingSecrets(
     select: STUCK_CANDIDATE_SELECT,
   });
   if (run?.status !== "waiting_input") return undefined;
-  const due = new Date(run.updatedAt.getTime() + idleRunSecretsAfterMs());
+  const due = new Date(run.updatedAt.getTime() + waitExpireAfterMs());
   if (due > deps.now) return due;
   if (!(await runHoldsOwnSecrets(deps.prisma, run))) return undefined;
   await expireOne(deps, { ...run, status: "waiting_input" });

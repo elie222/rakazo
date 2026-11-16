@@ -22,8 +22,8 @@ function stuckWorkMsFromEnv(raw: string | undefined, fallback: number): number {
     : fallback;
 }
 
-/** How long a run waiting on an answer may keep the logins and codes it took for itself. */
-export function idleRunSecretsAfterMs(): number {
+/** How long queued work, or a question whose run holds its own login or code, waits before it ends. */
+export function waitExpireAfterMs(): number {
   return stuckWorkMsFromEnv(process.env.STUCK_WORK_EXPIRE_AFTER_MS, STUCK_WORK_EXPIRE_AFTER_MS);
 }
 
@@ -41,7 +41,7 @@ export const STUCK_WORK_NOTICE = "stuck";
 /** A question holds nothing, so it stays open until someone answers it. */
 export const STUCK_WORK_STATUSES = ["queued", "waiting_takeover"] as const;
 export type StuckWorkStatus = (typeof STUCK_WORK_STATUSES)[number];
-/** A question ends only when its run holds a login or code it took for itself; see idleRunSecretsAfterMs. */
+/** A question ends only when its run holds a login or code it took for itself; see waitExpireAfterMs. */
 export type ExpirableWaitStatus = StuckWorkStatus | "waiting_input";
 
 export type StuckWorkAction = "notify" | "expire" | "none";
@@ -143,5 +143,5 @@ function botLabel(name: string): string {
 }
 
 function stuckWorkExpireAfterMs(status: StuckWorkStatus): number {
-  return status === "waiting_takeover" ? TAKEOVER_WAIT_EXPIRE_AFTER_MS : idleRunSecretsAfterMs();
+  return status === "waiting_takeover" ? TAKEOVER_WAIT_EXPIRE_AFTER_MS : waitExpireAfterMs();
 }
