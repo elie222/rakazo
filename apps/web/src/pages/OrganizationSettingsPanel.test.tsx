@@ -7,8 +7,15 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { organizations, wrote } = vi.hoisted(() => ({
-  organizations: { list: vi.fn(), rename: vi.fn() },
+const { organizations, wrote, toast, copy } = vi.hoisted(() => ({
+  organizations: {
+    list: vi.fn(),
+    rename: vi.fn(),
+    members: { list: vi.fn(), setRole: vi.fn(), remove: vi.fn() },
+    invitations: { create: vi.fn(), cancel: vi.fn() },
+  },
+  toast: vi.fn(),
+  copy: vi.fn(async () => true),
   /** The space each rename named. */
   wrote: [] as (string | null)[],
 }));
@@ -16,6 +23,8 @@ vi.mock("../lib/rpc", async (original) => {
   const clientFor = (spaceId: string | null) => ({
     organizations: {
       list: organizations.list,
+      members: organizations.members,
+      invitations: organizations.invitations,
       rename: (input: unknown) => {
         wrote.push(spaceId);
         return organizations.rename(input);
@@ -62,6 +71,15 @@ vi.mock("@rakazo/ui-web", () => {
     AlertDialogFooter: Box,
     AlertDialogHeader: Box,
     AlertDialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+    Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+    CopyTextFallback: () => null,
+    DropdownMenu: Box,
+    DropdownMenuContent: Box,
+    DropdownMenuItem: (props: ComponentProps<"button">) => <button type="button" {...props} />,
+    DropdownMenuSeparator: () => null,
+    DropdownMenuTrigger: () => null,
+    toast,
+    writeClipboard: copy,
   };
 });
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
@@ -103,6 +121,8 @@ it("enables Delete only once the organization's exact name is typed", async () =
           defaultSpaceId: "s2",
           spaceIds: ["s2"],
           canManage: true,
+          role: "owner",
+          memberCount: 1,
         }}
         onCancel={() => undefined}
         onConfirm={onConfirm}
@@ -135,6 +155,8 @@ describe("renaming the organization", () => {
         defaultSpaceId: "space-work",
         spaceIds: ["space-work"],
         canManage: true,
+        role: "owner",
+        memberCount: 1,
       },
     ],
     activeOrganizationId: "org-work",
@@ -260,5 +282,139 @@ describe("renaming the organization", () => {
     await act(async () => renaming.resolve({ id: "org-work", name: "Team" }));
     await settle();
     expect(names()).toEqual(["Team"]);
+  });
+});
+
+describe("organization members", () => {
+  const organization = (memberCount: number, role = "owner") => ({
+    organizations: [
+      {
+        id: "org-work",
+        name: "Work",
+        defaultSpaceId: "space-work",
+        spaceIds: ["space-work"],
+        canManage: role === "owner",
+        role,
+        memberCount,
+      },
+    ],
+    activeOrganizationId: "org-work",
+  });
+  const person = (name: string, role: string, manageable: boolean) => ({
+    userId: `user-${name}`,
+    name,
+    email: `${name.split(" ")[0]!.toLowerCase()}@example.test`,
+    image: null,
+    role,
+    manageable,
+    roleChangeable: manageable,
+  });
+
+  async function render() {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <QueryUserProvider value="user-a">
+            <SpaceRpcProvider spaceId="space-work">
+              <OrganizationSettingsPanel />
+            </SpaceRpcProvider>
+          </QueryUserProvider>
+        </QueryClientProvider>,
+      ),
+    );
+    await act(flush);
+  }
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((each) => each.textContent === label);
+  const rows = () =>
+    [...container.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent);
+
+  beforeEach(() => {
+    queryClient.clear();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    vi.clearAllMocks();
+  });
+
+  it("offers to invite people while the owner is alone, else shows the count", async () => {
+    organizations.list.mockResolvedValue(organization(1));
+    await render();
+    expect(button("MembersInvite people")).toBeTruthy();
+
+    queryClient.clear();
+    organizations.list.mockResolvedValue(organization(3, "member"));
+    await render();
+    expect(button("Members3")).toBeTruthy();
+  });
+
+  it("lists members, invites by email and copies the link when no email went out", async () => {
+    organizations.list.mockResolvedValue(organization(2));
+    organizations.members.list.mockResolvedValue({
+      canManage: true,
+      members: [person("Ada Lovelace", "owner", false), person("Bob Stone", "member", true)],
+      invitations: [],
+    });
+    await render();
+    await act(async () => button("Members2")?.click());
+    await act(flush);
+    expect(container.querySelector('[data-testid="settings-page-title"]')?.textContent).toBe(
+      "Members",
+    );
+    expect(rows()).toEqual([
+      "AAda LovelaceOwnerada@example.test",
+      "BBob Stonebob@example.testMake adminRemove",
+    ]);
+
+    organizations.invitations.create.mockResolvedValue({
+      url: "https://app.example.test/join/invitation-1",
+      emailed: false,
+    });
+    const field = container.querySelector<HTMLInputElement>('input[type="email"]')!;
+    await type(field, "cy@example.test");
+    await act(async () => field.form?.requestSubmit());
+    await act(flush);
+    expect(organizations.invitations.create).toHaveBeenCalledWith({
+      organizationId: "org-work",
+      email: "cy@example.test",
+    });
+    expect(copy).toHaveBeenCalledWith("https://app.example.test/join/invitation-1");
+    expect(toast).toHaveBeenCalledWith("Invite link copied");
+
+    organizations.members.setRole.mockResolvedValue({ ok: true });
+    await act(async () => button("Make admin")?.click());
+    await act(flush);
+    expect(organizations.members.setRole).toHaveBeenCalledWith({
+      organizationId: "org-work",
+      userId: "user-Bob Stone",
+      role: "admin",
+    });
+
+    // Removing asks first.
+    organizations.members.remove.mockResolvedValue({ ok: true });
+    await act(async () => button("Remove")?.click());
+    expect(container.querySelector("h2")?.textContent).toBe("Remove Bob Stone?");
+    expect(organizations.members.remove).not.toHaveBeenCalled();
+    const confirm = [...container.querySelectorAll("button")].filter(
+      (each) => each.textContent === "Remove",
+    );
+    await act(async () => confirm.at(-1)?.click());
+    await act(flush);
+    expect(organizations.members.remove).toHaveBeenCalledWith({
+      organizationId: "org-work",
+      userId: "user-Bob Stone",
+    });
+  });
+
+  it("shows the list without controls to someone who cannot manage it", async () => {
+    organizations.list.mockResolvedValue(organization(2, "member"));
+    organizations.members.list.mockResolvedValue({
+      canManage: false,
+      members: [person("Ada Lovelace", "owner", false), person("Bob Stone", "member", false)],
+      invitations: [],
+    });
+    await render();
+    await act(async () => button("Members2")?.click());
+    await act(flush);
+    expect(rows()).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.test"]);
+    expect(container.querySelector('input[type="email"]')).toBeNull();
   });
 });

@@ -12,13 +12,16 @@ import NewBot from "../app/new-bot";
 import type { SaveSend } from "./query";
 import { queryClient } from "./query";
 
-const { rpc, router, params, createInboxBot, askForModelBeforeFirstBot } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
-  params: { current: {} as { spaceId?: string } },
-  createInboxBot: vi.fn(),
-  askForModelBeforeFirstBot: vi.fn(),
-}));
+const { rpc, router, params, selected, header, createInboxBot, askForModelBeforeFirstBot } =
+  vi.hoisted(() => ({
+    rpc: vi.fn(),
+    selected: { spaceId: "space-1" },
+    router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
+    params: { current: {} as { spaceId?: string } },
+    header: { cancel: (): void => undefined },
+    createInboxBot: vi.fn(),
+    askForModelBeforeFirstBot: vi.fn(),
+  }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -26,8 +29,8 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
-  selectedSpaceId: () => "space-1",
-  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+  selectedSpaceId: () => selected.spaceId,
+  captureApiRequestContext: async (spaceId: string | null = selected.spaceId) => ({
     apiBase: "http://api.test",
     sessionGeneration: 1,
     headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
@@ -70,7 +73,12 @@ vi.mock("react-native", () => {
 });
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/bot-look-picker", () => ({ BotLookPicker: () => null }));
-vi.mock("../components/sheet-header", () => ({ cancelHeaderOptions: () => ({}) }));
+vi.mock("../components/sheet-header", () => ({
+  cancelHeaderOptions: (_label: string, cancel: () => void) => {
+    header.cancel = cancel;
+    return {};
+  },
+}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -96,6 +104,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
   params.current = {};
+  selected.spaceId = "space-1";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -148,6 +157,30 @@ it("creates once on a double tap, through the save's send, and holds the form me
   expect(button("Creating…")?.disabled).toBe(true);
 });
 
+it("names the Space it creates in, so the chat and model check use it too", async () => {
+  await start();
+  expect(askForModelBeforeFirstBot).toHaveBeenCalledWith("space-1", expect.any(Function));
+  await act(async () => button("Create")!.click());
+  const [{ spaceId }] = createInboxBot.mock.calls[0] as [{ spaceId?: string }];
+  expect(spaceId).toBe("space-1");
+});
+
+it("keeps sending the new bot's onboarding to its Space after another is selected", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  const [{ send }] = createInboxBot.mock.calls[0] as [{ send: SaveSend }];
+  selected.spaceId = "space-2";
+  rpc.mockClear().mockResolvedValue({});
+  await send("onboarding/start", { botId: "bot-1" });
+  expect(rpc).toHaveBeenCalledWith(
+    "onboarding/start",
+    { botId: "bot-1" },
+    {
+      requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }),
+    },
+  );
+});
+
 it("shows the failure and offers Create again", async () => {
   await start();
   await act(async () => button("Create")!.click());
@@ -172,4 +205,35 @@ it("creates nothing while the opening check asks for a model", async () => {
   expect(router.back).toHaveBeenCalledOnce();
   await act(async () => button("Create")?.click());
   expect(createInboxBot).not.toHaveBeenCalled();
+});
+
+it("ignores Cancel from the Create tap on, before the screen shows it", async () => {
+  await start();
+  const cancelAsRendered = header.cancel;
+  await act(async () => {
+    button("Create")!.click();
+    cancelAsRendered();
+  });
+  expect(createInboxBot).toHaveBeenCalledOnce();
+  expect(router.back).not.toHaveBeenCalled();
+});
+
+it("lets Cancel close the screen after a create fails once another Space is selected", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  selected.spaceId = "space-2";
+  await act(async () => root.render(<NewBot />));
+  await act(async () => creating.reject(new Error("Name taken")));
+  expect(button("Create")?.disabled).toBe(false);
+  header.cancel();
+  expect(router.back).toHaveBeenCalledOnce();
+});
+
+it("closes when the Space changed during the create", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  selected.spaceId = "space-2";
+  await act(async () => root.render(<NewBot />));
+  await act(async () => creating.resolve("stale"));
+  expect(router.back).toHaveBeenCalledOnce();
 });

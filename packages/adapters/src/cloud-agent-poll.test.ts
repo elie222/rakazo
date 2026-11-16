@@ -44,6 +44,8 @@ async function pollWithCard(blocks: unknown) {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     event: { create: vi.fn(async () => ({ seq: 1 })) },
+    // Takes, checks and releases the agent's lease.
+    $queryRaw: vi.fn(async () => [{ fence: 1n }]),
   };
   const prisma = {
     ...tx,

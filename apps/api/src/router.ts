@@ -154,6 +154,8 @@ export interface RouterDeps {
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;
+    /** Keys the hash that names an invited address in the security log, so it can't be guessed. */
+    invitationRecipientKey: string;
     sandboxProvider: string;
     gitSha?: string;
     integrationsCatalogUrl?: string;
