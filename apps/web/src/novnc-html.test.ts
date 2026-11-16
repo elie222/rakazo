@@ -177,7 +177,8 @@ describe("noVNC key bridge", () => {
       addEventListener() {},
     };
     const install = (html: string) => {
-      const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+      const start = html.indexOf("<script>") + "<script>".length;
+      const script = html.slice(start, html.lastIndexOf("</script>"));
       new Function("window", "document", script)(window, document);
     };
     return { window, events, install, bridge: () => window.rakazoComputerKeyboard as Bridge };
