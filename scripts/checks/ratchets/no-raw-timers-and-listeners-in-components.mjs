@@ -13,8 +13,10 @@ export const exclude = [
   "apps/web/src/lib/use-event-listener.ts",
 ];
 
+// The add, not the remove: a listener never removed is the leak the hook prevents. Native
+// subscriptions (app state, back button) and abort signals have no hook to move to.
 const CALL =
-  /(?<![\w$.])(?:window\.|globalThis\.)?(?:setTimeout|setInterval)\s*\(|\bremoveEventListener\s*\(/g;
+  /(?<![\w$.])(?:window\.|globalThis\.)?(?:setTimeout|setInterval)\s*\(|(?<!(?:\b(?:AppState|BackHandler|Linking|Keyboard|Dimensions|[sS]ignal)|\))\s*\.\s*)\baddEventListener\s*\(/g;
 const EFFECTS = /^import \{[^}]*\buse(?:Layout)?Effect\b[^}]*\} from "react";/m;
 
 /** A component (.tsx) or a module that runs React effects; stores and plain helpers keep their timers. */

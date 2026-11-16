@@ -22,6 +22,8 @@ const timer = window.setTimeout(close, 100);
 `,
   "apps/web/src/pages/shell/use-clock.ts": `${effects}const timer = setInterval(tick, 1000);\n`,
   "apps/mobile/components/card.tsx": "const timer = setTimeout (() => setFailed(true), 50);\n",
+  "apps/web/src/pages/leak.tsx": `useEffect(() => {\n  window.addEventListener("resize", sync);\n}, []);\n`,
+  "apps/mobile/lib/use-foreground.ts": `${effects}const sub = AppState.addEventListener("change", onChange);\nsignal.addEventListener("abort", stop);\n`,
   "apps/mobile/lib/use-pulse.ts": `${effects}globalThis.setTimeout(pulse, 10);\n`,
   "apps/mobile/lib/api.ts": "const timer = setTimeout(() => controller.abort(), 5000);\n",
   "apps/web/src/lib/call-session.ts":
@@ -39,11 +41,12 @@ for (const [file, text] of Object.entries(sources)) {
 }
 const found = scan([rule], Object.keys(sources), fixture).get(rule.name);
 
-test("counts raw timers and listener removals in components and effect hooks", () => {
+test("counts raw timers and added listeners, including one never removed", () => {
   assert.deepEqual(
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
-      "apps/web/src/pages/panel.tsx": [3, 5],
+      "apps/web/src/pages/panel.tsx": [2, 5],
+      "apps/web/src/pages/leak.tsx": [2],
       "apps/web/src/pages/shell/use-clock.ts": [2],
       "apps/mobile/components/card.tsx": [1],
       "apps/mobile/lib/use-pulse.ts": [2],
@@ -54,6 +57,7 @@ test("counts raw timers and listener removals in components and effect hooks", (
 test("leaves helpers without effects, method calls, converted code, the hooks and tests alone", () => {
   for (const file of [
     "apps/mobile/lib/api.ts",
+    "apps/mobile/lib/use-foreground.ts",
     "apps/web/src/lib/call-session.ts",
     "apps/web/src/preview-middleware.ts",
     "apps/web/src/pages/converted.tsx",
