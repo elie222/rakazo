@@ -51,6 +51,15 @@ describe("computer update presentation", () => {
     });
     stop();
   });
+  it("starts through the caller's client when one is given and shows what it started", async () => {
+    const updates = store(async () => []);
+    const stop = updates.watch();
+    const begin = vi.fn(async () => ({ ...update, id: "update-mine" }));
+    await updates.start("bot-1", "recover", begin);
+    expect(begin).toHaveBeenCalledWith("bot-1", "recover");
+    expect(updates.getSnapshot().openId).toBe("update-mine");
+    stop();
+  });
   it("restores background progress on a new mount and ignores responses after disposal", async () => {
     vi.useFakeTimers();
     const updates = store(async () => [update]);

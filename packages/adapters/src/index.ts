@@ -283,6 +283,7 @@ export {
 } from "./vault-values.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
+export * from "./voice-providers.js";
 export * from "./wake-run.js";
 export * from "./wakeup.js";
 export * from "./web-limits.js";
