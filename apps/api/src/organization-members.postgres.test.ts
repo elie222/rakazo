@@ -155,6 +155,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         defaultModel: "fake-model",
         webOrigin,
         screenProxySecret: "fake-test-secret",
+        invitationRecipientKey: "fake-recipient-key",
         sandboxProvider: "fake",
       },
       dataDir: "/tmp/rakazo-organization-members-test",
@@ -218,7 +219,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     expect(capped.json).toEqual({ url: third.json.url, emailed: false });
     expect(sent.length).toBe(sentBefore + 2);
-    // Each email is on record against its sender, and the record never names the address.
+    // Each email is on record, and only a keyed hash names the address.
     const records = await system.securityEvent.findMany({
       where: { type: "organization.invitation.sent", userId: owner.id },
       select: { metadata: true },

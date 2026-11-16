@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { emailLocale, organizationInvitationEmail } from "@rakazo/auth";
 import {
@@ -163,6 +164,8 @@ export function organizationsRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               email: input.email,
               sendsEmail: Boolean(deps.email),
+              recipientKey: (email) =>
+                createHmac("sha256", deps.env.invitationRecipientKey).update(email).digest("hex"),
             });
             // Past an address's daily limit the pending invitation comes back unchanged.
             if (invitation.created)

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -841,6 +842,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       webOrigin: env.webOrigin,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,
+      invitationRecipientKey: createHmac("sha256", env.authSecret)
+        .update("organization-invitation-recipient")
+        .digest("hex"),
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       integrationsCatalogUrl: env.integrationsCatalogUrl,

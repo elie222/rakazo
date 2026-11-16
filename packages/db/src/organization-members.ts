@@ -16,8 +16,8 @@ export const MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY = 3;
 /** Invitation emails one person sends per day across every organization they manage. */
 export const MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Each invitation email by whom, kept in the security log: no foreign keys, so deleting an
- * organization or an invitation never resets an inviter's count. It never names the address. */
+/** Each invitation email, kept in the security log: no foreign keys, so deleting an organization
+ * or an invitation never resets the counts. The address appears only as a keyed hash. */
 const INVITATION_SENT = "organization.invitation.sent";
 /** The Space each person gets when they join, theirs alone until they share it. */
 const OWN_SPACE_NAME = "Personal";
@@ -214,15 +214,22 @@ async function lockKey(tx: Prisma.TransactionClient, key: string) {
 
 /**
  * Owner and admins. Inviting the same address again replaces its pending invitation with a new
- * one, which is how a lost email is resent. An address's daily limit counts its invitations from
- * every organization, which cancelling keeps. An inviter's counts the emails they sent, recorded
- * in the same transaction, which nothing resets. Past an address's limit nothing is
+ * one, which is how a lost email is resent. With `sendsEmail`, each email is recorded as it is
+ * allowed, in the same transaction, and the daily limits count those records: resending,
+ * cancelling or deleting the organization never resets them. Past an address's limit nothing is
  * emailed: its pending invitation, or a new one, is returned unsent for its link to be shared by
  * hand.
  */
 export async function createOrganizationInvitation(
   prisma: PrismaClient,
-  input: { organizationId: string; userId: string; email: string; sendsEmail: boolean },
+  input: {
+    organizationId: string;
+    userId: string;
+    email: string;
+    sendsEmail: boolean;
+    /** Names the address in the security log: a hash keyed with a server secret. */
+    recipientKey: (email: string) => string;
+  },
 ): Promise<{
   id: string;
   email: string;
@@ -234,13 +241,14 @@ export async function createOrganizationInvitation(
   send: boolean;
 }> {
   const email = normalizeEmail(input.email);
+  const recipient = input.recipientKey(email);
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await lockOrganizationMembers(tx, input.organizationId);
       await requireManager(tx, input.organizationId, input.userId);
       // So two invitations at once cannot both take the last email allowed.
       await lockKey(tx, `invitation-sender:${input.userId}`);
-      await lockKey(tx, `invitation-recipient:${email}`);
+      await lockKey(tx, `invitation-recipient:${recipient}`);
       const existing = await tx.member.findFirst({
         where: {
           organizationId: input.organizationId,
@@ -267,7 +275,13 @@ export async function createOrganizationInvitation(
           },
           select: { id: true },
         }),
-        tx.invitation.count({ where: { email, createdAt: today } }),
+        tx.securityEvent.count({
+          where: {
+            type: INVITATION_SENT,
+            createdAt: today,
+            metadata: { path: ["recipient"], equals: recipient },
+          },
+        }),
         tx.securityEvent.count({
           where: { type: INVITATION_SENT, userId: input.userId, createdAt: today },
         }),
@@ -307,7 +321,7 @@ export async function createOrganizationInvitation(
           data: {
             type: INVITATION_SENT,
             userId: input.userId,
-            metadata: { organizationId: input.organizationId },
+            metadata: { organizationId: input.organizationId, recipient },
           },
         });
       return { id, email, ...names, created: true, send };
