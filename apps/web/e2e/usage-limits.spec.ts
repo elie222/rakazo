@@ -208,6 +208,10 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(settings.locator('[title="Nov 12: 330,000, $1.40"]')).toHaveCount(1);
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
   await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
+  const bar = settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" });
+  await bar.focus();
+  await expect(page.getByRole("tooltip")).toContainText("Nov 12: 330,000 tokens, $1.40");
+  await page.keyboard.press("Escape");
   await captureScreenshot(page, testInfo, "usage-limits-chart");
 
   await page.route("**/api/auth/capabilities", async (route) => {

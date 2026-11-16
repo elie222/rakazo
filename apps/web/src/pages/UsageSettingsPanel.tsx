@@ -7,6 +7,9 @@ import {
   SectionHeading,
   ToggleGroup,
   ToggleGroupItem,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@rakazo/ui-web";
 import {
   Table,
@@ -190,22 +193,26 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   : { month: "short", day: "numeric", timeZone: "UTC" },
               );
               const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
+              const label = t`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
               return (
-                <div
-                  key={point.date}
-                  className="flex h-full min-w-0 flex-1 flex-col items-center gap-1"
-                >
-                  <div className="flex w-full flex-1 items-end">
-                    <div
-                      className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
-                      style={{ height: `${height}%` }}
-                      title={`${day}: ${number(point.totalTokens)}, ${cost(point.costUsd)}`}
-                    />
-                  </div>
-                  <span className="w-full truncate text-center text-caption text-muted-foreground">
-                    {labelled ? day : null}
-                  </span>
-                </div>
+                <Tooltip key={point.date}>
+                  <TooltipTrigger
+                    aria-label={label}
+                    className="flex h-full min-w-0 flex-1 flex-col items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <span className="flex w-full flex-1 items-end">
+                      <span
+                        className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
+                        style={{ height: `${height}%` }}
+                        title={`${day}: ${number(point.totalTokens)}, ${cost(point.costUsd)}`}
+                      />
+                    </span>
+                    <span className="w-full truncate text-center text-caption text-muted-foreground">
+                      {labelled ? day : null}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{label}</TooltipContent>
+                </Tooltip>
               );
             })}
           </div>
