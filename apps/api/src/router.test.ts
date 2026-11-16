@@ -3506,7 +3506,11 @@ describe("connections.begin", () => {
   const { ref: _ref, ...LEFTOVER_APP } = LEFTOVER_REQUEST;
 
   /** A begin whose row a revoke took while the provider was answering. */
-  function lostBegin(connector: Record<string, unknown>, state: string) {
+  function lostBegin(
+    connector: Record<string, unknown>,
+    state: string,
+    authorizationUrl: string | null = "https://provider.test/go",
+  ) {
     const jobs = {
       enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
       enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
@@ -3533,7 +3537,7 @@ describe("connections.begin", () => {
       connection: root,
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as PrismaClient;
-    const begin = vi.fn(async () => ({ state, authorizationUrl: "https://provider.test/go" }));
+    const begin = vi.fn(async () => ({ state, authorizationUrl }));
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const call = () =>
@@ -3584,6 +3588,26 @@ describe("connections.begin", () => {
     );
     expect(integrationSettings.resolve).not.toHaveBeenCalled();
   });
+
+  it.each(["example-app", "javascript:alert(1)", "file:///tmp/fixture", "custom-app:signin"])(
+    "rejects an invalid sign-in URL before returning it to clients: %s",
+    async (url) => {
+      const cancelAuthorizationRequest = vi.fn(async () => undefined);
+      const { call, jobs, tx, root } = lostBegin({ cancelAuthorizationRequest }, "request-1", url);
+      await expect(call()).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+        message: "The app returned an invalid sign-in URL.",
+      });
+      expect(root.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: "error" } }),
+      );
+      expect(tx.connection.updateMany).not.toHaveBeenCalled();
+      expect(jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "connection.cleanup" }),
+      );
+      expect(cancelAuthorizationRequest).toHaveBeenCalledOnce();
+    },
+  );
 
   it("records the removal with the lost race and deletes the record once it is done", async () => {
     const cancelAuthorizationRequest = vi.fn(async () => undefined);

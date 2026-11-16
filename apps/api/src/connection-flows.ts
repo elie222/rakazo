@@ -24,6 +24,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
@@ -239,6 +240,12 @@ export async function beginConnection(
     },
     auth.state,
   );
+  // Never send an opaque provider reference or a non-web URI to native URL handlers.
+  if (auth.authorizationUrl && !normalizedHttpUrl(auth.authorizationUrl)) {
+    await markFailed();
+    if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
+    throw new ClientError("SERVICE_UNAVAILABLE", "The app returned an invalid sign-in URL.");
+  }
   // Re-take the provider lock and only advance the row while it is still this attempt's, so
   // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
   // result of a later begin that reused the row.
