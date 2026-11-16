@@ -364,9 +364,7 @@ describe("BotSettings model choices", () => {
       },
     ]);
     await render();
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await act(() => flush());
     const values = (await openModelPicker()).map((option) => option.dataset.value);
     expect(values).toContain("deepseek::deepseek-flash");
     expect(values).toContain("deepseek::deepseek-v4-pro");
@@ -412,9 +410,7 @@ describe("BotSettings thinking options", () => {
       },
     ]);
     await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await act(() => flush());
     const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
     expect(checked?.dataset.value).toBe("openai-compatible::beta");
     const thinking = container.querySelector('select[id$="-thinking"]');
@@ -445,9 +441,7 @@ describe("BotSettings model autosave", () => {
       },
     ]);
     await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await act(() => flush());
   }
 
   it("saves a thinking change at once and puts back a refused one", async () => {

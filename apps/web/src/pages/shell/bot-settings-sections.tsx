@@ -96,17 +96,6 @@ export function SwitchRow({
   );
 }
 
-function BotPanelGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <section>
-      <SectionHeading variant="label" className="mb-2">
-        {label}
-      </SectionHeading>
-      <div className="space-y-3 [&>*]:mt-0">{children}</div>
-    </section>
-  );
-}
-
 function humanizeTool(name: string) {
   const words = name.replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -222,7 +211,7 @@ export function DescriptionGroup({
 }) {
   const { t } = useLingui();
   return (
-    <BotPanelGroup label={t`How other bots see it`}>
+    <PanelSection label={t`How other bots see it`}>
       <Textarea
         id={`${ids}-description`}
         aria-label={t`How other bots see it`}
@@ -234,7 +223,7 @@ export function DescriptionGroup({
         rows={2}
         className="min-h-16 max-h-96 resize-none field-sizing-content"
       />
-    </BotPanelGroup>
+    </PanelSection>
   );
 }
 
@@ -251,7 +240,7 @@ export function ToolsGroup({
 }) {
   const { t } = useLingui();
   return (
-    <BotPanelGroup label={t`Tools`}>
+    <PanelSection label={t`Tools`}>
       <section data-testid="bot-settings-tools">
         <div className="space-y-2 [&>*]:mt-0">
           <div>
@@ -292,6 +281,6 @@ export function ToolsGroup({
           ))}
         </div>
       </section>
-    </BotPanelGroup>
+    </PanelSection>
   );
 }

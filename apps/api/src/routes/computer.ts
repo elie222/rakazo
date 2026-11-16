@@ -256,11 +256,12 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Computer recovery is not available on this device",
           });
         try {
+          const update = await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
           deps.analytics?.capture(context.actor.userId, {
             name: "computer_repair_started",
             action: "recover",
           });
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+          return update;
         } finally {
           // A refused start can still have dismissed earlier failures.
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
@@ -284,11 +285,12 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Computer update is not available on this device",
           });
         try {
+          const update = await queueComputerUpdate(deps, bot.computer.id, bot.id);
           deps.analytics?.capture(context.actor.userId, {
             name: "computer_repair_started",
             action: "update",
           });
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id);
+          return update;
         } finally {
           await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
