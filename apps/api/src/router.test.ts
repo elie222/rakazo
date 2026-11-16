@@ -49,6 +49,8 @@ import {
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
@@ -1405,14 +1407,14 @@ describe("thread stream authorization", () => {
   function threadStream() {
     vi.useFakeTimers();
     const queued: ProductEvent[] = [];
-    let waiting: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+    let waiting: Deferred<IteratorResult<ProductEvent>> | undefined;
     const follow = {
-      next: () =>
-        queued.length > 0
-          ? Promise.resolve({ done: false as const, value: queued.shift()! })
-          : new Promise<IteratorResult<ProductEvent>>((resolve) => {
-              waiting = resolve;
-            }),
+      next: () => {
+        if (queued.length > 0)
+          return Promise.resolve({ done: false as const, value: queued.shift()! });
+        waiting = deferred();
+        return waiting.promise;
+      },
       return: vi.fn(async () => ({ done: true as const, value: undefined })),
     };
     const emit = (seq: number, text: string, extra?: Partial<ProductEvent>) => {
@@ -1428,7 +1430,7 @@ describe("thread stream authorization", () => {
         ...extra,
       };
       if (waiting) {
-        waiting({ done: false, value: event });
+        waiting.resolve({ done: false, value: event });
         waiting = undefined;
       } else {
         queued.push(event);
@@ -2583,8 +2585,6 @@ describe("MCP server health", () => {
     args: ["-y", "@klodr/gmail-mcp@2.0.2"],
   };
 
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   it.each([
     [{ mcpStdioEnabled: false }, "Stdio MCP servers aren't available here"],
     [{ mcpStdioAllowedCommands: [] }, "Stdio MCP servers aren't available here"],
@@ -3459,16 +3459,13 @@ describe("connections.begin", () => {
 
   it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {
     vi.useFakeTimers();
-    let releaseSlot = () => {};
+    const slot = deferred();
     let holder: Promise<void> = Promise.resolve();
     const begin = vi.fn(async () => {
       // Another provider call takes this scope's slot while this one talks to the provider.
       holder = runProviderTransaction(
         providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-        () =>
-          new Promise<void>((resolve) => {
-            releaseSlot = resolve;
-          }),
+        () => slot.promise,
         120_000,
       );
       return { state: "request-1", authorizationUrl: "https://provider.test/authorize" };
@@ -3546,7 +3543,7 @@ describe("connections.begin", () => {
         expect.objectContaining({ data: { status: "error" } }),
       );
     } finally {
-      releaseSlot();
+      slot.resolve();
       await holder;
       vi.useRealTimers();
     }
@@ -4330,15 +4327,12 @@ describe("connections.complete", () => {
           dataDir: "/tmp/rakazo-router-test",
         } as unknown as RouterDeps),
       );
-      let releaseSlot = () => {};
+      const slot = deferred();
       const holder =
         held === "slot"
           ? runProviderTransaction(
               providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
-              () =>
-                new Promise<void>((resolve) => {
-                  releaseSlot = resolve;
-                }),
+              () => slot.promise,
               60_000,
             )
           : Promise.resolve();
@@ -4370,7 +4364,7 @@ describe("connections.complete", () => {
         expect(connectionReady).not.toHaveBeenCalled();
         expect(prisma.$transaction).toHaveBeenCalledTimes(held === "lock" ? 1 : 0);
       } finally {
-        releaseSlot();
+        slot.resolve();
         await holder;
         vi.useRealTimers();
       }
