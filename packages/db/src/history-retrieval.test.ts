@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
@@ -489,5 +492,73 @@ describe("local history retrieval", () => {
     await expect(searchHistory(prisma, scope, { query: "x", beforeSeq: -1 })).rejects.toThrow();
     await expect(searchHistory(prisma, scope, { query: " " })).rejects.toThrow();
     expect(mock.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe("history search index", () => {
+  const migrationsDir = fileURLToPath(new URL("../prisma/migrations", import.meta.url));
+  const migrations = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => readFileSync(path.join(migrationsDir, name, "migration.sql"), "utf8"));
+  const stringLiteral = /('(?:[^']|'')*')/;
+  /** Collapses whitespace between tokens but keeps string literals as written. */
+  const squash = (text: string) =>
+    text
+      .split(stringLiteral)
+      .map((part, index) => (index % 2 === 1 ? part : part.replace(/\s+/g, " ")))
+      .join("")
+      .trim();
+
+  /** The argument of every `to_tsvector('simple', ...)` call, matched to its closing parenthesis. */
+  function tsvectorExpressions(text: string): string[] {
+    const opener = "to_tsvector('simple', ";
+    const expressions: string[] = [];
+    for (let start = text.indexOf(opener); start !== -1; start = text.indexOf(opener, start + 1)) {
+      let depth = 1;
+      let end = start + opener.length;
+      while (depth > 0 && end < text.length) {
+        const literal = text.slice(end).match(/^'(?:[^']|'')*'/);
+        if (literal) {
+          end += literal[0].length;
+          continue;
+        }
+        if (text[end] === "(") depth++;
+        if (text[end] === ")") depth--;
+        end++;
+      }
+      expressions.push(squash(text.slice(start + opener.length, end - 1)));
+    }
+    return expressions;
+  }
+
+  /** The expression of the one history search index no later migration dropped. */
+  function liveIndexExpression(): string {
+    const live = new Map<string, string[]>();
+    for (const sql of migrations) {
+      for (const [statement, name] of sql.matchAll(
+        /CREATE\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"(messages_history_search\w*)"[^;]*;/gi,
+      ))
+        live.set(name!, tsvectorExpressions(statement));
+      for (const [, name] of sql.matchAll(
+        /DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?"(\w+)"/gi,
+      ))
+        live.delete(name!);
+    }
+    expect([...live.keys()]).toHaveLength(1);
+    const [expressions] = [...live.values()];
+    expect(expressions).toHaveLength(1);
+    return expressions![0]!;
+  }
+
+  it("searches with the live index's own expression, so Postgres can use it", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([]);
+    await searchHistory(prisma, scope, { query: "exports", limit: 2 });
+    const predicates = tsvectorExpressions(sql(mock).sql.replaceAll("m.blocks", "blocks"));
+    expect(predicates).not.toHaveLength(0);
+    const index = liveIndexExpression();
+    expect(predicates).toEqual(predicates.map(() => index));
   });
 });

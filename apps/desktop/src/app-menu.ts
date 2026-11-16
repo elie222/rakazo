@@ -6,6 +6,7 @@ import { desktop } from "./desktop-state.js";
 import { desktopLocale, t } from "./i18n.js";
 import type { createLocalComputerChoice } from "./local-settings.js";
 import { showSetupWindow } from "./setup-window.js";
+import { quitAndStopBotsItem } from "./stop-local-stack.js";
 
 let menuUpdateCheck: Promise<void> | null = null;
 /** Works before sign-in, unlike the settings section, and answers with native alerts. */
@@ -107,18 +108,19 @@ export function applicationMenuInstaller({
       accelerator: "CmdOrCtrl+Shift+K",
       click: () => showSetupWindow(),
     };
-    const stopStack: Electron.MenuItemConstructorOptions = {
-      id: "stop-local-stack",
-      label: t("Stop Local Stack"),
-      // The stack keeps running after quit (bots are always on); this is the explicit off switch.
-      click: () => {
-        if (desktop.currentSetup?.mode === "new") {
-          desktop.hostComputer?.activate(false);
-          installApplicationMenu();
-          void desktop.localStack.stop();
-        }
+    const quitAndStopBots = quitAndStopBotsItem({
+      mode: desktop.currentSetup?.mode,
+      stackRunning: desktop.localStack.managedStackRunning(),
+      stop: () => {
+        desktop.hostComputer?.activate(false);
+        return desktop.localStack.stop().then((state) => {
+          if (state.phase === "failed") showSetupWindow(state.message);
+          return state;
+        });
       },
-    };
+      quit: () => app.quit(),
+      rebuildMenu: () => installApplicationMenu(),
+    });
     const isMac = process.platform === "darwin";
     // The page handles these chords itself and stops them, so a key press runs them once; the menu
     // shows them and runs them on click. The page decides whether each one applies right now.
@@ -222,13 +224,13 @@ export function applicationMenuInstaller({
                 computerAccess,
                 revokeComputerAccess,
                 changeServer,
-                stopStack,
                 { type: "separator" },
                 { role: "hide", label: t("Hide {name}", { name: app.name }) },
                 { role: "hideOthers", label: t("Hide Others") },
                 { role: "unhide", label: t("Show All") },
                 { type: "separator" },
                 { role: "quit", label: t("Quit {name}", { name: app.name }) },
+                quitAndStopBots,
               ],
             },
             {
@@ -264,11 +266,11 @@ export function applicationMenuInstaller({
                 computerAccess,
                 revokeComputerAccess,
                 changeServer,
-                stopStack,
                 { type: "separator" },
                 checkForUpdates,
                 { type: "separator" },
                 { role: "quit", label: process.platform === "win32" ? t("Exit") : t("Quit") },
+                quitAndStopBots,
               ],
             },
             editMenu,

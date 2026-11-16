@@ -2,10 +2,10 @@
 
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { ORGANIC_AVATAR_LOOKS } from "@rakazo/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
+import { createRoot as createReactRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
 
@@ -18,7 +18,7 @@ vi.mock("@lingui/react/macro", () => {
 import { CreateBotDialog } from "./create-bot-dialog";
 
 let container: HTMLDivElement;
-let root: Root;
+let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -131,11 +131,14 @@ describe("CreateBotDialog", () => {
     const family = Number(preview?.getAttribute("data-shape-family"));
     await typeName("Scout");
     await click(button("Create"));
-    expect(onCreate).toHaveBeenCalledWith({
-      name: "Scout",
-      color: "#00C972",
-      avatarFamily: family,
-    });
+    expect(onCreate).toHaveBeenCalledWith(
+      {
+        name: "Scout",
+        color: "#00C972",
+        avatarFamily: family,
+      },
+      expect.anything(),
+    );
     expect(family).toBe(ORGANIC_AVATAR_LOOKS[1]);
   });
 
@@ -146,10 +149,13 @@ describe("CreateBotDialog", () => {
     await click(button("wedge"));
     await typeName("Scout");
     await click(button("Create"));
-    expect(onCreate).toHaveBeenCalledWith({
-      name: "Scout",
-      color: "#FF781C::shape_1",
-    });
+    expect(onCreate).toHaveBeenCalledWith(
+      {
+        name: "Scout",
+        color: "#FF781C::shape_1",
+      },
+      expect.anything(),
+    );
   });
 
   it("shows the error and stays open when creating fails", async () => {
@@ -184,3 +190,14 @@ it("retains the preview identity and colour through rerenders and a retry", asyn
   expect(second.color).toBe(first.color);
   expect(second.color?.toUpperCase()).toBe(colour?.toUpperCase());
 });
+
+/** Saves need a query client; each root gets its own. */
+function createRoot(container: Element) {
+  const root = createReactRoot(container);
+  const queryClient = new QueryClient();
+  return {
+    render: (node: ReactNode) =>
+      root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>),
+    unmount: () => root.unmount(),
+  };
+}

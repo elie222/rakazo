@@ -1,5 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { AccessGrant } from "@rakazo/contracts";
+import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
 import {
   Badge,
   Button,
@@ -10,15 +10,14 @@ import {
   Spinner,
   toast,
 } from "@rakazo/ui-web";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { PageLoading } from "../components/PageLoading";
 import { formatBillingAmount } from "../lib/billing";
-import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { WindowChrome } from "./WindowChrome";
 
@@ -54,49 +53,41 @@ export function AdminAccessPage() {
 function AccessGrantsPanel() {
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const grants = useQuery(queries.accessGrants.list.queryOptions());
   const [email, setEmail] = useState("");
   const [credits, setCredits] = useState("");
   const [months, setMonths] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
   const creditCents = Math.round(Number(credits || 0) * 100);
   const freeMonths = Number(months || 0);
-
-  async function run(key: string, failure: string, call: () => Promise<unknown>) {
-    setBusy(key);
-    try {
-      await call();
-      await queryClient.invalidateQueries({ queryKey: queries.accessGrants.list.key() });
-      return true;
-    } catch (err) {
-      toast.error(errorText(err, failure));
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function grant(event: FormEvent) {
-    event.preventDefault();
-    const done = await run("grant", t`Could not grant access`, () =>
-      rpc.accessGrants.create({ email, creditCents, freeMonths }),
-    );
-    if (done) {
+  const change = useSave({
+    save: (input: { grant: AccessGrantInput } | { revoke: string }, rpc) =>
+      "grant" in input
+        ? rpc.accessGrants.create(input.grant)
+        : rpc.accessGrants.revoke({ id: input.revoke }),
+    stale: [queries.accessGrants.list.key()],
+    onSaved: (_saved, input) => {
+      if (!("grant" in input)) return;
       setEmail("");
       setCredits("");
       setMonths("");
-    }
+    },
+    onFailed: (error, input) =>
+      toast.error(
+        errorText(error, "grant" in input ? t`Could not grant access` : t`Could not revoke grant`),
+      ),
+  });
+  const granting = change.pending && change.input !== undefined && "grant" in change.input;
+
+  function grant(event: FormEvent) {
+    event.preventDefault();
+    change.run({ grant: { email, creditCents, freeMonths } });
   }
 
   const list = grants.data ?? [];
 
   return (
     <>
-      <form
-        onSubmit={(event) => void grant(event)}
-        className="grid gap-3 sm:grid-cols-[1fr_8rem_8rem_auto] sm:items-end"
-      >
+      <form onSubmit={grant} className="grid gap-3 sm:grid-cols-[1fr_8rem_8rem_auto] sm:items-end">
         <Field>
           <FieldLabel htmlFor="grant-email">
             <Trans>Email</Trans>
@@ -140,9 +131,9 @@ function AccessGrantsPanel() {
         </Field>
         <Button
           type="submit"
-          disabled={busy !== null || !email.trim() || (creditCents <= 0 && freeMonths <= 0)}
+          disabled={change.pending || !email.trim() || (creditCents <= 0 && freeMonths <= 0)}
         >
-          {busy === "grant" ? <Trans>Granting…</Trans> : <Trans>Grant</Trans>}
+          {granting ? <Trans>Granting…</Trans> : <Trans>Grant</Trans>}
         </Button>
       </form>
 
@@ -187,12 +178,8 @@ function AccessGrantsPanel() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    void run(item.id, t`Could not revoke grant`, () =>
-                      rpc.accessGrants.revoke({ id: item.id }),
-                    )
-                  }
+                  disabled={change.pending}
+                  onClick={() => change.run({ revoke: item.id })}
                 >
                   <Trans>Revoke</Trans>
                 </Button>

@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, OrganizationList } from "@rakazo/contracts";
-import { GUEST_ROLE, LIVE_ORGANIZATION as LIVE } from "./billing.js";
+import { ClientError } from "@rakazo/core";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION as LIVE } from "./billing.js";
 import { createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { organizationRole } from "./organization-members.js";
 import { IsolationError } from "./scope.js";
 import {
   claimSpaceForDeletion,
@@ -17,23 +19,23 @@ import { withTransactionRetry } from "./transaction-retry.js";
 
 export const MAX_ORGANIZATIONS_PER_USER = 10;
 
-export class OrganizationLimitError extends Error {
+export class OrganizationLimitError extends ClientError {
   constructor() {
-    super(`You can have up to ${MAX_ORGANIZATIONS_PER_USER} organizations.`);
+    super("BAD_REQUEST", `You can have up to ${MAX_ORGANIZATIONS_PER_USER} organizations.`);
     this.name = "OrganizationLimitError";
   }
 }
 
-export class CannotDeleteLastOrganizationError extends Error {
+export class CannotDeleteLastOrganizationError extends ClientError {
   constructor() {
-    super("Your only organization cannot be deleted");
+    super("BAD_REQUEST", "Your only organization cannot be deleted");
     this.name = "CannotDeleteLastOrganizationError";
   }
 }
 
-export class SharedOrganizationError extends Error {
+export class SharedOrganizationError extends ClientError {
   constructor() {
-    super("An organization with other members cannot be deleted");
+    super("BAD_REQUEST", "An organization with other members cannot be deleted");
     this.name = "SharedOrganizationError";
   }
 }
@@ -95,29 +97,43 @@ export async function listMemberOrganizations(
     prisma.spaceMember.findMany({
       where: { userId: actor.userId, space: { deletingAt: null } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { spaceId: true, organizationId: true, member: { select: { role: true } } },
+      select: {
+        spaceId: true,
+        organizationId: true,
+        role: true,
+        member: { select: { role: true } },
+      },
     }),
   ]);
   return {
     activeOrganizationId,
-    organizations: organizations.map((organization) => ({
-      id: organization.id,
-      name: organization.name,
-      defaultSpaceId: organization.spaces[0]!.id,
-      // Phase one manages only organizations their owner has to themselves.
-      canManage:
-        organization._count.members === 1 &&
-        organization.members.some((member) => member.role.includes("owner")),
-      // Spaces shared with them as a guest show beside the active organization's, as in the
-      // sidebar.
-      spaceIds: memberships
-        .filter((membership) =>
-          membership.member.role === GUEST_ROLE
-            ? organization.id === activeOrganizationId
-            : membership.organizationId === organization.id,
-        )
-        .map((membership) => membership.spaceId),
-    })),
+    organizations: organizations.map((organization) => {
+      const defaultSpaceId = organization.spaces[0]!.id;
+      const own = memberships.filter((membership) => membership.organizationId === organization.id);
+      const role = organizationRole(organization.members[0]?.role ?? "member");
+      return {
+        id: organization.id,
+        name: organization.name,
+        // Another member's default Space is not theirs: they land in their own.
+        defaultSpaceId:
+          own.find((membership) => membership.spaceId === defaultSpaceId)?.spaceId ??
+          own.find((membership) => isOwnerRole(membership.role))?.spaceId ??
+          own[0]?.spaceId ??
+          defaultSpaceId,
+        canManage: role === "owner",
+        role,
+        memberCount: organization._count.members,
+        // Spaces shared with them as a guest show beside the active organization's, as in the
+        // sidebar.
+        spaceIds: memberships
+          .filter((membership) =>
+            membership.member.role === GUEST_ROLE
+              ? organization.id === activeOrganizationId
+              : membership.organizationId === organization.id,
+          )
+          .map((membership) => membership.spaceId),
+      };
+    }),
   };
 }
 
@@ -129,16 +145,25 @@ export async function renameOrganization(
   const { count } = await prisma.organization.updateMany({
     where: {
       id: input.organizationId,
-      members: {
-        some: { userId: input.userId, role: OWNER },
-        every: { OR: [{ userId: input.userId }, { role: GUEST_ROLE }] },
-      },
+      members: { some: { userId: input.userId, role: OWNER } },
       ...LIVE,
     },
     data: { name },
   });
   if (count === 0) throw new IsolationError();
   return { id: input.organizationId, name };
+}
+
+/** Throws `IsolationError` unless the user owns the organization. */
+export async function assertOrganizationOwner(
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string },
+): Promise<void> {
+  const owner = await prisma.member.findFirst({
+    where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
+    select: { id: true },
+  });
+  if (!owner) throw new IsolationError();
 }
 
 /**
@@ -183,25 +208,23 @@ export async function claimOrganizationForDeletion(
         if (otherMembers > 0) throw new SharedOrganizationError();
         if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
         await lockOrganizationSpaces(tx, input.organizationId);
-        // The previous release claimed under the bare `organization-deletion:<id>`.
-        const earlier: Prisma.SpaceWhereInput = {
+        // Any earlier claim counts, whichever operation placed it: an attempt that takes over
+        // another's claim must never release it.
+        const claimed: Prisma.SpaceWhereInput = {
           organizationId: input.organizationId,
-          OR: [
-            { deletionClaimId: `organization-deletion:${input.organizationId}` },
-            { deletionClaimId: { startsWith: `organization-deletion:${input.organizationId}:` } },
-          ],
+          deletionClaimId: { not: null },
         };
         const live = await tx.space.count({
           where: {
-            ...earlier,
+            ...claimed,
             deletingAt: { gte: new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS) },
           },
         });
         if (live > 0) throw new SpaceDeletionInProgressError();
-        // Take over this organization's lapsed claim, if any, under this attempt's token.
+        // Take over the lapsed claim, if any, under this attempt's token.
         const taken = await tx.space.updateMany({
-          where: earlier,
-          data: { deletingAt: new Date(), deletionClaimId: claimId },
+          where: claimed,
+          data: { deletingAt: new Date(), deletionClaimId: claimId, deletionAttemptId: null },
         });
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },
@@ -274,7 +297,7 @@ export async function listStalledOrganizationDeletions(
 
 /** Deletes the organization once its Spaces are gone; the rest of its rows go by cascade. */
 export async function deleteEmptyOrganization(
-  prisma: PrismaClient,
+  prisma: Pick<Prisma.TransactionClient, "organization">,
   organizationId: string,
 ): Promise<void> {
   const { count } = await prisma.organization.deleteMany({

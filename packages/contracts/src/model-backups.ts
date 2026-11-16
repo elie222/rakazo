@@ -49,7 +49,7 @@ export function connectionDisplayName(
     defaultNames.includes(label)
   )
     return provider;
-  if (label.toLowerCase().startsWith(providerName.toLowerCase())) return label;
+  if (label.toLowerCase().startsWith(provider.toLowerCase())) return label;
   return `${provider} (${label})`;
 }
 
@@ -58,8 +58,10 @@ export function connectionDisplayName(
  * instead of nesting brackets.
  */
 export function withConnectionName(label: string, connection: string): string {
-  const named = connection.match(/^(.+) \((.+)\)$/);
-  return `${label} (${named ? `${named[1]}, ${named[2]}` : connection})`;
+  const open = connection.endsWith(")") ? connection.lastIndexOf(" (", connection.length - 4) : -1;
+  const named =
+    open > 0 ? `${connection.slice(0, open)}, ${connection.slice(open + 2, -1)}` : connection;
+  return `${label} (${named})`;
 }
 
 /**

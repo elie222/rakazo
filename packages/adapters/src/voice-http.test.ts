@@ -1,41 +1,18 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VOICE_JSON_BYTES,
   readVoiceJson,
+  readVoiceText,
   speechUploadName,
   verifyVoiceHttpGet,
   voiceAccountIssue,
-  voiceDeadline,
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
-
-describe("voiceDeadline", () => {
-  it("aborts when the client signal aborts", () => {
-    const client = new AbortController();
-    const combined = voiceDeadline(client.signal, 20_000);
-    expect(combined.aborted).toBe(false);
-    client.abort();
-    expect(combined.aborted).toBe(true);
-  });
-
-  it("aborts when the deadline elapses even if the client stays connected", async () => {
-    const combined = voiceDeadline(new AbortController().signal, 1);
-    await new Promise<void>((resolve, reject) => {
-      const guard = setTimeout(() => reject(new Error("deadline did not abort")), 1_000);
-      combined.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(guard);
-          resolve();
-        },
-        { once: true },
-      );
-    });
-    expect(combined.aborted).toBe(true);
-  });
-});
 
 describe("speechUploadName", () => {
   it("keeps webm recordings as webm even when they name an opus codec", () => {
@@ -50,6 +27,55 @@ describe("speechUploadName", () => {
 describe("verifyVoiceHttpGet", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each(["pending", "rejecting"])("does not await %s success-body cleanup", async (mode) => {
+    const cancel = vi.fn(() =>
+      mode === "pending"
+        ? new Promise<void>(() => undefined)
+        : Promise.reject(new Error("cleanup failed")),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new ReadableStream({ cancel }))));
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: {},
+        signal: new AbortController().signal,
+        provider: "Example",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("closes a successful streaming response without waiting for the deadline", async () => {
+    let closed = false;
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write("{");
+      res.on("close", () => {
+        closed = true;
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("No test address");
+    const controller = new AbortController();
+    try {
+      await expect(
+        verifyVoiceHttpGet({
+          url: `http://127.0.0.1:${address.port}/voices`,
+          headers: {},
+          signal: controller.signal,
+          provider: "Example",
+        }),
+      ).resolves.toEqual({ ok: true });
+      await vi.waitFor(() => expect(closed).toBe(true), { timeout: 1000 });
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("returns ok when the provider accepts the key", async () => {
@@ -84,6 +110,7 @@ describe("verifyVoiceHttpGet", () => {
     ).resolves.toEqual({
       ok: false,
       message: "ElevenLabs rejected that key. Check the key and that it has speech permissions.",
+      code: "VOICE_KEY_REJECTED",
     });
   });
 
@@ -186,9 +213,18 @@ describe("voiceAccountIssue", () => {
   it.each([
     ["a bare 401", 401, null],
     ["a 403", 403, { message: "Forbidden" }],
+    [
+      "an xAI permission refusal",
+      403,
+      { error: "The caller does not have permission to execute the specified operation" },
+    ],
     ["ElevenLabs invalid key", 401, { detail: { status: "invalid_api_key", message: "Bad" } }],
   ])("reads %s as a rejected key", (_name, status, body) => {
     expect(voiceAccountIssue(status, body)).toBe("VOICE_KEY_REJECTED");
+  });
+
+  it("keeps a generic forbidden billing message classified as a rejected key", () => {
+    expect(voiceAccountIssue(403, { error: "billing" })).toBe("VOICE_KEY_REJECTED");
   });
 
   it.each([
@@ -204,6 +240,12 @@ describe("voiceAccountIssue", () => {
         },
       },
     ],
+    [
+      "an ordinary validation error",
+      400,
+      { code: "Client specified an invalid argument", error: "voice_id is required" },
+    ],
+    ["a different provider invalid key response", 400, { error: "Incorrect API key" }],
     ["an outage", 503, { message: "Service unavailable" }],
     [
       "a missing ElevenLabs permission",
@@ -253,4 +295,25 @@ describe("voiceLanguageHint", () => {
     expect(voiceLanguageHint("english")).toBeUndefined();
     expect(voiceLanguageHint("es_ES")).toBeUndefined();
   });
+});
+
+describe("oversized voice answers", () => {
+  const failingBody = (message: string) =>
+    new Response(
+      new ReadableStream({ pull: (controller) => controller.error(new Error(message)) }),
+    );
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = readVoiceJson(new Response(new Uint8Array(MAX_VOICE_JSON_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Voice response is too large.");
+  });
+
+  it.each(["Response is too large", "Voice response is too large."])(
+    "treats a read failure saying %j as an unreadable answer",
+    async (message) => {
+      await expect(readVoiceJson(failingBody(message))).resolves.toBeNull();
+      await expect(readVoiceText(failingBody(message))).resolves.toBeNull();
+    },
+  );
 });

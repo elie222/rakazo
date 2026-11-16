@@ -30,11 +30,12 @@ import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "./exec-computer.js";
 import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { deleteUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
-// Same default as the Compose stack. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
+// The Compose stack's default image. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
 // production so every pod runs the image the API was tested against.
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
@@ -206,7 +207,16 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     try {
       await this.waitForReady(podName, context.signal);
     } catch (error) {
-      if (fresh) await this.deletePod(podName).catch(() => undefined);
+      if (fresh) {
+        // Not recorded for a later delete: the pod carries its bot's fixed name, so that bot's
+        // next start reuses or deletes it, and a late delete by name could take the pod that
+        // start is reusing.
+        await deleteUnreferencedMachine(
+          undefined,
+          { provider: "kubernetes", machineId: podName },
+          (signal) => this.deletePod(podName, signal),
+        );
+      }
       throw error;
     }
     return {
@@ -528,10 +538,13 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async deletePod(name: string): Promise<void> {
+  /** Cancellation must not skip cleanup, so a caller passes only a deadline of its own. */
+  private async deletePod(
+    name: string,
+    signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  ): Promise<void> {
     try {
-      // Cancellation must not skip cleanup, so only the request deadline bounds it.
-      await this.request(AbortSignal.timeout(REQUEST_TIMEOUT_MS), (core, options) =>
+      await this.request(signal, (core, options) =>
         core.deleteNamespacedPod(
           {
             name,
@@ -633,15 +646,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
           ),
         );
         await Promise.race([
-          connecting.then((connected) => {
-            socket = connected;
-            if (done) {
-              connected.close();
-              return;
-            }
-            connected.onclose = () => finish(1);
-            connected.onerror = (event) => fail(event.error ?? new Error("Kubernetes exec failed"));
-          }, fail),
+          connecting.then(
+            (connected) => {
+              socket = connected;
+              if (done) {
+                connected.close();
+                return;
+              }
+              connected.onclose = () => finish(1);
+              connected.onerror = (event) => fail(execSocketError(event));
+            },
+            (event) => fail(execSocketError(event)),
+          ),
           completed,
         ]);
       }
@@ -649,7 +665,20 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
         while (queue.length) yield queue.shift()!;
       }
-      if (failure) throw failure;
+      if (failure) {
+        if (failure instanceof Error && /Unexpected server response: 404\b/.test(failure.message)) {
+          let pod: V1Pod | undefined;
+          try {
+            pod = await this.readPod(this.podId(computer), signal);
+          } catch {
+            throw failure;
+          }
+          if (!pod || isTerminalPod(pod) || pod.metadata?.deletionTimestamp) {
+            throw sandboxGone(this.podId(computer), failure);
+          }
+        }
+        throw failure;
+      }
     } finally {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
@@ -659,6 +688,12 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       stderr?.destroy();
     }
   }
+}
+
+/** A socket reports failure with an event whose fields are not enumerable, so it logs as `{}`. */
+function execSocketError(event: unknown): unknown {
+  const { error, message } = event as { error?: unknown; message?: string };
+  return event instanceof Error ? event : (error ?? new Error(message || "Kubernetes exec failed"));
 }
 
 let kubernetesModule: Promise<typeof KubernetesClient> | undefined;

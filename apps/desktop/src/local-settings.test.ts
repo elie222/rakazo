@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { createLocalComputerChoice, saveLocalComputerHost } from "./local-settings.js";
 
@@ -28,16 +29,6 @@ describe("native computer host transport", () => {
 });
 
 describe("local computer choice", () => {
-  function deferred() {
-    let resolve!: () => void;
-    let reject!: (error: Error) => void;
-    const promise = new Promise<void>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
-  }
-
   it("ends native access before the save finishes and refreshes once both settle", async () => {
     const events: string[] = [];
     const save = deferred();

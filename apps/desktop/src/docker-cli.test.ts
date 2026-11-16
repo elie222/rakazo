@@ -5,21 +5,61 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   classifyDockerFailure,
   composeSupportsWaitTimeout,
-  DOCKER_INSTALL_LINKS,
+  dockerAppFor,
   dockerBinaryCandidates,
+  dockerDownloadUrl,
   dockerSpawnEnv,
   isDesktopSetupLink,
   resolveDockerBinary,
   runDocker,
 } from "./docker-cli.js";
 
-describe("docker install links", () => {
-  it("only opens the three known pages over https", () => {
-    for (const url of Object.values(DOCKER_INSTALL_LINKS)) expect(url).toMatch(/^https:\/\//);
-    expect(isDesktopSetupLink("orbstack")).toBe(true);
+describe("docker download", () => {
+  it("accepts only the one download link", () => {
+    expect(isDesktopSetupLink("docker-download")).toBe(true);
+    expect(isDesktopSetupLink("orbstack")).toBe(false);
     expect(isDesktopSetupLink("toString")).toBe(false);
     expect(isDesktopSetupLink("https://evil.example")).toBe(false);
     expect(isDesktopSetupLink(42)).toBe(false);
+  });
+
+  it("downloads the installer that matches the machine", () => {
+    expect(dockerDownloadUrl("darwin", "arm64")).toBe(
+      "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
+    );
+    expect(dockerDownloadUrl("darwin", "x64")).toBe(
+      "https://desktop.docker.com/mac/main/amd64/Docker.dmg",
+    );
+    expect(dockerDownloadUrl("win32", "x64")).toBe(
+      "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe",
+    );
+    expect(dockerDownloadUrl("win32", "arm64")).toBe(
+      "https://desktop.docker.com/win/main/arm64/Docker%20Desktop%20Installer.exe",
+    );
+    expect(dockerDownloadUrl("linux", "x64")).toBe("https://docs.docker.com/engine/install/");
+  });
+});
+
+describe("dockerAppFor", () => {
+  it("starts the app that owns the docker CLI", () => {
+    expect(
+      dockerAppFor("darwin", "/Applications/Docker.app/Contents/Resources/bin/docker"),
+    ).toMatchObject({ name: "Docker Desktop", args: ["-b", "com.docker.docker"] });
+    expect(
+      dockerAppFor("darwin", "/Applications/OrbStack.app/Contents/MacOS/xbin/docker"),
+    ).toMatchObject({ name: "OrbStack", args: ["-b", "dev.kdrag0n.MacVirt"] });
+    expect(
+      dockerAppFor("win32", "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe"),
+    ).toEqual({
+      name: "Docker Desktop",
+      command: "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+      args: [],
+    });
+  });
+
+  it("leaves CLIs without a desktop app alone", () => {
+    expect(dockerAppFor("darwin", "/opt/homebrew/Cellar/docker/27.1.1/bin/docker")).toBeNull();
+    expect(dockerAppFor("linux", "/usr/bin/docker")).toBeNull();
   });
 });
 

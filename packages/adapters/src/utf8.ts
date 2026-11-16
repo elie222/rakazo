@@ -2,6 +2,14 @@ export function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
+/** `value.slice(0, end)` that backs off one unit when the cut would split a surrogate pair. */
+export function sliceWellFormed(value: string, end: number): string {
+  const before = value.charCodeAt(end - 1);
+  const after = value.charCodeAt(end);
+  const splits = before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+  return value.slice(0, splits ? end - 1 : end);
+}
+
 export function truncateUtf8(
   value: string,
   maxBytes: number,

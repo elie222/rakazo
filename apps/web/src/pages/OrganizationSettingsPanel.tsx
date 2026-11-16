@@ -1,13 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
 import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
-import { Plus } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
+import { OrganizationMembersSettings } from "../components/OrganizationMembersSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
-import { queryClient, useQueryUserId } from "../lib/query";
+import { useQueryUserId, useSave } from "../lib/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -24,9 +25,7 @@ export function OrganizationSettingsPanel({
     <OrganizationSettings
       key={organization.id}
       organization={organization}
-      canDelete={
-        organization.canManage && organizations.filter((each) => each.canManage).length > 1
-      }
+      canDelete={canDeleteOrganization(organizations, organization)}
       onBusyChange={onBusyChange}
     />
   );
@@ -44,35 +43,40 @@ function OrganizationSettings({
   const userId = useQueryUserId();
   const nameId = useId();
   const [draft, setDraft] = useState(organization.name);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const rename = useSave({
+    save: (name: string, rpc) =>
+      rpc.organizations.rename({ organizationId: organization.id, name }),
+    stale: [organizationsQuery(userId).queryKey],
+    onSaved: (_renamed, name) => setDraft(name),
+  });
+  const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [showingMembers, setShowingMembers] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
 
-  async function save() {
+  function save() {
     const trimmed = draft.trim();
     if (pending) return;
     if (!trimmed || trimmed === organization.name) {
       setDraft(organization.name);
-      setError(null);
+      rename.reset();
       return;
     }
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.organizations.rename({ organizationId: organization.id, name: trimmed });
-      setDraft(trimmed);
-      await queryClient.invalidateQueries({ queryKey: organizationsQuery(userId).queryKey });
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setPending(false);
-    }
+    rename.run(trimmed);
   }
 
+  if (showingMembers)
+    return (
+      <OrganizationMembersSettings
+        organization={organization}
+        onBack={() => setShowingMembers(false)}
+      />
+    );
+
+  // Alone in it, its owner is offered to invite someone instead of a count of one.
+  const inviteFirst = organization.memberCount === 1 && canManageOrganizationMembers(organization);
   return (
     <div className="space-y-8" data-testid="organization-settings">
       <SettingsGroup>
@@ -96,16 +100,16 @@ function OrganizationSettings({
                 disabled={pending}
                 onChange={(event) => {
                   setDraft(event.target.value);
-                  setError(null);
+                  rename.reset();
                 }}
-                onBlur={() => void save()}
+                onBlur={save}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") event.stopPropagation();
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                   if (event.key === "Escape") {
                     setDraft(organization.name);
-                    setError(null);
+                    rename.reset();
                   }
                 }}
               />
@@ -114,44 +118,51 @@ function OrganizationSettings({
             )
           }
         >
-          {error ? (
+          {rename.error ? (
             <p role="alert" className="pt-2 text-body-sm text-destructive">
-              {error}
+              {errorText(rename.error)}
             </p>
           ) : null}
         </SettingsRow>
+        <button
+          type="button"
+          className="flex min-h-15 w-full items-center justify-between gap-4 rounded-b-xl px-4 py-3 text-start hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          onClick={() => setShowingMembers(true)}
+        >
+          <span className="text-body text-foreground">
+            <Trans>Members</Trans>
+          </span>
+          <span className="flex items-center gap-1 text-body text-muted-foreground">
+            {inviteFirst ? <Trans>Invite people</Trans> : organization.memberCount}
+            <ChevronRight aria-hidden="true" className="size-4 rtl:rotate-180" />
+          </span>
+        </button>
       </SettingsGroup>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="rounded-full" onClick={() => setCreating(true)}>
-          <Plus aria-hidden="true" />
-          <Trans>Create organization</Trans>
+      {canDelete ? (
+        <Button
+          variant="destructive"
+          className="rounded-full"
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trans>Delete organization</Trans>
         </Button>
-        {canDelete ? (
-          <Button
-            variant="destructive"
-            className="rounded-full"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trans>Delete organization</Trans>
-          </Button>
-        ) : null}
-      </div>
-      <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
+      ) : null}
       {confirmingDelete ? (
         <DeleteOrganizationDialog
           organization={organization}
           onCancel={() => setConfirmingDelete(false)}
-          onConfirm={async () => {
-            const { activeSpaceId } = await rpc.organizations.remove({
-              organizationId: organization.id,
-            });
-            if (!selectSpace(activeSpaceId)) clearSpaceSelection();
-            window.location.assign("/");
-          }}
+          onConfirm={() => removeOrganization(organization)}
         />
       ) : null}
     </div>
   );
+}
+
+/** Deletes it, then reloads into the Space the server chose. */
+export async function removeOrganization(organization: Organization): Promise<void> {
+  const { activeSpaceId } = await rpc.organizations.remove({ organizationId: organization.id });
+  if (!selectSpace(activeSpaceId)) clearSpaceSelection();
+  window.location.assign("/");
 }
 
 export function DeleteOrganizationDialog({

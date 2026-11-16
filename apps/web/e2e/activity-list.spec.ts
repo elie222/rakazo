@@ -1,6 +1,14 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, createNamedBot, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  createNamedBot,
+  refocus,
+  rpc,
+  signup,
+} from "./helpers";
 
 /** Match activity rows by their aria-label. */
 function activityRow(page: Page, botName: string) {
@@ -66,7 +74,7 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   // Activity replaces the bot list instead of repeating it below.
   await expect(aside.locator("[data-sidebar-group]")).toHaveCount(0);
 
-  // Remount ActivityList so the first poll sees the in-flight run (15s interval otherwise).
+  // Reload so the list opens with the run already in flight.
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
@@ -116,7 +124,7 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await filtersButton.focus();
   await page.keyboard.press("Enter");
   await expect(filtersButton).toHaveAttribute("aria-expanded", "true");
-  await page.getByTestId("activity-status-filter").selectOption("running");
+  await chooseOption(page.getByTestId("activity-status-filter"), "Running");
   await expect(aside.getByTestId("activity-filter-indicator")).toBeVisible();
   await captureActivitySidebar(page, testInfo, "58b-activity-now-filters");
   await filtersButton.click();
@@ -174,7 +182,7 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await expect(activityRow(page, "Chief")).toBeVisible();
 
   await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByTestId("activity-status-filter").selectOption("failed");
+  await chooseOption(page.getByTestId("activity-status-filter"), "Failed");
   await expect(aside.getByText("No runs match these filters.")).toBeVisible();
   await expect(activityRow(page, "Chief")).toHaveCount(0);
   await page.getByTestId("activity-reset-filters").click();
@@ -253,7 +261,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   const aside = page.locator("aside").first();
   const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
   await activityToggle.click();
-  // The list refreshes every 15s; drive that poll with a controlled clock.
+  // A fixed clock keeps relative times stable; returning to the window reads the list again.
   await page.clock.install();
   await page.clock.setFixedTime(now);
   await page.reload();
@@ -272,13 +280,13 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await activitySearch.fill("Chief");
 
   phase = "empty";
-  await page.clock.fastForward(15_000);
+  await refocus(page);
   await expect(activityRow(page, "Chief")).toHaveCount(0);
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");
 
   phase = "fail";
-  await page.clock.fastForward(15_000);
+  await refocus(page);
   const retry = page.getByRole("button", { name: "Try again" });
   await expect(retry).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
@@ -316,7 +324,10 @@ test("activity groups what needs you, what is working, and unread chats", async 
   await rpc(page, "threads/markUnread", { botId: writer });
   await page.getByPlaceholder("Message Head of Marketing").fill("ask me which city to use");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Which city should I use?", { exact: true })).toBeVisible();
+  // The sidebar row shows the same text as its preview once the run ends, so read the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Which city should I use?", { exact: true }),
+  ).toBeVisible();
   const researcher = await createNamedBot(page, "Researcher");
   await page.getByPlaceholder("Message Researcher").fill("keep working until I stop you");
   await page.keyboard.press("Enter");

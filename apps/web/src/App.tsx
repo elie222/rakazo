@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
 import { analyticsScreen } from "@rakazo/core";
@@ -19,7 +20,7 @@ import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
-import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncCallIdentity } from "./lib/call-session";
 import { desktopBridge } from "./lib/desktop";
 import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
@@ -78,6 +79,9 @@ const NavLinkPage = lazyComponent(() =>
 const InvitePage = lazyComponent(() =>
   import("./pages/Invite").then((module) => module.InvitePage),
 );
+const JoinOrganizationPage = lazyComponent(() =>
+  import("./pages/JoinOrganization").then((module) => module.JoinOrganizationPage),
+);
 
 function SsoCallbackPage() {
   useEffect(() => {
@@ -113,9 +117,9 @@ export function App() {
 function SessionApp() {
   const [searchParams] = useSearchParams();
   const next = signInNext(searchParams.get("next"));
-  const ticketBoardEnabled = useSyncExternalStore(
-    subscribeTicketBoardEnabled,
-    getTicketBoardEnabled,
+  const boardEnabled = useSyncExternalStore(
+    subscribeLabs,
+    () => getLabs().includes("board"),
     () => false,
   );
   const session = authClient.useSession();
@@ -188,22 +192,32 @@ function SessionApp() {
                   />
                 }
               />
-              <Route
-                path="/sign-in"
-                element={
-                  user ? <Navigate to={next ?? "/app"} replace /> : <AuthPage key="in" mode="in" />
-                }
-              />
-              <Route
-                path="/sign-up"
-                element={
-                  user ? (
-                    <Navigate to={newAccountDestination(next)} replace />
-                  ) : (
-                    <AuthPage key="up" mode="up" />
-                  )
-                }
-              />
+              {["/sign-in", "/sign-in/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={next ?? "/app"} replace />
+                    ) : (
+                      <AuthPage key={path} mode="in" />
+                    )
+                  }
+                />
+              ))}
+              {["/sign-up", "/sign-up/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={newAccountDestination(next)} replace />
+                    ) : (
+                      <AuthPage key={path} mode="up" />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/forgot-password"
                 element={
@@ -259,6 +273,16 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/join/:invitationId"
+                element={
+                  user ? (
+                    <JoinOrganizationPage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
                 path="/invite/:token"
                 element={
                   user ? (
@@ -292,7 +316,7 @@ function SessionApp() {
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
                   <Route path="/app/artifacts" element={<ArtifactsPage />} />
                   <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
+                  {boardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
                   <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>
@@ -312,26 +336,22 @@ function SessionApp() {
  */
 function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   const { t } = useLingui();
-  const [attempt, setAttempt] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-  const retryImmediately = useRef(false);
-  const refetchRef = useRef(refetch);
-  refetchRef.current = refetch;
-
-  useEffect(() => {
-    let cancelled = false;
-    const delay = retryImmediately.current ? 0 : sessionRetryDelayMs(attempt);
-    retryImmediately.current = false;
-    const timer = setTimeout(() => {
-      void refetchRef.current().finally(() => {
-        if (!cancelled) setAttempt((value) => value + 1);
-      });
-    }, delay);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [attempt, retryKey]);
+  // Each retry is a new object, so a lookup that answers after Retry now cannot advance it.
+  const [retry, setRetry] = useState({ attempt: 0, delay: sessionRetryDelayMs(0) });
+  useTimeout(
+    () => {
+      const started = retry;
+      void refetch().finally(() =>
+        setRetry((current) =>
+          current === started
+            ? { attempt: started.attempt + 1, delay: sessionRetryDelayMs(started.attempt + 1) }
+            : current,
+        ),
+      );
+    },
+    retry.delay,
+    retry,
+  );
 
   return (
     <div className="grid h-full place-items-center bg-background px-6 text-center">
@@ -341,14 +361,7 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              retryImmediately.current = true;
-              setAttempt(0);
-              setRetryKey((key) => key + 1);
-            }}
-          >
+          <Button variant="secondary" onClick={() => setRetry({ attempt: 0, delay: 0 })}>
             <Trans>Retry now</Trans>
           </Button>
         </div>

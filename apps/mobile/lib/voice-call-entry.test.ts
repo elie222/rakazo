@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceCallStatus } from "./voice-call-entry";
 import {
@@ -157,16 +159,14 @@ describe("loadCallCallerName", () => {
 
   it("ignores a profile failure after the deadline", async () => {
     vi.useFakeTimers();
-    let reject!: (error: Error) => void;
-    const result = loadCallCallerName(
-      () =>
-        new Promise((_resolve, fail) => {
-          reject = fail;
-        }),
-    );
+    let pending!: Deferred<never>;
+    const result = loadCallCallerName(() => {
+      pending = deferred<never>();
+      return pending.promise;
+    });
     await vi.advanceTimersByTimeAsync(500);
     await expect(result).resolves.toBeUndefined();
-    reject(new Error("offline"));
+    pending.reject(new Error("offline"));
     await Promise.resolve();
   });
 

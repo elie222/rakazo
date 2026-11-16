@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 import { queryClient } from "./query";
 import {
@@ -13,9 +14,6 @@ const scope = vi.hoisted(() => ({
   spaceId: "space-a" as string | null,
   rpc: vi.fn(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => scope.apiBase,
   selectedSpaceId: () => scope.spaceId,
@@ -26,14 +24,6 @@ vi.mock("./session", () => ({
   loadSessionToken: async () => "token",
   currentSessionGeneration: () => scope.generation,
 }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 beforeEach(() => {
   queryClient.clear();

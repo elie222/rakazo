@@ -1,5 +1,4 @@
-import type { ApiRequestContext } from "./api";
-import { rpc } from "./api";
+import type { SaveSend } from "./query";
 
 /** Delay before the setup focus card for a non-first bot. */
 export const FOCUS_PROMPT_DELAY_MS = 10_000;
@@ -52,18 +51,13 @@ export function focusPromptThreadActive(botId: string): void {
  * that bot's thread (unmount / bot switch — not blur onto settings) so a late
  * `onboarding/start` cannot schedule after departure.
  */
-export function scheduleFocusPrompt(
-  botId: string,
-  immediate: boolean,
-  requestContext?: ApiRequestContext,
-): void {
+export function scheduleFocusPrompt(botId: string, immediate: boolean, send: SaveSend): void {
   if (cancelledBotIds.has(botId) || (eligibleBotId !== null && eligibleBotId !== botId)) return;
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingTimer = null;
   pendingBotId = null;
-  const options = requestContext ? { requestContext } : undefined;
   if (immediate) {
-    void rpc("onboarding/promptFocus", { botId }, options).catch(() => undefined);
+    void send("onboarding/promptFocus", { botId }).catch(() => undefined);
     return;
   }
   pendingBotId = botId;
@@ -71,6 +65,6 @@ export function scheduleFocusPrompt(
     pendingTimer = null;
     pendingBotId = null;
     if (cancelledBotIds.has(botId)) return;
-    void rpc("onboarding/promptFocus", { botId }, options).catch(() => undefined);
+    void send("onboarding/promptFocus", { botId }).catch(() => undefined);
   }, FOCUS_PROMPT_DELAY_MS);
 }

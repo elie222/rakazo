@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -120,19 +121,15 @@ describe("native crash metadata", () => {
   );
 
   it("drops in-flight metadata scans when the connection is disabled", async () => {
-    let release!: (value: string) => void;
-    mocks.readPrivateFile.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+    const scan = deferred<string>();
+    const readCheckpoint = vi.fn(() => scan.promise);
+    mocks.readPrivateFile.mockImplementationOnce(readCheckpoint);
     const native = await import("./native-crashes.js");
     const capture = vi.fn();
     native.configureNativeCrashReporting(base, capture);
-    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(readCheckpoint).toHaveBeenCalled());
     native.disableNativeCrashReporting();
-    release(JSON.stringify(checkpoint));
+    scan.resolve(JSON.stringify(checkpoint));
     await vi.waitFor(() => expect(mocks.writePrivateFile).toHaveBeenCalled());
     expect(capture).not.toHaveBeenCalled();
   });

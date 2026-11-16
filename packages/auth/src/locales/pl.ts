@@ -23,26 +23,26 @@ export const PL_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Wpisz ten kod w Rakazo, aby potwierdzić tożsamość:",
   "Welcome to Rakazo": "Witaj w Rakazo",
-  "Thanks for signing up for Rakazo.": "Dziękujemy za rejestrację w Rakazo.",
-  "Rakazo also has apps for": "Aplikacje Rakazo są też dostępne na platformach:",
-  "Questions or ideas?": "Masz pytania lub pomysły?",
-  "Join us on Discord": "Dołącz do nas na Discordzie",
-  "Rakazo is open source. If you like it,": "Rakazo ma otwarty kod. Jeśli Ci się podoba,",
-  "a star on GitHub": "gwiazdka na GitHub",
-  "helps others find it.": "pomoże innym je znaleźć.",
-  "Want to run it on your own servers?": "Chcesz uruchomić je na własnych serwerach?",
-  "Self-host Rakazo": "Uruchom Rakazo na własnym serwerze",
-  "Have any questions? Reply to this email.": "Masz pytania? Odpowiedz na tę wiadomość.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Witamy w Rakazo. Osoby, które korzystają z niego najlepiej, robią trzy rzeczy:",
+  "Get the apps": "Pobierz aplikacje",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo działa na {platforms}, więc Twoje boty mogą skontaktować się z Tobą wszędzie.",
+  "Join the community": "Dołącz do społeczności",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Zobacz, co budują inni, szybko uzyskaj pomoc i powiedz nam na {discord}, co zbudować dalej.",
+  "Star us on GitHub": "Daj nam gwiazdkę na GitHubie",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo jest open source. {star} pomaga innym go znaleźć.",
+  "A star on GitHub": "Gwiazdka na GitHubie",
+  "Questions? Just reply. I read every one.":
+    "Masz pytania? Po prostu odpowiedz. Czytam każdą wiadomość.",
   Unsubscribe: "Zrezygnuj z otrzymywania wiadomości",
   "Invite a friend": "Zaproś znajomego",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "Zaproś znajomego do Rakazo: otrzyma {weeks} tyg. za darmo, a Ty zyskasz bezpłatny miesiąc, gdy rozpocznie subskrypcję spełniającą warunki z użyciem nowej karty.",
   "Open Rakazo": "Otwórz Rakazo",
   "and choose Invite friends for your link.": "i wybierz Zaproś znajomych, aby otrzymać swój link.",
-  "Have any questions? Just reply to this email.":
-    "Masz pytania? Po prostu odpowiedz na tę wiadomość.",
-  "If you're enjoying Rakazo,": "Jeśli lubisz korzystać z Rakazo,",
-  "give us a star on GitHub": "daj nam gwiazdkę na GitHub",
   "We received your Rakazo plugin": "Otrzymaliśmy Twoją wtyczkę do Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Dziękujemy za zgłoszenie wtyczki do katalogu Rakazo.",
@@ -72,4 +72,16 @@ export const PL_MESSAGES: Record<string, string> = {
     "Zapisane pliki komputera zostaną usunięte {date}, jeśli nie wznowisz subskrypcji.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Zapisane pliki komputera zostaną usunięte {date}, jeśli nie wybierzesz planu.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} zaprasza Cię do {organization} w Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} zaprasza Cię do dołączenia do {organization} w Rakazo.",
+  "Join {organization}": "Dołącz do {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "To zaproszenie wygaśnie za 7 dni. Aby je przyjąć, zaloguj się tym adresem e-mail.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} zaprasza Cię do {space} w Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} zaprasza Cię do dołączenia do {space} w Rakazo.",
+  "Join {space}": "Dołącz do {space}",
+  "This invitation expires in 7 days.": "To zaproszenie wygaśnie za 7 dni.",
 };

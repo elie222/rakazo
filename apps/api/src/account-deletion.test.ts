@@ -1,3 +1,6 @@
+import type * as Adapters from "@rakazo/adapters";
+import { destroyBot } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
@@ -8,8 +11,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "./account-deletion.js";
 
+vi.mock("@rakazo/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  destroyBot: vi.fn(),
+}));
+
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
+  assertOrganizationOwner: vi.fn(async () => undefined),
   claimOrganizationForDeletion: vi.fn(),
   keepOrganizationTrialUse: vi.fn(async () => undefined),
   setOrganizationDeletionLease: vi.fn(),
@@ -19,14 +28,6 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => undefined),
 }));
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 describe("deleteOrganization lease", () => {
   let spacesLeft: number;
   const prisma = {
@@ -35,6 +36,9 @@ describe("deleteOrganization lease", () => {
     bot: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
     space: { count: vi.fn(async () => spacesLeft) },
+    // The lease table: every take, renewal, release and fence check finds the row.
+    $queryRaw: vi.fn(async () => [{ fence: 1 }]),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
   const deps = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -76,6 +80,34 @@ describe("deleteOrganization lease", () => {
     expect(recordAuditEvent).toHaveBeenCalledOnce();
   });
 
+  it("passes memory resolution into bot teardown before deleting the Space configuration", async () => {
+    let configured = true;
+    const resolve = vi.fn(async () => {
+      expect(configured).toBe(true);
+      return null;
+    });
+    const memoryProviders = { resolve };
+    vi.mocked(prisma.bot.findMany).mockResolvedValueOnce([
+      { id: "bot-1", spaceId: "space-1", userId: "user-1", name: "Bot", archivedAt: null },
+    ] as never);
+    vi.mocked(destroyBot).mockImplementationOnce(async (teardown, bot, _context, options) => {
+      expect(teardown.memoryProviders).toBe(memoryProviders);
+      expect(options.deleteMemories).toBe(true);
+      await teardown.memoryProviders!.resolve(bot.spaceId);
+      return { removedGroupIds: [] };
+    });
+    vi.mocked(deleteClaimedSpace).mockImplementation(async () => {
+      expect(resolve).toHaveBeenCalledWith("space-1");
+      configured = false;
+      spacesLeft = 0;
+      return { artifactKeys: [], pageShareSecrets: [] };
+    });
+
+    await deleteOrganization(deps({ memoryProviders }), "user-1", "org-1");
+    expect(destroyBot).toHaveBeenCalledOnce();
+    expect(configured).toBe(false);
+  });
+
   it("stops before teardown once renewals fail for most of the lease", async () => {
     const billing = deferred();
     let billingCalled = false;
@@ -97,7 +129,7 @@ describe("deleteOrganization lease", () => {
     await vi.waitFor(() => expect(billingCalled).toBe(true));
     await vi.advanceTimersByTimeAsync(4 * 60_000);
 
-    await expect(deleting).rejects.toThrow("lost its claim");
+    await expect(deleting).rejects.toThrow("Lost the lease");
     billing.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(prisma.artifact.findMany).not.toHaveBeenCalled();

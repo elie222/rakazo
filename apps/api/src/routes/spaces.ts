@@ -1,13 +1,10 @@
 import { ORPCError } from "@orpc/server";
+import { spaceInvitationEmail } from "@rakazo/auth";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
-  CannotDeleteDefaultSpaceError,
-  CannotDeleteLastSpaceError,
-  CannotDeleteSpaceAsNonOwnerError,
-  CannotRemoveSpaceOwnerError,
-  CannotRenameSpaceAsNonOwnerError,
+  addSpaceMember,
   cancelSpaceInvites,
   createExternalConversationRepos,
   createSpaceForMember,
@@ -15,7 +12,6 @@ import {
   fallbackSpaceForMember,
   GUEST_ROLE,
   homeOrganizationId,
-  InvalidSpaceNameError,
   IsolationError,
   isOwnerRole,
   leaveSpace,
@@ -27,17 +23,12 @@ import {
   runAsSystem,
   runAsTenant,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
-  SpaceDeletionInProgressError,
-  SpaceInviteLimitError,
-  SpaceInviteNotFoundError,
-  SpaceLimitError,
-  SpaceMemberNotFoundError,
   SpaceNotFoundError,
-  SpaceOwnerCannotLeaveError,
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
-import { otherSpaceOfBot } from "../bot-space.js";
+import { otherSpaceOfBot, otherSpaceOfGroup } from "../bot-space.js";
+import { invitationRecipientKey, sendInvitationEmail } from "../invitation-email.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
@@ -46,27 +37,6 @@ import { threadSnapshot } from "../thread-snapshot.js";
 import { resolveThreadTarget } from "../thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
-
-function mapSpaceMemberError(error: unknown): never {
-  if (
-    error instanceof SpaceInviteNotFoundError ||
-    error instanceof SpaceMemberNotFoundError ||
-    error instanceof SpaceNotFoundError
-  ) {
-    throw new ORPCError("NOT_FOUND", { message: error.message });
-  }
-  if (
-    error instanceof CannotRemoveSpaceOwnerError ||
-    error instanceof SpaceOwnerCannotLeaveError ||
-    error instanceof SpaceInviteLimitError
-  ) {
-    throw new ORPCError("BAD_REQUEST", { message: error.message });
-  }
-  if (error instanceof SpaceDeletionInProgressError) {
-    throw new ORPCError("CONFLICT", { message: error.message });
-  }
-  throw error;
-}
 
 /**
  * Runs `fn` scoped to another of the actor's Spaces. Membership is checked first,
@@ -82,7 +52,7 @@ async function asMemberOf<T>(
     where: { spaceId, userId: actor.userId },
     select: { id: true },
   });
-  if (!member) throw new ORPCError("NOT_FOUND", { message: new SpaceNotFoundError().message });
+  if (!member) throw new SpaceNotFoundError();
   return runAsTenant({ spaceId, userId: actor.userId }, fn);
 }
 
@@ -104,22 +74,11 @@ export function spacesRoutes(ctx: RouterContext) {
       // Seeds a Space whose id does not exist yet; the member limit is checked inside.
       create: authed.spaces.create.handler(({ context, input }) =>
         runAsSystem("create a Space for its member", async () => {
-          let space: { id: string; name: string };
-          try {
-            space = await createSpaceForMember(deps.prisma, {
-              currentSpaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              name: input.name,
-            });
-          } catch (error) {
-            if (error instanceof SpaceLimitError || error instanceof InvalidSpaceNameError) {
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            }
-            if (error instanceof SpaceDeletionInProgressError) {
-              throw new ORPCError("CONFLICT", { message: error.message });
-            }
-            throw error;
-          }
+          const space = await createSpaceForMember(deps.prisma, {
+            currentSpaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            name: input.name,
+          });
           await recordAuditEvent({
             action: "space.created",
             actor: { type: "user", id: context.actor.userId },
@@ -144,81 +103,46 @@ export function spacesRoutes(ctx: RouterContext) {
       // Renames another of the member's Spaces; membership is checked inside.
       rename: authed.spaces.rename.handler(({ context, input }) =>
         asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
-          try {
-            const renamed = await renameSpaceForMember(deps.prisma, {
-              currentSpaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              spaceId: input.spaceId,
-              name: input.name,
-            });
-            await recordAuditEvent({
-              action: "space.renamed",
-              actor: { type: "user", id: context.actor.userId },
-              spaceId: renamed.id,
-              target: { type: "space", id: renamed.id, label: renamed.name },
-            });
-            return renamed;
-          } catch (error) {
-            if (error instanceof SpaceNotFoundError) {
-              throw new ORPCError("NOT_FOUND", { message: error.message });
-            }
-            if (error instanceof CannotRenameSpaceAsNonOwnerError) {
-              throw new ORPCError("FORBIDDEN", { message: error.message });
-            }
-            if (error instanceof InvalidSpaceNameError) {
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            }
-            if (error instanceof SpaceDeletionInProgressError) {
-              throw new ORPCError("CONFLICT", { message: error.message });
-            }
-            throw error;
-          }
+          const renamed = await renameSpaceForMember(deps.prisma, {
+            currentSpaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            spaceId: input.spaceId,
+            name: input.name,
+          });
+          await recordAuditEvent({
+            action: "space.renamed",
+            actor: { type: "user", id: context.actor.userId },
+            spaceId: renamed.id,
+            target: { type: "space", id: renamed.id, label: renamed.name },
+          });
+          return renamed;
         }),
       ),
       // Acts on the Space being deleted, not the current one, so its teardown sees
       // that Space's rows. Ownership is checked inside.
       remove: authed.spaces.remove.handler(({ context, input }) =>
         asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
-          try {
-            const space = await deps.prisma.space.findUnique({
-              where: { id: input.spaceId },
-              select: { organizationId: true, name: true },
+          const space = await deps.prisma.space.findUnique({
+            where: { id: input.spaceId },
+            select: { organizationId: true, name: true },
+          });
+          const { activeSpaceId } = await deleteSpaceWithContent(
+            deps,
+            context.actor,
+            input.spaceId,
+            context.signal,
+          );
+          if (space) {
+            await recordAuditEvent({
+              action: "space.deleted",
+              actor: { type: "user", id: context.actor.userId },
+              spaceId: input.spaceId,
+              organizationId: space.organizationId,
+              spaceName: space.name,
+              target: { type: "space", id: input.spaceId, label: space.name },
             });
-            const { activeSpaceId } = await deleteSpaceWithContent(
-              deps,
-              context.actor,
-              input.spaceId,
-              context.signal,
-            );
-            if (space) {
-              await recordAuditEvent({
-                action: "space.deleted",
-                actor: { type: "user", id: context.actor.userId },
-                spaceId: input.spaceId,
-                organizationId: space.organizationId,
-                spaceName: space.name,
-                target: { type: "space", id: input.spaceId, label: space.name },
-              });
-            }
-            return { ok: true as const, activeSpaceId };
-          } catch (error) {
-            if (error instanceof SpaceNotFoundError) {
-              throw new ORPCError("NOT_FOUND", { message: error.message });
-            }
-            if (error instanceof CannotDeleteSpaceAsNonOwnerError) {
-              throw new ORPCError("FORBIDDEN", { message: error.message });
-            }
-            if (error instanceof SpaceDeletionInProgressError) {
-              throw new ORPCError("CONFLICT", { message: error.message });
-            }
-            if (
-              error instanceof CannotDeleteDefaultSpaceError ||
-              error instanceof CannotDeleteLastSpaceError
-            ) {
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            }
-            throw error;
           }
+          return { ok: true as const, activeSpaceId };
         }),
       ),
       members: {
@@ -227,8 +151,25 @@ export function spacesRoutes(ctx: RouterContext) {
             listSpaceMembers(deps.prisma, {
               spaceId: input.spaceId,
               userId: context.actor.userId,
-            }).catch(mapSpaceMemberError),
+            }),
           ),
+        ),
+        add: authed.spaces.members.add.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const added = await addSpaceMember(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+              memberUserId: input.userId,
+            });
+            if (added)
+              await recordAuditEvent({
+                action: "space.member.added",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+                target: { type: "user", id: input.userId },
+              });
+            return { ok: true as const };
+          }),
         ),
         remove: authed.spaces.members.remove.handler(({ context, input }) =>
           asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
@@ -236,7 +177,7 @@ export function spacesRoutes(ctx: RouterContext) {
               spaceId: input.spaceId,
               userId: context.actor.userId,
               memberUserId: input.userId,
-            }).catch(mapSpaceMemberError);
+            });
             await recordAuditEvent({
               action: "space.member.removed",
               actor: { type: "user", id: context.actor.userId },
@@ -256,7 +197,7 @@ export function spacesRoutes(ctx: RouterContext) {
             const departure = await leaveSpace(deps.prisma, {
               spaceId: input.spaceId,
               userId: context.actor.userId,
-            }).catch(mapSpaceMemberError);
+            });
             await recordAuditEvent({
               action: "space.member.left",
               actor: { type: "user", id: context.actor.userId },
@@ -277,35 +218,56 @@ export function spacesRoutes(ctx: RouterContext) {
         ),
       },
       invites: {
+        // Ownership is checked inside. An email's daily limits count the security log, and its
+        // language is the invitee's, neither of which a Space's scope can see.
         create: authed.spaces.invites.create.handler(({ context, input }) =>
-          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
-            const invite = await createSpaceInvite(deps.prisma, {
-              spaceId: input.spaceId,
-              userId: context.actor.userId,
-            }).catch(mapSpaceMemberError);
-            await recordAuditEvent({
-              action: "space.invite.created",
-              actor: { type: "user", id: context.actor.userId },
-              spaceId: input.spaceId,
-            });
-            return {
-              url: new URL(`/invite/${invite.token}`, deps.env.webOrigin).toString(),
-              expiresAt: invite.expiresAt.toISOString(),
-            };
-          }),
+          asMemberOf(deps.prisma, context.actor, input.spaceId, () =>
+            runAsSystem("invite someone to a Space", async () => {
+              const invite = await createSpaceInvite(deps.prisma, {
+                spaceId: input.spaceId,
+                userId: context.actor.userId,
+                ...(input.email
+                  ? {
+                      email: {
+                        address: input.email,
+                        sendsEmail: Boolean(deps.email),
+                        recipientKey: invitationRecipientKey(deps),
+                      },
+                    }
+                  : {}),
+              });
+              await recordAuditEvent({
+                action: "space.invite.created",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+              });
+              const url = new URL(`/invite/${invite.token}`, deps.env.webOrigin).toString();
+              const { email } = invite;
+              const emailed = email
+                ? await sendInvitationEmail(deps, context.actor.userId, email.to, (locale) =>
+                    spaceInvitationEmail(email.to, { ...email, url }, locale),
+                  )
+                : false;
+              return {
+                url,
+                expiresAt: invite.expiresAt.toISOString(),
+                ...(input.email ? { emailed } : {}),
+              };
+            }),
+          ),
         ),
         // The invitee is not a member yet, so these look the Space up by the link alone.
         preview: authed.spaces.invites.preview.handler(({ context, input }) =>
           previewSpaceInvite(deps.prisma, {
             token: input.token,
             userId: context.actor.userId,
-          }).catch(mapSpaceMemberError),
+          }),
         ),
         accept: authed.spaces.invites.accept.handler(async ({ context, input }) => {
           const accepted = await acceptSpaceInvite(deps.prisma, {
             token: input.token,
             userId: context.actor.userId,
-          }).catch(mapSpaceMemberError);
+          });
           if (accepted.joined) {
             await recordAuditEvent({
               action: "space.member.joined",
@@ -320,7 +282,7 @@ export function spacesRoutes(ctx: RouterContext) {
             await cancelSpaceInvites(deps.prisma, {
               spaceId: input.spaceId,
               userId: context.actor.userId,
-            }).catch(mapSpaceMemberError);
+            });
             await recordAuditEvent({
               action: "space.invites.cancelled",
               actor: { type: "user", id: context.actor.userId },
@@ -345,6 +307,10 @@ export function spacesRoutes(ctx: RouterContext) {
         input.botId && !requested
           ? await otherSpaceOfBot(deps.prisma, actor, input.botId)
           : undefined;
+      const groupSpaceId =
+        input.groupId && !groups.some((group) => group.id === input.groupId)
+          ? await otherSpaceOfGroup(deps.prisma, actor, input.groupId)
+          : undefined;
       const active = requested ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
@@ -365,6 +331,7 @@ export function spacesRoutes(ctx: RouterContext) {
         routines,
         spaces: navigation.spaces,
         ...(botSpaceId ? { botSpaceId } : {}),
+        ...(groupSpaceId ? { groupSpaceId } : {}),
       };
     }),
   };
@@ -421,6 +388,7 @@ async function memberSpaceNavigation(
     externalConversations,
     contentBots,
     contentGroups,
+    guestSpaces,
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
@@ -441,7 +409,15 @@ async function memberSpaceNavigation(
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
+    // Spaces someone from outside their organization belongs to, marked so nobody shares
+    // there unaware.
+    deps.prisma.spaceMember.findMany({
+      where: { spaceId: { in: spaceIds }, member: { role: GUEST_ROLE } },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
   ]);
+  const withGuests = new Set(guestSpaces.map((row) => row.spaceId));
   const botCounts = new Map(contentBots.map((row) => [row.spaceId, row._count._all]));
   const spacesWithContent = new Set([
     ...contentBots.map((row) => row.spaceId),
@@ -479,6 +455,7 @@ async function memberSpaceNavigation(
         isDefault: membership.space.isDefault && owner,
         hasContent: spacesWithContent.has(membership.spaceId),
         shared: membership.space._count.memberships > 1,
+        hasGuests: withGuests.has(membership.spaceId),
         botCount: botCounts.get(membership.spaceId) ?? 0,
         canRename: owner && membership.space.deletingAt === null,
         canDelete:

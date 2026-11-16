@@ -61,11 +61,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
       await db.pool.end();
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     owner = identity;
     await asSystem(prisma).bot.update({

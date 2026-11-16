@@ -9,6 +9,7 @@ export class MemoryPushTokenStore implements PushTokenStore {
   >();
   async saveDesktop(userId: string, token: string, sessionId: string) {
     this.desktop.set(credentialDigest(token), { userId, token, sessionId });
+    return true;
   }
   async desktopTargets(userId: string, spaceId: string): Promise<DesktopPushTarget[]> {
     return [...this.desktop.entries()]

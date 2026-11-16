@@ -3,21 +3,18 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   createAdapterContext,
-  runContinueJob,
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
-import type { ComputerExecutionLease, TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
+import type { TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   anotherPersonHoldsControl,
   appendRecordingEvent,
-  ComputerBusyError,
   captureTeachingSnapshot,
   completeTeachingSession,
   emptyRecording,
   expireTaughtSkillTeaching,
-  extendActiveComputerControl,
   getActiveTeachingSession,
   mapTaughtSkill,
   observeStopSnapshot,
@@ -27,28 +24,31 @@ import {
   recordTeachingInputEvent,
   releaseComputerExecutionLease,
   releaseTeachingComputerControlForBot,
-  scheduleComputerControlExpiry,
+  sandboxKindCapabilities,
   screenLeaseIdForRun,
-  teachingControlLeaseExpiresAt,
-  userControlHeldBy,
+  wakeRun,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
-  COMPUTER_USING_RUNS,
+  ClientError,
+  computerUsingRuns,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  changeMessageBlocks,
   clearEndedRunState,
   expireComputerExecutionLeases,
   IsolationError,
   isUniqueViolation,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { takeComputerControl } from "./computer-control.js";
 
 export interface TaughtSkillsDeps {
   prisma: PrismaClient;
@@ -105,7 +105,7 @@ async function cancelActiveRuns(
       botId,
       userId: actor.userId,
       status: { in: [...ACTIVE_RUN_STATUSES] },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
     },
     data: { status: "cancelled", completedAt: new Date() },
     select: { id: true },
@@ -113,10 +113,6 @@ async function cancelActiveRuns(
   const runIds = activeRuns.map((run) => run.id);
   await clearEndedRunState(deps.prisma, runIds);
   await expireComputerExecutionLeases(deps.prisma, { botId, runId: { in: runIds } });
-  await deps.prisma.computer.updateMany({
-    where: { executionBotId: botId, executionRunId: { in: runIds } },
-    data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
-  });
   await deps.prisma.event.deleteMany({
     where: { type: "thread.progress", runId: { in: runIds } },
   });
@@ -127,7 +123,7 @@ async function ensureGraphicalComputer(
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
 ) {
-  if (bot.computer?.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer?.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -136,19 +132,11 @@ async function ensureGraphicalComputer(
   if (bot.computer.state !== "running" || !bot.computer.providerRef) {
     const ctx = createAdapterContext(actor, bot.id, "skills.start");
     const manualRunId = `teach:${randomUUID()}`;
-    let lease: ComputerExecutionLease | null;
-    try {
-      lease = await acquireComputerExecutionLease(deps.prisma, {
-        computerId: bot.computer.id,
-        runId: manualRunId,
-        botId: bot.id,
-      });
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
-    }
+    const lease = await acquireComputerExecutionLease(deps.prisma, {
+      computerId: bot.computer.id,
+      runId: manualRunId,
+      botId: bot.id,
+    });
     const computerId = bot.computer.id;
     try {
       await getLogger().withContext({ reason: "teaching" }, () =>
@@ -157,11 +145,6 @@ async function ensureGraphicalComputer(
           screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
         }),
       );
-    } catch (error) {
-      if (error instanceof ComputerBusyError) {
-        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-      }
-      throw error;
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);
     }
@@ -173,7 +156,7 @@ async function ensureGraphicalComputer(
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
     throw new ORPCError("BAD_REQUEST", { message: "Computer must be running to teach" });
   }
-  if (bot.computer.kind === "desktop") {
+  if (sandboxKindCapabilities(bot.computer.kind).runsOnUserMachine) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Teaching needs a graphical sandbox computer, not a desktop host",
     });
@@ -202,7 +185,7 @@ async function assertComputerFreeFor(
   const othersWork = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       userId: { not: actor.userId },
       ...(bot.computerId ? { bot: { computerId: bot.computerId } } : { botId: bot.id }),
     },
@@ -217,53 +200,11 @@ async function grantTakeover(
   deps: TaughtSkillsDeps,
   actor: Actor,
   bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
-  until: Date,
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();
   await assertComputerFreeFor(deps, actor, bot);
-  if (await extendActiveComputerControl(deps.prisma, deps.jobs, bot.computer, bot.id, until)) {
-    const leaseId = bot.computer.controlLeaseId;
-    if (!leaseId) throw new IsolationError();
-    return { bot, leaseId };
-  }
-  const leaseId = randomUUID();
-  const expiresAt = teachingControlLeaseExpiresAt(until);
-  const granted = await deps.prisma.computer.updateMany({
-    where: {
-      id: bot.computer.id,
-      state: "running",
-      // Never another person's live lease, even one taken after the check above.
-      OR: [
-        { controlHolder: { not: "user" } },
-        { controlLeaseExpiresAt: { lte: new Date() } },
-        {
-          controlBotId: bot.id,
-          ...userControlHeldBy(actor.userId),
-        },
-      ],
-    },
-    data: {
-      controlHolder: "user",
-      controlLeaseId: leaseId,
-      controlLeaseExpiresAt: expiresAt,
-      controlBotId: bot.id,
-      controlUserId: actor.userId,
-      state: "running",
-    },
-  });
-  if (granted.count !== 1) {
-    throw new ORPCError("CONFLICT", { message: "Could not take control of the computer" });
-  }
-  await scheduleComputerControlExpiry(deps.jobs, bot.computer.id, leaseId, expiresAt);
-  if (bot.thread) {
-    await deps.events.append({
-      spaceId: actor.spaceId,
-      threadId: bot.thread.id,
-      botId: bot.id,
-      type: "computer.takeover.granted",
-      payload: { holder: "user", reason: "teaching" },
-    });
-  }
+  // Teaching records under the person's ordinary control, and ends when that control does.
+  const { leaseId } = await takeComputerControl(deps, actor, bot.id);
   return { bot, leaseId };
 }
 
@@ -290,17 +231,12 @@ async function updateSkillDraftMessage(
   });
 
   for (const message of messages) {
-    const parsed = message.blocks as MessageBlock[];
-    if (!Array.isArray(parsed)) continue;
-    const index = parsed.findIndex(
+    const existing = storedMessageBlocks(message).find(
       (block) => block.kind === "skill_draft" && block.skillId === skill.id,
     );
-    if (index === -1) continue;
-    const existing = parsed[index];
     if (existing?.kind !== "skill_draft") continue;
     const playbook = input.playbook ?? parsePlaybook(skill.playbook);
-    const nextBlocks: MessageBlock[] = [...parsed];
-    nextBlocks[index] = {
+    const draft: MessageBlock = {
       kind: "skill_draft",
       skillId: skill.id,
       name: input.name ?? existing.name,
@@ -308,16 +244,18 @@ async function updateSkillDraftMessage(
       playbook,
       status: input.status ?? existing.status,
     };
+    const next = changeMessageBlocks(message, (block) => (block === existing ? draft : block));
+    if (!next) return;
     await deps.prisma.message.update({
       where: { id: message.id },
-      data: { blocks: nextBlocks as never },
+      data: { blocks: next.stored },
     });
     await deps.events.append({
       spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: nextBlocks },
+      payload: { messageId: message.id, role: "bot", blocks: next.blocks },
     });
     return;
   }
@@ -413,11 +351,18 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       bot = await ensureGraphicalComputer(deps, actor, bot);
       const startedAt = new Date();
       const expiresAt = new Date(startedAt.getTime() + teachRecordingTtlMs());
-      const { leaseId } = await grantTakeover(deps, actor, bot, expiresAt);
+      const { leaseId } = await grantTakeover(deps, actor, bot);
       let row: TaughtSkillRow;
       try {
         row = await deps.prisma.$transaction(async (tx) => {
           await tx.$executeRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
+          // The recording ends with its control, so it starts only while that control holds; the
+          // lock keeps a release from ending it in between.
+          const [control] = await tx.$queryRaw<Array<{ controlLeaseId: string | null }>>`
+            SELECT "controlLeaseId" FROM computers WHERE id = ${bot.computer!.id} FOR UPDATE`;
+          if (control?.controlLeaseId !== leaseId) {
+            throw new ORPCError("CONFLICT", { message: "Could not take control of the computer" });
+          }
           const existing = await tx.taughtSkill.findFirst({
             where: { botId, status: "recording" },
           });
@@ -439,9 +384,8 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           });
         });
       } catch (error) {
-        if (error instanceof ORPCError) throw error;
         if (isUniqueViolation(error)) {
-          throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+          throw new ClientError("CONFLICT", "A teaching session is already active");
         }
         throw error;
       }
@@ -592,7 +536,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           trigger: "skill",
         },
       });
-      await deps.jobs.enqueue(runContinueJob(run.id));
+      await wakeRun(deps.jobs, run.id);
       return { runId: run.id };
     },
 
@@ -602,8 +546,10 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (skill.status === "recording" && skill.userId !== actor.userId) {
         throw new ORPCError("CONFLICT", { message: "Someone else is teaching this skill" });
       }
+      await deps.prisma.taughtSkill.delete({ where: { id: skill.id } });
       if (skill.status === "recording") {
         await deps.jobs.cancel(skillTeachingExpireJobKey(skill.id));
+        // Deleted first, so ending control finds no recording to post a draft card for.
         await releaseTeachingComputerControlForBot(
           deps,
           actor,
@@ -611,7 +557,6 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           parseRecording(skill.recording).controlLeaseId,
         );
       }
-      await deps.prisma.taughtSkill.delete({ where: { id: skill.id } });
       return { ok: true as const };
     },
 

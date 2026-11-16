@@ -1,6 +1,6 @@
-import type { VoiceProvider } from "./types";
 import { GITHUB_URL } from "../site";
 import { VOICE_DOC, VOICE_MODELS_DOC, voicePriceTable, withPricingSources } from "./shared";
+import type { VoiceProvider } from "./types";
 
 const COMPARED = ["macos", "selfHosted", "openai", "fish", "elevenlabs", "cartesia"] as const;
 
@@ -74,7 +74,7 @@ export const macos: VoiceProvider = {
       heading: "When to choose macOS voices",
       paragraphs: [
         "Choose them when you run Rakazo on your own Mac and want bots to speak right away, with nothing to sign up for, nothing to install and nothing to pay. Speech is made on the machine running Rakazo, with no vendor involved, then sent to whichever device is listening.",
-        "For voices that also transcribe, a [self-hosted speech server](/voice-providers/self-hosted/) keeps everything on your own hardware and works on Linux too; on a Mac, mlx-audio runs Kokoro and Whisper quickly. Hosted providers sound more natural and need a key: [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) clone voices, [OpenAI](/voice-providers/openai/) is the simplest, and [Cartesia](/voice-providers/cartesia/) is built for low latency. The [voice provider comparison](/voice-providers/) shows all six.",
+        "For voices that also transcribe, a [self-hosted speech server](/voice-providers/self-hosted/) keeps everything on your own hardware and works on Linux too; on a Mac, mlx-audio runs Kokoro and Whisper quickly. Hosted providers sound more natural and need an account: [ElevenLabs](/voice-providers/elevenlabs/) and [Fish Audio](/voice-providers/fish-audio/) clone voices, [OpenAI](/voice-providers/openai/) is the simplest, xAI can use the Grok sign-in you connect for models, and [Cartesia](/voice-providers/cartesia/) is built for low latency. The [voice provider comparison](/voice-providers/) shows every option.",
       ],
     },
     {
@@ -108,7 +108,8 @@ export const macos: VoiceProvider = {
     width: 1280,
     height: 720,
     alt: "Rakazo showing an incoming call from the bot Chief, with Decline and Answer buttons beside the chat.",
-    caption: "Chief calling from Rakazo. With macOS voices, its side of the call is spoken by the server's Mac.",
+    caption:
+      "Chief calling from Rakazo. With macOS voices, its side of the call is spoken by the server's Mac.",
   },
   faq: [
     {
@@ -144,14 +145,14 @@ export const macos: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    {
-      label: "Apple, change the voice your Mac uses to speak text",
-      href: "https://support.apple.com/guide/mac-help/mchlp2290/mac",
-    },
-    { label: "ss64, the say command", href: "https://ss64.com/mac/say.html" },
-    VOICE_DOC,
-    VOICE_MODELS_DOC,
-    { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
+      {
+        label: "Apple, change the voice your Mac uses to speak text",
+        href: "https://support.apple.com/guide/mac-help/mchlp2290/mac",
+      },
+      { label: "ss64, the say command", href: "https://ss64.com/mac/say.html" },
+      VOICE_DOC,
+      VOICE_MODELS_DOC,
+      { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
     ],
     { prices: COMPARED },
   ),

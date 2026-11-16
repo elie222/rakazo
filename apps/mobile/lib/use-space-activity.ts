@@ -1,12 +1,12 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { isRetryableError } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchSpaceActivity } from "./activity";
-import { useForegroundPoll } from "./foreground-poll";
-import { ACTIVITY_POLL_INTERVAL_MS } from "./poll-cadence";
+import { useSpaceChanges } from "./roster-signals";
 
-/** The Space's running and recent work, polled while the activity view is on and in sight. */
+export type SpaceActivityStatus = "loading" | "loaded" | "failed";
+
+/** The Space's running and recent work, read while the activity view is on and in sight. */
 export function useSpaceActivity({
   hasSession,
   activityMode,
@@ -22,13 +22,19 @@ export function useSpaceActivity({
     active: [],
     recent: [],
   });
+  const [activityStatus, setActivityStatus] = useState<SpaceActivityStatus>("loading");
   const activityRequestId = useRef(0);
+
+  const clearActivity = useCallback(() => {
+    setActivity({ active: [], recent: [] });
+    setActivityStatus("loading");
+  }, []);
 
   const loadActivity = useCallback(async () => {
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
     if (!hasSession || !activityMode) {
       activityRequestId.current += 1;
-      setActivity({ active: [], recent: [] });
+      clearActivity();
       return;
     }
     const requestId = ++activityRequestId.current;
@@ -36,15 +42,19 @@ export function useSpaceActivity({
       const next = await fetchSpaceActivity();
       if (requestId !== activityRequestId.current) return;
       setActivity(next);
-    } catch (error) {
+      setActivityStatus("loaded");
+    } catch {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
-      // False when the server refused rather than failed: asking again only polls it.
-      return isRetryableError(error);
+      setActivityStatus("failed");
     }
-  }, [activityMode, hasSession]);
+  }, [activityMode, clearActivity, hasSession]);
 
-  useForegroundPoll(loadActivity, ACTIVITY_POLL_INTERVAL_MS, hasSession && activityMode && inSight);
+  const shown = hasSession && activityMode && inSight;
+  useEffect(() => {
+    if (shown) void loadActivity();
+  }, [shown, loadActivity]);
+  useSpaceChanges("runs", loadActivity, shown);
 
   useEffect(
     () => () => {
@@ -53,5 +63,5 @@ export function useSpaceActivity({
     [activityMode, hasSession],
   );
 
-  return { activity, setActivity, activityRequestId, loadActivity };
+  return { activity, activityStatus, clearActivity, activityRequestId, loadActivity };
 }

@@ -1,3 +1,4 @@
+import { trimEndChars, trimStartChars } from "@rakazo/contracts";
 /**
  * Owner text commands, parsed only in the owner's verified 1:1 conversation.
  * Everything that is not an exact command is a normal message to the bot.
@@ -48,11 +49,10 @@ export function parseMessagingCommand(text: string): MessagingCommand | null {
   if (normalized === "YES") return "approve";
   if (normalized === "NO") return "decline";
   if (normalized === "LEAVE") return "leave";
-  const bare = normalized
-    .replace(/\s+/g, " ")
-    .replace(/^[¡¿]+/u, "")
-    .replace(/[.!?…。！？।]+$/u, "")
-    .trim();
+  const bare = trimEndChars(
+    trimStartChars(normalized.replace(/\s+/g, " "), "¡¿"),
+    ".!?…。！？।",
+  ).trim();
   if (STOP_WORDS.has(bare)) return "stop";
   return null;
 }

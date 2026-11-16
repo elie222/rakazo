@@ -1,17 +1,20 @@
 import type { ArticleTable } from "../provider-article/types";
 import {
+  aboutUsd,
   BOAT,
   BOAT_RAKAZO,
+  boatMonthly,
   E2B_PRO_FEE,
+  EXAMPLE_SIZE,
+  INSTABOX,
+  instaboxProMonthly,
+  monthly,
   PRICES_NOTE,
   RATES,
-  WORKDAY_HOURS,
-  aboutUsd,
-  boatMonthly,
-  monthly,
   railwayComputerMonthly,
   usd,
   vercelMonthly,
+  WORKDAY_HOURS,
 } from "./shared";
 
 const workday = (rate: (typeof RATES)[keyof typeof RATES]) => usd(monthly(rate, WORKDAY_HOURS));
@@ -78,6 +81,17 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
       ],
     },
     {
+      topic: "[InstaBox](/sandboxes/instabox/)",
+      cells: [
+        "Yes",
+        "Firecracker microVM",
+        `${usd(instaboxProMonthly(WORKDAY_HOURS, EXAMPLE_SIZE))} on Pro, the fee, returned as usage credit. Also ${usd(instaboxProMonthly(WORKDAY_HOURS))} at Rakazo's ${INSTABOX.size.vcpus} vCPU / ${INSTABOX.size.gb} GB. Free for one computer`,
+        "8 hours on the free plan, no cap on paid plans",
+        "Memory and disk, when paused",
+        "Your cloud on Enterprise",
+      ],
+    },
+    {
       topic: "[Railway](/sandboxes/railway/)",
       cells: [
         "Yes",
@@ -134,7 +148,14 @@ export const HOSTED_SANDBOXES_TABLE: ArticleTable = {
     },
     {
       topic: "Blaxel",
-      cells: ["No", "microVM", `${workday(RATES.blaxel)}, billed on memory only`, "Not published", "Memory, in standby", "No"],
+      cells: [
+        "No",
+        "microVM",
+        `${workday(RATES.blaxel)}, billed on memory only`,
+        "Not published",
+        "Memory, in standby",
+        "No",
+      ],
     },
   ],
   note: `${PRICES_NOTE} Usage only, before free credits, at each provider's default region. Vercel bills CPU only while it is busy, so its price depends on how hard the bot works.`,

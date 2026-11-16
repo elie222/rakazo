@@ -25,15 +25,18 @@ export function AgentAccessControl({
   bots,
   access,
   disabled,
+  withOneBot,
   onChange,
 }: {
   bots: AccessBot[];
   access: AgentAccess;
   disabled?: boolean;
+  /** Shown also for one bot: every bot then includes later ones, and none is a choice too. */
+  withOneBot?: boolean;
   onChange: (next: AgentAccess) => void;
 }) {
   const chosen = access.allBots ? bots.map((bot) => bot.id) : access.botIds;
-  if (bots.length === 0 || (bots.length === 1 && chosen.length === 1)) return null;
+  if (bots.length === 0 || (!withOneBot && bots.length === 1 && chosen.length === 1)) return null;
   const picked = bots.filter((bot) => chosen.includes(bot.id));
   const summary = access.allBots ? (
     <Trans>All bots</Trans>

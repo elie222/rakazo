@@ -1,5 +1,6 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor, ChatAlert } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -41,6 +42,78 @@ describe("notifications.subscribe", () => {
       );
     } finally {
       controller.abort();
+    }
+  });
+
+  it("interleaves roster signals with alerts on the same stream", async () => {
+    const controller = new AbortController();
+    const roster = deferred();
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await roster.promise;
+      yield alert;
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    const followRosterChanges = vi.fn(async function* () {
+      yield;
+      roster.resolve();
+      await flush();
+      yield;
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect((await iterator.next()).value).toEqual({ type: "alert", alert });
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect(followRosterChanges).toHaveBeenCalledWith(actor.userId, expect.any(AbortSignal));
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it("keeps streaming alerts for half a minute after roster signals fail, then ends", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* () {
+      await flush();
+      yield alert;
+    });
+    const followRosterChanges = vi.fn(async function* (): AsyncGenerator<void> {
+      await Promise.reject(new Error("roster lookup failed"));
+      yield;
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      const first = iterator.next();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await first).value).toEqual({ type: "alert", alert });
+      let ended = false;
+      const drained = (async () => {
+        try {
+          while (!(await iterator.next()).done);
+        } finally {
+          ended = true;
+        }
+      })();
+      drained.catch(() => {});
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(drained).rejects.toThrow("roster lookup failed");
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
     }
   });
 
@@ -139,7 +212,7 @@ describe("desktop push", () => {
   });
 
   it("registers a token only when the server can push to desktops", async () => {
-    const saveDesktop = vi.fn(async () => {});
+    const saveDesktop = vi.fn(async () => true);
     const token = "c".repeat(64);
     const enabled = createRouterClient(
       createRouter({
@@ -152,6 +225,11 @@ describe("desktop push", () => {
       ok: true,
     });
     expect(saveDesktop).toHaveBeenCalledWith("user-1", token, "session-1");
+    // A registration that lost a race with sign-out answers as signed out.
+    saveDesktop.mockResolvedValueOnce(false);
+    await expect(enabled.notifications.registerDesktopPush({ token })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
     const disabled = createRouterClient(
       createRouter({ pushTokens: { saveDesktop }, env: {} } as unknown as RouterDeps),
       { context: { actor, sessionId: "session-1" } },

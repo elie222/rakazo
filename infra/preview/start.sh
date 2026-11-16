@@ -73,7 +73,8 @@ export API_PROXY_TARGET=http://127.0.0.1:3100 WEB_PORT="$PORT"
 export TRUSTED_PROXIES=127.0.0.1 CLIENT_IP_HEADER=fly-client-ip
 export WAKEUP_DRIVER=graphile AGENT_RUNTIME=scripted SANDBOX_PROVIDER=fake
 export CLOUD_AGENT_PROVIDER=emulator PAYMENT_WALLET_PROVIDER=emulator
-export RAKAZO_LIVE_MODEL_CATALOG=off SIGNUPS_ENABLED=false CONTENT_ENCRYPTION=on
+export RAKAZO_LIVE_MODEL_CATALOG=off CONTENT_ENCRYPTION=on
+export DEMO_ACCOUNT_EMAIL=$OWNER_EMAIL DEMO_ACCOUNT_PASSWORD=$OWNER_PASSWORD
 
 migrate() {
   DATABASE_MIGRATION_URL="postgres://rakazo:${PG_OWNER_PASSWORD}@127.0.0.1:5432/rakazo" \
@@ -89,8 +90,14 @@ SQL
 }
 
 shutdown() {
-  kill $(jobs -pr) 2> /dev/null || true
-  wait || true
+  local pids
+  pids=$(jobs -pr)
+  # Name the jobs: after a trapped signal interrupts `wait -n`, a bare `wait` can spin forever in
+  # bash 5.3.
+  if [[ -n $pids ]]; then
+    kill $pids 2> /dev/null || true
+    wait $pids 2> /dev/null || true
+  fi
   stop_database
 }
 trap shutdown EXIT

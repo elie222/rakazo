@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,9 +10,6 @@ import { useThreadSnapshot } from "./thread-history";
 import type { ThreadListScroll } from "./thread-list-scroll";
 import { useThreadPaging } from "./thread-paging";
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
 }));
@@ -31,14 +29,6 @@ const snapshot: MobileSnapshot = {
   run: null,
   messages: [],
 };
-
-function deferred() {
-  let reject!: (error: Error) => void;
-  const promise = new Promise<never>((_resolve, rejectPromise) => {
-    reject = rejectPromise;
-  });
-  return { promise, reject };
-}
 
 function mount() {
   const probe = {} as {
@@ -90,8 +80,8 @@ describe("mobile older message paging", () => {
     vi.mocked(rpc).mockReset();
   });
   it("ignores a failure after clearing and still reports a later current failure", async () => {
-    const first = deferred();
-    const second = deferred();
+    const first = deferred<never>();
+    const second = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const { probe, setError, unmount } = mount();
     try {
@@ -125,7 +115,7 @@ describe("mobile older message paging", () => {
   });
 
   it("ignores a failure after switching threads", async () => {
-    const request = deferred();
+    const request = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(request.promise);
     const { probe, setError, switchThread, unmount } = mount();
     try {
@@ -148,7 +138,7 @@ describe("mobile older message paging", () => {
   });
 
   it("ignores a failure after the pinned window changes", async () => {
-    const request = deferred();
+    const request = deferred<never>();
     vi.mocked(rpc).mockReturnValueOnce(request.promise);
     const { probe, setError, unmount } = mount();
     try {

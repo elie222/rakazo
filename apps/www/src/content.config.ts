@@ -1,7 +1,7 @@
 import { defineCollection } from "astro:content";
+import { readFile } from "node:fs/promises";
 import { glob } from "astro/loaders";
 import { z } from "astro/zod";
-import { readFile } from "node:fs/promises";
 import { DOCS_SLUGS } from "./docs";
 import { rewriteDocsLinks } from "./docs-links";
 
@@ -9,6 +9,8 @@ const blog = defineCollection({
   loader: glob({ pattern: "**/*.md", base: "./src/content/blog" }),
   schema: z.object({
     title: z.string(),
+    /** A shorter title for the Open Graph card. */
+    ogTitle: z.string().optional(),
     description: z.string(),
     published: z.coerce.date(),
     updated: z.coerce.date(),

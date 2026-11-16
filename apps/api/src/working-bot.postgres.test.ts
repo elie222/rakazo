@@ -26,14 +26,10 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
   it("prioritizes running work everywhere, keeps delegated DM progress silent, and stops it", async () => {
     const { prisma, pool } = createDb(process.env.DATABASE_URL!);
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        {
-          provider: "sendblue",
-          address: `working-fixture-${crypto.randomUUID()}`,
-        },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, {
+        provider: "sendblue",
+        address: `working-fixture-${crypto.randomUUID()}`,
+      }),
     );
     const actor: Actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false };
     try {
@@ -96,11 +92,11 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
               (row) => row.botId === bot.id,
             )?.status,
           ).toBe(status);
-          const resolved = await resolveThreadTarget(prisma, actor, { groupId: group.id });
-          expect(
-            resolved.kind === "group" &&
-              resolved.members.find((row) => row.botId === bot.id)?.status,
-          ).toBe(status);
+          const opened = await threadSnapshot(
+            { prisma },
+            await resolveThreadTarget(prisma, actor, { groupId: group.id }),
+          );
+          expect(opened.members?.find((row) => row.botId === bot.id)?.status).toBe(status);
         };
         await assertRosterStatus("running");
         for (const status of ["waiting_input", "waiting_takeover", "leased"] as const) {
@@ -178,11 +174,10 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
   it("names a working routine and notes it in the chat when it is stopped", async () => {
     const { prisma, pool } = createDb(process.env.DATABASE_URL!);
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address: `routine-fixture-${crypto.randomUUID()}` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, {
+        provider: "sendblue",
+        address: `routine-fixture-${crypto.randomUUID()}`,
+      }),
     );
     const actor: Actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false };
     try {

@@ -1,11 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot } from "@rakazo/contracts";
 import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isLeavingSession, startCall, useCallSession } from "../../lib/call-session";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  isLeavingSession,
+  prepareCallAudio,
+  startCall,
+  useCallSession,
+} from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
 
@@ -58,13 +65,13 @@ export function IncomingCall({
   transcribe,
   onAnswered,
 }: {
-  bots: Bot[];
+  bots: readonly Pick<Bot, "id" | "name" | "color" | "avatarSet" | "incomingCall">[];
   transcribe?: boolean;
   onAnswered: (botId: string) => void;
 }) {
   const { t } = useLingui();
   const onCall = useCallSession() !== null;
-  /** Calls this tab already acted on, so a stale roster poll cannot ring them again. */
+  /** Calls this tab already acted on, so a stale roster read cannot ring them again. */
   const [handled, setHandled] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -85,15 +92,15 @@ export function IncomingCall({
   const call = bot?.incomingCall;
   const callId = call?.callId;
 
+  const expiresAt = call?.expiresAt;
   useEffect(() => {
-    if (!callId) return;
-    setNow(Date.now());
-    const timer = setTimeout(
-      () => setNow(Date.now()),
-      Math.max(0, Date.parse(call.expiresAt) - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [callId, call?.expiresAt]);
+    if (callId) setNow(Date.now());
+  }, [callId, expiresAt]);
+  const untilExpiry = useMemo(
+    () => (callId && expiresAt ? Math.max(0, Date.parse(expiresAt) - Date.now()) : null),
+    [callId, expiresAt],
+  );
+  useTimeout(() => setNow(Date.now()), untilExpiry, `${callId}:${expiresAt}`);
 
   useEffect(() => {
     if (!callId) return;
@@ -109,26 +116,23 @@ export function IncomingCall({
     };
   }, [callId]);
 
-  useEffect(() => {
-    const notify = () => {
-      if (!bot || !call || notified.current.has(call.callId)) return;
-      if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
-      if (Notification.permission !== "granted") return;
-      const notice = new Notification(t`${bot.name} is calling you`, {
-        tag: `call:${call.callId}`,
-        requireInteraction: true,
-      });
-      notification.current = notice;
-      notified.current.add(call.callId);
-      notice.onclick = () => {
-        window.focus();
-        notice.close();
-      };
+  const notify = () => {
+    if (!bot || !call || notified.current.has(call.callId)) return;
+    if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    const notice = new Notification(t`${bot.name} is calling you`, {
+      tag: `call:${call.callId}`,
+      requireInteraction: true,
+    });
+    notification.current = notice;
+    notified.current.add(call.callId);
+    notice.onclick = () => {
+      window.focus();
+      notice.close();
     };
-    notify();
-    document.addEventListener("visibilitychange", notify);
-    return () => document.removeEventListener("visibilitychange", notify);
-  }, [bot, call, t]);
+  };
+  useEffect(notify, [bot, call, t]);
+  useEventListener(document, "visibilitychange", notify);
 
   if (!bot || !call) return null;
 
@@ -154,6 +158,7 @@ export function IncomingCall({
 
   const answer = async () => {
     if (isLeavingSession()) return;
+    prepareCallAudio();
     setBusy(true);
     setError(null);
     const target = { botId: bot.id, callId: call.callId };

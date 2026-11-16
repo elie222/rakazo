@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
@@ -37,8 +38,6 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async (spaceId: string) => ({
     apiBase: "https://example.invalid",
@@ -82,6 +81,7 @@ import {
   startIncomingCalls,
   stopIncomingCalls,
 } from "./incoming-calls";
+import { registerCallPushToken } from "./push";
 
 const bot = { id: "bot-1", spaceId: "space-1", name: "Caller", color: "", avatarSet: undefined };
 const block = () => ({
@@ -95,15 +95,10 @@ const block = () => ({
 const tick = async () => {
   for (let i = 0; i < 15; i++) await Promise.resolve();
 };
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 let stop: (() => void) | undefined;
 beforeEach(() => {
+  // Retry and reconnect waits are jittered; pin them to their unjittered values.
+  vi.spyOn(Math, "random").mockReturnValue(0);
   vi.useFakeTimers();
   fake.generation = 1;
   fake.locked = false;
@@ -246,6 +241,38 @@ describe("mobile incoming calls", () => {
       ),
     );
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-roster", true);
+  });
+  it("answers a native call without waiting for VoIP token registration", async () => {
+    let settled = false;
+    let releaseRegistration = () => undefined;
+    vi.mocked(registerCallPushToken).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRegistration = () => {
+            settled = true;
+            resolve();
+          };
+        }),
+    );
+    fake.native.incomingState.mockResolvedValue({
+      token: "voip-token",
+      actions: [
+        { action: "answer", callId: "call-roster", botId: bot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    stop = startIncomingCalls();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.rpc).toHaveBeenCalledWith(
+      "threads/answerCall",
+      { botId: bot.id, callId: "call-roster" },
+      expect.anything(),
+    );
+    expect(registerCallPushToken).toHaveBeenCalledWith({ voipToken: "voip-token" });
+    expect(fake.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(registerCallPushToken).mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(settled).toBe(false);
+    releaseRegistration();
   });
   const pendingNativeAnswer = (expiresAt = block().expiresAt) =>
     fake.native.incomingState.mockResolvedValue({

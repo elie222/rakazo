@@ -30,7 +30,8 @@ export type DesktopPushTarget = { id: string; token: string };
 
 /** Account-wide registrations, shared by API replicas and notification workers. */
 export interface PushTokenStore {
-  saveDesktop?(userId: string, token: string, sessionId: string): Promise<void>;
+  /** False when the session ended before the registration could commit, as on sign-out. */
+  saveDesktop?(userId: string, token: string, sessionId: string): Promise<boolean>;
   /** The desktop tokens to push to, leaving out apps showing this Space's alerts themselves. */
   desktopTargets?(userId: string, spaceId: string): Promise<DesktopPushTarget[]>;
   /** Whether any desktop app would get a push for this Space, without decrypting tokens. */
@@ -220,7 +221,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
     );
   }
 
-  async saveDesktop(userId: string, token: string, sessionId: string): Promise<void> {
+  async saveDesktop(userId: string, token: string, sessionId: string): Promise<boolean> {
     const value = token.trim();
     if (!value) throw new Error("Push token is empty");
     // One physical token has one owner, so its digest is the row id across accounts.
@@ -236,7 +237,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
       },
       { recordId: `desktop-push:${id}` },
     );
-    await runAsSystem("register a desktop notification token", () =>
+    return runAsSystem("register a desktop notification token", () =>
       withTransactionRetry(() =>
         this.prisma.$transaction(async (tx) => {
           for (const key of [`push-user:${userId}`, `push-desktop:${id}`].sort())
@@ -245,7 +246,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
           const sessions = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "session" WHERE id = ${sessionId} AND "userId" = ${userId}
           AND "expiresAt" > CURRENT_TIMESTAMP FOR UPDATE`;
-          if (!sessions.length) throw new PushSessionEndedError();
+          if (!sessions.length) return false;
           const data = { userId, sessionId, ciphertext: sealed.ciphertext };
           const existing = await tx.desktopPushDevice.findUnique({
             where: { id },
@@ -284,6 +285,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
             await tx.desktopPushDevice.deleteMany({
               where: { userId, id: { in: kept.map((row) => row.id) } },
             });
+          return true;
         }),
       ),
     );

@@ -7,6 +7,11 @@ import {
   truncatePlainText,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "@rakazo/core";
+import {
+  OMITTED_AFTER_USE,
+  OMITTED_BEFORE_USE,
+  OMITTED_TEXT_BEFORE_USE,
+} from "./runtime-context.prompt.js";
 import type { VerbatimMcpServers } from "./verbatim-mcp-result.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
@@ -257,16 +262,6 @@ function shortenHistoryResult(
   }
   return encoded;
 }
-/**
- * A result cut before the model read it is missing evidence. A result cut after the model read
- * it is not: saying "unavailable" there makes a model retract statements it made from it.
- */
-const OMITTED_BEFORE_USE =
-  "[Tool result truncated to fit context; omitted evidence is unavailable.]";
-const OMITTED_TEXT_BEFORE_USE =
-  "[Tool result truncated to fit context; inspect original evidence before claiming omitted details.]";
-const OMITTED_AFTER_USE =
-  "[Earlier result shortened after you read it; statements made from it stand. Re-run the tool only if you need the omitted text.]";
 
 /** Keep control fields and JSON shape while marking omitted long evidence strings. */
 function shortenStructuredResult(

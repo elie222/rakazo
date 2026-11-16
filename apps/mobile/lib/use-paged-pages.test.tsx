@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -6,9 +7,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "./api";
 import { usePagedPages } from "./use-paged-pages";
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("expo-router", async () => {
@@ -21,13 +19,6 @@ let hook: ReturnType<typeof usePagedPages>;
 function Probe() {
   hook = usePagedPages({ botId: "b1" });
   return null;
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 const items = () => (hook.listed.status === "ready" ? hook.listed.items.map((p) => p.id) : []);
 

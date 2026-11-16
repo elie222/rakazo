@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configureProviderTransactionPool,
@@ -6,14 +7,6 @@ import {
   providerTransactionSlots,
   runProviderTransaction,
 } from "./provider-transactions.js";
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 afterEach(() => {
   vi.useRealTimers();

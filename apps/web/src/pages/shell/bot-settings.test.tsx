@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 
 import type { Bot } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -31,7 +34,8 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
     <h3 data-variant={variant} {...props} />
   ),
@@ -42,8 +46,6 @@ vi.mock("@rakazo/ui-web", () => ({
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
   Input: (props: ComponentProps<"input">) => <input {...props} />,
   Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
     checked,
     onCheckedChange,
@@ -60,33 +62,24 @@ vi.mock("@rakazo/ui-web", () => ({
       {...props}
     />
   ),
-  Toggle: ({
-    pressed: _pressed,
-    onPressedChange: _onPressedChange,
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    variant: _variant,
     ...props
-  }: ComponentProps<"button"> & {
-    pressed?: boolean;
-    onPressedChange?: (pressed: boolean) => void;
-    variant?: string;
-  }) => <button type="button" {...props} />,
-  Tabs: ({
-    value: _value,
-    onValueChange: _onValueChange,
-    ...props
-  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
-    <div {...props} />
-  ),
-  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
-  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
-    <button type="button" role="tab" {...props} />
-  ),
-  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
-    <div {...props} />
-  ),
+  }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
+  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverTrigger: (props: ComponentProps<"button">) => <button type="button" {...props} />,
+  PopoverContent: () => null,
+  ListSearchInput: () => null,
 }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
+vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
 
 import { BotSettings } from "./bot-panel";
 
@@ -109,6 +102,7 @@ const bot = {
   preview: "",
   status: "idle",
   computerMode: "dedicated",
+  fleetManagement: true,
   updatedAt: "2026-09-01T00:00:00.000Z",
   createdAt: "2026-09-01T00:00:00.000Z",
   voiceId: null,
@@ -126,12 +120,6 @@ const bot = {
 let container: HTMLDivElement;
 let root: Root;
 let queryClient: QueryClient;
-
-async function flush() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -161,12 +149,15 @@ function setField(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-async function submitToolName(input: HTMLSelectElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(input, value);
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await flush();
+async function toolOptions(picker: HTMLElement) {
+  await act(async () => picker.click());
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+}
+
+async function submitToolName(picker: HTMLElement, label: string) {
+  const option = (await toolOptions(picker)).find((entry) => entry.textContent === label);
+  await act(async () => option?.click());
+  await act(flush);
 }
 
 async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, currentBot = bot) {
@@ -176,7 +167,6 @@ async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, curre
         <BotSettings
           focusModel={1}
           bot={currentBot}
-          memoryProviderConfigured={false}
           onSave={onSave}
           onExport={async () => undefined}
           onClear={() => undefined}
@@ -184,28 +174,49 @@ async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, curre
       </QueryClientProvider>,
     );
   });
-  await flush();
+  await act(flush);
 }
 
-describe("BotSettings help", () => {
-  it("shows the management subtitle without changing the management switch", async () => {
-    const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-    await renderSettings(onSave, { ...bot, fleetManagement: false });
-    const label = [...container.querySelectorAll("label")].find(
-      (entry) => entry.textContent === "Manage other bots",
+describe("BotSettings rarely changed settings", () => {
+  const rows = ["-auto-speak", "-daily-check-ins", "-cross-space", "-fleet-management"];
+
+  it("hides them while the bot keeps the defaults", async () => {
+    await renderSettings(
+      vi.fn(async () => undefined),
+      { ...bot, disabledBuiltinTools: [] },
     );
-    const toggle = document.getElementById(label?.htmlFor ?? "");
+    for (const row of rows) expect(container.querySelector(`[id$="${row}"]`)).toBeNull();
+    expect(container.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
+  });
+
+  it("shows each one the bot has changed, and keeps it after it is put back", async () => {
+    const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+    await renderSettings(onSave, {
+      ...bot,
+      autoSpeak: true,
+      dailyCheckIns: false,
+      crossSpaceCommunication: false,
+      fleetManagement: false,
+    });
     const speechToggle = container.querySelector<HTMLButtonElement>('[id$="-auto-speak"]');
     const speechRow = speechToggle?.closest("label");
     expect(speechRow?.htmlFor).toBe(speechToggle?.id);
-    expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
-    expect(speechRow?.lastElementChild).toBe(speechToggle);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.querySelector('[aria-label="About Manage other bots"]')).toBeNull();
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(onSave).not.toHaveBeenCalled();
-    await act(async () => toggle?.click());
-    expect(onSave).toHaveBeenCalledWith({ fleetManagement: true });
+    expect(speechRow?.textContent).toBe("Read replies aloud");
+    expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
+      "Daily check-ins on unfinished work",
+    );
+    for (const [row, patch] of [
+      ["-fleet-management", { fleetManagement: true }],
+      ["-cross-space", { crossSpaceCommunication: true }],
+      ["-daily-check-ins", { dailyCheckIns: true }],
+    ] as const) {
+      const toggle = container.querySelector<HTMLButtonElement>(`[id$="${row}"]`)!;
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      await act(async () => toggle.click());
+      await flush();
+      expect(onSave).toHaveBeenLastCalledWith(patch);
+      expect(container.querySelector(`[id$="${row}"]`)?.getAttribute("aria-checked")).toBe("true");
+    }
   });
 });
 
@@ -221,7 +232,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       save.click();
     });
-    await flush();
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("disabledBuiltinTools");
@@ -236,7 +247,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       toggle.click();
     });
-    await flush();
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ disabledBuiltinTools: [] }));
   });
@@ -246,8 +257,8 @@ describe("BotSettings disabled tools", () => {
     await renderSettings(onSave);
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["web_fetch"] });
     expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     expect(onSave.mock.calls[0]?.[0].disabledBuiltinTools).toEqual(["web_fetch", "web_search"]);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[id$="-disabled-web_fetch"]')!.click();
@@ -258,29 +269,28 @@ describe("BotSettings disabled tools", () => {
   it.each([false, true])(
     "rebases a refresh during an in-flight save (reject: %s)",
     async (reject) => {
-      let release: (() => void) | undefined;
+      let release: Deferred | undefined;
       const onSave = vi
         .fn<(patch: SavePatch) => Promise<void>>()
         .mockImplementationOnce(async () => {
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
+          release = deferred();
+          await release.promise;
           if (reject) throw new Error("Network failed");
         })
         .mockResolvedValue(undefined);
       await renderSettings(onSave);
-      const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-      await submitToolName(input, "web_search");
+      const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+      await submitToolName(input, "Web search");
       await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["web_fetch"] });
       await act(async () => {
-        release?.();
+        release?.resolve();
       });
-      await flush();
+      await act(flush);
       expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
       expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
       if (reject) {
         expect(container.querySelector('[id$="-disabled-web_search"]')).toBeNull();
-        await submitToolName(input, "web_search");
+        await submitToolName(input, "Web search");
       }
       expect(onSave.mock.calls[1]?.[0].disabledBuiltinTools).toEqual(["web_fetch", "web_search"]);
       expect(container.querySelector('[id$="-disabled-web_search"]')).not.toBeNull();
@@ -288,26 +298,25 @@ describe("BotSettings disabled tools", () => {
   );
 
   it("rebases queued edits and a removal on a refresh during a save", async () => {
-    let release: (() => void) | undefined;
+    let release: Deferred | undefined;
     const onSave = vi
       .fn<(patch: SavePatch) => Promise<void>>()
       .mockImplementationOnce(async () => {
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        release = deferred();
+        await release.promise;
       })
       .mockResolvedValue(undefined);
     await renderSettings(onSave);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[id$="-disabled-remember"]')!.click();
     });
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["remember", "web_fetch"] });
     await act(async () => {
-      release?.();
+      release?.resolve();
     });
-    await flush();
+    await act(flush);
     expect(onSave.mock.calls.map(([patch]) => patch.disabledBuiltinTools)).toEqual([
       [],
       ["web_fetch"],
@@ -327,8 +336,8 @@ describe("BotSettings disabled tools", () => {
     expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["remember"] });
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     expect(onSave.mock.calls[1]?.[0].disabledBuiltinTools).toEqual(["remember", "web_search"]);
   });
 
@@ -339,16 +348,16 @@ describe("BotSettings disabled tools", () => {
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
+    await submitToolName(input, "Web search");
 
     expect(container.textContent).toContain("Network failed");
     expect(container.textContent).toContain("Remember");
     expect(container.querySelector('[id$="-disabled-web_search"]')).toBeNull();
 
     fail = false;
-    await submitToolName(input, "web_search");
+    await submitToolName(input, "Web search");
 
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave.mock.calls[1]?.[0]).toEqual(
@@ -369,7 +378,7 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       toggle.click();
     });
-    await flush();
+    await act(flush);
 
     expect(container.textContent).toContain("Network failed");
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();
@@ -377,32 +386,31 @@ describe("BotSettings disabled tools", () => {
   });
 
   it("keeps a newer disable when an earlier save fails", async () => {
-    let releaseFirst: (() => void) | undefined;
+    let releaseFirst: Deferred | undefined;
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async (patch) => {
       const tools = patch.disabledBuiltinTools ?? [];
       if (tools.includes("web_search") && !tools.includes("web_fetch")) {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        releaseFirst = deferred();
+        await releaseFirst.promise;
         throw new Error("Network failed");
       }
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
-    expect(releaseFirst).toBeTypeOf("function");
-    await submitToolName(input, "web_fetch");
+    await submitToolName(input, "Web search");
+    expect(releaseFirst).toBeDefined();
+    await submitToolName(input, "Web fetch");
 
     expect(container.querySelector('[id$="-disabled-web_search"]')).not.toBeNull();
     expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
 
     await act(async () => {
-      releaseFirst?.();
+      releaseFirst?.resolve();
     });
-    await flush();
-    await flush();
+    await act(flush);
+    await act(flush);
 
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave.mock.calls[1]?.[0]).toEqual(
@@ -416,27 +424,26 @@ describe("BotSettings disabled tools", () => {
   });
 
   it("returns to the last saved list when a later disable also fails", async () => {
-    let releaseFirst: (() => void) | undefined;
+    let releaseFirst: Deferred | undefined;
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async (patch) => {
       const tools = patch.disabledBuiltinTools ?? [];
       if (tools.includes("web_search") && !tools.includes("web_fetch")) {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        releaseFirst = deferred();
+        await releaseFirst.promise;
       }
       throw new Error("Network failed");
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
-    await submitToolName(input, "web_fetch");
+    await submitToolName(input, "Web search");
+    await submitToolName(input, "Web fetch");
     await act(async () => {
-      releaseFirst?.();
+      releaseFirst?.resolve();
     });
-    await flush();
-    await flush();
+    await act(flush);
+    await act(flush);
 
     expect(container.textContent).toContain("Network failed");
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();
@@ -446,14 +453,16 @@ describe("BotSettings disabled tools", () => {
 
   it("offers only known tools and excludes tools already disabled", async () => {
     await renderSettings(vi.fn(async () => undefined));
-    const picker = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    expect([...picker.options].map((option) => option.value)).toContain("web_search");
-    expect([...picker.options].find((option) => option.value === "web_search")?.textContent).toBe(
-      "Web search",
-    );
-    expect([...picker.options].map((option) => option.value)).not.toContain("remember");
-    await submitToolName(picker, "web_search");
-    expect([...picker.options].map((option) => option.value)).not.toContain("web_search");
+    const picker = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    const labels = async () => (await toolOptions(picker)).map((option) => option.textContent);
+    const offered = await labels();
+    expect(offered).toContain("Web search");
+    expect(offered).not.toContain("Remember");
+    await act(async () => picker.click());
+    await submitToolName(picker, "Web search");
+    const remaining = await labels();
+    expect(remaining).toContain("Web fetch");
+    expect(remaining).not.toContain("Web search");
   });
 });
 
@@ -473,40 +482,4 @@ it("omits projected identity values on unrelated saves but commits explicit inli
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
   expect(onSave.mock.calls[1]?.[0]).toMatchObject({ name: "SupportBot2026" });
-});
-
-it("uses section headings without repeating notification or model row labels", async () => {
-  await renderSettings(vi.fn(async () => undefined));
-  const heading = [...container.querySelectorAll("h3")].find(
-    (node) => node.textContent === "Notifications",
-  );
-  expect(heading).toBeDefined();
-  expect(heading?.dataset.variant).toBe("label");
-  const notification = container.querySelector('label[id$="-notify-finish-label"]');
-  expect(notification?.textContent?.trim()).toBe("When it finishes or needs input");
-  const model = container.querySelector('label[for$="-model"]');
-  expect(model?.className).toBe("sr-only");
-});
-
-it("treats cross-space communication as on unless turned off", async () => {
-  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave);
-  const toggle = container.querySelector<HTMLButtonElement>('[id$="-cross-space"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  await act(async () => toggle?.click());
-  await flush();
-  expect(onSave).toHaveBeenCalledWith({ crossSpaceCommunication: false });
-});
-
-it("defaults daily check-ins on and saves the opt-out", async () => {
-  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave);
-  const toggle = container.querySelector<HTMLButtonElement>('[id$="-daily-check-ins"]');
-  expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
-    "Daily check-ins on unfinished work",
-  );
-  await act(async () => toggle?.click());
-  await flush();
-  expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
 });

@@ -1,4 +1,4 @@
-import type { ByokTier, ComputerSize, SandboxKind } from "@rakazo/contracts";
+import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
@@ -44,35 +44,37 @@ const COMPUTER_USE: Record<ComputerSize, string> = {
   xlarge: "big builds and many apps at once",
 };
 
-/** A computer's hours over its size, with the size explained on hover. */
-function computerCell(hours: string, size: ComputerSize) {
+/** The exact hours and size behind a computer cell, shown on hover. */
+function computerDetail(hours: string, size: ComputerSize) {
   const specs = COMPUTER_SIZE_SPECS[size];
-  return {
-    label: `${hours}\n${specs.vcpus} vCPU\n${specs.memoryGb} GB RAM`,
-    detail: `${specs.vcpus} processor cores and ${specs.memoryGb} GB of memory: ${COMPUTER_USE[size]}`,
-  };
+  return `${hours} a month, ${specs.vcpus} vCPU, ${specs.memoryGb} GB RAM: ${COMPUTER_USE[size]}`;
 }
+
+/** Ends each computer hover, so the hours don't read as a meter on everything a bot does. */
+const COMPUTER_TIME_NOTE =
+  "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
 
 /** Computer hours a monthly credit plan of `cents` includes. */
 function creditPlanHours(cents: number) {
   return computerHours((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
 }
 
-/** Display names for every sandbox a self-hosted deployment can use; typed so a new kind must be named. */
-const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, string> = {
-  docker: "Docker",
-  kubernetes: "Kubernetes",
-  incus: "Incus",
-  boat: "Boat",
-  boxd: "Boxd",
-  createos: "CreateOS",
-  daytona: "Daytona",
-  e2b: "E2B",
-  novita: "Novita",
-  railway: "Railway",
-  wuying: "Wuying",
-};
-const SANDBOX_PROVIDERS = Object.values(SANDBOX_NAMES);
+/** Display names for every sandbox a self-hosted deployment can use. */
+const SANDBOX_PROVIDERS = [
+  "Docker",
+  "Kubernetes",
+  "Incus",
+  "Boat",
+  "Boxd",
+  "CreateOS",
+  "Daytona",
+  "E2B",
+  "InstaBox",
+  "Novita",
+  "Railway",
+  "Wuying",
+  "Apple container",
+];
 
 const CREDITS_PRICE = `From ${dollars(MODEL_CREDIT_AMOUNTS[0])}/mo`;
 
@@ -90,8 +92,7 @@ const SELF_HOSTED_PLAN: PricingPlan = {
 
 const OWN_MODEL_PLAN: PricingPlan = {
   name: "Your model",
-  price:
-    STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
+  price: STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
   note:
     STANDARD.annualPriceCents === null
       ? undefined
@@ -135,12 +136,26 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   return [
     {
       name: terms.name,
+      monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
       computerSize: terms.computerSize,
       hours: computerHours(terms.computerAllowanceCents),
     },
   ];
 });
+
+const STANDARD_HOURS = computerHours(STANDARD.computerAllowanceCents);
+const STANDARD_VCPUS = COMPUTER_SIZE_SPECS[STANDARD.computerSize].vcpus;
+
+/** A tier's computer as a multiple of Standard's, so the table compares plans without a meter. */
+function tierComputerCell(tier: (typeof TIERS)[number]): PricingCell {
+  const usage = tier.hours / STANDARD_HOURS;
+  const power = COMPUTER_SIZE_SPECS[tier.computerSize].vcpus / STANDARD_VCPUS;
+  return {
+    label: usage === 1 ? "Included" : `${usage}× the usage\n${power}× the power`,
+    detail: `${computerDetail(`${tier.hours} hours`, tier.computerSize)}. ${COMPUTER_TIME_NOTE}`,
+  };
+}
 
 const COLUMN_COUNT = TIERS.length + 2;
 const included = (cell: PricingCell): PricingCell[] => Array(COLUMN_COUNT).fill(cell);
@@ -156,7 +171,11 @@ export const PRICING_COMPARISON = {
     ...TIERS.map((tier) => ({
       name: tier.name,
       price: tier.price,
-      action: { ...OWN_MODEL_PLAN.action, label: "Start trial", ariaLabel: `Start ${tier.name} trial` },
+      action: {
+        ...OWN_MODEL_PLAN.action,
+        label: "Start trial",
+        ariaLabel: `Start ${tier.name} trial`,
+      },
     })),
     { name: CREDITS_PLAN.name, price: CREDITS_PRICE, action: CREDITS_PLAN.action },
   ],
@@ -191,17 +210,14 @@ export const PRICING_COMPARISON = {
     { feature: "Integrations and MCP", cells: included(true) },
     {
       feature: "Bot computer",
-      hint: "A computer a bot can use to run code, edit files, and browse. Most tasks don't need one, and it sleeps when idle, so hours go a long way.",
+      hint: "A computer your bot can use to run code, edit files, and browse.",
       cells: [
-        "Unlimited\nAny size",
-        ...TIERS.map((tier) => computerCell(`${tier.hours} hours/mo`, tier.computerSize)),
-        (() => {
-          const cell = computerCell(`From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours/mo`, STANDARD.computerSize);
-          return {
-            ...cell,
-            detail: `${cell.detail}. Hours grow with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)}`,
-          };
-        })(),
+        "Unlimited",
+        ...TIERS.map(tierComputerCell),
+        {
+          label: "Included",
+          detail: `${computerDetail(`From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours`, STANDARD.computerSize)}. Hours grow with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)}. ${COMPUTER_TIME_NOTE}`,
+        },
       ],
     },
     { feature: "EU hosting", cells: ["Your choice", ...TIERS.map(() => true), true] },
@@ -219,6 +235,20 @@ export const PRICING_COMPARISON = {
     { feature: "Open source", cells: included(true) },
   ] satisfies { feature: string; hint?: string; cells: PricingCell[] }[],
 };
+
+/** Every plan's price, for structured data. */
+export const PRICE_OFFERS: readonly (
+  | { name: string; monthlyCents: number }
+  | { name: string; fromMonthlyCents: number; description: string }
+)[] = [
+  { name: SELF_HOSTED_PLAN.name, monthlyCents: 0 },
+  ...TIERS.map((tier) => ({ name: tier.name, monthlyCents: tier.monthlyCents })),
+  {
+    name: CREDITS_PLAN.name,
+    fromMonthlyCents: MODEL_CREDIT_AMOUNTS[0],
+    description: CREDITS_PLAN.note ?? "",
+  },
+];
 
 function markdownCell(cell: PricingCell) {
   if (cell === true) return "Yes";

@@ -1,12 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerProviderSettings as Settings } from "@rakazo/contracts";
-import { Button, Field, FieldLabel, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input, OptionSelect } from "@rakazo/ui-web";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { useEffect, useId, useState } from "react";
+import { useSave, useSpaceQueries } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
@@ -14,8 +16,8 @@ import { SuccessPop } from "./ai/primitives";
 type Draft = { provider: string; values: Record<string, string> };
 
 // The RPC client hands out a new object on every property read, so pick by scope, never hold it.
-function settingsApi(scope: "deployment" | "account") {
-  return scope === "account" ? rpc.computerProvider.account : rpc.computerProvider;
+function settingsApi(client: RpcClient, scope: "deployment" | "account") {
+  return scope === "account" ? client.computerProvider.account : client.computerProvider;
 }
 
 // Field labels come from the server in English; translate the ones the registry uses.
@@ -60,13 +62,27 @@ export function ComputerProviderSettings({
   const selectId = useId();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const queries = useSpaceQueries();
+  const save = useSave({
+    save: (next: Draft, client) => settingsApi(client, scope).update(next),
+    // The deployment's provider is part of the account read.
+    stale: scope === "deployment" ? [queries.me.key()] : [],
+    onSaved: (next) => {
+      setSettings(next);
+      setDraft(draftFrom(next));
+      setSaved(true);
+      // An account's choice covers only its Team Computers, never what the deployment runs.
+      if (scope === "deployment")
+        onProviderChange?.(next.provider === "default" ? next.defaultProvider : next.provider);
+    },
+  });
+  const pending = save.pending;
 
   useEffect(() => {
     let alive = true;
-    settingsApi(scope)
+    settingsApi(rpc, scope)
       .get()
       .then((next) => {
         if (!alive) return;
@@ -74,7 +90,7 @@ export function ComputerProviderSettings({
         setDraft(draftFrom(next));
       })
       .catch((caught: unknown) => {
-        if (alive) setError(errorText(caught, t`Could not load computer settings`));
+        if (alive) setLoadError(errorText(caught, t`Could not load computer settings`));
       });
     return () => {
       alive = false;
@@ -82,9 +98,9 @@ export function ComputerProviderSettings({
   }, [scope, t]);
 
   if (!draft || !settings) {
-    return error ? (
+    return loadError ? (
       <p role="alert" className="mt-3 text-body-sm text-destructive">
-        {error}
+        {loadError}
       </p>
     ) : null;
   }
@@ -93,25 +109,6 @@ export function ComputerProviderSettings({
     setSaved(false);
     setDraft({ ...draft, ...patch });
   };
-  async function save() {
-    if (!draft || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const next = await settingsApi(scope).update(draft);
-      setSettings(next);
-      setDraft(draftFrom(next));
-      setSaved(true);
-      // An account's choice covers only its Team Computers, never what the deployment runs.
-      if (scope === "deployment")
-        onProviderChange?.(next.provider === "default" ? next.defaultProvider : next.provider);
-    } catch (caught) {
-      setError(errorText(caught, t`Could not save computer settings`));
-    } finally {
-      setPending(false);
-    }
-  }
-
   const descriptor = settings.providers.find((provider) => provider.id === draft.provider);
   if (settings.providers.length === 0) return null;
   return (
@@ -121,7 +118,7 @@ export function ComputerProviderSettings({
         data-testid="computer-provider-settings"
         onSubmit={(event) => {
           event.preventDefault();
-          void save();
+          save.run(draft);
         }}
       >
         {/* Edits made while a save is in flight would be replaced by what it saved. */}
@@ -130,24 +127,23 @@ export function ComputerProviderSettings({
             <FieldLabel htmlFor={selectId}>
               <Trans>New computers run on</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect
               id={selectId}
               value={draft.provider}
-              onChange={(event) =>
+              onValueChange={(provider) =>
                 set({
-                  provider: event.target.value,
-                  values: event.target.value === settings.provider ? settings.values : {},
+                  provider,
+                  values: provider === settings.provider ? settings.values : {},
                 })
               }
-              className="w-full"
-            >
-              <NativeSelectOption value="default">{t`Default`}</NativeSelectOption>
-              {settings.providers.map((provider) => (
-                <NativeSelectOption key={provider.id} value={provider.id}>
-                  {provider.displayName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: "default", label: t`Default` },
+                ...settings.providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.displayName,
+                })),
+              ]}
+            />
           </Field>
           {descriptor?.fields.map((field) => {
             const saved =
@@ -163,19 +159,17 @@ export function ComputerProviderSettings({
             return field.kind === "select" ? (
               <Field key={field.key}>
                 <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
-                <NativeSelect
+                <OptionSelect
                   id={`${selectId}-${field.key}`}
-                  value={draft.values[field.key] ?? ""}
-                  onChange={(event) => change(event.target.value)}
+                  value={draft.values[field.key] || (field.required ? null : "")}
+                  onValueChange={change}
                   required={field.required}
-                >
-                  <NativeSelectOption value="" />
-                  {field.options?.map((option) => (
-                    <NativeSelectOption key={option.value} value={option.value}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  className="w-fit"
+                  options={[
+                    ...(field.required ? [] : [{ value: "", label: t`Default` }]),
+                    ...(field.options ?? []),
+                  ]}
+                />
               </Field>
             ) : (
               <TextField
@@ -191,9 +185,9 @@ export function ComputerProviderSettings({
             );
           })}
         </fieldset>
-        {error ? (
+        {save.error ? (
           <p role="alert" className="text-body-sm text-destructive">
-            {error}
+            {errorText(save.error, t`Could not save computer settings`)}
           </p>
         ) : null}
         <div className="flex items-center gap-3">

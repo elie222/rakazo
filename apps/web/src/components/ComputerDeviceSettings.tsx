@@ -1,9 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
+import { useSave } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
@@ -27,13 +29,21 @@ async function thisComputerAccess(
   };
 }
 
+/**
+ * A private-LAN HTTP page never becomes the paired computer. `select` drops that origin, so a
+ * switch here would call `setAllowed` and do nothing.
+ */
+function plainHttpDesktop(desktop: RakazoDesktop | undefined): boolean {
+  if (!desktop?.device || typeof window === "undefined") return false;
+  return secureHttpOrigin(window.location.origin) === null;
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
   const desktop = desktopBridge();
+  const plainHttp = plainHttpDesktop(desktop);
   const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
   const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const switchId = useId();
 
   const load = useCallback(async () => {
@@ -50,24 +60,27 @@ export function ComputerDeviceSettings() {
     void load();
   }, [load]);
 
-  async function run(action: () => Promise<unknown>, failure: string) {
-    setPending(true);
-    setError(null);
-    try {
-      await action();
-    } catch {
-      setError(failure);
-    } finally {
-      await load();
-      setPending(false);
-    }
-  }
+  // Neither change goes through the API: one is the desktop app's, the other a device route.
+  const change = useSave({
+    save: async ({ action }: { action: () => Promise<unknown>; failure: string }) => {
+      try {
+        await action();
+      } finally {
+        await load();
+      }
+    },
+  });
+  const pending = change.pending;
 
-  if (devices.length === 0 && !thisComputer) return null;
+  if (devices.length === 0 && !thisComputer && !plainHttp) return null;
 
   return (
     <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
-      {thisComputer ? (
+      {plainHttp ? (
+        <p className="px-4 py-3 text-body-sm text-muted-foreground">
+          <Trans>Plain HTTP does not pair this computer. Use HTTPS, or a loopback server.</Trans>
+        </p>
+      ) : thisComputer ? (
         <SettingsRow
           label={
             <Label htmlFor={switchId} className="text-body font-normal text-foreground">
@@ -81,7 +94,10 @@ export function ComputerDeviceSettings() {
               checked={thisComputer.allowed}
               disabled={pending}
               onCheckedChange={(allowed) =>
-                void run(() => thisComputer.setAllowed(allowed), t`Could not change`)
+                change.run({
+                  action: () => thisComputer.setAllowed(allowed),
+                  failure: t`Could not change`,
+                })
               }
             />
           }
@@ -105,16 +121,21 @@ export function ComputerDeviceSettings() {
               aria-label={t`Remove ${device.name}`}
               disabled={pending}
               className="text-destructive hover:text-destructive"
-              onClick={() => void run(() => removeUserDevice(device.deviceId), t`Could not remove`)}
+              onClick={() =>
+                change.run({
+                  action: () => removeUserDevice(device.deviceId),
+                  failure: t`Could not remove`,
+                })
+              }
             >
               <Trash2 />
             </Button>
           }
         />
       ))}
-      {error ? (
+      {change.error ? (
         <p role="alert" className="px-4 py-3 text-body-sm text-destructive">
-          {error}
+          {change.input?.failure}
         </p>
       ) : null}
     </SettingsGroup>

@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import {
+  abortableDelay,
+  createMessagingLinkGuard,
+  isRetryableError,
+  messagingConnectOptions,
+} from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -8,19 +14,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
-import { useSpaceQueries } from "../lib/query";
+import { useQueryUserId, useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { useEventListener } from "../lib/use-event-listener";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
 const LINK_POLL_MS = 3_000;
@@ -43,6 +49,17 @@ export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
+  const queryClient = useQueryClient();
+  const userId = useQueryUserId();
+  const linkGuard = useMemo(
+    () => createMessagingLinkGuard(queryClient, userId ?? ""),
+    [queryClient, userId],
+  );
+  const issuingLink = useSyncExternalStore(
+    linkGuard.subscribe,
+    linkGuard.isPending,
+    linkGuard.isPending,
+  );
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
@@ -53,7 +70,6 @@ export function MessagingSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const statusOptions = queries.messaging.status.queryOptions();
   const channelsOptions = queries.messaging.channels.list.queryOptions();
   const connectionsOptions = queries.messaging.connections.list.queryOptions();
@@ -95,58 +111,50 @@ export function MessagingSettingsPanel() {
     ]);
   }
 
+  const untilLinkExpiry = useMemo(
+    () => (linkRequest ? Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()) : null),
+    [linkRequest],
+  );
+  useTimeout(() => setLinkRequest(null), untilLinkExpiry, linkRequest);
   // Linking completes in the chat app: watch for a new or reassigned identity.
   useEffect(() => {
     if (!linkRequest) return;
     const known = new Map(status?.identities.map((identity) => [identity.id, identity.botId]));
-    let active = true;
-    let poll: number;
-    const expire = window.setTimeout(
-      () => {
-        active = false;
-        window.clearTimeout(poll);
-        setLinkRequest(null);
-      },
-      Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()),
-    );
-    async function pollStatus() {
-      try {
-        const next = await rpc.messaging.status();
-        if (!active) return;
-        if (
-          next.identities.some(
-            (identity) =>
-              identity.provider === linkRequest?.provider &&
-              identity.botId === linkRequest?.botId &&
-              known.get(identity.id) !== identity.botId,
-          )
-        ) {
-          active = false;
-          window.clearTimeout(expire);
-          await writeSaved(queryClient, statusOptions.queryKey, () => next);
-          setLinkRequest(null);
-          await refresh();
+    const stopped = new AbortController();
+    void (async () => {
+      while (true) {
+        await abortableDelay(LINK_POLL_MS, stopped.signal);
+        if (stopped.signal.aborted) return;
+        try {
+          const next = await rpc.messaging.status();
+          if (stopped.signal.aborted) return;
+          if (
+            next.identities.some(
+              (identity) =>
+                identity.provider === linkRequest.provider &&
+                identity.botId === linkRequest.botId &&
+                known.get(identity.id) !== identity.botId,
+            )
+          ) {
+            stopped.abort();
+            // Cleared before waiting, and only if still this code: a newer one may follow.
+            setLinkRequest((current) => (current === linkRequest ? null : current));
+            await writeSaved(queryClient, statusOptions.queryKey, () => next);
+            await refresh();
+            return;
+          }
+        } catch (error) {
+          // A transient failure can be retried while the code is valid.
+          if (!isRetryableError(error)) return;
         }
-      } catch (error) {
-        // A transient failure can be retried while the code is valid.
-        if (!isRetryableError(error)) active = false;
-      } finally {
-        if (active) poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
       }
-    }
-    poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
-    return () => {
-      active = false;
-      window.clearTimeout(poll);
-      window.clearTimeout(expire);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+    return () => stopped.abort();
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
+    linkGuard.invalidate();
     setError(null);
-    // A displayed code must always match the current selection and link
-    // state; the link action re-sets it after issuing.
     setLinkRequest(null);
     try {
       await action();
@@ -156,15 +164,22 @@ export function MessagingSettingsPanel() {
     }
   }
 
-  useEffect(() => {
-    // A failed read shows through the queries' error.
-    const onFocus = () => void refresh().catch(() => undefined);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  // A failed read shows through the queries' error.
+  useEventListener(window, "focus", () => void refresh().catch(() => undefined));
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
+  useEffect(() => {
+    if (linkGuard.invalidate(true)) {
+      setLinkRequest(null);
+    }
+  }, [linkBotId, linkGuard]);
+  useEffect(
+    () => () => {
+      linkGuard.invalidate();
+    },
+    [linkGuard],
+  );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -210,11 +225,20 @@ export function MessagingSettingsPanel() {
   const linkApp = linkRequest ? providerLabel(linkRequest.provider) : "";
   const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
 
-  function startLink(provider: string, botId: string) {
-    void act(async () => {
+  async function startLink(provider: string, botId: string, fromPicker = true) {
+    const request = linkGuard.begin(fromPicker);
+    if (!request) return;
+    setError(null);
+    setLinkRequest(null);
+    try {
       const issued = await rpc.messaging.link.start({ botId });
+      if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
-    });
+    } catch {
+      if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
+    } finally {
+      request.finish();
+    }
   }
 
   function installSlack() {
@@ -234,20 +258,18 @@ export function MessagingSettingsPanel() {
 
   const botPicker =
     bots.length > 1 ? (
-      <NativeSelect
+      <OptionSelect
         aria-label={t`Bot`}
         value={linkBotId}
-        onChange={(event) => {
-          setSelectedBotId(event.target.value);
-          setLinkRequest(null);
+        onValueChange={(botId) => {
+          if (linkGuard.invalidate(true)) {
+            setLinkRequest(null);
+          }
+          setSelectedBotId(botId);
         }}
-      >
-        {bots.map((bot) => (
-          <NativeSelectOption key={bot.id} value={bot.id}>
-            {bot.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        className="w-fit"
+        options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+      />
     ) : null;
 
   const memberLinkControls = (
@@ -256,7 +278,7 @@ export function MessagingSettingsPanel() {
       <Button
         size="sm"
         variant="ghost"
-        disabled={!linkBotId}
+        disabled={issuingLink || !linkBotId}
         onClick={() => startLink("slack", linkBotId)}
       >
         <Trans>Link DMs</Trans>
@@ -357,7 +379,10 @@ export function MessagingSettingsPanel() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => startLink(installation.provider, installation.botId)}
+                        disabled={issuingLink}
+                        onClick={() =>
+                          void startLink(installation.provider, installation.botId, false)
+                        }
                       >
                         <Trans>Link DMs</Trans>
                       </Button>
@@ -422,7 +447,10 @@ export function MessagingSettingsPanel() {
           <div className="flex flex-wrap items-center gap-2">
             {memberLink ? null : botPicker}
             <DropdownMenu>
-              <DropdownMenuTrigger disabled={!linkBotId} render={<Button variant="outline" />}>
+              <DropdownMenuTrigger
+                disabled={issuingLink || !linkBotId}
+                render={<Button variant="outline" />}
+              >
                 <Trans>Connect a chat app</Trans>
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
@@ -535,8 +563,8 @@ export function MessagingSettingsPanel() {
                       <ExternalConversationSettings
                         conversation={conversation}
                         bot={bot}
-                        onSave={async (policy) => {
-                          await rpc.externalConversations.updatePolicy({
+                        onSave={async (policy, client) => {
+                          await client.externalConversations.updatePolicy({
                             externalConversationId: conversation.id,
                             ...policy,
                           });
