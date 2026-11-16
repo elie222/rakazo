@@ -165,6 +165,19 @@ describe("updater HTTP surface", () => {
     expect(deployments()).toHaveLength(deployed);
   });
 
+  it("does not recreate an already-current stable image installed under latest", async () => {
+    const fixture = await deployment("RAKAZO_IMAGE_TAG=latest\n");
+    fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
+    const run: UpdaterCommandRunner = async (command, args) => {
+      if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+      if (args[0] === "ps") return ok("a".repeat(12));
+      if (args[0] === "exec") return ok(targetCommit);
+      throw new Error("A current image must not be pulled or recreated");
+    };
+    await applyStableUpdate(createUpdaterApp(fixture.config, { run }), token);
+    expect(await readFile(fixture.config.envFile, "utf8")).toBe("RAKAZO_IMAGE_TAG=latest\n");
+  });
+
   it.each(["edge", `sha-${"3".repeat(40)}`, "latest", "v1.0.0"])(
     "refuses an unverified running build even when the environment pin is %s",
     async (tag) => {

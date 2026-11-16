@@ -480,6 +480,7 @@ export function createUpdaterApp(
         "Could not identify the running API; scheduled updates were refused.",
       );
     }
+    const commits: string[] = [];
     for (const id of ids) {
       const source = await run("docker", ["exec", id, "node", "-p", "process.env.GIT_SHA"], {
         cwd: config.deployDir,
@@ -495,7 +496,9 @@ export function createUpdaterApp(
           "The running API could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.",
         );
       }
+      commits.push(commit);
     }
+    return commits;
   }
 
   /** The branch head on the remote, read without fetching, so a plan does not mutate the checkout. */
@@ -558,7 +561,12 @@ export function createUpdaterApp(
     let releaseTag: string | null = null;
     if (decision.strategy === "pull") {
       const target = await resolveRelease(request.repoUrl);
-      if (config.autoUpdateIntervalMs > 0) await requireStableRunningImage(target.releases);
+      if (config.autoUpdateIntervalMs > 0) {
+        const running = await requireStableRunningImage(target.releases);
+        if (running.every((commit) => commit === target.commit)) {
+          return rememberRun(upToDateRecord(request, tags.currentTag, "pull", target.commit));
+        }
+      }
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;

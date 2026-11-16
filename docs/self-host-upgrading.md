@@ -287,6 +287,41 @@ manual rollback, or the next scheduled check will apply the newer release again.
 `autoUpdateIntervalHours` alongside the last update result; the existing `/apply` and `/rollback`
 endpoints also work when scheduling is disabled.
 
+The images stack publishes no updater port and does not route its control API through the
+application API. Run these commands from the deployment directory to call it **inside** the
+updater container. They read the token from the container environment without printing it or
+putting it in command-line arguments:
+
+```bash
+# Inspect the schedule and last update result.
+docker compose --env-file .env -f docker-compose.images.yml exec -T updater node -e '
+fetch("http://127.0.0.1:7092/state", {
+  headers: {authorization: "Bearer " + process.env.RAKAZO_UPDATER_TOKEN}
+}).then(async response => {
+  console.log(await response.text());
+  if (!response.ok) process.exitCode = 1;
+}).catch(error => { console.error(error.message); process.exitCode = 1; });'
+
+# After pausing scheduling as described above, restore the previous cached application image.
+docker compose --env-file .env -f docker-compose.images.yml exec -T updater node -e '
+fetch("http://127.0.0.1:7092/rollback", {
+  method: "POST",
+  headers: {authorization: "Bearer " + process.env.RAKAZO_UPDATER_TOKEN}
+}).then(async response => {
+  const result = await response.json();
+  console.log(JSON.stringify(result, null, 2));
+  if (!response.ok || result.ok === false) process.exitCode = 1;
+}).catch(error => { console.error(error.message); process.exitCode = 1; });'
+```
+
+For a manual stable update using the second command, change the path to `/apply` and add
+`"content-type": "application/json"` to its headers and
+`body: JSON.stringify({repoUrl: "https://github.com/elie222/rakazo", branch: "main"})` to its
+fetch options. The official repository still selects stable releases; `main` here does not select
+a main-build image. Keep the updater profile running with an interval of `0` to use only these
+manual controls. Review the result's recovery advice if an update or rollback fails; neither
+operation reverses database migrations.
+
 Application updates do not replace the updater itself, Compose files, Postgres major versions or
 existing bot computer containers. Review release notes for changes requiring manual setup and
 keep database backups: application-image recovery never reverses database migrations.
