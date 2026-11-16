@@ -1,7 +1,7 @@
 # Optional overlay: local Docker computers on the production HTTPS stack.
 # Layer it after docker-compose.prod.yml in every Compose invocation:
 #
-#   docker compose --env-file .env \
+#   GIT_SHA="$(git rev-parse HEAD)" docker compose --env-file .env \
 #     -f infra/compose/docker-compose.prod.yml \
 #     -f infra/compose/docker-compose.prod.docker.yml \
 #     up -d --build --wait --pull never

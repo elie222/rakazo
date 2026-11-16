@@ -268,9 +268,27 @@ docker compose --env-file .env -f docker-compose.images.yml up -d updater
 docker compose --env-file .env -f docker-compose.images.yml logs --tail 50 updater
 ```
 
-For a source checkout, use `-f infra/compose/docker-compose.prod.yml --profile updater` instead,
-and build or explicitly pull the updater image as described above. Do not enable scheduled
-updates on a server already managed by CI deployments.
+For a source checkout, use the production Compose file, not the development
+`docker-compose.yml` stack. Before enabling scheduling, build the application from a clean,
+reviewed checkout of a published stable release, with its source commit baked into the image:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  build --build-arg GIT_SHA="$(git rev-parse HEAD)" api worker web
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  up -d --wait --pull never api worker web
+```
+
+These commands also establish the metadata for an older source-built installation whose image
+has an empty `GIT_SHA`. Use the same Compose overlays as the running stack and include any
+additional application-image services, such as `supervisor`, when rebuilding. Do not stamp a main
+or modified checkout as a stable release; check out and review a compatible stable release first.
+Setting a revision only at container startup does not establish which source the image was built
+from. Published images already bake in this metadata and need no rebuild.
+
+Then start the updater using `-f infra/compose/docker-compose.prod.yml --profile updater`, building
+or explicitly pulling its image as described above. Do not enable scheduled updates on a server
+already managed by CI deployments.
 
 The first check runs six hours after startup, then six hours after each check completes. Valid
 intervals are 1–168 whole hours; `0` disables scheduling. Checks use the official repository's
