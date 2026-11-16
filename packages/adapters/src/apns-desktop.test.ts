@@ -37,6 +37,10 @@ describe("APNs desktop alerts", () => {
       "apns-collapse-id": "thread-1",
     });
     expect(headers.authorization).toMatch(/^bearer /);
+    // Kept for a day, so a Mac asleep or offline still gets it once it reconnects.
+    const expiration = Number(headers["apns-expiration"]);
+    expect(expiration - Date.now() / 1000).toBeGreaterThan(23 * 60 * 60);
+    expect(expiration - Date.now() / 1000).toBeLessThanOrEqual(24 * 60 * 60);
     const payload = JSON.parse(body);
     expect(payload.aps).toEqual({
       alert: { title: "Scout needs an answer", body: "Which flight?" },

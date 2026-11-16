@@ -15,6 +15,11 @@ export interface DesktopPushProvider {
 
 const MAX_TITLE_CHARS = 100;
 const MAX_BODY_CHARS = 180;
+/**
+ * How long APNs keeps an alert for a Mac it cannot reach, such as one asleep overnight. Without
+ * an expiration APNs tries once and drops the alert.
+ */
+const KEEP_FOR_OFFLINE_MAC_S = 24 * 60 * 60;
 
 export class ApnsDesktopProvider implements DesktopPushProvider {
   private readonly client: ApnsClient;
@@ -35,6 +40,7 @@ export class ApnsDesktopProvider implements DesktopPushProvider {
         topic: this.client.config.bundleId,
         pushType: "alert",
         priority: urgent ? 10 : 5,
+        expiration: Math.floor(Date.now() / 1000) + KEEP_FOR_OFFLINE_MAC_S,
         // A newer alert for the same chat replaces the one still in Notification Center.
         collapseId: message.threadId.slice(0, 64),
         body: {
