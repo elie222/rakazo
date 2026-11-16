@@ -1199,6 +1199,8 @@ model Message {
   authorUserId     String?
   replyToMessageId String?
   replyQuote       String?
+  /// Further excerpts a reply quotes after the first (JSON, see ExtraReplyQuotesSchema).
+  extraReplyQuotes Json?
   replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies          Message[] @relation("MessageReplies")
   runId            String?

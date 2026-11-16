@@ -178,6 +178,9 @@ export type GroupMember = z.infer<typeof GroupMemberSchema>;
 /** Selected-text excerpt carried by a reply; capped so a quote stays a quote. */
 export const REPLY_QUOTE_MAX_LENGTH = 2_000;
 
+/** Excerpts a reply can quote beyond its first, so a message stays one thought. */
+export const EXTRA_REPLY_QUOTES_MAX = 4;
+
 /**
  * One chat message's text. Far above anything the composer produces, but bounded so one
  * oversized send cannot dominate persistence and every viewer's markdown processing.

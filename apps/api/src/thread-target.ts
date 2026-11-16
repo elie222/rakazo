@@ -6,10 +6,17 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
-import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
+import type {
+  Actor,
+  ExtraReplyQuote,
+  GroupMember,
+  MessageBlock,
+  ReplyPreview,
+} from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
   MessageBlock as MessageBlockSchema,
+  MessageRole,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
@@ -371,6 +378,52 @@ export function sendTargetBotIds(
   return groupSendTargets(target.members, input, replied).botIds;
 }
 
+/**
+ * The further excerpts of a send that are real text of a message in this thread, in the order
+ * picked. One that does not match is left out, as a first excerpt that does not match is, so
+ * checking a quote never loses the message. The caller asks only once the first excerpt matched.
+ */
+async function verifiedExtraQuotes(
+  tx: Prisma.TransactionClient,
+  threadId: string,
+  requested: ReadonlyArray<{ messageId: string; text: string }>,
+): Promise<ExtraReplyQuote[]> {
+  const parents = new Map(
+    (
+      await tx.message.findMany({
+        where: { id: { in: [...new Set(requested.map((quote) => quote.messageId))] }, threadId },
+        select: { id: true, blocks: true, role: true, botId: true },
+      })
+    ).map((parent) => [parent.id, parent]),
+  );
+  const verified: ExtraReplyQuote[] = [];
+  for (const quote of requested) {
+    const parent = parents.get(quote.messageId);
+    const blocks = parent ? MessageBlockSchema.array().safeParse(parent.blocks) : undefined;
+    const role = MessageRole.safeParse(parent?.role);
+    if (!parent || !blocks?.success || !role.success) continue;
+    let text: string | undefined;
+    try {
+      text = deriveMessageQuote(
+        blocks.data,
+        quote.text,
+        parent.role === "user" ? "plain-text" : "markdown",
+      );
+    } catch (error) {
+      getLogger().error("thread send quote derivation", error);
+    }
+    if (!text) continue;
+    if (verified.some((kept) => kept.messageId === parent.id && kept.text === text)) continue;
+    verified.push({
+      messageId: parent.id,
+      role: role.data,
+      ...(parent.botId ? { botId: parent.botId } : {}),
+      text,
+    });
+  }
+  return verified;
+}
+
 export async function resolveThreadTarget(
   prisma: PrismaClient,
   actor: Actor,
@@ -505,6 +558,7 @@ export async function sendThreadMessage(
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     replyQuote?: string;
+    extraReplyQuotes?: Array<{ messageId: string; text: string }>;
     fromPage?: true;
     clientNonce?: string;
     /** No model to start a turn: the send may only stop active work. */
@@ -537,6 +591,7 @@ export async function sendThreadMessage(
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
+      let extraReplyQuotes: ExtraReplyQuote[] | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       let repliedBotId: string | undefined;
       let repliedQuestionRunId: string | undefined;
@@ -601,6 +656,10 @@ export async function sendThreadMessage(
               getLogger().error("thread send quote derivation", error);
               replyQuote = undefined;
             }
+          }
+          if (replyQuote && !input.fromPage && input.extraReplyQuotes?.length) {
+            const verified = await verifiedExtraQuotes(tx, target.threadId, input.extraReplyQuotes);
+            if (verified.length) extraReplyQuotes = verified;
           }
         }
       }
@@ -676,6 +735,7 @@ export async function sendThreadMessage(
           blocks,
           replyToMessageId,
           replyQuote,
+          extraReplyQuotes,
           clientNonce: input.clientNonce,
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
@@ -737,6 +797,7 @@ export async function sendThreadMessage(
               runIds: answered.map((run) => run.id),
               replyToMessageId,
               replyQuote,
+              extraReplyQuotes,
               replyPreview,
             },
           });
@@ -783,6 +844,7 @@ export async function sendThreadMessage(
               callId,
               replyToMessageId,
               replyQuote,
+              extraReplyQuotes,
               replyPreview,
             },
           });
@@ -837,6 +899,7 @@ export async function sendThreadMessage(
             runIds: [run.id],
             replyToMessageId,
             replyQuote,
+            extraReplyQuotes,
             replyPreview,
           },
         });
@@ -909,6 +972,7 @@ export async function sendThreadMessage(
         blocks,
         replyToMessageId,
         replyQuote,
+        extraReplyQuotes,
         clientNonce: input.clientNonce,
       });
       // A bare "stop" while any member, or a helper it started, works is the Stop button,
@@ -947,6 +1011,7 @@ export async function sendThreadMessage(
             runIds: [working.id],
             replyToMessageId,
             replyQuote,
+            extraReplyQuotes,
             replyPreview,
           },
         });
@@ -1099,6 +1164,7 @@ export async function sendThreadMessage(
           runIds: runs.map((run) => run.id),
           replyToMessageId,
           replyQuote,
+          extraReplyQuotes,
           replyPreview,
         },
       });
