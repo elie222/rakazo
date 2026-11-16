@@ -185,21 +185,30 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("brings a hidden stuck chat back even with no push provider", async () => {
+  it("brings a hidden stuck chat back with the reminder it sends, and not on a sweep that sends none", async () => {
+    const hiddenAgain = () => [{ userId: "user-1", snoozedUntil: null, hidden: true, muted: null }];
     const run = candidate("waiting_input", 5);
-    const prisma = noticePrisma(run, []);
-    prisma.threadRead.findMany = vi.fn(async () => [
-      { userId: "user-1", snoozedUntil: null, hidden: true, muted: null },
-    ]) as never;
-    const { jobs } = publisher();
+    const silent = noticePrisma(run, []);
+    silent.threadRead.findMany = vi.fn(async () => hiddenAgain()) as never;
+    await reconcileStuckWork({ prisma: silent, jobs: publisher().jobs, now, batchSize: 100 });
+    // The question brought it back already; the person hid it again since.
+    expect(silent.threadRead.updateMany).not.toHaveBeenCalled();
 
-    await reconcileStuckWork({ prisma, jobs, now, batchSize: 100 });
-
-    expect(prisma.threadRead.updateMany).toHaveBeenCalledWith({
+    const reminded = noticePrisma(run, []);
+    reminded.threadRead.findMany = vi.fn(async () => hiddenAgain()) as never;
+    const { provider, send } = notifications();
+    await reconcileStuckWork({
+      prisma: reminded,
+      jobs: publisher().jobs,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(reminded.threadRead.updateMany).toHaveBeenCalledWith({
       where: { threadId: run.threadId, userId: run.userId, hidden: true },
       data: { hidden: false },
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {

@@ -257,7 +257,10 @@ export async function afterChatNotifyChange(
     "groupId" in change
       ? { groupId: change.groupId }
       : { botId: change.botId, threadId: change.threadId };
-  await dismissThreadNotifications(target).catch(() => undefined);
+  // The mute or hide is saved either way; alerts left in the shade only clear on their own.
+  await dismissThreadNotifications(target).catch((error: unknown) =>
+    console.warn("Could not clear a silenced chat's notifications", error),
+  );
 }
 
 export async function openLiveNotificationSettings(): Promise<void> {

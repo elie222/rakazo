@@ -211,11 +211,11 @@ async function remindStuckRun(
   },
   run: StuckCandidate,
 ) {
-  // Asked first, so a hidden chat comes back even where no push can be sent. A skipped push
-  // (notices off, no provider, or no push token yet) stays unmarked so a later sweep can still
-  // remind during this same wait.
+  // A skipped push (notices off, no provider, or no push token yet) stays unmarked so a later
+  // sweep can still remind during this same wait. The question itself already brought a hidden
+  // chat back, so only the reminder that is sent does it again: a sweep that sends nothing
+  // leaves a chat the person hid again as they left it.
   const owner = await readStuckOwner(deps.prisma, run);
-  await owner.reveal();
   if (!deps.notifications || !owner.hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
@@ -225,6 +225,7 @@ async function remindStuckRun(
     ),
   );
   if (!claimId) return;
+  await owner.reveal();
   const reminder = stuckWorkReminder(run.status, run.bot.name);
   const message = {
     kind: reminder.kind,
