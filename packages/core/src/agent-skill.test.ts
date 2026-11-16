@@ -631,6 +631,13 @@ describe("skill prompt helpers", () => {
     expect(line).toContain("Prefer matching skills");
   });
 
+  it("describes skills without naming a vendor, runtime or how they are stored", () => {
+    const text = formatSkillsCatalogInstruction([
+      { name: "Standup", description: "Prepare standup notes", source: "user", readOnly: false },
+    ]);
+    expect(text).not.toMatch(/claude|anthropic|\bpi\b|runtime|SKILL\.md|persist|inject/i);
+  });
+
   it("renders the whole catalog instruction and a forced skill prompt", () => {
     expect(
       formatSkillsCatalogInstruction([
@@ -639,7 +646,7 @@ describe("skill prompt helpers", () => {
       ]),
     ).toBe(
       [
-        "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
+        "Available skills (reusable how-to recipes, not account-specific routines):",
         "- Standup: Prepare standup notes",
         "- Review: Review a change",
         "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",

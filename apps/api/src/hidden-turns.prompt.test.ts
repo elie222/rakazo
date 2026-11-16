@@ -20,10 +20,18 @@ describe("hidden turn prompts", () => {
       }),
     ).toMatchInlineSnapshot(`
       "You were just created.
-      Greet them by first name in a few words and ask in one sentence what they want you for, suggesting two to four short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list.
+      Greet them in a few words and ask in one sentence what they want you for, suggesting two to four short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list.
       If your profile already makes that clear, say in one line what you will do instead of asking.
       Then get started, asking one follow-up only if you cannot start without it."
     `);
+  });
+
+  it("does not ask for a first name it does not have", () => {
+    const withName = botIntroPrompt({ userName: "Ada", spaceName: null, disabledBuiltinTools: [] });
+    const noName = botIntroPrompt({ userName: "", spaceName: null, disabledBuiltinTools: [] });
+    expect(withName).toContain("greets them by first name");
+    expect(noName).toContain("Its question greets them in a few words");
+    expect(noName).not.toContain("first name");
   });
 
   it("renders the hang-up and connected-server turns", () => {
