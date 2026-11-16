@@ -4,6 +4,7 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode } from "react";
 import { act, useEffect, useMemo } from "react";
 import type { Root } from "react-dom/client";
@@ -96,9 +97,14 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
+  currentApiBase: () => "https://example.test",
   selectedSpaceId: () => "space-a",
   rpc: mocks.rpc,
-  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-a") => ({
+    apiBase: "https://example.test",
+    sessionGeneration: 0,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
@@ -138,6 +144,8 @@ vi.mock("../components/native-action-button", () => ({
 let container: HTMLDivElement;
 let root: Root;
 const flush = () => act(async () => undefined);
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -482,20 +490,25 @@ describe("group deletion archive notifications", () => {
         (button) => button.textContent === "Delete group",
       )!;
 
-    act(() => deleteGroup().click());
-    alertButton(0, "Delete").onPress!();
-    expect(listener).not.toHaveBeenCalled();
-    await flush();
-    expect(mocks.rpc).toHaveBeenCalledWith("groups/remove", { groupId: "group-b" });
-    expect(listener).toHaveBeenCalledOnce();
-    expect(mocks.router.replace).toHaveBeenCalledWith("/");
-
     removeFails = true;
     act(() => deleteGroup().click());
-    alertButton(1, "Delete").onPress!();
+    alertButton(0, "Delete").onPress!();
     await flush();
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).not.toHaveBeenCalled();
     expect(mocks.alert).toHaveBeenLastCalledWith("Could not delete group", "failure");
+
+    removeFails = false;
+    act(() => deleteGroup().click());
+    alertButton(2, "Delete").onPress!();
+    expect(listener).not.toHaveBeenCalled();
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "groups/remove",
+      { groupId: "group-b" },
+      expect.anything(),
+    );
+    expect(listener).toHaveBeenCalledOnce();
+    expect(mocks.router.replace).toHaveBeenCalledWith("/");
     stop();
   });
 });

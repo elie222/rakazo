@@ -283,8 +283,8 @@ export async function replaceBillingCustomer(
 }
 
 /**
- * Claims the organization's checkout lease, coordinating API instances without holding a
- * connection over provider calls. Returns the lease id, or null while another request holds it.
+ * Claims the organization's checkout claim, which the previous release takes in place of the
+ * checkout lease. Returns the claim id, or null while another request holds it.
  */
 export async function claimCheckoutLease(
   prisma: PrismaClient,
@@ -363,19 +363,6 @@ export function isLockTimeout(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
   const meta = error.meta as { driverAdapterError?: { cause?: { originalCode?: string } } };
   return meta?.driverAdapterError?.cause?.originalCode === "55P03";
-}
-
-/** Whether the checkout lease is still recorded for this holder. */
-export async function checkoutLeaseHeld(
-  prisma: PrismaClient,
-  organizationId: string,
-  leaseId: string,
-): Promise<boolean> {
-  const held = await prisma.billingAccount.findFirst({
-    where: { organizationId, checkoutLeaseId: leaseId },
-    select: { organizationId: true },
-  });
-  return held !== null;
 }
 
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
