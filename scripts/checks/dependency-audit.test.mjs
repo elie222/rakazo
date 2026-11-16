@@ -24,10 +24,18 @@ test("rejects a clean audit that covered only the package manager document", () 
   );
 });
 
-test("accepts complete multi-document and single-document workspace audits", () => {
-  const report = { metadata: { totalDependencies: 3 } };
-  checkAuditCoverage(lockfile, report);
-  checkAuditCoverage(lockfile.slice(lockfile.indexOf("importers:")), report);
+test("rejects a workspace-only audit that omitted the package manager document", () => {
+  assert.throws(
+    () => checkAuditCoverage(lockfile, { metadata: { totalDependencies: 3 } }),
+    /Incomplete/,
+  );
+});
+
+test("accepts complete multi-document and single-document audits", () => {
+  checkAuditCoverage(lockfile, { metadata: { totalDependencies: 4 } });
+  checkAuditCoverage(lockfile.slice(lockfile.indexOf("importers:")), {
+    metadata: { totalDependencies: 3 },
+  });
 });
 
 test("missing inventory or report metadata cannot pass as clean", () => {

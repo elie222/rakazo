@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // pnpm 12 writes package-manager and workspace locks as separate YAML documents.
-// Count package keys in each document; an audit of only the small first one must fail.
+// Count package keys across every document; omitting either document must fail.
 export function checkAuditCoverage(lockfile, report) {
   const counts = lockfile.split(/^---[ \t]*\r?$/m).map((document) => {
     let inPackages = false;
@@ -14,7 +14,7 @@ export function checkAuditCoverage(lockfile, report) {
     }
     return count;
   });
-  const minimum = Math.max(...counts);
+  const minimum = counts.reduce((total, count) => total + count, 0);
   assert(minimum > 0, "No lockfile package entries found; audit coverage cannot be checked");
   const actual = report.metadata?.totalDependencies;
   assert(

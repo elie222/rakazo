@@ -37,23 +37,54 @@ jobs:
           path: dependency-audit.json
           if-no-files-found: error
 
+  image-tags:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - name: Select main and current stable release
+        id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if release=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest"); then
+            tags=$(jq -c '["edge", .tag_name] | unique' <<< "$release")
+          elif jq -e '.status == "404"' <<< "$release" >/dev/null; then
+            tags='["edge"]'
+          else
+            exit 1
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
   published-images:
+    needs: image-tags
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
         image: [app, computer, updater]
         arch: [amd64, arm64]
+        tag: ${{ fromJSON(needs.image-tags.outputs.tags) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - uses: ./.github/actions/setup-trivy
       - name: Scan published image
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:edge
+          IMAGE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ matrix.tag }}
           IMAGE_PLATFORM: linux/${{ matrix.arch }}
         run: |
           trivy image --image-src remote --platform "$IMAGE_PLATFORM" --scanners vuln --format json --output image-vulnerabilities.json "$IMAGE_REF"
@@ -63,7 +94,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: published-image-security-${{ matrix.image }}-${{ matrix.arch }}
+          name: published-image-security-${{ matrix.image }}-${{ matrix.arch }}-${{ matrix.tag }}
           path: |
             image-vulnerabilities.json
             scanner-version.json
