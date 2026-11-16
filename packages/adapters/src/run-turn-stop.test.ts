@@ -1,4 +1,5 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "./run-context.js";
 import { createReplyState } from "./run-progress.js";
@@ -242,13 +243,9 @@ describe("consumeRunEvents and Stop", () => {
   it("does not abort when a takeover requeue finishes after the turn ended", async () => {
     const { ctx, findUnique } = await context({ status: "running" });
     (ctx.computer as { heldForTakeover?: boolean }).heldForTakeover = true;
-    let finishRequeue: (() => void) | undefined;
-    requeued.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishRequeue = resolve;
-        }),
-    );
+    const requeue = deferred();
+    const heldRequeue = vi.fn(() => requeue.promise);
+    requeued.mockImplementationOnce(heldRequeue);
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
       await quietCall(ctx, 1_500);
@@ -260,13 +257,13 @@ describe("consumeRunEvents and Stop", () => {
         checkpoint: "takeover",
       });
       await quietCall(ctx, 1_000);
-      expect(finishRequeue).toBeDefined();
+      expect(heldRequeue).toHaveBeenCalled();
       yield { type: "done", text: "Done." };
     }
     const consumed = consumeRunEvents(ctx, runtime());
     await vi.advanceTimersByTimeAsync(2_500);
     await expect(consumed).resolves.toBe(false);
-    finishRequeue?.();
+    requeue.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(ctx.abortController.signal.aborted).toBe(false);
   });

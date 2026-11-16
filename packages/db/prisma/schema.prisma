@@ -1428,6 +1428,7 @@ model CloudAgent {
   generation          Int      @default(0)
   wakeGeneration      Int      @default(-1)
   version             Int      @default(0)
+  /// Kept only for the previous release, which claims the row instead of taking the agent's lease.
   leaseToken          String?
   leaseExpiresAt      DateTime?
   nextPollAt          DateTime? @default(now())

@@ -34,6 +34,11 @@
       "permanent": false
     },
     {
+      "source": "/affiliates",
+      "destination": "https://partners.dub.co/inboxzero/rakazo",
+      "permanent": false
+    },
+    {
       "source": "/discord",
       "destination": "https://discord.gg/RWwKa2Sn7h",
       "permanent": false
