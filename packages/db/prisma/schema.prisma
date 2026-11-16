@@ -1675,7 +1675,7 @@ model AgentImport {
   @@map("agent_imports")
 }
 
-/// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
+/// Skills: reusable how-to recipes shared across bots (not per-bot).
 /// Distinct from TaughtSkill (demo/record playbooks).
 model AgentSkill {
   id          String   @id @default(cuid())
