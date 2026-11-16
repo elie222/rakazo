@@ -490,7 +490,13 @@ async function handOwnership(
 ): Promise<string | null> {
   const { spaceId, userId, fallbackOwnerId } = input;
   const coOwner = await tx.spaceMember.findFirst({
-    where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
+    where: {
+      spaceId,
+      userId: { not: userId },
+      role: { contains: "owner" },
+      // Taking over for a removal, only a co-owner who stays in the organization keeps it.
+      ...(fallbackOwnerId ? { member: { role: { not: GUEST_ROLE } } } : {}),
+    },
     select: { id: true },
   });
   if (coOwner) return null;
@@ -608,7 +614,7 @@ async function departSpace(
           if (!departing) throw new SpaceMemberNotFoundError();
           const others = await tx.spaceMember.findMany({
             where: { spaceId, userId: { not: userId } },
-            select: { userId: true, role: true },
+            select: { userId: true, role: true, member: { select: { role: true } } },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           });
           // A removal checks the remover again under the lock: ownership may have moved since.
@@ -620,7 +626,13 @@ async function departSpace(
           // Someone made owner since they asked to leave stays: the Space is theirs now.
           if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
           let ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
-          if (handOver && isOwnerRole(departing.role) && !(fallbackOwnerId && ownerId)) {
+          // Removing someone from the organization hands their Space only to someone staying in
+          // it: a co-owner whose own removal is still finishing is a guest already.
+          const stayingOwner = others.find(
+            (member) => isOwnerRole(member.role) && member.member.role !== GUEST_ROLE,
+          )?.userId;
+          if (fallbackOwnerId && stayingOwner) ownerId = stayingOwner;
+          else if (handOver && isOwnerRole(departing.role)) {
             ownerId =
               (await handOwnership(tx, {
                 spaceId,

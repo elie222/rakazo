@@ -519,6 +519,19 @@ export async function setOrganizationMemberRole(
       },
       data: { role: input.role },
     });
+    // Someone who can no longer invite leaves no invitation of theirs open.
+    if (input.role === "member") await cancelInvitationsBy(tx, input);
+  });
+}
+
+/** Withdraws the pending invitations someone sent to an organization, once they cannot invite. */
+async function cancelInvitationsBy(
+  tx: Prisma.TransactionClient,
+  input: { organizationId: string; memberUserId: string },
+) {
+  await tx.invitation.updateMany({
+    where: { organizationId: input.organizationId, inviterId: input.memberUserId, status: PENDING },
+    data: { status: "canceled" },
   });
 }
 
@@ -553,6 +566,21 @@ export async function revokeOrganizationMember(
           },
         },
         data: { role: GUEST_ROLE },
+      });
+    await cancelInvitationsBy(tx, input);
+    // Nor can an invitation sent to them before bring them back.
+    const removed = await tx.user.findUnique({
+      where: { id: input.memberUserId },
+      select: { email: true },
+    });
+    if (removed)
+      await tx.invitation.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          email: normalizeEmail(removed.email),
+          status: PENDING,
+        },
+        data: { status: "canceled" },
       });
   });
 }

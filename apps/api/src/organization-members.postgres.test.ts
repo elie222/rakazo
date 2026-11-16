@@ -475,6 +475,22 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       invitations: [{ email: outsider.email }],
     });
 
+    // Once the admin can no longer invite, what they sent stops working.
+    expect(
+      (
+        await call(owner.actor, "organizations/members/setRole", {
+          organizationId,
+          userId: admin.id,
+          role: "member",
+        })
+      ).status,
+    ).toBe(200);
+    await expect(
+      system.invitation.count({
+        where: { organizationId, inviterId: admin.id, status: "pending" },
+      }),
+    ).resolves.toBe(0);
+
     // The owner of an organization others belong to cannot delete their account yet.
     await expect(assertNoOwnedOrganizationWithMembers(system, owner.id)).rejects.toBeInstanceOf(
       OwnedOrganizationHasMembersError,

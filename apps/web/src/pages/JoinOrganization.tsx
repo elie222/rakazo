@@ -5,7 +5,7 @@ import { Button, cn } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSave } from "../lib/query";
-import { rpc, selectSpace } from "../lib/rpc";
+import { clearSpaceSelection, rpc, selectSpace } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { AuthFrame, submitClass } from "./Auth";
 
@@ -56,7 +56,7 @@ export function JoinOrganizationPage() {
       client.organizations.invitations.accept({ invitationId: id }, NO_SPACE),
     closesScreen: true,
     onSaved: ({ spaceId }) => {
-      selectSpace(spaceId);
+      if (!selectSpace(spaceId)) clearSpaceSelection();
       navigate("/app", { replace: true });
     },
     onFailed: (error) => {
