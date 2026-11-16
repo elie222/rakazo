@@ -2596,8 +2596,6 @@ model ModelCreditEntry {
   amountMicros           BigInt
   /// A purchase's paid credits an open dispute holds back; `amountMicros` excludes them.
   disputedMicros         BigInt             @default(0)
-  /// When an ordered provider read last changed a purchase; null means none has, so its first is trusted.
-  syncedAt               DateTime?
   pending                Boolean            @default(false)
   callId                 String?            @unique
   userId                 String?

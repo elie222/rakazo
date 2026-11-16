@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -10,6 +11,7 @@ import {
   reserveModelCredits,
   settleModelCredits,
   settleModelCreditsTx,
+  syncCreditPurchases,
   unexpiredCreditAccount,
 } from "./model-credits.js";
 import { asSystem } from "./row-security.js";
@@ -83,97 +85,63 @@ dbTests("model credits ledger", () => {
     await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 2000 });
     expect(await balance()).toBe(-5_000_000n);
   });
-  it("keeps a newer read's dispute hold when an older read commits after it", async () => {
-    const id = `${organizationId}-stale`;
-    const older = new Date("2030-01-01T00:00:00Z");
-    const newer = new Date("2030-01-01T00:00:01Z");
-    await reconcileCreditPurchase(
-      prisma,
-      organizationId,
-      { id, amountCents: 1000 },
-      new Date(),
-      older,
-    );
-    await reconcileCreditPurchase(
-      prisma,
-      organizationId,
-      { id, amountCents: 1000, disputedCents: 1000 },
-      new Date(),
-      newer,
-    );
-    await reconcileCreditPurchase(
-      prisma,
-      organizationId,
-      { id, amountCents: 1000 },
-      new Date(),
-      older,
-    );
-    expect(await balance()).toBe(0n);
-  });
-  it("skips an older read after a newer one that changed nothing", async () => {
-    const id = `${organizationId}-unchanged`;
-    const read = (at: string, purchase: { amountCents: number; disputedCents?: number }) =>
-      reconcileCreditPurchase(
-        prisma,
-        organizationId,
-        { id, ...purchase },
-        new Date(),
-        new Date(at),
+  describe("overlapping syncs", () => {
+    type Purchase = { amountCents: number; disputedCents?: number };
+    const sync = (id: string, purchases: Purchase[]) =>
+      syncCreditPurchases(prisma, organizationId, async () =>
+        purchases.map((purchase) => ({ id, ...purchase })),
       );
-    await read("2030-01-01T00:00:00Z", { amountCents: 1000 });
-    await read("2030-01-01T00:00:02Z", { amountCents: 1000 });
-    await read("2030-01-01T00:00:01Z", { amountCents: 1000, disputedCents: 1000 });
-    expect(await balance()).toBe(10_000_000n);
-  });
-  it("reports only a first grant as added, not credits a won dispute returns", async () => {
-    const id = `${organizationId}-added`;
-    expect(await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 })).toBe(
-      10_000_000,
-    );
-    await reconcileCreditPurchase(prisma, organizationId, {
-      id,
-      amountCents: 1000,
-      disputedCents: 1000,
+    /** A sync whose provider read starts now and returns `purchases` only when it is finished. */
+    const startSlowSync = async (id: string) => {
+      const started = deferred();
+      const read = deferred<Purchase[]>();
+      const done = syncCreditPurchases(prisma, organizationId, async () => {
+        started.resolve();
+        return (await read.promise).map((purchase) => ({ id, ...purchase }));
+      });
+      await started.promise;
+      return (purchases: Purchase[]) => {
+        read.resolve(purchases);
+        return done;
+      };
+    };
+    it("keeps a newer read's dispute hold when an older read lands after it", async () => {
+      const id = `${organizationId}-stale`;
+      await sync(id, [{ amountCents: 1000 }]);
+      const finishOlder = await startSlowSync(id);
+      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
+      await finishOlder([{ amountCents: 1000 }]);
+      expect(await balance()).toBe(0n);
     });
-    expect(await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 })).toBe(
-      0,
-    );
-  });
-  it("holds a purchase first seen disputed against an older undisputed read", async () => {
-    const id = `${organizationId}-stale-first`;
-    await reconcileCreditPurchase(
-      prisma,
-      organizationId,
-      { id, amountCents: 1000, disputedCents: 1000 },
-      new Date(),
-      new Date("2030-01-01T00:00:01Z"),
-    );
-    await reconcileCreditPurchase(
-      prisma,
-      organizationId,
-      { id, amountCents: 1000 },
-      new Date(),
-      new Date("2030-01-01T00:00:00Z"),
-    );
-    expect(await balance()).toBe(0n);
-  });
-  it("restores a purchase an earlier release zeroed for a dispute that was won", async () => {
-    const id = `${organizationId}-legacy-dispute`;
-    await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 });
-    await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 0 });
-    const read = (at: string, amountCents: number) =>
-      reconcileCreditPurchase(
-        prisma,
-        organizationId,
-        { id, amountCents },
-        new Date(),
-        new Date(at),
-      );
-    await read("2030-01-01T00:00:00Z", 1000);
-    expect(await balance()).toBe(10_000_000n);
-    await read("2030-01-01T00:00:01Z", 400);
-    await read("2030-01-01T00:00:02Z", 1000);
-    expect(await balance()).toBe(4_000_000n);
+    it("skips an older read after a newer one that changed nothing", async () => {
+      const id = `${organizationId}-unchanged`;
+      await sync(id, [{ amountCents: 1000 }]);
+      const finishOlder = await startSlowSync(id);
+      await sync(id, [{ amountCents: 1000 }]);
+      await finishOlder([{ amountCents: 1000, disputedCents: 1000 }]);
+      expect(await balance()).toBe(10_000_000n);
+    });
+    it("skips an older read after a newer one that listed nothing", async () => {
+      const id = `${organizationId}-empty`;
+      const finishOlder = await startSlowSync(id);
+      await sync(id, []);
+      await finishOlder([{ amountCents: 1000 }]);
+      expect(await balance()).toBe(0n);
+    });
+    it("holds a purchase first seen disputed against an older undisputed read", async () => {
+      const id = `${organizationId}-stale-first`;
+      const finishOlder = await startSlowSync(id);
+      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
+      await finishOlder([{ amountCents: 1000 }]);
+      expect(await balance()).toBe(0n);
+    });
+    it("reports only a first grant as added, not credits a won dispute returns", async () => {
+      const id = `${organizationId}-added`;
+      expect(await sync(id, [{ amountCents: 1000 }])).toBe(true);
+      await sync(id, [{ amountCents: 1000, disputedCents: 1000 }]);
+      expect(await sync(id, [{ amountCents: 1000 }])).toBe(false);
+      expect(await balance()).toBe(10_000_000n);
+    });
   });
   it("keeps a lost dispute's credits gone", async () => {
     const id = `${organizationId}-lost`;

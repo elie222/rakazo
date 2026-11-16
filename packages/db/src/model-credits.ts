@@ -92,12 +92,6 @@ export async function reconcileCreditPurchase(
     const [account] = await tx.$queryRaw<[{ purchasesSyncedAt: Date | null }]>`
       SELECT "purchasesSyncedAt" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
     if (readAt && account.purchasesSyncedAt && account.purchasesSyncedAt > readAt) return 0;
-    // Every purchase read since moves the mark, even one that changes nothing.
-    if (readAt && !(account.purchasesSyncedAt && account.purchasesSyncedAt >= readAt))
-      await tx.modelCreditAccount.update({
-        where: { organizationId },
-        data: { purchasesSyncedAt: readAt },
-      });
     const withheldMicros = await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const source = `purchase:${purchase.id}`;
@@ -105,12 +99,7 @@ export async function reconcileCreditPurchase(
     if (existing && existing.organizationId !== organizationId)
       throw new Error("Credit purchase belongs to another account");
     // Only what a dispute holds can come back; a refund or a lost dispute lowers the ceiling for good.
-    // A grant no ordered read has touched yet trusts its first one: releases before disputes were
-    // read zeroed a disputed purchase even after the dispute was won.
-    const ceiling =
-      existing && !(readAt && !existing.syncedAt)
-        ? existing.amountMicros + existing.disputedMicros
-        : undefined;
+    const ceiling = existing ? existing.amountMicros + existing.disputedMicros : undefined;
     const paid = BigInt(purchase.amountCents) * 10_000n;
     const kept = ceiling !== undefined && ceiling < paid ? ceiling : paid;
     const held = BigInt(disputedCents) * 10_000n;
@@ -134,8 +123,8 @@ export async function reconcileCreditPurchase(
       return 0;
     const entry = await tx.modelCreditEntry.upsert({
       where: { source },
-      create: { source, organizationId, amountMicros, disputedMicros, syncedAt: readAt },
-      update: { amountMicros, disputedMicros, ...(readAt ? { syncedAt: readAt } : {}) },
+      create: { source, organizationId, amountMicros, disputedMicros },
+      update: { amountMicros, disputedMicros },
     });
     if (delta !== 0n)
       await tx.modelCreditAccount.update({
@@ -336,9 +325,19 @@ export async function syncCreditPurchases(
   organizationId: string,
   load: () => Promise<BillingCreditPurchase[]>,
 ) {
+  await creditAccount(prisma, organizationId);
   const readAt = await databaseClock(prisma);
+  const purchases = await load();
+  // Every completed read moves the mark, even an empty one, so no older read can apply after it.
+  await prisma.modelCreditAccount.updateMany({
+    where: {
+      organizationId,
+      OR: [{ purchasesSyncedAt: null }, { purchasesSyncedAt: { lt: readAt } }],
+    },
+    data: { purchasesSyncedAt: readAt },
+  });
   let added = false;
-  for (const purchase of await load()) {
+  for (const purchase of purchases) {
     if ((await reconcileCreditPurchase(prisma, organizationId, purchase, new Date(), readAt)) > 0)
       added = true;
   }
