@@ -47,6 +47,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  drainRuns,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -62,6 +63,7 @@ import {
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
   piSessionsRoot,
+  RUN_DRAIN_MS,
   RunJobPublisher,
   RunStarter,
   removePiUserSessions,
@@ -197,7 +199,7 @@ export const MOBILE_AUTH_ORIGINS = [
   "http://127.0.0.1:19006",
 ];
 
-// Deploys give the old API 30 seconds to stop before killing it.
+// A stop that hands runs back is allowed 30 seconds before the process is killed.
 const REQUEST_DRAIN_MS = 20_000;
 
 export interface AppHandles {
@@ -216,7 +218,13 @@ export interface AppHandles {
   backgroundFailures?: () => Array<{ name: string; count: number }>;
   /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
   handleUpgrade?: UserDeviceHub["handleUpgrade"];
-  stop: () => Promise<void>;
+  /**
+   * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
+   * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
+   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
+   * for `connectionsClosed`, which settles once the server has stopped taking requests.
+   */
+  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -347,6 +355,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   }
   const jobPool = created.pool ?? ownedJobPool;
   const shutdown = new AbortController();
+  const runDrain = drainRuns(shutdown.signal, RUN_DRAIN_MS);
   // Chat starts in the process that receives it; the worker only takes what this one can't.
   const runs = inMemoryJobs ? undefined : new RunStarter(realtime, { signal: shutdown.signal });
   const jobs =
@@ -666,7 +675,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           token: hostComputer.hostComputerToken,
         }),
       paymentWallet,
-      shutdownSignal: shutdown.signal,
+      stoppingSignal: shutdown.signal,
+      shutdownSignal: runDrain.signal,
       now,
     },
   );
@@ -1168,6 +1178,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ),
   );
 
+  let stopped: Promise<void> | undefined;
   return {
     app,
     prisma,
@@ -1183,38 +1194,46 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
     handleUpgrade: userDeviceHub?.handleUpgrade,
-    stop: async () => {
-      // Handlers still running would otherwise query the pool after it ends.
-      const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
-      // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
-      // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
-      auth.disposeOidcDiscovery();
-      shutdown.abort();
-      // Aborted runs hand themselves back while realtime is still open to announce them.
-      const runsStopped = runs?.stop();
-      await userDeviceHub?.close();
-      await oauthLogins.abortAll();
-      await messagingRuntime?.stop();
-      await stopReferralEmails?.();
-      await stopHomeRetention?.();
-      await stopOrganizationDeletions();
-      await reconciler?.stop();
-      await oauthTokenUpgrade;
-      await mcpArgsMove;
-      await runsStopped;
-      await requestsSettled;
-      await botEmail?.drain?.();
-      await email?.drain?.();
-      await jobs.close();
-      await secrets.close();
-      await realtime.close();
-      await mcp.close();
-      await installed.close();
-      await bestEffort("disconnect database client", prisma.$disconnect());
-      await bestEffort("close database pool", created.pool?.end());
-      await bestEffort("close job database pool", ownedJobPool?.end());
-      await analytics?.flush();
-      await logger.flush({ timeoutMs: 2_000 });
+    stop: (options = {}) => {
+      if (!options.letRunsFinish) runDrain.end();
+      stopped ??= (async () => {
+        // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
+        // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
+        // It also ends run claims at once, while ordinary requests still finish.
+        shutdown.abort();
+        // Aborted runs hand themselves back while realtime is still open to announce them.
+        const runsStopped = runs?.stop();
+        // The next release polls for chat messages now; replies from turns still running send.
+        await messagingRuntime?.stopReceiving();
+        await options.connectionsClosed;
+        // Handlers still running would otherwise query the pool after it ends.
+        const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
+        auth.disposeOidcDiscovery();
+        await userDeviceHub?.close();
+        await oauthLogins.abortAll();
+        await stopReferralEmails?.();
+        await stopHomeRetention?.();
+        await stopOrganizationDeletions();
+        await reconciler?.stop();
+        await oauthTokenUpgrade;
+        await mcpArgsMove;
+        await runsStopped;
+        await messagingRuntime?.stop();
+        await requestsSettled;
+        await botEmail?.drain?.();
+        await email?.drain?.();
+        await jobs.close();
+        await secrets.close();
+        await realtime.close();
+        await mcp.close();
+        await installed.close();
+        await bestEffort("disconnect database client", prisma.$disconnect());
+        await bestEffort("close database pool", created.pool?.end());
+        await bestEffort("close job database pool", ownedJobPool?.end());
+        await analytics?.flush();
+        await logger.flush({ timeoutMs: 2_000 });
+      })();
+      return stopped;
     },
   };
 }
