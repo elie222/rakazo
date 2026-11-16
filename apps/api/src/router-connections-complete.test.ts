@@ -346,15 +346,13 @@ describe("connections.complete", () => {
       status: "pending",
       createdAt: new Date("2026-08-26T00:00:00.000Z"),
     };
-    let releaseSlowProvider = () => {};
-    const slowProvider = new Promise<boolean>((resolve) => {
-      releaseSlowProvider = () => resolve(true);
-    });
+    const slowProvider = deferred<boolean>();
+    const releaseSlowProvider = () => slowProvider.resolve(true);
     const otherReady = vi.fn().mockResolvedValue(true);
     const connectors = {
       managed: vi.fn((id: string) =>
         id === "composio"
-          ? { connectionReady: () => slowProvider }
+          ? { connectionReady: () => slowProvider.promise }
           : { connectionReady: otherReady },
       ),
     };

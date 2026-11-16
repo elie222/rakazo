@@ -5,8 +5,8 @@ import type { Actor } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { describe, expect, it, vi } from "vitest";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { appHandler, createRouter, handle } from "./router-test-support.js";
 
@@ -931,7 +931,9 @@ describe("private API connectors", () => {
     ["a character a header cannot carry", "fake-graphql-key-\u201Cquoted\u201D"],
   ])("refuses a GraphQL credential with %s without repeating it", async (_label, credential) => {
     const sink = createTestSink();
+    const previous = getLogger();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    onTestFinished(() => installLogger(previous));
     const { create, handler } = privateDeps();
     const response = await handle(
       handler,
