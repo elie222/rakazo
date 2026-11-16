@@ -2592,6 +2592,8 @@ model ModelCreditEntry {
   account                ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
   source                 String             @unique
   amountMicros           BigInt
+  /// A purchase's paid credits an open dispute holds back; `amountMicros` excludes them.
+  disputedMicros         BigInt             @default(0)
   pending                Boolean            @default(false)
   callId                 String?            @unique
   userId                 String?

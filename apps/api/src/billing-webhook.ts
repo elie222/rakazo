@@ -14,7 +14,7 @@ export function mountBillingRoutes(
   app: Hono,
   deps: {
     billing: BillingService;
-    provider: Pick<BillingProvider, "parseWebhook">;
+    provider: Pick<BillingProvider, "parseWebhook" | "customerForPayment">;
     webOrigin: string;
     authenticate: (request: Request) => Promise<Actor | null>;
   },
@@ -27,7 +27,11 @@ export function mountBillingRoutes(
     if (parsed === null) return c.json({ error: "Invalid signature" }, 400);
     if (parsed === "ignored") return c.json({ ok: true });
     try {
-      await deps.billing.sync(parsed.customerId);
+      const customerId =
+        "customerId" in parsed
+          ? parsed.customerId
+          : await deps.provider.customerForPayment?.(parsed.paymentId);
+      if (customerId) await deps.billing.sync(customerId);
     } catch (error) {
       // A non-2xx makes the provider retry the delivery.
       getLogger().error("billing webhook sync failed", error);

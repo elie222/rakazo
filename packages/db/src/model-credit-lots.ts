@@ -147,7 +147,6 @@ export async function syncLotBalance(tx: Tx, organizationId: string, withheldMic
 /** Refunds remove expired value before charging any funds already spent. */
 export async function resizeCreditLot(tx: Tx, id: string, amountMicros: bigint, expiresAt?: Date) {
   const lot = await tx.modelCreditLot.findUniqueOrThrow({ where: { id } });
-  if (amountMicros > lot.amountMicros) throw new Error("A refunded credit grant cannot grow");
   if (lot.expiresAt && expiresAt && lot.expiresAt.getTime() !== expiresAt.getTime())
     throw new Error("Credit service period changed");
   if (
@@ -155,7 +154,12 @@ export async function resizeCreditLot(tx: Tx, id: string, amountMicros: bigint, 
     (!expiresAt || lot.expiresAt?.getTime() === expiresAt.getTime())
   )
     return;
-  const expiredMicros = positive(lot.expiredMicros + amountMicros - lot.amountMicros);
+  // A cut removes expired value first. Restored credits are spendable until the caller expires a
+  // lapsed lot again.
+  const expiredMicros =
+    amountMicros < lot.amountMicros
+      ? positive(lot.expiredMicros + amountMicros - lot.amountMicros)
+      : lot.expiredMicros;
   const availableMicros = positive(amountMicros - lot.usedMicros - expiredMicros);
   await tx.modelCreditLot.update({
     where: { id },

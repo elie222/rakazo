@@ -64,14 +64,23 @@ export async function unexpiredCreditAccount(
   return { ...account, balanceMicros: account.balanceMicros - (expiring > 0n ? expiring : 0n) };
 }
 
-/** Payment replay and refunds reconcile one durable grant; refunds can never be re-credited. */
+/**
+ * Payment replay, refunds and disputes reconcile one durable grant. Refunds can never be
+ * re-credited; credits an open dispute holds come back when it is won.
+ */
 export async function reconcileCreditPurchase(
   prisma: PrismaClient,
   organizationId: string,
   purchase: BillingCreditPurchase,
   now = new Date(),
 ) {
-  if (!Number.isSafeInteger(purchase.amountCents) || purchase.amountCents < 0)
+  const disputedCents = purchase.disputedCents ?? 0;
+  if (
+    !Number.isSafeInteger(purchase.amountCents) ||
+    purchase.amountCents < 0 ||
+    !Number.isSafeInteger(disputedCents) ||
+    disputedCents < 0
+  )
     throw new Error("Invalid credit purchase");
   await creditAccount(prisma, organizationId);
   return prisma.$transaction(async (tx) => {
@@ -82,9 +91,14 @@ export async function reconcileCreditPurchase(
     const existing = await tx.modelCreditEntry.findUnique({ where: { source } });
     if (existing && existing.organizationId !== organizationId)
       throw new Error("Credit purchase belongs to another account");
-    if (!existing && purchase.amountCents === 0) return 0;
+    // Only what a dispute holds can come back; a refund or a lost dispute lowers the ceiling for good.
+    const ceiling = existing ? existing.amountMicros + existing.disputedMicros : undefined;
     const paid = BigInt(purchase.amountCents) * 10_000n;
-    const amountMicros = existing && existing.amountMicros < paid ? existing.amountMicros : paid;
+    const kept = ceiling !== undefined && ceiling < paid ? ceiling : paid;
+    const held = BigInt(disputedCents) * 10_000n;
+    const amountMicros = held < kept ? kept - held : 0n;
+    const disputedMicros = kept - amountMicros;
+    if (!existing && amountMicros === 0n) return 0;
     const delta = amountMicros - (existing?.amountMicros ?? 0n);
     const expiresAt = purchase.expiresAt === undefined ? undefined : new Date(purchase.expiresAt);
     if (expiresAt && !Number.isFinite(expiresAt.getTime()))
@@ -95,14 +109,15 @@ export async function reconcileCreditPurchase(
     if (
       existing &&
       delta === 0n &&
+      existing.disputedMicros === disputedMicros &&
       previousLot &&
       (!expiresAt || previousLot.expiresAt?.getTime() === expiresAt.getTime())
     )
       return 0;
     const entry = await tx.modelCreditEntry.upsert({
       where: { source },
-      create: { source, organizationId, amountMicros },
-      update: { amountMicros },
+      create: { source, organizationId, amountMicros, disputedMicros },
+      update: { amountMicros, disputedMicros },
     });
     if (delta !== 0n)
       await tx.modelCreditAccount.update({

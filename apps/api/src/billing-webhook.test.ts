@@ -19,14 +19,21 @@ const actor: Actor = {
 
 function mount(
   parseWebhook: BillingProvider["parseWebhook"],
-  options: { sync?: () => Promise<void>; actor?: Actor | null } = {},
+  options: {
+    sync?: () => Promise<void>;
+    actor?: Actor | null;
+    customerForPayment?: (paymentId: string) => Promise<string | null>;
+  } = {},
 ) {
   const sync = vi.fn(options.sync ?? (async () => undefined));
   const syncForActor = vi.fn(async () => undefined);
   const app = new Hono();
   mountBillingRoutes(app, {
     billing: { sync, syncForActor } as unknown as BillingService,
-    provider: { parseWebhook },
+    provider: {
+      parseWebhook,
+      ...(options.customerForPayment ? { customerForPayment: options.customerForPayment } : {}),
+    },
     webOrigin: "https://app.example.com",
     authenticate: async () => (options.actor === undefined ? actor : options.actor),
   });
@@ -70,6 +77,24 @@ describe("billing webhook", () => {
     expect(res.status).toBe(200);
     expect(parseWebhook).toHaveBeenCalledWith('{"id":"evt_1"}', expect.any(Headers));
     expect(sync).toHaveBeenCalledWith("cus_1");
+  });
+
+  it("syncs the customer a payment event's payment belongs to", async () => {
+    const { app, sync } = mount(() => ({ paymentId: "ch_1" }), {
+      customerForPayment: async (paymentId) => (paymentId === "ch_1" ? "cus_1" : null),
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(200);
+    expect(sync).toHaveBeenCalledWith("cus_1");
+  });
+
+  it("acknowledges a payment that belongs to no customer", async () => {
+    const { app, sync } = mount(() => ({ paymentId: "ch_guest" }), {
+      customerForPayment: async () => null,
+    });
+    const res = await app.request(BILLING_WEBHOOK_PATH, post("{}"));
+    expect(res.status).toBe(200);
+    expect(sync).not.toHaveBeenCalled();
   });
 
   it("fails the delivery so the provider retries when sync fails", async () => {
