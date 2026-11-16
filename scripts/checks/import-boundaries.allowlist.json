@@ -3,7 +3,7 @@
   "relative": [
     "apps/api/src/account-deletion.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
     "apps/api/src/board-app.postgres.test.ts -> ../../../packages/testkit/src/index.js",
-    "apps/api/src/computer-provider-config.test.ts -> ../../../packages/adapters/src/fake-computer-settings.test-support.js",
+    "apps/api/src/computer-provider-config.test.ts -> ../../../packages/adapters/src/providers/computer/fake/fake-computer-settings.test-support.js",
     "apps/api/src/desktop-host-choice.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/health.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
     "apps/api/src/home-retention.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
@@ -19,7 +19,7 @@
     "apps/api/src/user-device-pair-limit.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/user-device-sessions.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/webhook.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
-    "apps/web/e2e/computer-provider-settings.spec.ts -> ../../../packages/adapters/src/fake-computer-settings.test-support",
+    "apps/web/e2e/computer-provider-settings.spec.ts -> ../../../packages/adapters/src/providers/computer/fake/fake-computer-settings.test-support",
     "apps/web/e2e/fixtures/agent-connection-approval.tsx -> ../../../../packages/adapters/src/approval-ask",
     "apps/web/e2e/logo-avatar-motion-conformance.spec.ts -> ../../../packages/core/src/logo-avatar-activity",
     "apps/web/e2e/logo-avatar-motion-conformance.spec.ts -> ../../../packages/core/src/logo-avatar-motion",
@@ -29,8 +29,8 @@
     "apps/web/e2e/readable-names.spec.ts -> ../../../packages/db/src/index",
     "apps/web/e2e/social-sign-in.spec.ts -> ../../../packages/auth/src/social-presentation",
     "apps/web/e2e/social-sign-in.spec.ts -> ../../../packages/contracts/src/auth",
-    "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-assets.ts",
-    "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-policy.ts",
+    "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-assets.ts",
+    "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts",
     "apps/web/vite.config.ts -> ../../packages/logging/src/env.ts",
     "apps/worker/src/secret-store.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
     "apps/www/src/agent-content.ts -> ../../../packages/contracts/src/client-build.js",
@@ -77,7 +77,10 @@
   ],
   "server": [
     "apps/web/src/preview-middleware.ts -> @rakazo/adapters/wuying-screen-policy",
-    "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-assets.ts",
-    "apps/web/vite.config.ts -> ../../packages/adapters/src/wuying-screen-policy.ts"
+    "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-assets.ts",
+    "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts"
+  ],
+  "vendor": [
+    "packages/adapters/src/providers/computer/wuying/wuying-sandbox.ts -> ../desktop/desktop-sandbox-paths.js"
   ]
 }

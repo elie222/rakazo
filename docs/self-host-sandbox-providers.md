@@ -549,7 +549,7 @@ rechecks each selected PID's marker descriptors before signaling it.
 E2B computers start from the `rakazo-computer` template: E2B's stock desktop at
 2 vCPU and 4 GB instead of its 8 vCPU and 8 GB. Build it once in the E2B team that
 owns `E2B_API_KEY`, and again whenever its definition in
-`packages/adapters/src/e2b-template.ts` changes:
+`packages/adapters/src/providers/computer/e2b/e2b-template.ts` changes:
 
 ```bash
 E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
@@ -595,7 +595,7 @@ or network error does not authorize replacing an existing computer.
 ### Boat computer snapshot
 
 Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
-desktop tools installed. The hash follows the setup in `packages/adapters/src/boat-sandbox.ts`,
+desktop tools installed. The hash follows the setup in `packages/adapters/src/providers/computer/boat/boat-sandbox.ts`,
 so changing it produces a new name and existing computers keep the one they started from.
 
 No setup is needed: when the snapshot for the current setup is missing, the API or worker

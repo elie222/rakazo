@@ -26,8 +26,11 @@ import {
   loadComputerOwnerSettings,
   loadComputerProviderSelection,
 } from "./configured-sandbox.js";
-import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import {
+  assertHostCommandsAllowed,
+  DesktopSandboxProvider,
+} from "./providers/computer/desktop/desktop-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 

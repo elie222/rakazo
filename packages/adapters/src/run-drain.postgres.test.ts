@@ -24,8 +24,8 @@ import {
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRunExecutor } from "./executor.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import type * as RunLifecycle from "./run-lifecycle.js";
 import {

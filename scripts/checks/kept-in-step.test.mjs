@@ -62,7 +62,10 @@ test("Kubernetes computers default to the Compose stack's computer image", () =>
     .match(/:-([^}]+)\}:\$\{RAKAZO_COMPUTER_IMAGE_TAG:-([^}]+)\}/)
     .slice(1);
   assert.equal(
-    capture("packages/adapters/src/kubernetes-sandbox.ts", /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/),
+    capture(
+      "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts",
+      /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/,
+    ),
     `${image}:${tag}`,
   );
 });

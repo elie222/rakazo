@@ -8,10 +8,13 @@ import {
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "./computer-support.js";
-import { desktopGuardApplies, desktopProtectionGuardMessage } from "./desktop-command-guard.js";
-import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 import { mediaDelivery, scheduleMediaPoll } from "./media-video-poll.js";
+import {
+  desktopGuardApplies,
+  desktopProtectionGuardMessage,
+} from "./providers/computer/desktop/desktop-command-guard.js";
+import { protectedActivateScriptWriteRefusal } from "./providers/computer/desktop/desktop-guard-words.js";
 import type { RunContext } from "./run-context.js";
 import { persistMessageInTransaction, runLeaseFor } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
