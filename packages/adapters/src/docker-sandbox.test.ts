@@ -1,10 +1,13 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
@@ -14,6 +17,7 @@ import {
   SCREEN_RELEASE_TIMEOUT_MS,
 } from "./docker-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "docker-test",
@@ -48,6 +52,46 @@ describe("Docker sandbox", () => {
         context,
       ),
     ).rejects.toThrow("control screen failed to start");
+  });
+
+  it("preserves the team screen limit without provider details", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "cannot allocate another screen (limit 4): private detail" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.connectScreen(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        { view: "stream" },
+        context,
+      ),
+    ).rejects.toMatchObject({
+      name: "ComputerScreenUnavailableError",
+      teamScreenLimit: 4,
+      message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+    });
+  });
+
+  it("reports a full Team Computer when observing, not only when connecting", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "cannot allocate another screen (limit 4)" }, { status: 500 }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.observe(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toMatchObject({ name: "ComputerScreenUnavailableError", teamScreenLimit: 4 });
   });
 
   it("requires a control token and an explicit route for an interactive screen", async () => {
@@ -114,10 +158,7 @@ describe("Docker sandbox", () => {
   });
 
   it("yields stdout from a streaming exec before the command exits", async () => {
-    let releaseExit: () => void = () => undefined;
-    const exitGate = new Promise<void>((resolve) => {
-      releaseExit = resolve;
-    });
+    const exitGate = deferred();
     const encoder = new TextEncoder();
     const fetchMock = vi.fn(
       async () =>
@@ -129,7 +170,7 @@ describe("Docker sandbox", () => {
                   `${JSON.stringify({ type: "stdout", data: "code: ABCD-1234\nhttps://github.com/login/device\n" })}\n`,
                 ),
               );
-              await exitGate;
+              await exitGate.promise;
               controller.enqueue(encoder.encode(`${JSON.stringify({ type: "exit", code: 0 })}\n`));
               controller.close();
             },
@@ -160,7 +201,7 @@ describe("Docker sandbox", () => {
     })();
     await Promise.resolve();
     expect(exitSeen).toBe(false);
-    releaseExit();
+    exitGate.resolve();
     await expect(rest).resolves.toEqual({ value: { type: "exit", code: 0 }, done: false });
   });
 
@@ -271,13 +312,11 @@ describe("Docker sandbox", () => {
     });
 
     it("shares one home probe while callers stop waiting independently", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       vi.stubGlobal("fetch", fetchMock);
       const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
       const stopped = new AbortController();
@@ -286,7 +325,7 @@ describe("Docker sandbox", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       stopped.abort(new Error("stopped"));
       await expect(first).rejects.toThrow("stopped");
-      answer(commandOutput(""));
+      answer?.resolve(commandOutput(""));
       await expect(second).resolves.toBeUndefined();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -410,13 +449,11 @@ describe("Docker sandbox", () => {
     );
 
     it("observes a failed check after its only caller stops waiting", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const unhandled = vi.fn();
       process.on("unhandledRejection", unhandled);
@@ -427,7 +464,7 @@ describe("Docker sandbox", () => {
         stopped.abort(new Error("stopped"));
         await expect(check).rejects.toThrow("stopped");
 
-        answer(exit(1));
+        answer?.resolve(exit(1));
         await new Promise((resolve) => setImmediate(resolve));
         await new Promise((resolve) => setImmediate(resolve));
         expect(unhandled).not.toHaveBeenCalled();
@@ -465,30 +502,26 @@ describe("Docker sandbox", () => {
     });
 
     it("runs one check for callers that need it at the same time", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const first = provider.prepare(computer, context);
       const second = provider.prepare(computer, context);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-      answer(exit(0));
+      answer?.resolve(exit(0));
       await Promise.all([first, second]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it("lets the other callers' check finish when one caller stops waiting", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const stopped = new AbortController();
       const first = provider.prepare(computer, { ...context, signal: stopped.signal });
@@ -496,18 +529,16 @@ describe("Docker sandbox", () => {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       stopped.abort(new Error("stopped"));
       await expect(first).rejects.toThrow("stopped");
-      answer(exit(0));
+      answer?.resolve(exit(0));
       await expect(second).resolves.toBeUndefined();
     });
 
     it("checks again after a stall that happened during a passing check", async () => {
-      let answer = (_response: Response) => {};
-      const fetchMock = vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      );
+      let answer: Deferred<Response> | undefined;
+      const fetchMock = vi.fn(() => {
+        answer = deferred<Response>();
+        return answer.promise;
+      });
       const provider = await unansweredProvider(fetchMock);
       const check = provider.prepare(computer, context);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -519,7 +550,7 @@ describe("Docker sandbox", () => {
           [Symbol.asyncIterator]()
           .next(),
       ).rejects.toBeInstanceOf(SandboxUnresponsiveError);
-      passing(exit(0));
+      passing?.resolve(exit(0));
       await check;
       fetchMock.mockResolvedValueOnce(exit(0));
       await provider.prepare(computer, context);
@@ -562,6 +593,30 @@ describe("Docker sandbox", () => {
       provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
     ).rejects.toThrow(`sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`);
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("names a streamed success response over the cap, and only that, too large", async () => {
+    const provision = (body: BodyInit) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(body)),
+      );
+      return new DockerSandboxProvider("http://supervisor.test", "test-token").provision(
+        { botId: "bot", homePath: "/tmp/bot" },
+        context,
+      );
+    };
+
+    await expect(provision(new Uint8Array(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES + 1))).rejects.toThrow(
+      `sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`,
+    );
+    await expect(
+      provision(
+        new ReadableStream({
+          pull: (controller) => controller.error(new Error("Response is too large")),
+        }),
+      ),
+    ).rejects.toThrow(/^Response is too large$/);
   });
 
   it.each([
@@ -620,6 +675,50 @@ describe("Docker sandbox", () => {
     await expect(
       provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
     ).rejects.toThrow("Computer limit reached for space (max: 5)");
+  });
+
+  it("refuses a file over a read's size limit by type and returns one at the limit", async () => {
+    const content = new TextEncoder().encode("portable");
+    // The supervisor reads one byte past the limit and answers 413 when the file has it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const maxBytes = Number(new URL(url).searchParams.get("maxBytes"));
+        return content.byteLength > maxBytes
+          ? Response.json({ error: `computer file exceeds ${maxBytes} bytes` }, { status: 413 })
+          : Response.json({ content: Buffer.from(content).toString("base64") });
+      }),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await assertSandboxReadLimit(
+      provider,
+      { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+      context,
+      { path: "notes/result.txt", content },
+    );
+  });
+
+  it("keeps a supervisor failure that only mentions a size as a failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "argument list too large" }, { status: 404 })),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await provider
+      .readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "notes/result.txt",
+        context,
+        { maxBytes: 4 },
+      )
+      .then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+    expect(error).not.toBeInstanceOf(SandboxFileTooLargeError);
+    expect(error).toMatchObject({ message: expect.stringContaining("sandbox file read failed") });
   });
 
   it("stops a streamed file response at the caller-derived encoded limit", async () => {

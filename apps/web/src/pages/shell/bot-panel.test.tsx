@@ -3,6 +3,8 @@
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot, BotAvatarSet } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -16,6 +18,8 @@ vi.mock("../../lib/rpc", () => {
       get: vi.fn(),
       update: vi.fn(),
       restoreInstructions: vi.fn(),
+      // Saved instructions mark the roster stale; nothing here reads it.
+      list: vi.fn(async () => []),
       // This server receives no email, so the panel offers no address.
       emailAddress: vi.fn(async () => null),
     },
@@ -38,70 +42,78 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => ({
-  useCopyText: () => [false, () => {}],
-  SectionHeading: ({
-    variant: _variant,
-    ...props
-  }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
-  Button: ({
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
-    <button type="button" {...props} />
-  ),
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
-  Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
-  Switch: ({
-    onCheckedChange,
-    checked,
-    ...props
-  }: ComponentProps<"button"> & {
-    checked?: boolean;
-    onCheckedChange?: (checked: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange?.(!checked)}
-      {...props}
-    />
-  ),
-  Toggle: ({
-    onPressedChange: _onPressedChange,
-    pressed,
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & {
-    variant?: string;
-    size?: string;
-    pressed?: boolean;
-    onPressedChange?: (pressed: boolean) => void;
-  }) => (
-    <button type="button" aria-pressed={pressed} {...props}>
-      {props.children}
-    </button>
-  ),
-  Tabs: ({
-    value: _value,
-    onValueChange: _onValueChange,
-    ...props
-  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
-    <div {...props} />
-  ),
-  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
-  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
-    <button type="button" role="tab" {...props} />
-  ),
-  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
-    <div {...props} />
-  ),
-}));
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { createContext, useContext } = await import("react");
+  const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
+  return {
+    useCopyText: () => [false, () => {}],
+    SectionHeading: ({
+      variant: _variant,
+      ...props
+    }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
+    Button: ({
+      variant: _variant,
+      size: _size,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
+      <button type="button" {...props} />
+    ),
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
+    Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    OptionSelect,
+    Switch: ({
+      onCheckedChange,
+      checked,
+      ...props
+    }: ComponentProps<"button"> & {
+      checked?: boolean;
+      onCheckedChange?: (checked: boolean) => void;
+    }) => (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onCheckedChange?.(!checked)}
+        {...props}
+      />
+    ),
+    DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DropdownMenuItem: ({
+      variant: _variant,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
+    Popover: ({
+      onOpenChange,
+      children,
+    }: {
+      onOpenChange: (open: boolean) => void;
+      children: ReactNode;
+    }) => <PopoverOpen.Provider value={onOpenChange}>{children}</PopoverOpen.Provider>,
+    PopoverTrigger: (props: ComponentProps<"button">) => {
+      const setOpen = useContext(PopoverOpen);
+      return <button type="button" {...props} onClick={() => setOpen(true)} />;
+    },
+    PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    Command: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    CommandList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    CommandEmpty: () => null,
+    CommandGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    CommandItem: ({
+      value,
+      onSelect,
+      ...props
+    }: Omit<ComponentProps<"button">, "onSelect"> & { value: string; onSelect: () => void }) => (
+      <button type="button" role="option" data-value={value} onClick={onSelect} {...props} />
+    ),
+    ListSearchInput: () => null,
+  };
+});
+vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
 vi.mock("./avatar-studio-popover", () => ({
   AvatarStudioPopover: ({
     value,
@@ -171,7 +183,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     thinkingLevel: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
-    fleetManagement: false,
+    fleetManagement: true,
     replyMode: "chat",
     disabledBuiltinTools: [],
     webhookConfigured: false,
@@ -188,20 +200,13 @@ const onSave = vi.fn(
 );
 const onExport = vi.fn(async () => undefined);
 
-async function render(
-  description = "Billing",
-  overrides: Partial<Bot> = {},
-  memoryProviderConfigured = false,
-  focusModel = 0,
-) {
+async function render(description = "Billing", overrides: Partial<Bot> = {}, focusModel = 0) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
         <BotSettings
-          onOpenConnections={() => undefined}
           focusModel={focusModel}
           bot={bot(description, overrides)}
-          memoryProviderConfigured={memoryProviderConfigured}
           onSave={onSave}
           onExport={onExport}
           onClear={() => undefined}
@@ -209,7 +214,7 @@ async function render(
       </QueryClientProvider>,
     );
   });
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 function descriptionField(): HTMLTextAreaElement {
@@ -231,14 +236,42 @@ async function setDescription(value: string) {
   });
 }
 
-async function clickSave() {
-  const button = [...container.querySelectorAll("button")].find(
-    (node) => node.textContent === "Save",
-  );
+/** Flips Notifications, which saves the whole profile at once. */
+async function saveProfile() {
   await act(async () => {
-    if (button) button.click();
-    else container.querySelector<HTMLButtonElement>('button[id$="-notify-finish"]')!.click();
+    container.querySelector<HTMLButtonElement>('button[id$="-notify-finish"]')!.click();
   });
+}
+
+async function openSettings() {
+  await act(async () => settingsButton().click());
+}
+
+function settingsButton() {
+  return container.querySelector<HTMLButtonElement>(
+    '[data-testid="bot-settings-advanced"] button',
+  )!;
+}
+
+async function openModelPicker() {
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click(),
+  );
+  return [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+}
+
+function thinkingField() {
+  return container.querySelector<HTMLElement>('[role="combobox"][id$="-thinking"]')!;
+}
+
+async function openOptions(trigger: HTMLElement) {
+  await act(async () => trigger.click());
+  return [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')];
+}
+
+async function selectThinking(label: string) {
+  const option = (await openOptions(thinkingField())).find((entry) => entry.textContent === label);
+  await act(async () => option?.click());
 }
 
 beforeEach(() => {
@@ -260,59 +293,30 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the profile and the Advanced tab's controls", async () => {
-  vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
-    { id: "fixture-voice", label: "Fixture voice" },
-  ]);
-  await render("Billing", {}, true);
+it("shows the profile and folds the settings away", async () => {
+  await render("Billing");
   expect(container.querySelector('[data-testid="bot-profile-header"]')?.textContent).toContain(
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    "Computer",
-    "Routines",
-    "Pages",
-    "Advanced",
-  ]);
+  expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
-  const advanced = container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
-  expect(advanced.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
+  const settings = document.getElementById(settingsButton().getAttribute("aria-controls")!)!;
+  expect(settingsButton().getAttribute("aria-expanded")).toBe("false");
+  expect(settings.hidden).toBe(true);
+  await openSettings();
+  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
+  expect(settings.hidden).toBe(false);
+  expect(settings.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
+  expect(settings.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
+  const card = settings.firstElementChild!;
   expect(
-    container
-      .querySelector('[id$="-disabled-tools"]')
-      ?.closest("section")
-      ?.getAttribute("data-testid"),
-  ).toBe("bot-settings-tools");
-  const labels = {
-    model: "Model",
-    computer: "Computer",
-    memoryScope: "Memory scope",
-    voice: "Voice",
-    readAloud: "Read replies aloud",
-    fleetManagement: "Manage other bots",
-    replyMode: "Replies",
-  };
-  const controls = [...advanced.querySelectorAll("h3, span, label, div")].flatMap((node) =>
-    Object.entries(labels)
-      .filter(([, label]) =>
-        [...node.childNodes].some(
-          (child) => child.nodeType === Node.TEXT_NODE && child.textContent === label,
-        ),
-      )
-      .map(([key]) => key),
-  );
-  expect([...new Set(controls)]).toEqual([
-    "model",
-    "computer",
-    "memoryScope",
-    "voice",
-    "readAloud",
-    "fleetManagement",
-    "replyMode",
-  ]);
+    [...card.querySelectorAll('label, button[id$="-model"]')].map(
+      (node) => node.firstChild?.textContent,
+    ),
+  ).toEqual(["Model", "Notifications", "Own computer"]);
 });
 
 describe("BotSettings model choices", () => {
@@ -367,21 +371,12 @@ describe("BotSettings model choices", () => {
       },
     ]);
     await render();
-    await act(async () => {
-      await Promise.resolve();
-    });
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
-        .click(),
-    );
-    const model = container.querySelector('[id$="-model"]');
-    if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
-    const values = [...model.options].map((option) => option.value);
+    await act(() => flush());
+    const values = (await openModelPicker()).map((option) => option.dataset.value);
     expect(values).toContain("deepseek::deepseek-flash");
     expect(values).toContain("deepseek::deepseek-v4-pro");
     expect(values).not.toContain("deepseek::DeepSeek-V4.1-Flash");
-    expect(values.some((value) => value.includes("DeepSeek"))).toBe(false);
+    expect(values.some((value) => value?.includes("DeepSeek"))).toBe(false);
   });
 });
 
@@ -392,11 +387,11 @@ describe("BotSettings thinking options", () => {
       modelId: "beta",
       thinkingLevel: "high",
     });
-    await clickSave();
+    await saveProfile();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
   });
 
-  it("shows the connection's thinking levels for a bot on a second enabled model", async () => {
+  it("shows the thinking levels the bot's own model offers on its connection", async () => {
     i18n.load("en", {});
     i18n.activate("en");
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
@@ -417,23 +412,85 @@ describe("BotSettings thinking options", () => {
         isDefault: true,
         modelId: "alpha",
         enabledModelIds: ["alpha", "beta"],
-        thinkingLevels: ["off", "low", "high"],
+        apiProtocol: "anthropic-messages",
+        modelSettings: { beta: { reasoning: true } },
       },
     ]);
     await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
-        .click(),
+    await act(() => flush());
+    const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
+    expect(checked?.dataset.value).toBe("openai-compatible::beta");
+    expect((await openOptions(thinkingField())).map((option) => option.textContent)).toEqual([
+      "Default (Medium)",
+      "Minimal",
+      "Low",
+      "Medium",
+      "High",
+    ]);
+  });
+});
+
+describe("BotSettings model autosave", () => {
+  async function renderWithModels() {
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      {
+        id: "cred-compatible",
+        provider: "openai-compatible",
+        label: "Local server",
+        hasKey: true,
+        isDefault: true,
+        modelId: "alpha",
+        enabledModelIds: ["alpha", "beta"],
+        apiProtocol: "anthropic-messages",
+        modelSettings: { beta: { reasoning: true } },
+      },
+    ]);
+    await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
+    await act(() => flush());
+  }
+
+  it("saves a thinking change at once and puts back a refused one", async () => {
+    await renderWithModels();
+    await selectThinking("High");
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelId: "beta", thinkingLevel: "high" });
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    await selectThinking("Low");
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ thinkingLevel: "low" });
+    expect(thinkingField().textContent).toBe("High");
+    expect(container.textContent).toContain("offline");
+  });
+
+  it("saves a model change at once and puts back a refused one", async () => {
+    await renderWithModels();
+    const alpha = (await openModelPicker()).find(
+      (option) => option.dataset.value === "openai-compatible::alpha",
     );
-    const [model, thinking] = [...container.querySelectorAll('[id$="-model"], [id$="-thinking"]')];
-    if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
-    expect(model.value).toBe("openai-compatible::beta");
-    if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
-    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+    await act(async () => alpha!.click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      modelProvider: "openai-compatible",
+      modelId: "alpha",
+    });
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    const beta = (await openModelPicker()).find(
+      (option) => option.dataset.value === "openai-compatible::beta",
+    );
+    await act(async () => beta!.click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelId: "beta" });
+    const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
+    expect(checked?.dataset.value).toBe("openai-compatible::alpha");
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves Own computer at once and puts back a refused change", async () => {
+    await render();
+    const toggle = () => container.querySelector<HTMLButtonElement>('button[id$="-own-computer"]')!;
+    await act(async () => toggle().click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ computerMode: "dedicated" });
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => toggle().click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ computerMode: "team" });
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
   });
 });
 
@@ -441,12 +498,12 @@ describe("BotSettings bot management saves", () => {
   it("cannot restore a stale enabled value when another session disables it", async () => {
     await render("Billing", { fleetManagement: true });
     await render("Billing", { fleetManagement: false });
-    await clickSave();
+    await saveProfile();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
   });
 
   it("restores the toggle when the immediate save fails", async () => {
-    await render();
+    await render("Billing", { fleetManagement: false });
     onSave.mockRejectedValueOnce(new Error("offline"));
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
@@ -469,34 +526,23 @@ describe("BotSettings bot management saves", () => {
     expect(container.textContent).toContain("Could not reach the server");
   });
 
-  it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
-    await render("Billing", { fleetManagement: enabled });
+  it("saves only the bot management toggle, both ways", async () => {
+    await render("Billing", { fleetManagement: false });
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
-    await act(async () => {
-      toggle.click();
-    });
-    expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
-    await clickSave();
+    await act(async () => toggle.click());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: true });
+    await act(async () => toggle.click());
+    expect(onSave).toHaveBeenLastCalledWith({ fleetManagement: false });
+    await saveProfile();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
-  });
-
-  it("saves only the reply mode when it changes", async () => {
-    await render();
-    const select = container.querySelector<HTMLSelectElement>('select[id$="-reply-mode"]');
-    if (!select) throw new Error("Missing reply mode");
-    await act(async () => {
-      select.value = "messages";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(onSave).toHaveBeenCalledExactlyOnceWith({ replyMode: "messages" });
   });
 });
 
 describe("BotSettings description saves", () => {
   it("leaves instructions off a save that does not edit the description", async () => {
     await render();
-    await clickSave();
+    await saveProfile();
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("description");
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("instructions");
   });
@@ -504,7 +550,7 @@ describe("BotSettings description saves", () => {
   it("does not resend instructions when the bot prop stays on the old description", async () => {
     await render();
     await setDescription("Invoices");
-    await clickSave();
+    await saveProfile();
     expect(onSave.mock.calls[0]?.[0]).toMatchObject({
       description: "Invoices",
     });
@@ -512,7 +558,7 @@ describe("BotSettings description saves", () => {
 
     // The parent still passes the description from when the panel opened.
     await render();
-    await clickSave();
+    await saveProfile();
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave.mock.calls[1]?.[0]).not.toHaveProperty("description");
     expect(onSave.mock.calls[1]?.[0]).not.toHaveProperty("instructions");
@@ -521,10 +567,10 @@ describe("BotSettings description saves", () => {
   it("still saves a description edited back to the stale prop value", async () => {
     await render();
     await setDescription("Invoices");
-    await clickSave();
+    await saveProfile();
     await render();
     await setDescription("Billing");
-    await clickSave();
+    await saveProfile();
     expect(onSave.mock.calls[1]?.[0]).toMatchObject({
       description: "Billing",
     });
@@ -535,8 +581,8 @@ describe("BotSettings description saves", () => {
     onSave.mockRejectedValueOnce(new Error("offline"));
     await render();
     await setDescription("Invoices");
-    await clickSave();
-    await clickSave();
+    await saveProfile();
+    await saveProfile();
     expect(onSave.mock.calls[1]?.[0]).toMatchObject({
       description: "Invoices",
     });
@@ -545,18 +591,23 @@ describe("BotSettings description saves", () => {
 });
 
 describe("instruction settings refresh", () => {
+  const instructions = (shown: Bot) => (
+    <QueryClientProvider client={queryClient}>
+      <InstructionSettings bot={shown} />
+    </QueryClientProvider>
+  );
   it("refreshes a saved field against its latest baseline before the parent catches up", async () => {
     const initial = bot();
     vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Saved edit" });
     await act(async () => {
-      root.render(<InstructionSettings bot={initial} />);
+      root.render(instructions(initial));
     });
     await setDescription("Saved edit");
     await act(async () => {
       descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     });
     await act(async () => {
-      root.render(<InstructionSettings bot={{ ...initial, instructions: "External update" }} />);
+      root.render(instructions({ ...initial, instructions: "External update" }));
     });
     expect(descriptionField().value).toBe("External update");
     await setDescription("Fresh edit");
@@ -573,13 +624,11 @@ describe("instruction settings refresh", () => {
   it("keeps a dirty draft when run completion refreshes the bot", async () => {
     const initial = bot();
     await act(async () => {
-      root.render(<InstructionSettings bot={initial} />);
+      root.render(instructions(initial));
     });
     await setDescription("Unsaved instructions");
     await act(async () => {
-      root.render(
-        <InstructionSettings bot={{ ...initial, updatedAt: "2026-09-02T00:00:00.000Z" }} />,
-      );
+      root.render(instructions({ ...initial, updatedAt: "2026-09-02T00:00:00.000Z" }));
     });
     expect(descriptionField().value).toBe("Unsaved instructions");
   });
@@ -590,13 +639,11 @@ describe("instruction settings refresh", () => {
       instructions: "Unsaved instructions",
     });
     await act(async () => {
-      root.render(<InstructionSettings bot={initial} />);
+      root.render(instructions(initial));
     });
     await setDescription("Unsaved instructions");
     await act(async () => {
-      root.render(
-        <InstructionSettings bot={{ ...initial, instructions: "Newer saved instructions" }} />,
-      );
+      root.render(instructions({ ...initial, instructions: "Newer saved instructions" }));
     });
     await act(async () => {
       descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
@@ -619,7 +666,7 @@ describe("instruction settings refresh", () => {
         instructions: "Newer saved instructions",
       });
     await act(async () => {
-      root.render(<InstructionSettings bot={initial} />);
+      root.render(instructions(initial));
     });
     await setDescription("Unsaved instructions");
     await act(async () => {
@@ -657,12 +704,10 @@ describe("instruction settings refresh", () => {
   it("refreshes pristine instructions after an external update", async () => {
     const initial = bot();
     await act(async () => {
-      root.render(<InstructionSettings bot={initial} />);
+      root.render(instructions(initial));
     });
     await act(async () => {
-      root.render(
-        <InstructionSettings bot={{ ...initial, instructions: "Approved replacement" }} />,
-      );
+      root.render(instructions({ ...initial, instructions: "Approved replacement" }));
     });
     expect(descriptionField().value).toBe("Approved replacement");
   });
@@ -683,7 +728,8 @@ it("cancels an inline name edit", async () => {
 });
 
 it("focuses the model control for a model deep link", async () => {
-  await render("", {}, false, 1);
+  await render("", {}, 1);
+  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 
@@ -823,8 +869,11 @@ describe("BotSettings cached data", () => {
     vi.mocked(rpc.voice.voices)
       .mockClear()
       .mockReturnValueOnce(new Promise(() => undefined));
-    await render();
-    expect(container.querySelector('[id$="-voice"]')?.textContent).toContain("Cached voice");
+    await render("Billing", { autoSpeak: true });
+    const voices = await openOptions(
+      container.querySelector<HTMLElement>('[role="combobox"][id$="-voice"]')!,
+    );
+    expect(voices.map((option) => option.textContent)).toContain("Cached voice");
     expect(rpc.voice.voices).toHaveBeenCalledTimes(1);
   });
 
@@ -838,7 +887,7 @@ describe("BotSettings cached data", () => {
     });
     expect(container.querySelector('[aria-label="Edit name"]')?.textContent).toBe("Grace");
     expect(descriptionField().value).toBe("Invoices");
-    await clickSave();
+    await saveProfile();
     const patch = onSave.mock.lastCall?.[0];
     expect(patch).toMatchObject({ description: "Invoices", computerMode: "dedicated" });
     expect(patch).not.toHaveProperty("name");

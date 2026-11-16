@@ -5,13 +5,13 @@ import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import { ComputerModeSchema, ComputerStatusSchema } from "./computer.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, ReplyModeSchema, RunStatus, ThinkingLevelSchema } from "./ids.js";
+import { LabFeatureSchema } from "./labs.js";
 import { NavLinkSchema } from "./nav-links.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
-export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 /**
  * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
@@ -55,7 +55,6 @@ export const AppLocaleSchema = z.enum([
   "ja",
   "pl",
 ]);
-export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
 
@@ -71,7 +70,6 @@ export const AgentSecretInputSchema = z.object({
   name: z.string().trim().regex(AGENT_SECRET_NAME_PATTERN),
   value: z.string().min(1).max(16_384),
 });
-export type AgentSecretInput = z.infer<typeof AgentSecretInputSchema>;
 
 export const InstructionVersionSchema = z.object({
   id: Id,
@@ -248,7 +246,6 @@ export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
 export const GroupDetailSchema = GroupSchema.extend({
   messages: z.array(ThreadMessageSchema).optional(),
 });
-export type GroupDetail = z.infer<typeof GroupDetailSchema>;
 
 export const BotSectionName = z.string().trim().min(1).max(60);
 
@@ -389,7 +386,6 @@ export const SpaceSchema = z.object({
 export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceRoleSchema = z.enum(["owner", "member"]);
-export type SpaceRole = z.infer<typeof SpaceRoleSchema>;
 
 export const SpaceMemberSchema = z.object({
   userId: Id,
@@ -414,7 +410,6 @@ export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),
   expiresAt: z.string(),
 });
-export type SpaceInviteLink = z.infer<typeof SpaceInviteLinkSchema>;
 
 export const SpaceInvitePreviewSchema = z.object({
   spaceId: Id,
@@ -459,7 +454,8 @@ export const CreateBotInput = z.object({
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
-  computerMode: ComputerModeSchema.default("team"),
+  /** Unset follows the deployment's default computer. */
+  computerMode: ComputerModeSchema.optional(),
   /** Idempotency key within a space (unique with spaceId). */
   spawnKey: z.string().trim().min(1).max(120).optional(),
 });
@@ -648,7 +644,6 @@ export const CreateRoutineInput = z
 export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
 
 export const ScratchpadItemStatusSchema = z.enum(["open", "parked", "done"]);
-export type ScratchpadItemStatus = z.infer<typeof ScratchpadItemStatusSchema>;
 
 export const ScratchpadItemSchema = z.object({
   id: Id,
@@ -669,7 +664,6 @@ export const CreateScratchpadItemInput = z.object({
 });
 
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
-export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),
@@ -1010,7 +1004,6 @@ export const PluginSubmissionInputSchema = z.object({
   testing: z.string().trim().min(1).max(4000),
   tested: z.literal(true),
 });
-export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
 
 /** An app's owner claiming its integration page so it links to their site. */
 export const IntegrationClaimInputSchema = z.object({
@@ -1023,7 +1016,6 @@ export const IntegrationClaimInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
   website: HttpsUrlSchema,
 });
-export type IntegrationClaimInput = z.infer<typeof IntegrationClaimInputSchema>;
 
 export const IntegrationClaimSchema = z.object({
   slug: z.string(),
@@ -1176,6 +1168,58 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+export const UsageDateRangeSchema = z.enum(["today", "7d", "30d", "all"]);
+export type UsageDateRange = z.infer<typeof UsageDateRangeSchema>;
+
+export const UsageBreakdownInputSchema = z.object({
+  /** Omit or null to include every bot. */
+  botId: Id.nullish(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  range: UsageDateRangeSchema.default("30d"),
+});
+export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
+
+export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
+  provider: z.string(),
+  model: z.string(),
+});
+export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
+
+export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
+  /** The bucket's first day in the member's timezone, YYYY-MM-DD. */
+  date: z.string(),
+});
+export type UsageBreakdownPoint = z.infer<typeof UsageBreakdownPointSchema>;
+
+export const UsageBreakdownBotSchema = z.object({
+  id: Id,
+  /** Null for a bot removed without a record of its name. */
+  name: z.string().nullable(),
+  deleted: z.boolean(),
+  runs: z.number(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable(),
+  costUsd: z.number().nullable(),
+  modelCalls: z.number(),
+});
+export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
+
+export const UsageBreakdownSchema = z.object({
+  range: UsageDateRangeSchema,
+  /** Each bot with usage in the range, for the bot selector. */
+  bots: z.array(UsageBreakdownBotSchema),
+  /** Every model used in the range, for the model selector. */
+  modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
+  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  models: z.array(UsageBreakdownModelSchema),
+  /** One point per day, or per month for an all-time history longer than two months. */
+  overTimeUnit: z.enum(["day", "month"]),
+  overTime: z.array(UsageBreakdownPointSchema),
+});
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
+
 /** One rolling allowance of a model subscription the member signed in with. */
 export const PlanLimitWindowSchema = z.object({
   period: z.enum(["session", "week", "month"]),
@@ -1212,7 +1256,6 @@ export const MessagingLinkedIdentitySchema = z.object({
   botId: Id,
   botName: z.string(),
 });
-export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
 
 export const MessagingInstallationSummarySchema = z.object({
   id: Id,
@@ -1315,6 +1358,8 @@ export const SpaceMemoryConfigSchema = z.object({
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
+  /** One line naming the connection, written by the provider. Absent from older servers. */
+  connectionLabel: z.string().optional(),
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
@@ -1355,6 +1400,8 @@ export const VoiceCredentialSchema = z.object({
   transcribe: z.boolean(),
   /** Self-hosted server base URL and model ids (never the key). Empty for hosted providers. */
   endpoint: z.string().default(""),
+  /** A separate self-hosted transcription server; empty when `endpoint` transcribes. */
+  sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
 });
@@ -1386,7 +1433,6 @@ export const ServerUpdateSourceSchema = z.object({
   branch: z.string().max(200),
   official: z.boolean(),
 });
-export type ServerUpdateSource = z.infer<typeof ServerUpdateSourceSchema>;
 
 export const ServerUpdateStepSchema = z.object({
   id: z.string().max(40),
@@ -1398,11 +1444,9 @@ export const ServerUpdateStepSchema = z.object({
 
 /** How an update reaches new code: published images, a build on the server, or a git checkout. */
 export const ServerUpdateStrategySchema = z.enum(["pull", "build", "checkout"]);
-export type ServerUpdateStrategy = z.infer<typeof ServerUpdateStrategySchema>;
 
 /** `sidecar` is the Compose deployment; `checkout` is a supervised source install. */
 export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailable"]);
-export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
 
 /**
  * What Settings should render for a deployment owner.
@@ -1411,7 +1455,6 @@ export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
  * `source`: git checkout / `pnpm dev`; show terminal commands, never a fake Apply.
  */
 export const ServerUpdateInstallKindSchema = z.enum(["sidecar", "compose", "source"]);
-export type ServerUpdateInstallKind = z.infer<typeof ServerUpdateInstallKindSchema>;
 
 export const ServerUpdateRunSchema = z.object({
   startedAt: z.iso.datetime(),
@@ -1462,7 +1505,6 @@ export const ServerUpdateStatusSchema = z.object({
   running: z.boolean(),
   lastRun: ServerUpdateRunSchema.nullable(),
 });
-export type ServerUpdateStatus = z.infer<typeof ServerUpdateStatusSchema>;
 
 export const ServerUpdateCheckSchema = z.object({
   status: z.enum(["unavailable", "dirty", "up-to-date", "available"]),
@@ -1473,17 +1515,20 @@ export const ServerUpdateCheckSchema = z.object({
   targetTag: z.string().nullable(),
   behindBy: z.number().int().nonnegative(),
 });
-export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
 export const ServerUpdateRequestSchema = z.object({
   repoUrl: z.string().max(400).optional(),
   branch: z.string().max(200).optional(),
 });
-export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
   maxUploadSizeBytes: z.number().int().positive().optional(),
   maxAttachmentsPerMessage: z.number().int().positive().optional(),
+  /** Labs features this account turned on. Absent from servers that predate Labs. */
+  labs: z.array(LabFeatureSchema).default([]),
+  /** Labs features this account can switch; the deployment turns the rest on for everyone. */
+  labsAvailable: z.array(LabFeatureSchema).default([]),
+  /** Deprecated: whether `labs` includes "board", kept for apps that predate Labs. */
   ticketBoardEnabled: z.boolean(),
   phoneCallsEnabled: z.boolean().default(false),
   /** Operator-configured menu links. Absent from older servers. */
@@ -1565,6 +1610,8 @@ export const AppBootstrapSchema = z.object({
   spaces: z.array(SpaceSchema),
   /** Set when the requested bot is the caller's but lives in another of their Spaces. */
   botSpaceId: Id.optional(),
+  /** Set when the requested group is one the caller can open in another of their Spaces. */
+  groupSpaceId: Id.optional(),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 

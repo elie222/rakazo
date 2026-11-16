@@ -1,22 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
-import type { ComputerExecutionLease } from "@rakazo/adapters";
+import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   applyTeachingDesktopInput,
-  COMPUTER_SCREEN_UNAVAILABLE,
-  ComputerBusyError,
+  ComputerScreenUnavailableError,
   checkpointAndStopComputer,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   computerUpdateView,
+  controlLeaseExpiresAt,
   diskUsedPercent,
   displayBotWorkspacePath,
+  endTeachingWithLease,
   ensureComputerWorkspaceLayout,
-  expireComputerControl,
-  hasActiveComputerControl,
-  isComputerScreenUnavailable,
   isSandboxGoneError,
   provisionComputer,
   queueComputerUpdate,
@@ -25,13 +20,13 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
-  scheduleComputerControlExpiry,
+  sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
   sleepDeferReason,
-  takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
+  WorkspacePathError,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -39,7 +34,7 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, scrollDirection } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, scrollDirection } from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd } from "@rakazo/db";
 import {
@@ -52,8 +47,8 @@ import {
 import { getLogger } from "@rakazo/logging";
 import {
   acquireBootLease,
+  answerComputerRequest,
   assertNotAnotherPersonsControl,
-  bindWaitingTakeoverToControl,
   clearGoneSandbox,
   computerScreenContext,
   computerStatus,
@@ -61,32 +56,15 @@ import {
   holdsComputerControl,
   keepComputerAwake,
   releaseComputerControl,
+  renewComputerControl,
   runComputerReplace,
+  takeComputerControl,
+  waitingTakeoverRun,
   withViewOnly,
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
-import { executionBlocksUserTakeover } from "../computer-status.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
-
-/** The run paused for a person to take over this bot's computer, and who it waits on. */
-async function waitingTakeoverRun(
-  deps: RouterContext["deps"],
-  spaceId: string,
-  computerId: string,
-  botId: string,
-) {
-  const lease = await deps.prisma.computerExecutionLease.findUnique({
-    where: { computerId_botId: { computerId, botId } },
-    select: { runId: true },
-  });
-  if (!lease) return null;
-  const run = await deps.prisma.run.findUnique({
-    where: { id: lease.runId, spaceId },
-    select: { id: true, botId: true, status: true, userId: true },
-  });
-  return run?.botId === botId && run.status === "waiting_takeover" ? run : null;
-}
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -120,19 +98,11 @@ export function computerRoutes(ctx: RouterContext) {
         }
         const ctx = computerContext(context.actor, bot.id, "boot");
         const manualRunId = `boot:${randomUUID()}`;
-        let lease: ComputerExecutionLease | null;
-        try {
-          lease = await acquireBootLease(deps.prisma, {
-            computerId: bot.computer.id,
-            runId: manualRunId,
-            botId: bot.id,
-          });
-        } catch (error) {
-          if (error instanceof ComputerBusyError) {
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          }
-          throw error;
-        }
+        const lease = await acquireBootLease(deps.prisma, {
+          computerId: bot.computer.id,
+          runId: manualRunId,
+          botId: bot.id,
+        });
         const computerId = bot.computer.id;
         try {
           await getLogger().withContext({ reason: "manual" }, () =>
@@ -143,12 +113,9 @@ export function computerRoutes(ctx: RouterContext) {
           );
           scheduleComputerSleep(deps.jobs, bot.computer.id);
         } catch (error) {
-          if (error instanceof ComputerBusyError) {
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          }
           // The bot was deleted or moved to another computer while this boot waited.
           if (isRecordNotFound(error)) {
-            throw new ORPCError("NOT_FOUND", { message: "Computer no longer exists" });
+            throw new ClientError("NOT_FOUND", "Computer no longer exists");
           }
           throw error;
         } finally {
@@ -196,7 +163,7 @@ export function computerRoutes(ctx: RouterContext) {
             botId: { not: bot.id },
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId: bot.computer.id },
-            ...COMPUTER_USING_RUNS,
+            ...computerUsingRuns(),
           },
           select: { id: true },
         });
@@ -250,11 +217,11 @@ export function computerRoutes(ctx: RouterContext) {
               controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             },
           });
           if (stopped.count !== 1) return computerStatus(deps, context.actor, input.botId);
           await recordComputerRunEnd(deps.prisma, bot.computer, end);
+          await endTeachingWithLease(deps, context.actor.spaceId, controlLeaseId);
         } catch (error) {
           // A failed save, or a stop the provider put off, leaves the computer up: hand it back
           // to idle sleep and metering instead of hiding it as an error.
@@ -278,35 +245,43 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer recovery is not available on this device",
           });
         try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          throw error;
+          const update = await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+          deps.analytics?.capture(context.actor.userId, {
+            name: "computer_repair_started",
+            action: "recover",
+          });
+          return update;
+        } finally {
+          // A refused start can still have dismissed earlier failures.
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
-      reset: authed.computer.reset.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "reset", "reset"),
-      ),
+      reset: authed.computer.reset.handler(async ({ context, input }) => {
+        const status = await runComputerReplace(deps, context, input.botId, "reset", "reset");
+        // Counted once the reset ran, so a refused request is not a repair.
+        deps.analytics?.capture(context.actor.userId, {
+          name: "computer_repair_started",
+          action: "reset",
+        });
+        return status;
+      }),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
+        if (!sandboxKindCapabilities(bot.computer.kind).inPlaceUpdate)
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id);
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          throw error;
+        } finally {
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         }
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
@@ -336,7 +311,7 @@ export function computerRoutes(ctx: RouterContext) {
         throw new ORPCError("FORBIDDEN");
       }),
       dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
-        await deps.prisma.computerUpdate.updateMany({
+        const dismissed = await deps.prisma.computerUpdate.updateMany({
           where: {
             id: input.id,
             status: "failed",
@@ -347,6 +322,8 @@ export function computerRoutes(ctx: RouterContext) {
           },
           data: { status: "dismissed" },
         });
+        if (dismissed.count > 0)
+          await deps.events.publishSpaceChange?.(context.actor.spaceId, "computerUpdates");
         return { ok: true as const };
       }),
       dismissDiskWarning: authed.computer.dismissDiskWarning.handler(async ({ context, input }) => {
@@ -360,202 +337,44 @@ export function computerRoutes(ctx: RouterContext) {
         }
         return { ok: true as const };
       }),
-      takeover: authed.computer.takeover.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer?.providerRef || bot.computer.state !== "running") {
-          throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
-        }
-        assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
-          await bindWaitingTakeoverToControl(deps, {
-            spaceId: context.actor.spaceId,
-            threadId: bot.thread?.id,
-            botId: bot.id,
-            computerId: bot.computer.id,
-            controlLeaseId: bot.computer.controlLeaseId!,
-            controlRunId: bot.computer.controlRunId,
-          });
-          await scheduleComputerControlExpiry(
-            deps.jobs,
-            bot.computer.id,
-            bot.computer.controlLeaseId!,
-            bot.computer.controlLeaseExpiresAt!,
-          );
-          return {
-            leaseId: bot.computer.controlLeaseId!,
-            expiresAt: bot.computer.controlLeaseExpiresAt!.toISOString(),
-          };
-        }
-        if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
-          await releaseComputerControl(deps, context.actor, bot.computer.controlBotId!, "skipped");
-          bot = await repos.getBot(context.actor, input.botId);
-          if (!bot.computer) throw new IsolationError();
-        }
-        // Read again: someone else may have taken the screen since the first check, and their
-        // live lease is never expired here.
-        assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (bot.computer.controlLeaseId) {
-          await expireComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId);
-          bot = await repos.getBot(context.actor, input.botId);
-        }
-        if (!bot.computer) throw new IsolationError();
-        // Gone-sandbox revoke may have marked the row stopped; do not fall through to the
-        // running-state grant and return a confusing "control changed" conflict.
-        if (!bot.computer.providerRef || bot.computer.state !== "running") {
-          throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
-        }
-
-        const executionLease = await deps.prisma.computerExecutionLease.findUnique({
-          where: { computerId_botId: { computerId: bot.computer.id, botId: bot.id } },
-        });
-        const executionRun = executionLease
-          ? await deps.prisma.run.findUnique({
-              where: { id: executionLease.runId },
-              select: { botId: true, status: true, userId: true },
-            })
-          : null;
-        const waitingForTakeover =
-          executionRun?.botId === bot.id &&
-          (executionRun.status === "waiting_takeover" ||
-            bot.computer.controlRunId === executionLease?.runId);
-        // A run that asked a person to take over waits for that person, not whoever opens the screen.
-        if (waitingForTakeover && executionRun?.userId !== context.actor.userId) {
-          throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
-        }
-        if (
-          executionBlocksUserTakeover({
-            hasLease: Boolean(executionLease),
-            leaseExpiresAt: executionLease?.expiresAt,
-            runStatus: executionRun?.status,
-            takeoverRequested: waitingForTakeover,
-          })
-        ) {
-          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
-        }
-        // Keep an inactive lease as a fencing tombstone. The next run reclaims it
-        // with a higher fence, even if this user's screen remains connected.
-
-        const leaseId = randomUUID();
-        const expiresAt = new Date(Date.now() + takeoverLeaseMs());
-        const granted = await deps.prisma.computer.updateMany({
-          where: {
-            id: bot.computer.id,
-            state: "running",
-            maintenanceId: null,
-            controlHolder: { not: "user" },
-            controlLeaseId: null,
-          },
-          data: {
-            controlHolder: "user",
-            controlLeaseId: leaseId,
-            controlLeaseExpiresAt: expiresAt,
-            controlBotId: bot.id,
-            controlRunId: waitingForTakeover ? executionLease?.runId : null,
-            controlUserId: context.actor.userId,
-            state: "running",
-          },
-        });
-        if (granted.count !== 1) {
-          const current = await deps.prisma.computer.findUniqueOrThrow({
-            where: { id: bot.computer.id },
-          });
-          if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
-            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
-          }
-          assertNotAnotherPersonsControl(current, context.actor);
-          await bindWaitingTakeoverToControl(deps, {
-            spaceId: context.actor.spaceId,
-            threadId: bot.thread?.id,
-            botId: bot.id,
-            computerId: current.id,
-            controlLeaseId: current.controlLeaseId!,
-            controlRunId: current.controlRunId,
-          });
-          await scheduleComputerControlExpiry(
-            deps.jobs,
-            current.id,
-            current.controlLeaseId!,
-            current.controlLeaseExpiresAt!,
-          );
-          return {
-            leaseId: current.controlLeaseId!,
-            expiresAt: current.controlLeaseExpiresAt!.toISOString(),
-          };
-        }
-        const computerId = bot.computer.id;
-        const withdrawGrant = () =>
-          deps.prisma.computer.updateMany({
-            where: { id: computerId, controlLeaseId: leaseId },
-            data: {
-              controlHolder: "none",
-              controlLeaseId: null,
-              controlUserId: null,
-              controlLeaseExpiresAt: null,
-              controlBotId: null,
-              controlRunId: null,
-            },
-          });
-        if (waitingForTakeover && executionLease) {
-          // The wait can end (expired, or yielded to newer work) between the read above and the
-          // grant. Bound to an ended run, the user would share the screen with the next run.
-          const waiting = await deps.prisma.run.findUnique({
-            where: { id: executionLease.runId },
-            select: { status: true },
-          });
-          if (!ACTIVE_RUN_STATUSES.some((status) => status === waiting?.status)) {
-            await withdrawGrant();
-            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
-          }
-        }
-        try {
-          await scheduleComputerControlExpiry(deps.jobs, computerId, leaseId, expiresAt);
-        } catch (error) {
-          await withdrawGrant();
-          throw error;
-        }
-        if (bot.thread) {
-          await deps.events.append({
-            spaceId: context.actor.spaceId,
-            threadId: bot.thread.id,
-            botId: bot.id,
-            type: "computer.takeover.granted",
-            payload: { leaseId, takeoverRequested: waitingForTakeover },
-          });
-        }
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
-        return { leaseId, expiresAt: expiresAt.toISOString() };
-      }),
+      takeover: authed.computer.takeover.handler(async ({ context, input }) =>
+        takeComputerControl(deps, context.actor, input.botId),
+      ),
       release: authed.computer.release.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (bot.computer) assertNotAnotherPersonsControl(bot.computer, context.actor);
-        // A needs-you card answers its own run, before or after the person opens the screen.
-        if (input.runId) {
-          const waiting = bot.computer
-            ? await waitingTakeoverRun(deps, context.actor.spaceId, bot.computer.id, bot.id)
-            : null;
-          if (waiting?.id !== input.runId) {
-            throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
+        // Handing back also ends a teaching recording made under this control, saved as a draft.
+        const handBack = async () => {
+          const bot = await repos.getBot(context.actor, input.botId);
+          if (bot.computer) {
+            await releaseComputerControl(
+              deps,
+              context.actor,
+              bot.computer,
+              bot.id,
+              "released",
+              input.leaseId,
+            );
           }
-          // The person it asked, or whoever already holds the screen bound to this run.
-          const drivesThisRun =
-            bot.computer?.controlHolder === "user" &&
-            bot.computer.controlUserId === context.actor.userId &&
-            bot.computer.controlRunId === waiting.id;
-          if (waiting.userId !== context.actor.userId && !drivesThisRun) {
-            throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
-          }
+        };
+        if (input.reason === undefined && input.runId === undefined) {
+          await handBack();
+          return { ok: true as const };
         }
-        const released = await releaseComputerControl(
+        // Done or Skip answers the bot's request and then hands back. A refused answer changes
+        // nothing, including who controls the screen.
+        const answered = await answerComputerRequest(
           deps,
           context.actor,
           input.botId,
-          input.reason,
+          input.reason ?? "done",
           input.runId,
         );
+        if (answered) return { ok: true as const };
         // The card waits for its answer to land, so one that changed nothing must say so.
-        if (input.runId && !released) {
-          throw new ORPCError("CONFLICT", { message: "Could not continue" });
+        if (input.runId !== undefined) {
+          throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
         }
+        // The screen's I'm done with nothing waiting any more is a plain hand back.
+        await handBack();
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
@@ -660,15 +479,16 @@ export function computerRoutes(ctx: RouterContext) {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             })
             .catch((error: unknown) => {
-              if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
-                throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
+              if (error instanceof SandboxFileTooLargeError) {
+                throw new ClientError("BAD_REQUEST", "file is too large to preview");
               }
               throw error;
             });
           try {
             content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          } catch {
-            throw new ORPCError("BAD_REQUEST", { message: "file is not a text file" });
+          } catch (error) {
+            if (!(error instanceof TypeError)) throw error;
+            throw new ClientError("BAD_REQUEST", "file is not a text file");
           }
         } else {
           try {
@@ -676,12 +496,12 @@ export function computerRoutes(ctx: RouterContext) {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             });
           } catch (error) {
-            if (error instanceof Error && error.message.startsWith("agent home file exceeds ")) {
-              throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
+            if (error instanceof SandboxFileTooLargeError) {
+              throw new ClientError("BAD_REQUEST", "file is too large to preview");
             }
             // The file browser can ask for a file deleted since it last listed.
             if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-              throw new ORPCError("NOT_FOUND", { message: "file not found" });
+              throw new ClientError("NOT_FOUND", "file not found");
             }
             throw error;
           }
@@ -710,10 +530,11 @@ export function computerRoutes(ctx: RouterContext) {
             { maxBytes: attachmentMaxBytes(deps.env) },
           )
           .catch((error: unknown) => {
-            if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
-              });
+            if (error instanceof SandboxFileTooLargeError) {
+              throw new ClientError(
+                "BAD_REQUEST",
+                `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
+              );
             }
             throw error;
           });
@@ -749,9 +570,9 @@ export function computerRoutes(ctx: RouterContext) {
         try {
           storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
         } catch (error) {
-          if (error instanceof Error && /escapes/i.test(error.message)) {
-            throw new ORPCError("BAD_REQUEST", { message: error.message });
-          }
+          // This path is the caller's own, so leaving the workspace is theirs to fix.
+          if (error instanceof WorkspacePathError)
+            throw new ClientError("BAD_REQUEST", error.message);
           throw error;
         }
         await deps.sandbox.writeFile(
@@ -788,7 +609,7 @@ export function computerRoutes(ctx: RouterContext) {
           !computer?.providerRef ||
           computer.state !== "running" ||
           !deps.sandbox.connectTerminal ||
-          !computerSupportsTerminal(computer.kind)
+          !sandboxKindCapabilities(computer.kind).terminal
         ) {
           return { url: null };
         }
@@ -856,8 +677,8 @@ export function computerRoutes(ctx: RouterContext) {
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
-            if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
+            if (error instanceof ComputerScreenUnavailableError) {
+              throw new ClientError("CONFLICT", error.message);
             }
             return clearGoneSandbox(deps, computer, error);
           });
@@ -879,6 +700,14 @@ export function computerRoutes(ctx: RouterContext) {
             undefined,
             session.headers,
           ),
+          // The view is part of what a screen shows: taking or releasing control changes it.
+          ...(session.singleUseSignIn
+            ? {
+                singleUseSignIn: {
+                  screen: `${session.singleUseSignIn.screen}:${holder ? "control" : "view"}`,
+                },
+              }
+            : {}),
         };
       }),
       preview: authed.computer.preview.handler(async ({ context, input }) => {
@@ -888,8 +717,7 @@ export function computerRoutes(ctx: RouterContext) {
         // A card shows the screen only while its run waits, before and after the capture.
         const stillWaiting = async () =>
           !input.runId ||
-          (await waitingTakeoverRun(deps, context.actor.spaceId, computer.id, bot.id))?.id ===
-            input.runId;
+          Boolean(await waitingTakeoverRun(deps, context.actor.spaceId, bot.id, input.runId));
         if (!(await stillWaiting())) return { image: null };
         const observation = await deps.sandbox
           .observe(
@@ -907,6 +735,14 @@ export function computerRoutes(ctx: RouterContext) {
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.computer && holdsComputerControl(bot.computer, bot.id, context.actor)) {
+          await renewComputerControl(
+            deps,
+            bot.computer.id,
+            bot.computer.controlLeaseId!,
+            controlLeaseExpiresAt(),
+          );
+        }
         if (bot.computer?.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
             where: { id: bot.computer.id, state: "running" },

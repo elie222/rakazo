@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -203,17 +204,11 @@ describe("Pi usage accounting", () => {
     }
   }, 30000);
   it("persists a generation id before exposing the first SSE chunk", async () => {
-    let release = () => {};
-    let entered = () => {};
-    const waiting = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const durable = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const waiting = deferred();
+    const durable = deferred();
     const onRequestId = vi.fn(async () => {
-      entered();
-      await durable;
+      waiting.resolve();
+      await durable.promise;
     });
     const fields = new Set<keyof AgentUsage>();
     const wrapped = usageReportingFetch(
@@ -230,9 +225,9 @@ describe("Pi usage accounting", () => {
       exposed = true;
       return text;
     });
-    await waiting;
+    await waiting.promise;
     expect(exposed).toBe(false);
-    release();
+    durable.resolve();
     await read;
     expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
     expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
@@ -330,11 +325,10 @@ describe("Pi usage accounting", () => {
   });
 
   it("settles a thrown provider call before exposing the terminal event", async () => {
-    let finishSettlement = () => {};
-    const settlement = new Promise<void>((resolve) => {
-      finishSettlement = resolve;
-    });
-    const afterCall = vi.fn(async (_reservation: string, _usage: AgentUsage | null) => settlement);
+    const settlement = deferred();
+    const afterCall = vi.fn(
+      async (_reservation: string, _usage: AgentUsage | null) => settlement.promise,
+    );
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -354,7 +348,7 @@ describe("Pi usage accounting", () => {
     for (let index = 0; index < 4; index++) await Promise.resolve();
     expect(afterCall).toHaveBeenCalledOnce();
     expect(terminalSeen).toBe(false);
-    finishSettlement();
+    settlement.resolve();
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
@@ -1016,25 +1010,70 @@ describe("Pi usage accounting", () => {
     expect(push).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("retains bytes and observes fragmented CRLF SSE with explicit zeros", async () => {
-    const bytes = new TextEncoder().encode('data: {"usage":{"prompt_tokens":0}}\r\n\r\n');
-    const reported = new Set<"inputTokens">();
+  it.each(["\n", "\r\n", "\r"])(
+    "retains bytes and observes fragmented SSE with %j line endings",
+    async (newline) => {
+      const bytes = new TextEncoder().encode(
+        [
+          'data: {"id":"request-test",',
+          'data: "usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":7}}',
+          "",
+          "",
+        ].join(newline),
+      );
+      const reported = new Set<"inputTokens" | "outputTokens" | "totalTokens">();
+      const onRequestId = vi.fn();
+      const fetcher = usageReportingFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                for (const byte of bytes) {
+                  controller.enqueue(new Uint8Array([byte]));
+                  controller.enqueue(new Uint8Array());
+                }
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        reported,
+        onRequestId,
+      );
+      const response = await fetcher("https://model.example.test");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+      expect(reported).toEqual(new Set(["inputTokens", "outputTokens", "totalTokens"]));
+      expect(onRequestId).toHaveBeenCalledWith("request-test");
+      expect(normalizePiUsage({ input: 0, output: 0 }, model, reported)).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 7,
+      });
+    },
+  );
+  it("drops oversized CR frames and recovers for mixed line endings", async () => {
+    const text = `data: {"id":"oversized","padding":"${"x".repeat(262144)}"}\r\r`;
+    const tail = 'data: {"id":"valid","usage":{"total_tokens":9}}\r\n\rdata: [DONE]\n\n';
+    const onRequestId = vi.fn();
+    const reported = new Set<"totalTokens">();
     const fetcher = usageReportingFetch(
       async () =>
         new Response(
           new ReadableStream({
             start(controller) {
-              for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+              controller.enqueue(new TextEncoder().encode(text.slice(0, -2)));
+              controller.enqueue(new TextEncoder().encode(text.slice(-2) + tail));
               controller.close();
             },
           }),
           { headers: { "content-type": "text/event-stream" } },
         ),
       reported,
+      onRequestId,
     );
-    const response = await fetcher("https://model.example.test");
-    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
-    expect(reported.has("inputTokens")).toBe(true);
+    expect(await (await fetcher("https://model.example.test")).text()).toBe(text + tail);
+    expect(onRequestId.mock.calls).toEqual([["valid"]]);
+    expect(normalizePiUsage(undefined, model, reported).totalTokens).toBe(9);
   });
   it("records reported totalTokens and request id from WebSocket provider stream events when fetch is unused", async () => {
     const codexModel: Model<Api> = {

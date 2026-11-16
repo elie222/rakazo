@@ -5,12 +5,18 @@ import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
 
@@ -1126,13 +1132,11 @@ describe("KubernetesSandboxProvider", () => {
     async (mode) => {
       vi.useFakeTimers();
       try {
-        let connect!: (socket: Awaited<ReturnType<Exec["exec"]>>) => void;
-        const exec = vi.fn(
-          () =>
-            new Promise<Awaited<ReturnType<Exec["exec"]>>>((resolve) => {
-              connect = resolve;
-            }),
-        );
+        let connect!: Deferred<Awaited<ReturnType<Exec["exec"]>>>;
+        const exec = vi.fn(() => {
+          connect = deferred<Awaited<ReturnType<Exec["exec"]>>>();
+          return connect.promise;
+        });
         const controller = new AbortController();
         const consume = async () => {
           const events: ProcessEvent[] = [];
@@ -1150,7 +1154,7 @@ describe("KubernetesSandboxProvider", () => {
         else await vi.advanceTimersByTimeAsync(11_000);
         expect(await result).toContainEqual({ type: "exit", code: mode === "abort" ? 130 : 124 });
         const socket = { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
-        connect(socket);
+        connect.resolve(socket);
         await vi.advanceTimersByTimeAsync(0);
         expect(socket.close).toHaveBeenCalledOnce();
       } finally {
@@ -1325,12 +1329,59 @@ describe("KubernetesSandboxProvider", () => {
       await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
       controller.abort(new Error("caller cancelled"));
       await vi.waitFor(() => expect(del).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(19_000);
       expect(outcome).toBe("pending");
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      // Two tries of 10 seconds each fill the cleanup's 20 seconds.
+      expect(del).toHaveBeenCalledTimes(2);
       expect(outcome).toEqual(new Error("caller cancelled"));
     } finally {
       timeout.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  describe("a pod created by a start that then fails", () => {
+    const failedPod = { ...readyPod, status: { phase: "Failed" } };
+    const start = async (del: KubernetesSandboxSdk["core"]["deleteNamespacedPod"]) => {
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+        .mockResolvedValue(failedPod);
+      const create = vi.fn().mockResolvedValue(readyPod);
+      const provider = providerFor({
+        readNamespacedPod: read,
+        createNamespacedPod: create,
+        deleteNamespacedPod: del,
+      });
+      const outcome = await settleMachineCleanup(() =>
+        provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+      );
+      const pod: string = create.mock.calls[0]![0].body.metadata.name;
+      return { ...outcome, pod };
+    };
+
+    it("is deleted, trying a failed delete again", async () => {
+      const del = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockResolvedValue({ status: "Success" });
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(2);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const del = vi.fn().mockRejectedValue(new Error("connection reset"));
+
+      const { error, left, pod } = await start(del);
+
+      expect(error).toEqual(new Error(`Kubernetes pod ${pod} entered phase Failed`));
+      expect(del).toHaveBeenCalledTimes(4);
+      expect(left).toEqual([{ provider: "kubernetes", machineId: pod }]);
+    });
   });
 });

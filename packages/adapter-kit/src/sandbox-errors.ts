@@ -127,3 +127,15 @@ export class SandboxSizeUnavailableError extends Error {
     this.name = "SandboxSizeUnavailableError";
   }
 }
+
+/** A file is over the size limit of the computer read or write it was part of. */
+export class SandboxFileTooLargeError extends Error {
+  readonly code = "SANDBOX_FILE_TOO_LARGE";
+  constructor(
+    readonly maxBytes: number,
+    options?: { cause?: unknown },
+  ) {
+    super(`computer file exceeds ${maxBytes} bytes`, options);
+    this.name = "SandboxFileTooLargeError";
+  }
+}

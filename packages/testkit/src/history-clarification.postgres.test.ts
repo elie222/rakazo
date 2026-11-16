@@ -2,8 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PiAgentRuntime } from "@rakazo/adapters";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HISTORY_EVAL_CASES } from "./evals/cases.js";
+import type { EvalJudge } from "./evals/judge.js";
 import { runTrial } from "./evals/runner.js";
 import { startModelEmulator } from "./model-emulator.js";
 
@@ -27,6 +28,10 @@ describe.skipIf(!enabled)("product history clarification eval boundary", () => {
     "preserves the expected outcome for $id with choice labels $options",
     async (row) => {
       const scenario = HISTORY_EVAL_CASES.find((candidate) => candidate.id === row.id)!;
+      const judge = vi.fn<EvalJudge>(async () => ({
+        pass: true,
+        reason: "Offline fixture verdict",
+      }));
       const fixtureKey = "synthetic-clarification-fixture-key";
       const model = await startModelEmulator({
         apiKey: fixtureKey,
@@ -59,6 +64,7 @@ describe.skipIf(!enabled)("product history clarification eval boundary", () => {
           },
           timeoutMs: 30_000,
           maxToolCalls: 30,
+          judge,
           createApp: (composio) =>
             createApp({
               databaseUrl: process.env.DATABASE_URL!,
@@ -88,18 +94,18 @@ describe.skipIf(!enabled)("product history clarification eval boundary", () => {
           allCallsAccounted: true,
           modelCalls: 1,
         });
-        if (row.assistance) expect(result.reason).toContain("Agent requested assistance");
-        else {
+        if (row.assistance) {
+          expect(result.reason).toContain("Agent requested assistance");
+          expect(judge).not.toHaveBeenCalled();
+        } else {
           expect(result.artifacts["final-response"]).toContain("Which project do you mean?");
           expect(result.artifacts["final-response"]).toContain(row.options[0]);
-          if (row.status === "passed")
-            expect(result.trace[0]).toMatchObject({ status: "waiting_input", tools: ["ask_user"] });
-          else
-            expect(
-              result.criteria
-                .filter((criterion) => !criterion.pass)
-                .map((criterion) => criterion.id),
-            ).toEqual(["exclude-ORBIT-731", "exclude-COMET-219"]);
+          expect(result.trace[0]).toMatchObject({ status: "waiting_input", tools: ["ask_user"] });
+          // Whether the pending choice asks which project is the judge's to grade.
+          const [input] = judge.mock.calls[0]!;
+          expect(input.evidence).toMatchObject([
+            { question: scenario.history!.ask, reply: result.artifacts["final-response"] },
+          ]);
         }
       } finally {
         await model.close();

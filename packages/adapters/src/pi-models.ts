@@ -9,8 +9,10 @@ import type {
 } from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
+  ConnectionSetupError,
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
+  trimEndChars,
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
@@ -23,6 +25,7 @@ import {
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { maximumModelCallCost } from "./pi-usage.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -40,8 +43,12 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
   /** The model reads images. Left out where a connection setting decides it. */
   images?: boolean;
+  /** The model card's context window and output ceiling. */
+  contextWindow?: number;
+  maxTokens?: number;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -60,7 +67,8 @@ const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   openai: "gpt-6-luna",
   openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
-  google: "gemini-3.8-flash",
+  google: "gemini-4-hydrogen",
+  "google-vertex": "gemini-4-hydrogen",
   groq: "openai/gpt-oss-120b",
   minimax: "MiniMax-M3",
 };
@@ -118,11 +126,18 @@ export function hiddenCatalogModel(entry: { provider: string; id: string }): boo
 }
 
 const hiddenCatalogKeys = new Set<string>();
+const pricedCatalogKeys = new Set<string>();
+
+/** Rakazo credits reserve a call's price before sending it, so they only run a model with one. */
+export function creditsCanPriceModel(entry: { provider: string; id: string }): boolean {
+  listPiCatalog();
+  return pricedCatalogKeys.has(`${canonicalPiProviderId(entry.provider)}:${entry.id}`);
+}
 
 const catalogProbeBaseUrls = new Map<string, string>();
 const catalogBaseUrls = new Map<string, Set<string>>();
 
-const trimBaseUrl = (url: string) => url.trim().replace(/\/+$/, "");
+const trimBaseUrl = (url: string) => trimEndChars(url.trim(), "/");
 
 /** Whether `url` is one the model registry itself uses for this catalog provider. */
 export function isCatalogProviderBaseUrl(provider: string, url: string): boolean {
@@ -199,7 +214,7 @@ export async function verifyCatalogProviderApiKey(
     });
   } catch {
     // Transport errors may contain the request's credential. Never forward them.
-    if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+    if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
     return;
   }
   const rejected =
@@ -208,9 +223,9 @@ export async function verifyCatalogProviderApiKey(
       : response.status === 401 || response.status === 403;
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
-    throw new Error(MODEL_KEY_REJECTED_ERROR);
+    throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
   }
-  if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+  if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
 }
 
 /**
@@ -224,7 +239,7 @@ export async function probeCatalogProviderModels(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = catalogProviderProbeBaseUrl(input.provider);
-  if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  if (!baseUrl) throw new ConnectionSetupError("This provider cannot be tested without saving.");
   await verifyCatalogProviderApiKey(input, fetchImpl, signal);
   return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
     allowPublic: true,
@@ -278,6 +293,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
   catalogBaseUrls.clear();
   hiddenCatalogKeys.clear();
+  pricedCatalogKeys.clear();
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
@@ -305,9 +321,14 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
-    const routingFields = cloudflareRoutingFields(provider.id);
+    const routingFields =
+      provider.id === "google-vertex"
+        ? (["projectId", "region"] as ("projectId" | "region")[])
+        : cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
+      if (maximumModelCallCost(model.cost, 0, 0) !== undefined)
+        pricedCatalogKeys.add(`${provider.id}:${model.id}`);
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
       entries.push({
         provider: provider.id,
@@ -329,7 +350,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
           ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
-          : { images: model.input.includes("image") }),
+          : {
+              images: model.input.includes("image"),
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
       });
@@ -364,7 +389,16 @@ function buildPiCatalog(): PiCatalogEntry[] {
  * Trailing upstream "latest" marker: "Claude Opus 4.5 (latest)", "Gemini Flash Latest",
  * "foo-latest", or an alias parenthetical like "Qwen Max Latest (Qwen3.8 Max)".
  */
-const LATEST_MARKER = /[\s(/-]*\blatest\b\s*\)?\s*(\([^)]*\)\s*)?$/i;
+const LATEST_MARKER = /\blatest\b\s*(?:\)\s*)?(?:\([^)]*\)\s*)?$/i;
+
+/** Where the marker starts, with the spaces, brackets and dashes before it, or -1. */
+function latestMarkerStart(label: string): number {
+  const match = LATEST_MARKER.exec(label);
+  if (!match) return -1;
+  let start = match.index;
+  while (start > 0 && /[\s(/-]/.test(label[start - 1]!)) start--;
+  return start;
+}
 
 /**
  * Upstream marks auto-updating alias ids with a trailing "latest". That is an alias marker, not a
@@ -378,8 +412,9 @@ export function catalogModelLabel(
   providerModelIds: readonly string[] = [],
 ): string {
   const label = name || id;
-  if (!LATEST_MARKER.test(label)) return label;
-  const base = label.replace(LATEST_MARKER, "").trim();
+  const marker = latestMarkerStart(label);
+  if (marker < 0) return label;
+  const base = label.slice(0, marker).trim();
   if (!base) return label;
   return isAliasModelId(id, providerModelIds) ? `${base} (auto-updates)` : base;
 }

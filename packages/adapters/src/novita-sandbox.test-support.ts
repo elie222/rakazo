@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import {
   AuthenticationError,
   CommandExitError,
@@ -227,17 +228,14 @@ export class NovitaEmulator implements NovitaApi {
     options: Parameters<NovitaDesktop["commands"]["run"]>[1],
   ): NovitaCommandHandle {
     const computer = this.running(id);
-    let settled!: (outcome: { result: CommandResult } | { error: Error }) => void;
-    const outcome = new Promise<{ result: CommandResult } | { error: Error }>((resolve) => {
-      settled = resolve;
-    });
+    const outcome = deferred<{ result: CommandResult } | { error: Error }>();
     let timer: NodeJS.Timeout | undefined;
     const process: EmulatedProcess = {
       command,
       settle: (value) => {
         clearTimeout(timer);
         computer.processes.delete(process);
-        settled(value);
+        outcome.resolve(value);
       },
     };
     computer.processes.add(process);
@@ -245,7 +243,7 @@ export class NovitaEmulator implements NovitaApi {
       // The deadline ends the SDK's wait, not the remote process.
       if (options.timeoutMs)
         timer = setTimeout(
-          () => settled({ error: new TimeoutError("deadline_exceeded: command timeout") }),
+          () => outcome.resolve({ error: new TimeoutError("deadline_exceeded: command timeout") }),
           options.timeoutMs,
         );
     } else {
@@ -260,7 +258,7 @@ export class NovitaEmulator implements NovitaApi {
         return "";
       },
       wait: async () => {
-        const value = await outcome;
+        const value = await outcome.promise;
         if ("error" in value) throw value.error;
         if (value.result.exitCode !== 0) throw new CommandExitError(value.result);
         return value.result;

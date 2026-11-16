@@ -106,3 +106,13 @@ describe("confirmIdentityOnDevice", () => {
     expect(d.choose).not.toHaveBeenCalled();
   });
 });
+
+it.each(["google", "apple"])(
+  "cannot confirm a linked %s identity without a supported method",
+  async (id) => {
+    const d = deps(security({ hasPassword: false, emailDeletion: false, linkedProviderIds: [id] }));
+    await expect(confirmIdentityOnDevice(d)).rejects.toThrow();
+    expect(d.choose).not.toHaveBeenCalled();
+    expect(d.reauthenticate).not.toHaveBeenCalled();
+  },
+);

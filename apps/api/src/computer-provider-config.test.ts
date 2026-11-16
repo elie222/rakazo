@@ -1,5 +1,5 @@
-import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { computerProviderDescriptors } from "@rakazo/adapters";
+import type { BackgroundJob, SandboxProvider } from "@rakazo/adapter-kit";
+import { computerProviderDescriptors, retrySecretCleanup } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -21,8 +21,13 @@ const testDesktop = {
   mcpToken: "test-token",
 };
 
-/** An in-memory deployment settings row and secret table behind the calls the config makes. */
-function makeDeps(options: { admin?: boolean; computerSettingsEnabled?: boolean } = {}) {
+/**
+ * An in-memory deployment settings row and secret table behind the calls the config makes.
+ * `remote` makes the store hold its values elsewhere, as a hosted secret store does.
+ */
+function makeDeps(
+  options: { admin?: boolean; computerSettingsEnabled?: boolean; remote?: boolean } = {},
+) {
   const state = {
     settings: null as null | {
       computerProvider: string | null;
@@ -31,6 +36,10 @@ function makeDeps(options: { admin?: boolean; computerSettingsEnabled?: boolean 
     secrets: new Map<string, string>(),
   };
   let nextSecret = 0;
+  const queued = new Map<string, BackgroundJob>();
+  const queue = async (job: BackgroundJob) => {
+    queued.set(job.replaceKey ?? "", job);
+  };
   const prisma = {
     user: {
       findUnique: vi.fn(async () => ({ email: "admin@example.com", emailVerified: true })),
@@ -68,8 +77,16 @@ function makeDeps(options: { admin?: boolean; computerSettingsEnabled?: boolean 
         return { id, ref: id, ciphertext: id };
       }),
       load: vi.fn(async (ciphertext: string) => state.secrets.get(ciphertext) ?? ""),
-      delete: vi.fn(async (ciphertext: string) => {
+      delete: vi.fn(async (ciphertext: string, _context: unknown) => {
         state.secrets.delete(ciphertext);
+      }),
+      isRemote: () => options.remote ?? false,
+    },
+    jobs: {
+      enqueue: vi.fn(queue),
+      enqueueIn: vi.fn((_tx: unknown, job: BackgroundJob) => queue(job)),
+      cancel: vi.fn(async (key: string) => {
+        queued.delete(key);
       }),
     },
     sandbox: { describe: () => ({ id: "docker" }) } as unknown as SandboxProvider,
@@ -81,7 +98,7 @@ function makeDeps(options: { admin?: boolean; computerSettingsEnabled?: boolean 
     resolveHostname: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
     verifyConnection: vi.fn(async () => undefined),
   };
-  return { deps, state, prisma };
+  return { deps, state, prisma, queued };
 }
 
 describe("computer provider settings", () => {
@@ -207,6 +224,104 @@ describe("computer provider settings", () => {
     expect(state.secrets.size).toBe(0);
   });
 
+  it("queues nothing for a store that keeps its values in the database", async () => {
+    const { deps, queued } = makeDeps();
+    await updateComputerProviderSettings(deps, actor, { provider: "desktop", values: testDesktop });
+    await updateComputerProviderSettings(deps, actor, { provider: "default", values: {} });
+    expect(deps.jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(queued.size).toBe(0);
+  });
+
+  describe("with a remote secret store", () => {
+    const replaced = {
+      kind: "deployment_computer_provider",
+      recordId: "deployment-computer-provider",
+      ref: "secret-1",
+    } as const;
+    const save = (deps: ReturnType<typeof makeDeps>["deps"], desktopId = "ecd-test") =>
+      updateComputerProviderSettings(deps, actor, {
+        provider: "desktop",
+        values: { ...testDesktop, desktopId },
+      });
+
+    it("records the removal with the save and drops the record once it succeeds", async () => {
+      const { deps, state, queued } = makeDeps({ remote: true });
+      await save(deps);
+      await save(deps, "ecd-other");
+      expect(deps.jobs.enqueueIn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          name: "secret.cleanup",
+          payload: replaced,
+          availableAt: expect.any(Date),
+        }),
+      );
+      expect(deps.secrets.delete).toHaveBeenCalledWith(
+        "secret-1",
+        expect.objectContaining({ recordId: "deployment-computer-provider" }),
+      );
+      expect([...state.secrets.keys()]).toEqual(["secret-2"]);
+      expect(queued.size).toBe(0);
+    });
+
+    it("saves as usual when the replaced connection cannot be removed, and retries it later", async () => {
+      const { deps, state, queued } = makeDeps({ remote: true });
+      await save(deps);
+      deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+      const saved = await save(deps, "ecd-other");
+      expect(saved).toMatchObject({ provider: "desktop", values: { desktopId: "ecd-other" } });
+      expect(state.settings?.computerProviderCipher).toBe("secret-2");
+      expect(state.secrets.has("secret-1")).toBe(true);
+      const [job] = [...queued.values()];
+      expect(job).toMatchObject({ name: "secret.cleanup", payload: replaced });
+      // Handed over to run now, and only ever by reference.
+      expect(job).not.toHaveProperty("availableAt");
+      expect(JSON.stringify(job)).not.toContain("test-secret");
+
+      await retrySecretCleanup(deps, replaced);
+      expect([...state.secrets.keys()]).toEqual(["secret-2"]);
+    });
+
+    it("retries removing saved keys that going back to the default left behind", async () => {
+      const { deps, state, queued } = makeDeps({ remote: true });
+      await save(deps);
+      deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await expect(
+        updateComputerProviderSettings(deps, actor, { provider: "default", values: {} }),
+      ).resolves.toMatchObject({ provider: "default" });
+      expect(state.settings?.computerProviderCipher).toBeNull();
+      expect([...queued.values()]).toEqual([expect.objectContaining({ payload: replaced })]);
+    });
+
+    it("keeps the save's own failure when the unsaved connection cannot be removed either", async () => {
+      const { deps, prisma, queued } = makeDeps({ remote: true });
+      prisma.deploymentSettings.upsert.mockRejectedValueOnce(new Error("database unavailable"));
+      deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await expect(save(deps)).rejects.toThrow("database unavailable");
+      expect([...queued.values()]).toEqual([expect.objectContaining({ payload: replaced })]);
+      await expect(retrySecretCleanup(deps, replaced)).resolves.toBeUndefined();
+      expect(deps.secrets.delete).toHaveBeenCalledTimes(2);
+    });
+
+    it("never deletes a connection that is in use again", async () => {
+      const { deps, state } = makeDeps({ remote: true });
+      await save(deps);
+      deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await save(deps, "ecd-other");
+      state.settings = { computerProvider: "desktop", computerProviderCipher: "secret-1" };
+      deps.secrets.delete.mockClear();
+      await retrySecretCleanup(deps, replaced);
+      expect(deps.secrets.delete).not.toHaveBeenCalled();
+      expect(state.secrets.has("secret-1")).toBe(true);
+    });
+
+    it("leaves a failing retry to the queue", async () => {
+      const { deps } = makeDeps({ remote: true });
+      deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await expect(retrySecretCleanup(deps, replaced)).rejects.toThrow("secret store unavailable");
+    });
+  });
+
   it("reports the selected provider as the sandbox only with a saved connection", () => {
     expect(effectiveSandboxProvider(null, "docker")).toBe("docker");
     expect(
@@ -227,8 +342,8 @@ describe("computer provider settings", () => {
 type SecretRow = { id: string; userId: string; spaceId: string | null; kind: string };
 
 /** An in-memory secret table that filters the way the account settings query it. */
-function makeAccountDeps(sandboxProvider = "docker") {
-  const { deps, state } = makeDeps({ admin: false });
+function makeAccountDeps(sandboxProvider = "docker", remote = false) {
+  const { deps, state, queued } = makeDeps({ admin: false, remote });
   const rows: SecretRow[] = [];
   const matches = (row: SecretRow, where: Record<string, unknown>) =>
     Object.entries(where).every(([key, value]) =>
@@ -239,6 +354,9 @@ function makeAccountDeps(sandboxProvider = "docker") {
           : row[key as keyof SecretRow] === value,
     );
   const secret = {
+    findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+      rows.some((row) => row.id === where.id) ? { ciphertext: where.id } : null,
+    ),
     findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
       const row = rows.findLast((candidate) => matches(candidate, where));
       return row ? { id: row.id, ciphertext: row.id } : null;
@@ -260,7 +378,7 @@ function makeAccountDeps(sandboxProvider = "docker") {
   };
   Object.assign(deps.prisma, { secret });
   deps.env.sandboxProvider = sandboxProvider;
-  return { deps, state, rows };
+  return { deps, state, rows, queued };
 }
 
 describe("an account's own computer", () => {
@@ -380,6 +498,54 @@ describe("an account's own computer", () => {
     expect(deps.secrets.delete).toHaveBeenCalledWith("secret-1", "secret-1");
   });
 
+  it("retries removing an account's replaced keys from a remote secret store", async () => {
+    const { deps, rows, queued } = makeAccountDeps("docker", true);
+    const replaced = { kind: "secret_row", recordId: "secret-1", ref: "secret-1" } as const;
+    await updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop });
+    deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    await expect(
+      updateAccountComputerSettings(deps, actor, {
+        provider: "desktop",
+        values: { ...testDesktop, desktopId: "ecd-other" },
+      }),
+    ).resolves.toMatchObject({ provider: "desktop", values: { desktopId: "ecd-other" } });
+    expect(rows.map((row) => row.id)).toEqual(["secret-2"]);
+    expect(deps.jobs.enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ payload: replaced, availableAt: expect.any(Date) }),
+    );
+    const [job] = [...queued.values()];
+    expect(job).toMatchObject({ name: "secret.cleanup", payload: replaced });
+    expect(job).not.toHaveProperty("availableAt");
+
+    await retrySecretCleanup(deps, replaced);
+    expect(deps.secrets.delete).toHaveBeenLastCalledWith(
+      "secret-1",
+      expect.objectContaining({ recordId: "secret-1" }),
+    );
+    // The keys now in use are never the retry's to delete.
+    deps.secrets.delete.mockClear();
+    await retrySecretCleanup(deps, { kind: "secret_row", recordId: "secret-2", ref: "secret-2" });
+    expect(deps.secrets.delete).not.toHaveBeenCalled();
+  });
+
+  it("keeps an account save's own failure when the unsaved keys cannot be removed either", async () => {
+    const { deps, queued } = makeAccountDeps("docker", true);
+    (
+      deps.prisma as unknown as { secret: { create: ReturnType<typeof vi.fn> } }
+    ).secret.create.mockRejectedValueOnce(new Error("database unavailable"));
+    deps.secrets.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    await expect(
+      updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("database unavailable");
+    expect([...queued.values()]).toEqual([
+      expect.objectContaining({
+        name: "secret.cleanup",
+        payload: { kind: "secret_row", recordId: "secret-1", ref: "secret-1" },
+      }),
+    ]);
+  });
+
   it("lets an account remove its saved desktop after the deployment stops offering one", async () => {
     const { deps, rows } = makeAccountDeps();
     await updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop });
@@ -417,11 +583,54 @@ it.each(computerProviderDescriptors())(
   },
 );
 
-it("rejects unregistered providers and deployment-only providers for accounts", async () => {
-  const { deps } = makeAccountDeps();
+it("answers a provider this build does not have with a client error and saves nothing", async () => {
+  const unknown = { provider: "a-provider-since-removed", values: { apiKey: "test-key" } };
+  const refusal = {
+    name: "ClientError",
+    kind: "BAD_REQUEST",
+    message: "Unknown computer provider",
+  };
+  const deployment = makeDeps();
   await expect(
-    updateAccountComputerSettings(deps, actor, { provider: "unknown", values: {} }),
-  ).rejects.toThrow("Could not verify");
+    updateComputerProviderSettings(deployment.deps, actor, unknown),
+  ).rejects.toMatchObject(refusal);
+  expect(deployment.deps.secrets.put).not.toHaveBeenCalled();
+  expect(deployment.state.settings).toBeNull();
+  const account = makeAccountDeps();
+  await expect(updateAccountComputerSettings(account.deps, actor, unknown)).rejects.toMatchObject(
+    refusal,
+  );
+  expect(account.deps.secrets.put).not.toHaveBeenCalled();
+  expect(account.rows).toEqual([]);
+});
+
+it("reads saved settings for a provider this build does not have as the default", async () => {
+  const stored = JSON.stringify({ provider: "a-provider-since-removed", values: { apiKey: "k" } });
+  const deployment = makeDeps();
+  deployment.state.secrets.set("secret-old", stored);
+  deployment.state.settings = {
+    computerProvider: "a-provider-since-removed",
+    computerProviderCipher: "secret-old",
+  };
+  const shown = await getComputerProviderSettings(deployment.deps, actor);
+  expect(shown).toMatchObject({ provider: "default", values: {}, savedSecrets: {} });
+  expect(shown.providers.map((provider) => provider.id)).not.toContain("a-provider-since-removed");
+  const account = makeAccountDeps();
+  account.rows.push({
+    id: "secret-old",
+    userId: "user-1",
+    spaceId: null,
+    kind: "computer-provider",
+  });
+  account.state.secrets.set("secret-old", stored);
+  await expect(getAccountComputerSettings(account.deps, actor)).resolves.toMatchObject({
+    provider: "default",
+    values: {},
+  });
+});
+
+it("rejects deployment-only providers for accounts", async () => {
+  const { deps } = makeAccountDeps();
   await expect(
     updateAccountComputerSettings(deps, actor, {
       provider: "test-cloud",

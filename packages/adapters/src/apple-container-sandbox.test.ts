@@ -6,7 +6,11 @@ import path from "node:path";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppleContainerSandboxProvider, localVmFirewall } from "./apple-container-sandbox.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxReadLimit,
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+} from "./sandbox-test-support.js";
 
 const context: AdapterContext = {
   operationId: "operation",
@@ -40,6 +44,12 @@ if (command === "exec") {
     if (rest[0] === "list") process.stdout.write("table inet rakazo {}\\n");
     process.exit(0);
   }
+  // The tool follows setpriv's "--" and the four words of the timeout wrapper.
+  const tool = rest.slice(rest.indexOf("--") + 1);
+  if (tool[0] === "timeout") tool.splice(0, 4);
+  const file = state.files[tool.at(-1)];
+  if (file !== undefined && tool[0] === "stat") { process.stdout.write(String(Buffer.from(file, "base64").length)); process.exit(0); }
+  if (file !== undefined && tool[0] === "cat") { process.stdout.write(Buffer.from(file, "base64")); process.exit(0); }
   const script = rest.join(" ");
   if (script.includes("/dev/tcp/127.0.0.1/6080") || script.includes("rakazo-write")) process.exit(0);
   if (script.includes("sleep")) setInterval(() => {}, 1000);
@@ -72,7 +82,11 @@ afterEach(() => {
   for (const dir of fakes.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function fakeCli(vms: Record<string, { botId: string; state?: string }> = {}, nftMissing = false) {
+function fakeCli(
+  vms: Record<string, { botId: string; state?: string }> = {},
+  nftMissing = false,
+  files: Record<string, Uint8Array> = {},
+) {
   const dir = mkdtempSync(path.join(tmpdir(), "rakazo-fake-container-"));
   fakes.push(dir);
   const cli = path.join(dir, "container");
@@ -90,7 +104,19 @@ function fakeCli(vms: Record<string, { botId: string; state?: string }> = {}, nf
       },
     ]),
   );
-  writeFileSync(path.join(dir, "state.json"), JSON.stringify({ vms: records, nftMissing }));
+  writeFileSync(
+    path.join(dir, "state.json"),
+    JSON.stringify({
+      vms: records,
+      nftMissing,
+      files: Object.fromEntries(
+        Object.entries(files).map(([name, content]) => [
+          name,
+          Buffer.from(content).toString("base64"),
+        ]),
+      ),
+    }),
+  );
   return {
     provider: new AppleContainerSandboxProvider({
       cli,
@@ -339,6 +365,17 @@ describe("AppleContainerSandboxProvider", () => {
     );
     setTimeout(() => controller.abort(), 300);
     expect((await running).at(-1)).toEqual({ type: "exit", code: 130 });
+  });
+
+  it("refuses a file over a read's size limit by type and returns one at the limit", async () => {
+    const content = new TextEncoder().encode("portable");
+    const fake = fakeCli({ "rakazo-1": { botId: "bot-a" } }, false, {
+      "/home/rakazo/notes/result.txt": content,
+    });
+    await assertSandboxReadLimit(fake.provider, ref("rakazo-1"), context, {
+      path: "notes/result.txt",
+      content,
+    });
   });
 
   it("removes the VM and its network when stopped", async () => {

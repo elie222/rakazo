@@ -52,6 +52,19 @@ const TABLES: TableSpec[] = [
       Prisma.sql`UPDATE messages SET blocks = ${JSON.stringify(row.blocks)}::jsonb, "searchTokens" = NULL WHERE id = ${id}`,
   },
   {
+    // A reply's kept tool calls: scalar ciphertext beside the blocks, never search-indexed.
+    model: "Message",
+    delegate: "message",
+    columns: ["toolHistory"],
+    json: false,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT m.id, jsonb_build_array(m."toolHistory") AS values, t."spaceId", m."threadId" AS owner
+      FROM messages m JOIN threads t ON t.id = m."threadId"
+      WHERE m.id > ${cursor} AND m."toolHistory" IS NOT NULL ORDER BY m.id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE messages SET "toolHistory" = ${row.toolHistory as string} WHERE id = ${id}`,
+  },
+  {
     model: "Event",
     delegate: "event",
     columns: ["payload"],
@@ -328,6 +341,9 @@ export async function contentEncryptionStatus(
   const tables = await prisma.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
     SELECT 'messages' AS table, count(*) AS rows, count(*) FILTER (WHERE "searchTokens" IS NULL
       OR (cardinality("searchTokens") = 0 AND blocks <> '[]'::jsonb)) AS plaintext FROM messages
+    UNION ALL
+    SELECT 'messages.toolHistory', count(*) FILTER (WHERE "toolHistory" IS NOT NULL),
+      count(*) FILTER (WHERE "toolHistory" NOT LIKE 'rkz1:%') FROM messages
     UNION ALL
     SELECT 'events', count(*), count(*) FILTER (WHERE NOT CASE jsonb_typeof(payload)
       WHEN 'object' THEN jsonb_exists(payload, '$sealed')

@@ -84,6 +84,15 @@ export async function signup(
   await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
 }
 
+/** Opens the email form when the server offers a provider chooser first. */
+export async function openEmailSignIn(page: Page) {
+  const email = page.getByLabel("Email", { exact: true });
+  const choice = page.getByRole("button", { name: "Continue with email" });
+  await expect(email.or(choice)).toBeVisible();
+  if (await choice.isVisible()) await choice.click();
+  await expect(email).toBeVisible();
+}
+
 export async function signupThroughForm(
   page: Page,
   email: string,
@@ -92,12 +101,18 @@ export async function signupThroughForm(
   testInfo?: TestInfo,
 ) {
   await page.goto("/sign-up");
-  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await openEmailSignIn(page);
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
+}
+
+/** Brings the window back into view, which reads live lists again as returning to the tab does. */
+export async function refocus(page: Page) {
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
 }
 
 /** Opens Integrations' add menu and picks one of its custom sources. */
@@ -108,16 +123,16 @@ export async function openIntegrationsAdd(page: Page, item: string) {
 }
 
 /**
- * Opens the bot panel from the header pill and shows one tab, leaving an open routine editor.
- * `name` is the tab's label in the UI language ("Routines", or "자동 실행" in Korean).
+ * Opens the bot panel from the header pill on the panel itself (profile, computer, routines,
+ * pages), leaving an open routine editor or one of the panel's whole lists.
  */
-export async function openBotPanelTab(page: Page, name: string) {
+export async function openBotPanel(page: Page) {
   const pill = page.getByTestId("bot-settings-trigger");
-  const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
+  const profile = page.getByTestId("bot-settings").getByTestId("bot-profile-header");
   // A reloaded page restores its saved panel a moment after it draws, so a single pass can
-  // race that restore; the sequence is retried until the tab is selected.
+  // race that restore; the sequence is retried until the panel shows.
   await expect(async () => {
-    if (!(await tab.isVisible())) {
+    if (!(await profile.isVisible())) {
       // The pill closes whatever else the sidebar shows, such as a restored routine editor.
       if ((await pill.getAttribute("aria-expanded")) === "true") {
         await pill.click();
@@ -125,9 +140,16 @@ export async function openBotPanelTab(page: Page, name: string) {
       }
       await pill.click();
     }
-    await tab.click({ timeout: 2_000 });
-    await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+    await expect(profile).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
+}
+
+/** Opens the bot panel and unfolds its Settings (model, switches, instructions, memory). */
+export async function openBotSettings(page: Page) {
+  await openBotPanel(page);
+  const toggle = page.getByTestId("bot-settings-advanced").locator("button[aria-expanded]").first();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */
@@ -222,12 +244,17 @@ export async function openUserSettings(
     | "computer"
     | "billing"
     | "organization"
+    | "labs"
     | "updates",
 ) {
   // A reload keeps settings open because the URL holds them; closing clears the URL at once.
   if (!new URL(page.url()).searchParams.has("settings")) {
     await page.getByTestId("user-menu-trigger").click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    // An open bot panel has its own Settings fold, so look only in the account menu.
+    await page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Settings", exact: true })
+      .click();
   }
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
@@ -295,6 +322,7 @@ export async function pickReopenedModel(page: Page, model?: string) {
   await expect(search).toBeHidden();
 }
 
+/** Opens the page of the connection that runs a role's row, through the row's menu. */
 export async function manageModelConnection(
   page: Page,
   provider: string,
@@ -305,10 +333,13 @@ export async function manageModelConnection(
     .getByTestId(`model-role-row-${row}`)
     .getByRole("button", { name: / options$/ })
     .click();
-  await page.getByRole("menuitem", { name: `Manage ${provider}`, exact: true }).click();
-  const dialog = modelConnectionDialog(page, provider);
-  await expect(dialog).toBeVisible();
-  return dialog;
+  await page.getByRole("menuitem", { name: "Manage provider", exact: true }).click();
+  const name = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const connection = page
+    .getByTestId("model-provider-page")
+    .filter({ has: page.getByRole("heading", { name: new RegExp(`^${name}`) }) });
+  await expect(connection).toBeVisible();
+  return connection;
 }
 
 export async function createNamedBot(
@@ -329,8 +360,8 @@ export async function createNamedBot(
 }
 
 /**
- * Picks an option from one of the kit's dropdowns. They open a menu of options rather than a
- * native select, so selectOption() does not apply; options are matched by their visible name.
+ * Picks an option from one of the app's dropdowns, matched by its visible name. The menu opens
+ * at the page body, so options are looked up on the page rather than inside the trigger.
  */
 export async function chooseOption(trigger: Locator, option: string | { index: number }) {
   await trigger.click();

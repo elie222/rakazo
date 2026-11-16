@@ -271,14 +271,20 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
       throw new Error("Lark message content is empty or unsupported");
     return { msgType: "text", content: JSON.stringify({ text }) };
   }
-  async postMessage(threadId: string, message: AdapterPostableMessage) {
+  /** `idempotencyKey` makes Lark drop a repeat of this send for an hour. */
+  async postMessage(threadId: string, message: AdapterPostableMessage, idempotencyKey?: string) {
     const decoded = this.decodeThreadId(threadId);
     if (decoded.threadId) throw new Error("Lark group thread replies are not supported");
     const { msgType, content } = this.payload(message);
     const result = checked(
       await this.client.im.message.create({
         params: { receive_id_type: "chat_id" },
-        data: { receive_id: decoded.chatId, msg_type: msgType, content },
+        data: {
+          receive_id: decoded.chatId,
+          msg_type: msgType,
+          content,
+          ...(idempotencyKey ? { uuid: larkDedupeId(idempotencyKey) } : {}),
+        },
       }),
     );
     const id = result.data?.message_id;
@@ -300,6 +306,11 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
   }
 }
 
+/** Lark's dedupe id is at most 50 characters; message keys can be longer. */
+function larkDedupeId(idempotencyKey: string): string {
+  return createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32);
+}
+
 function checked<T extends { code?: number; msg?: string }>(result: T): T {
   if (result.code)
     throw new Error(`Lark API error ${result.code}: ${result.msg ?? "Request failed"}`);
@@ -319,10 +330,20 @@ function inboundText(
   type: string,
   mentions: NonNullable<LarkMessageEvent["message"]["mentions"]>,
 ): { text: string; parts?: LarkTextPart[] } {
-  const replaceMentions = (value: string) => {
-    for (const mention of mentions) value = value.replaceAll(mention.key, `@${mention.name}`);
-    return value;
-  };
+  const mentionNames = new Map(
+    mentions.filter((mention) => mention.key).map((mention) => [mention.key, `@${mention.name}`]),
+  );
+  const mentionPattern = mentionNames.size
+    ? new RegExp(
+        `(?:${[...mentionNames.keys()]
+          .sort((a, b) => b.length - a.length)
+          .map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("|")})(?!\\w)`,
+        "g",
+      )
+    : null;
+  const replaceMentions = (value: string) =>
+    mentionPattern ? value.replace(mentionPattern, (key) => mentionNames.get(key) ?? key) : value;
   const plain = (value: string) => ({ text: replaceMentions(value) });
   if (type !== "text" && type !== "post") return plain("");
   try {
@@ -335,13 +356,21 @@ function inboundText(
     if (!post || typeof post !== "object") return plain("");
     const rich = post as {
       title?: string;
-      content?: { tag: string; text?: string; href?: string; user_name?: string }[][];
+      content?: {
+        tag: string;
+        text?: string;
+        href?: string;
+        user_name?: string;
+        user_id?: string;
+      }[][];
     };
     const itemText = (item: NonNullable<typeof rich.content>[number][number]) =>
       item.tag === "a"
         ? `[${item.text ?? ""}](${item.href ?? ""})`
         : item.tag === "at"
-          ? `@${item.user_name ?? "unknown"}`
+          ? item.user_name
+            ? `@${item.user_name}`
+            : item.user_id || "@unknown"
           : item.tag === "text" || item.tag === "code_block"
             ? (item.text ?? "")
             : "";

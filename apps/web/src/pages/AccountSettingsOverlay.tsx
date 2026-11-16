@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
+import type { AccountSecurity, BotAvatarSet, SignInProvider } from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
@@ -13,24 +13,13 @@ import {
   FieldLabel,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   SectionHeading,
   Switch,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@rakazo/ui-web/components/ui/table";
-import type { RefObject } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
@@ -45,6 +34,7 @@ import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
@@ -147,7 +137,25 @@ export function GeneralSettingsPanels({
   const showPassword = Boolean(
     accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false,
   );
+  const [providers, setProviders] = useState<SignInProvider[]>([]);
   const passkeysSupported = usePasskeysSupported();
+  useEffect(() => {
+    let active = true;
+    void fetchAuthCapabilities()
+      .then((value) => {
+        if (active) setProviders(value.providers ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const unlinkedProviders = accountSecurity?.linkedProviderIds
+    ? providers.filter(
+        (provider) =>
+          provider.id !== "oidc" && !accountSecurity.linkedProviderIds?.includes(provider.id),
+      )
+    : [];
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
@@ -363,20 +371,18 @@ export function GeneralSettingsPanels({
                 </span>
               }
               control={
-                <NativeSelect
+                <OptionSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
                   value={selectedTimezone}
                   disabled={timezonePending}
-                  onChange={(event) => void chooseTimezone(event.target.value)}
+                  options={timezoneOptions(selectedTimezone).map((zone) => ({
+                    value: zone,
+                    label: zone.replaceAll("_", " "),
+                  }))}
+                  onValueChange={(zone) => void chooseTimezone(zone)}
                   className="w-56 max-w-full"
-                >
-                  {timezoneOptions(selectedTimezone).map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone.replaceAll("_", " ")}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                />
               }
             >
               {!sameTimeZone(selectedTimezone, deviceTimezone) ? (
@@ -471,10 +477,20 @@ export function GeneralSettingsPanels({
       <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
-      {showPassword || passkeysSupported || canLinkSso ? (
+      {showPassword || canLinkSso || passkeysSupported || unlinkedProviders.length > 0 ? (
         <SettingsGroup title={<Trans>Security</Trans>}>
           {showPassword ? <ChangePasswordRow email={email} /> : null}
-          {canLinkSso ? <LinkSsoRow /> : null}
+          {canLinkSso ? (
+            <LinkSsoRow
+              provider={
+                accountSecurity?.sso ? { id: "oidc", name: accountSecurity.sso.name } : undefined
+              }
+              onSecurity={setAccountSecurity}
+            />
+          ) : null}
+          {unlinkedProviders.map((provider) => (
+            <LinkSsoRow key={provider.id} provider={provider} onSecurity={setAccountSecurity} />
+          ))}
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
@@ -483,90 +499,6 @@ export function GeneralSettingsPanels({
         <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
         <AccountAccess onSecurity={setAccountSecurity} />
       </SettingsGroup>
-    </div>
-  );
-}
-
-export function UsageSettingsPanel({
-  usage,
-  panelRef,
-}: {
-  usage?: UsageSummary | null;
-  panelRef?: RefObject<HTMLDivElement | null>;
-}) {
-  const { t, i18n } = useLingui();
-  const count = new Intl.NumberFormat(i18n.locale);
-  const usd = new Intl.NumberFormat(i18n.locale, {
-    style: "currency",
-    currency: "USD",
-  });
-  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
-  const cost = (value: number | null | undefined) =>
-    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
-  const models = usage?.models ?? [];
-  return (
-    <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
-      {usage ? (
-        <dl className="grid grid-cols-3 gap-3">
-          {[
-            { label: t`Runs`, value: number(usage.runs) },
-            { label: t`Tokens`, value: number(usage.totalTokens) },
-            { label: t`Cost`, value: cost(usage.costUsd) },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
-              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
-              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {models.length > 0 ? (
-        <div className="mt-4 rounded-xl border border-border px-2">
-          <Table className="text-body">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-muted-foreground">
-                  <Trans>Model</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Calls</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Input</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Output</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Cost</Trans>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {models.map((row) => (
-                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
-                  <TableCell>
-                    <div className="text-foreground">{row.model}</div>
-                    <div className="text-label text-muted-foreground">{row.provider}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.modelCalls)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : null}
     </div>
   );
 }

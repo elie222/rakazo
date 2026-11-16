@@ -14,8 +14,15 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, cancelResponseBody } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import {
+  boundedSandboxCommandTimeoutMs,
+  cancelResponseBody,
+  ResponseTooLargeError,
+} from "@rakazo/core";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
@@ -33,6 +40,7 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
@@ -340,6 +348,7 @@ export interface CreateOSSandboxProviderOptions {
   shape?: string;
   rootfs?: string;
   fetch?: typeof fetch;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }
 
 interface CreateOSView {
@@ -447,11 +456,16 @@ export class CreateOSSandboxProvider implements SandboxProvider {
       context,
     );
     if (!created?.id) throw new Error("CreateOS did not return a sandbox id");
+    await recordUnreferencedMachine(this.options.unreferencedMachines, {
+      provider: "createos",
+      machineId: created.id,
+      homeKey: request.botId,
+    });
     try {
       const settled = await this.waitUntilSettled(created.id, context);
       if (settled.status !== "running") throw new Error(`CreateOS sandbox is ${settled.status}`);
     } catch (error) {
-      await this.abandonSandbox(created.id);
+      await this.abandonSandbox(created.id, request.botId);
       throw error;
     }
     return this.ref(created.id, request.botId, true);
@@ -657,15 +671,23 @@ print(json.dumps(out))
       );
       const size = Number((stat.result?.stdout ?? "").trim());
       if (Number.isFinite(size) && size > options.maxBytes) {
-        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(options.maxBytes);
       }
     }
-    return this.getBytes(
-      `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/files?path=${encodeURIComponent(target)}`,
-      context,
-      "application/octet-stream",
-      options?.maxBytes ?? MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
-    );
+    try {
+      return await this.getBytes(
+        `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/files?path=${encodeURIComponent(target)}`,
+        context,
+        "application/octet-stream",
+        options?.maxBytes ?? MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
+      );
+    } catch (error) {
+      // The file can grow between the size check and the read.
+      if (options?.maxBytes !== undefined && error instanceof CreateOSResponseTooLargeError) {
+        throw new SandboxFileTooLargeError(options.maxBytes, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
@@ -1047,18 +1069,32 @@ print(json.dumps(out))
     return (result.result?.stdout ?? "").trim();
   }
 
-  /** Best-effort delete so a sandbox that will not run stops counting against the quota. */
-  private async abandonSandbox(id: string): Promise<void> {
+  /** Deletes a sandbox that will not run, so it stops counting against the quota. */
+  private abandonSandbox(id: string, homeKey?: string): Promise<void> {
+    return deleteUnreferencedMachine(
+      this.options.unreferencedMachines,
+      { provider: "createos", machineId: id, ...(homeKey && { homeKey }) },
+      (signal) => this.deleteSandbox(id, signal),
+    );
+  }
+
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.deleteSandbox(machine.machineId, signal);
+  }
+
+  private async deleteSandbox(id: string, signal: AbortSignal): Promise<void> {
     const context: AdapterContext = {
       operationId: "createos.abandon",
       traceId: "createos.abandon",
       spaceId: "createos",
       userId: "createos",
-      signal: AbortSignal.timeout(10_000),
+      signal,
     };
-    await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context).catch(
-      () => undefined,
-    );
+    try {
+      await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context);
+    } catch (error) {
+      if (!isCreateOSSandboxGone(error)) throw error;
+    }
   }
 
   private async applyAction(
@@ -1722,6 +1758,12 @@ async function readCreateOSJson<T>(response: Response, signal: AbortSignal): Pro
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
+class CreateOSResponseTooLargeError extends Error {
+  constructor(maxBytes: number, options?: { cause?: unknown }) {
+    super(`CreateOS response exceeds ${maxBytes} bytes`, options);
+  }
+}
+
 async function readCreateOSBody(
   response: Response,
   maxBytes: number,
@@ -1730,7 +1772,7 @@ async function readCreateOSBody(
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     cancelResponseBody(response);
-    throw new Error(`CreateOS response exceeds ${maxBytes} bytes`);
+    throw new CreateOSResponseTooLargeError(maxBytes);
   }
   const readSignal = AbortSignal.any([
     signal,
@@ -1739,8 +1781,8 @@ async function readCreateOSBody(
   try {
     return await readBodyCapped(response, maxBytes, readSignal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error(`CreateOS response exceeds ${maxBytes} bytes`, { cause: error });
+    if (error instanceof ResponseTooLargeError) {
+      throw new CreateOSResponseTooLargeError(maxBytes, { cause: error });
     }
     throw error;
   }

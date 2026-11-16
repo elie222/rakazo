@@ -1,4 +1,6 @@
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
 
@@ -29,6 +31,61 @@ describe("ResendEmailProvider", () => {
       expect(first[1]!.headers).toMatchObject({ authorization: "Bearer fake-api-key" });
       expect(JSON.parse(first[1]!.body as string)).toEqual({ from: config.from, ...message });
     }
+  });
+
+  it.each([
+    [429, "2", 2_000],
+    [503, "2", 2_000],
+    [429, "Thu, 22 Oct 2026 10:00:02 GMT", 2_000],
+    [429, null, 250],
+    [429, "invalid", 250],
+  ])("honors retry timing for HTTP %s and header %s", async (status, header, delay) => {
+    vi.useFakeTimers({ now: Date.parse("2026-10-22T10:00:00Z") });
+    try {
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json(
+            {},
+            {
+              status,
+              headers: header === null ? {} : { "retry-after": header },
+            },
+          ),
+        )
+        .mockResolvedValueOnce(Response.json({ id: "email-1" }));
+      const sent = new ResendEmailProvider(config, { fetch: request }).send(message);
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(request).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await sent;
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request.mock.calls[0]![1]!.headers).toEqual(request.mock.calls[1]![1]!.headers);
+      expect(request.mock.calls[0]![1]!.signal).toBe(request.mock.calls[1]![1]!.signal);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the delivery deadline while waiting for Retry-After", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({}, { status: 429, headers: { "retry-after": "2" } }),
+      );
+    await expect(provider(request, 20).send(message)).rejects.toThrow("timed out");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let Retry-After add attempts", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({}, { status: 429, headers: { "retry-after": "0" } }),
+      );
+    const email = new ResendEmailProvider(config, { fetch: request, retryDelaysMs: [] });
+    await expect(email.send(message)).rejects.toThrow("HTTP 429");
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("sends the configured reply-to address", async () => {
@@ -173,19 +230,17 @@ describe("ResendEmailProvider", () => {
   });
 
   it("waits for accepted delivery on shutdown", async () => {
-    let complete!: (response: Response) => void;
-    const email = provider(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
+    let complete!: Deferred<Response>;
+    const email = provider(() => {
+      complete = deferred<Response>();
+      return complete.promise;
+    });
     const delivery = email.send(message);
     const drained = vi.fn();
     const draining = email.drain().then(drained);
     await Promise.resolve();
     expect(drained).not.toHaveBeenCalled();
-    complete(Response.json({ id: "email-1" }));
+    complete.resolve(Response.json({ id: "email-1" }));
     await delivery;
     await draining;
     expect(drained).toHaveBeenCalledOnce();

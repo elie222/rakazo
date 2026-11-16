@@ -1,6 +1,12 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import type { Server } from "node:http";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { shownWindow } from "./shown-window.js";
 
 const fixture = `<!doctype html>
 <html lang="en">
@@ -8,118 +14,161 @@ const fixture = `<!doctype html>
   <body><main>Desktop fixture ready</main></body>
 </html>`;
 
+let server: Server;
+let userData: string;
+let app: ElectronApplication | undefined;
+
+// Hooks run when a launch or a close fails too, so the server and the profile are always released.
+test.beforeAll(async () => {
+  // The bridge answers only the server the window was opened for, so the fixture is served.
+  server = createServer((request, response) => {
+    if (request.url === "/api/monitoring/config") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ dsn: null }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixture);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+});
+
+test.afterAll(async () => {
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+    // A window that did not close must not keep the port open.
+    server.closeAllConnections();
+  });
+});
+
+test.beforeEach(async () => {
+  userData = await mkdtemp(path.join(tmpdir(), "rakazo-desktop-e2e-"));
+});
+
+test.afterEach(async () => {
+  try {
+    await app?.close();
+  } finally {
+    app = undefined;
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
 test("launches with a narrow preload bridge and an isolated renderer", async () => {
-  const app = await electron.launch({
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("fixture has no port");
+  app = await electron.launch({
     args: ["."],
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       ...process.env,
-      RAKAZO_WEB_URL: `data:text/html;charset=utf-8,${encodeURIComponent(fixture)}`,
+      RAKAZO_PERFORMANCE_USER_DATA: userData,
+      RAKAZO_WEB_URL: `http://127.0.0.1:${address.port}`,
     },
   });
 
-  try {
-    const page = await app.firstWindow();
-    await expect(page.getByText("Desktop fixture ready")).toBeVisible();
-    await expect(page).toHaveTitle("Rakazo desktop smoke");
+  const page = await shownWindow(app);
+  await expect(page.getByText("Desktop fixture ready")).toBeVisible();
+  await expect(page).toHaveTitle("Rakazo desktop smoke");
 
-    const renderer = await page.evaluate(async () => {
-      const desktop = (window as typeof window & { rakazoDesktop?: RakazoDesktop }).rakazoDesktop;
+  const renderer = await page.evaluate(async () => {
+    const desktop = (window as typeof window & { rakazoDesktop?: RakazoDesktop }).rakazoDesktop;
 
-      return {
-        computerKeys: desktop?.computer ? Object.keys(desktop.computer).sort() : [],
-        deviceKeys: desktop?.device ? Object.keys(desktop.device).sort() : [],
-        bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
-        windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
-        updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
-        badgeKeys: desktop?.badge ? Object.keys(desktop.badge) : [],
-        passkeyRpIds: await desktop?.passkeys?.rpIds(),
-        platform: desktop?.platform,
-        nativeWindowFrame: desktop?.nativeWindowFrame,
-        state: await desktop?.window.state(),
-        update: await desktop?.update.state(),
-        nodeGlobals: {
-          require: typeof (window as unknown as { require?: unknown }).require,
-          process: typeof (window as unknown as { process?: unknown }).process,
-          module: typeof (window as unknown as { module?: unknown }).module,
-        },
-      };
-    });
+    return {
+      computerKeys: desktop?.computer ? Object.keys(desktop.computer).sort() : [],
+      deviceKeys: desktop?.device ? Object.keys(desktop.device).sort() : [],
+      bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
+      windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
+      updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
+      badgeKeys: desktop?.badge ? Object.keys(desktop.badge) : [],
+      mcpBrowserKeys: desktop?.mcpBrowser ? Object.keys(desktop.mcpBrowser).sort() : [],
+      passkeyRpIds: await desktop?.passkeys?.rpIds(),
+      platform: desktop?.platform,
+      nativeWindowFrame: desktop?.nativeWindowFrame,
+      state: await desktop?.window.state(),
+      update: await desktop?.update.state(),
+      nodeGlobals: {
+        require: typeof (window as unknown as { require?: unknown }).require,
+        process: typeof (window as unknown as { process?: unknown }).process,
+        module: typeof (window as unknown as { module?: unknown }).module,
+      },
+    };
+  });
 
-    expect(renderer.bridgeKeys).toEqual([
-      "badge",
-      "computer",
-      "device",
-      "locale",
-      "menu",
-      "monitoring",
-      "nativeWindowFrame",
-      "oauth",
-      "passkeys",
-      "platform",
-      "server",
-      "settings",
-      "update",
-      "window",
-    ]);
-    // Unpackaged builds carry no passkey association.
-    expect(renderer.passkeyRpIds).toEqual([]);
-    expect(renderer.computerKeys).toEqual([
-      "managesHostChoice",
-      "onConfigure",
-      "requestAccess",
-      "revokeAccess",
-    ]);
-    expect(renderer.deviceKeys).toEqual(["setAllowed", "state"]);
-    expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
-    expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
-    expect(renderer.badgeKeys).toEqual(["set"]);
-    expect(renderer.platform).toBe(process.platform);
-    expect(renderer.nativeWindowFrame).toBe(process.platform === "win32");
-    expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
-    // An unpackaged run has no update feed, and that is reported as a state rather than an error.
-    expect(renderer.update).toMatchObject({ phase: "unsupported", availableVersion: null });
-    expect(renderer.nodeGlobals).toEqual({
-      require: "undefined",
-      process: "undefined",
-      module: "undefined",
-    });
+  expect(renderer.bridgeKeys).toEqual([
+    "badge",
+    "clipboard",
+    "computer",
+    "device",
+    "locale",
+    "mcpBrowser",
+    "menu",
+    "monitoring",
+    "nativeWindowFrame",
+    "oauth",
+    "passkeys",
+    "platform",
+    "server",
+    "settings",
+    "update",
+    "window",
+  ]);
+  // Unpackaged builds carry no passkey association.
+  expect(renderer.passkeyRpIds).toEqual([]);
+  expect(renderer.computerKeys).toEqual([
+    "managesHostChoice",
+    "onConfigure",
+    "requestAccess",
+    "revokeAccess",
+  ]);
+  expect(renderer.deviceKeys).toEqual(["setAllowed", "state"]);
+  expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
+  expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
+  expect(renderer.badgeKeys).toEqual(["set"]);
+  expect(renderer.mcpBrowserKeys).toEqual(["clear", "onOAuthCallback"]);
+  expect(renderer.platform).toBe(process.platform);
+  expect(renderer.nativeWindowFrame).toBe(process.platform === "win32");
+  expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
+  // An unpackaged run has no update feed, and that is reported as a state rather than an error.
+  expect(renderer.update).toMatchObject({ phase: "unsupported", availableVersion: null });
+  expect(renderer.nodeGlobals).toEqual({
+    require: "undefined",
+    process: "undefined",
+    module: "undefined",
+  });
 
-    const preferences = await app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      // The installed Electron types do not declare getLastWebPreferences; the runtime has it.
-      const lastPreferences = win
-        ? (
-            win.webContents as Electron.WebContents & {
-              getLastWebPreferences(): {
-                nodeIntegration: boolean;
-                contextIsolation: boolean;
-                sandbox: boolean;
-              };
-            }
-          ).getLastWebPreferences()
-        : undefined;
-      return {
-        count: BrowserWindow.getAllWindows().length,
-        nodeIntegration: lastPreferences?.nodeIntegration,
-        contextIsolation: lastPreferences?.contextIsolation,
-        sandbox: lastPreferences?.sandbox,
-        state: {
-          minimized: win?.isMinimized(),
-          maximized: win?.isMaximized(),
-          fullScreen: win?.isFullScreen(),
-        },
-      };
-    });
+  const preferences = await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    // The installed Electron types do not declare getLastWebPreferences; the runtime has it.
+    const lastPreferences = win
+      ? (
+          win.webContents as Electron.WebContents & {
+            getLastWebPreferences(): {
+              nodeIntegration: boolean;
+              contextIsolation: boolean;
+              sandbox: boolean;
+            };
+          }
+        ).getLastWebPreferences()
+      : undefined;
+    return {
+      count: BrowserWindow.getAllWindows().length,
+      nodeIntegration: lastPreferences?.nodeIntegration,
+      contextIsolation: lastPreferences?.contextIsolation,
+      sandbox: lastPreferences?.sandbox,
+      state: {
+        minimized: win?.isMinimized(),
+        maximized: win?.isMaximized(),
+        fullScreen: win?.isFullScreen(),
+      },
+    };
+  });
 
-    expect(preferences).toEqual({
-      count: 1,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      state: renderer.state,
-    });
-  } finally {
-    await app.close();
-  }
+  expect(preferences).toEqual({
+    count: 1,
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: true,
+    state: renderer.state,
+  });
 });

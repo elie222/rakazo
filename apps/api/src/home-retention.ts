@@ -1,16 +1,25 @@
 import { randomUUID } from "node:crypto";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { sandboxKindsWhere } from "@rakazo/adapters";
 import type { HomeDeletionReason } from "@rakazo/auth";
 import { emailLocale, homeDeletionEmail } from "@rakazo/auth";
 import type { PrismaClient } from "@rakazo/db";
-import { hasModelAccess, needsBillingPortal, Prisma, runAsSystem } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import {
+  assertLeaseHeld,
+  hasModelAccess,
+  LeaseHeldError,
+  needsBillingPortal,
+  Prisma,
+  runAsSystem,
+  withLease,
+} from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PLAN_ENDED_DAYS = 30;
 const UNUSED_DAYS = 90;
 const WARNING_DAYS = 7;
-const CLAIM_MS = 15 * 60 * 1000;
+const LEASE_MS = 2 * 60 * 1000;
 const BATCH = 500;
 /** Cleared only while nothing runs on it; a failed start leaves `error`, which nothing moves on. */
 const IDLE_STATES = ["stopped", "suspended", "error"];
@@ -62,7 +71,7 @@ function planIsLive({ billing, modelCredits }: Account, now: Date) {
 const candidate = {
   homeStorageId: { not: null },
   // These work in a copy on a host the user or the server runs; the stored home only backs it up.
-  kind: { notIn: ["docker", "desktop", "wuying"] },
+  kind: { notIn: sandboxKindsWhere((capabilities) => capabilities.storedHomeIsBackup) },
 } satisfies Prisma.ComputerWhereInput;
 
 interface HomeRetentionDeps {
@@ -74,15 +83,15 @@ interface HomeRetentionDeps {
 
 /**
  * Deletes stored homes that are past retention, emailing each organization's owner a week
- * first. Every API instance may run it: a claim keeps each email to one process, and eligibility
+ * first. Every API instance may run it: a lease keeps each email to one process, and eligibility
  * is read again right before each email and inside the deletion's transaction, so resubscribing
  * or using a bot in the meantime cancels it.
  *
  * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
  * worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
- * whose provider copy has expired, starts empty next time. Docker, desktop and Wuying computers
- * are skipped: they work in a copy on a host, which the stored home backs up. Aborting stops it
+ * whose provider copy has expired, starts empty next time. Computers whose stored
+ * home is only a backup are skipped: they work in a copy on a host. Aborting stops it
  * between emails and deletions; the next sweep picks up the rest.
  */
 export function homeRetentionSweep(
@@ -228,8 +237,9 @@ export function deletionDates(sentAt: Date) {
 
 /**
  * Emails the organization's first owner, the one who can pay, once for all its computers still
- * due for the same reason. A crash after sending
- * and before recording it sends again once the claim expires, so nothing is deleted unwarned.
+ * due for the same reason. One process emails an organization at a time; another skips it until
+ * the next sweep. A crash after sending and before recording it sends again once the lease
+ * lapses, so nothing is deleted unwarned.
  */
 async function warn(deps: HomeRetentionDeps, group: Warning) {
   const { prisma } = deps;
@@ -237,60 +247,90 @@ async function warn(deps: HomeRetentionDeps, group: Warning) {
     data: group.ids.map((computerId) => ({ computerId })),
     skipDuplicates: true,
   });
+  // The previous release claims notices instead of taking the lease, so the claim is kept with it
+  // while a deploy overlaps.
   const claimId = randomUUID();
-  const claimed = await prisma.homeDeletionNotice.updateMany({
-    where: { computerId: { in: group.ids }, warnedAt: null, ...claimable() },
-    data: { claimId, claimExpiresAt: new Date(Date.now() + CLAIM_MS) },
-  });
-  if (!claimed.count) return;
+  const claimUntil = () => new Date(Date.now() + LEASE_MS);
+  const renewClaim = async () => {
+    await prisma.homeDeletionNotice.updateMany({
+      where: { claimId },
+      data: { claimExpiresAt: claimUntil() },
+    });
+    return true;
+  };
   const release = () =>
     prisma.homeDeletionNotice.updateMany({
       where: { claimId },
       data: { claimId: null, claimExpiresAt: null },
     });
-  try {
-    // Read again now that the claim holds them: a plan or use since the scan cancels.
-    const sentAt = new Date();
-    const { shown, deleteAfter } = deletionDates(sentAt);
-    const due: string[] = [];
-    for (let cursor: string | undefined; ; ) {
-      const page = await dueDates(prisma, { homeDeletionNotice: { claimId } }, sentAt, cursor);
-      for (const computer of page)
-        if (computer.due?.reason === group.reason && computer.due.at <= deleteAfter)
-          due.push(computer.id);
-      if (page.length < BATCH) break;
-      cursor = page.at(-1)?.id;
-    }
-    await prisma.homeDeletionNotice.deleteMany({ where: { claimId, computerId: { notIn: due } } });
-    const owner = due.length
-      ? await prisma.member.findFirst({
-          where: { organizationId: group.organizationId, role: { contains: "owner" } },
-          orderBy: { createdAt: "asc" },
-          select: { user: { select: { email: true, name: true, locale: true } } },
-        })
-      : null;
-    const user = owner?.user;
-    if (!user) {
-      if (due.length)
-        getLogger().warn("home.retention.no_recipient", {
-          "organization.id": group.organizationId,
-          "home.retention.reason": group.reason,
-          "home.retention.computers": due.length,
+  await withLease(
+    prisma,
+    `home-deletion-notice:${group.organizationId}`,
+    { ttlMs: LEASE_MS, onRenew: renewClaim },
+    async (lease) => {
+      const underLease = <R>(write: (tx: Prisma.TransactionClient) => Promise<R>) =>
+        prisma.$transaction(async (tx) => {
+          await assertLeaseHeld(tx, lease);
+          return write(tx);
         });
-      await release();
-      return;
-    }
-    await deps.email.send(
-      await homeDeletionEmail(user, shown, group.reason, deps.appUrl, emailLocale(user.locale)),
-    );
-    await prisma.homeDeletionNotice.updateMany({
-      where: { claimId },
-      data: { warnedAt: sentAt, deleteAfter, claimId: null, claimExpiresAt: null },
-    });
-  } catch (error) {
-    await release();
-    throw error;
-  }
+      const claimed = await prisma.homeDeletionNotice.updateMany({
+        where: { computerId: { in: group.ids }, warnedAt: null, ...claimable() },
+        data: { claimId, claimExpiresAt: claimUntil() },
+      });
+      if (!claimed.count) return;
+      try {
+        // Cut off while the claim was being taken: give it back rather than leave it to lapse.
+        lease.signal.throwIfAborted();
+        // Read again now that the lease holds them: a plan or use since the scan cancels.
+        const sentAt = new Date();
+        const { shown, deleteAfter } = deletionDates(sentAt);
+        const due: string[] = [];
+        for (let cursor: string | undefined; ; ) {
+          const page = await dueDates(prisma, { homeDeletionNotice: { claimId } }, sentAt, cursor);
+          for (const computer of page)
+            if (computer.due?.reason === group.reason && computer.due.at <= deleteAfter)
+              due.push(computer.id);
+          if (page.length < BATCH) break;
+          cursor = page.at(-1)?.id;
+        }
+        await underLease((tx) =>
+          tx.homeDeletionNotice.deleteMany({ where: { claimId, computerId: { notIn: due } } }),
+        );
+        const owner = due.length
+          ? await prisma.member.findFirst({
+              where: { organizationId: group.organizationId, role: { contains: "owner" } },
+              orderBy: { createdAt: "asc" },
+              select: { user: { select: { email: true, name: true, locale: true } } },
+            })
+          : null;
+        const user = owner?.user;
+        if (!user) {
+          if (due.length)
+            getLogger().warn("home.retention.no_recipient", {
+              "organization.id": group.organizationId,
+              "home.retention.reason": group.reason,
+              "home.retention.computers": due.length,
+            });
+          return;
+        }
+        lease.signal.throwIfAborted();
+        await deps.email.send(
+          await homeDeletionEmail(user, shown, group.reason, deps.appUrl, emailLocale(user.locale)),
+        );
+        await underLease((tx) =>
+          tx.homeDeletionNotice.updateMany({
+            where: { claimId },
+            data: { warnedAt: sentAt, deleteAfter, claimId: null, claimExpiresAt: null },
+          }),
+        );
+      } finally {
+        await bestEffort("release home deletion notices", release());
+      }
+    },
+  ).catch((error: unknown) => {
+    // Another process is emailing this organization; the next sweep finds what it leaves.
+    if (!(error instanceof LeaseHeldError)) throw error;
+  });
 }
 
 /**

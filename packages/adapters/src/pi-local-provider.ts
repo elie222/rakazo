@@ -7,7 +7,15 @@ import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "./pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "./pi-think-tags.js";
+import { pacerTokensPerMinute } from "./token-pacer.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
+
+/** Reasoning effort names for an OpenAI-style chat completions server that accepts them. */
+export const REASONING_THINKING_LEVELS: Model<"openai-completions">["thinkingLevelMap"] = {
+  off: "none",
+  xhigh: "xhigh",
+  max: "max",
+};
 
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
@@ -68,8 +76,7 @@ function localModel(id: string): Model<"openai-completions"> {
     compat: reasoning
       ? { supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: "openai" }
       : { supportsDeveloperRole: false, supportsReasoningEffort: false },
-    // Mirrors openAiCompatibleModel's reasoning levels.
-    ...(reasoning ? { thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" } } : {}),
+    ...(reasoning ? { thinkingLevelMap: { ...REASONING_THINKING_LEVELS } } : {}),
     input: inputModalities(localVisionModelIds().has(id)),
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -114,6 +121,8 @@ function localApi(): ProviderStreams {
 export function localProvider(): Provider | undefined {
   const ids = localModelIds();
   if (!ids.length) return undefined;
+  // Fail on a bad pacing limit with the other token limits, not on the first model call.
+  pacerTokensPerMinute(LOCAL_PROVIDER_ID);
   return createProvider({
     id: LOCAL_PROVIDER_ID,
     name: "Local (Ollama / LM Studio)",

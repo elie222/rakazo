@@ -24,11 +24,7 @@ describePostgres("agent home storage records (PostgreSQL)", () => {
     db = createDb(url!);
     system = asSystem(db.prisma);
     identity = await runAsSystem("home storage records fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
   });
 

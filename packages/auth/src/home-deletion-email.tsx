@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
-import { Link, Text } from "react-email";
-import { emailText, greeting, linkStyle, message } from "./email.js";
+import { Text } from "react-email";
+import { Button, emailText, greeting, message } from "./email.js";
 
 /** Why saved computer files are due for deletion. */
 export type HomeDeletionReason = "plan-ended" | "unused";
@@ -32,11 +32,7 @@ export function homeDeletionEmail(
               date,
             })}
       </Text>
-      <Text>
-        <Link href={appUrl} style={linkStyle}>
-          {say("Open Rakazo")}
-        </Link>
-      </Text>
+      <Button href={appUrl}>{say("Open Rakazo")}</Button>
     </>,
   );
 }

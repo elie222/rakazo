@@ -360,6 +360,8 @@ export interface LocalStackDeps {
   randomHex: (bytes: number) => string;
   /** Called on every state change so the setup window is pushed progress instead of polling for it. */
   onState?: (state: DesktopLocalStackState) => void;
+  /** Called when a reuse probe confirms a running stack without a phase change, so dependent UI can refresh. */
+  onReuseConfirmed?: () => void;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
 }
@@ -369,6 +371,8 @@ export interface StackController {
   webUrl(): string;
   state(): DesktopLocalStackState;
   matchesDesiredStack(): Promise<boolean>;
+  /** True while a stack this app manages may still be running, so the menu offers its off-switch. */
+  managedStackRunning(): boolean;
   start(): Promise<DesktopLocalStackState>;
   stop(): Promise<DesktopLocalStackState>;
   abort(): void;
@@ -376,6 +380,7 @@ export interface StackController {
 
 /** Resolves early on abort so a stop never waits out a health poll. */
 export function defaultSleep(ms: number, signal: AbortSignal) {
+  if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => {
     const timer = setTimeout(done, ms);
     function done() {
@@ -412,6 +417,7 @@ export abstract class StackLifecycle implements StackController {
   }
 
   abstract matchesDesiredStack(): Promise<boolean>;
+  abstract managedStackRunning(): boolean;
   protected abstract attempt(signal: AbortSignal): Promise<void>;
   protected abstract attemptFailed(error: unknown, signal: AbortSignal): Promise<void>;
   protected abstract shutdown(): Promise<void>;
@@ -438,6 +444,11 @@ export abstract class StackLifecycle implements StackController {
       });
     this.running = attempt;
     return attempt;
+  }
+
+  /** True while a stop is tearing the stack down, so a probe's answer would already be stale. */
+  protected stopInFlight(): boolean {
+    return this.stopping !== null;
   }
 
   /** Cancels the in-flight step; whatever already started keeps running. */
@@ -497,13 +508,32 @@ export class LocalStackController extends StackLifecycle {
   private currentStackToken: string | null = null;
   /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
   private dockerAppLaunch: { app: string | null; at: number } | undefined;
+  /** True once `compose up` may have left containers running, or a launch probe confirmed
+   * a reusable stack; retries and failures keep it, and only a successful stop clears it. */
+  private managedStackMayRun = false;
+  /** Bumped when a stop succeeds, where the running flag clears; a probe started before
+   * that success cannot record reuse afterwards, and a failed stop keeps the stack a candidate. */
+  private stopGeneration = 0;
 
   constructor(private readonly deps: LocalStackDeps) {
     super(deps.imageTag, deps.localWebUrl, deps.onState);
   }
 
+  /**
+   * True while a stack this app manages may have containers running: one whose `compose up`
+   * ran this session (also across retries and later failures), or one whose reuse a launch
+   * probe confirmed. Early failures never started a container, so the desktop's stack
+   * off-switch stays hidden for them.
+   */
+  managedStackRunning(): boolean {
+    return this.managedStackMayRun;
+  }
+
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    // A successful stop during either file read invalidates the probe result.
+    const stopGeneration = this.stopGeneration;
+    if (this.stopInFlight()) return false;
     if (
       this.deps.hostComputer &&
       (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
@@ -514,10 +544,19 @@ export class LocalStackController extends StackLifecycle {
     if (token === null) return false;
     this.currentStackToken = token;
     try {
-      return (
-        (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
-        this.deps.imageTag
+      const probed = await this.deps.probe(
+        url,
+        AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS),
+        token,
       );
+      const matched = probed === this.deps.imageTag;
+      // A stop that succeeded while the probe was pending may have stopped the stack it saw.
+      if (matched && stopGeneration === this.stopGeneration && !this.managedStackMayRun) {
+        this.managedStackMayRun = true;
+        // The phase stays idle, so no lifecycle event follows; announce the flip itself.
+        this.deps.onReuseConfirmed?.();
+      }
+      return matched && stopGeneration === this.stopGeneration && !this.stopInFlight();
     } catch {
       return false;
     }
@@ -527,6 +566,10 @@ export class LocalStackController extends StackLifecycle {
   protected async shutdown() {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
+    if (stopped?.code === 0) {
+      this.stopGeneration += 1;
+      this.managedStackMayRun = false;
+    }
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
@@ -649,11 +692,14 @@ export class LocalStackController extends StackLifecycle {
       }
     }
 
-    this.push({ type: "up-start" });
     const upArgs = composeSupportsWaitTimeout(version.stdout)
       ? ["up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)]
       : ["up", "-d"];
     await writePrivateFile(path.join(this.deps.stackDir, STACK_WEB_URL_FILE), this.currentWebUrl);
+    // `compose up` may leave containers running even when it fails or is aborted midway;
+    // set before the up-start push so the menu that push rebuilds already sees it.
+    this.managedStackMayRun = true;
+    this.push({ type: "up-start" });
     let up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     for (
       let retry = 0;

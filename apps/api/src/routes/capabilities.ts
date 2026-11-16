@@ -19,7 +19,13 @@ import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability 
 import { requireAdmin } from "../admins.js";
 import { searchIntegrationCatalog } from "../integration-catalog.js";
 import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../mcp-servers.js";
-import { installPlugin, lockPluginInstalls, setPluginParts } from "../plugin-installs.js";
+import {
+  installConfig,
+  installPlugin,
+  lockPluginInstalls,
+  rethrowUnlessPluginSourceFailed,
+  setPluginParts,
+} from "../plugin-installs.js";
 import {
   approvedPluginEntries,
   listPluginSubmissions,
@@ -105,7 +111,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           version: row.version,
           digest: row.digest,
           secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
+          config: installConfig(row),
           availability: spaceAvailability(row),
           createdAt: row.createdAt.toISOString(),
         }));
@@ -260,7 +266,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           version: row.version,
           digest: row.digest,
           secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
+          config: installConfig(row),
           availability: spaceAvailability(row),
           createdAt: row.createdAt.toISOString(),
         };
@@ -285,7 +291,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             installedSource: `${preview.source.gitUrl}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
           };
         } catch (error) {
-          // Only content we can't support leaves browse; a slow or failing GitHub is retried.
+          // An endpoint the plugin names that is refused (an ORPCError) is about the plugin too.
+          if (!(error instanceof ORPCError)) rethrowUnlessPluginSourceFailed(error, context.signal);
+          // Only content we can't support leaves browse; a slow or failing host is retried.
           if (!isTransientFetchError(error)) pluginMarketplace.markUnreadable(input.source);
           throw new ORPCError("BAD_REQUEST", {
             message: "Could not preview a supported plugin from this repository",

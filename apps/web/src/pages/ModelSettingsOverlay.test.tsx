@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -21,6 +22,7 @@ const models = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
   rename: vi.fn(),
+  saveModelSettings: vi.fn(),
   setDefault: vi.fn(),
   probeOpenAiCompatible: vi.fn(),
   beginOAuth: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock("@lingui/react/macro", () => {
     useLingui: () => ({ t }),
     Trans: ({ children }: { children?: ReactNode }) => children,
     Plural: ({ one, other, value }: { one: string; other: string; value: number }) =>
-      value === 1 ? one : other,
+      (value === 1 ? one : other).replace("#", String(value)),
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
@@ -117,43 +119,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogHeader: Pass,
     DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    ModelThinkingOptions: (props: {
-      children?: ReactNode;
-      maxTokens?: string;
-      maxTokensLabel?: string;
-      onMaxTokensChange?: (value: string) => void;
-      thinkingLevel?: string | null;
-      thinkingLevelLabel?: string;
-      thinkingLevelOptions?: { value: string; label: string }[];
-      onThinkingLevelChange?: (value: string) => void;
-    }) =>
-      props.onMaxTokensChange || props.onThinkingLevelChange ? (
-        <>
-          {props.onMaxTokensChange ? (
-            <input
-              aria-label={props.maxTokensLabel}
-              value={props.maxTokens ?? ""}
-              onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
-            />
-          ) : null}
-          {props.onThinkingLevelChange ? (
-            <select
-              aria-label={props.thinkingLevelLabel}
-              value={props.thinkingLevel ?? ""}
-              onChange={(event) => props.onThinkingLevelChange?.(event.target.value)}
-            >
-              {(props.thinkingLevelOptions ?? []).map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {props.children}
-        </>
-      ) : null,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   };
 });
 
@@ -218,7 +183,9 @@ function account(provider: string, modelId: string) {
     mcpStdioEnabled: false,
     avatarStyle: "organic" as const,
     billingEnabled: false,
+    labs: [],
     ticketBoardEnabled: false,
+    labsAvailable: [],
     navLinks: [],
     phoneCallsEnabled: false,
   };
@@ -289,24 +256,28 @@ async function pick(label: string, option: string, role: "main" | "computer" = "
   await choose(option);
 }
 
-/** Opens the connection dialog for the main model's first row through its options menu. */
-async function manage() {
+/** Picks one item from the options menu of the main model's first row. */
+async function rowMenu(item: string) {
   await click(
     section("main").querySelector(
       '[data-testid="model-role-row-1"] button[aria-label$=" options"]',
     ),
   );
   await click(
-    [...document.querySelectorAll('[role="menuitem"]')].find((entry) =>
-      entry.textContent?.startsWith("Manage "),
-    ),
+    [...document.querySelectorAll('[role="menuitem"]')].find((entry) => entry.textContent === item),
   );
 }
 
+/** Opens the connection dialog for the main model's first row. */
+const manage = () => rowMenu("Manage provider");
+
+/** The open connection form's title, or the title of the page that replaced the lists. */
 function titles(container: HTMLElement) {
-  return [...container.querySelectorAll('[data-testid="model-connection-title"]')].map(
-    (entry) => entry.textContent,
-  );
+  return [
+    ...container.querySelectorAll(
+      '[data-testid="model-connection-title"], [data-testid="settings-page-title"]',
+    ),
+  ].map((entry) => entry.textContent);
 }
 
 function testQueryClient() {
@@ -447,9 +418,8 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "deepseek", apiKey: "sk-replacement-key" }),
     );
-    // A saved connection closes its dialog; reopening shows the stored key again.
-    expect(view.container.querySelector("#model-api-key")).toBeNull();
-    await manage();
+    // The connection's page stays open and shows the stored key again.
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
@@ -472,25 +442,123 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
   }
 });
 
-it("saves an edited output limit without sending a half-typed replacement key", async () => {
+/** The field a visible label names, as the shared settings fields label their inputs. */
+function labeled(container: HTMLElement, text: string) {
+  const label = [...container.querySelectorAll("label")].find(
+    (entry) => entry.textContent === text,
+  );
+  const field = label?.htmlFor ? container.ownerDocument.getElementById(label.htmlFor) : null;
+  return (field ?? label?.querySelector('[role="checkbox"]') ?? null) as HTMLInputElement | null;
+}
+
+it("saves a model's own limits from its row, leaving the catalog's capabilities alone", async () => {
+  models.list.mockResolvedValue([{ ...deepseekEntry, contextWindow: 128_000, maxTokens: 8_000 }]);
   models.credentials.mockResolvedValue([deepseekCredential]);
+  models.saveModelSettings.mockResolvedValue({ ok: true });
 
   const view = await renderSettings();
   try {
-    await manage();
-    const limit = view.container.querySelector<HTMLInputElement>(
-      'input[aria-label="Maximum output tokens"]',
-    );
+    await rowMenu("Manage model");
+    expect(titles(view.container)).toEqual(["DeepSeek Chat"]);
+    const limit = labeled(view.container, "Maximum output tokens");
+    expect(limit?.placeholder).toBe("8000");
+    expect(labeled(view.container, "Context limit")?.placeholder).toBe("128000");
+    expect(labeled(view.container, "Supports images")).toBeNull();
+    // Nothing to save until a field changes.
+    expect(
+      [...view.container.querySelectorAll("button")].some((entry) => entry.textContent === "Save"),
+    ).toBe(false);
     if (!limit) throw new Error("Missing output limit field");
     await typeInto(limit, "4096");
-    await typeInto(keyField(view.container), "sk-ab");
     await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
-    expect(models.connect).toHaveBeenCalledTimes(1);
-    const input = models.connect.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(input).toMatchObject({ provider: "deepseek", maxTokens: 4096 });
-    expect(input).not.toHaveProperty("apiKey");
-    // A limits-only save keeps the dialog and the half-typed key.
-    expect(keyField(view.container).value).toBe("sk-ab");
+    expect(models.saveModelSettings).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek",
+      modelId: "deepseek-chat",
+      settings: { maxTokens: 4096 },
+    });
+    expect(models.connect).not.toHaveBeenCalled();
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("returns to the provider list when a refresh removes the open model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([compatibleCredential]);
+  models.saveModelSettings.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await rowMenu("Manage model");
+    expect(view.container.querySelector('[data-testid="model-settings-page"]')).not.toBeNull();
+    models.credentials.mockResolvedValue([
+      { ...compatibleCredential, modelId: "model-b", enabledModelIds: ["model-b"] },
+    ]);
+    await typeInto(labeled(view.container, "Maximum output tokens")!, "2000");
+    await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
+    // The save, the refresh after it and the return to the list each take their own turn.
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-testid="model-settings-page"]')).toBeNull(),
+    );
+    expect(view.container.textContent).toContain("model-b");
+    expect(labeled(view.container, "Maximum output tokens")).toBeNull();
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("resets a customized model to its defaults", async () => {
+  models.list.mockResolvedValue([deepseekEntry]);
+  models.credentials.mockResolvedValue([
+    { ...deepseekCredential, modelSettings: { "deepseek-chat": { maxTokens: 4096 } } },
+  ]);
+  models.saveModelSettings
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({ ok: true });
+
+  const view = await renderSettings();
+  try {
+    await rowMenu("Manage model");
+    expect(labeled(view.container, "Maximum output tokens")?.value).toBe("4096");
+    const reset = () =>
+      click(
+        buttons(view.container, "Reset to defaults").find(
+          (entry) => entry.textContent === "Reset to defaults",
+        ),
+      );
+    await reset();
+    expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+    await reset();
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    expect(models.saveModelSettings).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek",
+      modelId: "deepseek-chat",
+      settings: {},
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("lets a model the catalog cannot describe read images and think", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([compatibleCredential]);
+  models.saveModelSettings.mockResolvedValue({ ok: true });
+
+  const view = await renderSettings();
+  try {
+    await rowMenu("Manage model");
+    expect(labeled(view.container, "Maximum output tokens")?.placeholder).toBe("4096");
+    expect(labeled(view.container, "Maximum images per request")).toBeNull();
+    await click(labeled(view.container, "Supports images"));
+    expect(labeled(view.container, "Maximum images per request")).not.toBeNull();
+    await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
+    expect(models.saveModelSettings).toHaveBeenCalledWith({
+      credentialId: "cred-compatible",
+      modelId: "model-a",
+      settings: { images: true, reasoning: false },
+    });
   } finally {
     await view.unmount();
   }
@@ -503,11 +571,7 @@ it("renaming a connection keeps unsaved form fields", async () => {
   const view = await renderSettings();
   try {
     await manage();
-    const limit = view.container.querySelector<HTMLInputElement>(
-      'input[aria-label="Maximum output tokens"]',
-    );
-    if (!limit) throw new Error("Missing output limit field");
-    await typeInto(limit, "8192");
+    await typeInto(keyField(view.container), "sk-half-typed");
     const nameLabel = [...view.container.querySelectorAll("label")].find(
       (entry) => entry.textContent === "Name",
     );
@@ -522,14 +586,14 @@ it("renaming a connection keeps unsaved form fields", async () => {
     if (!(nameSave instanceof HTMLButtonElement)) throw new Error("Missing name save button");
     await click(nameSave);
     await act(async () => {
-      for (let index = 0; index < 5; index += 1) await new Promise((done) => setTimeout(done, 0));
+      for (let index = 0; index < 5; index += 1) await flush();
     });
     expect(models.rename).toHaveBeenCalledWith({
       credentialId: "cred-deepseek",
       label: "Renamed",
     });
     expect(titles(view.container)).toEqual(["DeepSeek (Renamed)"]);
-    expect(limit.value).toBe("8192");
+    expect(keyField(view.container).value).toBe("sk-half-typed");
   } finally {
     await view.unmount();
   }
@@ -1001,12 +1065,8 @@ it("lists saved models as checked rows before the server is probed", async () =>
   });
   try {
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
-    const select = view.container.querySelector("select[aria-label='Models from server']");
-    expect([...(select?.querySelectorAll("option") ?? [])].map((entry) => entry.value)).toEqual([
-      "model-a",
-      "model-b",
-      "",
-    ]);
+    await click(view.container.querySelector('[role="combobox"][aria-label="Models from server"]'));
+    expect(pickerOptions()).toEqual(["model-a", "model-b", "Other model…"]);
   } finally {
     await view.unmount();
   }
@@ -1083,6 +1143,26 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
   }
 });
 
+it("hides a credential in a refused save's message", async () => {
+  models.connect.mockRejectedValue(
+    new Error("Incorrect API key provided: example-1234. Check the key."),
+  );
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
+  try {
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(view.container.textContent).toContain("Incorrect API key provided: •••. Check the key.");
+    expect(view.container.textContent).not.toContain("example-1234");
+  } finally {
+    await view.unmount();
+  }
+});
+
 function baseUrlField(container: HTMLElement) {
   const input = container.querySelector("#model-base-url");
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing server URL field");
@@ -1125,27 +1205,9 @@ it("probes with the editing credential id without sending saved header values", 
 });
 
 function protocolField(container: HTMLElement) {
-  const select = container.querySelector('select[aria-label="Protocol"]');
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing protocol select");
-  return select;
-}
-
-async function chooseProtocol(container: HTMLElement, value: string) {
-  await selectValue(protocolField(container), value);
-}
-
-async function selectValue(select: HTMLSelectElement, value: string) {
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
-function effortField(container: HTMLElement) {
-  const select = container.querySelector('select[aria-label="Reasoning effort"]');
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing effort select");
-  return select;
+  const trigger = container.querySelector<HTMLElement>('[role="combobox"][aria-label="Protocol"]');
+  if (!trigger) throw new Error("Missing protocol select");
+  return trigger;
 }
 
 it("offers the three wire protocols only on a custom endpoint, keeping the saved choice", async () => {
@@ -1154,14 +1216,10 @@ it("offers the three wire protocols only on a custom endpoint, keeping the saved
     apiProtocol: "anthropic-messages",
   });
   try {
-    const select = protocolField(view.container);
-    expect([...select.options].map((option) => option.value)).toEqual([
-      "chat-completions",
-      "responses",
-      "anthropic-messages",
-    ]);
-    expect(select.value).toBe("anthropic-messages");
-    await chooseProtocol(view.container, "responses");
+    expect(protocolField(view.container).textContent).toBe("Anthropic Messages");
+    await click(protocolField(view.container));
+    expect(pickerOptions()).toEqual(["Chat Completions", "Responses", "Anthropic Messages"]);
+    await choose("Responses");
     await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "responses" }),
@@ -1177,7 +1235,7 @@ it("offers the three wire protocols only on a custom endpoint, keeping the saved
   const catalog = await renderSettings();
   try {
     await manage();
-    expect(catalog.container.querySelector('select[aria-label="Protocol"]')).toBeNull();
+    expect(catalog.container.querySelector('[aria-label="Protocol"]')).toBeNull();
   } finally {
     await catalog.unmount();
   }
@@ -1191,29 +1249,10 @@ it("keeps the chosen protocol when the endpoint changes and probes with it", asy
   });
   try {
     await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
-    expect(protocolField(view.container).value).toBe("anthropic-messages");
+    expect(protocolField(view.container).textContent).toBe("Anthropic Messages");
     await click(buttons(view.container, "Find models")[0]);
     expect(models.probeOpenAiCompatible).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "anthropic-messages" }),
-    );
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("clamps a staged effort when the protocol switch drops the level", async () => {
-  const view = await renderCompatible({
-    ...compatibleCredential,
-    reasoning: true,
-    thinkingLevel: "max",
-  });
-  try {
-    expect(effortField(view.container).value).toBe("max");
-    await chooseProtocol(view.container, "anthropic-messages");
-    expect(effortField(view.container).value).toBe("high");
-    await click(buttons(view.container, "Save")[0]);
-    expect(models.connect).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiProtocol: "anthropic-messages", thinkingLevel: "high" }),
     );
   } finally {
     await view.unmount();
@@ -1237,7 +1276,6 @@ it("shows saved header names only, preserves untouched headers and explicitly cl
     expect(models.connect).toHaveBeenLastCalledWith(
       expect.objectContaining({ headers: undefined }),
     );
-    await manage();
     await click(view.container.querySelector('button[aria-label="Remove header"]'));
     await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenLastCalledWith(expect.objectContaining({ headers: {} }));
@@ -1580,10 +1618,19 @@ function providersSection() {
   return found as HTMLElement;
 }
 
+/** The connection names the Providers list shows, in order. */
+function providerNames() {
+  return [...providersSection().querySelectorAll('[data-testid="provider-row-name"]')].map(
+    (entry) => entry.textContent,
+  );
+}
+
 /** Opens a connection's page from the Providers list. */
 async function openProvider(name: string) {
   await click(
-    [...providersSection().querySelectorAll("button")].find((entry) => entry.textContent === name),
+    [...providersSection().querySelectorAll('[data-testid="provider-row-name"]')]
+      .find((entry) => entry.textContent === name)
+      ?.closest("button"),
   );
 }
 
@@ -1598,11 +1645,7 @@ it("lists every connection under Providers and adds another for a connected prov
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
   try {
-    expect(
-      [...providersSection().querySelectorAll('[data-testid^="model-provider-"]')].map(
-        (row) => row.textContent,
-      ),
-    ).toEqual(["DeepSeek", "DeepSeek (Work)"]);
+    expect(providerNames()).toEqual(["DeepSeek", "DeepSeek (Work)"]);
     await click(buttons(providersSection() as HTMLElement, "Add provider")[0]);
     expect(pickerOptions()).toContain("DeepSeek");
     await choose("DeepSeek");
@@ -1625,6 +1668,36 @@ it("lists every connection under Providers and adds another for a connected prov
   }
 });
 
+it("opens a connection's page with its models, then a model's page, and goes back to each", async () => {
+  models.list.mockResolvedValue([
+    deepseekEntry,
+    { ...deepseekEntry, id: "deepseek-reasoner", label: "DeepSeek Reasoner" },
+  ]);
+  models.credentials.mockResolvedValue([
+    { ...deepseekCredential, modelSettings: { "deepseek-reasoner": { maxTokens: 2048 } } },
+  ]);
+  const view = await renderSettings();
+  try {
+    expect(providersSection().textContent).toContain("2 models");
+    await openProvider("DeepSeek");
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    const rows = [
+      ...view.container.querySelectorAll('[data-testid="model-provider-models"] button'),
+    ].map((entry) => entry.textContent);
+    // Models with their own settings stay first without adding status labels.
+    expect(rows).toEqual(["DeepSeek Reasoner", "DeepSeek Chat"]);
+    await click(buttons(view.container, "DeepSeek Reasoner")[0]);
+    expect(titles(view.container)).toEqual(["DeepSeek Reasoner"]);
+    expect(labeled(view.container, "Maximum output tokens")?.value).toBe("2048");
+    await click(view.container.querySelector('button[aria-label="Back"]'));
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    await click(view.container.querySelector('button[aria-label="Back"]'));
+    expect(providerNames()).toEqual(["DeepSeek"]);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("replaces one connection's key and disconnects only that connection", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
@@ -1641,7 +1714,6 @@ it("replaces one connection's key and disconnects only that connection", async (
       }),
     );
 
-    await openProvider("DeepSeek (Work)");
     await click(buttons(view.container, "Disconnect")[0]);
     const confirm = buttons(view.container, "Disconnect");
     await click(confirm[confirm.length - 1]);
@@ -1657,13 +1729,8 @@ it("replaces one connection's key and disconnects only that connection", async (
 it("keeps another connection's form when an earlier save finishes", async () => {
   models.list.mockResolvedValue([deepseekEntry, openrouterEntry]);
   models.credentials.mockResolvedValue([deepseekCredential]);
-  let finishSave!: (value: unknown) => void;
-  models.connect.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishSave = resolve;
-      }),
-  );
+  const finishSave = deferred<unknown>();
+  models.connect.mockImplementationOnce(() => finishSave.promise);
   const view = await renderSettings();
   try {
     await openPicker("Add fallback");
@@ -1676,7 +1743,7 @@ it("keeps another connection's form when an earlier save finishes", async () => 
     await manage();
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     await act(async () => {
-      finishSave({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
+      finishSave.resolve({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
     });
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     // The finished save's slot picker does not take over.
@@ -1708,6 +1775,61 @@ it("renames a connection", async () => {
   }
 });
 
+it("renames once, holds Save meanwhile, then reads the connections again", async () => {
+  const renaming = deferred<{ ok: true }>();
+  models.rename.mockReturnValue(renaming.promise);
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    const save = () => input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await act(async () => {
+      input.form?.requestSubmit();
+      input.form?.requestSubmit();
+    });
+    expect(models.rename).toHaveBeenCalledTimes(1);
+    expect(save()?.disabled).toBe(true);
+    expect(save()?.textContent).toBe("Saving…");
+
+    const reads = models.credentials.mock.calls.length;
+    models.credentials.mockResolvedValue([
+      deepseekCredential,
+      { ...workCredential, label: "Client work" },
+    ]);
+    await act(async () => renaming.resolve({ ok: true }));
+    await vi.waitFor(() => expect(save()).toBeNull());
+    expect(models.credentials.mock.calls.length).toBeGreaterThan(reads);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("says why a rename failed and offers Save again", async () => {
+  models.rename.mockRejectedValue({ code: "INTERNAL_SERVER_ERROR" });
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    await typeInto(input, "Client work");
+    await act(async () => {
+      input.form?.requestSubmit();
+    });
+    await vi.waitFor(() =>
+      expect(input.form?.textContent).toContain("Could not rename connection"),
+    );
+    const save = input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(save?.disabled).toBe(false);
+    expect(save?.textContent).toBe("Save");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("shows what a disconnect left, not a read sent before it", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const queryClient = testQueryClient();
@@ -1724,8 +1846,6 @@ it("shows what a disconnect left, not a read sent before it", async () => {
         }),
     )
     .mockResolvedValue([deepseekCredential]);
-  const providerNames = () =>
-    [...providersSection().querySelectorAll("button")].map((entry) => entry.textContent);
   const view = await renderSettings(true, queryClient);
   try {
     expect(providerNames()).toContain("DeepSeek (Work)");

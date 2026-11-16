@@ -19,6 +19,7 @@ import type {
 import {
   INVALID_BROWSER_REQUEST,
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -26,10 +27,12 @@ import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import {
   boundedSandboxCommandTimeoutMs,
   cancelResponseBody,
+  ResponseTooLargeError,
   requestDeadline,
   resolveSupervisorToken,
 } from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
+import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
@@ -91,7 +94,7 @@ async function readSandboxJson<T>(
   try {
     bytes = await readBodyCapped(res, maxBytes, readSignal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
+    if (error instanceof ResponseTooLargeError) {
       throw new Error(`sandbox response exceeds ${maxBytes} bytes`, { cause: error });
     }
     throw error;
@@ -377,9 +380,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
-      if (/cannot allocate another screen/i.test(detail)) {
-        throw new Error("This Team Computer cannot allocate another screen.");
-      }
+      throwIfScreensFull(detail);
       // A container that stopped under a "running" row (host reboot, docker stop) has no
       // screen to show; report it gone so the caller offers a boot instead of a blank error.
       if ((await this.containerRunning(computer, context)) === false) {
@@ -434,6 +435,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       // containing Docker's 404. Preserve the gone signal so lease cleanup can
       // clear the stale providerRef instead of retrying the same dead container.
       if (/no such container/i.test(detail)) throw sandboxGoneError(computer);
+      throwIfScreensFull(detail);
       if ((await this.containerRunning(computer, context)) === false) {
         // The screen died with its container: a revoke has nothing left to release, while
         // an interactive grant needs the computer booted first.
@@ -485,6 +487,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
       throw new Error(`sandbox input failed: ${res.status} ${detail}`.trim());
     }
   }
@@ -495,10 +498,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox observation failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
+    if (!res.ok) {
+      const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
+      throw new Error(`sandbox observation failed: ${res.status} ${detail}`.trim());
+    }
     const body = await readSandboxJson<{
       image: string;
       mimeType: "image/png" | "image/jpeg";
@@ -528,10 +532,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       }),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox action failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
+    if (!res.ok) {
+      const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
+      throw new Error(`sandbox action failed: ${res.status} ${detail}`.trim());
+    }
     const body = await readSandboxJson<{
       completed: number;
       observation?: {
@@ -586,6 +591,8 @@ export class DockerSandboxProvider implements SandboxProvider {
     );
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
+      if (res.status === 413 && maxBytes !== undefined)
+        throw new SandboxFileTooLargeError(maxBytes);
       throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
     }
     const body = await readSandboxJson<{ content: string }>(
@@ -806,4 +813,11 @@ function parseProcessLine(line: string): ProcessEvent | undefined {
     return { type: "exit", code: record.code };
   }
   return undefined;
+}
+
+/** The supervisor refuses a screen with this text when a Team Computer has reached its screen cap. */
+function throwIfScreensFull(detail: string): void {
+  if (!/cannot allocate another screen/i.test(detail)) return;
+  const limit = /\(limit (\d+)\)/i.exec(detail)?.[1];
+  throw new ComputerScreenUnavailableError(limit ? Number(limit) : null);
 }

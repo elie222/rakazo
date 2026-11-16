@@ -19,6 +19,7 @@ import {
   runAsSystem,
   runAsTenant,
   setSpaceSettingOverride,
+  withLease,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
@@ -65,8 +66,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
-      // Board procedures answer 404 before the session check while the board is off.
-      ticketBoardEnabled: true,
       composio: new ComposioConnector({ client: new FakeComposioClient() }),
     });
     pushTokens = new PrismaPushTokenStore(handles.prisma, encryptionKey);
@@ -260,6 +259,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeOpenAiCompatible"],
       ["models/probeCatalog"],
       ["models/rename"],
+      ["models/saveModelSettings"],
       ["models/disconnect"],
       ["spaces/list"],
       ["spaces/create", { name: "Nope" }],
@@ -384,7 +384,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/exportMarkdown", {}],
       ["memory/remove"],
       ["memory/providerConfig"],
+      ["memory/providers"],
       ["memory/connectProvider"],
+      ["memory/updateProvider"],
       ["memory/setDefaultScope"],
       ["memory/disconnectProvider"],
       ["routines/list", { botId: "missing-bot" }],
@@ -453,6 +455,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/list"],
       ["usage/summary"],
       ["usage/limits"],
+      ["usage/breakdown", {}],
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
       ["notifications/subscribe"],
@@ -578,6 +581,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["vault/list"],
       ["vault/put"],
       ["vault/reveal"],
+      ["vault/activity"],
+      ["vault/import"],
       ["vault/remove"],
       ["botSecrets/list"],
       ["botSecrets/put"],
@@ -1986,12 +1991,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       claimSpaceDeletionForMember(handles.prisma, deleteInput),
     );
     expect(replacementClaim.recovered).toBe(true);
+    // Even while holding the Space's lease, a replaced claim deletes nothing.
     await expect(
       asMember(() =>
-        deleteClaimedSpaceForMember(handles.prisma, {
-          ...deleteInput,
-          claimId: firstClaim.claimId,
-        }),
+        withLease(handles.prisma, `space-deletion:${space.id}`, { ttlMs: 60_000 }, (lease) =>
+          deleteClaimedSpaceForMember(handles.prisma, {
+            ...deleteInput,
+            claimId: firstClaim.claimId,
+            lease,
+          }),
+        ),
       ),
     ).rejects.toThrow("Space deletion is already in progress");
     await asMember(() =>
@@ -2415,9 +2424,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
         apiKey: "fake-key",
       });
     }
-    expect(
-      await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
-    ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
 });
 

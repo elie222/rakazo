@@ -4,6 +4,10 @@
 default; Private Computers are optional. See [computer runtime and isolation](./computer-runtime.md)
 for the sharing and persistence contract.
 
+Set `COMPUTER_DEFAULT_MODE=dedicated` on the API and worker to give each new bot a Private
+Computer when its request does not choose one. An explicit choice still wins, and existing bots
+keep their computer. Private Computers count toward `SANDBOX_MAX_COMPUTERS_PER_USER`.
+
 ## Quick pick
 
 | Goal                                                    | Set                                                                      | Also need                                                                                                                             |
@@ -131,6 +135,9 @@ Browser identity is only one input to bot-check challenges; the host's IP reputa
 matters more.
 
 ## `kubernetes`
+
+For a staged single-node installation with storage, scoped permissions and network policies,
+see [Kubernetes / k3s installation](./self-host-kubernetes.md) ([한국어](./ko-KR/self-host-kubernetes.md)).
 
 Each computer is one pod in a namespace you choose, created from the published computer image.
 The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
@@ -649,3 +656,22 @@ Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boa
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.
+
+## Browser proxy on Railway computers
+
+Set `RAKAZO_COMPUTER_PROXY` on the API and worker to send the browser on every Railway computer
+through an upstream proxy, for example `http://user:pass@proxy.example.com:8080` or
+`socks5://user:pass@proxy.example.com:1080`. Chrome cannot send proxy credentials from policy, so
+when a computer is prepared Rakazo installs `tinyproxy`, writes its config (credentials included)
+to a root-only file, starts it on `127.0.0.1:18080`, and adds a managed Chrome policy that points
+the browser there. Loopback stays direct so the bot's page tools still reach the browser.
+
+The credentials are not secret from the people using your bots. Bot commands run as root on the
+computer, so a user can ask a bot to read the config, and any program on the computer can send
+traffic through the loopback proxy. Set it only when you trust everyone who can use a bot on this
+deployment, and give Rakazo its own proxy login with a usage cap so a leak is limited and easy to
+revoke.
+
+The setting applies to every bot. It covers the browser only: terminal commands go direct. The
+username cannot contain spaces, control characters, `:`, `@`, `"` or `#`, and the password cannot
+contain spaces, control characters, `@`, `"` or `#`. Changing or clearing the variable takes effect the next time each computer starts.

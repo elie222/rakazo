@@ -63,13 +63,13 @@ export function IncomingCall({
   transcribe,
   onAnswered,
 }: {
-  bots: Bot[];
+  bots: readonly Pick<Bot, "id" | "name" | "color" | "avatarSet" | "incomingCall">[];
   transcribe?: boolean;
   onAnswered: (botId: string) => void;
 }) {
   const { t } = useLingui();
   const onCall = useCallSession() !== null;
-  /** Calls this tab already acted on, so a stale roster poll cannot ring them again. */
+  /** Calls this tab already acted on, so a stale roster read cannot ring them again. */
   const [handled, setHandled] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);

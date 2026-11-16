@@ -6,6 +6,7 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -15,6 +16,42 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 
 const OWNER_MEMORY = "Owner's door code is 4821";
 const OWNER_NOTE = "Plan the owner's surprise party";
+/** What an owner-only tool returned to an earlier reply, kept for the bot's own later turns. */
+const OWNER_TOOL_RESULT = "Inbox: offer letter from the owner's new employer";
+/** The earlier reply itself, part of the owner's private exchange in the thread. */
+const PRIVATE_REPLY = "You have one new email.";
+const CHANNEL_HISTORY = "Lunch at noon?";
+
+type HistoryClause = {
+  id?: string;
+  role?: string;
+  runId?: string;
+  blocks?: { array_contains: [{ channelId: string }] };
+};
+/** The history loader's filter, applied the way the database applies it. */
+function inHistory(
+  row: {
+    id: string;
+    role: string;
+    runId: string | null;
+    blocks: { kind: string; channelId?: string }[];
+  },
+  where: { OR?: HistoryClause[] },
+) {
+  return (
+    !where.OR ||
+    where.OR.some((clause) =>
+      clause.id
+        ? row.id === clause.id
+        : row.role === clause.role &&
+          (clause.blocks
+            ? row.blocks.some(
+                (block) => block.channelId === clause.blocks?.array_contains[0].channelId,
+              )
+            : row.runId === clause.runId),
+    )
+  );
+}
 
 type Sender = { senderId: string; senderIsBot?: boolean };
 
@@ -24,6 +61,10 @@ async function teamChatRun(input: {
   ownerAddress?: string | null;
   linkedAddresses?: string[];
   sharedChannel?: boolean;
+  delegated?: "helper" | "helper_result";
+  attachment?: boolean;
+  /** The waking message's stored blocks, for a row that holds more than blocks. */
+  sourceBlocks?: unknown;
 }) {
   const [waking, ...batched] = input.senders.map((sender, index) => ({
     id: `external-${index}`,
@@ -53,6 +94,19 @@ async function teamChatRun(input: {
     sourceMessageId: "source-1",
     leaseFence: 0,
   };
+  const original = {
+    ...run,
+    id: "original",
+    sourceMessage: { id: "source-1", role: "user", blocks: [], threadId: "thread-1" },
+    thread: { id: "thread-1", groupId: null, externalConversationId: "conversation-1" },
+  };
+  if (input.delegated)
+    Object.assign(run, {
+      id: "delegated",
+      threadId: "hidden-thread",
+      trigger: input.delegated,
+      delegatedFromRunId: "original",
+    });
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
@@ -60,8 +114,11 @@ async function teamChatRun(input: {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
+      findFirst: vi.fn(async () => original),
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
+      // The earlier reply's run: started under the conversation's (owner's) user, as all are.
+      findMany: vi.fn(async () => [{ id: "run-0", userId: run.userId }]),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };
@@ -89,17 +146,102 @@ async function teamChatRun(input: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
         groupId: null,
-        externalConversationId: "conversation-1",
+        externalConversationId: input.delegated ? null : "conversation-1",
       })),
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      // The history loader asks for tool history; an earlier reply read the owner's inbox.
+      findMany: vi.fn(
+        async (args: {
+          select?: { toolHistory?: boolean };
+          where: { threadId?: string; OR?: HistoryClause[] };
+        }) => {
+          if (input.attachment && args.where?.threadId === "hidden-thread" && !args.where.OR)
+            return [
+              {
+                id: "helper-input",
+                threadId: run.threadId,
+                role: "user",
+                runId: run.id,
+                authorUserId: run.userId,
+                botId: run.botId,
+                seq: 1,
+                createdAt: new Date(),
+                steeringMessages: [],
+                blocks: [
+                  {
+                    kind: "file",
+                    artifactId: "fixture-file",
+                    name: "notes.txt",
+                    mimeType: "text/plain",
+                    size: 5,
+                  },
+                ],
+              },
+            ];
+          if (!args.select?.toolHistory) return [];
+          const row = {
+            threadId: "thread-1",
+            botId: null as string | null,
+            runId: null as string | null,
+            toolHistory: null as string | null,
+            authorUserId: null,
+            createdAt: new Date("2026-11-01T00:00:00Z"),
+            replyToMessageId: null,
+            replyQuote: null,
+            replyTo: null,
+            clientNonce: null,
+            steeringMessages: [],
+          };
+          return [
+            {
+              ...row,
+              id: "reply-0",
+              seq: 1,
+              role: "bot",
+              botId: "bot-1",
+              runId: "run-0",
+              blocks: [
+                { kind: "steps", steps: [{ label: "Read email", count: 1 }] },
+                { kind: "text", text: PRIVATE_REPLY },
+              ],
+              toolHistory: JSON.stringify({
+                steps: [
+                  {
+                    tool: "read_email",
+                    calls: [{ arguments: "{}", result: OWNER_TOOL_RESULT }],
+                  },
+                ],
+              }),
+            },
+            {
+              ...row,
+              id: "channel-0",
+              seq: 0,
+              role: "user",
+              blocks: [
+                {
+                  kind: "channel_message",
+                  provider: "slack",
+                  channelId: "channel-1",
+                  fromAddress: "T1:U-PAT",
+                  fromLabel: "Pat",
+                  text: CHANNEL_HISTORY,
+                },
+              ],
+            },
+          ].filter((message) => inHistory(message, args.where));
+        },
+      ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
-        blocks: input.sharedChannel
-          ? [{ kind: "channel_message", channelId: "channel-1" }]
-          : [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }],
+        id: "source-1",
+        blocks:
+          input.sourceBlocks ??
+          (input.sharedChannel
+            ? [{ kind: "channel_message", channelId: "channel-1" }]
+            : [{ kind: "text", text: "Slack message from Pat:\n\nWhat do you remember?" }]),
         clientNonce: `teamchat:slack:${waking.providerEventId}`,
       })),
       create: vi.fn(async ({ data }: { data: object }) => ({ id: "message-1", ...data })),
@@ -261,8 +403,12 @@ async function teamChatRun(input: {
   const context = [request.instructions, request.prompt].join("\n");
   return {
     tools,
+    history: request.history,
     context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
+    sawOwnerToolResult: JSON.stringify(request.history).includes(OWNER_TOOL_RESULT),
+    sawPrivateReply: JSON.stringify(request.history).includes(PRIVATE_REPLY),
+    sawChannelHistory: JSON.stringify(request.history).includes(CHANNEL_HISTORY),
     toldNonOwner: context.includes("someone other than your owner"),
   };
 }
@@ -278,6 +424,7 @@ describe("team chat runs from people other than the owner", () => {
   ])("keep the owner's memory and notes from %s", async (_who, senders) => {
     const result = await teamChatRun({ senders, ownerAddress: "T1:U-OWNER" });
     expect(result.sawOwnerState).toBe(false);
+    expect(result.sawOwnerToolResult).toBe(false);
     expect(result.toldNonOwner).toBe(true);
     for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
     expect(result.tools).toContain("web_fetch");
@@ -303,8 +450,63 @@ describe("team chat runs from the owner", () => {
       ...owner,
     });
     expect(result.sawOwnerState).toBe(true);
+    expect(result.sawOwnerToolResult).toBe(true);
     expect(result.toldNonOwner).toBe(false);
     for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
+  });
+});
+
+describe("runs whose waking message is stored beside entries that are not blocks", () => {
+  const owner = { senders: [{ senderId: "T1:U-OWNER" }], ownerAddress: "T1:U-OWNER" };
+  const stray = [{ text: "no kind" }, null];
+
+  it.each([
+    ["still shows its channel message", [{ kind: "channel_message", channelId: "c-1" }, ...stray]],
+    ["may have lost its channel message", [{ kind: "text", text: "What's new?" }, ...stray]],
+    ["is not a list", { kind: "text", text: "What's new?" }],
+  ])("get a channel's limits when the message %s", async (_case, sourceBlocks) => {
+    const result = await teamChatRun({ ...owner, sourceBlocks });
+    expect(result.sawOwnerState).toBe(false);
+    expect(result.sawOwnerToolResult).toBe(false);
+    for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+  });
+
+  it("read the channel their message still names, and nothing private", async () => {
+    const result = await teamChatRun({
+      ...owner,
+      sourceBlocks: [{ kind: "channel_message", channelId: "channel-1" }, ...stray],
+    });
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.sawPrivateReply).toBe(false);
+    expect(result.tools).toContain("search_history");
+  });
+
+  it.each([
+    ["may have lost its channel message", [{ kind: "text", text: "What's new?" }, ...stray]],
+    ["is not a list", { kind: "text", text: "What's new?" }],
+  ])("read none of the thread when the message %s", async (_case, sourceBlocks) => {
+    const result = await teamChatRun({ ...owner, sourceBlocks });
+    expect(result.sawPrivateReply).toBe(false);
+    expect(result.sawChannelHistory).toBe(false);
+    for (const tool of ["search_history", "read_history"]) expect(result.tools).not.toContain(tool);
+  });
+});
+
+describe("what an intact waking message lets its run read", () => {
+  it("gives the owner's private run the whole thread", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "T1:U-OWNER" }],
+      ownerAddress: "T1:U-OWNER",
+    });
+    expect(result.sawPrivateReply).toBe(true);
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.tools).toContain("search_history");
+  });
+
+  it("gives a channel run its channel's messages only", async () => {
+    const result = await teamChatRun({ senders: [{ senderId: "member" }], sharedChannel: true });
+    expect(result.sawChannelHistory).toBe(true);
+    expect(result.sawPrivateReply).toBe(false);
   });
 });
 
@@ -325,4 +527,46 @@ describe("private skills in shared-channel prompts", () => {
     expect(result.context).toContain("PRIVATE_SKILL_BODY");
     expect(result.context).toContain("PRIVATE_TAUGHT_HINT");
   });
+});
+
+describe("delegation inherits connected chat privacy", () => {
+  it("keeps the helper's own input while preserving the connected channel's privacy", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "coworker" }],
+      sharedChannel: true,
+      delegated: "helper",
+      attachment: true,
+    });
+    expect(result.history.some((message) => message.content.includes("notes.txt"))).toBe(true);
+    expect(result.sawOwnerState).toBe(false);
+    for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+  });
+
+  it.each(["helper", "helper_result"] as const)(
+    "keeps private state out of a %s in a shared channel",
+    async (delegated) => {
+      const result = await teamChatRun({
+        senders: [{ senderId: "coworker" }],
+        sharedChannel: true,
+        delegated,
+      });
+      expect(result.sawOwnerState).toBe(false);
+      expect(result.context).not.toContain("PRIVATE_SKILL");
+      expect(result.context).not.toContain("PRIVATE_TAUGHT");
+      for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+      expect(result.tools).toContain("web_fetch");
+    },
+  );
+  it.each(["helper", "helper_result"] as const)(
+    "retains the owner's context in their %s",
+    async (delegated) => {
+      const result = await teamChatRun({
+        senders: [{ senderId: "T1:U-OWNER" }],
+        ownerAddress: "T1:U-OWNER",
+        delegated,
+      });
+      expect(result.sawOwnerState).toBe(true);
+      for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
+    },
+  );
 });
