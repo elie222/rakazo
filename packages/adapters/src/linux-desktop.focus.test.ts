@@ -39,6 +39,17 @@ function writeExecutable(file: string, body: string) {
   chmodSync(file, 0o755);
 }
 
+/**
+ * macOS assesses a new executable on its first run, which can outlast the launcher's 0.2s
+ * quick-failure window. Run a program that exits at once one time first so it is judged by its exit.
+ */
+function writeQuickExitExecutable(file: string, body: string) {
+  writeExecutable(file, body);
+  const warm = spawnSync(file, { cwd: root, env: { ...process.env, FOCUS_RECORDED: "/dev/null" } });
+  // A program that cannot run at all must fail here, not pass as one that exits at once.
+  if (warm.error) throw warm.error;
+}
+
 writeExecutable(
   path.join(bin, "wmctrl"),
   [
@@ -211,7 +222,7 @@ describe("provider focus command", () => {
   });
 
   it("resolves a workspace-relative program when no window matches", async () => {
-    writeExecutable(
+    writeQuickExitExecutable(
       path.join(workspace, "tool"),
       ["#!/bin/sh", 'pwd > "$FOCUS_RECORDED"', 'printf "%s\\n" "$*" >> "$FOCUS_RECORDED"', ""].join(
         "\n",
@@ -285,7 +296,7 @@ describe("provider focus command", () => {
 
   it("fails a focus URI when the launcher exits before the old window is raised", async () => {
     const failapp = path.join(bin, "failapp");
-    writeExecutable(failapp, "#!/bin/sh\nexit 1\n");
+    writeQuickExitExecutable(failapp, "#!/bin/sh\nexit 1\n");
     writeFileSync(windows, "0x00000004  0 4 failapp.Failapp host app\n");
     const command = await focusCommand({
       kind: "focus",
