@@ -399,8 +399,10 @@ function withStepStatusField(agentTool: AgentTool): AgentTool {
     type?: unknown;
     properties?: Record<string, unknown>;
   };
-  if (schema?.type !== "object" || !schema.properties || STEP_STATUS_FIELD in schema.properties)
+  if (schema?.type !== "object" || (schema.properties && STEP_STATUS_FIELD in schema.properties))
     return agentTool;
+  // A free-form object tool takes the field too.
+  schema.properties ??= {};
   schema.properties[STEP_STATUS_FIELD] = { type: "string", description: STEP_STATUS_DESCRIPTION };
   const prepare = agentTool.prepareArguments;
   return {

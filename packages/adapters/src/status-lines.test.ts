@@ -1,4 +1,4 @@
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { startStatusLines } from "./run-status-lines.js";
 import type { StatusLineWriter } from "./status-lines.js";
@@ -60,32 +60,29 @@ describe("startStatusLines", () => {
 
   it("never requests the opening once a step came first", async () => {
     const opening = vi.fn(async () => "Looking into the plan pricing");
-    let resolveWriter!: (writer: StatusLineWriter) => void;
+    const writer = deferred<StatusLineWriter | undefined>();
     const t = target(undefined);
-    t.target.writer = new Promise<StatusLineWriter | undefined>((resolve) => {
-      resolveWriter = resolve;
-    });
+    t.target.writer = writer.promise;
     const live = startStatusLines(t.target);
     live.supersede();
-    resolveWriter({ opening, step: async () => undefined });
+    writer.resolve({ opening, step: async () => undefined });
     await flush();
     expect(opening).not.toHaveBeenCalled();
     live.close();
   });
 
   it("shows statuses one at a time, so a slow write never lands after a newer one", async () => {
-    let release: () => void = () => {};
-    const slow = new Promise<void>((resolve) => (release = resolve));
+    const slow = deferred();
     const steps = ["Listing files", "Reading the ledger"];
     const t = target({ opening: async () => undefined, step: async () => steps.shift() }, (text) =>
-      text === "Listing files" ? slow : Promise.resolve(),
+      text === "Listing files" ? slow.promise : Promise.resolve(),
     );
     const live = startStatusLines(t.target);
     live.step("Running: ls");
     await flush();
     live.step("Reading ledger.json");
     await flush();
-    release();
+    slow.resolve();
     await flush();
     // The first step's write finishes first; the newer step then shows over it.
     expect(t.shown).toEqual(["Listing files", "Reading the ledger"]);
@@ -104,16 +101,16 @@ describe("startStatusLines", () => {
   });
 
   it("drops a status that arrives after something newer took the line", async () => {
-    let finish: (line: string) => void = () => {};
+    const finish = deferred<string | undefined>();
     const t = target({
       opening: async () => undefined,
-      step: () => new Promise((resolve) => (finish = resolve)),
+      step: () => finish.promise,
     });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
     await flush();
     live.supersede();
-    finish("Listing files");
+    finish.resolve("Listing files");
     await flush();
     expect(t.shown).toEqual([]);
     live.close();
@@ -138,13 +135,12 @@ describe("startStatusLines", () => {
 
   it("sends nothing to the status model before the run's credentials are registered", async () => {
     const opening = vi.fn(async () => "Reading your question");
-    let markReady: () => void = () => {};
-    const ready = new Promise<void>((resolve) => (markReady = resolve));
+    const ready = deferred();
     const t = target({ opening, step: async () => undefined });
-    startStatusLines({ ...t.target, ready });
+    startStatusLines({ ...t.target, ready: ready.promise });
     await flush();
     expect(opening).not.toHaveBeenCalled();
-    markReady();
+    ready.resolve();
     await flush();
     expect(opening).toHaveBeenCalledOnce();
     expect(t.shown).toEqual(["Reading your question"]);
@@ -198,18 +194,49 @@ describe("startStatusLines", () => {
     expect(t.shown).toEqual([]);
   });
 
-  it("is active only once a status model is known, and until the run ends", async () => {
-    let resolveWriter: (writer: StatusLineWriter | undefined) => void = () => {};
-    const writer = new Promise<StatusLineWriter | undefined>(
-      (resolve) => (resolveWriter = resolve),
-    );
-    const live = startStatusLines({ writer, request: "", held: () => false, show: async () => {} });
-    expect(live.active()).toBe(false);
-    resolveWriter({ opening: async () => undefined, step: async () => undefined });
+  it("is active while the status model is looked up and with one, until the run ends", async () => {
+    const writer = deferred<StatusLineWriter | undefined>();
+    const live = startStatusLines({
+      writer: writer.promise,
+      request: "",
+      held: () => false,
+      show: async () => {},
+    });
+    // An early step waits for the lookup instead of showing its technical line.
+    expect(live.active()).toBe(true);
+    writer.resolve({ opening: async () => undefined, step: async () => undefined });
     await flush();
     expect(live.active()).toBe(true);
     live.close();
     expect(live.active()).toBe(false);
+  });
+
+  it("words a step that started before the status model was known", async () => {
+    const writer = deferred<StatusLineWriter | undefined>();
+    const t = target(undefined);
+    t.target.writer = writer.promise;
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    writer.resolve({ opening: async () => undefined, step: async () => "Listing files" });
+    await flush();
+    expect(t.shown).toEqual(["Listing files"]);
+    live.close();
+  });
+
+  it("shows the current step's status again after the line was cleared", async () => {
+    const t = target({ opening: async () => undefined, step: async () => "Listing files" });
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await flush();
+    live.restore();
+    await flush();
+    expect(t.shown).toEqual(["Listing files", "Listing files"]);
+    // A status from a step something newer replaced does not come back.
+    live.supersede();
+    live.restore();
+    await flush();
+    expect(t.shown).toHaveLength(2);
+    live.close();
   });
 
   it("stays inactive without a status model", async () => {

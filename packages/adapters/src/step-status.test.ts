@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { describeToolActivity, stepStatusOf } from "./pi-runtime-tools.js";
+import type { ToolHost } from "./pi-runtime-tools.js";
+import { describeToolActivity, stepStatusOf, toAgentTools } from "./pi-runtime-tools.js";
 import type { RunContext } from "./run-context.js";
 import { isOpeningAcknowledgement } from "./run-progress.js";
 import {
@@ -44,6 +45,20 @@ describe("step status field", () => {
       expect(call({ arguments: { name: "Finance", live_status: "Setting up Finance" } })).toBe(
         "Setting up Finance",
       );
+    });
+
+    it("offers the status field to a free-form object tool too", () => {
+      const host = {} as ToolHost;
+      const [tool] = toAgentTools(
+        [{ name: "crm_call", description: "Call the CRM.", inputSchema: { type: "object" } }],
+        host,
+      );
+      const parameters = tool!.parameters as unknown as { properties?: Record<string, unknown> };
+      expect(parameters.properties).toHaveProperty("live_status");
+      expect(host.narratedTools?.has("crm_call")).toBe(true);
+      expect(tool!.prepareArguments?.({ id: 1, live_status: "Calling the CRM" })).toEqual({
+        id: 1,
+      });
     });
 
     it("leaves a tool's own status argument alone", () => {

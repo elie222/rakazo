@@ -2,7 +2,10 @@ import { bestEffort } from "@rakazo/logging";
 import type { StatusLineWriter } from "./status-lines.js";
 
 export type LiveStatusLines = {
-  /** Whether a status model is writing statuses; false until it is known, and without one. */
+  /**
+   * Whether steps go to the status model: true while it is still being looked up, so an early
+   * step waits for it, and false without one or once the run ended.
+   */
   active(): boolean;
   /**
    * A step the status model words for the person. Without an answer, a tool's own description
@@ -11,6 +14,8 @@ export type LiveStatusLines = {
   step(text: string, options?: { fallback?: boolean }): void;
   /** Something else now owns the working line: the model's own status, or its reply text. */
   supersede(): void;
+  /** Shows the current step's status again, after something else cleared the line. */
+  restore(): void;
   /** The turn ended: nothing more is shown and pending writes are cancelled. */
   close(): void;
 };
@@ -47,6 +52,9 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   let supersededAt = -1;
   let closed = false;
   let hasWriter = false;
+  let writerKnown = false;
+  // The last status shown, and the step it belongs to.
+  let lastShown: { text: string; generation: number } | undefined;
   // The request for whatever the line shows now; a newer step or status cancels it.
   let current = new AbortController();
   const replaceCurrent = () => {
@@ -60,6 +68,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     showing = showing.then(async () => {
       if (closed || mine !== generation || target.held()) return;
       await bestEffort("show status line", target.show(text));
+      lastShown = { text, generation: mine };
     });
     return showing;
   };
@@ -68,6 +77,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const writer = Promise.all([target.writer, target.ready]).then(([found]) => found);
   void bestEffort("set up status model", target.writer).then((found) => {
     hasWriter = Boolean(found);
+    writerKnown = true;
   });
   function close() {
     closed = true;
@@ -92,7 +102,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   );
 
   return {
-    active: () => hasWriter && !closed,
+    active: () => !closed && (hasWriter || !writerKnown),
     step(text, { fallback = true } = {}) {
       const mine = ++generation;
       const signal = replaceCurrent();
@@ -110,6 +120,9 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
       generation += 1;
       supersededAt = generation;
       replaceCurrent();
+    },
+    restore() {
+      if (lastShown && lastShown.generation === generation) void show(lastShown.text, generation);
     },
     close,
   };

@@ -2,6 +2,7 @@ import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { ModelRoleChoice } from "@rakazo/contracts";
 import { deadlineSignal, redactSecrets, withAbort } from "@rakazo/core";
 import { recordUsage } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { findConnectedModelCredential } from "./model-selection.js";
@@ -183,19 +184,22 @@ export async function createStatusLineWriter(
       })();
       await withAbort(consume, deadline);
       if (problem || !text.trim()) {
-        // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.
-        console.warn(
-          `[status-line] ${choice.provider}/${choice.modelId} wrote nothing after ${Date.now() - startedAt}ms${problem ? `: ${redactSecrets(problem, secrets).slice(0, 200)}` : ""}`,
-        );
+        getLogger().warn("status_line.empty", {
+          "model.provider": choice.provider,
+          "model.id": choice.modelId,
+          duration_ms: Date.now() - startedAt,
+          ...(problem ? { problem: redactSecrets(problem, secrets).slice(0, 200) } : {}),
+        });
       }
       return problem ? "" : text;
     };
     const quietly = (choice: ModelRoleChoice) => (error: unknown) => {
       if (isCancelled(error)) return "";
-      // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.
-      console.warn(
-        `[status-line] ${choice.provider}/${choice.modelId} failed: ${redactSecrets(error instanceof Error ? `${error.name}: ${error.message}` : String(error), secrets).slice(0, 200)}`,
-      );
+      getLogger().warn("status_line.failed", {
+        "model.provider": choice.provider,
+        "model.id": choice.modelId,
+        error: redactedError(error, secrets),
+      });
       return "";
     };
     /**
@@ -229,12 +233,15 @@ export async function createStatusLineWriter(
       },
     };
   } catch (error) {
-    // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.
-    console.warn(
-      `[status-line] could not set up the status model: ${redactSecrets(error instanceof Error ? error.message : String(error), secrets).slice(0, 200)}`,
-    );
+    getLogger().warn("status_line.setup_failed", { error: redactedError(error, secrets) });
     return undefined;
   }
+}
+
+/** An error's name and message with the run's secrets removed: a provider can echo a key. */
+function redactedError(error: unknown, secrets: string[]) {
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return redactSecrets(text, secrets).slice(0, 200);
 }
 
 /** Text a runtime writes in place of an answer when the model call failed. */

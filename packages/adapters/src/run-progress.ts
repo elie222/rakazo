@@ -397,4 +397,6 @@ export async function showNarrationStatus(
     runId,
     payload: { reset: true, text: shown, activity: true },
   });
+  // A status that landed while this note was handled was just cleared with it; it comes back.
+  if (live && !shown) ctx.statusLive?.restore();
 }
