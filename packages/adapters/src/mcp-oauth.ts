@@ -29,7 +29,7 @@ import {
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
@@ -41,8 +41,10 @@ import {
 } from "./mcp-transport.js";
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
+import { attemptSecretCleanup, cleanUpUnsavedSecret } from "./secret-cleanup.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
-import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
+import { holdSecretNotifications } from "./secret-store-factory.js";
 
 type OAuthState = {
   tokens?: OAuthTokens;
@@ -1171,6 +1173,8 @@ export class McpOAuthBroker {
     private readonly secrets: SecretStore,
     private readonly network: RemoteTransportDependencies = {},
     private readonly allowPrivateEndpoint = false,
+    /** The queue that retries removing a store entry a failed refresh left behind. */
+    private readonly cleanupJobs?: SecretCleanupDeps["jobs"],
   ) {}
 
   async statusFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary["status"]> {
@@ -1650,7 +1654,8 @@ export class McpOAuthBroker {
       );
       return result.grant;
     } catch (error) {
-      if (stored) await deleteSecretBestEffort(this.secrets, stored.ciphertext, stored.id);
+      // The write can have committed with its reply lost, so the row decides, not this error.
+      if (stored) await this.discardUnsaved(stored);
       if (isCredentialRefusal(error) || !rotated) throw error;
       // The authorization server already rotated the grant, so the stored one is spent.
       // Store the new one over the grant it replaced; a login or disconnect that landed
@@ -1675,6 +1680,18 @@ export class McpOAuthBroker {
     } finally {
       await network.close().catch(() => undefined);
     }
+  }
+
+  /** Deletes a store entry the refresh wrote, unless the row it was written for holds it. */
+  private async discardUnsaved(stored: { id: string; ciphertext: string }): Promise<void> {
+    const cleanup: SecretCleanup = {
+      kind: "secret_row",
+      recordId: stored.id,
+      ref: stored.ciphertext,
+    };
+    const deps = { prisma: this.prisma, secrets: this.secrets };
+    if (this.cleanupJobs) await cleanUpUnsavedSecret({ ...deps, jobs: this.cleanupJobs }, cleanup);
+    else await bestEffort("delete an unsaved MCP credential", attemptSecretCleanup(deps, cleanup));
   }
 
   private async replaceMaterial(

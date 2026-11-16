@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Ticket } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { EffectCallback, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -72,16 +73,9 @@ afterEach(async () => {
 const button = (label: string) =>
   [...host.querySelectorAll("button")].find((element) => element.textContent === label);
 const render = () => act(async () => root.render(createElement(BoardScreen)));
-function deferred() {
-  let resolve!: (value: { tickets: Ticket[] }) => void;
-  const promise = new Promise<{ tickets: Ticket[] }>((yes) => {
-    resolve = yes;
-  });
-  return { promise, resolve };
-}
 
 it("retries a failed first load without leaving the screen", async () => {
-  const retry = deferred();
+  const retry = deferred<{ tickets: Ticket[] }>();
   rpc.mockRejectedValueOnce(new Error("Offline")).mockReturnValueOnce(retry.promise);
   await render();
   expect(host.textContent).toContain("Offline");

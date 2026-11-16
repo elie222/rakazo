@@ -1,5 +1,6 @@
 import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -1313,26 +1314,24 @@ describe("a message from the person while the bot works", () => {
   });
 
   it("keeps an allowance granted by a mid-task message that lands during message_user", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    let reached!: () => void;
-    const statusWriting = new Promise<void>((resolve) => (reached = resolve));
+    const gate = deferred();
+    const statusWriting = deferred();
     let holding = true;
     const { messages } = await runTurn("", false, undefined, [], "fyi", {
       // The status line for the text before message_user is held open, so the person's
       // message is handled while message_user is still running.
       appendGate: (event) => {
         if (!holding || !(event.payload as { reset?: boolean } | undefined)?.reset) return;
-        reached();
-        return gate;
+        statusWriting.resolve();
+        return gate.promise;
       },
       runtime: async function* (request) {
         yield { type: "text", text: "Let me check." };
         const call = request.executeTool!("message_user", { message: "Working on it." }, "call-1");
-        await statusWriting;
+        await statusWriting.promise;
         yield { type: "steered", fromRunUser: true };
         holding = false;
-        release();
+        gate.resolve();
         await call;
         yield { type: "text", text: "Yes, still on it." };
         yield { type: "tool", name: "read_file", args: {}, executionId: "call-2" };

@@ -1,5 +1,7 @@
 import * as z from "zod";
 import { Id, SandboxKind } from "./ids.js";
+import type { ProviderSettingsField } from "./provider-settings.js";
+import { ProviderSettingsFieldSchema } from "./provider-settings.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -42,6 +44,8 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
   terminalAvailable: z.boolean(),
+  /** True when the computer is the person's own machine, which has no remote screen to show. */
+  runsOnUserMachine: z.boolean().optional(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),
   /** True when other people share the Space, and with it this computer and its browser sign-ins. */
@@ -53,21 +57,23 @@ export const ComputerStatusSchema = z.object({
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
+/** A computer screen to load, and how its URL signs the viewer in. */
+export const ComputerScreenSchema = z.object({
+  url: z.string().nullable(),
+  /**
+   * Set when the URL signs in with a code that works once and ends the session an earlier code
+   * opened, so loading it a second time, or loading a newer one beside it, loses the screen.
+   * `screen` names what the URL shows apart from that code: URLs with the same value show the
+   * same screen. Absent when the URL can be loaded again, and from older servers.
+   */
+  singleUseSignIn: z.object({ screen: z.string() }).optional(),
+});
+
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 
-/** Public metadata only; adapter validation and constructor options stay server-side. */
-export const ComputerProviderFieldSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  kind: z.enum(["text", "secret", "url", "select"]),
-  required: z.boolean(),
-  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
-  validation: z.enum(["public-https"]).optional(),
-  /** A saved credential must be re-entered when its destination changes. */
-  destination: z.string().optional(),
-});
-export type ComputerProviderField = z.infer<typeof ComputerProviderFieldSchema>;
+export const ComputerProviderFieldSchema = ProviderSettingsFieldSchema;
+export type ComputerProviderField = ProviderSettingsField;
 export const ComputerProviderDescriptorSchema = z.object({
   id: z.string(),
   displayName: z.string(),

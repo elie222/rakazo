@@ -12,8 +12,11 @@ import type {
   SandboxProvider,
   ScreenRequest,
   TerminalRequest,
+  UnreferencedMachine,
+  UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type * as Railway from "railway";
 import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
@@ -34,6 +37,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -58,6 +62,7 @@ export interface RailwaySandboxOptions {
   environmentId: string;
   maxWorkspaceFileBytes?: string;
   region?: string;
+  unreferencedMachines?: UnreferencedMachineRecords;
 }
 
 export class RailwaySandboxProvider implements SandboxProvider {
@@ -95,7 +100,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   private readonly region: string | undefined;
 
-  constructor({ maxWorkspaceFileBytes, region, ...options }: RailwaySandboxOptions) {
+  private readonly machines: UnreferencedMachineRecords | undefined;
+
+  constructor({
+    maxWorkspaceFileBytes,
+    region,
+    unreferencedMachines,
+    ...options
+  }: RailwaySandboxOptions) {
+    this.machines = unreferencedMachines;
     this.maxWorkspaceFileBytes = z.coerce
       .number()
       .int()
@@ -168,9 +181,18 @@ export class RailwaySandboxProvider implements SandboxProvider {
         ...this.options,
         fetch: async (input, init) => {
           // Finish the bounded request so cancellation cannot hide a created sandbox's ID.
+          let learned: string | undefined;
           const response = await railwayFetch(input, init, (id) => {
-            createdId = id;
+            createdId = learned = id;
           });
+          // Before the SDK waits for the sandbox to start, which can fail or outlive this process.
+          if (learned) {
+            await recordUnreferencedMachine(this.machines, {
+              provider: "railway",
+              machineId: learned,
+              homeKey: request.botId,
+            });
+          }
           context.signal.throwIfAborted();
           return response;
         },
@@ -203,11 +225,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
       ) {
         createdId = error.id;
       }
-      if (createdId) await this.destroy(this.ref(createdId, request.botId, true), context);
+      if (createdId) await this.deleteUnreferenced(createdId, request.botId);
       throw error;
     }
     if (context.signal.aborted) {
-      await this.destroy(this.ref(sandbox.id, request.botId, true), context);
+      await this.deleteUnreferenced(sandbox.id, request.botId);
       context.signal.throwIfAborted();
     }
     return this.ref(sandbox.id, request.botId, true);
@@ -329,7 +351,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     const maxBytes = options?.maxBytes ?? this.maxWorkspaceFileBytes;
     if (content.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return content;
   }
@@ -497,13 +519,30 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext) {
+    await this.delete(computer.providerRef);
+  }
+
+  private async delete(id: string, signal?: AbortSignal) {
     const railway = await loadRailway();
+    const options = signal ? { ...this.options, fetch: fetchUntil(signal) } : this.options;
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      await remove(railway, await connectSandbox(railway, computer.providerRef, this.options));
+      await remove(railway, await connectSandbox(railway, id, options));
     } catch (error) {
       if (!(error instanceof railway.SandboxNotFoundError)) throw error;
     }
+  }
+
+  async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal): Promise<void> {
+    await this.delete(machine.machineId, signal);
+  }
+
+  private deleteUnreferenced(id: string, homeKey: string): Promise<void> {
+    return deleteUnreferencedMachine(
+      this.machines,
+      { provider: "railway", machineId: id, homeKey },
+      (signal) => this.delete(id, signal),
+    );
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
@@ -649,6 +688,15 @@ class RailwayWebSocket extends WebSocket {
   constructor(url: string, protocols?: string | string[]) {
     super(url, protocols, { maxPayload: MAX_RESPONSE_BYTES, handshakeTimeout: 30_000 });
   }
+}
+
+/** Railway requests that also end when `signal` does. */
+function fetchUntil(signal: AbortSignal): typeof railwayFetch {
+  return (input, init) =>
+    railwayFetch(input, {
+      ...init,
+      signal: init?.signal ? anySignal([init.signal, signal]) : signal,
+    });
 }
 
 async function railwayFetch(

@@ -158,6 +158,72 @@ describe("model credit reconciler", () => {
     expect(charged()?.costUsd).toBeCloseTo(0.04);
   });
 
+  it("sends a receipt stored in another shape to review instead of pricing it", async () => {
+    const updateMany = await reconcile({
+      usage: { ...stopped, countedTokens: { inputTokens: "100000", outputTokens: 2_000 } },
+      reconciliationAttempts: 5,
+    });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconciliationState: "needs_review" }),
+      }),
+    );
+  });
+
+  describe("a receipt stored in another shape", () => {
+    const unreadable = {
+      ...stopped,
+      costUsd: "0.9",
+      countedTokens: { inputTokens: "100000", outputTokens: 2_000 },
+    };
+    const answer = { inputTokens: 90_000, outputTokens: 2_500, costUsd: 0.21 };
+
+    it("settles on the provider's answer and prices nothing the receipt held", async () => {
+      const updateMany = await reconcile(
+        { usage: unreadable, providerRequestId: "gen-fixture" },
+        lookup(async () => ({ ...answer, costSource: "provider-reported" })),
+      );
+      expect(charged()).toMatchObject({ ...answer, costSource: "provider-reported" });
+      expect(charged()).not.toHaveProperty("countedTokens");
+      expect(charged()).not.toHaveProperty("pricingSnapshot");
+      expect(updateMany).toHaveBeenLastCalledWith({
+        where: { id: "entry-1", reconciliationState: "pending" },
+        data: { reconciliationState: "complete", nextReconcileAt: null },
+      });
+    });
+
+    it.each([
+      ["while lookups remain", 0, "pending"],
+      ["after the last lookup", 5, "needs_review"],
+    ])("is never priced when the provider has no answer %s", async (_case, attempts, state) => {
+      const find = vi.fn(async () => null);
+      const updateMany = await reconcile(
+        { usage: unreadable, providerRequestId: "gen-fixture", reconciliationAttempts: attempts },
+        lookup(find),
+      );
+      expect(find).toHaveBeenCalledWith("gen-fixture");
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reconciliationState: state }),
+        }),
+      );
+    });
+
+    it("keeps what a readable receipt held beside the provider's answer", async () => {
+      await reconcile(
+        { usage: stopped, providerRequestId: "gen-fixture" },
+        lookup(async () => ({ ...answer, costSource: "provider-reported" })),
+      );
+      expect(charged()).toMatchObject({
+        ...answer,
+        pricingSnapshot,
+        countedTokens: stopped.countedTokens,
+      });
+    });
+  });
+
   it("holds counted tokens it has no price for", async () => {
     const updateMany = await reconcile({
       usage: { ...stopped, pricingSnapshot: null },

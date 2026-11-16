@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { MessageBlock } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -216,18 +217,14 @@ it("shows the bots at work outside the app once the server accepts a run", async
 });
 
 it("does not confirm a card answer accepted after navigation leaves the mounted chat", async () => {
-  let accept!: () => void;
-  vi.mocked(rpc).mockReturnValueOnce(
-    new Promise<void>((resolve) => {
-      accept = resolve;
-    }) as never,
-  );
+  const accept = deferred();
+  vi.mocked(rpc).mockReturnValueOnce(accept.promise as never);
   const view = await chat([]);
   vi.mocked(hapticSuccess).mockClear();
   try {
     const saving = view.sender().answer({ id: "ask-1", runId: "run-1" } as never, "yes");
     navigation.focused = false;
-    accept();
+    accept.resolve();
     await saving;
     expect(hapticSuccess).not.toHaveBeenCalled();
     navigation.focused = true;

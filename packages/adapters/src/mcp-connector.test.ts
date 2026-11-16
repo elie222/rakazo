@@ -7,6 +7,7 @@ import {
   ServerError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectorRegistry } from "./connector-registry.js";
@@ -1027,20 +1028,14 @@ describe("MCP connector session cache", () => {
     ] as const)(
       "keeps %s from a discovery begun before sign-in off the new revision",
       async (_case, fresh, answer) => {
-        let release!: () => void;
-        let entered!: () => void;
-        const waiting = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        const started = new Promise<void>((resolve) => {
-          entered = resolve;
-        });
+        const waiting = deferred();
+        const started = deferred();
         const server = mcpFetch({ failNext: false, initializations: 0 }, SERVER.endpoint);
         vi.stubGlobal(
           "fetch",
           vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-            entered();
-            await waiting;
+            started.resolve();
+            await waiting.promise;
             return answer ? answer() : server(input, init);
           }),
         );
@@ -1069,16 +1064,16 @@ describe("MCP connector session cache", () => {
         );
         try {
           const discovering = connector.discoverTools(context);
-          await started;
+          await started.promise;
           // Sign-in bumps the revision and the new revision's check records its own result.
           row.revision = 2;
           row.healthStatus = fresh;
-          release();
+          waiting.resolve();
           await discovering;
           await vi.waitFor(() => expect(writes).toHaveBeenCalled());
           expect(row.healthStatus).toBe(fresh);
         } finally {
-          release();
+          waiting.resolve();
           vi.restoreAllMocks();
           await connector.close();
         }
@@ -2383,26 +2378,20 @@ describe("MCP connector session cache", () => {
   it("retries concurrent calls on an expired session without closing in-flight requests", async () => {
     const state = { failNext: false, initializations: 0, calls: [] as string[] };
     const fetch = mcpFetch(state);
-    let startBoth!: () => void;
-    const bothStarted = new Promise<void>((resolve) => {
-      startBoth = resolve;
-    });
-    let reconnect!: () => void;
-    const reconnected = new Promise<void>((resolve) => {
-      reconnect = resolve;
-    });
+    const bothStarted = deferred();
+    const reconnected = deferred();
     let expiredCalls = 0;
     vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       const request = new Request(input, init);
       if (request.method === "POST") {
         const message = JSON.parse(await request.clone().text());
-        if (message.method === "initialize" && state.initializations === 1) reconnect();
+        if (message.method === "initialize" && state.initializations === 1) reconnected.resolve();
         if (message.method === "tools/call" && expiredCalls < 2) {
           expiredCalls += 1;
-          if (expiredCalls === 1) await bothStarted;
+          if (expiredCalls === 1) await bothStarted.promise;
           else {
-            startBoth();
-            await reconnected;
+            bothStarted.resolve();
+            await reconnected.promise;
           }
           return new Response("Session not found", { status: 404 });
         }
@@ -2456,29 +2445,20 @@ describe("MCP connector session cache", () => {
     const state = { failNext: false, initializations: 0, calls: [] as string[] };
     const fetch = mcpFetch(state);
     let lists = 0;
-    let callStarted!: () => void;
-    const callArrived = new Promise<void>((resolve) => {
-      callStarted = resolve;
-    });
-    let releaseCall!: () => void;
-    const callReleased = new Promise<void>((resolve) => {
-      releaseCall = resolve;
-    });
-    let releaseList!: () => void;
-    const listReleased = new Promise<void>((resolve) => {
-      releaseList = resolve;
-    });
+    const callArrived = deferred();
+    const callReleased = deferred();
+    const listReleased = deferred();
     vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       const request = new Request(input, init);
       if (request.method === "POST") {
         const message = JSON.parse(await request.clone().text());
         if (message.method === "tools/call") {
-          callStarted();
-          await callReleased;
+          callArrived.resolve();
+          await callReleased.promise;
         }
         if (message.method === "tools/list" && ++lists === 2) {
           // The server stops answering tools/list.
-          await listReleased;
+          await listReleased.promise;
           return new Response(null, { status: 202 });
         }
       }
@@ -2517,17 +2497,17 @@ describe("MCP connector session cache", () => {
           events.push(event);
         return events;
       })();
-      await callArrived;
+      await callArrived.promise;
 
       expect(await connector.discoverTools(context)).toMatchObject([
         { name: "mcp__demo__unavailable" },
       ]);
-      releaseCall();
+      callReleased.resolve();
       expect(await running).toMatchObject([{ type: "result" }]);
       expect(state.calls).toEqual(["slow"]);
       expect(state.initializations).toBe(1);
     } finally {
-      releaseList();
+      listReleased.resolve();
       await connector.close();
     }
   });
@@ -2786,25 +2766,19 @@ describe("MCP connector stdio OAuth", () => {
     const launches = stubSession();
     const connector = stdioConnector(stored(), brokerFor());
     await connector.discoverTools(context);
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let enter!: () => void;
-    const entered = new Promise<void>((resolve) => {
-      enter = resolve;
-    });
+    const held = deferred();
+    const entered = deferred();
     vi.spyOn(McpSession.prototype, "listTools").mockImplementationOnce(async () => {
-      enter();
-      await held;
+      entered.resolve();
+      await held.promise;
       return { tools: [] };
     });
     const active = connector.discoverTools(context);
-    await entered;
+    await entered.promise;
     vi.setSystemTime(Date.now() + 3550_000);
     await connector.discoverTools(context);
     expect(launches).toHaveLength(1);
-    release();
+    held.resolve();
     await active;
     await connector.discoverTools(context);
     expect(launches).toHaveLength(2);

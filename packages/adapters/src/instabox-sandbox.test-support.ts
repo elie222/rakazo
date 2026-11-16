@@ -1,4 +1,5 @@
 import { CommandExitError, InstaboxError, InstaboxQuotaError } from "@insforge/instabox-sdk";
+import type { UnreferencedMachineRecords } from "@rakazo/adapter-kit";
 import { parse } from "shell-quote";
 import type {
   InstaboxApi,
@@ -320,7 +321,10 @@ async function settle(
 }
 
 /** The real instabox adapter, SDK translation included, over the in-memory emulator. */
-export function emulatedInstabox(emulator = new InstaboxEmulator()) {
+export function emulatedInstabox(
+  emulator = new InstaboxEmulator(),
+  machines?: UnreferencedMachineRecords,
+) {
   const provider = () =>
     new InstaboxSandboxProvider(
       { apiKey: "test-instabox-key" },
@@ -330,6 +334,7 @@ export function emulatedInstabox(emulator = new InstaboxEmulator()) {
           emulator.requests.push(`fence ${id}`);
         },
         async () => emulator,
+        machines,
       ),
     );
   return { emulator, provider };

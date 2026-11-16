@@ -12,6 +12,7 @@ import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { importChunk } from "../../lib/preload-recovery";
+import { useSave } from "../../lib/query";
 import { rpc } from "../../lib/rpc";
 import { useArtifactImage } from "../../lib/use-artifact-image";
 import type { ErrorDetails } from "../../lib/user-error";
@@ -27,35 +28,30 @@ export function ChoiceCard({
   onBotChanged: () => Promise<void>;
 }) {
   const { t } = useLingui();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [locallyDismissed, setLocallyDismissed] = useState(false);
   const dismissed = locallyDismissed || block.answerId === "_dismissed";
-
-  async function choose(optionId: string) {
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.onboarding.choose({ botId, optionId });
-      await onBotChanged();
-    } catch (err) {
-      setError(errorText(err, t`Could not save this choice`));
-      setPending(false);
-    }
-  }
-
-  async function dismiss() {
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.onboarding.dismissFocus({ botId });
+  const answer = useSave({
+    save: (input: { optionId: string } | { dismiss: true }, rpc) =>
+      "optionId" in input
+        ? rpc.onboarding.choose({ botId, optionId: input.optionId })
+        : rpc.onboarding.dismissFocus({ botId }),
+    // An answered card takes no second answer; the thread brings the answer back.
+    closesScreen: true,
+    onSaved: async (_saved, input) => {
+      if ("optionId" in input) return onBotChanged();
       setLocallyDismissed(true);
       void onBotChanged().catch(() => undefined);
-    } catch (err) {
-      setError(errorText(err, t`Could not dismiss`));
-      setPending(false);
-    }
-  }
+    },
+  });
+  const pending = answer.pending;
+  const error = answer.error
+    ? errorText(
+        answer.error,
+        answer.input && "optionId" in answer.input
+          ? t`Could not save this choice`
+          : t`Could not dismiss`,
+      )
+    : null;
 
   if (dismissed) return null;
 
@@ -68,7 +64,7 @@ export function ChoiceCard({
             size="icon-sm"
             aria-label={t`Dismiss`}
             disabled={pending}
-            onClick={() => void dismiss()}
+            onClick={() => answer.run({ dismiss: true })}
             className="absolute end-2 top-2 text-muted-foreground"
           >
             <X size={16} strokeWidth={1.8} />
@@ -87,7 +83,7 @@ export function ChoiceCard({
               letter={option.letter}
               selected={block.answerId === option.id}
               disabled={Boolean(block.answerId) || pending}
-              onClick={() => void choose(option.id)}
+              onClick={() => answer.run({ optionId: option.id })}
             >
               <OnboardingFocusOptionLabel
                 id={option.id}

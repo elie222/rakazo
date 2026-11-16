@@ -11,6 +11,7 @@ import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.
 import { persistMessageInTransaction } from "./run-messages.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 import { wakeRun } from "./wake-run.js";
+import { mediaVideoWakePrompt } from "./wakes.prompt.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
@@ -308,9 +309,7 @@ async function queueWake(
       botId: run.botId,
       threadId: run.threadId,
       userId: run.userId,
-      prompt: completed
-        ? `Video job ${jobId} finished and is attached to the chat.`
-        : `Video job ${jobId} failed. Do not resubmit unless the user asks.`,
+      prompt: mediaVideoWakePrompt(jobId, completed),
       status: "queued",
     },
   });

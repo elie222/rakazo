@@ -1,4 +1,5 @@
 import { RESPONSE_STREAMING_STORAGE_KEY } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
@@ -39,13 +40,10 @@ describe("mobile response streaming preference", () => {
   });
 
   it("notifies subscribers before SecureStore finishes", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const { setItemAsync } = await import("expo-secure-store");
     vi.mocked(setItemAsync).mockImplementation(async () => {
-      await gate;
+      await gate.promise;
     });
     const {
       getCachedResponseStreamingEnabled,
@@ -58,7 +56,7 @@ describe("mobile response streaming preference", () => {
     const pending = setResponseStreamingPreference("on");
     expect(getCachedResponseStreamingEnabled()).toBe(true);
     expect(listener).toHaveBeenCalledOnce();
-    release();
+    gate.resolve();
     await pending;
   });
 

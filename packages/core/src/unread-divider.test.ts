@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
+import { flush } from "./async.test-support.js";
 import { messageUnreadFor } from "./message-replies.js";
 import type { ReadBoundary } from "./unread-divider.js";
 import {
@@ -257,7 +258,7 @@ describe("marking unread through a chat's read queue", () => {
       unread = true;
     });
     // The queue starts the read on the next tick; finish it once it has started.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     finishRead();
     await Promise.all([inFlight, queued, mark]);
     expect(unread).toBe(true);

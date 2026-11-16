@@ -142,6 +142,8 @@ export interface AppEnv {
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
+  /** Reports signups and plan payments to the affiliate program; off when unset. */
+  dubApiKey: string | undefined;
   emailEmulator: boolean;
   billingEmulator: boolean;
   /** A/B tests this deployment runs, by key; none by default. */
@@ -345,6 +347,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
+    dubApiKey: optional(source.DUB_API_KEY),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
     experiments: optional(source.EXPERIMENTS),
     billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",

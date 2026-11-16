@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
-import { getSnapshot as getCallSnapshot } from "../../lib/call-session";
+import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/call-session";
 import { leaveOrganization } from "../../lib/organizations";
 import { queryClient, spaceSeedKey } from "../../lib/query";
 import { selectedSpaceId, selectSpace } from "../../lib/rpc";
@@ -58,9 +58,11 @@ export function useOpenSpaceChat({
         if (selectSpace(spaceId)) navigate(path);
         return;
       }
+      // Signing out clears the selected space; a switch that finishes afterwards must not select one.
+      const live = () => request === spaceSwitchRequest.current && !isLeavingSession();
       const reload = async () => {
         await leaveOrganization(userId ?? null, previousEffective, spaceId);
-        if (request !== spaceSwitchRequest.current || !selectSpace(spaceId)) return false;
+        if (!live() || !selectSpace(spaceId)) return false;
         window.location.assign(destination());
         return true;
       };
@@ -79,7 +81,7 @@ export function useOpenSpaceChat({
       const startedAt = window.location.pathname;
       const decision = () =>
         spaceSwitchDecision(
-          request === spaceSwitchRequest.current &&
+          live() &&
             startedNavigation === navigationRevision.current &&
             startedIndex === window.history.state?.idx,
           startedAt,

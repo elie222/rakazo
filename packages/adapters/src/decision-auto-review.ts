@@ -16,11 +16,8 @@ import {
   TOO_LONG_TO_REVIEW,
 } from "./auto-review.js";
 import {
-  AUTO_REVIEW_ASK,
-  AUTO_REVIEW_PASS,
+  autoReviewDecisionQuestion,
   MAX_OWNER_WORDS_CHARS,
-  MEMORY_WRITE_ASK,
-  MEMORY_WRITE_PASS,
   truncateReviewText,
 } from "./auto-review.prompt.js";
 
@@ -72,23 +69,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             ...(request.newSite ? { newSite: true } : {}),
             ...(request.memoryWrite ? { memoryWrite: true } : {}),
           },
-          questions: {
-            decision: {
-              type: "choice",
-              instructions: "Should this bot action run without asking its owner first?",
-              criteria: request.newSite
-                ? {
-                    pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
-                    ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
-                  }
-                : request.memoryWrite
-                  ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
-                  : {
-                      pass: AUTO_REVIEW_PASS,
-                      ask: AUTO_REVIEW_ASK,
-                    },
-            },
-          },
+          questions: { decision: autoReviewDecisionQuestion(request) },
         },
         {
           ...context,

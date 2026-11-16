@@ -103,6 +103,7 @@ import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import { attachRejectedRequests, rejectedRequestsOf } from "./provider-request-shape.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./run-replies.prompt.js";
 import { fallbackSystemPrompt } from "./runtime.prompt.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -115,7 +116,6 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
-import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const MAX_REJECTED_REQUESTS = 5;
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();

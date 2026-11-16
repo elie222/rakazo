@@ -7,6 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { memoryRetainTurnJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -349,7 +350,29 @@ describe("createBackgroundJobHandlers", () => {
   });
 });
 
-it("retries retired messaging credentials without deleting a currently referenced credential", async () => {
+it("retries a secret cleanup without deleting a reference that is in use again", async () => {
+  const remove = vi.fn(async () => undefined);
+  const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
+  const handlers = createBackgroundJobHandlers({
+    prisma: { messagingInstallation: { findUnique }, secret: { findUnique } },
+    secretStore: { delete: remove },
+  } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+  const cleanup = { kind: "secret_row", recordId: "secret-a" } as const;
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "active-ref" });
+  expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "secret-a" } }));
+  expect(remove).not.toHaveBeenCalled();
+  await handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" });
+  expect(remove).toHaveBeenCalledWith(
+    "retired-ref",
+    expect.objectContaining({ recordId: "secret-a" }),
+  );
+  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
+  await expect(handlers["secret.cleanup"]({ ...cleanup, ref: "retired-ref" })).rejects.toThrow(
+    "temporarily unavailable",
+  );
+});
+
+it("drains the previous release's messaging credential cleanup jobs the same way", async () => {
   const remove = vi.fn(async () => undefined);
   const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
   const handlers = createBackgroundJobHandlers({
@@ -365,14 +388,13 @@ it("retries retired messaging credentials without deleting a currently reference
     installationId: "install-a",
     ref: "retired-ref",
   });
+  expect(findUnique).toHaveBeenLastCalledWith(
+    expect.objectContaining({ where: { id: "install-a" } }),
+  );
   expect(remove).toHaveBeenCalledWith(
     "retired-ref",
     expect.objectContaining({ recordId: "install-a" }),
   );
-  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
-  await expect(
-    handlers["messaging.credential-cleanup"]({ installationId: "install-a", ref: "retired-ref" }),
-  ).rejects.toThrow("temporarily unavailable");
 });
 
 describe("memory.retain-turn", () => {
@@ -470,27 +492,21 @@ describe("memory.retain-turn", () => {
     const pending = { ...identity, generation: 3, checks: 0, unconfirmed: true as const };
     const recovery = memoryRetainTurnJob("run-1", [], { pending });
     durable.set(recovery.replaceKey!, recovery);
-    let entered!: () => void;
-    let finish!: (result: { settled: boolean }) => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const slow = new Promise<{ settled: boolean }>((resolve) => {
-      finish = resolve;
-    });
+    const started = deferred();
+    const slow = deferred<{ settled: boolean }>();
     vi.mocked(settleRetainedConversation).mockImplementationOnce(async () => {
-      entered();
-      return slow;
+      started.resolve();
+      return slow.promise;
     });
     const running = handle({ runId: "run-1", pending });
-    await started;
+    await started.promise;
     vi.mocked(retainRunConversation).mockResolvedValueOnce({
       pending: { ...identity, generation: 3, token: "op-1" },
     });
     await handle({ runId: "run-1" });
     expect(jobs.cancel).toHaveBeenCalledWith(recovery.replaceKey);
     expect(durable.has(recovery.replaceKey!)).toBe(false);
-    finish({ settled: false });
+    slow.resolve({ settled: false });
     await running;
     expect(durable.get("memory.retain-turn:run-1:settle")).toMatchObject({
       payload: { pending: { token: "op-1" } },

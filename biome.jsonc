@@ -62,7 +62,7 @@
             "patterns": [
               {
                 "group": [
-                  "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
+                  "@{alicloud,aws-sdk,axiomhq,azure,boatdev,boxd-sh,chat-adapter}/**",
                   "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
                   "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
                   "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",

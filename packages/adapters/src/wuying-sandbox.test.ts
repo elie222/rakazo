@@ -3,7 +3,11 @@ import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+import {
+  assertSandboxReadLimit,
+  assertSandboxWorkspaceContract,
+  provisionPrepared,
+} from "./sandbox-test-support.js";
 import { psLiteral, quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
 import { FAKE_PROFILE, FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
@@ -35,6 +39,16 @@ describe("WuyingSandboxProvider", () => {
     const provider = desktop.provider();
     const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
     await assertSandboxWorkspaceContract(provider, computer, ctx);
+  });
+
+  it("enforces a read's size limit when the gateway leaves the file's size out", async () => {
+    const desktop = new FakeWuyingDesktop();
+    desktop.omitReadSize = true;
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
+    await provider.writeFile(computer, note, ctx);
+    await assertSandboxReadLimit(provider, computer, ctx, note);
   });
 
   it("keeps each computer's home in its own folder under the user profile", async () => {
@@ -319,6 +333,8 @@ describe("WuyingSandboxProvider", () => {
       region_id: "cn-hangzhou",
       auth_code: "one-time-code",
     });
+    // The app learns the code works once from this, never from the URL.
+    expect(screen.singleUseSignIn).toEqual({ screen: "ecd-fake:cn-hangzhou" });
   });
 
   it("removes only the computer's home, never the desktop", async () => {

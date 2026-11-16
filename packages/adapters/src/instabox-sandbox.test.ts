@@ -8,7 +8,11 @@ import { installPageBrowserCommand } from "./page-browser-install.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
+import {
+  assertSandboxWorkspaceContract,
+  MachineRecords,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "test",
@@ -614,5 +618,100 @@ describe("instabox page tools", () => {
       "Page browser unavailable or interrupted",
     );
     expect(pageFiles(emulator, computer.id)).toEqual([]);
+  });
+
+  describe("a computer created by a start that then fails", () => {
+    const unpublished = new Error("gateway refused");
+    /** The computer is created, and publishing its gateway fails. */
+    function start(emulator: InstaboxEmulator, records?: MachineRecords) {
+      const create = emulator.create.bind(emulator);
+      vi.spyOn(emulator, "create").mockImplementation(async (...args) => {
+        const machine = await create(...args);
+        machine.ports.publish = async () => {
+          throw unpublished;
+        };
+        return machine;
+      });
+      const instabox = emulatedInstabox(emulator, records).provider();
+      return settleMachineCleanup(() => instabox.provision(request, ctx));
+    }
+
+    it("is deleted, trying a failed delete again", async () => {
+      const emulator = new InstaboxEmulator();
+      const kill = emulator.kill.bind(emulator);
+      vi.spyOn(emulator, "kill")
+        .mockRejectedValueOnce(new Error("connection reset"))
+        .mockImplementation(kill);
+
+      const { error, left } = await start(emulator);
+
+      expect(error).toBe(unpublished);
+      expect(emulator.computers.size).toBe(0);
+      expect(left).toEqual([]);
+    });
+
+    it("is reported when it cannot be deleted, and the start's own error stands", async () => {
+      const emulator = new InstaboxEmulator();
+      const kill = vi.spyOn(emulator, "kill").mockRejectedValue(new Error("connection reset"));
+
+      const { error, left } = await start(emulator);
+
+      expect(error).toBe(unpublished);
+      expect(kill).toHaveBeenCalledTimes(4);
+      // Each delete may take what its try has left of the cleanup's time, never instabox's default.
+      expect(kill).toHaveBeenNthCalledWith(1, "m_test1", 10_000);
+      expect(left).toEqual([{ provider: "instabox", machineId: "m_test1" }]);
+    });
+
+    it("is handed to the records when it cannot be deleted, and dropped from them when it can", async () => {
+      const kept = new InstaboxEmulator();
+      vi.spyOn(kept, "kill").mockRejectedValue(new Error("connection reset"));
+      const left = new MachineRecords();
+      const deleted = new MachineRecords();
+
+      await start(kept, left);
+      await start(new InstaboxEmulator(), deleted);
+
+      expect([...left.due.values()].map((entry) => entry.machine)).toEqual([
+        { provider: "instabox", machineId: "m_test1", homeKey: "bot" },
+      ]);
+      expect(deleted.due.size).toBe(0);
+    });
+  });
+
+  it("records a new computer for its bot before publishing its gateway", async () => {
+    const emulator = new InstaboxEmulator();
+    const records = new MachineRecords();
+    let whenPublishing: ReturnType<MachineRecords["dueIn"]> | undefined;
+    const create = emulator.create.bind(emulator);
+    vi.spyOn(emulator, "create").mockImplementation(async (...args) => {
+      const machine = await create(...args);
+      const publish = machine.ports.publish.bind(machine.ports);
+      machine.ports.publish = async (...ports) => {
+        whenPublishing ??= records.dueIn();
+        return publish(...ports);
+      };
+      return machine;
+    });
+
+    const computer = await emulatedInstabox(emulator, records).provider().provision(request, ctx);
+
+    expect(whenPublishing).toMatchObject([
+      { provider: "instabox", machineId: computer.providerRef, homeKey: "bot" },
+    ]);
+    expect(whenPublishing?.[0]?.dueInMs).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("deletes a computer from its id alone, and counts one already gone as deleted", async () => {
+    const emulator = new InstaboxEmulator();
+    const instabox = emulatedInstabox(emulator).provider();
+    const computer = await instabox.provision(request, ctx);
+    const machine = { provider: "instabox", machineId: computer.providerRef };
+    const signal = AbortSignal.timeout(5_000);
+
+    await instabox.deleteMachine(machine, signal);
+
+    expect(emulator.computers.size).toBe(0);
+    await expect(instabox.deleteMachine(machine, signal)).resolves.toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -358,10 +359,8 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
 
   mocks.focused = false;
   await render();
-  let switched!: (value: unknown) => void;
-  status = new Promise((resolve) => {
-    switched = resolve;
-  });
+  const switched = deferred<unknown>();
+  status = switched.promise;
   mocks.focused = true;
   await render();
   await act(async () => {
@@ -372,7 +371,9 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
   // The handler of the field as it showed Fish Audio, for typing that lands after the switch.
   const typeIntoFish = mocks.typed["Speech model"]!;
 
-  await act(async () => switched({ configured: true, ready: true, provider: "elevenlabs" }));
+  await act(async () =>
+    switched.resolve({ configured: true, ready: true, provider: "elevenlabs" }),
+  );
   expect(field().value).toBe("eleven_v3");
   await act(async () => typeIntoFish("s3"));
   expect(field().value).toBe("eleven_v3");

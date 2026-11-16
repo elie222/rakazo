@@ -50,15 +50,13 @@ function createSurface(sendErrors: string[] = []) {
       });
     }),
   );
-  const adapter = createTelegramAdapter({
-    botToken: "test-token",
-    secretToken: "test-webhook-secret",
-    mode: "webhook",
-  });
-  const surface = new ChatSdkMessagingSurface([
-    { provider: "telegram", capabilities: { direct: true, groups: false, receipt: null }, adapter },
-  ]);
-  return { surface, sends, threadId: adapter.encodeThreadId({ chatId: "123" }) };
+  const surface = new ChatSdkMessagingSurface(
+    messagingPlatformsFromEnv({
+      telegramBotToken: "test-token",
+      telegramWebhookSecret: "test-webhook-secret",
+    }),
+  );
+  return { surface, sends, threadId: "telegram:123" };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -94,45 +92,54 @@ describe("Telegram messaging Markdown", () => {
     expect(visibleText).toBe(expected);
   });
 
-  it("keeps every link address when a long reply is split", () => {
+  async function sendSplit(body: string): Promise<string[]> {
+    const { surface, sends, threadId } = createSurface();
+    for (const part of splitOutboundBody("telegram", body)) {
+      await surface.sendToThread({ threadId, body: part }, context);
+    }
+    return sends.map(({ text }) => text);
+  }
+
+  it("keeps every link when a long reply is split", async () => {
     const urls = Array.from({ length: 80 }, (_, i) => `https://example.com/articles/${i}`);
     const body = `Sources:\n${urls
       .map((url, i) => `${i + 1}. [Article ${i}](${url}) - a short summary of the article text`)
       .join("\n")}`;
     expect(body.length).toBeGreaterThan(4096);
-    const sent = splitOutboundBody("telegram", body).join("\n").replace(/\\(.)/g, "$1");
-    for (const url of urls) expect(sent).toContain(url);
+    const sent = (await sendSplit(body)).join("\n");
+    for (const [i, url] of urls.entries()) expect(sent).toContain(`[Article ${i}](${url})`);
   });
 
-  it("keeps link-shaped text in code as written when a long reply is split", () => {
+  it("keeps link-shaped text in code as written when a long reply is split", async () => {
     const filler = Array.from({ length: 120 }, (_, i) => `Line ${i} of the reply.`).join("\n");
-    const body = `Write links as \`[label](url)\`.\n${filler}`;
-    expect(body.length).toBeGreaterThan(2000);
-    const long = `${body}\n${"x".repeat(4200)}`;
-    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
-    expect(sent).toContain("[label](url)");
-    expect(sent).not.toContain("label (url)");
+    const sent = await sendSplit(
+      `Write links as \`[label](url)\`.\n${filler}\n${"x".repeat(4200)}`,
+    );
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent[0]).toContain("Write links as `[label](url)`\\.");
   });
 
-  it("keeps the address of a link whose label has brackets when a long reply is split", () => {
-    const long = `See [the [beta] docs](https://example.com/beta)\n${"x".repeat(4200)}`;
-    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
-    expect(sent).toContain("https://example.com/beta");
+  it("keeps a link whose label has brackets when a long reply is split", async () => {
+    const sent = await sendSplit(
+      `See [the [beta] docs](https://example.com/beta)\n${"x".repeat(4200)}`,
+    );
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent[0]).toContain("See [the \\[beta\\] docs](https://example.com/beta)");
   });
 
-  it("does not repeat an address already shown when a long reply is split", () => {
-    const long = `**Contact** bob@example.com or https://example.com/\n${"x".repeat(4200)}`;
-    const sent = splitOutboundBody("telegram", long).join("\n").replace(/\\(.)/g, "$1");
-    expect(sent).toContain("bob@example.com");
-    expect(sent).not.toContain("mailto:");
-    expect(sent).not.toContain("(https://example.com/)");
+  it("links a bare address and email once when a long reply is split", async () => {
+    const sent = await sendSplit(
+      `**Contact** bob@example.com or https://example.com/\n${"x".repeat(4200)}`,
+    );
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent[0]).toContain(
+      "*Contact* [bob@example\\.com](mailto:bob@example.com) or [https://example\\.com/](https://example.com/)",
+    );
   });
 
   it("keeps the address of a link in a reply that fits in one message", () => {
     const body = "Read [the docs](https://example.com/docs/start) first.";
-    expect(splitOutboundBody("telegram", body).join("")).toContain(
-      "https://example.com/docs/start",
-    );
+    expect(splitOutboundBody("telegram", body)).toEqual([body]);
   });
 
   it("keeps every split part in the plain-text fallback after Markdown rejection", async () => {
@@ -182,6 +189,42 @@ describe("Telegram messaging Markdown", () => {
     expect(sends[0]).toMatchObject({ parse_mode: "MarkdownV2", text: "*bold*\\!" });
     expect(sends[1]).toMatchObject({ text: "bold!" });
     expect(sends[1]).not.toHaveProperty("parse_mode");
+  });
+
+  it("keeps a link's address when a reply is sent as plain text", async () => {
+    const { surface, sends, threadId } = createSurface(["Bad Request: can't parse entities"]);
+
+    await surface.sendToThread(
+      {
+        threadId,
+        body: "Read [the docs](https://example.com/docs) or https://example.com/faq. ![A chart](https://example.com/chart.png)",
+      },
+      context,
+    );
+
+    expect(sends[1]).toEqual({
+      chat_id: "123",
+      text: "Read the docs (https://example.com/docs) or https://example.com/faq. A chart (https://example.com/chart.png)",
+    });
+  });
+
+  it("keeps every part of a long reply within one message when sent as plain text", async () => {
+    const rows = Array.from(
+      { length: 90 },
+      (_, row) => `- [Article ${row}](https://example.com/articles/${row}/${"path/".repeat(8)})`,
+    );
+    const parts = splitOutboundBody("telegram", rows.join("\n"));
+    const { surface, sends, threadId } = createSurface(
+      parts.flatMap(() => ["Bad Request: can't parse entities", ""]),
+    );
+    for (const part of parts) await surface.sendToThread({ threadId, body: part }, context);
+
+    const fallback = sends.filter((send) => !send.parse_mode).map(({ text }) => text);
+    expect(fallback).toHaveLength(parts.length);
+    expect(fallback.every((text) => text.length <= 4096 && !text.includes("…"))).toBe(true);
+    for (const [row] of rows.entries()) {
+      expect(fallback.join("\n")).toContain(`Article ${row} (https://example.com/articles/${row}/`);
+    }
   });
 
   it("propagates unrelated send failures without a duplicate plain-text attempt", async () => {

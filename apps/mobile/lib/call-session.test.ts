@@ -7,6 +7,8 @@ import {
   ensureAiDataConsent,
   INTERIM_BARGE_IN_MS,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hapticImpact, hapticSuccess } from "./haptics";
 
@@ -129,23 +131,6 @@ vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-};
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
-
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const CALL_SESSION = {
   category: "playAndRecord",
   categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
@@ -2468,17 +2453,11 @@ describe("mobile call microphone after hang-up", () => {
   it("does not ask for the microphone when the call ends during the audio import", async () => {
     vi.resetModules();
     const requestPermission = vi.fn(async () => ({ granted: true }));
-    let finishImport!: () => void;
-    let importStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      importStarted = resolve;
-    });
-    const pendingImport = new Promise<void>((resolve) => {
-      finishImport = resolve;
-    });
+    const started = deferred();
+    const pendingImport = deferred();
     vi.doMock("expo-audio", async () => {
-      importStarted();
-      await pendingImport;
+      started.resolve();
+      await pendingImport.promise;
       return {
         AudioModule: { requestRecordingPermissionsAsync: requestPermission },
         RecordingPresets: { HIGH_QUALITY: {} },
@@ -2489,9 +2468,9 @@ describe("mobile call microphone after hang-up", () => {
       const session = await import("./call-session");
       const { record: _record, ...deps } = fakes().deps;
       session.startCall({ botId: "bot-1", botName: "Ada" }, deps);
-      await started;
+      await started.promise;
       session.endCall();
-      finishImport();
+      pendingImport.resolve();
       await flush();
       expect(requestPermission).not.toHaveBeenCalled();
     } finally {

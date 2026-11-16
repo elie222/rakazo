@@ -666,7 +666,7 @@ function protectedValues(secrets: Iterable<string>): string[] {
  * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
  * leave the rest readable; matches that only touch stay separate.
  */
-function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
+export function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
   // Count matches starting and ending at each offset rather than listing every match, so a value
   // that repeats or overlaps itself across a long text costs no more than two counters per offset.
   let starts: Int32Array | undefined;

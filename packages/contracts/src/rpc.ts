@@ -64,6 +64,7 @@ import {
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
+  ComputerScreenSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
 } from "./computer.js";
@@ -200,6 +201,7 @@ import {
   SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
+import { MemoryProviderDescriptorSchema } from "./provider-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -467,7 +469,9 @@ export const appContract = {
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
   },
-  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  bootstrap: oc
+    .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
+    .output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -891,7 +895,7 @@ export const appContract = {
     commands: oc
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
-    screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    screenUrl: oc.input(botId).output(ComputerScreenSchema),
     /** A still of the screen as an image data URL, or null when the computer is not running. */
     preview: oc
       .input(
@@ -921,6 +925,8 @@ export const appContract = {
     remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
+    /** The providers a Space can connect, with the settings form each one asks for. */
+    providers: oc.output(z.array(MemoryProviderDescriptorSchema)),
     connectProvider: oc
       .input(
         z.object({
@@ -1086,7 +1092,7 @@ export const appContract = {
       .output(z.object({ runId: Id })),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). */
+  /** Skills: reusable how-to recipes (not taught/demo skills). */
   agentSkills: {
     list: oc.output(z.array(AgentSkillCatalogEntrySchema)),
     get: oc
@@ -1265,7 +1271,8 @@ export const appContract = {
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
           provider: z.string(),
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -1282,7 +1289,8 @@ export const appContract = {
     begin: oc
       .input(
         z.object({
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
           provider: z.string(),
           displayName: z.string(),
         }),

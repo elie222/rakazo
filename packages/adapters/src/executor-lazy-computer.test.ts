@@ -623,7 +623,7 @@ describe("run computer provisioning", () => {
     );
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "error", message: "run setup failed" }),
+      expect.objectContaining({ level: "error", message: "run.setup_failed" }),
     );
   });
 
@@ -637,7 +637,7 @@ describe("run computer provisioning", () => {
       "Run setup failed; retrying",
     );
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
@@ -664,7 +664,7 @@ describe("run computer provisioning", () => {
     }
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { Routine } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -30,7 +31,7 @@ let container: HTMLDivElement;
 async function update(change: () => void) {
   await act(async () => {
     change();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 
