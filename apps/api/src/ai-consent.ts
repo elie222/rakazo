@@ -138,9 +138,10 @@ export async function aiConsentStatus(
     // The connection a run uses: a member's endpoint that doesn't list the model gives way to
     // the deployment's, so consent names the endpoint that receives the content.
     const runCredential = (provider: string, modelId: string) =>
+      // A lookup that fails fails the check, rather than naming a connection the run may not use.
       findConnectedModelCredential(deps.prisma, deps.secrets, actor, provider, modelId, {
         deployment: async () => deploymentModels,
-      }).catch(() => findModelCredential(deps.prisma, actor, provider, modelId));
+      });
     const selected = await Promise.all(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =

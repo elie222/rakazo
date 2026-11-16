@@ -40,6 +40,8 @@ export function DeploymentVoiceSettings({
     setSettings(next);
     setDraft(draftFrom(next));
     setVoices([]);
+    // A listing that failed before belongs to what was shown then.
+    setLoadError(null);
     if (!next.keySaved) return;
     // The RPC client hands out a new object on every property read, so never hold it.
     rpc.voice.deployment.voices().then(

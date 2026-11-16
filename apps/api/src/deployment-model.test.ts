@@ -168,6 +168,29 @@ describe("deployment model settings", () => {
     expect(state.connections.size).toBe(0);
   });
 
+  it("refuses a failed check without the key, and leaves a provider outage a server error", async () => {
+    const { deps } = makeDeps();
+    const key = "fixture-echoed-key-123";
+    Object.assign(deps, {
+      modelConnectionCheck: vi.fn(async () => {
+        throw new Error(`Model not found for ${key}`);
+      }),
+    });
+    const refused = connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: key });
+    await expect(refused).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(refused).rejects.not.toThrow(key);
+
+    Object.assign(deps, {
+      modelConnectionCheck: vi.fn(async () => {
+        throw new Error("529 overloaded_error: Overloaded");
+      }),
+    });
+    const outage = connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: key });
+    await expect(outage).rejects.toThrow("Overloaded");
+    await expect(outage).rejects.not.toMatchObject({ code: "BAD_REQUEST" });
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
   it("checks a catalog key as a member's is, and takes only one that reads back as a key", async () => {
     const { deps, state } = makeDeps();
     const endpoint = JSON.stringify({

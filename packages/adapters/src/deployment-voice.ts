@@ -1,7 +1,7 @@
 import type { AdapterContext, SecretStore, VoiceProvider } from "@rakazo/adapter-kit";
 import type { VoiceCatalogEntry } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
 import {
@@ -129,16 +129,16 @@ export async function deploymentVoiceSpeaks(
 ): Promise<boolean> {
   const voice = await findDeploymentVoice(prisma, secrets, env);
   if (!voice) return false;
-  const key = await voice.loadKey().catch(() => "");
+  // A key or voice list that can't be read means no speech now; the failure is logged.
+  const key = (await bestEffort("deployment voice key", voice.loadKey())) ?? "";
   if (!key.trim()) return false;
   if (voice.voiceId) return true;
   // Without a chosen voice it speaks with the provider's first, so the provider must list one.
-  const voiceId = await deploymentVoiceId(
-    voice,
-    key,
-    createVoiceProvider(voice.provider),
-    context,
-  ).catch(() => "");
+  const voiceId =
+    (await bestEffort(
+      "deployment voice listing",
+      deploymentVoiceId(voice, key, createVoiceProvider(voice.provider), context),
+    )) ?? "";
   return voiceId.length > 0;
 }
 

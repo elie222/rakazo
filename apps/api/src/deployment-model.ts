@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
+import { isTransientModelError } from "@rakazo/adapter-kit";
 import type { DeploymentModels, SavedDeploymentModels } from "@rakazo/adapters";
 import {
   allowlistOpens,
@@ -33,6 +34,7 @@ import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { requireAdmin } from "./admins.js";
 import { forgetDeploymentSecret } from "./deployment-secrets.js";
+import { modelConnectionErrorMessage } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 
 type ModelEnv = Pick<
@@ -278,15 +280,18 @@ async function checkedConnection(
       );
     return { plaintext, models: [] };
   } catch (error) {
+    // A provider that didn't answer is not the admin's mistake: it fails as a server error.
+    if (isTransientModelError(error)) throw error;
     // Provider errors can echo the request; log only the error's class.
     getLogger().warn("deployment_model.verify_failed", {
       provider: input.provider,
       "user.id": actor.userId,
       "error.name": error instanceof Error ? error.name : typeof error,
     });
+    // The key is taken out of what the provider said, as it is for a member's own connection.
     throw new ClientError(
       "BAD_REQUEST",
-      error instanceof Error ? error.message : "Invalid model connection",
+      modelConnectionErrorMessage(error, "Invalid model connection", { apiKey: input.apiKey }),
     );
   }
 }

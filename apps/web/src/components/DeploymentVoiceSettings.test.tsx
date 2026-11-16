@@ -215,3 +215,16 @@ it("shows why a save failed", async () => {
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("That key was rejected.");
 });
+
+it("clears a failed voice listing once a later save lists them", async () => {
+  deployment.get.mockResolvedValue(saved);
+  deployment.voices.mockRejectedValueOnce(new Error("listing unavailable"));
+  deployment.update.mockResolvedValue(saved);
+  await act(async () => root.render(withQueries(<DeploymentVoiceSettings />)));
+  expect(host.textContent).toContain("listing unavailable");
+
+  await act(async () => enter("API key", "test-voice-key"));
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(host.textContent).not.toContain("listing unavailable");
+  expect(field("Voice")?.value).toBe("voice-a");
+});

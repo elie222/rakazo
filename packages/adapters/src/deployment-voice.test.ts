@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEPLOYMENT_VOICE_RECORD,
@@ -238,6 +239,23 @@ describe("deploymentVoiceSpeaks", () => {
       ),
     ).resolves.toBe(true);
     expect(createVoiceProvider).not.toHaveBeenCalled();
+  });
+
+  it("reads a key that can't be loaded as no speech, and logs why", async () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    const broken = { load: vi.fn(async () => Promise.reject(new Error("store unavailable"))) };
+    await expect(
+      deploymentVoiceSpeaks(
+        prismaWith({ provider: "elevenlabs", voiceId: "saved-voice", cipher: "cipher-1" }),
+        broken,
+        context,
+        {},
+      ),
+    ).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("deployment voice key"),
+      expect.anything(),
+    );
   });
 
   it("without a chosen voice, speaks only if the provider lists one", async () => {
