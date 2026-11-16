@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot as createReactRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type * as Passkeys from "../lib/passkeys";
@@ -122,3 +124,14 @@ it.each([{ isComposing: true }, { keyCode: 229 }])(
     expect(host.querySelector("input")).toBeNull();
   },
 );
+
+/** Saves need a query client; each root gets its own. */
+function createRoot(container: Element) {
+  const root = createReactRoot(container);
+  const queryClient = new QueryClient();
+  return {
+    render: (node: ReactNode) =>
+      root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>),
+    unmount: () => root.unmount(),
+  };
+}

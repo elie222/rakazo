@@ -2,6 +2,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -42,7 +43,10 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 vi.mock("../lib/user-devices", () => ({ listUserDevices: vi.fn(), removeUserDevice: vi.fn() }));
-vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
+vi.mock("../lib/rpc", () => {
+  const rpc = { me: vi.fn() };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -84,9 +88,11 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
 function renderSettings() {
   return act(async () =>
     root.render(
-      <I18nProvider i18n={i18n}>
-        <ComputerDeviceSettings />
-      </I18nProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <I18nProvider i18n={i18n}>
+          <ComputerDeviceSettings />
+        </I18nProvider>
+      </QueryClientProvider>,
     ),
   );
 }

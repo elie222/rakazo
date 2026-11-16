@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -12,7 +13,15 @@ const { bots, client, toast } = vi.hoisted(() => {
   return { bots, client: { bots }, toast };
 });
 
-vi.mock("../../lib/space-rpc", () => ({ useSpaceRpc: () => client }));
+vi.mock("../../lib/space-rpc", () => ({
+  useSpaceRpc: () => client,
+  useBoundSpaceId: () => "space-a",
+}));
+vi.mock("../../lib/rpc", () => ({
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => "space-a",
+}));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     String.raw({ raw: parts }, ...values);
@@ -58,18 +67,25 @@ function button(label: string) {
   return [...document.body.querySelectorAll("button")].find((node) => node.textContent === label);
 }
 
+const queryClient = new QueryClient();
+const view = (mainModelKey: string) => (
+  <QueryClientProvider client={queryClient}>
+    <SpaceBotsModelButton mainModelKey={mainModelKey} />
+  </QueryClientProvider>
+);
+
 async function render(mainModelKey = "s:a:one") {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   await act(async () => {
-    root.render(<SpaceBotsModelButton mainModelKey={mainModelKey} />);
+    root.render(view(mainModelKey));
   });
   return {
     host,
     rerender: (key: string) =>
       act(async () => {
-        root.render(<SpaceBotsModelButton mainModelKey={key} />);
+        root.render(view(key));
       }),
     unmount: () => act(() => root.unmount()),
   };

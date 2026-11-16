@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -35,10 +36,16 @@ vi.mock("./ConfirmIdentityDialog", async () => {
     },
   };
 });
-vi.mock("../lib/rpc", () => ({
-  rpc: { export: { accountToken } },
-  recheckSessionOnUnauthorized: () => undefined,
-}));
+vi.mock("../lib/rpc", () => {
+  const rpc = { export: { accountToken } };
+  return {
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+    selectedSpaceId: () => null,
+    recheckSessionOnUnauthorized: () => undefined,
+  };
+});
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -78,7 +85,11 @@ afterEach(() => {
 
 async function render(onImported?: () => Promise<void>) {
   await act(async () => {
-    root.render(<AccountDataSettings onImported={onImported} />);
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AccountDataSettings onImported={onImported} />
+      </QueryClientProvider>,
+    );
   });
 }
 

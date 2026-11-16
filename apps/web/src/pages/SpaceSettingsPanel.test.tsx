@@ -2,6 +2,7 @@
 
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -51,24 +52,35 @@ vi.mock("../components/SpaceMembersSettings", () => ({
   SpaceMembersSettings: () => <div data-testid="space-members-settings" />,
 }));
 
+const client = vi.hoisted(() => ({ spaces: {} }));
+vi.mock("../lib/rpc", () => ({
+  rpc: client,
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => null,
+}));
+
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 
 let container: HTMLDivElement;
 let root: Root;
+const queryClient = new QueryClient();
 
 type Props = ComponentProps<typeof SpaceSettingsPanel>;
 
 async function render(props: Partial<Props>) {
   await act(async () => {
     root.render(
-      <SpaceSettingsPanel
-        space={{ id: "space-a", name: "Support", canRename: true, canDelete: true, botCount: 0 }}
-        onRename={async () => undefined}
-        onDelete={async () => undefined}
-        onLeft={() => undefined}
-        onClose={() => undefined}
-        {...props}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <SpaceSettingsPanel
+          space={{ id: "space-a", name: "Support", canRename: true, canDelete: true, botCount: 0 }}
+          onRename={async () => undefined}
+          onDelete={async () => undefined}
+          onLeft={() => undefined}
+          onClose={() => undefined}
+          {...props}
+        />
+      </QueryClientProvider>,
     );
   });
 }
@@ -133,7 +145,7 @@ describe("SpaceSettingsPanel", () => {
     expect(container.querySelector("input")?.value).toBe("Support");
     await type("  Help desk  ");
     await commit();
-    expect(onRename).toHaveBeenCalledWith("Help desk");
+    expect(onRename).toHaveBeenCalledWith("Help desk", client);
     expect(container.querySelector("input")?.value).toBe("Help desk");
   });
 

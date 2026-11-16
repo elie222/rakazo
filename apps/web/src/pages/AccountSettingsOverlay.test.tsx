@@ -4,9 +4,10 @@ import type { AccountSecurity } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot as createReactRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -142,6 +143,16 @@ import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
+
+/** Saves need a query client; every render here gets a fresh one. */
+function createRoot(container: HTMLElement) {
+  const root = createReactRoot(container);
+  return {
+    render: (node: ReactNode) =>
+      root.render(<QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>),
+    unmount: () => root.unmount(),
+  };
+}
 
 afterEach(() => {
   localStorage.clear();

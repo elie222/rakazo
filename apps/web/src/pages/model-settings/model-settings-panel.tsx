@@ -13,7 +13,7 @@ import {
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useSave } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** One model's own settings on the connection that runs it. */
@@ -29,15 +29,32 @@ export function ModelSettingsPanel({
   onSaved: () => Promise<unknown>;
 }) {
   const { t } = useLingui();
-  const rpc = useSpaceRpc();
   const provider = credential.provider;
   const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
   // Unedited fields follow what is saved, including after a save or reset.
   const [edited, setEdited] = useState<Fields | null>(null);
   const fields = edited ?? saved;
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const persist = useSave({
+    // The save stands even when reading it back fails, so that failure is not the save's.
+    save: async (settings: ModelSettings, rpc) => {
+      await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
+      return onSaved().then(
+        () => null,
+        (err: unknown) => err,
+      );
+    },
+    onSaved: (loadError) => {
+      if (loadError) {
+        setError(errorText(loadError, t`Could not load model settings`));
+        return;
+      }
+      setEdited(null);
+      setNotice(t`Saved.`);
+    },
+  });
+  const pending = persist.pending;
   const defaults = modelSettingsDefaults(provider, entry);
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
   const dirty = (Object.keys(fields) as (keyof Fields)[]).some((key) => fields[key] !== saved[key]);
@@ -48,33 +65,20 @@ export function ModelSettingsPanel({
     setEdited({ ...fields, ...patch });
     setError(null);
     setNotice(null);
+    persist.reset();
   };
 
-  async function persist(settings: ModelSettings) {
+  function run(settings: ModelSettings) {
+    if (pending) return;
     setError(null);
     setNotice(null);
-    setPending(true);
-    try {
-      await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
-    } catch (err) {
-      setError(errorText(err, t`Could not save model settings`));
-      setPending(false);
-      return;
-    }
-    try {
-      await onSaved();
-      setEdited(null);
-      setNotice(t`Saved.`);
-    } catch (err) {
-      setError(errorText(err, t`Could not load model settings`));
-    } finally {
-      setPending(false);
-    }
+    persist.run(settings);
   }
 
-  async function save() {
+  function save() {
     const request = modelSettingsRequest({ fields, provider, entry });
     if (request.status === "invalid") {
+      persist.reset();
       setError(
         request.field === "contextWindow"
           ? t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`
@@ -86,14 +90,14 @@ export function ModelSettingsPanel({
       );
       return;
     }
-    await persist(request.settings);
+    run(request.settings);
   }
 
   return (
     <>
-      {error ? (
+      {persist.error || error ? (
         <p className="mb-4 text-body text-destructive" role="alert">
-          {error}
+          {persist.error ? errorText(persist.error, t`Could not save model settings`) : error}
         </p>
       ) : null}
       {notice ? (
@@ -125,13 +129,7 @@ export function ModelSettingsPanel({
       {dirty || customized ? (
         <div className="mt-4 flex items-center gap-2">
           {dirty ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={pending}
-              onClick={() => void save()}
-            >
+            <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={save}>
               {pending ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
             </Button>
           ) : null}
@@ -142,7 +140,7 @@ export function ModelSettingsPanel({
               size="sm"
               className="text-muted-foreground"
               disabled={pending}
-              onClick={() => void persist({})}
+              onClick={() => run({})}
             >
               <Trans>Reset to defaults</Trans>
             </Button>

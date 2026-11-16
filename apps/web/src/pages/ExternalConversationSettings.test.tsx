@@ -3,10 +3,10 @@
 import type { Bot, ExternalConversation } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
+import { createRoot as createReactRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => {
@@ -17,7 +17,26 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 
+const client = vi.hoisted(() => ({}));
+vi.mock("../lib/rpc", () => ({
+  rpc: client,
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => null,
+}));
+
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
+
+/** Saves need a query client. */
+function createRoot(container: HTMLElement) {
+  const root = createReactRoot(container);
+  const queryClient = new QueryClient();
+  return {
+    render: (node: ReactNode) =>
+      root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>),
+    unmount: () => root.unmount(),
+  };
+}
 
 const bot = {
   id: "bot-1",
@@ -37,7 +56,7 @@ const conversation = {
 } as unknown as ExternalConversation;
 
 let host: HTMLDivElement;
-let root: Root;
+let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -102,11 +121,14 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
     rules.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => button("Save").click());
-  expect(onSave).toHaveBeenLastCalledWith({
-    teamChatAmbientEnabled: false,
-    teamChatRules: "Only launch questions.",
-    automatedSenderPolicies: {},
-  });
+  expect(onSave).toHaveBeenLastCalledWith(
+    {
+      teamChatAmbientEnabled: false,
+      teamChatRules: "Only launch questions.",
+      automatedSenderPolicies: {},
+    },
+    client,
+  );
 
   // Emptying the field follows the bot again rather than saving no rules.
   await act(async () => {
@@ -115,7 +137,7 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
   });
   expect(host.textContent).not.toContain("Reset");
   await act(async () => button("Save").click());
-  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ teamChatRules: null }));
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ teamChatRules: null }), client);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
       rules,
@@ -129,6 +151,7 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
   await act(async () => button("Save").click());
   expect(onSave).toHaveBeenLastCalledWith(
     expect.objectContaining({ teamChatAmbientEnabled: false, teamChatRules: null }),
+    client,
   );
 });
 
@@ -166,6 +189,7 @@ it("does not claim Saved for a draft edited while the save is in flight", async 
   await act(async () => {});
   expect(onSave).toHaveBeenLastCalledWith(
     expect.objectContaining({ teamChatRules: "Second take." }),
+    client,
   );
   expect(host.textContent).toContain("Saved");
 });

@@ -568,8 +568,8 @@ export function MessagingSettingsPanel() {
                       <ExternalConversationSettings
                         conversation={conversation}
                         bot={bot}
-                        onSave={async (policy) => {
-                          await rpc.externalConversations.updatePolicy({
+                        onSave={async (policy, client) => {
+                          await client.externalConversations.updatePolicy({
                             externalConversationId: conversation.id,
                             ...policy,
                           });
