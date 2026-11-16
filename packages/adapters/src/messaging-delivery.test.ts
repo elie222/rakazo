@@ -352,6 +352,9 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
       }),
     },
     event: {
+      findMany: vi.fn(async ({ where }: { where: Where }) =>
+        world.events.filter((event) => matches(event, where)).map(copy),
+      ),
       create: vi.fn(async ({ data }: { data: Where }) => {
         const event = { id: `evt-${world.events.length + 1}`, createdAt: new Date(), ...data };
         world.events.push(event);
@@ -1257,6 +1260,61 @@ describe("independent subagent delivery", () => {
     expect(t.sendToThread).not.toHaveBeenCalled();
     expect(t.world.outbound).toEqual([]);
   });
+
+  it.each([false, true])(
+    "keeps a result influenced by private app steering out of external delivery (team: %s)",
+    async (team) => {
+      const t = delegated();
+      if (team) {
+        Object.assign(t.prisma.run, {
+          findFirst: vi.fn(async () => ({
+            id: "parent",
+            trigger: "messaging",
+            thread: { externalConversationId: "team-conversation" },
+          })),
+        });
+      }
+      t.world.events.push({
+        id: "steering-claim",
+        runId: "run-1",
+        type: "run.steering.claimed",
+        payload: { steeringIds: ["already-deleted-private-steering"], nextMessageSeq: 2 },
+      });
+      await t.delivery.deliverRun("run-1");
+      expect(t.sendToThread).not.toHaveBeenCalled();
+      expect(t.world.outbound).toEqual([]);
+    },
+  );
+
+  it("delivers a result when every consumed steering claim has external provenance", async () => {
+    const t = delegated();
+    t.world.events.push({
+      id: "safe-claim",
+      runId: "run-1",
+      type: "run.steering.claimed",
+      payload: { externalSafe: true },
+    });
+    await t.delivery.deliverRun("run-1");
+    expect(t.sendToThread).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "The findings" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([false, "true", null])(
+    "refuses an unsafe or malformed steering delivery proof: %j",
+    async (externalSafe) => {
+      const t = delegated();
+      t.world.events.push({
+        id: "unsafe-claim",
+        runId: "run-1",
+        type: "run.steering.claimed",
+        payload: { externalSafe },
+      });
+      await t.delivery.deliverRun("run-1");
+      expect(t.sendToThread).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not guess a destination when delegation provenance is missing", async () => {
     const t = delegated();

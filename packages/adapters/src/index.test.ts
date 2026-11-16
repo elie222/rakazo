@@ -223,6 +223,25 @@ describe("builtin tools", () => {
     }
   });
 
+  it.each([false, true])(
+    "keeps fleet reads out of helpers with channel privacy %s",
+    (messagingChannelRun) => {
+      const tools = selectBuiltinToolsForRun({
+        trigger: "helper",
+        fleetManagement: true,
+        messagingChannelRun,
+        graphicalToolsAllowed: false,
+        groupId: null,
+        semanticMemoryEnabled: false,
+      });
+      for (const name of FLEET_TOOL_NAMES)
+        expect(
+          tools.some((tool) => tool.name === name),
+          name,
+        ).toBe(false);
+    },
+  );
+
   it("offers agent connections to a chat-linked bot's turns, but not to its helpers", () => {
     const linked = { hasMessagingIdentity: true, crossSpaceCommunication: true };
     expect(offersAgentConnectionTools({ ...linked, trigger: "user" })).toBe(true);

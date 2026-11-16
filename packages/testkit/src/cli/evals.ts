@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,8 +31,10 @@ import {
 import {
   caseFingerprint,
   caseKey,
+  codeRevision,
   firstRequestFetch,
   runFingerprint,
+  workingDiffHash,
 } from "../evals/fingerprint.js";
 import { regradeTrial } from "../evals/grading.js";
 import {
@@ -945,43 +946,6 @@ async function main() {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
-  }
-}
-
-function workingDiffHash(): string | null {
-  try {
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const options = {
-      cwd: root,
-      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
-      maxBuffer: 64 * 1024 * 1024,
-    };
-    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
-    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-      ...options,
-      encoding: "utf8",
-    })
-      .split("\0")
-      .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
-      .sort();
-    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
-    return hash.digest("hex");
-  } catch {
-    return null;
-  }
-}
-
-function codeRevision(): string | null {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return null;
   }
 }
 

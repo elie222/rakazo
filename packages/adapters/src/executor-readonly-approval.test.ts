@@ -4180,6 +4180,26 @@ describe("subagent permissions", () => {
     expect(f.effects).toEqual([]);
   });
 
+  it("refuses a helper's emitted fleet read even when fleet management is enabled", async () => {
+    const f = fixture({
+      name: "list_fleet",
+      builtin: true,
+      trigger: "helper",
+      fleetManagement: true,
+      skipApprovals: true,
+    });
+    f.setCalls([{ args: {}, executionId: "fleet-read" }]);
+    await f.run();
+    expect(f.offeredTools()).not.toContain("list_fleet");
+    expect(f.results).toEqual([
+      {
+        error:
+          "list_fleet is not available to a subagent. Say in your result what the parent should do.",
+      },
+    ]);
+    expect(f.effects).toEqual([]);
+  });
+
   it.each(["helper", "helper_result"])(
     "asks instead of Auto-approving a %s with missing provenance",
     async (trigger) => {

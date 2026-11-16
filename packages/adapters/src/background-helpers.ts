@@ -260,31 +260,15 @@ export async function returnHelperOutcome(
         select: { id: true, blocks: true },
       });
       for (const request of requests) {
-        const prior = storedMessageBlocks(request);
-        if (
-          !prior.some(
-            (block) =>
-              isApprovalAskBlock(block) &&
-              block.kind === "ask" &&
-              isApprovalAskBlock(block) &&
-              block.status !== "answered",
-          )
-        )
-          continue;
-        const blocks = prior.map((block) =>
+        const denied = changeMessageBlocks(request, (block) =>
           block.kind === "ask" && isApprovalAskBlock(block) && block.status !== "answered"
             ? { ...block, status: "answered" as const, answer: "deny" }
             : block,
         );
+        if (!denied) continue;
         await tx.message.update({
           where: { id: request.id },
-          data: {
-            blocks: changeMessageBlocks(request, (block) =>
-              block.kind === "ask" && isApprovalAskBlock(block) && block.status !== "answered"
-                ? { ...block, status: "answered" as const, answer: "deny" }
-                : block,
-            )!.stored,
-          },
+          data: { blocks: denied.stored },
         });
         await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -293,7 +277,7 @@ export async function returnHelperOutcome(
           type: "thread.message.updated",
           runId: run.id,
           allowCancelledRun: true,
-          payload: { messageId: request.id, role: "bot", blocks },
+          payload: { messageId: request.id, role: "bot", blocks: denied.blocks },
         });
       }
     }

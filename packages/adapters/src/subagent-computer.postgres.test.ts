@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { releaseComputerExecutionLease, waitForRunComputerLease } from "./computer-lifecycle.js";
 
 const url = process.env.DATABASE_URL;
@@ -115,8 +114,10 @@ describePostgres("subagent computer coordination", () => {
     const parent = await running("user");
     const signal = new AbortController().signal;
     const first = await waitForRunComputerLease(prisma, helper, signal);
+    const checked = vi.spyOn(prisma.bot, "findUnique");
     const next = waitForRunComputerLease(prisma, parent, signal);
-    await delay(20);
+    await vi.waitFor(() => expect(checked.mock.calls.length).toBeGreaterThanOrEqual(2));
+    checked.mockRestore();
     expect(
       (await prisma.run.findUniqueOrThrow({ where: { id: parent.runId } })).computerUseStartedAt,
     ).toBeNull();
@@ -131,9 +132,11 @@ describePostgres("subagent computer coordination", () => {
     const waiter = await running("helper");
     const holding = await waitForRunComputerLease(prisma, holder, new AbortController().signal);
     const controller = new AbortController();
+    const checked = vi.spyOn(prisma.bot, "findUnique");
     const waiting = waitForRunComputerLease(prisma, waiter, controller.signal);
     const rejected = expect(waiting).rejects.toThrow("cancelled");
-    await delay(20);
+    await vi.waitFor(() => expect(checked.mock.calls.length).toBeGreaterThanOrEqual(2));
+    checked.mockRestore();
     controller.abort(new Error("cancelled"));
     await rejected;
     const lease = await prisma.computerExecutionLease.findUniqueOrThrow({

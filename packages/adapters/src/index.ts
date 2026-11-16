@@ -221,6 +221,7 @@ export { notifyMemberMessage } from "./run-notifications.js";
 export { loadRunOrigin } from "./run-origin.js";
 export * from "./run-runtime.js";
 export * from "./run-secret.js";
+export { createRunTrustLoaders } from "./run-trust.js";
 export * from "./run-wakeup.js";
 export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";

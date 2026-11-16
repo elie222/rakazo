@@ -5,6 +5,7 @@ import { runJobKey } from "@rakazo/adapter-kit";
 import {
   ComposioConnector,
   createJobReconciler,
+  createRunTrustLoaders,
   createScheduleFromTool,
   DesktopSandboxProvider,
   DestinationEmulator,
@@ -12,6 +13,7 @@ import {
   FakeSandboxProvider,
   handoffToGroupBot,
   listPiCatalog,
+  loadRunOrigin,
   organizeBot,
   returnHelperOutcome,
   startBackgroundHelper,
@@ -37,9 +39,6 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ExecutorDeps } from "../../adapters/src/executor-deps.js";
-import { loadRunOrigin } from "../../adapters/src/run-origin.js";
-import { createRunTrustLoaders } from "../../adapters/src/run-trust.js";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -2144,7 +2143,7 @@ describeJourneys("required product journeys", () => {
     expect(helper.threadId).not.toBe(chat.id);
     const authorizationWords = async (id: string) => {
       const run = await prisma.run.findUniqueOrThrow({ where: { id } });
-      return createRunTrustLoaders({ prisma } as ExecutorDeps, {
+      return createRunTrustLoaders({ prisma } as Parameters<typeof createRunTrustLoaders>[0], {
         run,
         runId: id,
         botId: bot.id,

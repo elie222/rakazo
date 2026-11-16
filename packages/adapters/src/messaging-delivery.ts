@@ -34,19 +34,38 @@ import {
   databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
+  JsonColumnMismatchError,
+  readJsonColumn,
   readMessageBlocks,
+  reportJsonColumnOnce,
   runAsSystem,
   SpaceDeletionInProgressError,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 import { loadRunOrigin } from "./run-origin.js";
 import { resolveMessagingThreadId } from "./team-chat-messaging.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 import { wakeRun } from "./wake-run.js";
+
+const SteeringDeliveryProof = z.object({ externalSafe: z.boolean().optional() });
+
+function steeringAllowsExternalDelivery(event: { id: string; payload: unknown }): boolean {
+  const row = { table: "events", column: "payload", id: event.id };
+  try {
+    return (
+      readJsonColumn(SteeringDeliveryProof, event.payload, row, "reject").externalSafe === true
+    );
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce("delegated reply has unreadable steering provenance", row);
+    return false;
+  }
+}
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -295,7 +314,15 @@ export class MessagingDelivery {
       const lanes: OutboundLane[] = [];
       if (run.trigger === "helper_result") {
         const origin = await loadRunOrigin(this.deps.prisma, run);
-        if (origin && !options.progress) {
+        // Consumed steering rows may already be deleted after the reply. Older claim events
+        // carry no privacy provenance, so a result influenced by them stays in the app.
+        const steering = origin
+          ? await this.deps.prisma.event.findMany({
+              where: { runId: run.id, type: "run.steering.claimed" },
+              select: { id: true, payload: true },
+            })
+          : [];
+        if (origin && !options.progress && steering.every(steeringAllowsExternalDelivery)) {
           if (origin.thread.externalConversationId) {
             if (terminal) {
               const external = await this.deps.prisma.externalMessage.findUnique({
