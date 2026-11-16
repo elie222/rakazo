@@ -38,6 +38,19 @@ describe("sidebarGroupsForSpaces", () => {
     expect(header).toMatchObject({ title: "Clients", hasGuests: true, showLock: false });
     const [plain] = sidebarGroupsForSpaces([space("space-1", "Personal")], "");
     expect(plain).toMatchObject({ hasGuests: false });
+    // A lone Space shown as its sections marks none of them.
+    const sectioned = {
+      ...space("space-1", "Clients"),
+      hasGuests: true,
+      bots: [{ ...chat("a", "Alpha"), sectionId: "s1" }],
+      botSections: [{ id: "s1", name: "Projects" }],
+    };
+    expect(
+      sidebarGroupsForSpaces([sectioned], "").map((group) => [group.title, group.hasGuests]),
+    ).toEqual([
+      ["Projects", false],
+      ["Unassigned", false],
+    ]);
   });
 
   it("keeps an empty space with saved sections openable", () => {

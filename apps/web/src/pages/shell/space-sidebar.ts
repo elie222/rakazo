@@ -98,7 +98,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
       shared: space.shared === true,
-      hasGuests: space.hasGuests === true,
+      // Only a heading that names the Space carries its mark, never a section of it.
+      hasGuests: space.hasGuests === true && (showSpaceNames || (index === 0 && !group.title)),
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
@@ -119,7 +120,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           sectionId: section.id as string | null,
           showLock: showSpaceNames,
           shared: space.shared === true,
-          hasGuests: space.hasGuests === true,
+          hasGuests: space.hasGuests === true && showSpaceNames,
           emptySpaceId: undefined as string | undefined,
           spaceId: space.id,
           spaceName: space.name,
