@@ -223,6 +223,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
+      let yielded: string | undefined;
       let resumeHost: ToolHost | undefined;
       try {
         const savedMode = request.turnCheckpoint
@@ -629,6 +630,20 @@ export class PiAgentRuntime implements AgentRuntime {
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
+            // Between steps a stopping process hands the turn back, so the next process resumes
+            // here instead of repeating a step cut off at the drain limit. A running shell's
+            // output would only reach this process, so the turn keeps going until it is read.
+            if (
+              request.yieldSignal?.aborted &&
+              turn.toolResults.length > 0 &&
+              !turnSignal?.aborted &&
+              !host.pausePending &&
+              !terminatedReply &&
+              host.pendingShells.length === 0
+            ) {
+              yielded = serializeTurnCheckpoint(turnCheckpointAt(""));
+              return { action: "end" };
+            }
             await deliverFinishedShells(
               // Steered, so the output reaches the next model request like a tool result. A
               // follow-up waits until the model stops and then costs one model turn each.
@@ -713,8 +728,7 @@ export class PiAgentRuntime implements AgentRuntime {
         // Pi publishes parallel results into state only after the entire batch.
         // Retain completed siblings separately so a pause can include them now.
         const finishedCalls = new Map<string, Message>();
-        host.captureCheckpoint = async (toolCallId, executionId) => {
-          if (!request.onCheckpoint) return;
+        const turnCheckpointAt = (pendingToolCallId: string) => {
           const messages = sentContext
             ? [
                 ...sentContext.context.messages,
@@ -730,7 +744,7 @@ export class PiAgentRuntime implements AgentRuntime {
                   call.type === "toolCall" &&
                   tools.find((tool) => tool.name === call.name)?.executionMode === "sequential",
               ));
-          const checkpoint = {
+          return {
             version: 1 as const,
             ...(computerMode
               ? {
@@ -745,13 +759,18 @@ export class PiAgentRuntime implements AgentRuntime {
             provider: activeStreamTarget.model.provider,
             model: activeStreamTarget.model.id,
             systemPrompt,
-            pendingToolCallId: toolCallId,
+            pendingToolCallId,
             executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
             messages: messages as Message[],
             historyMessageIds: [...representedHistoryIds],
           };
+        };
+        host.captureCheckpoint = async (toolCallId, executionId) => {
+          if (!request.onCheckpoint) return;
+          const checkpoint = turnCheckpointAt(toolCallId);
+          const { messages } = checkpoint;
           await request.onCheckpoint(() => {
-            const unresolved = new Set(unresolvedTurnCheckpointCalls(messages as Message[]));
+            const unresolved = new Set(unresolvedTurnCheckpointCalls(messages));
             const siblings = messages.flatMap((message) =>
               message.role === "assistant"
                 ? message.content.flatMap((call) => {
@@ -1140,6 +1159,10 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         // A continuation that failed or stopped early still hands over what it wrote.
         releaseJoin();
+        if (yielded) {
+          queue.push({ type: "yielded", checkpoint: yielded });
+          return;
+        }
 
         // Budget abort stops the agent underneath the model, which leaves
         // errorMessage set. Treat that as a soft stop so the turn still ends
@@ -1275,7 +1298,8 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.close();
         if (trackedBudget) {
           const keepForResume =
-            (signal.aborted || Boolean(resumeHost?.pausePending)) && !trackedBudget.exceeded;
+            (signal.aborted || Boolean(resumeHost?.pausePending) || Boolean(yielded)) &&
+            !trackedBudget.exceeded;
           releaseToolCallBudget(request.runId, keepForResume);
         }
       }

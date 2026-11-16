@@ -53,7 +53,7 @@ import {
   modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { persistTurnCheckpoint } from "./run-context.js";
+import { persistTurnCheckpoint, saveTurnCheckpoint } from "./run-context.js";
 import {
   computerRetryDelay,
   enqueueSteeringContinuation,
@@ -232,6 +232,9 @@ export async function consumeRunEvents(
         return true;
       } else if (event.type === "tool") {
         if (await onToolCalled(ctx, event)) return true;
+      } else if (event.type === "yielded") {
+        await handBackBetweenSteps(ctx, event);
+        return true;
       } else if (event.type === "subagent") {
         await publishSubagent(ctx, event);
       } else if (event.type === "usage" && !event.accounted) {
@@ -524,6 +527,18 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     botId: bot.id,
     threadId: thread.id,
   });
+}
+
+/**
+ * The process is stopping and the turn finished a step: keep its narration, save the turn and
+ * queue the run, so another process resumes with the next model call instead of repeating one.
+ */
+async function handBackBetweenSteps(ctx: RunContext, event: RuntimeEvent<"yielded">) {
+  const { deps, runId, workerId, fence } = ctx;
+  await publishMidTurnNarration(ctx);
+  await ctx.computer.checkpoint.flush();
+  await saveTurnCheckpoint(ctx, event.checkpoint);
+  ctx.state.lease.handedBack = await requeueInterruptedRun(deps, runId, workerId, fence);
 }
 
 /** Show the tool step, stop a repeating loop, and run the tool for scripted runtimes. */

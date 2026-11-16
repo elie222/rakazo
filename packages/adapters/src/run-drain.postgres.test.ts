@@ -34,6 +34,8 @@ import {
 } from "./run-wakeup.js";
 import { ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import type { TurnCheckpoint } from "./turn-checkpoint.js";
+import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import { wakeRun } from "./wake-run.js";
 
 const url = process.env.DATABASE_URL;
@@ -49,7 +51,8 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     defaultModelProvider: string | null;
     defaultModelId: string | null;
   } | null;
-  type Turn = { runId: string; signal: AbortSignal; finish: Deferred };
+  /** One step of a turn: a model call held open until the test ends it. */
+  type Turn = { runId: string; step: number; signal: AbortSignal; finish: Deferred };
   const processes: Array<{ turns: Turn[]; exit: () => Promise<void> }> = [];
   const wait = (assertion: () => Promise<void> | void) =>
     vi.waitFor(assertion, { timeout: 10_000, interval: 20 });
@@ -146,11 +149,31 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     return { createRun };
   }
 
+  /** The saved turn of a run that finished `steps` steps, in the shape the executor restores. */
+  const checkpointAfter = (steps: number) =>
+    serializeTurnCheckpoint({
+      version: 1,
+      provider: "openrouter",
+      model: "openai/gpt-4o",
+      systemPrompt: "",
+      pendingToolCallId: "",
+      messages: Array.from({ length: steps }, (_, step) => ({
+        role: "toolResult" as const,
+        toolCallId: `step-${step}`,
+        toolName: "list_files",
+        content: [],
+        isError: false,
+        timestamp: 0,
+      })),
+    });
+
   /**
    * A process as the worker composes one: its own run starter, recovery scan and executor on
-   * the shared database. Each model call it makes is held open until the test ends the turn.
+   * the shared database. Each turn takes `steps` steps, and each step's model call is held open
+   * until the test ends it. Between steps a stopping process's turn hands itself back.
    */
-  function startProcess(workerId: string, options: { drains: boolean }) {
+  function startProcess(workerId: string, options: { drains: boolean; steps?: number }) {
+    const steps = options.steps ?? 1;
     const stopping = new AbortController();
     const drain = options.drains ? drainRuns(stopping.signal) : undefined;
     const starter = new RunStarter(realtime, { signal: stopping.signal });
@@ -173,16 +196,25 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
       abort: async () => undefined,
       async *run(request: AgentRunRequest, context: AdapterContext) {
         await request.executeTool!("list_files", { path: "drain-fixture" }, "drain-computer-use");
-        const turn = { runId: context.runId!, signal: context.signal, finish: deferred() };
-        turns.push(turn);
-        const aborted = deferred();
-        const onAbort = () => aborted.reject(context.signal.reason);
-        context.signal.addEventListener("abort", onAbort, { once: true });
-        if (context.signal.aborted) onAbort();
-        try {
-          await Promise.race([turn.finish.promise, aborted.promise]);
-        } finally {
-          context.signal.removeEventListener("abort", onAbort);
+        const resumedAt = request.turnCheckpoint
+          ? (JSON.parse(request.turnCheckpoint) as TurnCheckpoint).messages.length
+          : 0;
+        for (let step = resumedAt; step < steps; step++) {
+          if (step > resumedAt && request.yieldSignal?.aborted) {
+            yield { type: "yielded" as const, checkpoint: checkpointAfter(step) };
+            return;
+          }
+          const turn = { runId: context.runId!, step, signal: context.signal, finish: deferred() };
+          turns.push(turn);
+          const aborted = deferred();
+          const onAbort = () => aborted.reject(context.signal.reason);
+          context.signal.addEventListener("abort", onAbort, { once: true });
+          if (context.signal.aborted) onAbort();
+          try {
+            await Promise.race([turn.finish.promise, aborted.promise]);
+          } finally {
+            context.signal.removeEventListener("abort", onAbort);
+          }
         }
         yield { type: "done" as const, text: `Hello from ${workerId}.` };
       },
@@ -321,6 +353,70 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     // The model was called once, by the process that was stopping.
     expect(leaving.turnsOf(run.id)).toHaveLength(1);
     expect(replacement.turnsOf(run.id)).toHaveLength(0);
+  });
+
+  describe("a turn of several steps", () => {
+    const savedTurns = (runId: string) =>
+      system.externalEffect.count({ where: { runId, kind: "runtime_checkpoint" } });
+    const stepsOf = (on: ReturnType<typeof startProcess>, runId: string) =>
+      on.turnsOf(runId).map((turn) => turn.step);
+
+    it("is handed back after the step in flight once its process is stopping, and resumes from the next step elsewhere", async () => {
+      const { createRun } = await seedBot();
+      const run = await createRun();
+      const leaving = startProcess("leaving", { drains: true, steps: 3 });
+      const replacement = startProcess("replacement", { drains: false, steps: 3 });
+      await leaving.start();
+      const first = await runInFlight(leaving, run);
+      await replacement.start();
+
+      leaving.signalStop();
+      first.finish.resolve();
+      // The process stops without waiting for the drain limit.
+      await leaving.stop();
+
+      await wait(() => expect(stepsOf(replacement, run.id)).toEqual([1]));
+      expect(await attemptsOf(run.id)).toEqual([
+        { fence: 1, status: "interrupted" },
+        { fence: 2, status: "running" },
+      ]);
+      replacement.turnsOf(run.id)[0]!.finish.resolve();
+      await wait(() => expect(stepsOf(replacement, run.id)).toEqual([1, 2]));
+      replacement.turnsOf(run.id)[1]!.finish.resolve();
+      await wait(async () => expect((await runRow(run.id)).status).toBe("completed"));
+
+      expect(await runRow(run.id)).toMatchObject({
+        status: "completed",
+        error: null,
+        leaseFence: 2,
+      });
+      expect(await attemptsOf(run.id)).toEqual([
+        { fence: 1, status: "interrupted" },
+        { fence: 2, status: "completed" },
+      ]);
+      expect(await repliesOf(run.id)).toBe(1);
+      // Each step ran once: the step finished before the stop was not repeated.
+      expect(stepsOf(leaving, run.id)).toEqual([0]);
+      expect(await savedTurns(run.id)).toBe(0);
+    });
+
+    it("runs every step in one attempt on a process that is not stopping", async () => {
+      const { createRun } = await seedBot();
+      const run = await createRun();
+      const staying = startProcess("staying", { drains: true, steps: 3 });
+      await staying.start();
+      await runInFlight(staying, run);
+      for (const step of [0, 1, 2]) {
+        await wait(() => expect(staying.turnsOf(run.id)).toHaveLength(step + 1));
+        staying.turnsOf(run.id)[step]!.finish.resolve();
+      }
+      await wait(async () => expect((await runRow(run.id)).status).toBe("completed"));
+
+      expect(await attemptsOf(run.id)).toEqual([{ fence: 1, status: "completed" }]);
+      expect(stepsOf(staying, run.id)).toEqual([0, 1, 2]);
+      expect(await repliesOf(run.id)).toBe(1);
+      expect(await savedTurns(run.id)).toBe(0);
+    });
   });
 
   it("starts and claims nothing once it is stopping", async () => {

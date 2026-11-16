@@ -304,6 +304,7 @@ function modelTurnRequest(
     },
     resumeFromCheckpoint: takeoverResume?.checkpoint,
     turnCheckpoint,
+    yieldSignal: deps.stoppingSignal,
     onCheckpoint: async (capture, executionId) => {
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },

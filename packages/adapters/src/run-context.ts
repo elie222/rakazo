@@ -485,16 +485,23 @@ export function nextMutatingEffectOccurrence(
   return occurrence;
 }
 
+/** Save the runtime's turn with the effect occurrences it assigned, for the next attempt. */
+export async function saveTurnCheckpoint(ctx: RunContext, checkpoint: string) {
+  const { deps, run, workerId, fence } = ctx;
+  const effects = ctx.state.effects;
+  const saved = JSON.parse(checkpoint);
+  saved.effectOccurrences = effects.occurrences;
+  saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
+  await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+  effects.storedTurnCheckpoint = true;
+}
+
 export async function persistTurnCheckpoint(ctx: RunContext, executionId?: string) {
   const { deps, run, workerId, fence } = ctx;
   const effects = ctx.state.effects;
   const capture = executionId ? effects.pendingTurnCheckpoints.get(executionId) : undefined;
   if (capture) {
-    const saved = JSON.parse(capture());
-    saved.effectOccurrences = effects.occurrences;
-    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
-    await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
-    effects.storedTurnCheckpoint = true;
+    await saveTurnCheckpoint(ctx, capture());
   } else if (effects.storedTurnCheckpoint) {
     // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
     await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
