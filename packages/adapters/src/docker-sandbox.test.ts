@@ -78,6 +78,22 @@ describe("Docker sandbox", () => {
     });
   });
 
+  it("reports a full Team Computer when observing, not only when connecting", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "cannot allocate another screen (limit 4)" }, { status: 500 }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.observe(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toMatchObject({ name: "ComputerScreenUnavailableError", teamScreenLimit: 4 });
+  });
+
   it("requires a control token and an explicit route for an interactive screen", async () => {
     const fetchMock = vi.fn(async () => Response.json({}));
     vi.stubGlobal("fetch", fetchMock);

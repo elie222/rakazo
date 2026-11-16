@@ -109,6 +109,10 @@ it.each([
   ["an unrecognised refusal", async () => Response.json({ ok: false, error: "bad_client_secret" })],
   ["a server error", async () => new Response("invalid_code", { status: 500 })],
   [
+    "a server error carrying a refusal",
+    async () => Response.json({ ok: false, error: "invalid_code" }, { status: 503 }),
+  ],
+  [
     "rotating tokens",
     async () =>
       Response.json({ ok: true, access_token: "token", team: { id: "T1" }, refresh_token: "r" }),

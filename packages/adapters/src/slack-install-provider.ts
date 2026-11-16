@@ -75,7 +75,7 @@ export class SlackInstallProvider implements MessagingInstallProvider {
       refresh_token?: string;
       error?: string;
     }>(response, MAX_OAUTH_RESPONSE_BYTES).catch(() => undefined);
-    if (result?.ok === false && SLACK_REFUSED_CODES.has(result.error ?? ""))
+    if (response.ok && result?.ok === false && SLACK_REFUSED_CODES.has(result.error ?? ""))
       throw new MessagingInstallRefusedError("Slack workspace authorization failed");
     // Org-wide installs need distinct lifecycle support.
     if (response.ok && result?.ok && result.is_enterprise_install)

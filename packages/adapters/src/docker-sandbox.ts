@@ -380,10 +380,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
-      if (/cannot allocate another screen/i.test(detail)) {
-        const limit = /\(limit (\d+)\)/i.exec(detail)?.[1];
-        throw new ComputerScreenUnavailableError(limit ? Number(limit) : null);
-      }
+      throwIfScreensFull(detail);
       // A container that stopped under a "running" row (host reboot, docker stop) has no
       // screen to show; report it gone so the caller offers a boot instead of a blank error.
       if ((await this.containerRunning(computer, context)) === false) {
@@ -438,6 +435,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       // containing Docker's 404. Preserve the gone signal so lease cleanup can
       // clear the stale providerRef instead of retrying the same dead container.
       if (/no such container/i.test(detail)) throw sandboxGoneError(computer);
+      throwIfScreensFull(detail);
       if ((await this.containerRunning(computer, context)) === false) {
         // The screen died with its container: a revoke has nothing left to release, while
         // an interactive grant needs the computer booted first.
@@ -489,6 +487,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
       throw new Error(`sandbox input failed: ${res.status} ${detail}`.trim());
     }
   }
@@ -499,10 +498,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox observation failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
+    if (!res.ok) {
+      const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
+      throw new Error(`sandbox observation failed: ${res.status} ${detail}`.trim());
+    }
     const body = await readSandboxJson<{
       image: string;
       mimeType: "image/png" | "image/jpeg";
@@ -532,10 +532,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       }),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox action failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
+    if (!res.ok) {
+      const detail = await safeBody(res, context.signal);
+      throwIfScreensFull(detail);
+      throw new Error(`sandbox action failed: ${res.status} ${detail}`.trim());
+    }
     const body = await readSandboxJson<{
       completed: number;
       observation?: {
@@ -812,4 +813,11 @@ function parseProcessLine(line: string): ProcessEvent | undefined {
     return { type: "exit", code: record.code };
   }
   return undefined;
+}
+
+/** The supervisor refuses a screen with this text when a Team Computer has reached its screen cap. */
+function throwIfScreensFull(detail: string): void {
+  if (!/cannot allocate another screen/i.test(detail)) return;
+  const limit = /\(limit (\d+)\)/i.exec(detail)?.[1];
+  throw new ComputerScreenUnavailableError(limit ? Number(limit) : null);
 }
