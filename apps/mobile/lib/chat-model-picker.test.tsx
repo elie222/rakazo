@@ -1243,17 +1243,9 @@ describe("model role lists", () => {
   });
 
   const holdFirstSave = () => {
-    const first: { finish: () => void; fail: (error: Error) => void } = {
-      finish: () => undefined,
-      fail: () => undefined,
-    };
+    const first = deferred();
     mocks.rpc.mockImplementation((procedure: string) =>
-      procedure === "models/setRole" && roleSaves().length === 1
-        ? new Promise<void>((resolve, reject) => {
-            first.finish = resolve;
-            first.fail = reject;
-          })
-        : undefined,
+      procedure === "models/setRole" && roleSaves().length === 1 ? first.promise : undefined,
     );
     return first;
   };
@@ -1274,7 +1266,7 @@ describe("model role lists", () => {
     await menuAction("Model 2", "moveDown");
     await menuAction("Model 4", "remove");
     expect(roleSaves()).toEqual([{ backups: [model(3), model(2), model(4)] }]);
-    await act(async () => first.finish());
+    await act(async () => first.resolve());
     expect(roleSaves()).toEqual([
       { backups: [model(3), model(2), model(4)] },
       { backups: [model(3), model(2)] },
@@ -1288,7 +1280,7 @@ describe("model role lists", () => {
     const first = holdFirstSave();
     await menuAction("Model 2", "remove");
     await menuAction("Model 3", "remove");
-    await act(async () => first.fail(new Error("Save failed")));
+    await act(async () => first.reject(new Error("Save failed")));
     expect(roleSaves()).toEqual([{ backups: [model(3), model(4)] }]);
     expect(rowTitles()).toEqual(["Model 2", "Model 3", "Model 4"]);
     expect(container.textContent).toContain("Save failed");
@@ -1301,7 +1293,7 @@ describe("model role lists", () => {
     await menuAction("Model 2", "remove");
     await menuAction("Model 3", "remove");
     leaveModels();
-    await act(async () => first.finish());
+    await act(async () => first.resolve());
     expect(roleSaves()).toEqual([{ backups: [model(3), model(4)] }, { backups: [model(4)] }]);
   });
 
@@ -1315,7 +1307,7 @@ describe("model role lists", () => {
     await renderModels();
     expect(mainLoads()).toBe(1);
     expect(container.textContent).not.toContain("Main model");
-    await act(async () => first.finish());
+    await act(async () => first.resolve());
     expect(mainLoads()).toBe(2);
     expect(rowTitles()).toEqual(["Model 3"]);
   });

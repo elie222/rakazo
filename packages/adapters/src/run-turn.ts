@@ -30,12 +30,12 @@ import {
   recordUsage,
   retryWhileDatabaseUnavailable,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
 import { returnHelperOutcome } from "./background-helpers.js";
-import { returnBotMessageOutcome } from "./bot-messages.js";
+import { reportBotMessageWait, returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
@@ -47,13 +47,14 @@ import {
 } from "./history-compaction.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
 import { rejectedRequestsOf } from "./provider-request-shape.js";
+import { snapshotReply } from "./reply-snapshot.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
   modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { persistTurnCheckpoint } from "./run-context.js";
+import { persistTurnCheckpoint, saveTurnCheckpoint } from "./run-context.js";
 import {
   computerRetryDelay,
   enqueueSteeringContinuation,
@@ -93,6 +94,7 @@ import {
   TOOL_STEPS_WITHOUT_RESPONSE,
 } from "./run-replies.prompt.js";
 import { scheduleRoutineRetry } from "./run-routines.js";
+import { scheduleRunSecretsExpiry } from "./run-secrets-expiry.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
@@ -232,6 +234,10 @@ export async function consumeRunEvents(
         return true;
       } else if (event.type === "tool") {
         if (await onToolCalled(ctx, event)) return true;
+      } else if (event.type === "yielded") {
+        const ended = await handBackBetweenSteps(ctx, event.checkpoint);
+        event.answer(ended);
+        if (ended) return true;
       } else if (event.type === "subagent") {
         await publishSubagent(ctx, event);
       } else if (event.type === "usage" && !event.accounted) {
@@ -439,6 +445,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     attemptId: ctx.attempt.id,
     leaseOwner: workerId,
     leaseFence: fence,
+    onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
     blocks: [
       {
         kind: "ask",
@@ -455,6 +462,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   });
   if (!paused) return;
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
+  await reportBotMessageWait(deps, run, bot, safeText, ctx.attempt.id);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,
@@ -524,6 +532,29 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     botId: bot.id,
     threadId: thread.id,
   });
+}
+
+/**
+ * The process is stopping and the turn finished a step: keep its narration, save the turn and
+ * queue the run, so another process resumes with the next model call instead of repeating one.
+ * Returns whether the turn ends here; when any part fails the turn goes on in this process, and
+ * the shutdown path hands it back if it is still running at the drain limit.
+ */
+async function handBackBetweenSteps(ctx: RunContext, checkpoint: string): Promise<boolean> {
+  const { deps, runId, workerId, fence } = ctx;
+  const ended = await bestEffort(
+    "run.hand_back",
+    (async () => {
+      await publishMidTurnNarration(ctx);
+      // Saved before the flush, so a shutdown that cuts the flush short still resumes after
+      // this step.
+      await saveTurnCheckpoint(ctx, checkpoint, snapshotReply(ctx.state.reply));
+      await ctx.computer.checkpoint.flush();
+      ctx.state.lease.handedBack = await requeueInterruptedRun(deps, runId, workerId, fence);
+      return true;
+    })(),
+  );
+  return ended ?? false;
 }
 
 /** Show the tool step, stop a repeating loop, and run the tool for scripted runtimes. */

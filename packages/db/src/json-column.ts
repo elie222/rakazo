@@ -47,10 +47,15 @@ export function warnJsonColumnOnce(
 
 /**
  * Reports once per row, as an error, a rejected value its reader worked around: the row is left
- * out so the work around it goes on, and someone has to repair it.
+ * out so the work around it goes on, and someone has to repair it. `detail` describes the
+ * mismatch (counts, key paths), never the stored value.
  */
-export function reportJsonColumnOnce(message: string, row: JsonColumnRow): void {
-  logJsonColumnOnce("error", message, row);
+export function reportJsonColumnOnce(
+  message: string,
+  row: JsonColumnRow,
+  detail?: Record<string, number | string>,
+): void {
+  logJsonColumnOnce("error", message, row, detail);
 }
 
 /**

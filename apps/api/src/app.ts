@@ -71,7 +71,6 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
-  sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   UserDeviceHub,
   UserDevices,
@@ -116,6 +115,7 @@ import {
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -152,7 +152,7 @@ import { cspReportRoutes } from "./csp-report.js";
 import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
-import { loadEnv } from "./env.js";
+import { loadEnv, withEnvOverrides } from "./env.js";
 import { createExperiments } from "./experiments.js";
 import { healthRoutes } from "./health.js";
 import { homeRetentionSweep } from "./home-retention.js";
@@ -282,7 +282,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     now,
     ...envOverrides
   } = overrides;
-  const env = { ...loadEnv(process.env), ...envOverrides };
+  const env = withEnvOverrides(loadEnv(process.env), envOverrides);
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
@@ -306,6 +306,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
   // Set once push delivery is configured below; thread changes before then have no cards.
@@ -378,21 +380,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     deploymentLabs: env.deploymentLabs,
   });
-  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...hostComputer,
+      ...env.sandboxOptions,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
-      e2bApiKey: env.e2bApiKey,
-      novitaApiKey: env.novitaApiKey,
-      sandboxTemplate: env.sandboxTemplate,
-      daytonaApiKey: env.daytonaApiKey,
-      daytonaApiUrl: env.daytonaApiUrl,
-      daytonaTarget: env.daytonaTarget,
-      boatApiKey: env.boatApiKey,
-      boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
       secrets,
@@ -671,8 +664,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         withHostComputerScreen(userDevices, {
           prisma,
           sandboxKind: env.sandboxProvider,
-          url: hostComputer.hostComputerUrl,
-          token: hostComputer.hostComputerToken,
+          url: env.sandboxOptions.hostComputerUrl,
+          token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
       stoppingSignal: shutdown.signal,

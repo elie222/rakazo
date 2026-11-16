@@ -21,7 +21,9 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/apps/www/.astro",
+      "!**/apps/www/.vercel",
+      "!**/apps/www/**/*.{css,json,mjs}"
     ]
   },
   "plugins": [

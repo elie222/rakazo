@@ -8,7 +8,7 @@ import type {
   PluginPreview,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts } from "@rakazo/core";
+import { installedPluginParts, pluginSite } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -37,19 +37,6 @@ export function pluginSelection(entry: PluginMarketplaceEntry): PluginSelection 
     logo: entry.logo,
     site: pluginSite(entry),
   };
-}
-
-/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
-function pluginSite(entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">): string | null {
-  const domain = entry.domains[0]?.replace(/^https?:\/\//, "");
-  if (domain) return `https://${domain}`;
-  try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? entry.homepage
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 export function PluginLogo({
