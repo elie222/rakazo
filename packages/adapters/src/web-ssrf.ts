@@ -7,7 +7,7 @@ import {
   isNonPublicAddress,
   normalizeHost,
 } from "@rakazo/contracts";
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { ResponseTooLargeError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Dispatcher } from "undici";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
@@ -290,7 +290,7 @@ async function followRedirects(
   const contentLength = response.headers.get("content-length");
   if (!state.truncate && contentLength && Number(contentLength) > state.maxBytes) {
     await cancelResponseBody(response, state.signal);
-    throw new Error("Response is too large");
+    throw new ResponseTooLargeError();
   }
 
   const body = state.truncate

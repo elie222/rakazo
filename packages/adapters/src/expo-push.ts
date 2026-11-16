@@ -8,6 +8,7 @@ import type {
   NotificationProvider,
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
@@ -494,7 +495,7 @@ async function postToExpo(
     return { status: response.status, body: await readExpoPushBody(response, attempt) };
   } catch (error) {
     getLogger().warn("expo push request failed", { error });
-    if (signal?.aborted || errorMessage(error) === RESPONSE_TOO_LARGE) throw error;
+    if (signal?.aborted || error instanceof ResponseTooLargeError) throw error;
     return { status: 503, body: { errors: [{ message: errorMessage(error) }] } };
   }
 }
@@ -516,15 +517,15 @@ async function readExpoPushBody(response: Response, signal: AbortSignal): Promis
       cancel.catch(() => undefined),
       signal,
     ).catch(() => undefined);
-    throw new Error(RESPONSE_TOO_LARGE);
+    throw new ResponseTooLargeError(RESPONSE_TOO_LARGE);
   }
   try {
     const bytes = await readBodyCapped(response, MAX_EXPO_PUSH_RESPONSE_BYTES, signal);
     if (bytes.byteLength === 0) return undefined;
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error(RESPONSE_TOO_LARGE);
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError(RESPONSE_TOO_LARGE, { cause: error });
     }
     if (error instanceof SyntaxError) return undefined;
     throw error;

@@ -1,4 +1,4 @@
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
@@ -129,8 +129,7 @@ export const memoryTools: ToolHandlers = {
         );
         return call.finish({ ok: true });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= 3) throw error;
+        if (!(error instanceof MemoryRevisionConflictError) || attempt >= 3) throw error;
       }
     }
   },
@@ -158,8 +157,8 @@ export const memoryTools: ToolHandlers = {
       );
       return call.finish({ ok: true, path: saved.path, revision: saved.revision });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save shared memory.";
-      if (message === MEMORY_REVISION_CONFLICT_ERROR) return call.finish({ error: message });
+      if (error instanceof MemoryRevisionConflictError)
+        return call.finish({ error: error.message });
       throw error;
     }
   },

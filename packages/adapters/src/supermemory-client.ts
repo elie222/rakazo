@@ -1,3 +1,4 @@
+import { ResponseTooLargeError } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
 import { fetchLocalService, parseServiceBaseUrl } from "./local-service-endpoint.js";
@@ -132,7 +133,7 @@ export async function searchSupermemory(
       results: parseSearchResults(await readSupermemoryJson(response, requestAbort)),
     };
   } catch (error) {
-    if (error instanceof Error && error.message === "Supermemory response is too large.") {
+    if (error instanceof ResponseTooLargeError) {
       return { ok: false, error: error.message };
     }
     return { ok: false, error: unreachableError(error) };
@@ -143,14 +144,14 @@ async function readSupermemoryJson(response: Response, signal?: AbortSignal): Pr
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_SUPERMEMORY_RESPONSE_BYTES) {
     await bestEffort("cancel unread response body", response.body?.cancel());
-    throw new Error("Supermemory response is too large.");
+    throw new ResponseTooLargeError("Supermemory response is too large.");
   }
   let bytes: Uint8Array;
   try {
     bytes = await readBodyCapped(response, MAX_SUPERMEMORY_RESPONSE_BYTES, signal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error("Supermemory response is too large.");
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError("Supermemory response is too large.", { cause: error });
     }
     throw error;
   }

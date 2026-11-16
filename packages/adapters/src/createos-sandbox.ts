@@ -18,7 +18,11 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, cancelResponseBody } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  cancelResponseBody,
+  ResponseTooLargeError,
+} from "@rakazo/core";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
@@ -1777,7 +1781,7 @@ async function readCreateOSBody(
   try {
     return await readBodyCapped(response, maxBytes, readSignal);
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
+    if (error instanceof ResponseTooLargeError) {
       throw new CreateOSResponseTooLargeError(maxBytes, { cause: error });
     }
     throw error;

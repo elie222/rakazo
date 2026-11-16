@@ -71,7 +71,27 @@ describe("Docker sandbox", () => {
         { view: "stream" },
         context,
       ),
-    ).rejects.toThrow("This Team Computer cannot allocate another screen (limit 4).");
+    ).rejects.toMatchObject({
+      name: "ComputerScreenUnavailableError",
+      teamScreenLimit: 4,
+      message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+    });
+  });
+
+  it("reports a full Team Computer when observing, not only when connecting", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "cannot allocate another screen (limit 4)" }, { status: 500 }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.observe(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toMatchObject({ name: "ComputerScreenUnavailableError", teamScreenLimit: 4 });
   });
 
   it("requires a control token and an explicit route for an interactive screen", async () => {
@@ -573,6 +593,30 @@ describe("Docker sandbox", () => {
       provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
     ).rejects.toThrow(`sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`);
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("names a streamed success response over the cap, and only that, too large", async () => {
+    const provision = (body: BodyInit) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(body)),
+      );
+      return new DockerSandboxProvider("http://supervisor.test", "test-token").provision(
+        { botId: "bot", homePath: "/tmp/bot" },
+        context,
+      );
+    };
+
+    await expect(provision(new Uint8Array(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES + 1))).rejects.toThrow(
+      `sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`,
+    );
+    await expect(
+      provision(
+        new ReadableStream({
+          pull: (controller) => controller.error(new Error("Response is too large")),
+        }),
+      ),
+    ).rejects.toThrow(/^Response is too large$/);
   });
 
   it.each([

@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
 import { expect, it, vi } from "vitest";
 import { SlackInstallProvider } from "./slack-install-provider.js";
 
@@ -82,3 +83,48 @@ it.each([{ is_enterprise_install: true }, { refresh_token: "rotating-token" }])(
     );
   },
 );
+it.each(["invalid_code", "code_already_used"])(
+  "refuses a code Slack answers %s for as one to start over",
+  async (error) => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ok: false, error }));
+    const failure = new SlackInstallProvider(config, fetcher).exchange("code");
+    await expect(failure).rejects.toBeInstanceOf(MessagingInstallRefusedError);
+    await expect(failure).rejects.toThrow(/^Slack workspace authorization failed$/);
+  },
+);
+it("refuses an org-wide install as one the person chose", async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      ok: true,
+      access_token: "token",
+      team: { id: "T1" },
+      is_enterprise_install: true,
+    }),
+  );
+  await expect(new SlackInstallProvider(config, fetcher).exchange("code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+});
+it.each([
+  ["an unrecognised refusal", async () => Response.json({ ok: false, error: "bad_client_secret" })],
+  ["a server error", async () => new Response("invalid_code", { status: 500 })],
+  [
+    "a server error carrying a refusal",
+    async () => Response.json({ ok: false, error: "invalid_code" }, { status: 503 }),
+  ],
+  [
+    "rotating tokens",
+    async () =>
+      Response.json({ ok: true, access_token: "token", team: { id: "T1" }, refresh_token: "r" }),
+  ],
+  [
+    "a network failure",
+    async (): Promise<Response> => {
+      throw new TypeError("fetch failed");
+    },
+  ],
+])("keeps %s a fault", async (_, answer) => {
+  const failure = new SlackInstallProvider(config, vi.fn<typeof fetch>(answer)).exchange("code");
+  await expect(failure).rejects.toThrow();
+  await expect(failure).rejects.not.toBeInstanceOf(MessagingInstallRefusedError);
+});

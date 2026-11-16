@@ -9,6 +9,9 @@ import {
   ConnectorAuthUnavailableError,
   connectionCleanupJob,
   connectionCleanupJobKey,
+  MEMORY_REVISION_CONFLICT_ERROR,
+  MemoryRevisionConflictError,
+  MessagingInstallRefusedError,
   routineWakeupJob,
   SandboxFileTooLargeError,
   SecretStoreUnavailableError,
@@ -5208,11 +5211,9 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
-  it("returns the team screen limit without private provider details", async () => {
+  it("returns the team screen limit", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new Error("cannot allocate another screen (limit 4): private provider detail"),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError(4)),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -5221,6 +5222,17 @@ describe("computer screen url", () => {
         message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
       }),
     });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure that only mentions the screen limit as a fault", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.not.toContain("private provider detail");
     expect(updateMany).not.toHaveBeenCalled();
   });
 
@@ -5234,7 +5246,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
+      Promise.reject(new ComputerScreenUnavailableError()),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -5703,6 +5715,25 @@ describe("computer terminal and file transfer", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("answers 400 when a stopped computer's file is too large to preview", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(new SandboxFileTooLargeError(1024));
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { code: "BAD_REQUEST", message: "file is too large to preview" } },
+    });
+  });
+
+  it("reports a stopped computer's read failure that only mentions a size as a fault", async () => {
+    const home = new LocalAgentHomeStore(tmpdir());
+    vi.spyOn(home, "readFile").mockRejectedValueOnce(
+      new Error("agent home file exceeds 1024 bytes"),
+    );
+    const { call } = setup({ state: "stopped" }, undefined, home);
+    await expect(call("readFile", { path: "big.log" })).resolves.toMatchObject({ status: 500 });
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -11999,5 +12030,111 @@ describe("connection tool listing", () => {
         }),
       );
     }
+  });
+});
+
+describe("adapter refusals answered by type", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const call = (deps: RouterDeps, path: string, body: unknown) =>
+    handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } as never },
+    );
+
+  describe("saving a memory document", () => {
+    const save = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            memoryDocument: {
+              findFirst: vi.fn().mockResolvedValue({ id: "doc-1", scope: "user", path: "a.md" }),
+            },
+          },
+          memory: { commit: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "memory/update",
+        { documentId: "doc-1", content: "new", expectedRevision: 1 },
+      );
+
+    it("answers a lost revision race as a conflict", async () => {
+      const response = await save(new MemoryRevisionConflictError());
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        json: { code: "CONFLICT", message: MEMORY_REVISION_CONFLICT_ERROR },
+      });
+    });
+
+    it("reports another failure as a fault, even one quoting the conflict", async () => {
+      const response = await save(new Error(MEMORY_REVISION_CONFLICT_ERROR));
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(MEMORY_REVISION_CONFLICT_ERROR);
+    });
+  });
+
+  describe("finishing a chat workspace install", () => {
+    const complete = (failure: Error) =>
+      call(
+        {
+          prisma: {},
+          messagingInstallations: { complete: vi.fn().mockRejectedValue(failure) },
+        } as unknown as RouterDeps,
+        "messaging/installations/complete",
+        { state: "s".repeat(43), code: "code" },
+      );
+
+    it("answers a refused install as a bad request", async () => {
+      const response = await complete(new MessagingInstallRefusedError("Authorization expired"));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "Bad Request" },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await complete(new Error("Authorization expired: database unreachable"));
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe("linking a chat identity to a bot", () => {
+    const link = (failure: Error) =>
+      call(
+        {
+          prisma: {
+            messagingIdentity: {
+              findFirst: vi.fn().mockResolvedValue({ id: "identity-1", userId: "user-1" }),
+              update: vi.fn().mockRejectedValue(failure),
+            },
+            bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1" }) },
+          },
+        } as unknown as RouterDeps,
+        "messaging/identities/setBot",
+        { identityId: "identity-1", botId: "bot-1" },
+      );
+
+    it("answers a bot already linked elsewhere as a bad request", async () => {
+      const response = await link(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        json: { code: "BAD_REQUEST", message: "That bot is already linked to a chat app." },
+      });
+    });
+
+    it("reports another failure as a fault", async () => {
+      const response = await link(new Error("connection reset"));
+      expect(response.status).toBe(500);
+    });
   });
 });
