@@ -1,10 +1,13 @@
 import type { Actor } from "@rakazo/contracts";
 import { AuditEventFilterSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { auditLogOrganization, exportAuditEvents, recordAuditEvent } from "@rakazo/db";
+import { auditLogAccess, auditLogScope, exportAuditEvents, recordAuditEvent } from "@rakazo/db";
 import type { Hono } from "hono";
 
-/** `GET /api/audit-events/export`: the organization's audit log as JSON Lines, newest first. */
+/**
+ * `GET /api/audit-events/export`: the organization's audit log as JSON Lines, newest first. A
+ * member who is not an owner or admin gets only their own events.
+ */
 export function mountAuditExportRoute(
   app: Hono,
   deps: { prisma: PrismaClient; sessionActor: (request: Request) => Promise<Actor | null> },
@@ -13,17 +16,18 @@ export function mountAuditExportRoute(
     const headers = { "cache-control": "no-store" };
     const actor = await deps.sessionActor(c.req.raw);
     if (!actor) return c.text("Unauthorized", 401, headers);
-    const organizationId = await auditLogOrganization(deps.prisma, actor);
-    if (!organizationId) return c.text("Forbidden", 403, headers);
-    const filter = AuditEventFilterSchema.safeParse(c.req.query());
-    if (!filter.success) return c.text("Invalid filter", 400, headers);
+    const access = await auditLogAccess(deps.prisma, actor);
+    if (!access) return c.text("Forbidden", 403, headers);
+    const parsed = AuditEventFilterSchema.safeParse(c.req.query());
+    if (!parsed.success) return c.text("Invalid filter", 400, headers);
+    const filter = auditLogScope(access, parsed.data);
     await recordAuditEvent({
       action: "audit_log.exported",
       actor: { type: "user", id: actor.userId },
-      organizationId,
-      metadata: filter.data,
+      organizationId: access.organizationId,
+      metadata: filter,
     });
-    const lines = exportAuditEvents(deps.prisma, organizationId, filter.data);
+    const lines = exportAuditEvents(deps.prisma, access.organizationId, filter);
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {

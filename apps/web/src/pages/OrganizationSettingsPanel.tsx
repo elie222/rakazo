@@ -1,6 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { canDeleteOrganization } from "@rakazo/core";
-import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Field,
+  FieldLabel,
+  Input,
+} from "@rakazo/ui-web";
+import { MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { AuditLog } from "../components/AuditLog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -39,6 +49,7 @@ function OrganizationSettings({
   canDelete: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
+  const { t } = useLingui();
   const userId = useQueryUserId();
   const nameId = useId();
   const [draft, setDraft] = useState(organization.name);
@@ -50,6 +61,7 @@ function OrganizationSettings({
   });
   const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showingLog, setShowingLog] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
@@ -65,8 +77,37 @@ function OrganizationSettings({
     rename.run(trimmed);
   }
 
+  if (showingLog)
+    return <AuditLog organizationId={organization.id} onBack={() => setShowingLog(false)} />;
+
   return (
     <div className="space-y-8" data-testid="organization-settings">
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label={t`Organization options`}
+              />
+            }
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[200px]">
+            <DropdownMenuItem onClick={() => setShowingLog(true)}>
+              <Trans>Activity log</Trans>
+            </DropdownMenuItem>
+            {canDelete ? (
+              <DropdownMenuItem variant="destructive" onClick={() => setConfirmingDelete(true)}>
+                <Trans>Delete organization</Trans>
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <SettingsGroup>
         <SettingsRow
           label={
@@ -113,16 +154,6 @@ function OrganizationSettings({
           ) : null}
         </SettingsRow>
       </SettingsGroup>
-      {canDelete ? (
-        <Button
-          variant="destructive"
-          className="rounded-full"
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trans>Delete organization</Trans>
-        </Button>
-      ) : null}
-      <AuditLog organizationId={organization.id} />
       {confirmingDelete ? (
         <DeleteOrganizationDialog
           organization={organization}

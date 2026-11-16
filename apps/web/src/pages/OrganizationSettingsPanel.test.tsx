@@ -43,6 +43,16 @@ vi.mock("@rakazo/ui-web", () => {
   return {
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
+    DropdownMenu: Box,
+    DropdownMenuContent: Box,
+    DropdownMenuTrigger: ({ children }: { children?: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    DropdownMenuItem: ({ children, onClick }: ComponentProps<"button">) => (
+      <button type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
     Dialog: ({ open, children }: { open: boolean; children?: ReactNode }) =>
       open ? <div>{children}</div> : null,
     DialogContent: Box,

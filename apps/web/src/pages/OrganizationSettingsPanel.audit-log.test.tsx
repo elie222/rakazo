@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AuditEvent } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -42,7 +43,8 @@ vi.mock("../lib/organizations", () => ({
 }));
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
-import { queryClient } from "../lib/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryUserProvider, queryClient } from "../lib/query";
 import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 
 function event(id: string, overrides: Partial<AuditEvent> = {}): AuditEvent {
@@ -74,6 +76,7 @@ let root: Root;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   queryClient.clear();
+  queryClient.setDefaultOptions({ queries: { retry: false } });
   api.events.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -84,10 +87,33 @@ afterEach(async () => {
   container.remove();
 });
 
+async function click(element: Element) {
+  await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+async function render() {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <QueryUserProvider value="user-a">
+          <OrganizationSettingsPanel />
+        </QueryUserProvider>
+      </QueryClientProvider>,
+    ),
+  );
+}
+
+/** Opens the organization options menu and chooses Activity log. */
 async function open() {
-  await act(async () => root.render(<OrganizationSettingsPanel />));
+  await render();
+  await click(container.querySelector('button[aria-label="Organization options"]')!);
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find(
+      (item) => item.textContent === "Activity log",
+    )!,
+  );
   await vi.waitFor(() => expect(api.events).toHaveBeenCalled());
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 it("lists the organization's audit log and loads older events on request", async () => {
@@ -138,11 +164,33 @@ it("lists the organization's audit log and loads older events on request", async
   expect(log.textContent).not.toContain("success");
 });
 
-it("hides the log from members the server does not let read it", async () => {
-  api.events.mockRejectedValue(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
-  await open();
+it("keeps the log off the organization page until Activity log is chosen, and Back returns", async () => {
+  api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
+  await render();
   expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+  expect(api.events).not.toHaveBeenCalled();
+
+  await open();
+  const log = container.querySelector('[data-testid="audit-log"]')!;
+  expect(container.querySelector('[data-testid="organization-settings"]')).toBeNull();
+  expect(log.querySelector("h3")?.textContent).toBe("Activity log");
+  const labels = [...log.querySelectorAll("button")].map(
+    (button) => button.getAttribute("aria-label") ?? button.textContent,
+  );
+  expect(labels).toEqual(expect.arrayContaining(["Back", "Export"]));
+
+  await click(log.querySelector('button[aria-label="Back"]')!);
+  expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
+  expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull();
+});
+
+it("shows a failed load on the log page", async () => {
+  api.events.mockRejectedValue(new Error("Boom"));
+  await open();
+  expect(container.querySelector('[data-testid="audit-log"] [role="alert"]')?.textContent).toBe(
+    "Boom",
+  );
 });
 
 it("exports the log of the selected Space", async () => {

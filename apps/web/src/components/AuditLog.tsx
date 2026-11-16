@@ -1,11 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
-import { Button, SectionHeading } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { queryClient } from "../lib/query";
 import { rpc, withSpaceHeaders } from "../lib/rpc";
-import { errorCode, errorText } from "../lib/user-error";
+import { errorText } from "../lib/user-error";
+import { SettingsPageHeader } from "./SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 
@@ -28,8 +29,17 @@ async function downloadExport(): Promise<void> {
   downloadArtifactBytes(name, "application/x-ndjson", new Uint8Array(await response.arrayBuffer()));
 }
 
-/** The organization's audit log, newest first. Shown only to those the server lets read it. */
-export function AuditLog({ organizationId }: { organizationId: string }) {
+/**
+ * The organization's activity log, newest first, on its own page. The server decides whose events
+ * it holds: everyone's for owners and admins, the reader's own for other members.
+ */
+export function AuditLog({
+  organizationId,
+  onBack,
+}: {
+  organizationId: string;
+  onBack: () => void;
+}) {
   const { t } = useLingui();
   const log = useInfiniteQuery(
     {
@@ -42,19 +52,19 @@ export function AuditLog({ organizationId }: { organizationId: string }) {
     queryClient,
   );
   const download = useMutation({ mutationFn: downloadExport }, queryClient);
-  if (log.isPending || errorCode(log.error) === "FORBIDDEN") return null;
   const events = log.data?.pages.flatMap((page) => page.events) ?? [];
   const nextCursor = log.data?.pages.at(-1)?.nextCursor ?? null;
   return (
-    <section data-testid="audit-log" className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <SectionHeading>
-          <Trans>Log</Trans>
-        </SectionHeading>
-        <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>
-          <Trans>Export</Trans>
-        </Button>
-      </div>
+    <section data-testid="audit-log" className="space-y-4">
+      <SettingsPageHeader
+        title={t`Activity log`}
+        onBack={onBack}
+        trailing={
+          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>
+            <Trans>Export</Trans>
+          </Button>
+        }
+      />
       {log.isError ? (
         <p role="alert" className="text-body-sm text-destructive">
           {errorText(log.error, t`Could not load the log.`)}

@@ -67,7 +67,12 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await settings.getByTestId("settings-nav-organization").click();
   const single = settings.getByTestId("organization-settings");
   await expect(single.getByLabel("Name")).toHaveValue("Personal");
-  await expect(single.getByRole("button")).toHaveCount(0);
+  // The only control is the options menu, which holds the activity log and, when allowed, Delete.
+  await expect(single.getByRole("button")).toHaveCount(1);
+  await single.getByRole("button", { name: "Organization options" }).click();
+  await expect(page.getByRole("menuitem", { name: "Activity log" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete organization" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await captureScreenshot(page, testInfo, "org-settings-single");
   await page.keyboard.press("Escape");
 
@@ -189,7 +194,8 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     )
     .toEqual(["Personal", "Acme"]);
 
-  await organization.getByRole("button", { name: "Delete organization" }).click();
+  await organization.getByRole("button", { name: "Organization options" }).click();
+  await page.getByRole("menuitem", { name: "Delete organization" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Delete Acme?" });
   const remove = confirm.getByRole("button", { name: "Delete", exact: true });
   await expect(remove).toBeDisabled();
