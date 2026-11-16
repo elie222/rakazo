@@ -21,9 +21,8 @@ import {
   assertHttpsForKeyedOpenAiCompatibleUrl,
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatAllowPublicHosts,
-} from "./openai-compatible-url.js";
-import { OPENAI_VOICES } from "./openai-voice.js";
-import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+} from "../../../openai-compatible-url.js";
+import { createOpenAiCompatibleFetch } from "../../../pi-openai-compatible-provider.js";
 import {
   readVoiceAudio,
   readVoiceJson,
@@ -33,8 +32,9 @@ import {
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
-} from "./voice-http.js";
-import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
+} from "../../../voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+import { OPENAI_VOICES } from "../openai/openai-voice.js";
 
 export { DEFAULT_COMPATIBLE_STT_MODEL, DEFAULT_COMPATIBLE_TTS_MODEL };
 export const OPENAI_COMPATIBLE_VOICE_PROVIDER_ID = OPENAI_COMPATIBLE_PROVIDER_ID;
