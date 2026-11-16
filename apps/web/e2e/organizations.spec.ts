@@ -23,6 +23,12 @@ async function openAvatarMenu(page: Page) {
   return menu;
 }
 
+/** Closes the avatar menu and its submenu together; Escape would close only the submenu. */
+async function closeAvatarMenu(page: Page) {
+  await page.getByTestId("user-menu-trigger").click();
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+}
+
 /** Opens the avatar menu's organization submenu, which lists them and starts a new one. */
 async function openOrganizationMenu(page: Page) {
   await openAvatarMenu(page);
@@ -133,7 +139,7 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     "true",
   );
   await captureScreenshot(page, testInfo, "org-menu-two-orgs");
-  await page.keyboard.press("Escape");
+  await closeAvatarMenu(page);
 
   // Work has no bot yet, so its first visit finishes onboarding there.
   await switchFromAvatarMenu(page, "Work", work.defaultSpaceId);
