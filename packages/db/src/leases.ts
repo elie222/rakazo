@@ -6,7 +6,10 @@ type LeaseQueries = Pick<PrismaClient | Prisma.TransactionClient, "$queryRaw">;
 
 export type HeldLease = {
   readonly key: string;
-  /** Grows with every holder of the key. Pass the lease to `assertLeaseHeld` to guard a write. */
+  /**
+   * Higher than every earlier holder's of the key. Pass the lease to `assertLeaseHeld` to guard a
+   * write.
+   */
   readonly fence: number;
   /** Aborts once the lease is lost, a renewal cannot land in time, or the caller's signal aborts. */
   readonly signal: AbortSignal;
@@ -51,9 +54,14 @@ export async function withLease<T>(
   work: (lease: HeldLease) => Promise<T>,
 ): Promise<T> {
   options.signal?.throwIfAborted();
-  const takenAt = Date.now();
   const fence = await takeLease(prisma, key, options.ttlMs);
   if (fence === undefined) throw new LeaseHeldError(key);
+  // The database set the expiry when the take ran, so time spent waiting for it is not the lease's.
+  const takenAt = Date.now();
+  if (options.signal?.aborted) {
+    await bestEffort(`release lease ${key}`, releaseLease(prisma, key, fence));
+    throw options.signal.reason;
+  }
   const lost = new AbortController();
   const stopRenewing = new AbortController();
   const signal = options.signal ? anySignal([options.signal, lost.signal]) : lost.signal;
@@ -99,14 +107,18 @@ async function takeLease(
   key: string,
   ttlMs: number,
 ): Promise<number | undefined> {
-  const rows = await prisma.$queryRaw<Array<{ fence: number }>>`
+  const rows = await prisma.$queryRaw<Array<{ fence: bigint }>>`
     INSERT INTO "leases" ("key", "fence", "expiresAt")
-    VALUES (${key}, 1, clock_timestamp() + ${ttlMs}::float8 * interval '1 millisecond')
+    VALUES (
+      ${key},
+      nextval('leases_fence_seq'),
+      clock_timestamp() + ${ttlMs}::float8 * interval '1 millisecond'
+    )
     ON CONFLICT ("key") DO UPDATE
-      SET "fence" = "leases"."fence" + 1, "expiresAt" = EXCLUDED."expiresAt"
+      SET "fence" = EXCLUDED."fence", "expiresAt" = EXCLUDED."expiresAt"
       WHERE "leases"."expiresAt" <= clock_timestamp()
     RETURNING "fence"`;
-  return rows[0]?.fence;
+  return rows[0] && Number(rows[0].fence);
 }
 
 async function renewLease(
@@ -123,16 +135,16 @@ async function renewLease(
   return rows.length > 0;
 }
 
+/** Fences come from one sequence, so a released key's next holder still outranks earlier ones. */
 async function releaseLease(prisma: LeaseQueries, key: string, fence: number): Promise<void> {
   await prisma.$queryRaw`
-    UPDATE "leases" SET "expiresAt" = 'epoch'::timestamptz
-    WHERE "key" = ${key} AND "fence" = ${fence}
-    RETURNING 1`;
+    DELETE FROM "leases" WHERE "key" = ${key} AND "fence" = ${fence} RETURNING 1`;
 }
 
 /**
  * Renews until stopped. A renewal that fails is retried until the lease would lapse; the holder
  * counts it lost a renewal interval before the database would, so it stops before another may start.
+ * Once stopped it returns only after any renewal in flight settles, and starts no `onRenew` after.
  */
 async function keepRenewed(
   prisma: LeaseQueries,
@@ -145,8 +157,11 @@ async function keepRenewed(
 ): Promise<void> {
   const everyMs = options.ttlMs / 5;
   let keptUntil = takenAt + options.ttlMs - everyMs;
-  const renew = async () =>
-    (await renewLease(prisma, key, fence, options.ttlMs)) && (await (options.onRenew?.() ?? true));
+  const renew = async () => {
+    if (!(await renewLease(prisma, key, fence, options.ttlMs))) return false;
+    if (stop.aborted) return true;
+    return (await options.onRenew?.()) ?? true;
+  };
   for (;;) {
     await abortableDelay(everyMs, stop);
     if (stop.aborted) return;
@@ -156,16 +171,14 @@ async function keepRenewed(
       `Lost the lease on ${key}`,
       stop,
     );
+    const renewal = retry(renew, {
+      attempts: Number.POSITIVE_INFINITY,
+      retryable: () => !deadline.signal.aborted,
+      signal: deadline.signal,
+      onRetry: (error) => getLogger().warn("lease renewal failed", { key, error }),
+    });
     try {
-      const renewed = await withAbort(
-        retry(renew, {
-          attempts: Number.POSITIVE_INFINITY,
-          retryable: () => !deadline.signal.aborted,
-          signal: deadline.signal,
-          onRetry: (error) => getLogger().warn("lease renewal failed", { key, error }),
-        }),
-        deadline.signal,
-      );
+      const renewed = await withAbort(renewal, deadline.signal);
       if (stop.aborted) return;
       if (!renewed) {
         lost.abort(new LeaseLostError(key));
@@ -173,7 +186,11 @@ async function keepRenewed(
       }
       keptUntil = sentAt + options.ttlMs - everyMs;
     } catch (error) {
-      if (stop.aborted) return;
+      if (stop.aborted) {
+        // `retry` settles only once its try in flight does.
+        await Promise.allSettled([renewal]);
+        return;
+      }
       lost.abort(new LeaseLostError(key, { cause: error }));
       return;
     } finally {

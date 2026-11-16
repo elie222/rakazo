@@ -38,21 +38,37 @@ describePostgres("withLease (PostgreSQL)", () => {
       .$executeRaw`UPDATE "leases" SET "expiresAt" = now() - interval '1 minute' WHERE "key" = ${key}`;
 
   const fenceOf = async (key: string) => {
-    const [row] = await prisma().$queryRaw<Array<{ fence: number }>>`
+    const [row] = await prisma().$queryRaw<Array<{ fence: bigint }>>`
       SELECT "fence" FROM "leases" WHERE "key" = ${key}`;
-    return row?.fence;
+    return row && Number(row.fence);
   };
 
   /** Resolves once the lease can be taken again, waiting only on due timers, never on a clock. */
   async function untilFree(key: string) {
     for (let look = 0; look < 1_000; look++) {
       const [row] = await prisma().$queryRaw<Array<{ free: boolean }>>`
-        SELECT "expiresAt" <= clock_timestamp() AS free FROM "leases" WHERE "key" = ${key}`;
+        SELECT NOT EXISTS (
+          SELECT 1 FROM "leases" WHERE "key" = ${key} AND "expiresAt" > clock_timestamp()
+        ) AS free`;
       if (row?.free) return;
       await flush();
     }
     throw new Error(`lease ${key} was never released`);
   }
+
+  /** `prisma()`, passing each lease query to `intercept` first, which may hold it. */
+  const intercepting = (intercept: (sql: string) => Promise<void> | void) => {
+    const client = prisma();
+    return new Proxy(client, {
+      get(target, name, receiver) {
+        if (name !== "$queryRaw") return Reflect.get(target, name, receiver);
+        return async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          await intercept(strings.join("?"));
+          return target.$queryRaw(strings, ...values);
+        };
+      },
+    });
+  };
 
   const fencedWrite = (lease: { key: string; fence: number }) =>
     prisma().$transaction(async (tx) => {
@@ -78,7 +94,7 @@ describePostgres("withLease (PostgreSQL)", () => {
     expect(second).not.toHaveBeenCalled();
 
     held.resolve();
-    await expect(first).resolves.toBe(1);
+    await expect(first).resolves.toEqual(expect.any(Number));
   });
 
   it("takes each key once even when many processes race for it", async () => {
@@ -96,14 +112,15 @@ describePostgres("withLease (PostgreSQL)", () => {
       }),
     );
     await vi.waitFor(() => expect(refused).toBe(7));
-    expect(ran).toEqual([1]);
+    expect(ran).toHaveLength(1);
     held.resolve();
     await Promise.all(racers);
   });
 
   it("releases on success, failure and abort, so the next holder starts at once", async () => {
     const key = nextKey();
-    await withLease(prisma(), key, { ttlMs: TTL_MS }, async () => undefined);
+    const first = await withLease(prisma(), key, { ttlMs: TTL_MS }, async (lease) => lease.fence);
+    await expect(fenceOf(key)).resolves.toBeUndefined();
     await expect(
       withLease(prisma(), key, { ttlMs: TTL_MS }, async () => {
         throw new Error("work failed");
@@ -125,7 +142,7 @@ describePostgres("withLease (PostgreSQL)", () => {
 
     await expect(
       withLease(prisma(), key, { ttlMs: TTL_MS }, async (lease) => lease.fence),
-    ).resolves.toBe(4);
+    ).resolves.toBeGreaterThan(first);
   });
 
   it("keeps the lease of aborted work that ignores the signal until that work settles", async () => {
@@ -159,6 +176,7 @@ describePostgres("withLease (PostgreSQL)", () => {
     });
     crashed.catch(() => undefined);
     await started.promise;
+    const crashedFence = await fenceOf(key);
     await expect(
       withLease(prisma(), key, { ttlMs: TTL_MS }, async () => undefined),
     ).rejects.toBeInstanceOf(LeaseHeldError);
@@ -167,7 +185,7 @@ describePostgres("withLease (PostgreSQL)", () => {
 
     await expect(
       withLease(prisma(), key, { ttlMs: TTL_MS }, async (lease) => lease.fence),
-    ).resolves.toBe(2);
+    ).resolves.toBeGreaterThan(crashedFence!);
   });
 
   it("stops a holder that lost its lease and refuses its fenced writes", async () => {
@@ -189,7 +207,7 @@ describePostgres("withLease (PostgreSQL)", () => {
       await taken.promise;
       return lease.fence;
     });
-    await vi.waitFor(async () => expect(await fenceOf(key)).toBe(2));
+    await vi.waitFor(async () => expect(await fenceOf(key)).toBeGreaterThan(staleLease.fence));
 
     await expect(fencedWrite(staleLease)).rejects.toBeInstanceOf(LeaseLostError);
     // Its next renewal finds the lease taken and stops the work.
@@ -199,7 +217,122 @@ describePostgres("withLease (PostgreSQL)", () => {
     expect(staleLease.signal.aborted).toBe(true);
 
     taken.resolve();
-    await expect(next).resolves.toBe(2);
+    await expect(next).resolves.toBeGreaterThan(staleLease.fence);
+  });
+
+  it("refuses a stale holder's fenced write after a later holder released the key", async () => {
+    const key = nextKey();
+    const started = deferred<{ key: string; fence: number }>();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const stale = withLease(prisma(), key, { ttlMs: TTL_MS }, (lease) => {
+      started.resolve(lease);
+      return new Promise<never>(() => undefined);
+    });
+    stale.catch(() => undefined);
+    const staleLease = await started.promise;
+    await lapse(key);
+
+    await withLease(prisma(), key, { ttlMs: TTL_MS }, async () => undefined);
+    await expect(fenceOf(key)).resolves.toBeUndefined();
+    const latest = await withLease(prisma(), key, { ttlMs: TTL_MS }, async (lease) => {
+      await expect(fencedWrite(staleLease)).rejects.toBeInstanceOf(LeaseLostError);
+      return lease.fence;
+    });
+    expect(latest).toBeGreaterThan(staleLease.fence);
+  });
+
+  it("starts no work when the caller aborts while the lease is being taken", async () => {
+    const key = nextKey();
+    const taking = deferred();
+    const proceed = deferred();
+    const client = intercepting(async (sql) => {
+      if (!sql.includes("INSERT INTO")) return;
+      taking.resolve();
+      await proceed.promise;
+    });
+    const abort = new AbortController();
+    const work = vi.fn(async () => "ran");
+    const running = withLease(client, key, { ttlMs: TTL_MS, signal: abort.signal }, work);
+    await taking.promise;
+    abort.abort(new Error("stopped"));
+    proceed.resolve();
+
+    await expect(running).rejects.toThrow("stopped");
+    expect(work).not.toHaveBeenCalled();
+    await expect(fenceOf(key)).resolves.toBeUndefined();
+  });
+
+  it("counts the lease's lifetime from when the take lands, not from when it was sent", async () => {
+    const key = nextKey();
+    const taking = deferred();
+    const proceed = deferred();
+    const client = intercepting(async (sql) => {
+      if (!sql.includes("INSERT INTO")) return;
+      taking.resolve();
+      await proceed.promise;
+    });
+    const started = deferred<AbortSignal>();
+    const onRenew = vi.fn(async () => true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const running = withLease(client, key, { ttlMs: TTL_MS, onRenew }, (lease) => {
+      started.resolve(lease.signal);
+      return new Promise((_, reject) =>
+        lease.signal.addEventListener("abort", () => reject(lease.signal.reason)),
+      );
+    });
+    running.catch(() => undefined);
+    await taking.promise;
+    // The take waits most of a TTL behind another transaction, then lands with a full one.
+    vi.setSystemTime(Date.now() + TTL_MS * 0.9);
+    proceed.resolve();
+    const signal = await started.promise;
+
+    await vi.advanceTimersByTimeAsync(TTL_MS / 5);
+    await vi.waitFor(() => expect(onRenew).toHaveBeenCalledTimes(1));
+    expect(signal.aborted).toBe(false);
+  });
+
+  it("stops renewing only once a renewal in flight lands, and runs no hook after the work", async () => {
+    const key = nextKey();
+    const renewing = deferred();
+    const proceed = deferred();
+    const released = vi.fn();
+    const client = intercepting(async (sql) => {
+      if (sql.includes("DELETE FROM") || sql.includes("'epoch'")) released();
+      else if (!sql.trimStart().startsWith("UPDATE")) return;
+      else {
+        renewing.resolve();
+        await proceed.promise;
+      }
+    });
+    const onRenew = vi.fn(async () => true);
+    const started = deferred();
+    const fail = deferred();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let settled = false;
+    const running = withLease(client, key, { ttlMs: TTL_MS, onRenew }, () => {
+      started.resolve();
+      return fail.promise;
+    });
+    running.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(TTL_MS / 5);
+    await renewing.promise;
+
+    fail.reject(new Error("work failed"));
+    // Stopping takes only promise callbacks, so had it not waited it would have released by now.
+    await new Promise(setImmediate);
+    expect(settled).toBe(false);
+    expect(released).not.toHaveBeenCalled();
+
+    proceed.resolve();
+    await expect(running).rejects.toThrow("work failed");
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(onRenew).not.toHaveBeenCalled();
+    await expect(fenceOf(key)).resolves.toBeUndefined();
   });
 
   it("renews the lease while work runs, and loses it when a renewal hook says so", async () => {
@@ -216,7 +349,8 @@ describePostgres("withLease (PostgreSQL)", () => {
     });
     await started.promise;
     const [before] = await prisma().$queryRaw<Array<{ expiresAt: Date }>>`
-      SELECT "expiresAt" FROM "leases" WHERE "key" = ${key}`;
+      UPDATE "leases" SET "expiresAt" = "expiresAt" - interval '1 second' WHERE "key" = ${key}
+      RETURNING "expiresAt"`;
 
     await vi.advanceTimersByTimeAsync(TTL_MS / 5);
     await vi.waitFor(() => expect(onRenew).toHaveBeenCalledTimes(1));

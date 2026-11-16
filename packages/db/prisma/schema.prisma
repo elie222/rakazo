@@ -1915,10 +1915,11 @@ model HomeDeletionNotice {
 }
 
 /// One holder at a time for long work across processes. `withLease` in packages/db/src/leases.ts
-/// is the only writer: a row is never deleted, so `fence` grows with every holder.
+/// is the only writer. A release deletes its row; `fence` comes from `leases_fence_seq`, so a key's
+/// next holder always outranks every earlier one.
 model Lease {
   key       String   @id
-  fence     Int
+  fence     BigInt
   expiresAt DateTime @db.Timestamptz(3)
 
   @@map("leases")

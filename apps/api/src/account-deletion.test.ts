@@ -17,6 +17,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
+  assertOrganizationOwner: vi.fn(async () => undefined),
   claimOrganizationForDeletion: vi.fn(),
   keepOrganizationTrialUse: vi.fn(async () => undefined),
   setOrganizationDeletionLease: vi.fn(),

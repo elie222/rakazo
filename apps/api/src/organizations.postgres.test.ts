@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -474,6 +474,109 @@ describePostgres("organizations (PostgreSQL)", () => {
   const deletedAudits = (organizationId: string) =>
     system.auditEvent.count({ where: { organizationId, action: "organization.deleted" } });
 
+  const leaseRows = async (key: string) => {
+    const [row] = await system.$queryRaw<Array<{ rows: bigint }>>`
+      SELECT count(*) AS rows FROM "leases" WHERE "key" = ${key}`;
+    return Number(row!.rows);
+  };
+
+  /** Hands an attempt's lease to another holder, as if it had lapsed and been taken. */
+  const takeLeaseFrom = (organizationId: string) =>
+    system.$executeRaw`
+      UPDATE "leases" SET "fence" = nextval('leases_fence_seq')
+      WHERE "key" = ${`organization-deletion:${organizationId}`}`;
+
+  /** Starts deleting the organization and holds it at its billing call. */
+  async function deletionHeldAtBilling(userId: string, organizationId: string) {
+    const called = deferred();
+    const held = deferred();
+    const deleting = runAsSystem("an attempt held at billing", () =>
+      deleteOrganization(
+        {
+          ...deps(),
+          billing: {
+            cancelForDeletedOrganization: async () => {
+              called.resolve();
+              await held.promise;
+            },
+          },
+        } as Parameters<typeof deleteOrganization>[0],
+        userId,
+        organizationId,
+      ),
+    );
+    deleting.catch(() => undefined);
+    await called.promise;
+    return { deleting, release: () => held.resolve() };
+  }
+
+  it("refuses a delete by someone who does not own the organization before taking its lease", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const missing = randomUUID();
+
+    await expect(
+      client(grace).organizations.remove({ organizationId: missing }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(leaseRows(`organization-deletion:${missing}`)).resolves.toBe(0);
+
+    // While the owner's deletion holds the lease, a stranger still sees only that it is not theirs.
+    const owners = await deletionHeldAtBilling(ada.userId, work.id);
+    await expect(
+      client(grace).organizations.remove({ organizationId: work.id }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    owners.release();
+    await owners.deleting;
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    await expect(leaseRows(`organization-deletion:${work.id}`)).resolves.toBe(0);
+  });
+
+  it("commits no Space or organization delete from an attempt that lost its lease", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const stale = await deletionHeldAtBilling(ada.userId, work.id);
+
+    await takeLeaseFrom(work.id);
+    stale.release();
+
+    await expect(stale.deleting).rejects.toBeInstanceOf(LeaseLostError);
+    await expect(system.space.findUnique({ where: { id: work.id } })).resolves.not.toBeNull();
+    await expect(
+      system.organization.findUnique({ where: { id: work.id } }),
+    ).resolves.not.toBeNull();
+    await expect(deletedAudits(work.id)).resolves.toBe(0);
+  });
+
+  it("reports success once the organization went with its last Space, even if the lease is lost after", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const storageKey = `blob-late-${suffix}`;
+    await system.artifact.create({
+      data: {
+        spaceId: work.id,
+        userId: ada.userId,
+        name: "plan.txt",
+        mimeType: "text/plain",
+        size: 4,
+        hash: "hash-late",
+        storageKey,
+      },
+    });
+    // The second removal is the cleanup after the Space and organization were deleted.
+    artifacts.remove.mockImplementationOnce(async () => undefined);
+    let tookOver = 0;
+    artifacts.remove.mockImplementationOnce(async () => {
+      tookOver = await takeLeaseFrom(work.id);
+    });
+
+    await client(ada).organizations.remove({ organizationId: work.id });
+
+    expect(tookOver).toBe(1);
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    await expect(deletedAudits(work.id)).resolves.toBe(1);
+  });
+
   it("finishes a deletion that stopped part way in the background", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
@@ -498,7 +601,11 @@ describePostgres("organizations (PostgreSQL)", () => {
     );
     await system.$executeRaw`
       INSERT INTO "leases" ("key", "fence", "expiresAt")
-      VALUES (${`organization-deletion:${work.id}`}, 1, now() + interval '5 minutes')`;
+      VALUES (
+        ${`organization-deletion:${work.id}`},
+        nextval('leases_fence_seq'),
+        now() + interval '5 minutes'
+      )`;
     await system.space.updateMany({
       where: { organizationId: work.id },
       data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
@@ -533,9 +640,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
       "already in progress",
     );
-    const [lease] = await system.$queryRaw<Array<{ free: boolean }>>`
-      SELECT "expiresAt" <= now() AS free FROM "leases" WHERE "key" = ${leaseKey}`;
-    expect(lease?.free).toBe(true);
+    await expect(leaseRows(leaseKey)).resolves.toBe(0);
 
     // This release's attempt keeps its Spaces' claim fresh, so the previous release's is refused.
     const called = deferred();

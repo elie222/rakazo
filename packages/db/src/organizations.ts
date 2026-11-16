@@ -142,6 +142,18 @@ export async function renameOrganization(
   return { id: input.organizationId, name };
 }
 
+/** Throws `IsolationError` unless the user owns the organization. */
+export async function assertOrganizationOwner(
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string },
+): Promise<void> {
+  const owner = await prisma.member.findFirst({
+    where: { organizationId: input.organizationId, userId: input.userId, role: OWNER },
+    select: { id: true },
+  });
+  if (!owner) throw new IsolationError();
+}
+
 /**
  * Claims every Space of an organization only its owner belongs to, unless it is the last one they
  * own, which hides it from the list. Each attempt claims under its own token, and the claimed

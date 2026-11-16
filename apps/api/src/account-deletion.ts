@@ -10,6 +10,7 @@ import { requestDeadline } from "@rakazo/core";
 import type { HeldLease, Prisma, ThreadEvents } from "@rakazo/db";
 import {
   assertLeaseHeld,
+  assertOrganizationOwner,
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
   deleteClaimedSpace,
@@ -129,6 +130,8 @@ export async function deleteOrganization(
   organizationId: string,
   signal?: AbortSignal,
 ): Promise<void> {
+  // A caller who may not delete it takes no lease on it, and never learns whether one is held.
+  await assertOrganizationOwner(deps.prisma, { userId, organizationId });
   const organization = await deps.prisma.organization.findUnique({
     where: { id: organizationId },
     select: { name: true },
@@ -194,9 +197,14 @@ export async function deleteOrganization(
       bots: inOrganization,
       computers: inOrganization,
       signal: lease.signal,
+      lease,
     });
-    stillLeased();
+    // The organization went with its last Space; only one left without any is deleted here.
     await deps.prisma.$transaction(async (tx) => {
+      if (
+        !(await tx.organization.findUnique({ where: { id: organizationId }, select: { id: true } }))
+      )
+        return;
       await assertLeaseHeld(tx, lease);
       await deleteEmptyOrganization(tx, organizationId);
     });
@@ -265,6 +273,8 @@ async function deleteClaimedSpaces(
     soleMemberId?: string;
     /** Deletes the organization with its last Space. */
     organizationId?: string;
+    /** Commits each Space's deletion only while this lease is held. */
+    lease?: Pick<HeldLease, "key" | "fence">;
     bots: Prisma.BotWhereInput;
     computers: Prisma.ComputerWhereInput;
     signal?: AbortSignal;
@@ -333,6 +343,7 @@ async function deleteClaimedSpaces(
       claimId: input.claimId,
       soleMemberId: input.soleMemberId,
       organizationId: input.organizationId,
+      lease: input.lease,
     });
     if (!deleted) continue;
     const cleanup = await Promise.allSettled(
