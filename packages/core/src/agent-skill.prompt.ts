@@ -8,7 +8,7 @@ export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): st
   if (entries.length === 0) return undefined;
   const lines = entries.map(skillCatalogLine).join("\n");
   return [
-    "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
+    "Available skills (reusable how-to recipes, not account-specific routines):",
     lines,
     "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
     "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
