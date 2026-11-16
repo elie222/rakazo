@@ -1084,12 +1084,15 @@ export class McpConnector implements ConnectorProvider {
           where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
           select: { secretId: true },
         });
-        if (current?.secretId) {
+        // The server was edited or reconnected after this run read it; later runs see the change.
+        if (!current)
+          throw new McpConnectFailure("MCP server changed while connecting", "reconnect");
+        if (current.secretId) {
           secret = await this.prisma.secret.findFirst({
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new Error("MCP server secret is unavailable; retry");
+        if (!secret) throw new McpSecretChangedError();
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
