@@ -165,6 +165,7 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => ui.spaceId,
   spaceSelectionSeq: () => ui.spaceSeq,
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 /** The caller's save: it pins every request to the Space it names, as `useSave` does. */
 function sendTo(spaceId?: string): SaveSend {
   const options = spaceId

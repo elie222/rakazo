@@ -214,6 +214,23 @@ describe("bot context cards", () => {
     expect(container.textContent).toContain("Review draft");
   });
 
+  it("clears a failed complete when the screen is shown again", async () => {
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/update") throw new Error("Already done");
+      return work;
+    });
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    expect(container.textContent).toContain("Already done");
+    await act(async () => {
+      for (const effect of focus.effects) effect();
+    });
+    expect(container.textContent).not.toContain("Already done");
+    expect(container.textContent).toContain("Review draft");
+  });
+
   it("clears an earlier load error once the lists load", async () => {
     rpc.mockImplementation(async (method: string, { botId }: { botId: string }) => {
       if (botId === "bot-a" && method === "scratchpad/list") throw new Error("Request failed");

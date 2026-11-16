@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -48,7 +49,8 @@ vi.mock("@lingui/react/macro", () => {
     Trans: ({ children }: { children?: ReactNode }) => children,
   };
 });
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { OptionSelect } = await importOriginal<typeof UiWeb>();
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Button: ({
@@ -76,8 +78,7 @@ vi.mock("@rakazo/ui-web", () => {
         {children}
       </button>
     ),
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect,
   };
 });
 
@@ -131,6 +132,16 @@ afterEach(() => {
   messaging.channels.list.mockReset();
   messaging.channels.list.mockResolvedValue([]);
 });
+
+/** Picks the bot named `name` in the bot picker. */
+async function pickBot(name: string) {
+  await act(async () => container.querySelector<HTMLElement>('[role="combobox"]')?.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (entry) => entry.textContent === name,
+  );
+  if (!option) throw new Error(`no ${name} option`);
+  await act(async () => option.click());
+}
 
 function telegramItem() {
   return [...container.querySelectorAll("button")].find(
@@ -280,7 +291,7 @@ it("connects Slack to the default bot through workspace authorization", async ()
         ["Slack", "Connect a chat app", "Link DMs"].includes(button.textContent ?? ""),
       ),
     ).toBe(false);
-    expect(container.querySelector("select")).toBeNull();
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
     await act(async () => buttons.find((button) => button.textContent === "Connect")!.click());
     expect(messaging.installations.start).toHaveBeenCalledWith({});
     expect(messaging.link.start).not.toHaveBeenCalled();
@@ -506,11 +517,7 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
     { id: "bot-2", name: "Team" },
   ]);
   await renderOverlay();
-  const select = container.querySelector("select")!;
-  await act(async () => {
-    select.value = "bot-2";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await pickBot("Team");
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "Link DMs")!
@@ -559,11 +566,7 @@ it.each(["resolve", "reject"] as const)(
       telegramItem()?.click();
     });
     expect(messaging.link.start).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      const select = container.querySelector("select")!;
-      select.value = "bot-2";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await pickBot("Team");
     await act(async () => {
       if (outcome === "resolve")
         pending.resolve({
@@ -645,18 +648,13 @@ it.each([false, true])(
         .find((button) => button.textContent === "Link DMs")!
         .click(),
     );
-    const pick = (id: string) => {
-      const select = container.querySelector("select")!;
-      select.value = id;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    };
     if (initialLoad) {
       await act(async () => loadingBots.resolve(bots));
       await vi.waitFor(() => {
-        expect(container.querySelectorAll("select option")).toHaveLength(2);
+        expect(container.querySelector('[role="combobox"]')).not.toBeNull();
       });
     }
-    await act(async () => pick("bot-2"));
+    await pickBot("Team");
     await act(async () =>
       pending.resolve({
         code: "WORKSPACE-CODE",
@@ -665,7 +663,7 @@ it.each([false, true])(
     );
     expect(container.textContent).toContain("WORKSPACE-CODE");
     expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
-    await act(async () => pick("bot-1"));
+    await pickBot("Chief");
     expect(container.textContent).toContain("WORKSPACE-CODE");
   },
 );

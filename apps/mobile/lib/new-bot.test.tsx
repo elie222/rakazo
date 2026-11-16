@@ -12,13 +12,16 @@ import NewBot from "../app/new-bot";
 import type { SaveSend } from "./query";
 import { queryClient } from "./query";
 
-const { rpc, router, params, createInboxBot, askForModelBeforeFirstBot } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
-  params: { current: {} as { spaceId?: string } },
-  createInboxBot: vi.fn(),
-  askForModelBeforeFirstBot: vi.fn(),
-}));
+const { rpc, router, params, selected, createInboxBot, askForModelBeforeFirstBot } = vi.hoisted(
+  () => ({
+    rpc: vi.fn(),
+    selected: { spaceId: "space-1" },
+    router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
+    params: { current: {} as { spaceId?: string } },
+    createInboxBot: vi.fn(),
+    askForModelBeforeFirstBot: vi.fn(),
+  }),
+);
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -26,8 +29,8 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
-  selectedSpaceId: () => "space-1",
-  captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
+  selectedSpaceId: () => selected.spaceId,
+  captureApiRequestContext: async (spaceId: string | null = selected.spaceId) => ({
     apiBase: "http://api.test",
     sessionGeneration: 1,
     headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
@@ -96,6 +99,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
   params.current = {};
+  selected.spaceId = "space-1";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -146,6 +150,22 @@ it("creates once on a double tap, through the save's send, and holds the form me
   await act(async () => creating.resolve("created"));
   expect(router.back).not.toHaveBeenCalled();
   expect(button("Creating…")?.disabled).toBe(true);
+});
+
+it("keeps sending the new bot's onboarding to its Space after another is selected", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  const [{ send }] = createInboxBot.mock.calls[0] as [{ send: SaveSend }];
+  selected.spaceId = "space-2";
+  rpc.mockClear().mockResolvedValue({});
+  await send("onboarding/start", { botId: "bot-1" });
+  expect(rpc).toHaveBeenCalledWith(
+    "onboarding/start",
+    { botId: "bot-1" },
+    {
+      requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }),
+    },
+  );
 });
 
 it("shows the failure and offers Create again", async () => {

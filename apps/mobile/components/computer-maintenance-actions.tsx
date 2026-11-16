@@ -2,8 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
+import { selectedSpaceId } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
 import { queryClient, rpcQuery, useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
@@ -12,7 +13,9 @@ import { SettingsRow } from "./settings-group";
 /** The one repair a bot's computer offers, and only while that computer is broken. */
 export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
-  const statusRead = rpcQuery("computer/status", { botId: botId ?? "" });
+  // The bot's own Space, the one selected when its settings opened, whatever is selected later.
+  const [spaceId] = useState(() => selectedSpaceId() ?? undefined);
+  const statusRead = rpcQuery("computer/status", { botId: botId ?? "" }, spaceId);
   const status = useQuery({ ...statusRead, enabled: Boolean(botId) }, queryClient);
   const { refetch } = status;
   // A stale status could offer an action the computer can no longer take.
@@ -32,6 +35,7 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
     [botId, refetch],
   );
   const repair = useSave({
+    target: spaceId ? { scope: "space", spaceId } : undefined,
     save: async ({ botId, action }: { botId: string; action: "reset" | "recover" }, send) => {
       if (action === "reset") await send("computer/reset", { botId });
       else

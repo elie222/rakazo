@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { createSnoozeQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import type { ApiRequestContext, RpcArgs } from "./api";
@@ -19,7 +19,7 @@ import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
-import type { SaveSend } from "./query";
+import { useSave } from "./query";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
@@ -74,6 +74,19 @@ export function useInboxChatActions({
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
   const [snoozeQueue] = useState(createSnoozeQueue);
+  const groupRemoval = useSave({
+    target: (group: { id: string; spaceId?: string }) =>
+      group.spaceId ? { scope: "space", spaceId: group.spaceId } : undefined,
+    save: async (group, send) => {
+      await deleteGroup(group.id, send);
+      notifyArchivedChatsChanged();
+    },
+    onSaved: () => void loadBots(),
+    onFailed: alertGroupNotDeleted,
+  });
+  // The latest run, so the row callbacks keep one identity across renders.
+  const removeGroup = useRef(groupRemoval.run);
+  removeGroup.current = groupRemoval.run;
   const updateChat = useCallback(
     async (
       kind: InboxChatKind,
@@ -194,43 +207,31 @@ export function useInboxChatActions({
       }
       // The same confirmation as the chat's own menu; the row goes once the server deletes it.
       if (action === "delete") {
-        const confirmation = kind === "bot" ? beginDelete() : undefined;
-        if (kind === "bot" && !confirmation) return;
-        const deleted = () => {
-          notifyArchivedChatsChanged();
-          void loadBots();
-        };
-        // Capture fails only when the session or server changed; the delete is dropped quietly.
-        let requestContext: ApiRequestContext | undefined;
-        try {
-          requestContext =
-            kind === "bot"
-              ? await captureApiRequestContext(chat.spaceId ?? selectedSpaceId())
-              : await chatRequestContext(chat.spaceId);
-        } catch {
-          confirmation?.finish();
+        if (kind === "group") {
+          confirmDeleteGroup(chat, () => removeGroup.current(chat));
           return;
         }
-        if (kind === "bot") {
-          void confirmDeleteBot(
-            { id: chat.id, name: chat.name },
-            (removedGroupIds, recoveryContext) => {
-              deleted();
-              void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
-            },
-            confirmation!.current,
-            requestContext,
-            confirmation!.finish,
-          );
-        } else {
-          const pinned = requestContext && { requestContext, skipSpaceAuthRecovery: true };
-          const send: SaveSend = (proc, input) =>
-            rpc(proc, ...([input, pinned] as RpcArgs<typeof proc>));
-          confirmDeleteGroup(
-            chat,
-            () => void deleteGroup(chat.id, send).then(deleted, alertGroupNotDeleted),
-          );
+        const confirmation = beginDelete();
+        if (!confirmation) return;
+        // Capture fails only when the session or server changed; the delete is dropped quietly.
+        let requestContext: ApiRequestContext;
+        try {
+          requestContext = await captureApiRequestContext(chat.spaceId ?? selectedSpaceId());
+        } catch {
+          confirmation.finish();
+          return;
         }
+        void confirmDeleteBot(
+          { id: chat.id, name: chat.name },
+          (removedGroupIds, recoveryContext) => {
+            notifyArchivedChatsChanged();
+            void loadBots();
+            void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
+          },
+          confirmation.current,
+          requestContext,
+          confirmation.finish,
+        );
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>

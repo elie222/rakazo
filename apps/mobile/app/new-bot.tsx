@@ -15,6 +15,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
+import { selectedSpaceId } from "../lib/api";
 import type { InboxBotOutcome } from "../lib/create-inbox-bot";
 import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
 import { openChatFromInbox } from "../lib/inbox-changes";
@@ -46,8 +47,10 @@ export default function NewBot() {
   const modelCheck = useRef<Promise<boolean>>(Promise.resolve(false));
   const trimmed = name.trim();
   const identity = newBotPreviewIdentity(avatarSet, look);
+  const createdIn = params.spaceId ?? selectedSpaceId() ?? undefined;
   const creation = useSave({
-    target: params.spaceId ? { scope: "space", spaceId: params.spaceId } : undefined,
+    // The bot's onboarding and focus prompt still reach its Space after another is selected.
+    target: createdIn ? { scope: "space", spaceId: createdIn } : undefined,
     save: async (input: NewBotInput, send): Promise<InboxBotOutcome | "asked"> => {
       // That check is asking for a model and closing the screen.
       if (await modelCheck.current) return "asked";
