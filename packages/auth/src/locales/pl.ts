@@ -79,4 +79,5 @@ export const PL_MESSAGES: Record<string, string> = {
   "Join {organization}": "Dołącz do {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "To zaproszenie wygaśnie za 7 dni. Aby je przyjąć, zaloguj się tym adresem e-mail.",
+  "This invitation expires in 7 days.": "To zaproszenie wygaśnie za 7 dni.",
 };

@@ -14,7 +14,14 @@ import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<
   MobileSpace,
-  "id" | "name" | "isDefault" | "hasContent" | "canDelete" | "botCount" | "botSections"
+  | "id"
+  | "name"
+  | "isDefault"
+  | "hasContent"
+  | "canDelete"
+  | "botCount"
+  | "botSections"
+  | "hasGuests"
 > & {
   bots: (MobileBot | SpaceBot)[];
   groups: (MobileGroup | SpaceGroup)[];

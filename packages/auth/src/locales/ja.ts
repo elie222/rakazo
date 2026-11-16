@@ -80,4 +80,5 @@ export const JA_MESSAGES: Record<string, string> = {
   "Join {organization}": "{organization}に参加",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "この招待は7日後に期限切れになります。承諾するには、このメールアドレスでサインインしてください。",
+  "This invitation expires in 7 days.": "この招待は7日後に期限切れになります。",
 };

@@ -79,4 +79,5 @@ export const NL_MESSAGES: Record<string, string> = {
   "Join {organization}": "Word lid van {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "Deze uitnodiging verloopt over 7 dagen. Log in met dit e-mailadres om haar te accepteren.",
+  "This invitation expires in 7 days.": "Deze uitnodiging verloopt over 7 dagen.",
 };

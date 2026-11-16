@@ -53,6 +53,7 @@ vi.mock("@rakazo/ui-web", () => {
     InputGroupAddon: Plain,
     InputGroupButton: PlainButton,
     InputGroupInput: (props: ComponentProps<"input">) => <input {...props} />,
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
     toast,
   };
 });
@@ -99,6 +100,15 @@ function buttonNamed(label: string) {
   return [...host.querySelectorAll("button")].find((button) => button.textContent === label);
 }
 
+/** Types into the email field as a person would, so React sees the change. */
+async function type(text: string) {
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Email"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, text);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 async function renderWith(members: SpaceMembers, onLeft = vi.fn()) {
   rpc.spaces.members.list.mockResolvedValue(members);
   await act(async () =>
@@ -120,7 +130,7 @@ it("lets the owner invite and remove members but not leave", async () => {
     "AAda LovelaceOwnerada@example.test",
     "BBob Stonebob@example.testRemove",
   ]);
-  expect(buttonNamed("Invite")).toBeTruthy();
+  expect(buttonNamed("Copy invite link")).toBeTruthy();
   expect(buttonNamed("Leave space")).toBeUndefined();
 });
 
@@ -130,7 +140,8 @@ it("a member cannot invite or remove, and leaves after confirming", async () => 
     members: [owner, member],
     canManage: false,
   });
-  expect(buttonNamed("Invite")).toBeUndefined();
+  expect(buttonNamed("Copy invite link")).toBeUndefined();
+  expect(buttonNamed("Invite by email")).toBeUndefined();
   expect(buttonNamed("Remove")).toBeUndefined();
 
   rpc.spaces.members.leave.mockResolvedValue({ ok: true, activeSpaceId: "space-own" });
@@ -152,14 +163,14 @@ it("copies a new invite link, and shows it only when copying fails", async () =>
   });
   const linkField = () => host.querySelector<HTMLInputElement>('input[aria-label="Invite link"]');
 
-  await act(async () => buttonNamed("Invite")?.click());
+  await act(async () => buttonNamed("Copy invite link")?.click());
   expect(rpc.spaces.invites.create).toHaveBeenCalledWith({ spaceId: space.id });
   expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-1");
   expect(toast).toHaveBeenCalledWith("Invite link copied");
   expect(linkField()).toBeNull();
 
   writeText.mockRejectedValueOnce(new Error("denied"));
-  await act(async () => buttonNamed("Invite")?.click());
+  await act(async () => buttonNamed("Copy invite link")?.click());
   expect(linkField()?.value).toBe("https://rakazo.example/invite/token-1");
   expect(linkField()?.readOnly).toBe(true);
 });
@@ -225,7 +236,7 @@ it("adds someone from the organization, and keeps the link for anyone else", asy
     url: "https://rakazo.example/invite/token-2",
     expiresAt: new Date().toISOString(),
   });
-  await act(async () => buttonNamed("Invite")?.click());
+  await act(async () => buttonNamed("Copy invite link")?.click());
   expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-2");
 });
 
@@ -258,4 +269,58 @@ it("never shows a Space's people once another Space is open, even after an add",
   expect(
     [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
   ).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.testRemove"]);
+});
+
+it("tags guests, and says before inviting someone by email that they are outside the organization", async () => {
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  const guest = { ...member, guest: true };
+  await renderWith({
+    spaceName: "Home",
+    members: [owner, guest],
+    canManage: true,
+    addable: [colleague],
+    organizationName: "Acme",
+  });
+  expect(
+    [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
+  ).toEqual(["AAda LovelaceOwnerada@example.test", "BBob StoneExternalbob@example.testRemove"]);
+
+  await act(async () => buttonNamed("Invite by email")?.click());
+  const notice = "Not in Acme. They'll only see this Space.";
+  await type("CY@example.test");
+  expect(host.textContent).not.toContain(notice);
+  await type("dee@example");
+  expect(host.textContent).not.toContain(notice);
+  expect(buttonNamed("Invite")?.disabled).toBe(true);
+  await type("dee@example.test");
+  expect(host.textContent).toContain(notice);
+
+  rpc.spaces.invites.create.mockResolvedValue({
+    url: "https://rakazo.example/invite/token-3",
+    expiresAt: new Date().toISOString(),
+    emailed: true,
+  });
+  await act(async () => buttonNamed("Invite")?.click());
+  expect(rpc.spaces.invites.create).toHaveBeenCalledWith({
+    spaceId: space.id,
+    email: "dee@example.test",
+  });
+  await vi.waitFor(() => expect(toast).toHaveBeenCalledWith("Invitation sent"));
+  expect(host.querySelector('input[aria-label="Email"]')).toBeNull();
+
+  // Someone already in the organization is added directly.
+  rpc.spaces.members.add.mockResolvedValue({ ok: true });
+  await act(async () => buttonNamed("Invite by email")?.click());
+  await type("cy@example.test");
+  await act(async () => buttonNamed("Invite")?.click());
+  expect(rpc.spaces.members.add).toHaveBeenCalledWith({
+    spaceId: space.id,
+    userId: "user-colleague",
+  });
+  expect(rpc.spaces.invites.create).toHaveBeenCalledTimes(1);
 });

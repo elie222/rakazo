@@ -30,6 +30,16 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
+  it("marks a Space with guests on its header, even when it is the only one", () => {
+    const [header] = sidebarGroupsForSpaces(
+      [{ ...space("space-1", "Clients"), hasGuests: true }],
+      "",
+    );
+    expect(header).toMatchObject({ title: "Clients", hasGuests: true, showLock: false });
+    const [plain] = sidebarGroupsForSpaces([space("space-1", "Personal")], "");
+    expect(plain).toMatchObject({ hasGuests: false });
+  });
+
   it("keeps an empty space with saved sections openable", () => {
     const empty = {
       ...space("space-2", "Support", { canRename: true, bots: [] }),

@@ -80,4 +80,5 @@ export const RU_MESSAGES: Record<string, string> = {
   "Join {organization}": "Присоединиться к {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "Приглашение действует 7 дней. Чтобы принять его, войдите с этим адресом электронной почты.",
+  "This invitation expires in 7 days.": "Приглашение действует 7 дней.",
 };

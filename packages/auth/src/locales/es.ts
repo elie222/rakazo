@@ -80,4 +80,5 @@ export const ES_MESSAGES: Record<string, string> = {
   "Join {organization}": "Unirte a {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "Esta invitación caduca en 7 días. Inicia sesión con esta dirección de correo para aceptarla.",
+  "This invitation expires in 7 days.": "Esta invitación caduca en 7 días.",
 };

@@ -4,6 +4,7 @@ import {
   canManageOrganizationMembers,
   organizationLandingSpaceId,
   organizationOfSpace,
+  spaceInvitee,
 } from "./organizations.js";
 
 const work = {
@@ -61,5 +62,21 @@ describe("canManageOrganizationMembers", () => {
     expect(canManageOrganizationMembers(home)).toBe(true);
     expect(canManageOrganizationMembers({ ...home, role: "admin" })).toBe(true);
     expect(canManageOrganizationMembers({ ...home, role: "member" })).toBe(false);
+  });
+});
+
+describe("spaceInvitee", () => {
+  const person = (userId: string, email: string) => ({ userId, name: "", email, image: null });
+  const list = {
+    members: [{ ...person("u1", "ana@example.test"), role: "owner" as const }],
+    addable: [person("u2", "Ben@Example.test")],
+  };
+
+  it("tells members, the organization's people and outsiders apart once it reads as an address", () => {
+    expect(spaceInvitee(list, "ana@exam")).toBeNull();
+    expect(spaceInvitee(list, " ANA@example.test ")).toEqual({ kind: "member" });
+    expect(spaceInvitee(list, "ben@example.test")).toEqual({ kind: "addable", userId: "u2" });
+    expect(spaceInvitee(list, "cy@example.test")).toEqual({ kind: "outside" });
+    expect(spaceInvitee({ members: [] }, "ben@example.test")).toEqual({ kind: "outside" });
   });
 });

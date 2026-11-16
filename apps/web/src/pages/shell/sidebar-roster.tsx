@@ -17,6 +17,7 @@ import {
 import {
   ChevronDown,
   CircleAlert,
+  Globe,
   Lock,
   MoreHorizontal,
   Pencil,
@@ -193,7 +194,10 @@ export function SidebarRoster({
                       <span
                         className={`flex min-w-0 items-center gap-1.5 truncate ${hasSpaceActions ? "pe-7" : ""}`}
                       >
-                        {group.showLock ? (
+                        {/* People from outside the organization are marked even in a lone Space. */}
+                        {group.hasGuests ? (
+                          <Globe size={11} strokeWidth={2} aria-hidden="true" />
+                        ) : group.showLock ? (
                           group.shared ? (
                             <Users size={11} strokeWidth={2} aria-hidden="true" />
                           ) : (

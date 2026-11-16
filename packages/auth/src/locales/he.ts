@@ -77,4 +77,5 @@ export const HE_MESSAGES: Record<string, string> = {
   "Join {organization}": "הצטרפות ל-{organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "ההזמנה תפוג בעוד 7 ימים. כדי לקבל אותה, יש להתחבר עם כתובת האימייל הזו.",
+  "This invitation expires in 7 days.": "ההזמנה תפוג בעוד 7 ימים.",
 };

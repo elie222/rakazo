@@ -81,4 +81,5 @@ export const TR_MESSAGES: Record<string, string> = {
   "Join {organization}": "{organization} kuruluşuna katıl",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "Bu davetin süresi 7 gün içinde dolar. Kabul etmek için bu e-posta adresiyle oturum açın.",
+  "This invitation expires in 7 days.": "Bu davetin süresi 7 gün içinde dolar.",
 };
