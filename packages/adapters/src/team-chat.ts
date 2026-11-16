@@ -5,7 +5,7 @@ import {
   teamChatEngageJob,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type { AutomatedSenderPolicies, MessageBlock } from "@rakazo/contracts";
+import type { AutomatedSenderPolicies } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import {
   messageBlockForArtifact,
@@ -18,6 +18,7 @@ import {
   runAsSystem,
   SendClaimLostError,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   teamChatRunClientNonce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -219,7 +220,8 @@ export class TeamChat {
     const conversation = message.externalConversation;
     const thread = conversation.thread;
     if (!thread) throw new Error("Team chat conversation has no Rakazo thread");
-    // A routine the previous release woke without claiming the message already answers it.
+    // A routine the previous release woke without claiming the message already answers it. Rows
+    // it left stay in the database, so this goes only with a migration that settles them.
     if (await this.routineWoken(message)) {
       await this.settle(message.id, from, {
         status: "ignored",
@@ -238,12 +240,12 @@ export class TeamChat {
           id: { in: batch?.messageIds.length ? batch.messageIds : [message.id] },
         },
       },
-      select: { blocks: true },
+      select: { id: true, blocks: true },
       orderBy: { seq: "asc" },
     });
     const fileBlocks = transcripts
-      .flatMap(({ blocks }) =>
-        (blocks as MessageBlock[]).filter(
+      .flatMap((transcript) =>
+        storedMessageBlocks(transcript).filter(
           (block) => block.kind === "file" || block.kind === "image",
         ),
       )
@@ -339,7 +341,8 @@ export class TeamChat {
       }
       await this.mirrorTranscript(message);
       if (message.status === "received") await this.startAgentRun(message.id, ["received"]);
-      // The previous release's queueing claim, left by a process that stopped mid-way.
+      // The previous release's queueing claim, left by a process that stopped mid-way. Rows in this
+      // status stay in the database, so this goes only with a migration that settles them.
       else if (message.status === "queueing") await this.startAgentRun(message.id, ["queueing"]);
       else if (message.status === "deferred") await this.routeToAgent(message.id, message.kind);
     });

@@ -328,12 +328,7 @@ export function ModelSettingsOverlay({
       {/* Edits made while a save is in flight would be replaced by what it saved. */}
       <fieldset className="contents" disabled={pending === "connect" || pending === "settings"}>
         {connected && credential ? (
-          <ConnectionNameField
-            key={credential.id}
-            credential={credential}
-            // A rename touches only the label; keep any unsaved form fields.
-            onRenamed={() => void refresh({ keepForm: true })}
-          />
+          <ConnectionNameField key={credential.id} credential={credential} />
         ) : null}
         {connection}
       </fieldset>

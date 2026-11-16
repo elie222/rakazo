@@ -1,17 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "./async.test-support.js";
 import type { CallThread } from "./call-session.js";
 import { callTurn, createCallSendTracker, pendingCallSecretAsk } from "./call-session.js";
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<void>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 describe("call send tracker", () => {
   it("closes at once when nothing is in flight", () => {

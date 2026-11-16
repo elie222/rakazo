@@ -1,5 +1,4 @@
 export type Panel =
-  | "computer"
   | "routines"
   | "pages"
   | "settings"
@@ -11,7 +10,7 @@ export type Panel =
 export type RightPanelState = { panel: Panel; routineId?: string };
 
 /** Panels that are safe to remember across reloads. */
-const durablePanels: readonly Panel[] = [
+const durablePanels: readonly (string | null)[] = [
   "computer",
   "routines",
   "pages",
@@ -37,11 +36,11 @@ export function readRightPanelState(key: string): RightPanelState {
       !value ||
       typeof value !== "object" ||
       !("panel" in value) ||
-      !durablePanels.includes(value.panel as Panel)
+      !durablePanels.includes(value.panel as string | null)
     )
       return { panel: null };
     return {
-      panel: value.panel as Panel,
+      panel: restoredPanel(value.panel as string | null),
       ...(value.panel === "routine" &&
       "routineId" in value &&
       typeof value.routineId === "string" &&
@@ -52,6 +51,16 @@ export function readRightPanelState(key: string): RightPanelState {
   } catch {
     return { panel: null };
   }
+}
+
+/**
+ * A bot's panel reopens on the panel itself: a whole list is somewhere it led to, and the
+ * computer tab an older version stored is gone.
+ */
+function restoredPanel(panel: string | null): Panel {
+  return panel === "computer" || panel === "routines" || panel === "pages"
+    ? "settings"
+    : (panel as Panel);
 }
 
 export function writeRightPanelState(key: string, panel: Panel, routineId?: string) {

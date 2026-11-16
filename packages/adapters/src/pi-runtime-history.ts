@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import type { AssistantMessage, Context, Message, ToolCall } from "@earendil-works/pi-ai";
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import { TOOL_STEP_CALLS_KEPT, toolStepOutcomeText } from "@rakazo/core";
+import {
+  CONVERSATION_START,
+  imageNotKeptNote,
+  REPLAYED_SCREENSHOT_LEAD,
+  toolNotAvailableNote,
+} from "./history-replay.prompt.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
 import { normalizeAgentToolName } from "./pi-runtime-tools.js";
 import { bounded, IMAGE_NOT_KEPT, TOOL_CALL_TEXT_MAX_CHARS } from "./tool-step-calls.js";
@@ -33,8 +39,6 @@ const NO_USAGE = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
-/** Stands in for the opening turn when the window starts on a bot message (Bedrock needs a user first). */
-const CONVERSATION_START = "[Conversation start]";
 
 type HistoryMessage = Message & {
   rakazoHistory: true;
@@ -128,10 +132,7 @@ function replayedResult(
     wordsAfter.length > WORDS_AFTER_IMAGE_MAX_CHARS
       ? `${wordsAfter.slice(0, WORDS_AFTER_IMAGE_MAX_CHARS)}…`
       : wordsAfter;
-  const seen = quote
-    ? `[${ended} You looked at this image then; it is not kept. What you wrote next: "${quote}"]`
-    : `[${ended} You looked at this image then; it is not kept.]`;
-  return { text: call.result.replace(IMAGE_NOT_KEPT, seen), isError };
+  return { text: call.result.replace(IMAGE_NOT_KEPT, imageNotKeptNote(ended, quote)), isError };
 }
 
 /** The bot's next words after a step: the following step's note, or the text after the steps. */
@@ -235,12 +236,11 @@ function replayedToolReply(
           content: [
             {
               type: "text",
-              // Without this a model reads a call to a tool it no longer has as one it never made.
               text: `${
                 seen
-                  ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, "[the screenshot you took:]")
+                  ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, REPLAYED_SCREENSHOT_LEAD)
                   : result.text
-              }${offered.has(name) ? "" : `\n[${name} is not available to you now.]`}`,
+              }${offered.has(name) ? "" : toolNotAvailableNote(name)}`,
             },
             ...(seen ? [screenshot] : []),
           ],

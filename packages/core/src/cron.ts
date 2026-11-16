@@ -611,7 +611,7 @@ function instantOfWallTime(wall: number, zone: string): number {
   return later;
 }
 
-function validTimezoneOrUtc(timezone: string): string {
+export function validTimezoneOrUtc(timezone: string): string {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
     return timezone;

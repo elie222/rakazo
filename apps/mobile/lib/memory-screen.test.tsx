@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -92,7 +93,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<MemoryScreen />));
@@ -125,10 +126,10 @@ it("says when nothing is remembered, and retries a failed load", async () => {
 });
 
 it("keeps the newest list when an earlier load finishes last", async () => {
-  let finishFirst!: (docs: unknown[]) => void;
+  const finishFirst = deferred<unknown[]>();
   mocks.rpc
     .mockResolvedValueOnce([{ id: "old", path: "deleted.md" }])
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockReturnValueOnce(finishFirst.promise)
     .mockResolvedValueOnce([]);
   await render();
   const refresh = () =>
@@ -137,7 +138,7 @@ it("keeps the newest list when an earlier load finishes last", async () => {
   await act(async () => refresh());
   await settle();
   expect(container.textContent).toContain("Nothing remembered yet");
-  await act(async () => finishFirst([{ id: "old", path: "deleted.md" }]));
+  await act(async () => finishFirst.resolve([{ id: "old", path: "deleted.md" }]));
   await settle();
   expect(container.textContent).not.toContain("deleted.md");
 });

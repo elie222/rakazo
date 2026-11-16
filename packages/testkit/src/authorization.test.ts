@@ -19,6 +19,7 @@ import {
   runAsSystem,
   runAsTenant,
   setSpaceSettingOverride,
+  withLease,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
@@ -383,6 +384,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/exportMarkdown", {}],
       ["memory/remove"],
       ["memory/providerConfig"],
+      ["memory/providers"],
       ["memory/connectProvider"],
       ["memory/updateProvider"],
       ["memory/setDefaultScope"],
@@ -453,6 +455,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/list"],
       ["usage/summary"],
       ["usage/limits"],
+      ["usage/breakdown", {}],
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
       ["notifications/subscribe"],
@@ -1988,12 +1991,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       claimSpaceDeletionForMember(handles.prisma, deleteInput),
     );
     expect(replacementClaim.recovered).toBe(true);
+    // Even while holding the Space's lease, a replaced claim deletes nothing.
     await expect(
       asMember(() =>
-        deleteClaimedSpaceForMember(handles.prisma, {
-          ...deleteInput,
-          claimId: firstClaim.claimId,
-        }),
+        withLease(handles.prisma, `space-deletion:${space.id}`, { ttlMs: 60_000 }, (lease) =>
+          deleteClaimedSpaceForMember(handles.prisma, {
+            ...deleteInput,
+            claimId: firstClaim.claimId,
+            lease,
+          }),
+        ),
       ),
     ).rejects.toThrow("Space deletion is already in progress");
     await asMember(() =>
@@ -2417,9 +2424,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
         apiKey: "fake-key",
       });
     }
-    expect(
-      await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
-    ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
 });
 

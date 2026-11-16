@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import type { ReactElement, ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -155,8 +156,8 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<PluginRoute />));

@@ -1,5 +1,4 @@
 import type { SandboxKindCapabilities } from "@rakazo/adapter-kit";
-import type { SandboxKind } from "@rakazo/contracts";
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
 import { appleContainerSandboxCapabilities } from "./apple-container-capabilities.js";
 import { boatSandboxCapabilities } from "./boat-capabilities.js";
@@ -18,8 +17,11 @@ import { novitaSandboxCapabilities } from "./novita-capabilities.js";
 import { railwaySandboxCapabilities } from "./railway-capabilities.js";
 import { wuyingSandboxCapabilities } from "./wuying-capabilities.js";
 
-/** A kind with no entry here fails typecheck, so a new provider cannot skip its declaration. */
-export const sandboxCapabilitiesByKind: Record<SandboxKind, SandboxKindCapabilities> = {
+/**
+ * The computer providers this build has, by id. The factory switches over these keys, so a
+ * provider cannot be built without declaring its capabilities here.
+ */
+export const sandboxCapabilitiesByKind = {
   none: noneSandboxCapabilities,
   docker: dockerSandboxCapabilities,
   e2b: e2bSandboxCapabilities,
@@ -36,7 +38,16 @@ export const sandboxCapabilitiesByKind: Record<SandboxKind, SandboxKindCapabilit
   wuying: wuyingSandboxCapabilities,
   desktop: desktopSandboxCapabilities,
   fake: fakeSandboxCapabilities,
-};
+} satisfies Record<string, SandboxKindCapabilities>;
+
+/** A kind this build has a provider for. Outside adapters a kind is an opaque string. */
+export type KnownSandboxKind = keyof typeof sandboxCapabilitiesByKind;
+
+export const knownSandboxKinds = Object.keys(sandboxCapabilitiesByKind) as KnownSandboxKind[];
+
+export function isKnownSandboxKind(kind: string | null | undefined): kind is KnownSandboxKind {
+  return !!kind && Object.hasOwn(sandboxCapabilitiesByKind, kind);
+}
 
 /** A stored kind no provider declares anymore reads as a plain remote Linux computer. */
 const UNDECLARED_KIND_CAPABILITIES: SandboxKindCapabilities = {
@@ -55,15 +66,11 @@ const UNDECLARED_KIND_CAPABILITIES: SandboxKindCapabilities = {
  * run computers of several kinds.
  */
 export function sandboxKindCapabilities(kind: string | null | undefined): SandboxKindCapabilities {
-  return kind && Object.hasOwn(sandboxCapabilitiesByKind, kind)
-    ? sandboxCapabilitiesByKind[kind as SandboxKind]
-    : UNDECLARED_KIND_CAPABILITIES;
+  return isKnownSandboxKind(kind) ? sandboxCapabilitiesByKind[kind] : UNDECLARED_KIND_CAPABILITIES;
 }
 
 export function sandboxKindsWhere(
   matches: (capabilities: SandboxKindCapabilities) => boolean,
-): SandboxKind[] {
-  return (Object.keys(sandboxCapabilitiesByKind) as SandboxKind[]).filter((kind) =>
-    matches(sandboxCapabilitiesByKind[kind]),
-  );
+): string[] {
+  return knownSandboxKinds.filter((kind) => matches(sandboxCapabilitiesByKind[kind]));
 }

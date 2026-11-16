@@ -141,7 +141,6 @@ describe("lingui catalogs", () => {
         "Disable a tool",
         "Edit name",
         "Enable {0}",
-        "Model connections",
         "Permissions",
         "Skills",
       ]) {

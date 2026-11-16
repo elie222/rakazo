@@ -20,6 +20,7 @@ import { requireAdmin } from "../admins.js";
 import { searchIntegrationCatalog } from "../integration-catalog.js";
 import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../mcp-servers.js";
 import {
+  installConfig,
   installPlugin,
   lockPluginInstalls,
   rethrowUnlessPluginSourceFailed,
@@ -110,7 +111,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           version: row.version,
           digest: row.digest,
           secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
+          config: installConfig(row),
           availability: spaceAvailability(row),
           createdAt: row.createdAt.toISOString(),
         }));
@@ -265,7 +266,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           version: row.version,
           digest: row.digest,
           secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
+          config: installConfig(row),
           availability: spaceAvailability(row),
           createdAt: row.createdAt.toISOString(),
         };

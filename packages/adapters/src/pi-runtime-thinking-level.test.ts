@@ -16,6 +16,7 @@ const fakeAgentState = vi.hoisted(() => ({
   sessionIds: [] as Array<string | undefined>,
   subagentArgs: { name: "helper", task: "help" } as Record<string, unknown>,
   lastSubagentResult: undefined as unknown,
+  delegated: [] as Record<string, unknown>[],
   failPrompt: false,
   abortCalls: 0,
 }));
@@ -148,7 +149,10 @@ async function runWithModel(
         maxImagesPerPrompt,
         ...limits,
       },
-      executeTool: vi.fn(async () => ({ ok: true })),
+      executeTool: vi.fn(async (_name, args) => {
+        fakeAgentState.delegated.push(args);
+        return { ok: true };
+      }),
       resolveModel,
     },
     {
@@ -188,15 +192,16 @@ describe("Pi agent thinking level", () => {
     fakeAgentState.sessionIds = [];
     fakeAgentState.subagentArgs = { name: "helper", task: "help" };
     fakeAgentState.lastSubagentResult = undefined;
+    fakeAgentState.delegated.length = 0;
     fakeAgentState.failPrompt = false;
     vi.unstubAllEnvs();
   });
 
-  it("uses medium reasoning for the main agent and subagent", async () => {
+  it("uses medium reasoning for a reasoning model", async () => {
     // Regression for OpenRouter mandatory-reasoning models (#114): forcing
     // thinkingLevel "off" becomes effort "none" and the provider returns 400.
     const levels = await runWithModel("reasoning-model");
-    expect(levels).toEqual(["medium", "medium"]);
+    expect(levels).toEqual(["medium"]);
     expect(levels.every((level) => level !== "off")).toBe(true);
   });
 
@@ -208,37 +213,22 @@ describe("Pi agent thinking level", () => {
 
   it("honors a per-bot thinking level on reasoning models", async () => {
     const levels = await runWithModel("grok-4.6", "xai", new AbortController().signal, "high");
-    expect(levels).toEqual(["high", "high"]);
+    expect(levels).toEqual(["high"]);
   });
 
-  it("resolves and runs an explicitly selected subagent model", async () => {
+  it("passes an explicit subagent model to the executor without starting it inline", async () => {
     fakeAgentState.subagentArgs = {
       name: "helper",
       task: "help",
-      model_provider: "xai",
-      model_id: "grok-4.6",
+      model_provider: "test",
+      model_id: "reasoning-model",
     };
-    const resolveModel = vi.fn(async (provider: string, modelId: string) => ({
-      provider,
-      id: modelId,
-      apiKey: "subagent-key",
-      thinkingLevel: "high" as const,
-    }));
-
-    const levels = await runWithModel(
-      "plain-model",
-      "test",
-      new AbortController().signal,
-      null,
-      resolveModel,
-    );
-
-    expect(resolveModel).toHaveBeenCalledWith("xai", "grok-4.6");
-    expect(fakeAgentState.models.map((model) => `${model.provider}/${model.id}`)).toEqual([
-      "test/plain-model",
-      "xai/grok-4.6",
+    await runWithModel("plain-model");
+    expect(fakeAgentState.delegated).toEqual([
+      expect.objectContaining({ model_provider: "test", model_id: "reasoning-model" }),
     ]);
-    expect(levels).toEqual(["off", "high"]);
+    expect(fakeAgentState.models).toHaveLength(1);
+    expect(fakeAgentState.models[0]?.id).toBe("plain-model");
   });
 
   it.each([
@@ -260,12 +250,16 @@ describe("Pi agent thinking level", () => {
         "test",
         new AbortController().signal,
         null,
-        async () => ({
-          provider: "test",
-          id: "plain-model",
-          maxImagesPerPrompt: childLimit,
-        }),
+        undefined,
         parentLimit,
+      );
+      await runWithModel(
+        "plain-model",
+        "test",
+        new AbortController().signal,
+        null,
+        undefined,
+        childLimit ?? 2,
       );
       const screenshots: Message[] = [
         { role: "user", content: "inspect screenshots", timestamp: 0 },
@@ -311,46 +305,8 @@ describe("Pi agent thinking level", () => {
     },
   );
 
-  it("rejects an incomplete per-call subagent model pair", async () => {
-    fakeAgentState.subagentArgs = {
-      name: "helper",
-      task: "help",
-      model_provider: "xai",
-    };
-    const resolveModel = vi.fn();
-
-    await runWithModel("plain-model", "test", new AbortController().signal, null, resolveModel);
-
-    expect(resolveModel).not.toHaveBeenCalled();
-    expect(fakeAgentState.lastSubagentResult).toMatchObject({
-      details: {
-        result: "Subagent failed: model_provider and model_id must both be set",
-      },
-    });
-  });
-
-  it("surfaces a scoped model-resolution failure without starting the helper", async () => {
-    fakeAgentState.subagentArgs = {
-      name: "helper",
-      task: "help",
-      model_provider: "anthropic",
-      model_id: "claude-opus-4-6",
-    };
-    const resolveModel = vi.fn(async () => {
-      throw new Error("Connect that model provider first");
-    });
-
-    await runWithModel("plain-model", "test", new AbortController().signal, null, resolveModel);
-
-    expect(resolveModel).toHaveBeenCalledWith("anthropic", "claude-opus-4-6");
-    expect(fakeAgentState.models).toHaveLength(1);
-    expect(fakeAgentState.lastSubagentResult).toMatchObject({
-      details: { result: "Subagent failed: Connect that model provider first" },
-    });
-  });
-
-  it("keeps reasoning off for the main agent and subagent", async () => {
-    expect(await runWithModel("plain-model")).toEqual(["off", "off"]);
+  it("keeps reasoning off for a non-reasoning model", async () => {
+    expect(await runWithModel("plain-model")).toEqual(["off"]);
   });
 
   it("normalizes and runs a configured OpenRouter model absent from the static catalog", async () => {
@@ -359,7 +315,7 @@ describe("Pi agent thinking level", () => {
 
     const levels = await runWithModel("  stealth/ox-alpha  ", "openrouter");
 
-    expect(fakeAgentState.models).toHaveLength(2);
+    expect(fakeAgentState.models).toHaveLength(1);
     expect(fakeAgentState.models[0]).toMatchObject({
       id: "stealth/ox-alpha",
       provider: "openrouter",
@@ -370,7 +326,7 @@ describe("Pi agent thinking level", () => {
       maxTokens: 8192,
     });
     // Unknown OpenRouter PI_DEFAULT_MODEL must not force thinking off (#114).
-    expect(levels).toEqual(["medium", "medium"]);
+    expect(levels).toEqual(["medium"]);
     expect(levels.every((level) => level !== "off")).toBe(true);
   });
 

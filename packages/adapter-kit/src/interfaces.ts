@@ -16,6 +16,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
   BrowserActRequest,
@@ -452,6 +453,7 @@ export interface AgentHomeStore {
     context: AdapterContext,
     options?: { directory?: string; skipHidden?: boolean },
   ): AsyncIterable<PortableFile>;
+  /** Throws `SandboxFileTooLargeError` for a file over `maxBytes`. */
   readFile(
     botId: string,
     path: string,
@@ -567,6 +569,11 @@ export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
   createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
+  /**
+   * Paid own-key plan invoices created since `since`, the payments a referring partner earns on.
+   * Credits never count.
+   */
+  listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
@@ -603,8 +610,16 @@ export interface BillingProvider {
   /** Sets seats on the customer's subscription; a no-op when none can still take updates. */
   updateSeats(customerId: string, seats: number): Promise<void>;
   cancelCustomerSubscriptions(customerId: string): Promise<void>;
-  /** Verifies the signature. `null` means the request is not authentic. */
-  parseWebhook(rawBody: string, headers: Headers): { customerId: string } | "ignored" | null;
+  /**
+   * Verifies the signature. `null` means the request is not authentic. An event about a payment
+   * rather than a customer, such as a dispute, names the payment for `customerForPayment`.
+   */
+  parseWebhook(
+    rawBody: string,
+    headers: Headers,
+  ): { customerId: string } | { paymentId: string } | "ignored" | null;
+  /** The customer a payment named by `parseWebhook` belongs to, or null when it has none. */
+  customerForPayment(paymentId: string): Promise<string | null>;
 }
 
 export interface ExecutionRunner {
@@ -669,6 +684,11 @@ export interface MessagingSurface {
    * webhook URL is reachable) otherwise never start until a webhook or send touches them.
    */
   initialize?(): Promise<void>;
+  /**
+   * Stop pulling inbound updates so a replacement process can claim them, while sends keep
+   * working. No-op for surfaces that only receive webhooks.
+   */
+  stopReceiving?(): Promise<void>;
   /**
    * Release long-lived inbound resources (Telegram getUpdates polling) so a
    * replacement process can claim them. No-op when the surface never started.

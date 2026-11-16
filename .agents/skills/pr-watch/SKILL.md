@@ -49,10 +49,18 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
   push and wait for required CI and automated review on that head. Do not restart
   this cycle for unrelated base advances. Ask when an interaction needs judgment
   or cannot be adequately verified.
-- Enforced branch protection and explicit current-base requirements still apply.
-  Check base freshness after CI finishes, not on each notification. If that
-  requirement repeatedly restarts CI, ask once for permission to use this
-  interaction-based policy and reuse the answer. Never bypass required checks.
+- Approval to get a PR reviewed, green and merged authorizes routine base-update
+  decisions. Do not pause monitoring or ask for a merge strategy merely because
+  the base advanced, even repeatedly. Review the interaction and proceed: merge
+  the tested head for unrelated advances, or update the base and verify material
+  interactions. Explicit user conditions remain binding: when the user requires
+  the current base, merge it and rerun the affected checks and required CI,
+  continuing without another permission request if it advances again. Do not
+  reinterpret that condition as permission to merge behind the base. Ask only
+  for a concrete unresolved
+  product, security or compatibility decision, or missing access. State that
+  decision and your recommendation, rather than asking permission to continue.
+  Enforced branch protection still applies. Never bypass required checks.
   Prefer GitHub's merge queue when configured; it tests combined changes but
   does not replace the interaction review above. Merge base updates; never
   rebase or force-push without authorization.
@@ -61,8 +69,8 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
    there is something to act on: a review finding you have not seen, a check
-   that newly failed, or every check run and commit status on the exact head
-   SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   that newly failed, or every check run, commit status and workflow run on the
+   exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
    Review bots usually answer long before the slowest check, so expect to
    handle comments while CI is still running.
 
@@ -91,6 +99,10 @@ steps too. Inspect `"$PRD" --logs <job-id>` before classifying the failure. Only
 rerun as infrastructure when the evidence establishes a setup/infrastructure
 failure, rather than a test assertion — `gh run rerun <run-id> --failed` and go
 back to 1.
+
+A `FAIL workflow` line is a run that ended without a failed job of its own, so
+there is no job log; `gh run view <run-id>` shows why it did not run, such as an
+invalid workflow file.
 
 The logs flag returns the assertion and code frame. Raw CI
 logs prefix every line with job name, step name, and a timestamp, and a
@@ -186,7 +198,7 @@ gh api graphql -f query='mutation($id:ID!){
 Finish only when one observation of a single SHA proves all of:
 
 1. `VERDICT green` — local, upstream, and PR head agree; no failing check or
-   status.
+   status, and no workflow run still queued or running.
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.

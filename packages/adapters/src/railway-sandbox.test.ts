@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
 import {
   RailwayGraphQLError,
@@ -623,7 +624,7 @@ describe("Railway computers", () => {
     try {
       const pending = transport("https://backboard.railway.com/graphql/v2");
       const assertion = expect(pending).rejects.toThrow("deadline");
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await flush();
       controller.abort(new Error("deadline"));
       await assertion;
       expect(deadline).toHaveBeenCalledWith(30_000);
@@ -636,17 +637,11 @@ describe("Railway computers", () => {
   it("captures and destroys a sandbox when canceled before the create response is read", async () => {
     const controller = new AbortController();
     const reason = new Error("provision canceled");
-    let acceptRequest!: () => void;
-    const accepted = new Promise<void>((resolve) => {
-      acceptRequest = resolve;
-    });
-    let sendResponse!: (response: Response) => void;
-    const response = new Promise<Response>((resolve) => {
-      sendResponse = resolve;
-    });
+    const accepted = deferred();
+    const response = deferred<Response>();
     const fetchMock = vi.fn((_input, _init) => {
-      acceptRequest();
-      return response;
+      accepted.resolve();
+      return response.promise;
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(Sandbox.create).mockImplementation(async (options) => {
@@ -659,9 +654,9 @@ describe("Railway computers", () => {
       { ...ctx, signal: controller.signal },
     );
     const assertion = expect(pending).rejects.toBe(reason);
-    await accepted;
+    await accepted.promise;
     controller.abort(reason);
-    sendResponse(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
+    response.resolve(new Response('{"data":{"sandboxCreate":{"id":"created"}}}'));
     await assertion;
 
     expect(fetchMock.mock.calls[0]?.[1]?.signal.aborted).toBe(false);

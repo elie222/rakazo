@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ResponseTooLargeError,
   readBoundedResponseBytes,
   readJsonObjectWithin,
   readResponseWithin,
@@ -142,5 +143,20 @@ describe("readJsonObjectWithin", () => {
     await expect(readJsonObjectWithin(new Response("x".repeat(65)), within)).rejects.toThrow(
       "Too large.",
     );
+  });
+});
+
+describe("ResponseTooLargeError", () => {
+  it.each([
+    ["a declared length", new Response("12345", { headers: { "content-length": "5" } })],
+    ["a streamed body", new Response(new Uint8Array(5))],
+  ])("names a response over its budget by %s", async (_, response) => {
+    const failure = readResponseWithin(response, {
+      maxBytes: 4,
+      tooLargeMessage: "Response exceeds the limit.",
+      signal: new AbortController().signal,
+    });
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Response exceeds the limit.");
   });
 });

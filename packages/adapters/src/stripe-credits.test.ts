@@ -769,3 +769,62 @@ describe("Stripe prepaid model credits", () => {
     },
   );
 });
+
+describe("Stripe credit disputes", () => {
+  const disputes: Record<string, Array<{ id: string; amount: number; status: string }>> = {
+    open: [{ id: "dp_needs_response", amount: 2000, status: "needs_response" }],
+    review: [{ id: "dp_under_review", amount: 2000, status: "under_review" }],
+    inquiry: [{ id: "dp_warning_needs_response", amount: 2000, status: "warning_needs_response" }],
+    won: [{ id: "dp_won", amount: 2000, status: "won" }],
+    lost: [{ id: "dp_lost", amount: 2000, status: "lost" }],
+    partial: [{ id: "dp_needs_response", amount: 1000, status: "needs_response" }],
+  };
+  const ids = Object.keys(disputes);
+  const page = (data: unknown[]) => Response.json({ data, has_more: false });
+  const provider = new StripeBillingProvider({
+    secretKey: "sk_test_fixture",
+    webhookSecret: "whsec_fixture",
+    fetch: vi.fn(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/charges")
+        return page(
+          ids.map((id) => ({
+            id,
+            payment_intent: `pi_${id}`,
+            currency: "usd",
+            paid: true,
+            captured: true,
+            disputed: true,
+            amount: 2000,
+            amount_refunded: id === "partial" ? 500 : 0,
+          })),
+        );
+      if (url.pathname === "/v1/checkout/sessions")
+        return page(
+          ids.map((id) => ({
+            id: `cs_${id}`,
+            mode: "payment",
+            payment_status: "paid",
+            currency: "usd",
+            amount_total: 2000,
+            payment_intent: `pi_${id}`,
+            metadata: { rakazo_credit_cents: "2000" },
+          })),
+        );
+      if (url.pathname === "/v1/disputes")
+        return page(disputes[url.searchParams.get("charge") ?? ""] ?? []);
+      return page([]);
+    }),
+  });
+
+  it("holds credits while a dispute is open, keeps them when it is won, and drops them when lost", async () => {
+    expect(await provider.listCreditPurchases("cus_fixture")).toEqual([
+      { id: "cs_open", amountCents: 2000, disputedCents: 2000 },
+      { id: "cs_review", amountCents: 2000, disputedCents: 2000 },
+      { id: "cs_inquiry", amountCents: 2000 },
+      { id: "cs_won", amountCents: 2000 },
+      { id: "cs_lost", amountCents: 0 },
+      { id: "cs_partial", amountCents: 1500, disputedCents: 1000 },
+    ]);
+  });
+});

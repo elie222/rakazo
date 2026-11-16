@@ -17,6 +17,7 @@ import {
 } from "@daytona/sdk";
 import type { PageBrowserCommand } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBrowserProvider } from "./computer-browser.js";
@@ -25,7 +26,11 @@ import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { installPageBrowserCommand } from "./page-browser-install.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
-import { MachineRecords, settleMachineCleanup } from "./sandbox-test-support.js";
+import {
+  assertSandboxReadLimit,
+  MachineRecords,
+  settleMachineCleanup,
+} from "./sandbox-test-support.js";
 
 const context = {
   operationId: "test",
@@ -205,21 +210,15 @@ describe("DaytonaSandboxProvider", () => {
     const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     const original = fixture.executeCommand.getMockImplementation()!;
-    let dispatch = () => {};
-    const dispatched = new Promise<void>((resolve) => {
-      dispatch = resolve;
-    });
-    let finish = (_value: { exitCode: number; result: string }) => {};
-    const finished = new Promise<{ exitCode: number; result: string }>((resolve) => {
-      finish = resolve;
-    });
+    const dispatched = deferred();
+    const finished = deferred<{ exitCode: number; result: string }>();
     const controller = new AbortController();
     let calls = 0;
     fixture.executeCommand.mockImplementation(async (command, cwd, env, timeout) => {
       if (command.includes("/usr/local/bin/rakazo-page-browser snapshot")) {
         calls++;
-        dispatch();
-        return finished;
+        dispatched.resolve();
+        return finished.promise;
       }
       return original(command, cwd, env, timeout);
     });
@@ -237,11 +236,11 @@ describe("DaytonaSandboxProvider", () => {
         settled = true;
       },
     );
-    await dispatched;
+    await dispatched.promise;
     controller.abort();
     await Promise.resolve();
     expect(settled).toBe(false);
-    finish({ exitCode: 0, result: '{"ok":true}' });
+    finished.resolve({ exitCode: 0, result: '{"ok":true}' });
     await expect(result).rejects.toThrow(/abort/i);
     expect(calls).toBe(1);
     expect(fixture.executeCommand.mock.calls.at(-1)?.[0]).toMatch(/^rm -f -- /);
@@ -378,6 +377,10 @@ describe("DaytonaSandboxProvider", () => {
       context,
     );
     expect(await provider.readFile(computer, "bin/tool", context)).toEqual(binary);
+    await assertSandboxReadLimit(provider, computer, context, {
+      path: "bin/tool",
+      content: binary,
+    });
     expect(await provider.listFiles(computer, "bin", context)).toEqual([
       { path: "bin/tool", kind: "file", size: 4, executable: true },
     ]);

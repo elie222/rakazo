@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
 import { i18n } from "@lingui/core";
 import type { ProductEvent, RoutineHistory, RoutineRun, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -105,17 +107,13 @@ async function mounted({
 }
 
 it("shows loading, then the latest runs as rows that open their chat", async () => {
-  let finish!: (value: RoutineHistory) => void;
-  routines.history.mockReturnValue(
-    new Promise<RoutineHistory>((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred<RoutineHistory>();
+  routines.history.mockReturnValue(finish.promise);
   const view = await mounted();
   try {
     expect(view.container.querySelector('[role="status"][aria-label="Loading…"]')).not.toBeNull();
     expect(view.container.textContent).not.toContain("No runs yet");
-    await act(async () => finish(page([run, { ...run, id: "silent", messageId: null }])));
+    await act(async () => finish.resolve(page([run, { ...run, id: "silent", messageId: null }])));
     await view.settled(() => expect(view.rows()).toHaveLength(2));
     expect(routines.history.mock.calls[0]?.[0]).toEqual({ routineId: "routine-1", limit: 5 });
     expect(view.container.textContent).not.toContain("1m 22s");

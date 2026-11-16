@@ -21,6 +21,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { computerTransitionTool } from "./pi-runtime-computer-mode.js";
 
 function response(
   target: Model<"openai-completions">,
@@ -614,4 +615,35 @@ it("keeps the computer model's thinking when resuming an approval in computer mo
         ),
     ),
   ).toBe(true);
+});
+
+it("defines the mode switches the model sees", () => {
+  const define = (mode: "main" | "computer") => {
+    const { name, label, description, parameters } = computerTransitionTool(
+      mode,
+      () => {},
+      new AbortController().signal,
+    );
+    return { name, label, description, parameters };
+  };
+  const text = (field: string) => ({
+    type: "object",
+    properties: { [field]: { type: "string", minLength: 1 } },
+    required: [field],
+    additionalProperties: false,
+  });
+  expect(define("main")).toEqual({
+    name: "enter_computer_mode",
+    label: "enter_computer_mode",
+    description:
+      "Hand off a concrete GUI goal to computer mode before any browser or desktop action. Call this alone; computer mode continues in the same run.",
+    parameters: text("goal"),
+  });
+  expect(define("computer")).toEqual({
+    name: "leave_computer_mode",
+    label: "leave_computer_mode",
+    description:
+      "Finish computer work and return a summary to the main model in this same run. Call this alone.",
+    parameters: text("summary"),
+  });
 });

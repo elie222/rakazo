@@ -1,5 +1,7 @@
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Deferred } from "./async.test-support.js";
+import { deferred } from "./async.test-support.js";
 import { createComputerUpdates } from "./computer-updates.js";
 
 const update: ComputerUpdate = {
@@ -17,14 +19,12 @@ afterEach(() => {
 });
 
 function pending() {
-  let resolve!: (rows: ComputerUpdate[]) => void;
-  const list = vi.fn(
-    () =>
-      new Promise<ComputerUpdate[]>((done) => {
-        resolve = done;
-      }),
-  );
-  return { list, resolve: (rows: ComputerUpdate[]) => resolve(rows) };
+  let read!: Deferred<ComputerUpdate[]>;
+  const list = vi.fn(() => {
+    read = deferred<ComputerUpdate[]>();
+    return read.promise;
+  });
+  return { list, resolve: (rows: ComputerUpdate[]) => read.resolve(rows) };
 }
 
 function store(list: () => Promise<ComputerUpdate[]>) {
@@ -168,34 +168,30 @@ describe("computer update presentation", () => {
   });
   it("asks no more after a refusal, even when signalled during the refused read", async () => {
     vi.useFakeTimers();
-    let reject!: (error: unknown) => void;
-    const list = vi.fn(
-      () =>
-        new Promise<ComputerUpdate[]>((_, fail) => {
-          reject = fail;
-        }),
-    );
+    let read!: Deferred<ComputerUpdate[]>;
+    const list = vi.fn(() => {
+      read = deferred<ComputerUpdate[]>();
+      return read.promise;
+    });
     const updates = store(list);
     const stop = updates.watch();
     updates.signalled();
-    reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    read.reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
     stop();
   });
   it("lets signals wait out a failed read's Retry-After", async () => {
     vi.useFakeTimers();
-    let reject!: (error: unknown) => void;
-    const list = vi.fn(
-      () =>
-        new Promise<ComputerUpdate[]>((_, fail) => {
-          reject = fail;
-        }),
-    );
+    let read!: Deferred<ComputerUpdate[]>;
+    const list = vi.fn(() => {
+      read = deferred<ComputerUpdate[]>();
+      return read.promise;
+    });
     const updates = store(list);
     const stop = updates.watch();
     updates.signalled();
-    reject(Object.assign(new Error("Busy"), { status: 429, retryAfterMs: 20_000 }));
+    read.reject(Object.assign(new Error("Busy"), { status: 429, retryAfterMs: 20_000 }));
     await vi.advanceTimersByTimeAsync(0);
     updates.signalled();
     await vi.advanceTimersByTimeAsync(19_000);

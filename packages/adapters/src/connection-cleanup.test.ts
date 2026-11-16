@@ -9,6 +9,8 @@ import {
   connectionCleanupJobKey,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { currentDbContext, runProviderTransaction } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
@@ -251,13 +253,13 @@ describe("connection.cleanup", () => {
     vi.useFakeTimers();
     const cancelAuthorizationRequest = vi.fn(async () => undefined);
     const { run, prisma, jobs } = cleanupJob({ cancelAuthorizationRequest });
-    let release = () => {};
+    let release: Deferred | undefined;
     const holder = runProviderTransaction(
       providerScopeKey(scope, scope.connectorId, scope.provider),
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
+      () => {
+        release = deferred();
+        return release.promise;
+      },
       120_000,
     );
     try {
@@ -270,7 +272,7 @@ describe("connection.cleanup", () => {
         expect.objectContaining({ payload: request, availableAt: expect.any(Date) }),
       );
     } finally {
-      release();
+      release?.resolve();
       await holder;
     }
   });

@@ -18,6 +18,7 @@ import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { formatRelativeTime } from "../../lib/relative-time";
+import { useEventListener } from "../../lib/use-event-listener";
 import { isApplePlatform } from "./shell-shortcuts";
 
 /** Pages listed before anything is typed. */
@@ -124,22 +125,17 @@ export function CommandPalette({
         ))}
       </CommandGroup>
     ) : null;
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.repeat) {
-        return;
-      }
-      if (!/^[1-9]$/.test(event.key)) return;
-      const bot = filteredBots[Number(event.key) - 1];
-      if (!bot) return;
-      event.preventDefault();
-      onSelectBot(bot.id);
-      onOpenChange(false);
+  useEventListener(open ? window : null, "keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.repeat) {
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filteredBots, onOpenChange, onSelectBot, open]);
+    if (!/^[1-9]$/.test(event.key)) return;
+    const bot = filteredBots[Number(event.key) - 1];
+    if (!bot) return;
+    event.preventDefault();
+    onSelectBot(bot.id);
+    onOpenChange(false);
+  });
 
   return (
     <CommandDialog

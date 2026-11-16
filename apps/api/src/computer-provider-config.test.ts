@@ -583,11 +583,54 @@ it.each(computerProviderDescriptors())(
   },
 );
 
-it("rejects unregistered providers and deployment-only providers for accounts", async () => {
-  const { deps } = makeAccountDeps();
+it("answers a provider this build does not have with a client error and saves nothing", async () => {
+  const unknown = { provider: "a-provider-since-removed", values: { apiKey: "test-key" } };
+  const refusal = {
+    name: "ClientError",
+    kind: "BAD_REQUEST",
+    message: "Unknown computer provider",
+  };
+  const deployment = makeDeps();
   await expect(
-    updateAccountComputerSettings(deps, actor, { provider: "unknown", values: {} }),
-  ).rejects.toThrow("Could not verify");
+    updateComputerProviderSettings(deployment.deps, actor, unknown),
+  ).rejects.toMatchObject(refusal);
+  expect(deployment.deps.secrets.put).not.toHaveBeenCalled();
+  expect(deployment.state.settings).toBeNull();
+  const account = makeAccountDeps();
+  await expect(updateAccountComputerSettings(account.deps, actor, unknown)).rejects.toMatchObject(
+    refusal,
+  );
+  expect(account.deps.secrets.put).not.toHaveBeenCalled();
+  expect(account.rows).toEqual([]);
+});
+
+it("reads saved settings for a provider this build does not have as the default", async () => {
+  const stored = JSON.stringify({ provider: "a-provider-since-removed", values: { apiKey: "k" } });
+  const deployment = makeDeps();
+  deployment.state.secrets.set("secret-old", stored);
+  deployment.state.settings = {
+    computerProvider: "a-provider-since-removed",
+    computerProviderCipher: "secret-old",
+  };
+  const shown = await getComputerProviderSettings(deployment.deps, actor);
+  expect(shown).toMatchObject({ provider: "default", values: {}, savedSecrets: {} });
+  expect(shown.providers.map((provider) => provider.id)).not.toContain("a-provider-since-removed");
+  const account = makeAccountDeps();
+  account.rows.push({
+    id: "secret-old",
+    userId: "user-1",
+    spaceId: null,
+    kind: "computer-provider",
+  });
+  account.state.secrets.set("secret-old", stored);
+  await expect(getAccountComputerSettings(account.deps, actor)).resolves.toMatchObject({
+    provider: "default",
+    values: {},
+  });
+});
+
+it("rejects deployment-only providers for accounts", async () => {
+  const { deps } = makeAccountDeps();
   await expect(
     updateAccountComputerSettings(deps, actor, {
       provider: "test-cloud",

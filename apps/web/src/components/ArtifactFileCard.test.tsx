@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -150,12 +151,8 @@ it("downloads independently before playback", async () => {
 it.each(["unmount", "change"])(
   "ignores pending bytes after %s and suppresses duplicate play",
   async (cleanup) => {
-    let resolve!: (bytes: Uint8Array) => void;
-    mocks.fetch.mockReturnValueOnce(
-      new Promise<Uint8Array>((done) => {
-        resolve = done;
-      }),
-    );
+    const bytes = deferred<Uint8Array>();
+    mocks.fetch.mockReturnValueOnce(bytes.promise);
     await act(async () => renderClip());
     const play = container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!;
     await act(async () => {
@@ -171,7 +168,7 @@ it.each(["unmount", "change"])(
         root = undefined;
       }
     });
-    await act(async () => resolve(new Uint8Array([1])));
+    await act(async () => bytes.resolve(new Uint8Array([1])));
     expect(mocks.create).not.toHaveBeenCalled();
     expect(container.querySelector("audio")).toBeNull();
   },
@@ -246,16 +243,11 @@ it("previews plain text in the app instead of only offering a download", async (
 });
 
 it("retries failed audio loads in place without duplicate requests", async () => {
-  let resolve!: (bytes: Uint8Array) => void;
+  const bytes = deferred<Uint8Array>();
   mocks.fetch
     .mockRejectedValueOnce(new Error("offline"))
     .mockRejectedValueOnce(new Error("still offline"))
-    .mockImplementationOnce(
-      () =>
-        new Promise<Uint8Array>((done) => {
-          resolve = done;
-        }),
-    );
+    .mockImplementationOnce(() => bytes.promise);
   await act(async () => renderClip());
   const play = () => container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -271,7 +263,7 @@ it("retries failed audio loads in place without duplicate requests", async () =>
   expect(mocks.fetch).toHaveBeenCalledTimes(3);
   expect(play().disabled).toBe(true);
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  await act(async () => resolve(new Uint8Array([1, 2, 3])));
+  await act(async () => bytes.resolve(new Uint8Array([1, 2, 3])));
   expect(container.querySelector("audio")?.getAttribute("src")).toBe("blob:audio-preview");
   expect(play()).toBeNull();
   expect(mocks.create).toHaveBeenCalledTimes(1);
@@ -279,13 +271,10 @@ it("retries failed audio loads in place without duplicate requests", async () =>
 });
 
 it.each(["unmount", "change"])("ignores a rejected retry after %s", async (cleanup) => {
-  let reject!: (error: Error) => void;
-  mocks.fetch.mockRejectedValueOnce(new Error("offline")).mockImplementationOnce(
-    () =>
-      new Promise<Uint8Array>((_, fail) => {
-        reject = fail;
-      }),
-  );
+  const late = deferred<Uint8Array>();
+  mocks.fetch
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockImplementationOnce(() => late.promise);
   await act(async () => renderClip());
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!.click(),
@@ -300,7 +289,7 @@ it.each(["unmount", "change"])("ignores a rejected retry after %s", async (clean
       root = undefined;
     }
   });
-  await act(async () => reject(new Error("late failure")));
+  await act(async () => late.reject(new Error("late failure")));
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(mocks.create).not.toHaveBeenCalled();
   if (cleanup === "change") {

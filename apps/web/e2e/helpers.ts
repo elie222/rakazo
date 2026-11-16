@@ -123,16 +123,16 @@ export async function openIntegrationsAdd(page: Page, item: string) {
 }
 
 /**
- * Opens the bot panel from the header pill and shows one tab, leaving an open routine editor.
- * `name` is the tab's label in the UI language ("Routines", or "자동 실행" in Korean).
+ * Opens the bot panel from the header pill on the panel itself (profile, computer, routines,
+ * pages), leaving an open routine editor or one of the panel's whole lists.
  */
-export async function openBotPanelTab(page: Page, name: string) {
+export async function openBotPanel(page: Page) {
   const pill = page.getByTestId("bot-settings-trigger");
-  const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
+  const profile = page.getByTestId("bot-settings").getByTestId("bot-profile-header");
   // A reloaded page restores its saved panel a moment after it draws, so a single pass can
-  // race that restore; the sequence is retried until the tab is selected.
+  // race that restore; the sequence is retried until the panel shows.
   await expect(async () => {
-    if (!(await tab.isVisible())) {
+    if (!(await profile.isVisible())) {
       // The pill closes whatever else the sidebar shows, such as a restored routine editor.
       if ((await pill.getAttribute("aria-expanded")) === "true") {
         await pill.click();
@@ -140,9 +140,16 @@ export async function openBotPanelTab(page: Page, name: string) {
       }
       await pill.click();
     }
-    await tab.click({ timeout: 2_000 });
-    await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+    await expect(profile).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
+}
+
+/** Opens the bot panel and unfolds its Settings (model, switches, instructions, memory). */
+export async function openBotSettings(page: Page) {
+  await openBotPanel(page);
+  const toggle = page.getByTestId("bot-settings-advanced").locator("button[aria-expanded]").first();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */
@@ -243,7 +250,11 @@ export async function openUserSettings(
   // A reload keeps settings open because the URL holds them; closing clears the URL at once.
   if (!new URL(page.url()).searchParams.has("settings")) {
     await page.getByTestId("user-menu-trigger").click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    // An open bot panel has its own Settings fold, so look only in the account menu.
+    await page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Settings", exact: true })
+      .click();
   }
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
@@ -349,8 +360,8 @@ export async function createNamedBot(
 }
 
 /**
- * Picks an option from one of the kit's dropdowns. They open a menu of options rather than a
- * native select, so selectOption() does not apply; options are matched by their visible name.
+ * Picks an option from one of the app's dropdowns, matched by its visible name. The menu opens
+ * at the page body, so options are looked up on the page rather than inside the trigger.
  */
 export async function chooseOption(trigger: Locator, option: string | { index: number }) {
   await trigger.click();

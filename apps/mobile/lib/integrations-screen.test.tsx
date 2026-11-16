@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -204,8 +206,7 @@ const account = {
 };
 let root: Root;
 let container: HTMLDivElement;
-let resolveCatalog: (items: (typeof item)[]) => void;
-let rejectCatalog: (error: Error) => void;
+let catalog: Deferred<(typeof item)[]>;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.current = true;
@@ -221,15 +222,12 @@ beforeEach(() => {
   state.marketplace
     .mockReset()
     .mockResolvedValue({ entries: [], unavailableRegistries: [], skippedEntries: 0 });
-  const pending = new Promise<(typeof item)[]>((resolve, reject) => {
-    resolveCatalog = resolve;
-    rejectCatalog = reject;
-  });
+  catalog = deferred<(typeof item)[]>();
   state.rpc
     .mockReset()
     .mockImplementation((proc: string) =>
       proc === "connections/catalog"
-        ? pending
+        ? catalog.promise
         : Promise.resolve(proc === "connections/list" ? [account] : []),
     );
   container = document.createElement("div");
@@ -244,14 +242,14 @@ async function render(node: ReactNode = <Integrations />) {
   await act(async () => root.render(node));
 }
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 it("keeps Search visible and shows rows on a cold load until the first success", async () => {
   await render();
   expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="integrations-loading"]')?.children).toHaveLength(8);
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
   expect(container.textContent).toContain("Example appAdded");
   expect(state.write).toHaveBeenCalledWith(expect.anything(), {
@@ -264,13 +262,13 @@ it("paints the cached list and Added state before replacing it in the background
   await render();
   expect(container.textContent).toContain("Example appAdded");
   expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
-  await act(async () => resolveCatalog([{ ...item, name: "Refreshed app" }]));
+  await act(async () => catalog.resolve([{ ...item, name: "Refreshed app" }]));
   expect(container.textContent).toContain("Refreshed appAdded");
 });
 it("keeps cached rows after a refresh failure and offers Retry", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
   await render();
-  await act(async () => rejectCatalog(new Error("Unavailable")));
+  await act(async () => catalog.reject(new Error("Unavailable")));
   expect(container.textContent).toContain("Example appAdded");
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
@@ -286,7 +284,7 @@ it("keeps cached rows after a refresh failure and offers Retry", async () => {
 });
 it("offers Retry on a cold failure without leaving a loading placeholder", async () => {
   await render();
-  await act(async () => rejectCatalog(new Error("Unavailable")));
+  await act(async () => catalog.reject(new Error("Unavailable")));
   expect(container.textContent).toContain("Retry");
   expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
 });
@@ -294,7 +292,7 @@ it("ignores a refresh after its scope changes", async () => {
   await render();
   state.current = false;
   state.scope.mockRejectedValue(new Error("session changed"));
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   expect(container.textContent).not.toContain("Example app");
   expect(state.write).not.toHaveBeenCalled();
 });
@@ -368,7 +366,7 @@ it("persists a rename before a pending stale refresh can overwrite it", async ()
     catalog: [item],
     connections: [{ ...account, displayName: "Renamed" }],
   });
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   expect(container.querySelector("input")?.value).toBe("Renamed");
   expect(state.write).toHaveBeenCalledTimes(1);
 });
@@ -459,16 +457,12 @@ it.each(["Add another", "Remove", "Uninstall"])(
 it("paints persisted cached rows while identity is pending or offline", async () => {
   state.persisted.mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
-  let rejectIdentity!: (error: Error) => void;
-  state.scope.mockReturnValue(
-    new Promise((_, reject) => {
-      rejectIdentity = reject;
-    }),
-  );
+  const rejectIdentity = deferred<never>();
+  state.scope.mockReturnValue(rejectIdentity.promise);
   await render();
   expect(container.textContent).toContain("Example appAdded");
   expect(state.rpc).not.toHaveBeenCalled();
-  await act(async () => rejectIdentity(new Error("offline")));
+  await act(async () => rejectIdentity.reject(new Error("offline")));
   expect(container.textContent).toContain("Example appAdded");
   expect(container.textContent).toContain("Retry");
 });
@@ -487,7 +481,7 @@ it("rebuilds a stale space and continues refreshing while the screen stays open"
       proc === "connections/catalog" ? [{ ...item, name: "Recovered app", connected: false }] : [],
     ),
   );
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   expect(state.scope).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain("Example app");
   expect(container.textContent).toContain("Recovered appAdd");
@@ -502,13 +496,10 @@ it("rebuilds a stale space and continues refreshing while the screen stays open"
 
 it("keeps sources loading when a rename cancels the catalog refresh", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
-  let resolveSources!: (value: unknown[]) => void;
-  const sources = new Promise<unknown[]>((resolve) => {
-    resolveSources = resolve;
-  });
+  const sources = deferred<unknown[]>();
   const original = state.rpc.getMockImplementation()!;
   state.rpc.mockImplementation((proc: string) =>
-    proc === "capabilities/list" ? sources : original(proc),
+    proc === "capabilities/list" ? sources.promise : original(proc),
   );
   await render();
   await act(async () =>
@@ -528,9 +519,9 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
       : original(proc),
   );
   await act(async () => input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   await act(async () =>
-    resolveSources([
+    sources.resolve([
       { id: "source-a", name: "Installed source", kind: "mcp", source: "https://example.test/mcp" },
     ]),
   );
@@ -547,7 +538,7 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
 
 it("keeps loaded plugins out of a loading state when scope lookup fails on refresh", async () => {
   await render();
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   expect(container.querySelector('[role="progressbar"]')).toBeNull();
   state.focused = false;
   await render();
@@ -565,7 +556,7 @@ it.each([true, false])(
   async (staleScope) => {
     const guidance = "Configure a plugin catalog on the server to connect apps.";
     await render();
-    await act(async () => resolveCatalog([]));
+    await act(async () => catalog.resolve([]));
     expect(container.textContent).toContain(guidance);
     state.focused = false;
     await render();
@@ -575,19 +566,15 @@ it.each([true, false])(
       return { userId: "user-a", spaceId: "space-b" };
     });
     state.read.mockReturnValue({ catalog: [], connections: [] });
-    let finishPlugins!: (value: unknown) => void;
-    state.marketplace.mockReturnValue(
-      new Promise((resolve) => {
-        finishPlugins = resolve;
-      }),
-    );
+    const finishPlugins = deferred<unknown>();
+    state.marketplace.mockReturnValue(finishPlugins.promise);
     state.rpc.mockResolvedValue([]);
     state.focused = true;
     await render();
     expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
     expect(container.textContent).not.toContain(guidance);
     await act(async () =>
-      finishPlugins({ entries: [], unavailableRegistries: [], skippedEntries: 0 }),
+      finishPlugins.resolve({ entries: [], unavailableRegistries: [], skippedEntries: 0 }),
     );
     expect(container.textContent).toContain(guidance);
   },
@@ -598,7 +585,7 @@ it("refreshes a different space on focus return and rejects the blurred refresh"
   await render();
   state.focused = false;
   await render();
-  await act(async () => resolveCatalog([{ ...item, name: "Late old app" }]));
+  await act(async () => catalog.resolve([{ ...item, name: "Late old app" }]));
   expect(container.textContent).not.toContain("Late old app");
   state.current = false;
   state.scope.mockImplementation(async () => {
@@ -606,18 +593,15 @@ it("refreshes a different space on focus return and rejects the blurred refresh"
     return { userId: "user-a", spaceId: "space-b" };
   });
   state.read.mockReturnValue(null);
-  let resolveNew!: (items: (typeof item)[]) => void;
-  const pending = new Promise<(typeof item)[]>((resolve) => {
-    resolveNew = resolve;
-  });
+  const pending = deferred<(typeof item)[]>();
   state.rpc.mockImplementation((proc: string) =>
-    proc === "connections/catalog" ? pending : Promise.resolve([]),
+    proc === "connections/catalog" ? pending.promise : Promise.resolve([]),
   );
   state.focused = true;
   await render();
   expect(container.textContent).not.toContain("Example app");
   expect(container.querySelector('[data-testid="integrations-loading"]')).not.toBeNull();
-  await act(async () => resolveNew([{ ...item, name: "New space app", connected: false }]));
+  await act(async () => pending.resolve([{ ...item, name: "New space app", connected: false }]));
   expect(container.textContent).toContain("New space appAdd");
   expect(state.scope).toHaveBeenCalledTimes(2);
 });
@@ -630,10 +614,7 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Added")?.click(),
     );
-    let finish!: (value: unknown) => void;
-    const pending = new Promise((resolve) => {
-      finish = resolve;
-    });
+    const pending = deferred<unknown>();
     const original = state.rpc.getMockImplementation()!;
     state.rpc.mockImplementation((proc: string) => {
       if (
@@ -641,7 +622,7 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
         proc === "connections/revoke" ||
         proc === "connections/complete"
       )
-        return pending;
+        return pending.promise;
       if (proc === "connections/begin")
         return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
       return original(proc);
@@ -684,10 +665,10 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
           : [],
       ),
     );
-    await act(async () => resolveCatalog([item]));
+    await act(async () => catalog.resolve([item]));
     expect(container.textContent).toContain("New space appAdd");
     const writes = state.write.mock.calls.length;
-    await act(async () => finish({ ...account, displayName: "Old space rename" }));
+    await act(async () => pending.resolve({ ...account, displayName: "Old space rename" }));
     expect(state.write).toHaveBeenCalledTimes(writes);
     expect(state.write).toHaveBeenLastCalledWith(
       { userId: "user-a", spaceId: "space-b" },
@@ -701,11 +682,8 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
 );
 
 it("ignores an old focus identity error after the new focus succeeds", async () => {
-  let failIdentity!: (reason: Error) => void;
-  const pending = new Promise((_, reject) => {
-    failIdentity = reject;
-  });
-  state.scope.mockReturnValueOnce(pending);
+  const pending = deferred<never>();
+  state.scope.mockReturnValueOnce(pending.promise);
   await render();
   state.focused = false;
   await render();
@@ -718,7 +696,7 @@ it("ignores an old focus identity error after the new focus succeeds", async () 
   state.focused = true;
   await render();
   expect(container.textContent).toContain("New space appAdd");
-  await act(async () => failIdentity(new Error("Old focus failed")));
+  await act(async () => pending.reject(new Error("Old focus failed")));
   expect(container.textContent).not.toContain("Old focus failed");
   expect(container.textContent).not.toContain("Retry");
   expect(container.textContent).toContain("New space appAdd");
@@ -823,7 +801,7 @@ it("lists plugins by category, hides ones named like a managed app, and opens on
     skippedEntries: 0,
   });
   await render();
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   const sections = container.querySelectorAll('[data-testid="plugin-section"]');
   expect([...sections].map((section) => section.textContent)).toEqual([
     "ProductivityCCalcomScheduling",
@@ -855,7 +833,7 @@ it("opens a managed app's brand plugin as one page and keeps skill packs out", a
     skippedEntries: 0,
   });
   await render();
-  await act(async () => resolveCatalog([{ ...item, connected: false }]));
+  await act(async () => catalog.resolve([{ ...item, connected: false }]));
   expect(container.textContent).not.toContain("Teaching");
   expect(container.querySelectorAll('[data-testid="plugin-section"]')).toHaveLength(0);
   const tile = [...container.querySelectorAll("button")].find(
@@ -923,7 +901,7 @@ it("lists a plugin connector under Apps, with its servers kept under the plugin"
         : fallback?.(proc),
   );
   await render();
-  await act(async () => resolveCatalog([item]));
+  await act(async () => catalog.resolve([item]));
   // An install from before parts could be chosen has both; its skills are listed in Skills.
   expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
     "AppsCCalcom1 connectorSign in",
@@ -999,7 +977,7 @@ it.each([
           : fallback?.(proc),
     );
     await render();
-    await act(async () => resolveCatalog([item]));
+    await act(async () => catalog.resolve([item]));
     expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
       `AppsCCalcom1 connector${action}`,
     );
@@ -1008,7 +986,7 @@ it.each([
 
 async function openMcpSource() {
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await act(async () => {
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "MCP server")
@@ -1140,7 +1118,7 @@ it("keeps an MCP sign-in that needed no browser when the following refresh fails
     return fallback?.(proc, args);
   });
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await press("Reconnect");
   expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "expired" });
   expect(container.textContent).toContain("Could not load integrations");
@@ -1155,7 +1133,7 @@ it("reports an MCP sign-in that could not start", async () => {
     return fallback?.(proc, args);
   });
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await press("Reconnect");
   expect(container.textContent).toContain("Could not start MCP OAuth");
 });
@@ -1208,7 +1186,7 @@ it("adds a source once when tapped again while a sign-in is still starting", asy
     return fallback?.(proc, args);
   });
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await press("Reconnect");
   await press("MCP server");
   await press("Verify and add");
@@ -1226,7 +1204,7 @@ it("clears a failed MCP sign-in once the servers load again", async () => {
     return fallback?.(proc, args);
   });
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await press("Reconnect");
   expect(container.textContent).toContain("Could not start MCP OAuth");
   await press("MCP server");
@@ -1250,7 +1228,7 @@ it("clears a failed add when another type is picked from the header menu", async
         .onPress(),
     );
   await render();
-  await act(async () => resolveCatalog([]));
+  await act(async () => catalog.resolve([]));
   await pick("MCP server");
   await press("Verify and add");
   expect(container.textContent).toContain("Could not add source");

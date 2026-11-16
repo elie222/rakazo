@@ -1,5 +1,6 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { returnHelperOutcome } from "./background-helpers.js";
@@ -50,14 +51,6 @@ function fakePrisma(
   } as unknown as PrismaClient;
 }
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 describe("createJobReconciler", () => {
   it("continues the main scans when an auxiliary reconciler fails", async () => {
     const prisma = fakePrisma();
@@ -102,7 +95,7 @@ describe("createJobReconciler", () => {
     const stopping = reconciler.stop().then(() => {
       stopped = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(stopped).toBe(false);
     storage.resolve();
     await stopping;
@@ -134,7 +127,7 @@ describe("createJobReconciler", () => {
     });
     acquired.resolve();
     await pass;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     expect(reconcileHomeStorage).toHaveBeenCalledOnce();
     expect(stopped).toBe(false);
@@ -215,7 +208,7 @@ describe("createJobReconciler", () => {
     );
   });
 
-  it("leaves queued resource waits untouched and recovers them after release", async () => {
+  it("recovers a queued chat while another run holds its computer", async () => {
     const run = {
       id: "run-waiting",
       status: "queued",
@@ -238,7 +231,7 @@ describe("createJobReconciler", () => {
 
     await reconciler.reconcileOnce();
 
-    expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
     expect(prisma.computerExecutionLease.findMany).toHaveBeenCalledWith({
       where: { botId: { in: ["bot-1"] }, expiresAt: { gt: expect.any(Date) } },
       select: { computerId: true, botId: true, runId: true, expiresAt: true },

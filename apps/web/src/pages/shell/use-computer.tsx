@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
 import type { RefObject } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComputerScreenResult } from "../../lib/computer-screen";
 import {
   createScreenRefocus,
@@ -20,6 +21,7 @@ import {
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { screenReadLoaded } from "../../lib/thread-events";
+import { useEventListener } from "../../lib/use-event-listener";
 
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
@@ -143,14 +145,13 @@ export function useComputerState({
     setShownScreen({ botId: frameBotId, url: screenUrl });
   }
   useEffect(() => {
-    if (!heldScreen) return;
-    if (screenLoadError) {
-      setHeldScreen(null);
-      return;
-    }
-    const timer = setTimeout(() => setHeldScreen(null), SCREEN_FRAME_LOAD_TIMEOUT_MS);
-    return () => clearTimeout(timer);
+    if (heldScreen && screenLoadError) setHeldScreen(null);
   }, [heldScreen, screenLoadError]);
+  useTimeout(
+    () => setHeldScreen(null),
+    heldScreen && !screenLoadError ? SCREEN_FRAME_LOAD_TIMEOUT_MS : null,
+    heldScreen,
+  );
   useEffect(() => {
     setHeldScreen(null);
   }, [computerOpen, panel]);
@@ -173,18 +174,25 @@ export function useComputerState({
     const url = embeddableScreenUrl(screenUrl);
     if (!isProxiedScreenUrl(url)) return;
     let cancelled = false;
-    const fallback = t`Could not connect to the computer screen`;
-    void probeScreen(url, fallback).then((error) => {
+    void probeScreen(url, t`Could not connect to the computer screen`).then((error) => {
       if (!cancelled && error && !screenFrameReported.current) setScreenLoadError(error);
     });
-    const timer = setTimeout(() => {
-      if (!cancelled && !screenFrameReported.current) setScreenLoadError(fallback);
-    }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [screenFrame, screenUrl]);
+  // A new frame or screen URL starts the wait again.
+  const screenLoad = useMemo(() => ({}), [screenFrame, screenUrl]);
+  useTimeout(
+    () => {
+      if (!screenFrameReported.current)
+        setScreenLoadError(t`Could not connect to the computer screen`);
+    },
+    screenFrame && isProxiedScreenUrl(embeddableScreenUrl(screenUrl))
+      ? SCREEN_FRAME_LOAD_TIMEOUT_MS
+      : null,
+    screenLoad,
+  );
   useEffect(() => {
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;
@@ -355,27 +363,19 @@ export function useComputerState({
       }
     };
   }, [screenFrame]);
+  const viewport = computerOpen ? window.visualViewport : null;
+  const syncViewport = () => {
+    if (viewport) setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
+  };
   useEffect(() => {
-    if (!computerOpen) {
-      setComputerViewport(null);
-      return;
-    }
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const sync = () => {
-      setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
-    };
-    sync();
-    viewport.addEventListener("resize", sync);
-    viewport.addEventListener("scroll", sync);
-    return () => {
-      viewport.removeEventListener("resize", sync);
-      viewport.removeEventListener("scroll", sync);
-    };
+    if (computerOpen) syncViewport();
+    else setComputerViewport(null);
   }, [computerOpen]);
+  useEventListener(viewport, "resize", syncViewport);
+  useEventListener(viewport, "scroll", syncViewport);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "computer" || computerOpen;
+  computerVisible.current = computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 

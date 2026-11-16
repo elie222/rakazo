@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { APP_LOCALE_LABELS } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { setItemAsync } from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -123,13 +125,11 @@ function expectSelected(label: string) {
 it.each(["ru", "de", "zh-TW"] as const)(
   "saves and selects %s when its language row is pressed",
   async (locale) => {
-    let finishSave!: () => void;
-    vi.mocked(setItemAsync).mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishSave = resolve;
-        }),
-    );
+    let finishSave!: Deferred;
+    vi.mocked(setItemAsync).mockImplementation(() => {
+      finishSave = deferred();
+      return finishSave.promise;
+    });
     await act(async () => root.render(<Language />));
     expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(
       UI_LOCALES.map((code) => APP_LOCALE_LABELS[code]),
@@ -144,7 +144,7 @@ it.each(["ru", "de", "zh-TW"] as const)(
     expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
 
     await act(async () => {
-      finishSave();
+      finishSave.resolve();
       await vi.mocked(i18n.setUiLocale).mock.results[0]!.value;
     });
     expect(i18n.getActiveUiLocale()).toBe(locale);

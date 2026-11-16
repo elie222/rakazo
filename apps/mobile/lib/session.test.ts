@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,21 +48,17 @@ describe("mobile session storage", () => {
 
   it("hides the previous bearer while a replacement token is being stored", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-old-token");
-    let finish!: () => void;
-    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    const write = deferred();
+    const setItem = vi.fn(() => write.promise);
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(setItem);
     const listener = vi.fn();
     const unsubscribe = subscribeSessionGeneration(listener);
     const saving = saveSessionToken("fake-new-token");
     expect(listener).toHaveBeenCalledOnce();
     unsubscribe();
-    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(setItem).toHaveBeenCalled());
     expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
-    finish();
+    write.resolve();
     await saving;
   });
 
@@ -330,20 +328,23 @@ describe("password change token rotation", () => {
     ["sign-in", "fake-other"],
   ])("lets a %s during the recovery write win", async (change, expected) => {
     disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
-    let release: (() => void) | undefined;
+    let recoveryWrite: Deferred | undefined;
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (value === "fake-new") await new Promise<void>((resolve) => (release = resolve));
+      if (value === "fake-new") {
+        recoveryWrite = deferred();
+        await recoveryWrite.promise;
+      }
       disk.set(key, value);
     });
 
     const next = await restart();
     const recovering = next.loadSessionToken();
-    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(recoveryWrite).toBeDefined());
     const changing =
       change === "sign-out" ? next.clearSessionToken() : next.saveSessionToken(expected);
     // The session change runs as far as it can before the delayed recovery write finishes.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    release?.();
+    recoveryWrite?.resolve();
     await Promise.all([recovering, changing]);
 
     expect(disk.get("rakazo.session_token") ?? "").toBe(expected);
@@ -484,19 +485,16 @@ describe("verified integration session scope", () => {
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
   });
   it("serializes an in-flight scope write before sign-out deletes it", async () => {
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === "rakazo.integrations-scope") await pending;
+      if (key === "rakazo.integrations-scope") await pending.promise;
       disk.set(key, value);
     });
     const saving = saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
     await Promise.resolve();
     await Promise.resolve();
     const clearing = clearSessionToken();
-    release();
+    pending.resolve();
     await Promise.all([saving, clearing]);
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
     expect(await loadVerifiedIntegrationsScope()).toBeNull();

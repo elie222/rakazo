@@ -1,5 +1,4 @@
 import type { ComputerRef, SandboxProvider, UnreferencedMachineRecords } from "@rakazo/adapter-kit";
-import { SandboxKind } from "@rakazo/contracts";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
@@ -11,6 +10,8 @@ import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
 import { NovitaSandboxProvider } from "./novita-sandbox.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
+import type { KnownSandboxKind } from "./sandbox-kind-capabilities.js";
+import { isKnownSandboxKind, knownSandboxKinds } from "./sandbox-kind-capabilities.js";
 
 export interface SandboxProviderOptions {
   hostComputerUrl?: string;
@@ -75,20 +76,7 @@ export interface SandboxProviderOptions {
   dataDir?: string;
 }
 
-function missingRemoteKey(
-  provider:
-    | "novita"
-    | "e2b"
-    | "daytona"
-    | "createos"
-    | "boat"
-    | "boxd"
-    | "instabox"
-    | "railway"
-    | "incus"
-    | "wuying",
-  envName: string,
-): SandboxProvider {
+function missingRemoteKey(provider: KnownSandboxKind, envName: string): SandboxProvider {
   return new NoneSandboxProvider(
     `Computers unavailable: ${envName} is required for SANDBOX_PROVIDER=${provider}.`,
   );
@@ -99,13 +87,10 @@ export async function createSandboxProvider(
   opts: SandboxProviderOptions,
 ): Promise<SandboxProvider> {
   if (kind === "") return new NoneSandboxProvider();
-  const parsed = SandboxKind.safeParse(kind);
-  if (!parsed.success) {
-    throw new Error(
-      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | wuying | desktop | fake.`,
-    );
+  if (!isKnownSandboxKind(kind)) {
+    throw new Error(`Unknown SANDBOX_PROVIDER "${kind}". Use ${knownSandboxKinds.join(" | ")}.`);
   }
-  const sandboxKind = parsed.data;
+  const sandboxKind: KnownSandboxKind = kind;
   switch (sandboxKind) {
     case "none":
       return new NoneSandboxProvider();
@@ -258,9 +243,7 @@ export async function createSandboxProvider(
       return new FakeSandboxProvider();
     default: {
       const _exhaustive: never = sandboxKind;
-      throw new Error(
-        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | wuying | desktop | fake.`,
-      );
+      throw new Error(`Unknown SANDBOX_PROVIDER "${_exhaustive}".`);
     }
   }
 }

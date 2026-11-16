@@ -10,7 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
   isSpeechModelId,
@@ -287,7 +287,7 @@ async function readFishResponse(res: Response): Promise<unknown> {
 }
 
 function fishUnreadBody(error: unknown): { message: string } {
-  if (error instanceof Error && error.message === "Voice response is too large.") {
+  if (error instanceof ResponseTooLargeError) {
     return { message: error.message };
   }
   return { message: "response body could not be read" };

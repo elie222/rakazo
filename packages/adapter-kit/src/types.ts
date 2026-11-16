@@ -406,9 +406,16 @@ export interface MemorySearchResult {
   score: number;
 }
 
-/** A full-document save lost the race to another writer. The caller should read again. */
 export const MEMORY_REVISION_CONFLICT_ERROR =
   "Shared memory changed since it was read. Read the latest version and save again.";
+
+/** A full-document save lost the race to another writer. The caller should read again. */
+export class MemoryRevisionConflictError extends Error {
+  constructor() {
+    super(MEMORY_REVISION_CONFLICT_ERROR);
+    this.name = "MemoryRevisionConflictError";
+  }
+}
 
 export interface MemoryCommitRequest {
   scope: "bot" | "user";
@@ -961,9 +968,15 @@ export interface BackgroundJobPayloads {
   "messaging.send": { outboundId: string };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
-  /** The previous release's outbox drain; drained by the new delivery path. */
+  /**
+   * The previous release's outbox drain, drained by the new path.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.deliver": { runId?: string };
-  /** The previous release's interim-message mirror; drained by the new delivery path. */
+  /**
+   * The previous release's interim-message mirror.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.progress": { runId: string };
   /**
    * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
@@ -971,7 +984,10 @@ export interface BackgroundJobPayloads {
    * unreferenced. `ref` is the store's reference to a remote entry, never a value.
    */
   "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
-  /** The previous release's `secret.cleanup` for a messaging installation. */
+  /**
+   * The previous release's `secret.cleanup` for a messaging install.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /**
    * Backup for removing an authorization a connection flow left at the provider with no local
@@ -1003,6 +1019,7 @@ export interface BackgroundJobPayloads {
 /** What held a secret-store reference before it was replaced or dropped. */
 export type SecretCleanupKind =
   | "secret_row"
+  | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
   | "purchase_request"
@@ -1634,9 +1651,23 @@ export interface BillingPrice {
 export interface BillingCreditPurchase {
   /** Stable provider payment identity, including any subsequent refund adjustment. */
   id: string;
+  /** Paid net of refunds and lost disputes; a reduction is final. */
   amountCents: number;
+  /** Part of `amountCents` an open payment dispute holds back; it returns if the dispute is won. */
+  disputedCents?: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
+}
+
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
 }
 
 export interface BillingCreditCheckoutRequest {

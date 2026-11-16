@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -412,19 +413,15 @@ it("asks an external sign-in before it deletes the kept queue", async () => {
 
 it("ignores a second tap while an external sign-in waits on the queue check", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
-  let decide!: (keep: boolean) => void;
-  vi.mocked(confirmUnsentSendLoss).mockReturnValue(
-    new Promise<boolean>((resolve) => {
-      decide = resolve;
-    }),
-  );
+  const decide = deferred<boolean>();
+  vi.mocked(confirmUnsentSendLoss).mockReturnValue(decide.promise);
   await render();
   const sso = ssoButtons()[0]!;
   await act(async () => sso.click());
   await act(async () => sso.click());
   expect(confirmUnsentSendLoss).toHaveBeenCalledOnce();
 
-  await act(async () => decide(false));
+  await act(async () => decide.resolve(false));
   expect(continueWithSso).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
   // Cancelling released the button, so a later attempt asks again.
@@ -450,15 +447,15 @@ it("signs in with a typed password and emails a code when it is blank", async ()
 
 it("verifies the code even if a password was typed while it was sent", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  let sent!: () => void;
-  vi.mocked(sendSignInCode).mockReturnValue(new Promise<void>((resolve) => (sent = resolve)));
+  const sent = deferred();
+  vi.mocked(sendSignInCode).mockReturnValue(sent.promise);
   vi.mocked(signInWithCode).mockResolvedValue();
   vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
   await type(input("Password")!, "example-password");
-  await act(async () => sent());
+  await act(async () => sent.resolve());
   await type(input("Code")!, "123456");
   expect(signInWithCode).toHaveBeenCalledWith("ada@example.test", "123456", undefined);
   expect(signIn).not.toHaveBeenCalled();

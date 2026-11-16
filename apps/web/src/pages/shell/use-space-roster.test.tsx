@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
+
 import type { AppBootstrap, Bot, Group } from "@rakazo/contracts";
-import { act, useLayoutEffect, useRef, useState } from "react";
+import { deferred } from "@rakazo/core/test-async";
+import type { ComponentType } from "react";
+import { act, lazy, StrictMode, Suspense, useLayoutEffect, useRef, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
-import { BrowserRouter, useMatch } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useMatch } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useSpaceEpoch } from "../../lib/space-switch";
@@ -55,11 +58,16 @@ let server: Record<string, { bots: string[]; groups: string[] }>;
 let root: Root;
 let shell: {
   signals: RosterSignals;
+  refreshBots: () => Promise<void>;
   navigate: NavigateFunction;
   openSpaceChat: (spaceId: string, path: string) => void;
 };
 /** Settles the load of the other space, in the order the switches asked for it. */
 let spaceLoads: Array<{ finish: () => void; fail: () => void }>;
+/** While set, roster re-reads wait for it before answering. */
+let rosterHeld: Promise<void> | undefined;
+/** The page other than the shell that is on screen. */
+let pageShown: string | undefined;
 
 function bootstrapOf(spaceId: string, botId?: string, groupId?: string) {
   const { bots, groups } = server[spaceId]!;
@@ -85,6 +93,7 @@ function rpcOf(spaceId: string) {
   return {
     spaces: {
       list: async () => {
+        if (rosterHeld) await rosterHeld;
         const { bots, groups, botSections } = bootstrapOf(spaceId);
         return { current: { bots, groups, botSections }, spaces: [] };
       },
@@ -111,8 +120,6 @@ function SpaceShell() {
   const roster = useSpaceRoster({
     rpc,
     seed: undefined,
-    botId,
-    groupId,
     navigate,
     redirectKeepingOverlay,
   });
@@ -145,7 +152,7 @@ function SpaceShell() {
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
   }, [openSpaceChat]);
-  shell = { signals, navigate, openSpaceChat };
+  shell = { signals, refreshBots: roster.refreshBots, navigate, openSpaceChat };
   return null;
 }
 
@@ -165,6 +172,71 @@ async function open(path: string) {
   );
 }
 
+/** Opens `path` as development does: the shell's effects run, are torn down, and run again. */
+async function openStrict(path: string) {
+  window.history.replaceState({ idx: 0 }, "", path);
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <BrowserRouter useTransitions={false}>
+          <ShellPage />
+        </BrowserRouter>
+      </StrictMode>,
+    ),
+  );
+}
+
+function page(name: string): ComponentType {
+  return function Page() {
+    useLayoutEffect(() => {
+      pageShown = name;
+      return () => {
+        pageShown = undefined;
+      };
+    }, []);
+    return null;
+  };
+}
+const OnboardingPage = page("onboarding");
+const ArtifactsPage = page("artifacts");
+
+/** A page whose code is still loading, until the returned `finish` is called. */
+function stillLoading(Page: ComponentType) {
+  let loaded!: () => void;
+  const Loading = lazy(
+    () =>
+      new Promise<{ default: ComponentType }>((resolve) => {
+        loaded = () => resolve({ default: Page });
+      }),
+  );
+  return { Loading, finish: () => act(async () => loaded()) };
+}
+
+/**
+ * The shell among the app's pages: the others are separate routes, whose code may still be
+ * loading. No page has `/app/board` here, so the shell stands in for it, as when the board is off.
+ */
+async function openApp(
+  path: string,
+  { Onboarding = OnboardingPage, Artifacts = ArtifactsPage } = {},
+) {
+  window.history.replaceState({ idx: 0 }, "", path);
+  await act(async () =>
+    root.render(
+      <BrowserRouter useTransitions={false}>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/app" element={<ShellPage />} />
+            <Route path="/app/:botId" element={<ShellPage />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/app/artifacts" element={<Artifacts />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>,
+    ),
+  );
+}
+
 /** A roster signal from the server, and the re-read it starts. */
 async function rosterSignal() {
   await act(async () => {
@@ -173,15 +245,30 @@ async function rosterSignal() {
   });
 }
 
+/** The window coming back into focus, and the re-read it starts. */
+async function windowFocus() {
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(50);
+  });
+}
+
+/** Holds roster re-reads back; the returned function lets them answer. */
+function holdRoster() {
+  const held = deferred();
+  rosterHeld = held.promise;
+  return held.resolve;
+}
+
 /** Opens `path` with its first load held back; the returned function answers it. */
 async function openHoldingFirstLoad(path: string) {
-  let answer!: (bootstrap: AppBootstrap) => void;
-  state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (answer = resolve)));
+  const answer = deferred<AppBootstrap>();
+  state.take.mockReturnValueOnce(answer.promise);
   await open(path);
   const [botId, groupId] = state.take.mock.calls[0]!;
   return () =>
     act(async () => {
-      answer(bootstrapOf("personal", botId, groupId));
+      answer.resolve(bootstrapOf("personal", botId, groupId));
       await vi.advanceTimersByTimeAsync(50);
     });
 }
@@ -203,6 +290,8 @@ beforeEach(() => {
     work: { bots: ["sales", "support"], groups: ["standup"] },
   };
   spaceLoads = [];
+  rosterHeld = undefined;
+  pageShown = undefined;
   state.take.mockImplementation(async (botId?: string, groupId?: string) =>
     bootstrapOf(state.space, botId, groupId),
   );
@@ -225,14 +314,17 @@ afterEach(() => {
 });
 
 describe("a roster re-read while the shell opens a chat in another space", () => {
-  it("opens a linked chat in its space when the signal came during the first load", async () => {
-    let firstLoad!: (bootstrap: AppBootstrap) => void;
-    state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (firstLoad = resolve)));
+  it.each([
+    ["the signal", rosterSignal],
+    ["the window's focus", windowFocus],
+  ])("opens a linked chat in its space when %s came during the first load", async (_, reRead) => {
+    const firstLoad = deferred<AppBootstrap>();
+    state.take.mockReturnValueOnce(firstLoad.promise);
     await open("/app/sales?message=m1");
-    // The stream opens with a signal, which is held until the first load settles.
-    await rosterSignal();
+    // The stream opens with a signal; like focus, it is held until the first load settles.
+    await reRead();
     await act(async () => {
-      firstLoad(bootstrapOf("personal", "sales"));
+      firstLoad.resolve(bootstrapOf("personal", "sales"));
       await vi.advanceTimersByTimeAsync(50);
     });
     expect(window.location.pathname).toBe("/app/sales");
@@ -345,6 +437,122 @@ describe("a roster re-read while the shell opens a chat in another space", () =>
   });
 });
 
+describe("a first load that sends an empty space to onboarding", () => {
+  let answerFirstLoad: () => void;
+  beforeEach(() => {
+    server.work = { bots: [], groups: [] };
+    state.space = "work";
+    state.take.mockReturnValueOnce(
+      new Promise<AppBootstrap>((resolve) => {
+        answerFirstLoad = () => resolve(bootstrapOf("work"));
+      }),
+    );
+  });
+
+  it("goes to onboarding when the window was focused during the first load", async () => {
+    await openApp("/app");
+    await windowFocus();
+    await act(async () => {
+      answerFirstLoad();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/onboarding");
+    expect(pageShown).toBe("onboarding");
+  });
+
+  it("stays on onboarding when the roster is re-read while onboarding's code loads", async () => {
+    const onboarding = stillLoading(OnboardingPage);
+    await openApp("/app", { Onboarding: onboarding.Loading });
+    // The stream opens with a signal, which is held until the first load settles.
+    await rosterSignal();
+    await act(async () => {
+      answerFirstLoad();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/onboarding");
+    await act(() => vi.advanceTimersByTimeAsync(50));
+    expect(window.location.pathname).toBe("/onboarding");
+    await onboarding.finish();
+    expect(window.location.pathname).toBe("/onboarding");
+    expect(pageShown).toBe("onboarding");
+  });
+
+  it("stays on onboarding when a re-read answers before the shell has gone", async () => {
+    await openApp("/app");
+    const answerRoster = holdRoster();
+    // An action in the shell re-reads at once; focus and signals wait for the first load.
+    act(() => void shell.refreshBots());
+    // Both answers arrive before React has rendered the page the first one moved to.
+    await act(async () => {
+      answerFirstLoad();
+      answerRoster();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/onboarding");
+    expect(pageShown).toBe("onboarding");
+  });
+});
+
+describe("another page under /app whose code is still loading", () => {
+  it("stays on the page when the chat the shell had open is gone", async () => {
+    const artifacts = stillLoading(ArtifactsPage);
+    await openApp("/app/home", { Artifacts: artifacts.Loading });
+    act(() => void shell.navigate("/app/artifacts"));
+    server.personal!.bots = ["errands"];
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/artifacts");
+    await artifacts.finish();
+    expect(window.location.pathname).toBe("/app/artifacts");
+    expect(pageShown).toBe("artifacts");
+  });
+
+  it("stays on the page when the first load answers after the user opened it", async () => {
+    let answerFirstLoad!: () => void;
+    state.take.mockReturnValueOnce(
+      new Promise<AppBootstrap>((resolve) => {
+        answerFirstLoad = () => resolve(bootstrapOf("personal", "home"));
+      }),
+    );
+    const artifacts = stillLoading(ArtifactsPage);
+    await openApp("/app/home", { Artifacts: artifacts.Loading });
+    act(() => void shell.navigate("/app/artifacts"));
+    await act(async () => {
+      answerFirstLoad();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(window.location.pathname).toBe("/app/artifacts");
+    await artifacts.finish();
+    expect(window.location.pathname).toBe("/app/artifacts");
+    expect(pageShown).toBe("artifacts");
+  });
+
+  it("moves off a path the shell stands in for", async () => {
+    await openApp("/app/board");
+    expect(window.location.pathname).toBe("/app/home");
+    act(() => void shell.navigate("/app/board"));
+    expect(window.location.pathname).toBe("/app/board");
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/home");
+  });
+});
+
+describe("a re-read that answers as the user opens another chat", () => {
+  it("stays on the chat just opened when the one before it is gone", async () => {
+    server.personal!.bots = ["home", "errands", "chores"];
+    await open("/app/home");
+    const answerRoster = holdRoster();
+    await rosterSignal();
+    server.personal!.bots = ["errands", "chores"];
+    // The answer arrives before React has rendered the chat the user moved to.
+    await act(async () => {
+      void shell.navigate("/app/chores");
+      answerRoster();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(window.location.pathname).toBe("/app/chores");
+  });
+});
+
 describe("a first load that answers after the user moved on", () => {
   it.each([
     ["a group", "/app/g/standup"],
@@ -404,15 +612,35 @@ describe("a link to a group chat in another space", () => {
   });
 
   it("opens the group in its space when the signal came during the first load", async () => {
-    let firstLoad!: (bootstrap: AppBootstrap) => void;
-    state.take.mockReturnValueOnce(new Promise<AppBootstrap>((resolve) => (firstLoad = resolve)));
+    const firstLoad = deferred<AppBootstrap>();
+    state.take.mockReturnValueOnce(firstLoad.promise);
     await open("/app/g/standup");
     await rosterSignal();
     await act(async () => {
-      firstLoad(bootstrapOf("personal", undefined, "standup"));
+      firstLoad.resolve(bootstrapOf("personal", undefined, "standup"));
       await vi.advanceTimersByTimeAsync(50);
     });
     expect(window.location.pathname).toBe("/app/g/standup");
+    await finishLoadingSpace();
+    expect(state.space).toBe("work");
+    expect(window.location.pathname).toBe("/app/g/standup");
+  });
+
+  it("opens the group in its space when a discarded first load answers before the kept one", async () => {
+    const kept = deferred<AppBootstrap>();
+    state.take
+      .mockImplementationOnce(async (botId?: string, groupId?: string) =>
+        bootstrapOf("personal", botId, groupId),
+      )
+      .mockReturnValueOnce(kept.promise);
+    await openStrict("/app/g/standup");
+    expect(state.take).toHaveBeenCalledTimes(2);
+    await rosterSignal();
+    expect(window.location.pathname).toBe("/app/g/standup");
+    await act(async () => {
+      kept.resolve(bootstrapOf("personal", undefined, "standup"));
+      await vi.advanceTimersByTimeAsync(50);
+    });
     await finishLoadingSpace();
     expect(state.space).toBe("work");
     expect(window.location.pathname).toBe("/app/g/standup");

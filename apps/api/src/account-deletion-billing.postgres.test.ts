@@ -4,11 +4,15 @@ import path from "node:path";
 import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   asSystem,
+  claimSpacesLeavingWithAccount,
   createDb,
   createThreadEvents,
+  LeaseLostError,
+  restoreSpaceDeletionClaims,
   runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
@@ -20,14 +24,6 @@ import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 /** Holds the provider's checkout call until the test releases it, so its lease stays held. */
 class GatedCheckoutEmulator extends BillingEmulator {
@@ -125,6 +121,17 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       events: ThreadEvents;
     };
   }
+
+  const leaseKey = `account-deletion:${userId}`;
+  /** Lapses the account's deletion lease, as if its holder had stopped renewing it. */
+  const lapseLease = () =>
+    prisma.$executeRaw`
+      UPDATE "leases" SET "expiresAt" = now() - interval '10 minutes' WHERE "key" = ${leaseKey}`;
+  const leaseRows = async () => {
+    const [row] = await prisma.$queryRaw<Array<{ rows: bigint }>>`
+      SELECT count(*) AS rows FROM "leases" WHERE "key" = ${leaseKey}`;
+    return Number(row!.rows);
+  };
 
   it("refuses a checkout opened while the account's billing cancellation is still running", async () => {
     const second = await organization("second");
@@ -370,8 +377,9 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       try {
         const first = attempt(stage === "teardown" ? flaky : prisma);
         await firstWaiting.promise;
-        // The first attempt outlives its claim, and a second one takes the claim over.
+        // The first attempt outlives its lease and claim, and a second one takes them over.
         vi.setSystemTime(Date.now() + SPACE_DELETION_CLAIM_TIMEOUT_MS + 60_000);
+        await lapseLease();
         const second = attempt(prisma);
         await secondInBilling.promise;
         failFirst.resolve();
@@ -471,6 +479,8 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       try {
         const firstOutcome = attempt(first);
         await firstWaiting.promise;
+        // The first attempt stalls past its lease, so a second one may start.
+        await lapseLease();
         const secondOutcome = attempt(second);
         await secondReading.promise;
         vi.setSystemTime(Date.now() + SPACE_DELETION_CLAIM_TIMEOUT_MS + 60_000);
@@ -542,6 +552,236 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
     } finally {
       failFirst.resolve();
       resumeFirst.resolve();
+      vi.useRealTimers();
+    }
+  });
+
+  /** Bumps the lease's fence, as if it had lapsed and another holder had taken it. */
+  const takeLease = () =>
+    prisma.$executeRaw`
+      UPDATE "leases" SET "fence" = nextval('leases_fence_seq') WHERE "key" = ${leaseKey}`;
+  const dropLease = () => prisma.$executeRaw`DELETE FROM "leases" WHERE "key" = ${leaseKey}`;
+
+  /** Starts deleting the account and holds it at its billing cancellation. */
+  async function deletionHeldAtBilling() {
+    const inBilling = deferred();
+    const held = deferred();
+    const billing = {
+      cancelForDeletedUser: vi.fn(async () => {
+        inBilling.resolve();
+        await held.promise;
+      }),
+    };
+    const deleting = settled(
+      runAsSystem("account deletion billing test", () =>
+        deleteAccountContent(deletionDeps(billing as never), userId),
+      ),
+    );
+    await inBilling.promise;
+    return { deleting, release: () => held.resolve() };
+  }
+
+  const previousReleaseClaims = () =>
+    runAsSystem("the previous release's attempt", () =>
+      claimSpacesLeavingWithAccount(prisma, userId),
+    );
+
+  it("keeps its Spaces claimed past the claim timeout while it still runs", async () => {
+    const only = await organization("long-running");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const current = await deletionHeldAtBilling();
+    try {
+      const aged = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS - 60_000);
+      await prisma.space.updateMany({
+        where: { organizationId: only.organizationId },
+        data: { deletingAt: aged },
+      });
+      // The lease's next renewal refreshes the claims too.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.waitUntil(async () => {
+        const space = await prisma.space.findFirstOrThrow({
+          where: { organizationId: only.organizationId },
+        });
+        return space.deletingAt!.getTime() > aged.getTime();
+      });
+      // So the previous release's attempt, which takes no lease, is still refused.
+      await expect(previousReleaseClaims()).rejects.toBeInstanceOf(SpaceDeletionInProgressError);
+    } finally {
+      current.release();
+      vi.useRealTimers();
+    }
+    await expect(current.deleting).resolves.toBe("fulfilled");
+    await expect(
+      prisma.space.findFirst({ where: { organizationId: only.organizationId } }),
+    ).resolves.toBeNull();
+  });
+
+  it("never runs beside the previous release's attempt on the same account", async () => {
+    const only = await organization("previous-release");
+    // The previous release claims without a lease row; its live claims refuse this release's
+    // attempt, which gives its own lease straight back.
+    const previous = await previousReleaseClaims();
+    await expect(
+      runAsSystem("account deletion billing test", () =>
+        deleteAccountContent(deletionDeps({ cancelForDeletedUser: vi.fn() } as never), userId),
+      ),
+    ).rejects.toBeInstanceOf(SpaceDeletionInProgressError);
+    await expect(leaseRows()).resolves.toBe(0);
+    await restoreSpaceDeletionClaims(prisma, previous, previous.takenOver);
+
+    // This release's attempt holds live claims, so the previous release's is refused.
+    const current = await deletionHeldAtBilling();
+    await expect(previousReleaseClaims()).rejects.toBeInstanceOf(SpaceDeletionInProgressError);
+    current.release();
+    await expect(current.deleting).resolves.toBe("fulfilled");
+    await expect(
+      prisma.space.findFirst({ where: { organizationId: only.organizationId } }),
+    ).resolves.toBeNull();
+  });
+
+  it("commits no Space delete from an attempt that lost its lease", async () => {
+    const only = await organization("lost-lease");
+    const stale = await deletionHeldAtBilling();
+    try {
+      await takeLease();
+      stale.release();
+
+      await expect(stale.deleting).resolves.toBeInstanceOf(LeaseLostError);
+      await expect(
+        prisma.space.findFirst({ where: { organizationId: only.organizationId } }),
+      ).resolves.not.toBeNull();
+    } finally {
+      stale.release();
+      await dropLease();
+    }
+  });
+
+  it("gives its claims back when it is cut off during billing", async () => {
+    const only = await organization("cut-off-in-billing");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const cutOff = await deletionHeldAtBilling();
+    try {
+      await takeLease();
+      // The next renewal finds the lease taken, so the caller has its error while billing runs.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(cutOff.deleting).resolves.toBeInstanceOf(LeaseLostError);
+      cutOff.release();
+      // Billing settles with nothing torn down, so the next attempt need not wait for the claims.
+      await vi.waitUntil(async () => {
+        const space = await prisma.space.findFirstOrThrow({
+          where: { organizationId: only.organizationId },
+        });
+        return space.deletionClaimId === null;
+      });
+    } finally {
+      cutOff.release();
+      vi.useRealTimers();
+      await dropLease();
+    }
+  });
+
+  it("keeps going when a Space it gave up is claimed by another deletion", async () => {
+    const joined = await organization("joined-later");
+    const kept = await organization("deleted-after");
+    const neighbour = `${userId}-neighbour`;
+    await asSystem(prisma).user.create({
+      data: { id: neighbour, name: "Neighbour", email: `neighbour-${email}`, emailVerified: false },
+    });
+    await asSystem(prisma).artifact.create({
+      data: {
+        spaceId: kept.actor.spaceId,
+        userId,
+        name: "notes.txt",
+        mimeType: "text/plain",
+        size: 1,
+        hash: "notes-hash",
+        storageKey: `notes-${stamp}`,
+      },
+    });
+    const removing = deferred();
+    const resume = deferred();
+    const deps = deletionDeps({ cancelForDeletedUser: vi.fn() } as never);
+    deps.artifacts.remove = vi.fn(async () => {
+      removing.resolve();
+      await resume.promise;
+    });
+    const inBilling = deferred();
+    const billingHeld = deferred();
+    deps.billing = {
+      cancelForDeletedUser: vi.fn(async () => {
+        inBilling.resolve();
+        await billingHeld.promise;
+      }),
+    } as never;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const deleting = settled(
+        runAsSystem("account deletion billing test", () => deleteAccountContent(deps, userId)),
+      );
+      await inBilling.promise;
+      // Someone joins the first Space while the account is being deleted, so it is given up.
+      const createdAt = new Date();
+      await asSystem(prisma).member.create({
+        data: {
+          id: `${neighbour}-member`,
+          organizationId: joined.organizationId,
+          userId: neighbour,
+          role: "member",
+          createdAt,
+        },
+      });
+      billingHeld.resolve();
+      await removing.promise;
+      // Another deletion then claims the Space this one let go of.
+      await asSystem(prisma).space.update({
+        where: { id: joined.actor.spaceId },
+        data: { deletionClaimId: "another-deletion", deletingAt: new Date() },
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      resume.resolve();
+      await expect(deleting).resolves.toBe("fulfilled");
+      await expect(
+        prisma.space.findUnique({ where: { id: kept.actor.spaceId } }),
+      ).resolves.toBeNull();
+    } finally {
+      billingHeld.resolve();
+      resume.resolve();
+      vi.useRealTimers();
+      await prisma.user.deleteMany({ where: { id: neighbour } });
+    }
+  });
+
+  it("gives its claims straight back when they land after it lost its lease", async () => {
+    const only = await organization("late-claim");
+    const reading = deferred();
+    const resume = deferred();
+    const late = withFirstRead("space", async () => {
+      reading.resolve();
+      await resume.promise;
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const attempt = settled(
+        runAsSystem("account deletion billing test", () =>
+          deleteAccountContent(
+            { ...deletionDeps({ cancelForDeletedUser: vi.fn() } as never), prisma: late },
+            userId,
+          ),
+        ),
+      );
+      await reading.promise;
+      await lapseLease();
+      // The next renewal finds the lease lapsed, so the attempt stops before its claims land.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(attempt).resolves.toBeInstanceOf(LeaseLostError);
+      resume.resolve();
+      // The attempt lets its lease go only once its late claims went back.
+      await vi.waitUntil(async () => (await leaseRows()) === 0);
+      await expect(
+        prisma.space.findFirstOrThrow({ where: { organizationId: only.organizationId } }),
+      ).resolves.toMatchObject({ deletionClaimId: null, deletingAt: null });
+    } finally {
+      resume.resolve();
       vi.useRealTimers();
     }
   });
