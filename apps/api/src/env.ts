@@ -194,6 +194,15 @@ export interface AppEnv {
   crispWebsiteId?: string | null;
 }
 
+/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
+export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEnv {
+  return {
+    ...env,
+    ...overrides,
+    sandboxOptions: { ...env.sandboxOptions, ...overrides.sandboxOptions },
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   secretStoreOptionsFromEnv(source);
   const issuer = optional(source.OIDC_ISSUER);
@@ -255,6 +264,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
+  let sandboxOptions: SandboxProviderOptions | undefined;
   return {
     passwordAuth,
     breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
@@ -309,7 +319,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
-    sandboxOptions: sandboxProviderOptionsFromEnv(source),
+    // Read on first use, so a malformed computer setting stops only the services that build one.
+    get sandboxOptions() {
+      sandboxOptions ??= sandboxProviderOptionsFromEnv(source);
+      return sandboxOptions;
+    },
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),

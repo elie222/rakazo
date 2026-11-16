@@ -1,5 +1,6 @@
 import type * as Adapters from "@rakazo/adapters";
 import { destroyBot } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
@@ -26,14 +27,6 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   releaseOrganizationDeletionClaim: vi.fn(async () => undefined),
   recordAuditEvent: vi.fn(async () => undefined),
 }));
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("deleteOrganization lease", () => {
   let spacesLeft: number;

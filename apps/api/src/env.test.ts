@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadEnv, parseExtraAuthOrigins } from "./env.js";
+import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -186,6 +186,25 @@ describe("loadEnv", () => {
       sandboxProvider: "boat",
       sandboxOptions: { boatApiKey: "test-boat-key", boatApiUrl: "https://boat.test/api/v1" },
     });
+  });
+
+  it("starts without reading a malformed computer setting until a computer is built", () => {
+    const env = loadEnv({ ...base, KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" });
+    expect(env.databaseUrl).toBe(base.DATABASE_URL);
+    expect(() => env.sandboxOptions).toThrow(/KUBERNETES_SANDBOX_POD_ANNOTATIONS/);
+  });
+
+  it("keeps environment computer options a partial override leaves out", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "daytona",
+      DAYTONA_API_KEY: "test-daytona-key",
+      DAYTONA_TARGET: "env-target",
+    });
+    expect(
+      withEnvOverrides(env, { sandboxOptions: { daytonaTarget: "override-target" } })
+        .sandboxOptions,
+    ).toMatchObject({ daytonaApiKey: "test-daytona-key", daytonaTarget: "override-target" });
   });
 
   it("throws when production omits secrets", () => {
