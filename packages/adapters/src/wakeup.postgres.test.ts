@@ -966,7 +966,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         `update graphile_worker._private_jobs
          set attempts = case when key = $2 then 1 else max_attempts end,
              locked_by = 'contract-worker',
-             locked_at = case when key = $3 then now() else now() - interval '3 hours' end
+             locked_at = case when key = $3 then now() - interval '3 hours' else now() - interval '3 hours 55 minutes' end
          where key = any($1::text[])`,
         [keys, `${prefix}:earlierDead`, `${prefix}:lastLive`],
       );
@@ -996,6 +996,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         expect.objectContaining({
           level: "error",
           "job.type": "computer.sleep",
+          "job.queue_id": expect.any(String),
           error: expect.objectContaining({ message: ABANDONED_LAST_ATTEMPT_ERROR }),
         }),
       ]);

@@ -1,4 +1,4 @@
-import { getLogger, unwrapJobPayload } from "@rakazo/logging";
+import { bestEffort, getLogger, unwrapJobPayload } from "@rakazo/logging";
 import type { Job } from "graphile-worker";
 import type { Pool } from "pg";
 
@@ -14,14 +14,17 @@ export function jobType(taskIdentifier: string): string {
  * Graphile emits this once a job's last attempt has failed: it keeps the row and never runs it
  * again. The payload stays out, since it can hold identifiers and references to secrets.
  */
-export function recordJobGaveUp(
-  job: Pick<Job, "task_identifier" | "payload" | "attempts" | "max_attempts" | "created_at">,
-  error: unknown,
-): void {
+type GaveUpJob = Pick<
+  Job,
+  "id" | "task_identifier" | "payload" | "attempts" | "max_attempts" | "created_at"
+>;
+
+export function recordJobGaveUp(job: GaveUpJob, error: unknown): void {
   const type = jobType(job.task_identifier);
   const { correlation } = unwrapJobPayload(job.payload);
   getLogger().error("job.gave_up", error instanceof Error ? error : new Error(String(error)), {
     "job.type": type,
+    "job.queue_id": String(job.id),
     ...(correlation ? { "job.id": correlation.jobId, "trace.id": correlation.traceId } : {}),
     "job.attempts": job.attempts,
     "job.max_attempts": job.max_attempts,
@@ -38,11 +41,13 @@ const DEAD_JOB_PRUNE_BATCH = 1_000;
 const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
 
 /**
- * A worker that dies during a job's last attempt leaves it locked and never fails it, so the queue
- * reports nothing, and after four hours Graphile clears the lock without a trace. No job holds its
- * lock this long, and two hourly passes fit before Graphile's four hours.
+ * A worker that dies during a job's last attempt leaves it locked and never fails it, so nothing is
+ * reported, and at four hours the queue frees the lock as a dead worker's without a trace. Just
+ * before that, the job is reported and failed instead; the queue would treat any job still holding
+ * its lock by then as dead anyway.
  */
-export const ABANDONED_LAST_ATTEMPT_MS = 2 * 60 * 60 * 1000;
+export const ABANDONED_LAST_ATTEMPT_MS = 3 * 60 * 60 * 1000 + 50 * 60 * 1000;
+const ABANDONED_LAST_ATTEMPT_BATCH = 100;
 export const ABANDONED_LAST_ATTEMPT_ERROR = "The worker stopped during the last attempt";
 
 /**
@@ -66,23 +71,12 @@ export function createDeadJobPruner(
   const intervalMs = options.intervalMs ?? DEAD_JOB_PRUNE_INTERVAL_MS;
   let lastRun: number | undefined;
   return async () => {
+    // Every tick, so a dead last attempt is caught in the minutes before the queue frees it; a
+    // failure here never holds up the pruning below.
+    await bestEffort("fail abandoned last attempts", failAbandonedLastAttempts(pool));
     const now = Date.now();
     if (lastRun !== undefined && now - lastRun < intervalMs) return;
     lastRun = now;
-    // First, a last attempt whose worker died is failed and reported like one that threw.
-    const abandoned = await pool.query<
-      Pick<Job, "task_identifier" | "payload" | "attempts" | "max_attempts" | "created_at">
-    >(
-      `update graphile_worker._private_jobs as jobs
-       set locked_at = null, locked_by = null, last_error = $2::text, updated_at = now()
-       from graphile_worker._private_tasks as tasks
-       where tasks.id = jobs.task_id and jobs.attempts >= jobs.max_attempts
-         and jobs.locked_at < now() - $1::int * interval '1 millisecond'
-       returning tasks.identifier as task_identifier, jobs.payload, jobs.attempts,
-         jobs.max_attempts, jobs.created_at`,
-      [ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_ERROR],
-    );
-    for (const job of abandoned.rows) recordJobGaveUp(job, new Error(ABANDONED_LAST_ATTEMPT_ERROR));
     const removedByType = new Map<string, number>();
     for (let batch = 0; batch < DEAD_JOB_PRUNE_MAX_BATCHES; batch += 1) {
       const { rows } = await pool.query<{ identifier: string; removed: number }>(
@@ -124,4 +118,28 @@ export function createDeadJobPruner(
       "jobs.removed_by_type": byType.map(([type, count]) => `${type}=${count}`).join(","),
     });
   };
+}
+
+/** Reports before it fails, so a crash in between repeats a report rather than losing one. */
+async function failAbandonedLastAttempts(pool: Pick<Pool, "query">): Promise<void> {
+  const { rows } = await pool.query<GaveUpJob>(
+    `select jobs.id, tasks.identifier as task_identifier, jobs.payload, jobs.attempts,
+       jobs.max_attempts, jobs.created_at
+     from graphile_worker._private_jobs as jobs
+     join graphile_worker._private_tasks as tasks on tasks.id = jobs.task_id
+     where jobs.attempts >= jobs.max_attempts
+       and jobs.locked_at < now() - $1::int * interval '1 millisecond'
+     order by jobs.id
+     limit $2`,
+    [ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_BATCH],
+  );
+  if (rows.length === 0) return;
+  for (const job of rows) recordJobGaveUp(job, new Error(ABANDONED_LAST_ATTEMPT_ERROR));
+  await pool.query(
+    `update graphile_worker._private_jobs
+     set locked_at = null, locked_by = null, last_error = $3::text, updated_at = now()
+     where id = any($1::bigint[]) and attempts >= max_attempts
+       and locked_at < now() - $2::int * interval '1 millisecond'`,
+    [rows.map((job) => job.id), ABANDONED_LAST_ATTEMPT_MS, ABANDONED_LAST_ATTEMPT_ERROR],
+  );
 }
