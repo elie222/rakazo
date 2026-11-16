@@ -1333,15 +1333,17 @@ describe("E2B sandbox lifecycle", () => {
 
   it("does not resume a sandbox that stop paused while a request was in flight", async () => {
     const { fake, provider, computer } = await started();
-    let finish!: () => void;
+    const command = deferred();
+    let commandStarted = false;
     fake.command = async () => {
-      await new Promise<void>((resolve) => (finish = resolve));
+      commandStarted = true;
+      await command.promise;
       return ok();
     };
     const events = runCommand(provider, computer).catch((failure: unknown) => failure);
-    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitUntil(() => commandStarted);
     await provider.stop(computer, context);
-    finish();
+    command.resolve();
     const error = await events;
     expect(error).toBeInstanceOf(Error);
     expect(isSandboxGoneError(error)).toBe(false);
