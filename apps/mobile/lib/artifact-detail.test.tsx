@@ -25,7 +25,6 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("./activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("./live-notifications", () => ({}));
-vi.mock("./api-server", () => ({}));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ artifactId: state.id }),
   useRouter: () => ({ back: state.back }),

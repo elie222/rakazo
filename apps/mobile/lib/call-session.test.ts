@@ -110,7 +110,6 @@ const expoAudioMock = vi.hoisted(() => () => ({
   setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
 }));
 vi.mock("expo-audio", () => expoAudioMock());
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   // The live session's context, so the production recorder's voice consent check can run.
