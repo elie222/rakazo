@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { InferRouterInitialContext } from "@orpc/server";
-import { createRouterClient, ORPCError, onError } from "@orpc/server";
+import { createRouterClient, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { BackgroundJob, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import {
@@ -29,6 +29,7 @@ import {
   LocalAgentHomeStore,
   listPiCatalog,
   McpOAuthClientRequiredError,
+  McpOAuthRefusedError,
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
@@ -1896,7 +1897,7 @@ describe("MCP pre-registered OAuth client", () => {
         endpoint: "http://localhost:3100/mcp?region=us&api_key=sk-test-123",
       }),
     ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
+      name: "ConnectionSetupError",
       message: "Put api_key in a header instead of the server URL",
     });
     expect(secrets.put).not.toHaveBeenCalled();
@@ -2179,7 +2180,10 @@ describe("MCP pre-registered OAuth client", () => {
           env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
           oauthClient: { ...oauthClient, authorizationServer: "http://localhost:3100" },
         }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/HTTPS/) });
+      ).rejects.toMatchObject({
+        name: "ConnectionSetupError",
+        message: expect.stringMatching(/HTTPS/),
+      });
       expect(secrets.put).not.toHaveBeenCalled();
     });
 
@@ -2210,7 +2214,7 @@ describe("MCP pre-registered OAuth client", () => {
           oauthClient: { ...stored.oauthClient, authorization_server: "https://127.0.0.1/" },
         });
         await expect(client.mcp.servers.update(update)).rejects.toMatchObject({
-          code: "BAD_REQUEST",
+          name: "ConnectionSetupError",
         });
         expect(secrets.put).not.toHaveBeenCalled();
       });
@@ -2373,7 +2377,7 @@ describe("MCP loopback endpoints", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    return { create, handler: new RPCHandler(createRouter(deps)) };
+    return { create, handler: appHandler(deps) };
   }
 
   function actor(isDeploymentOwner: boolean): Actor {
@@ -2921,6 +2925,58 @@ describe("MCP server health", () => {
       expect(listed?.hasArgs).toBe(true);
     });
 
+    it("answers a sign-in the server refused as a refusal, and any other failure as a fault", async () => {
+      const h = harness({
+        row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),
+      });
+      const begin = vi.fn();
+      const complete = vi.fn();
+      Object.assign(h.deps, { mcpOAuth: { ...(h.deps.mcpOAuth as object), begin, complete } });
+      const handler = appHandler(h.deps);
+      const call = async (path: string, json: unknown) => {
+        const response = await handle(
+          handler,
+          new Request(`http://127.0.0.1/rpc/mcp/oauth/${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json }),
+          }),
+          {
+            prefix: "/rpc",
+            context: {
+              actor: {
+                spaceId: "workspace-1",
+                userId: "owner-1",
+                email: "owner@rakazo.test",
+                isDeploymentOwner: true,
+              },
+            },
+          },
+        );
+        const body = (await response.json()) as { json: { message: string } };
+        return { status: response.status, message: body.json.message };
+      };
+      const calls = [
+        { path: "begin", input: { serverId: "server-1" }, fake: begin },
+        {
+          path: "complete",
+          input: { sessionId: "session-1", code: "code", state: "session-1" },
+          fake: complete,
+        },
+      ];
+      for (const { path, input, fake } of calls) {
+        fake.mockRejectedValueOnce(
+          new McpOAuthRefusedError("MCP OAuth session is invalid or expired"),
+        );
+        await expect(call(path, input)).resolves.toEqual({
+          status: 400,
+          message: "MCP OAuth session is invalid or expired",
+        });
+        fake.mockRejectedValueOnce(new Error("pool timeout"));
+        await expect(call(path, input)).resolves.toMatchObject({ status: 500 });
+      }
+    });
+
     it("asks for a client ID when the server cannot register one", async () => {
       const h = harness({
         row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),
@@ -2987,10 +3043,7 @@ describe("MCP server health", () => {
 
       await expect(
         client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
-      ).rejects.toMatchObject({
-        code: "MCP_OAUTH_REDIRECT_MISMATCH",
-        status: 400,
-      });
+      ).rejects.toMatchObject({ code: "MCP_OAUTH_REDIRECT_MISMATCH", kind: "BAD_REQUEST" });
       expect(begin).not.toHaveBeenCalled();
     });
 
@@ -3258,7 +3311,7 @@ describe("private API connectors", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    return { create, handler: new RPCHandler(createRouter(deps)) };
+    return { create, handler: appHandler(deps) };
   }
 
   function actor(isDeploymentOwner: boolean): Actor {
@@ -3310,6 +3363,31 @@ describe("private API connectors", () => {
     });
 
     expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a line break", "fake-graphql-key\r\nx-injected: 1"],
+    ["a character a header cannot carry", "fake-graphql-key-\u201Cquoted\u201D"],
+  ])("refuses a GraphQL credential with %s without repeating it", async (_label, credential) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const { create, handler } = privateDeps();
+    const response = await handle(
+      handler,
+      rpc("capabilities/install", {
+        kind: "graphql",
+        name: "GraphQL",
+        source: "https://graphql.example.test/graphql",
+        config: { auth: { type: "bearer" } },
+        credential,
+      }),
+      { prefix: "/rpc", context: { actor: actor(false) } },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain("fake-graphql-key");
+    expect(JSON.stringify(sink.events)).not.toContain("fake-graphql-key");
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -3827,7 +3905,7 @@ describe("connections.begin", () => {
       // The lost race's job write fails, which fails its transaction.
       jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
 
-      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(call()).rejects.toThrow("queue unavailable");
       // Recorded, removed, and only then is the record deleted.
       expect(jobs.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({ payload: LEFTOVER_REQUEST, availableAt: expect.any(Date) }),
@@ -3864,7 +3942,7 @@ describe("connections.begin", () => {
         .mockImplementationOnce(async (fn: (client: unknown) => Promise<unknown>) => fn(tx))
         .mockRejectedValueOnce(new Error("Transaction already closed"));
 
-      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(call()).rejects.toThrow("Transaction already closed");
       expect(cancelAuthorizationRequest).toHaveBeenCalledTimes(1);
       expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
       expect(jobs.cancelIn).not.toHaveBeenCalled();
@@ -3876,7 +3954,7 @@ describe("connections.begin", () => {
       reachable.jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
       reachable.jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
 
-      await expect(reachable.call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(reachable.call()).rejects.toThrow("queue unavailable");
       expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
       expect(reachable.errors()).toEqual([]);
 
@@ -3885,7 +3963,7 @@ describe("connections.begin", () => {
       const unreachable = lostBegin({ cancelAuthorizationRequest }, "request-1");
       unreachable.jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
       unreachable.jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
-      await expect(unreachable.call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(unreachable.call()).rejects.toThrow("queue unavailable");
       expect(unreachable.errors()).toEqual([
         "connections.begin leftover cleanup has no backup job; remove the authorization at the provider by hand",
       ]);
@@ -3906,7 +3984,7 @@ describe("connections.begin", () => {
         jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
         tx.connection.count.mockResolvedValue(1);
 
-        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        await expect(call()).rejects.toThrow("connection lost at commit");
         // The removal reads the rows under the scope's lock, as the job would, and finds it in use.
         expect(tx.connection.count).toHaveBeenCalledWith({
           where: expect.objectContaining({ providerRef: "request-1" }),
@@ -3926,7 +4004,7 @@ describe("connections.begin", () => {
         jobs.enqueueIn.mockRejectedValue(new Error("connection lost at commit"));
         tx.connection.count.mockRejectedValue(new Error("database unavailable"));
 
-        await expect(call()).rejects.toBeInstanceOf(ORPCError);
+        await expect(call()).rejects.toThrow("connection lost at commit");
         // The job decides later, under the lock, once it can read the row.
         expect(jobs.enqueue).toHaveBeenLastCalledWith(connectionCleanupJob(LEFTOVER_REQUEST));
         expect(jobs.cancelIn).not.toHaveBeenCalled();
@@ -3946,7 +4024,7 @@ describe("connections.begin", () => {
       jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
       tx.connection.count.mockRejectedValue(new Error("database unavailable"));
 
-      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(call()).rejects.toThrow("connection lost at commit");
       // An authorization nothing may refer to is the lesser harm next to deleting one in use.
       expect(cancelAuthorizationRequest).not.toHaveBeenCalled();
       expect(errors()).toEqual([
@@ -3967,7 +4045,7 @@ describe("connections.begin", () => {
       jobs.enqueueIn.mockRejectedValue(new Error("queue unavailable"));
       root.updateMany.mockRejectedValue(new Error("database unavailable"));
 
-      await expect(call()).rejects.toBeInstanceOf(ORPCError);
+      await expect(call()).rejects.toThrow("queue unavailable");
       expect(cancelAuthorizationRequest).toHaveBeenCalledWith("request-1", expect.anything());
     });
   });
@@ -3989,12 +4067,23 @@ describe("connections.begin", () => {
     expect(errors()).toEqual([]);
   });
 
-  it("answers with the connector auth code when the app has no usable sign-in", async () => {
-    const begin = vi.fn().mockRejectedValue(
+  it.each([
+    [
+      "with the connector auth code when the app has no usable sign-in",
       new ConnectorAuthUnavailableError({
         cause: '400 {"error":{"slug":"ToolRouterV2_NoManagedAuth"}}',
       }),
-    );
+      400,
+      { code: CONNECTOR_AUTH_UNAVAILABLE },
+    ],
+    [
+      "as a fault, not the person's mistake, when the provider fails",
+      new Error('502 {"error":"ToolRouterV2_NoManagedAuth upstream"}'),
+      500,
+      { code: "INTERNAL_SERVER_ERROR" },
+    ],
+  ])("answers %s", async (_case, failure, status, answer) => {
+    const begin = vi.fn().mockRejectedValue(failure);
     const rootUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
@@ -4007,20 +4096,18 @@ describe("connections.begin", () => {
       connection: { updateMany: rootUpdateMany },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as PrismaClient;
-    const handler = new RPCHandler(
-      createRouter({
-        prisma,
-        connectors: { managed: vi.fn(() => ({ begin })) },
-        env: {
-          defaultProvider: "fake",
-          defaultModel: "fake-model",
-          webOrigin: "http://127.0.0.1:5173",
-          screenProxySecret: "fake-test-secret",
-          sandboxProvider: "fake",
-        },
-        dataDir: "/tmp/rakazo-router-test",
-      } as unknown as RouterDeps),
-    );
+    const handler = appHandler({
+      prisma,
+      connectors: { managed: vi.fn(() => ({ begin })) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps);
 
     const response = await handle(
       handler,
@@ -4044,9 +4131,9 @@ describe("connections.begin", () => {
       },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.json();
-    expect(body).toMatchObject({ json: { code: CONNECTOR_AUTH_UNAVAILABLE } });
+    expect(body).toMatchObject({ json: answer });
     expect(JSON.stringify(body)).not.toContain("ToolRouterV2_NoManagedAuth");
     expect(rootUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "error" } }),
@@ -4625,7 +4712,7 @@ describe("connections.complete", () => {
         throw new Error("Request was cancelled by the caller: Request was aborted.");
       });
 
-      await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+      await expect(revoke(request.signal)).resolves.toMatchObject({ status: 500 });
       expect(row.status).toBe("revoked");
       // A job has the removal, so nobody has to act: not an error.
       expect(
@@ -4680,7 +4767,8 @@ describe("connections.complete", () => {
     row.providerRef = "account-1";
     connector.revoke.mockRejectedValue(new Error("403 forbidden"));
 
-    await expect(revoke()).resolves.toMatchObject({ status: 400 });
+    // The provider's refusal is a fault here, not the person's mistake.
+    await expect(revoke()).resolves.toMatchObject({ status: 500 });
     // Still connected, so removing it again is how the authorization goes.
     expect(row.status).toBe("connected");
     expect(jobs.enqueueIn).not.toHaveBeenCalled();
