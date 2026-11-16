@@ -1022,7 +1022,8 @@ export function composioResultError(summary: string, data: unknown): string {
   return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
 }
 
-const SHARED_ACCESS_SCOPE = /\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)*\.Shared\b/;
+const SHARED_ACCESS_SCOPE =
+  /\b(?:Mail|Calendars|Contacts|Tasks)\.(?:Read|ReadBasic|ReadWrite|Send)\.Shared(?![A-Za-z0-9_]|\.[A-Za-z0-9])/;
 
 /**
  * A connection made without a delegated "shared" scope is refused for any mailbox or
@@ -1033,7 +1034,7 @@ export function withSharedAccessHint(message: string): string {
   if (!scope) return message;
   let end = message.length;
   while (end > 0 && (message[end - 1] === "." || message[end - 1]?.trim() === "")) end--;
-  return `${message.slice(0, end)}. This call needs the ${scope} permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.`;
+  return `${message.slice(0, end)}. This call needs the ${scope} permission; reconnect if the connection was made before it was added.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {

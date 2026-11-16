@@ -1167,7 +1167,7 @@ describe("composio tool mapping", () => {
       {
         type: "error",
         message:
-          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This call needs the Mail.Read.Shared permission. If the connection was made before that permission was added to the sign-in setup, reconnect it. The tenant admin must also consent, and the account needs Full Access to the mailbox.",
+          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This call needs the Mail.Read.Shared permission; reconnect if the connection was made before it was added.",
       },
     ]);
   });
@@ -1213,7 +1213,7 @@ describe("composio tool mapping", () => {
     expect(events).toEqual([
       {
         type: "error",
-        message: expect.stringContaining("This call needs the Mail.Send.Shared permission."),
+        message: expect.stringContaining("This call needs the Mail.Send.Shared permission;"),
       },
     ]);
   });
@@ -1221,14 +1221,27 @@ describe("composio tool mapping", () => {
   it("leaves other refusals as the provider worded them", () => {
     expect(withSharedAccessHint("Access denied")).toBe("Access denied");
     expect(withSharedAccessHint("Shared folder not found")).toBe("Shared folder not found");
+    for (const message of [
+      "Not Found: repository Contoso.Shared does not exist",
+      "File Report.Shared.docx not found",
+      "File Mail.Read.Shared.docx not found",
+    ]) {
+      expect(withSharedAccessHint(message)).toBe(message);
+    }
+  });
+
+  it("names the permission when it ends a sentence or sits in a list", () => {
+    expect(
+      withSharedAccessHint("Needs Calendars.ReadWrite.Shared, or Calendars.Read.Shared."),
+    ).toContain("This call needs the Calendars.ReadWrite.Shared permission;");
   });
 
   it("ends the message cleanly before the hint, however it was punctuated", () => {
     const hinted = withSharedAccessHint(`requires Mail.Read.Shared.. \t\n`);
     expect(hinted.startsWith("requires Mail.Read.Shared. This call needs")).toBe(true);
     const long = `requires Mail.Read.Shared${"\t".repeat(100_000)}`;
-    expect(withSharedAccessHint(long).startsWith("requires Mail.Read.Shared. This call")).toBe(
-      true,
+    expect(withSharedAccessHint(long)).toBe(
+      "requires Mail.Read.Shared. This call needs the Mail.Read.Shared permission; reconnect if the connection was made before it was added.",
     );
   });
 
