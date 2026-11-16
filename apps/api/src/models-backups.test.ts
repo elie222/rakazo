@@ -20,6 +20,7 @@ function setup(
   options: {
     actor?: Actor;
     credentialProvider?: string;
+    allowPrivateEndpoint?: boolean;
     codexCatalog?: RouterDeps["codexCatalog"];
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
@@ -182,6 +183,7 @@ function setup(
       webOrigin: "http://127.0.0.1:5173",
       screenProxySecret: "fixture-secret",
       sandboxProvider: "fake",
+      mcpAllowPrivateEndpoint: options.allowPrivateEndpoint ?? true,
     },
     dataDir: "C:/scratch/rakazo-model-backups",
   } as unknown as RouterDeps;
@@ -609,6 +611,24 @@ describe("role-based model settings API", () => {
         expect(response.status).toBe(200);
         expect((await response.json()).json.deploymentPrimary).toEqual(
           enabled ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([true, false])(
+      "checks the current private endpoint policy for an approval default: %s",
+      async (allowPrivateEndpoint) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        const { call } = setup({
+          allowPrivateEndpoint,
+          compatible: { enabledModelIds: ["judge"], defaultModel: "judge" },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          allowPrivateEndpoint ? { provider: "openai-compatible", modelId: "judge" } : null,
         );
       },
     );

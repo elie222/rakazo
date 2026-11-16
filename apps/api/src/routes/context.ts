@@ -233,7 +233,7 @@ export function createRouterContext(deps: RouterDeps) {
           actor,
           deploymentPrimary.provider,
           deploymentPrimary.modelId,
-          { codexCatalog },
+          { codexCatalog, allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint },
         );
         if (!ready) deploymentPrimary = null;
       } catch (error) {

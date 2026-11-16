@@ -82,6 +82,7 @@ it("checks approval readiness with one connection scan and one read per secret",
       { userId: "user-1", spaceId: "space-1" },
       "openai-compatible",
       "judge",
+      { allowPrivateEndpoint: true },
     ),
   ).resolves.toBe(true);
   // One lookup chooses the preferred connection; one scans the alternate connections.

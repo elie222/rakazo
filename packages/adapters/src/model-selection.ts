@@ -2,6 +2,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor, ModelSettings } from "@rakazo/contracts";
 import {
+  ConnectionSetupError,
   canonicalPiProviderId,
   selectCompatibleModelCredential,
   usableModelId,
@@ -23,6 +24,7 @@ import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
 import { catalogKnowsModel, modelAcceptsImageInput } from "./model-vision.js";
+import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -657,7 +659,7 @@ export async function hasReadyModelCredential(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
-  resolution: ConnectedModelResolution = {},
+  resolution: ConnectedModelResolution & { allowPrivateEndpoint?: boolean } = {},
 ): Promise<boolean> {
   const reads = resolution.reads ?? new Map();
   const lookup = { ...resolution, reads };
@@ -678,6 +680,17 @@ export async function hasReadyModelCredential(
     reads,
   );
   if (!secret || (secret.kind === "oauth" && secret.reconnectRequired)) return false;
+  if (secret.kind === "openai_compatible") {
+    try {
+      assertAllowedOpenAiCompatibleUrl(secret.baseUrl, {
+        allowPublic: true,
+        allowPrivate: resolution.allowPrivateEndpoint === true,
+      });
+    } catch (error) {
+      if (!(error instanceof ConnectionSetupError)) throw error;
+      return false;
+    }
+  }
   if (
     await validateSelectedModelChoice(
       prisma,
