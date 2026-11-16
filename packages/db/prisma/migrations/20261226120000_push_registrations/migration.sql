@@ -1,4 +1,6 @@
 -- One row per device; push_tokens is dropped by the deferred migration that follows.
+-- Hold the previous release's writes until the mirror trigger exists, so the backfill misses none.
+LOCK TABLE "push_tokens" IN SHARE ROW EXCLUSIVE MODE;
 CREATE TABLE "push_registrations" (
   "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   "tokenDigest" TEXT NOT NULL UNIQUE,
@@ -22,6 +24,15 @@ BEGIN
     DELETE FROM "push_registrations" WHERE "userId" = OLD."userId"
       AND ("tokenDigest" = OLD."tokenDigest" OR "sessionId" = OLD."sessionId");
     RETURN OLD;
+  END IF;
+  -- The same device kept its token: update only its own row, so a token the new release has
+  -- since handed to another account is not taken back.
+  IF TG_OP = 'UPDATE' AND OLD."tokenDigest" = NEW."tokenDigest" THEN
+    UPDATE "push_registrations"
+      SET "sessionId" = NEW."sessionId", "ciphertext" = NEW."ciphertext",
+        "presentation" = NEW."presentation", "updatedAt" = NEW."updatedAt"
+      WHERE "userId" = NEW."userId" AND "tokenDigest" = NEW."tokenDigest";
+    RETURN NEW;
   END IF;
   -- An old-release update overwrites its one row per account; another device's row stays.
   DELETE FROM "push_registrations"
