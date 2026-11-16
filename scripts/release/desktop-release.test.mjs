@@ -40,6 +40,11 @@ test("a release must be newer than every published stable release", () => {
     () => checkNewerThanPublished("v1.9.9", ["v1.9.0", "v1.10.0"]),
     /^Error: v1\.9\.9 must be newer than published release v1\.10\.0\.$/,
   );
+  checkNewerThanPublished("v1.0.9007199254740993", ["v1.0.9007199254740992"]);
+  assert.throws(
+    () => checkNewerThanPublished("v1.0.9007199254740992", ["v1.0.9007199254740993"]),
+    /newer than published release v1\.0\.9007199254740993/,
+  );
   assert.throws(
     () => checkNewerThanPublished("v1.2.3", ["v1.2.3"]),
     /newer than published release v1\.2\.3/,

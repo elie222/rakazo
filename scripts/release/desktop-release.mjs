@@ -29,8 +29,9 @@ function compareStableTags(a, b) {
   const [, ...left] = STABLE_TAG.exec(a);
   const [, ...right] = STABLE_TAG.exec(b);
   for (let i = 0; i < 3; i++) {
-    const difference = Number(left[i]) - Number(right[i]);
-    if (difference !== 0) return difference;
+    // BigInt, so parts past Number.MAX_SAFE_INTEGER still compare exactly, as sort -V does.
+    const [l, r] = [BigInt(left[i]), BigInt(right[i])];
+    if (l !== r) return l < r ? -1 : 1;
   }
   return 0;
 }

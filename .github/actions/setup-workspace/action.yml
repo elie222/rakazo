@@ -122,7 +122,8 @@ runs:
         if [[ -n "${SETUP_FILTER}" ]]; then
           filter_args=(--filter "${SETUP_FILTER}" --filter rakazo)
         fi
-        pnpm install --frozen-lockfile "${filter_args[@]}"
+        # macOS's bash 3.2 treats an empty array as unset under `set -u`.
+        pnpm install --frozen-lockfile ${filter_args[@]+"${filter_args[@]}"}
 
     - name: Save node_modules
       if: steps.keys.outputs.cacheable == 'true' && steps.node-modules.outputs.cache-hit != 'true'

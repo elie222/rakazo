@@ -166,7 +166,7 @@ jobs:
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
       - name: Script tests
-        run: node --test "scripts/**/*.test.mjs"
+        run: node --test scripts/lazy-vendors.test.mjs scripts/checks/*.test.mjs scripts/release/*.test.mjs
 
   # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:
