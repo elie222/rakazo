@@ -20,8 +20,6 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "Computer.executionLeaseExpiresAt",
-  "Computer.executionFence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
