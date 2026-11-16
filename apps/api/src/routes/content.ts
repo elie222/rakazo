@@ -383,11 +383,7 @@ export function contentRoutes(ctx: RouterContext) {
             ] as const;
           }),
         );
-        const firstDay = since
-          ? localDay(since)
-          : input.range === "today"
-            ? localDay(now)
-            : timeRows[0]?.bucket;
+        const firstDay = since ? localDay(since) : timeRows[0]?.bucket;
         const lastDay = [localDay(now), timeRows.at(-1)?.bucket ?? ""].sort().at(-1) ?? "";
         const overTimeUnit =
           input.range === "all" &&
