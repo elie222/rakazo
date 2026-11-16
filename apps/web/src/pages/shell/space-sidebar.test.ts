@@ -38,7 +38,7 @@ describe("sidebarGroupsForSpaces", () => {
     expect(header).toMatchObject({ title: "Clients", hasGuests: true, showLock: false });
     const [plain] = sidebarGroupsForSpaces([space("space-1", "Personal")], "");
     expect(plain).toMatchObject({ hasGuests: false });
-    // A lone Space shown as its sections marks none of them.
+    // A lone Space shown as its sections marks only the first of them.
     const sectioned = {
       ...space("space-1", "Clients"),
       hasGuests: true,
@@ -48,7 +48,7 @@ describe("sidebarGroupsForSpaces", () => {
     expect(
       sidebarGroupsForSpaces([sectioned], "").map((group) => [group.title, group.hasGuests]),
     ).toEqual([
-      ["Projects", false],
+      ["Projects", true],
       ["Unassigned", false],
     ]);
   });

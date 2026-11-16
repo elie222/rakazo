@@ -98,8 +98,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
       shared: space.shared === true,
-      // Only a heading that names the Space carries its mark, never a section of it.
-      hasGuests: space.hasGuests === true && (showSpaceNames || (index === 0 && !group.title)),
+      // Once per Space: every heading that names it, or a lone Space's first heading.
+      hasGuests: space.hasGuests === true && (showSpaceNames || index === 0),
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
