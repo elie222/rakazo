@@ -63,9 +63,6 @@ vi.mock("./user-error", () => ({
 }));
 // The bots' addresses read on their own; this screen's tests cover the vault's items.
 vi.mock("../components/bot-email", () => ({ BotEmailAddressesGroup: () => null }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",

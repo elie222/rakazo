@@ -1,12 +1,12 @@
-import { cartesiaVoice } from "./cartesia-voice.js";
-import { elevenlabsVoice } from "./elevenlabs-voice.js";
-import { fishAudioVoice } from "./fish-audio-voice.js";
-import { macOsVoice } from "./macos-voice.js";
-import { openAiCompatibleVoice } from "./openai-compatible-voice.js";
-import { openaiVoice } from "./openai-voice.js";
-import { scriptedVoice } from "./scripted-voice.js";
+import { cartesiaVoice } from "./providers/voice/cartesia/cartesia-voice.js";
+import { elevenlabsVoice } from "./providers/voice/elevenlabs/elevenlabs-voice.js";
+import { fishAudioVoice } from "./providers/voice/fish-audio/fish-audio-voice.js";
+import { macOsVoice } from "./providers/voice/macos/macos-voice.js";
+import { openaiVoice } from "./providers/voice/openai/openai-voice.js";
+import { openAiCompatibleVoice } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
+import { scriptedVoice } from "./providers/voice/scripted/scripted-voice.js";
+import { xaiVoice } from "./providers/voice/xai/xai-voice.js";
 import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
-import { xaiVoice } from "./xai-voice.js";
 
 /**
  * Every voice provider this build has, by id. The factory, the catalog and the conformance

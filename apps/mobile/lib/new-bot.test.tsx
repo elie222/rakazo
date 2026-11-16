@@ -23,9 +23,6 @@ const { rpc, router, params, selected, header, createInboxBot, askForModelBefore
     askForModelBeforeFirstBot: vi.fn(),
   }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",

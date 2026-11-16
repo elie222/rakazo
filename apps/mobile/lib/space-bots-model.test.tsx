@@ -12,9 +12,6 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   confirm: undefined as (() => void) | undefined,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",

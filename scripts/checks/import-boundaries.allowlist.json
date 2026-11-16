@@ -9,7 +9,7 @@
     "apps/api/src/home-retention.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
     "apps/api/src/organizations.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
     "apps/api/src/request-auth-queries.postgres.test.ts -> ../../../packages/testkit/src/index.js",
-    "apps/api/src/router.test.ts -> ../../../packages/adapters/src/testing/model-roles.js",
+    "apps/api/src/router-test-support.ts -> ../../../packages/adapters/src/testing/model-roles.js",
     "apps/api/src/secret-migration.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
     "apps/api/src/team-chat-bridge.test.ts -> ../../../packages/adapters/src/thread-artifacts.js",
     "apps/api/src/thread-lock-budget.postgres.test.ts -> ../../../packages/adapters/src/child-bots.js",
@@ -80,6 +80,10 @@
     "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts"
   ],
   "vendor": [
-    "packages/adapters/src/providers/computer/wuying/wuying-sandbox.ts -> ../desktop/desktop-sandbox-paths.js"
+    "packages/adapters/src/providers/computer/wuying/wuying-sandbox.ts -> ../desktop/desktop-sandbox-paths.js",
+    "packages/adapters/src/providers/memory/hindsight/hindsight-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
+    "packages/adapters/src/providers/memory/honcho/honcho-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
+    "packages/adapters/src/providers/memory/supermemory/supermemory-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
+    "packages/adapters/src/providers/voice/openai-compatible/openai-compatible-voice.ts -> ../openai/openai-voice.js"
   ]
 }

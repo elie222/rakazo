@@ -42,6 +42,7 @@ elif name == "node" and any("bootstrap-owner" in a for a in args):
     (data / "postgres/demo-account").touch()
 elif name == "node":
     if "preview" in args:
+        (data / "origins").write_text(f"{os.environ['WEB_ORIGIN']} {os.environ['BETTER_AUTH_URL']}")
         (data / "serving").touch()
     time.sleep(60)
 '''
@@ -55,6 +56,7 @@ class PreviewBoot(unittest.TestCase):
         self.preview = self.root / "infra/preview"
         self.preview.mkdir(parents=True)
         shutil.copy(Path(__file__).with_name("start.sh"), self.preview)
+        shutil.copy(Path(__file__).with_name("demo-account.env"), self.preview)
         (self.root / "apps/api").mkdir(parents=True)
         web = self.root / "apps/web/node_modules/.bin"
         web.mkdir(parents=True)
@@ -72,14 +74,14 @@ class PreviewBoot(unittest.TestCase):
         self.image = self.preview / "image-id"
         self.image.write_text("first-image\n")
 
-    def boot(self, succeeds=True):
+    def boot(self, succeeds=True, **env):
         serving = self.data / "serving"
         serving.unlink(missing_ok=True)
         process = subprocess.Popen(
             ["bash", str(self.preview / "start.sh")],
             env={**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}",
                  "PREVIEW_DATA_DIR": str(self.data), "PG_BIN": str(self.bin),
-                 "PREVIEW_HOST": "preview.example.test"},
+                 "PREVIEW_HOST": "preview.example.test", **env},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
         )
         try:
@@ -95,6 +97,7 @@ class PreviewBoot(unittest.TestCase):
             output = process.communicate(timeout=3)[0].decode()
             if succeeds:
                 self.assertIn("[preview] Ready", output)
+        return output
 
     def calls(self):
         return (self.data / "calls").read_text().splitlines()
@@ -167,6 +170,22 @@ class PreviewBoot(unittest.TestCase):
         self.boot()
         self.assertTrue((self.data / "postgres/demo-account").exists())
         self.assertEqual(self.calls(), ["migrate", "bootstrap", "bootstrap", "migrate", "bootstrap"])
+
+    def origins(self):
+        return (self.data / "origins").read_text().split()
+
+    def test_origins_use_https_by_default(self):
+        self.boot()
+        self.assertEqual(self.origins(), ["https://preview.example.test"] * 2)
+
+    def test_plain_http_is_refused_off_localhost(self):
+        output = self.boot(succeeds=False, PREVIEW_SCHEME="http")
+        self.assertIn("PREVIEW_SCHEME=http needs a localhost PREVIEW_HOST", output)
+        self.assertFalse((self.data / "calls").exists())
+
+    def test_plain_http_is_allowed_on_localhost(self):
+        self.boot(PREVIEW_SCHEME="http", PREVIEW_HOST="localhost:8080")
+        self.assertEqual(self.origins(), ["http://localhost:8080"] * 2)
 
 
 if __name__ == "__main__":

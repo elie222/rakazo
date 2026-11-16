@@ -8,13 +8,13 @@ import {
   visibleSettingsFields,
 } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { isReservedHonchoPeerId } from "./honcho-memory-provider.js";
 import {
   assertMemoryProviderSettings,
   keptMemoryProviderSettings,
   memoryProviderConnectionLabel,
   memoryProviderDescriptors,
 } from "./memory-provider-factory.js";
+import { isReservedHonchoPeerId } from "./providers/memory/honcho/honcho-memory-provider.js";
 
 const descriptors = memoryProviderDescriptors();
 

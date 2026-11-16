@@ -22,8 +22,6 @@ const state = vi.hoisted(() => ({
   session: { generation: 4, apiBase: "http://api.test" },
 }));
 
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "http://api.test",

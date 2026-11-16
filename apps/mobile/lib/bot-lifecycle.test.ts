@@ -11,9 +11,6 @@ const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoist
 }));
 const session = vi.hoisted(() => ({ generation: 2 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc, captureApiRequestContext }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox }));
 vi.mock("react-native", () => ({ Alert: { alert } }));

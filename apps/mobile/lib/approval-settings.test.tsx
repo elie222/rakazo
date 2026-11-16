@@ -37,9 +37,6 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
 }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
