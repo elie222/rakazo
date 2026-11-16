@@ -231,6 +231,18 @@ describe("rakazo-net", () => {
     });
   });
 
+  it("explains a secure connection that fails, without a traceback", async () => {
+    // The gateway here speaks plain HTTP, so the TLS handshake fails.
+    const { stderr } = await run("python3", [HELPER, "nc", "nas.tail1234.ts.net", "7"], {
+      env: {
+        ...environment(),
+        RAKAZO_NET_URL: `https://127.0.0.1:${gatewayPort}${TAILNET_CONNECT_PATH}`,
+      },
+    }).catch((error: { stderr: string }) => error);
+    expect(stderr).toMatch(/^rakazo-net: Rakazo could not be reached securely: /);
+    expect(stderr).not.toContain("Traceback");
+  });
+
   it("is off without Rakazo's tunnel settings", async () => {
     const { stderr } = await run("python3", [HELPER, "nc", "nas.tail1234.ts.net", "7"], {
       env: { PATH: process.env.PATH },
@@ -369,8 +381,9 @@ describe("the shell launcher", () => {
         'command -v rakazo-net; [ -z "$RAKAZO_NET_HELPER" ] && echo hidden',
         settings,
       );
-      expect(found.stdout).toBe(`${join(home, ".cache/rakazo/bin/rakazo-net")}\nhidden\n`);
-      const installed = await readFile(join(home, ".cache/rakazo/bin/rakazo-net"), "utf8");
+      const installedAt = join(home, ".cache/rakazo/net", helper.version, "rakazo-net");
+      expect(found.stdout).toBe(`${installedAt}\nhidden\n`);
+      const installed = await readFile(installedAt, "utf8");
       expect(installed).toBe(await readFile(HELPER, "utf8"));
       // The installed helper reaches the tailnet through the same command settings.
       const reply = await launch("printf hello | rakazo-net nc nas.tail1234.ts.net 7", settings);

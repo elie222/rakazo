@@ -263,6 +263,26 @@ describe("TailnetTunnelGateway", () => {
     await once(socket, "close");
   });
 
+  it("opens nothing that finishes dialing after the gateway closed", async () => {
+    const dialing = deferred();
+    const [far, service] = duplexPair();
+    let dialed = false;
+    const { connect, gateway: tunnels } = await gateway({
+      dial: async () => {
+        dialed = true;
+        await dialing.promise;
+        return far;
+      },
+    });
+    const pending = refusal(connect());
+    await vi.waitFor(() => expect(dialed).toBe(true));
+    tunnels.close();
+    dialing.resolve();
+    expect(await pending).toEqual({ status: 503, body: "The server is shutting down." });
+    expect(far.destroyed).toBe(true);
+    service.destroy();
+  });
+
   it("closes a run's tunnels once it ends", async () => {
     let active = true;
     const { connect } = await gateway({

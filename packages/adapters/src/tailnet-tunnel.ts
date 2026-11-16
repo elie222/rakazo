@@ -358,6 +358,11 @@ export class TailnetTunnelGateway {
       upstream.destroy();
       return;
     }
+    // The server began shutting down while this dialed: nothing may open after close().
+    if (this.closed) {
+      upstream.destroy();
+      return refuse(socket, 503, "The server is shutting down.");
+    }
     // Upgrading completes in this call, so the tunnel joins its group before the slot is freed.
     this.wss.handleUpgrade(request, socket, head, (ws) => {
       const tunnel: Tunnel = { destination, close: () => ws.terminate() };

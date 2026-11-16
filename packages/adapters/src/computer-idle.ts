@@ -71,14 +71,16 @@ const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 /**
  * A command that carries tailnet tunnel settings also carries rakazo-net itself
  * (RAKAZO_NET_HELPER, base64), so every computer has the helper whatever its image or provider.
- * It is written to the user's cache once per version and put first on PATH inside the login
- * shell, after the profile has set PATH.
+ * Each version gets its own directory in the user's cache, filled through a file of this shell's
+ * own and a rename, so commands installing at once (even different versions, mid-deploy) never
+ * mix them up. It is put first on PATH inside the login shell, after the profile has set PATH.
  */
 const TAILNET_HELPER_LAUNCH = [
   'if [ -n "$RAKAZO_NET_HELPER" ]; then',
-  '  bin="$HOME/.cache/rakazo/bin"',
-  '  if [ "$(cat "$bin/.rakazo-net-version" 2>/dev/null)" != "$RAKAZO_NET_VERSION" ]; then',
-  '    { mkdir -p "$bin" && printf %s "$RAKAZO_NET_HELPER" | base64 -d > "$bin/rakazo-net.new" && chmod 755 "$bin/rakazo-net.new" && mv -f "$bin/rakazo-net.new" "$bin/rakazo-net" && printf %s "$RAKAZO_NET_VERSION" > "$bin/.rakazo-net-version"; } || echo "rakazo-net could not be installed" >&2',
+  '  bin="$HOME/.cache/rakazo/net/$RAKAZO_NET_VERSION"',
+  '  if [ ! -x "$bin/rakazo-net" ]; then',
+  '    part="$bin/rakazo-net.$$"',
+  '    { mkdir -p "$bin" && printf %s "$RAKAZO_NET_HELPER" | base64 -d > "$part" && chmod 755 "$part" && mv -f "$part" "$bin/rakazo-net"; } || { rm -f "$part"; echo "rakazo-net could not be installed" >&2; }',
   "  fi",
   "  unset RAKAZO_NET_HELPER RAKAZO_NET_VERSION",
   '  exec bash -lc "export PATH=$(printf %q "$bin"):\\"\\$PATH\\"',
