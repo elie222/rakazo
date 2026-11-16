@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { GROUP_MEMBER_MAX } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -8,6 +10,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../app/group-settings";
 import { BotMemberPicker } from "../components/bot-member-picker";
+import { notifyArchivedChatsChanged } from "./archived-chats";
 import type { MobileBot, MobileGroup } from "./mobile-types";
 
 const { rpc, back, push, replace } = vi.hoisted(() => ({
@@ -17,10 +20,12 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
   replace: vi.fn(),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+const space = vi.hoisted(() => ({ id: "space-a" }));
+vi.mock("./api", () => ({ rpc, selectedSpaceId: () => space.id }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -123,12 +128,19 @@ const group = {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  space.id = "space-a";
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
   rpc.mockImplementation(async (procedure: string) =>
-    procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : undefined,
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
   );
 });
 afterEach(async () => {
@@ -179,6 +191,7 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   expect(rpc).toHaveBeenCalledWith("groups/update", {
     groupId: "group-1",
     botIds: ["bot-1", "bot-2", "bot-3"],
+    expectedBotIds: ["bot-1", "bot-2"],
   });
   expect(back).toHaveBeenCalledOnce();
 });
@@ -226,16 +239,22 @@ it("opens a member's profile from group settings without touching membership", a
 });
 
 it("keeps members closed while a save is running", async () => {
-  let finish = () => {};
-  rpc.mockImplementation((procedure: string) =>
-    procedure === "groups/update"
-      ? new Promise<void>((resolve) => {
-          finish = resolve;
-        })
-      : Promise.resolve(
-          procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : undefined,
-        ),
-  );
+  let finish!: Deferred;
+  rpc.mockImplementation((procedure: string) => {
+    if (procedure === "groups/update") {
+      finish = deferred();
+      return finish.promise;
+    }
+    return Promise.resolve(
+      procedure === "groups/list"
+        ? [group]
+        : procedure === "bots/list"
+          ? bots
+          : procedure === "bots/listArchived"
+            ? []
+            : undefined,
+    );
+  });
   await act(async () => root.render(<GroupSettings />));
   await act(async () => {
     const input = container.querySelector<HTMLInputElement>('[placeholder="Group name"]')!;
@@ -246,5 +265,141 @@ it("keeps members closed while a save is running", async () => {
   expect(rpc).toHaveBeenCalledWith("groups/update", { groupId: "group-1", name: "Crew" });
   expect(openButtons()).toHaveLength(2);
   expect(openButtons().every((button) => button.disabled)).toBe(true);
-  await act(async () => finish());
+  await act(async () => finish.resolve());
+});
+
+it("removes deleted bots from an open group picker after deletion completes", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, members: group.members.slice(1) }]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
+  await click("Show all");
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer", "Runner"]);
+});
+
+it("preserves archived membership when the bot is restored", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : procedure === "bots/listArchived"
+          ? [bots[0]]
+          : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [group]
+      : procedure === "bots/list"
+        ? bots
+        : procedure === "bots/listArchived"
+          ? []
+          : undefined,
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Researcher",
+    "Writer",
+  ]);
+});
+
+it("ignores an older refresh after a deletion refresh completes", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  const old = deferred<MobileBot[]>();
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list" ? [group] : procedure === "bots/list" ? old.promise : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, members: group.members.slice(1) }]
+      : procedure === "bots/list"
+        ? bots.slice(1)
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  await act(async () => old.resolve(bots));
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual(["Writer"]);
+});
+
+it("shows refreshed members while collapsed and adopts an unedited server rename", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, name: "Renamed", members: bots.map((bot) => ({ botId: bot.id })) }]
+      : procedure === "bots/list"
+        ? bots
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Researcher",
+    "Writer",
+    "Runner",
+  ]);
+  await act(async () => switches()[2]!.click());
+  expect(switches()).toHaveLength(3);
+  await act(async () => switches()[2]!.click());
+  await click("Save");
+  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+});
+
+it("does not overwrite a refreshed member order when saving", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list"
+      ? [{ ...group, members: [...group.members].reverse() }]
+      : procedure === "bots/list"
+        ? bots
+        : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  await click("Save");
+  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+});
+
+it("keeps a failed save visible after a successful refresh", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  await click("Show all");
+  await act(async () => switches()[2]!.click());
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "groups/update") throw new Error("Save failed");
+    return procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : [];
+  });
+  await click("Save");
+  const before = container.textContent;
+  await act(async () => notifyArchivedChatsChanged());
+  expect(container.textContent).toBe(before);
+});
+
+it("does not refresh an open group from another selected Space", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  rpc.mockClear();
+  space.id = "space-b";
+  await act(async () => notifyArchivedChatsChanged());
+  expect(rpc).not.toHaveBeenCalled();
+  expect(switches()).toHaveLength(2);
+});
+
+it("preserves a local deselection across remote removal and readdition", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  await act(async () => switches()[1]!.click());
+  let members = group.members.slice(0, 1);
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list" ? [{ ...group, members }] : procedure === "bots/list" ? bots : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  members = group.members;
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches()[1]!.checked).toBe(false);
 });

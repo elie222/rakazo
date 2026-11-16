@@ -9,6 +9,7 @@ import {
 } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { APP_URL, IOS_APP_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { downloadStructuredData } from "../structured-data";
 
 const starsLabel = await githubStarsLabel();
 
@@ -19,14 +20,32 @@ const platforms = [
     action: "Download",
     href: desktopDownloadHref(platform),
     attr: platform,
+    operatingSystem: DESKTOP_NAMES[platform],
   })),
-  { name: "iPhone, iPhone Duo, and iPad", action: "App Store", href: IOS_APP_URL, attr: "ios" },
-  { name: "Android", action: "Google Play", href: ANDROID_APP_STORE_URL, attr: "android" },
+  {
+    name: "iPhone, iPhone Duo, and iPad",
+    action: "App Store",
+    href: IOS_APP_URL,
+    attr: "ios",
+    operatingSystem: "iOS, iPadOS",
+  },
+  {
+    name: "Android",
+    action: "Google Play",
+    href: ANDROID_APP_STORE_URL,
+    attr: "android",
+    operatingSystem: "Android",
+  },
   { name: "Web", action: "Open", href: APP_URL, attr: "web" },
 ];
+const structuredData = downloadStructuredData(
+  platforms.flatMap((platform) =>
+    platform.operatingSystem ? [{ operatingSystem: platform.operatingSystem, href: platform.href }] : [],
+  ),
+);
 ---
 
-<BaseLayout title="Download · Rakazo" description="Get Rakazo for macOS, Windows, Linux, iPhone, iPhone Duo, iPad, Android, and the web.">
+<BaseLayout {structuredData} title="Download · Rakazo" description="Get Rakazo for macOS, Windows, Linux, iPhone, iPhone Duo, iPad, Android, and the web.">
   <div class="container">
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">

@@ -10,6 +10,7 @@ const provisionComputer = vi.hoisted(() => vi.fn());
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));
@@ -63,7 +64,7 @@ type Answer = { text?: string; calls?: Array<{ name: string; args: object }> };
  */
 async function runLoop(
   answer: (request: number) => Answer,
-  { listing = (_call: number) => [REPORT] } = {},
+  { listing = (_call: number) => [REPORT], learning = false, finalized = true } = {},
 ) {
   vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-model");
   vi.stubEnv("RAKAZO_LOCAL_VISION_MODELS", "example-model");
@@ -172,8 +173,12 @@ async function runLoop(
       return { count: effect ? 1 : 0 };
     },
   };
+  let answeredMessageIds = ["steer-1"];
   const prisma = {
     externalEffect,
+    steeringMessage: {
+      findMany: vi.fn(async () => answeredMessageIds.map((messageId) => ({ messageId }))),
+    },
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     $transaction: async (work: unknown): Promise<unknown> =>
       typeof work === "function" ? work(proxied) : Promise.all(work as unknown[]),
@@ -229,6 +234,7 @@ async function runLoop(
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
+        botId: run.botId,
         groupId: null,
         historyCompactionSummary: null,
         historyCompactedUpToSeq: null,
@@ -260,6 +266,7 @@ async function runLoop(
     },
     computer: {
       updateMany: vi.fn(async () => ({ count: 1 })),
+      findUnique: vi.fn(async () => null),
       findFirst: vi.fn(async () => ({
         state: "running",
         restorePending: false,
@@ -303,7 +310,11 @@ async function runLoop(
       yield* [];
     }),
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async () => {
+    answeredMessageIds = [];
+    return finalized ? { continuationRunId: null } : false;
+  });
+  const enqueue = vi.fn(async () => undefined);
   const events = {
     append: vi.fn(async () => undefined),
     claimSteering: vi.fn(async () => []),
@@ -319,10 +330,21 @@ async function runLoop(
     // A real save takes a while, and the model must not keep going while it runs.
     home: { commit: vi.fn(() => delay(200, "fixture-revision")) },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () =>
+        learning
+          ? {
+              defaultScope: "isolated",
+              provider: {
+                describe: () => ({ id: "fixture", capabilities: {} }),
+                retainConversation: async () => undefined,
+              },
+            }
+          : null,
+    },
     artifacts: { get: vi.fn(async () => new Uint8Array()) },
     events,
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs: { enqueue },
     notifications: { send: vi.fn(async () => undefined) },
     secrets: [],
     // Ends the run if the guard is missing, instead of letting the fake server answer forever.
@@ -342,7 +364,7 @@ async function runLoop(
   const finalText = finalBlocks
     .map((block) => (block as { kind: string; text?: string }).text ?? "")
     .join("");
-  return { requests, act, finalizeRun, finalText };
+  return { requests, act, finalizeRun, finalText, enqueue };
 }
 
 /** Every answer is a computer_act call. `sizes` gives the batch size per request; the last repeats. */
@@ -372,12 +394,36 @@ function expectStoppedAt(calls: number, run: { requests: unknown[]; finalText: s
 }
 
 describe("over-limit computer_act batches through the run loop", () => {
+  it.each([true, false])(
+    "retains a loop-stopped turn only after successful finalization (%s)",
+    async (finalized) => {
+      const { enqueue, finalizeRun } = await runLoop(
+        (n) => ({ calls: [{ name: "computer_act", args: clickBatch(30, n) }] }),
+        { learning: true, finalized },
+      );
+      expect(finalizeRun).toHaveBeenCalledTimes(1);
+      const job = expect.objectContaining({
+        name: "memory.retain-turn",
+        payload: { runId: "run-1", messageIds: ["steer-1"] },
+      });
+      if (finalized) expect(enqueue).toHaveBeenCalledWith(job);
+      else
+        expect(enqueue).not.toHaveBeenCalledWith(
+          expect.objectContaining({ name: "memory.retain-turn" }),
+        );
+    },
+    30_000,
+  );
+
   it("ends the run after four refused batches in a row", async () => {
-    const { requests, act, finalizeRun, finalText } = await runWithBatches([30]);
+    const { requests, act, finalizeRun, finalText, enqueue } = await runWithBatches([30]);
 
     expect(requests).toHaveLength(MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS);
     expect(act).not.toHaveBeenCalled();
     expect(finalizeRun).toHaveBeenCalledTimes(1);
+    expect(enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "memory.retain-turn" }),
+    );
     expect(finalText).toMatch(
       /^I got stuck calling Computer act with too many actions 4 times in a row without making progress, so I stopped early\./,
     );
@@ -463,5 +509,35 @@ describe("repeated identical tool calls through the run loop", () => {
       6,
       await runLoop(() => ({ calls: [LISTING, LISTING] }), { listing: unreadable }),
     );
+  }, 30_000);
+});
+
+describe("one tool getting the same answer through the run loop", () => {
+  const REWORDED = ["Continuing.", "On it.", "Proceeding with both tasks.", "Still working."];
+
+  it("ends a reworded progress message that keeps getting the same answer at the 25th", async () => {
+    const run = await runLoop((n) => ({
+      calls: [
+        { name: "message_user", args: { message: `${REWORDED[n % REWORDED.length]} (${n})` } },
+      ],
+    }));
+
+    expect(run.requests.length).toBeGreaterThanOrEqual(25);
+    expect(run.requests.length).toBeLessThanOrEqual(26);
+    expect(run.finalText).toMatch(
+      /^I got stuck calling Message user with the same result 25 times in a row/,
+    );
+    expect(isLoopGuardStopText(run.finalText)).toBe(true);
+  }, 30_000);
+
+  it("keeps writing different files", async () => {
+    const { requests, finalText } = await runLoop((n) => ({
+      calls: [
+        { name: "write_file", args: { path: `notes/${REWORDED[n % 4]} ${n}.md`, content: "x" } },
+      ],
+    }));
+
+    expect(requests).toHaveLength(REQUEST_CAP + 1);
+    expect(isLoopGuardStopText(finalText)).toBe(false);
   }, 30_000);
 });

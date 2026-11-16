@@ -39,6 +39,16 @@ function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
   };
 }
 
+async function artifactGroupId(ctx: RunContext): Promise<string | undefined> {
+  const threadId = ctx.source.conversationThreadId;
+  if (!threadId || threadId === ctx.thread.id) return ctx.thread.groupId ?? undefined;
+  const conversation = await ctx.deps.prisma.thread.findFirst({
+    where: { id: threadId, spaceId: ctx.run.spaceId },
+    select: { groupId: true },
+  });
+  return conversation?.groupId ?? undefined;
+}
+
 /** Generate an image or video, or with recoverOnly, only resume a job an earlier attempt started. */
 export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly = false) {
   const { deps, run, thread, context } = ctx;
@@ -64,7 +74,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     threadGeneration: thread.historyCompactionGeneration,
     ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
       providerId: mediaGeneration.id,
-      groupId: thread.groupId ?? undefined,
+      groupId: await artifactGroupId(ctx),
       operationId: executionId,
       holdReply: silent,
       lease: runLeaseFor(deps, run.id),
@@ -136,7 +146,7 @@ export const fileTools: ToolHandlers = {
     return renderPlotFromTool(deps, run, args, executionId, workspace, call.finish);
   },
   async attach_file(ctx, call) {
-    const { deps, run, bot, thread } = ctx;
+    const { deps, run, bot } = ctx;
     const filePath = String(call.args.path ?? "");
     const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
@@ -154,7 +164,7 @@ export const fileTools: ToolHandlers = {
         call,
         filePath,
         read.bytes,
-        { botId: bot.id, groupId: thread.groupId ?? undefined },
+        { botId: bot.id, groupId: await artifactGroupId(ctx) },
         {
           name: typeof call.args.name === "string" ? call.args.name : undefined,
           description:

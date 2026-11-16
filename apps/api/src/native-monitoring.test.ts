@@ -111,6 +111,14 @@ describe("native error collector privacy boundary", () => {
     expect(sanitizeNativeEvent({ breadcrumbs }, "desktop").breadcrumbs).toBeUndefined();
   });
 
+  it("keeps the Android mapping id so obfuscated stacks can be deobfuscated", () => {
+    const uuid = "00000000-0000-4000-8000-000000000000";
+    expect(
+      sanitizeNativeEvent({ debug_meta: { images: [{ type: "proguard", uuid }] } }, "mobile")
+        .debug_meta,
+    ).toEqual({ images: [{ type: "proguard", uuid }] });
+  });
+
   it("keeps replayed startup failures anonymous", () => {
     const event = sanitizeNativeEvent(
       {

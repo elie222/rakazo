@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ScratchpadItem } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -9,7 +10,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 const rpcMock = vi.hoisted(() => ({
-  scratchpad: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
+  scratchpad: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcMock,
@@ -43,7 +44,7 @@ async function mount(root: Root, botId: string) {
       </QueryClientProvider>,
     ),
   );
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 
 function workItem(id: string, title: string): ScratchpadItem {
@@ -108,7 +109,7 @@ it("renders open and parked work without status chrome and removes a wrapped ite
     expect(remove).not.toBeNull();
     await act(async () => remove.click());
     expect(rpc.scratchpad.remove).toHaveBeenCalledWith({ itemId: item.id });
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
     expect(container.textContent).not.toContain(title);
   } finally {
     await act(async () => root.unmount());
@@ -158,15 +159,13 @@ it("reopens on the cached list and refreshes it in the background", async () => 
     await mount(root, "bot-fixture");
     await act(async () => root.unmount());
 
-    let resolveRead: (items: ScratchpadItem[]) => void = () => undefined;
-    rpcMock.scratchpad.list.mockImplementationOnce(
-      () => new Promise((resolve) => (resolveRead = resolve)),
-    );
+    const resolveRead = deferred<ScratchpadItem[]>();
+    rpcMock.scratchpad.list.mockImplementationOnce(() => resolveRead.promise);
     root = createRoot(host);
     await mount(root, "bot-fixture");
     expect(host.textContent).toContain("Cached task");
     expect(rpcMock.scratchpad.list).toHaveBeenCalledTimes(2);
-    await act(async () => resolveRead([workItem("b", "Fresh task")]));
+    await act(async () => resolveRead.resolve([workItem("b", "Fresh task")]));
     await vi.waitFor(() => expect(host.textContent).toContain("Fresh task"));
     expect(host.textContent).not.toContain("Cached task");
   } finally {
@@ -186,9 +185,9 @@ it("keeps an added item when an older background read lands after it", async () 
     await mount(root, "bot-fixture");
     await act(async () => root.unmount());
 
-    let resolveOlderRead: (items: ScratchpadItem[]) => void = () => undefined;
+    const resolveOlderRead = deferred<ScratchpadItem[]>();
     rpcMock.scratchpad.list
-      .mockImplementationOnce(() => new Promise((resolve) => (resolveOlderRead = resolve)))
+      .mockImplementationOnce(() => resolveOlderRead.promise)
       .mockResolvedValueOnce([added, existing]);
     rpcMock.scratchpad.create.mockResolvedValue(added);
     root = createRoot(host);
@@ -205,15 +204,67 @@ it("keeps an added item when an older background read lands after it", async () 
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => input.form!.requestSubmit());
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
     expect(host.textContent).toContain("Added task");
     await act(async () => {
-      resolveOlderRead([existing]);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      resolveOlderRead.resolve([existing]);
+      await flush();
     });
     expect(host.textContent).toContain("Added task");
   } finally {
     await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each(["remove", "complete"])("keeps the draft after the last item is %s", async (action) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const existing = workItem("a", "Existing task");
+  const added = workItem("b", "New draft");
+  rpcMock.scratchpad.list
+    .mockResolvedValueOnce([existing])
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([added]);
+  rpcMock.scratchpad.remove.mockResolvedValue({ ok: true });
+  rpcMock.scratchpad.update.mockResolvedValue({ ...existing, status: "done" });
+  rpcMock.scratchpad.create.mockResolvedValue(added);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
+    );
+    const input = host.querySelector<HTMLInputElement>('[aria-label="New open-work item"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        added.title,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          action === "remove" ? '[aria-label="Remove"]' : '[aria-label="Complete"]',
+        )!
+        .click(),
+    );
+    await act(flush);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="New open-work item"]')?.value).toBe(
+      added.title,
+    );
+    await act(async () => input.form!.requestSubmit());
+    await act(flush);
+    expect(rpcMock.scratchpad.create).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      title: added.title,
+    });
+    expect(host.textContent).toContain(added.title);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
     vi.unstubAllGlobals();
   }
 });

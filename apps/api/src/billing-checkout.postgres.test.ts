@@ -5,6 +5,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -78,7 +79,7 @@ dbTests("billing checkout coordination", () => {
       prisma.user.findUnique({ where: { id: userId } }),
     );
     const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
-    await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     const results = await Promise.all(
       [1000, 2500, 5000].map((amountCents) =>
         service.purchaseCredits(actor, { amountCents, monthly: true }),
@@ -92,14 +93,6 @@ dbTests("billing checkout coordination", () => {
     ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
   });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 /** Holds the provider's customer and checkout calls until the test releases them. */
 class GatedCheckoutEmulator extends BillingEmulator {
@@ -240,13 +233,13 @@ dbTests("checkout and organization deletion", () => {
       name: "monthly credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: true }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: true }),
     },
     {
       name: "one-time credit",
       modelCredits: true,
       open: (service: ReturnType<typeof createBillingService>, actor: Actor) =>
-        service.purchaseCredits(actor, { amountCents: 1000, monthly: false }),
+        service.purchaseCredits(actor, { amountCents: 2000, monthly: false }),
     },
   ] as const;
 

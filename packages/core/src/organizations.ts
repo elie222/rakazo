@@ -19,3 +19,11 @@ export function organizationOfSpace(
     ? organizations.find((organization) => organization.spaceIds.includes(spaceId))
     : undefined;
 }
+
+/** Its owner can delete it while they still own another organization to land in. */
+export function canDeleteOrganization(
+  organizations: readonly Organization[],
+  organization: Organization,
+): boolean {
+  return organization.canManage && organizations.filter((each) => each.canManage).length > 1;
+}

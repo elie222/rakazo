@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { Bot, Group } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -232,18 +234,18 @@ describe("GroupSettings", () => {
   });
 
   it("stays open until a save in flight finishes, then closes", async () => {
-    let finishSave!: () => void;
+    let finishSave!: Deferred;
     const { onClose } = await render({
-      onSave: () =>
-        new Promise<void>((resolve) => {
-          finishSave = resolve;
-        }),
+      onSave: () => {
+        finishSave = deferred();
+        return finishSave.promise;
+      },
     });
     await click("Save");
     expect(button("Close panel").disabled).toBe(true);
     await pressEscape();
     expect(onClose).not.toHaveBeenCalled();
-    await act(async () => finishSave());
+    await act(async () => finishSave.resolve());
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -259,16 +261,16 @@ describe("GroupSettings", () => {
   });
 
   it("does not close the panel of a chat opened while the save was in flight", async () => {
-    let finishSave!: () => void;
+    let finishSave!: Deferred;
     const first = await render({
-      onSave: () =>
-        new Promise<void>((resolve) => {
-          finishSave = resolve;
-        }),
+      onSave: () => {
+        finishSave = deferred();
+        return finishSave.promise;
+      },
     });
     await click("Save");
     const second = await render({ instance: "another chat" });
-    await act(async () => finishSave());
+    await act(async () => finishSave.resolve());
     expect(first.onClose).not.toHaveBeenCalled();
     expect(second.onClose).not.toHaveBeenCalled();
   });

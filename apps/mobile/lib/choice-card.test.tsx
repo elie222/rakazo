@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { MessageBlock } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -191,13 +193,11 @@ describe("ChoiceCard", () => {
   });
 
   it("disables every control while a request is in flight", async () => {
-    let release: (value: unknown) => void = () => undefined;
-    rpc.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+    let release!: Deferred<unknown>;
+    rpc.mockImplementation(() => {
+      release = deferred<unknown>();
+      return release.promise;
+    });
     const view = render();
 
     await act(async () => {
@@ -219,7 +219,7 @@ describe("ChoiceCard", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      release({});
+      release.resolve({});
       await Promise.resolve();
     });
 

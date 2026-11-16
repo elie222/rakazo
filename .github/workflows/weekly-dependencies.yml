@@ -9,7 +9,8 @@ permissions: {}
 
 # One serialized auth stream preserves Codex's rotating refresh token.
 concurrency:
-  group: weekly-dependencies
+  group: codex-subscription
+  queue: max
   cancel-in-progress: false
 
 jobs:

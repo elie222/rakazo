@@ -1,7 +1,7 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { buildBotMessageWakePrompt, STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { helperPrompt, resultPrompt } from "./background-helpers.js";
+import { helperPrompt, resultPrompt } from "./background-helpers.prompt.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 
 describe("inferScript ask resumes", () => {
@@ -32,7 +32,7 @@ describe("inferScript background helpers", () => {
   it("starts a helper for a request to work in the background, not for a question about it", () => {
     const started = (prompt: string) =>
       (inferScript(prompt)[0]?.toolCalls ?? []).some(
-        (call) => call.name === "run_subagent" && call.args.background === true,
+        (call) => call.name === "run_subagent" && !("background" in call.args),
       );
     expect(started("keep working on the venue list in the background")).toBe(true);
     expect(started("Is the calendar sync running in the background?")).toBe(false);

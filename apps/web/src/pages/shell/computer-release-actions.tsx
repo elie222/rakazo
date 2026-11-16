@@ -12,7 +12,7 @@ export function ComputerReleaseActions({
   if (!takeoverRequested) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        <Trans>Release control</Trans>
+        <Trans>Hand back control</Trans>
       </Button>
     );
   }

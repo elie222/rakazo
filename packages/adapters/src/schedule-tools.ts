@@ -19,7 +19,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
-import { localDateTime } from "./current-time.js";
+import { localDateTime } from "./current-time.prompt.js";
 import { finishRoutineHandover } from "./routine-handover.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
@@ -313,16 +313,20 @@ async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): 
  * preference fields that came in the same save, so they commit with it or not at all.
  */
 export async function changeUserTimezone(
-  deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
+  deps: Pick<ScheduleToolDeps, "prisma" | "jobs"> & {
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
+  },
   userId: string,
   timezone: string | null,
   other?: {
     locale?: string;
     botAvatarSet?: string;
+    labs?: string[];
     marketingEmailOptOutAt?: Date | null;
   },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];
+  const movedSpaces = new Set<string>();
   await deps.prisma.$transaction(async (tx) => {
     // The user's routines sit in every space they own one in, and a tenant scope only
     // sees its own space's rows, so the move runs as an explicit cross-space bypass.
@@ -346,6 +350,7 @@ export async function changeUserTimezone(
         where: { id: { in: locked.map((row) => row.id) }, userId, timezone: user.timezone },
         select: {
           id: true,
+          spaceId: true,
           crons: true,
           timezone: true,
           nextRunAt: true,
@@ -353,6 +358,7 @@ export async function changeUserTimezone(
           watch: true,
         },
       });
+      for (const routine of routines) movedSpaces.add(routine.spaceId);
       // Rows whose next run keeps its instant move their zone label in one write; only
       // the retimed ones need their own fenced update.
       const relabeled: string[] = [];
@@ -385,6 +391,7 @@ export async function changeUserTimezone(
       }
     });
   });
+  for (const spaceId of movedSpaces) await deps.events?.publishSpaceChange?.(spaceId, "routines");
   // Enqueue after the commit, like every routine write. The save is committed by now, so
   // a failing enqueue is logged instead of thrown: the reconciler repairs the missed
   // wake, and the caller keeps the successful save. Every wakeup is attempted.
@@ -578,6 +585,7 @@ export async function createScheduleFromTool(
   } catch {
     // Match routines.create: the reminder is live even if the thread signal fails.
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
 
   return {
     ok: true as const,
@@ -742,6 +750,7 @@ async function createWatchFromTool(
   } catch {
     // The watch is live even if the thread signal fails.
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
   return {
     ok: true as const,
     routineId: row.id,
@@ -974,6 +983,7 @@ export async function updateScheduleFromTool(
         : "Schedule not found.",
     };
   }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
 
   if (timingChanged) {
     if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
@@ -1052,6 +1062,7 @@ export async function cancelScheduleFromTool(
   // The scope is part of the delete, so the routine cannot change hands between the read and it.
   const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });
   if (count === 0) return { error: "Schedule not found." };
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
   await deps.jobs.cancel(routineJobKey(existing.id));
   return { ok: true as const, routineId: existing.id, name: existing.name };
 }

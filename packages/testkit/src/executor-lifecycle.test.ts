@@ -11,6 +11,7 @@ import {
 import type { createApp } from "@rakazo/api/app";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import {
+  createDb,
   createThreadEvents,
   createThreadMessage,
   loadRunHistoryMessages,
@@ -788,7 +789,9 @@ describeIntegration("run executor lifecycle", () => {
     );
     expect(claimed.map((item) => item.messageId)).toEqual([publicSend.messageId]);
     const history = await runAsSystem("background job run.continue", () =>
-      loadRunHistoryMessages(handles.prisma, seeded.run, 100, channel.channelId),
+      loadRunHistoryMessages(handles.prisma, seeded.run, 100, {
+        channelId: channel.channelId,
+      }),
     );
     expect(history.map((message) => message.id).sort()).toEqual(
       [source.id, publicSend.messageId].sort(),
@@ -828,17 +831,179 @@ describeIntegration("run executor lifecycle", () => {
     expect(
       (
         await runAsSystem("background job run.continue", () =>
-          loadRunHistoryMessages(
-            handles.prisma,
-            { ...seeded.run, id: "next-group-run" },
-            100,
-            channel.channelId,
-          ),
+          loadRunHistoryMessages(handles.prisma, { ...seeded.run, id: "next-group-run" }, 100, {
+            channelId: channel.channelId,
+          }),
         )
       )
         .map((message) => message.id)
         .sort(),
     ).toEqual([source.id, publicSend.messageId].sort());
+  });
+
+  it("waits out a failover while finishing a turn instead of failing or rerunning it", async () => {
+    const seeded = await seedRun("failover-finish", "write a file that says failover-finish");
+    const failover = await failNext(
+      "failover_finish",
+      "UPDATE ON runs",
+      `NEW.id = '${seeded.run.id}' AND NEW.status = 'completed' AND OLD.status <> 'completed'`,
+    );
+    try {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+      expect(await failover.fired()).toBe(true);
+    } finally {
+      await failover.drop();
+    }
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id } }),
+    ]);
+    expect(run).toMatchObject({ status: "completed", error: null, leaseFence: 1 });
+    expect(attempts.map(({ fence, status }) => ({ fence, status }))).toEqual([
+      { fence: 1, status: "completed" },
+    ]);
+    expect(await repliesOf(seeded.run.id)).toBe(1);
+  });
+
+  it("resumes a turn the database interrupted at once instead of failing it", async () => {
+    const seeded = await seedRun("failover-turn", "write a file that says failover-turn");
+    const failover = await failNext(
+      "failover_turn",
+      "INSERT ON events",
+      `NEW."runId" = '${seeded.run.id}' AND NEW.type = 'agent.tool.called'`,
+    );
+    try {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+      // The interrupted attempt hands the run back, and its next attempt starts at once.
+      await expect
+        .poll(
+          async () => (await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).status,
+          {
+            timeout: 10_000,
+          },
+        )
+        .toBe("completed");
+      expect(await failover.fired()).toBe(true);
+    } finally {
+      await failover.drop();
+    }
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id }, orderBy: { fence: "asc" } }),
+    ]);
+    expect(run).toMatchObject({ status: "completed", error: null, leaseFence: 2 });
+    expect(attempts.map(({ fence, status }) => ({ fence, status }))).toEqual([
+      { fence: 1, status: "interrupted" },
+      { fence: 2, status: "completed" },
+    ]);
+    expect(await repliesOf(seeded.run.id)).toBe(1);
+  });
+
+  it("starts a run again at once when the database fails right after it is claimed", async () => {
+    const seeded = await seedRun("failover-claim", "write a file that says failover-claim");
+    const failover = await failNext(
+      "failover_claim",
+      "INSERT ON attempts",
+      `NEW."runId" = '${seeded.run.id}'`,
+    );
+    try {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+      await expect
+        .poll(
+          async () => (await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).status,
+          { timeout: 10_000 },
+        )
+        .toBe("completed");
+      expect(await failover.fired()).toBe(true);
+    } finally {
+      await failover.drop();
+    }
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id }, orderBy: { fence: "asc" } }),
+    ]);
+    expect(run).toMatchObject({ status: "completed", error: null, leaseFence: 2 });
+    expect(attempts.map(({ fence, status, error }) => ({ fence, status, error }))).toEqual([
+      { fence: 1, status: "setup_failed", error: null },
+      { fence: 2, status: "completed", error: null },
+    ]);
+    expect(await repliesOf(seeded.run.id)).toBe(1);
+  });
+
+  it("hands back and counts a run whose setup fails right after it is claimed", async () => {
+    const seeded = await seedRun("claim-setup", "write a file that says claim-setup");
+    await db.bot.update({ where: { id: seeded.bot.id }, data: { computerId: null } });
+
+    await expect(
+      runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      ),
+    ).rejects.toThrow("Run setup failed; retrying");
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id }, orderBy: { fence: "asc" } }),
+    ]);
+    // Not left running under a lease nobody renews: it is due again after a short backoff.
+    expect(run).toMatchObject({
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      error: "Run setup failed; retrying",
+    });
+    expect(attempts[0]).toMatchObject({
+      fence: 1,
+      status: "setup_failed",
+      error: "Bot has no computer",
+    });
+  });
+
+  it("counts setup failures an earlier release recorded together with its own", async () => {
+    const seeded = await seedRun("mixed-setup", "write a file that says mixed-setup", {
+      leaseFence: 6,
+    });
+    await db.bot.update({ where: { id: seeded.bot.id }, data: { computerId: null } });
+    await db.attempt.createMany({
+      data: [1, 2, 3, 4, 5, 6].map((fence) => ({
+        runId: seeded.run.id,
+        fence,
+        status: "setup_failed",
+        error: "Run setup failed; retrying",
+        finishedAt: new Date(),
+      })),
+    });
+    const continueRun = () =>
+      runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+
+    await expect(continueRun()).rejects.toThrow("Run setup failed; retrying");
+    expect(await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).toMatchObject({
+      status: "queued",
+    });
+    await db.run.update({ where: { id: seeded.run.id }, data: { wakeAt: null } });
+    await continueRun();
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({
+        where: { runId: seeded.run.id, fence: { gt: 6 } },
+        orderBy: { fence: "asc" },
+      }),
+    ]);
+    expect(run).toMatchObject({ status: "failed", error: "Bot has no computer" });
+    expect(attempts.map(({ fence, status, error }) => ({ fence, status, error }))).toEqual([
+      { fence: 7, status: "setup_failed", error: "Bot has no computer" },
+      { fence: 8, status: "failed", error: "Bot has no computer" },
+    ]);
   });
 
   it("recovers a computer a crashed worker left booting", async () => {
@@ -1392,6 +1557,44 @@ describeIntegration("run executor lifecycle", () => {
         ...runState,
       },
     });
+  }
+
+  function repliesOf(runId: string) {
+    return db.event.count({ where: { runId, type: "thread.message.created" } });
+  }
+
+  /**
+   * Makes the next write matching `when` fail as a database shutting down for a failover
+   * would; later writes go through.
+   */
+  async function failNext(name: string, operation: string, when: string) {
+    const owner = createDb(process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL!);
+    const sql = (statement: string) => owner.prisma.$executeRawUnsafe(statement);
+    await sql(`CREATE SEQUENCE ${name}_attempts`);
+    await sql(`CREATE FUNCTION ${name}() RETURNS trigger SECURITY DEFINER AS $$
+      BEGIN
+        IF nextval('${name}_attempts') = 1 THEN
+          RAISE EXCEPTION 'the database system is shutting down' USING ERRCODE = '57P01';
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await sql(`CREATE TRIGGER ${name} BEFORE ${operation} FOR EACH ROW
+      WHEN (${when}) EXECUTE FUNCTION ${name}()`);
+    return {
+      fired: async () => {
+        const [row] = await owner.prisma.$queryRawUnsafe<{ attempts: bigint }[]>(
+          `SELECT last_value AS attempts FROM ${name}_attempts`,
+        );
+        return Number(row?.attempts) > 1;
+      },
+      drop: async () => {
+        await sql(`DROP TRIGGER IF EXISTS ${name} ON ${operation.split(" ").at(-1)}`);
+        await sql(`DROP FUNCTION IF EXISTS ${name}()`);
+        await sql(`DROP SEQUENCE IF EXISTS ${name}_attempts`);
+        await owner.prisma.$disconnect();
+        await owner.pool.end();
+      },
+    };
   }
 
   async function signup(email: string, name: string) {

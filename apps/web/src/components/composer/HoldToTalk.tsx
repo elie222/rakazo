@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { Button, cn } from "@rakazo/ui-web";
 import { ArrowUp, ChevronUp, Lock, Mic, Trash2 } from "lucide-react";
 import type { PointerEvent } from "react";
@@ -180,11 +181,7 @@ export function useHoldToTalk({
 }
 
 function useSeconds(since: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow(500);
   return Math.max(0, Math.floor((now - since) / 1000));
 }
 

@@ -38,7 +38,7 @@ while IFS= read -r file; do
     *) all_packages=true ;;
   esac
   case "$file" in
-    .github/workflows/ci.yml | .github/workflows/playwright.yml | .github/actions/setup-workspace/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
+    .github/workflows/ci.yml | .github/workflows/playwright.yml | .github/actions/setup-workspace/* | .github/actions/start-postgres/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
       native=true
       compose=true
       ;;
@@ -47,7 +47,8 @@ while IFS= read -r file; do
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
       packages/adapters/src/home* | packages/adapters/src/native-shell* | \
-      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path*)
+      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path* | \
+      packages/adapters/src/workspace-save-*)
       native=true
       ;;
     infra/compose/*) compose=true ;;

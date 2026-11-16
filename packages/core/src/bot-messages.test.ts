@@ -1,22 +1,24 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  BOT_DELIBERATION_GUIDANCE,
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
   botMessageHopExhausted,
   botMessageMaxHops,
-  buildBotMessageWakePrompt,
   clampBotMessage,
   DEFAULT_BOT_MESSAGE_MAX_HOPS,
-  formatBotRosterLines,
   nextBotMessageHop,
+  resolveBotAddress,
+} from "./bot-messages.js";
+import {
+  BOT_DELIBERATION_GUIDANCE,
+  buildBotMessageWakePrompt,
+  formatBotRosterLines,
   renderBotDirectory,
   renderBotGroupDirectory,
   renderGroupMembersContext,
-  resolveBotAddress,
-} from "./bot-messages.js";
+} from "./bot-messages.prompt.js";
 
 const bots = [
   { id: "b_1", name: "Researcher" },
@@ -144,6 +146,28 @@ describe("addressing", () => {
     expect(resolveBotAddress(twins, { name: "ANA" })).toBeUndefined();
     // An exact match still wins over the ambiguity.
     expect(resolveBotAddress(twins, { name: "ana" })?.id).toBe("b_2");
+  });
+
+  it.each(["Reviewer", "  Reviewer  ", "REVIEWER"])(
+    "refuses duplicate exact names for %j regardless of candidate order",
+    (name) => {
+      const twins = [
+        { id: "b_1", name: "Reviewer" },
+        { id: "b_2", name: "Reviewer" },
+        { id: "b_3", name: "reviewer" },
+      ];
+      expect(resolveBotAddress(twins, { name })).toBeUndefined();
+      expect(resolveBotAddress([...twins].reverse(), { name })).toBeUndefined();
+    },
+  );
+
+  it("resolves duplicate names by explicit id without falling back from an unknown id", () => {
+    const twins = [
+      { id: "b_1", name: "Reviewer" },
+      { id: "b_2", name: "Reviewer" },
+    ];
+    expect(resolveBotAddress(twins, { botId: " b_2 ", name: "Reviewer" })).toBe(twins[1]);
+    expect(resolveBotAddress(twins, { botId: "b_404", name: "Reviewer" })).toBeUndefined();
   });
 
   it("returns nothing for an unknown target", () => {

@@ -1,3 +1,4 @@
+import { RunStatus } from "@rakazo/contracts";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,6 +12,7 @@ import {
   isRoutineRunTrigger,
   isRunWaitingOnUser,
   isRunWorking,
+  isTerminal,
   messageBypassesTakeoverWait,
   messageSteersRun,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -154,6 +156,21 @@ describe("run state machine", () => {
           expect(canTransition(from, to)).toBe(false);
         },
       ),
+    );
+  });
+
+  it("leaves a finished state on no walk of allowed transitions, except a failed run retrying", () => {
+    const status = fc.constantFrom(...RunStatus.options);
+    fc.assert(
+      fc.property(status, fc.array(status, { maxLength: 40 }), (start, attempts) => {
+        let current = start;
+        for (const to of attempts) {
+          if (!canTransition(current, to)) continue;
+          if (isTerminal(current)) expect([current, to]).toEqual(["failed", "queued"]);
+          current = to;
+        }
+      }),
+      { seed: 42, numRuns: 200 },
     );
   });
 });

@@ -1,4 +1,6 @@
 import { t } from "@lingui/core/macro";
+import { SIGNUP_SURFACE_HEADER } from "@rakazo/contracts";
+import { Platform } from "react-native";
 import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
 import { clearSpace } from "./api-server";
 import {
@@ -14,6 +16,7 @@ let inFlight = false;
 /** Better Auth Expo proxy transfers the state cookie into the native auth browser. */
 export async function continueWithSso(
   action: "sign-in" | "link" | "reauthenticate" = "sign-in",
+  provider = "oidc",
 ): Promise<boolean> {
   if (inFlight) return false;
   inFlight = true;
@@ -40,10 +43,11 @@ export async function continueWithSso(
           "content-type": "application/json",
           origin: "rakazo://",
           "x-skip-oauth-proxy": "true",
+          [SIGNUP_SURFACE_HEADER]: Platform.OS,
           ...headers,
         },
         body: JSON.stringify({
-          provider: "oidc",
+          provider,
           callbackURL,
           errorCallbackURL: callbackURL,
           disableRedirect: true,

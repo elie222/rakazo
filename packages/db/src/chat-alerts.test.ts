@@ -1,4 +1,5 @@
 import type { ChatAlert } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { createChatAlerts } from "./chat-alerts.js";
 
@@ -34,7 +35,7 @@ describe("createChatAlerts", () => {
     const alerts = createChatAlerts(fanout as never);
     const iterator = alerts.follow("user-1", "space-1");
     const pending = iterator.next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     await alerts.publish("user-2", { ...alert, body: "Not yours" });
     await alerts.publish("user-1", { ...alert, spaceId: "space-2", body: "Other space" });
     await fanout.publish("chat-alerts:user-1", "{");
@@ -49,7 +50,7 @@ describe("createChatAlerts", () => {
     const alerts = createChatAlerts(fanout as never);
     const iterator = alerts.follow("user-1", "space-1");
     const first = iterator.next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     for (let i = 0; i < 30; i++) await alerts.publish("user-1", { ...alert, body: `Alert ${i}` });
     expect((await first).value.body).toBe("Alert 0");
     expect((await iterator.next()).value.body).toBe("Alert 10");
@@ -64,7 +65,7 @@ describe("createChatAlerts", () => {
       controller.signal,
     );
     const pending = iterator.next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     controller.abort();
     expect((await pending).done).toBe(true);
   });

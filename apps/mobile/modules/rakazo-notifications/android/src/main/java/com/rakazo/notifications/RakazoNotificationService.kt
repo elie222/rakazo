@@ -658,7 +658,7 @@ private fun closerAt(text: String, open: Char, close: Char): Array<Int?> {
 private data class PreviewSource(val text: String, val truncated: Boolean)
 
 private fun boundedPreviewSource(markdown: String): PreviewSource {
-  val normalized = markdown.replace("\r\n", "\n")
+  val normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
   if (normalized.length <= MAX_PREVIEW_SOURCE) return PreviewSource(normalized, false)
   val body = normalized.trimStart()
   if (body.length <= MAX_PREVIEW_SOURCE) return PreviewSource(body, false)
@@ -731,6 +731,10 @@ private fun takeFencedCode(
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. Mirrors htmlTagClose. */
 private fun htmlTagClose(text: String, open: Int): Int {
+  if (text.startsWith("<!--", open)) {
+    val close = text.indexOf("-->", open + 4)
+    return if (close == -1) text.length - 1 else close + 2
+  }
   var quote: Char? = null
   var gtInOpenQuote = -1
   for (i in open + 1 until text.length) {

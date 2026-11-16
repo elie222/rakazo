@@ -1,4 +1,5 @@
 import { setImmediate } from "node:timers/promises";
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { openAuthSessionAsync } from "expo-web-browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +15,8 @@ import {
   saveSessionToken,
 } from "./session";
 import { continueWithSso } from "./sso";
+
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 const { saved, selectedSpace } = vi.hoisted(() => ({
   saved: new Map<string, string>(),
@@ -52,14 +55,6 @@ vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: vi.fn() }));
 registerSessionDiskCache((sameAccount?: boolean) => {
   if (!sameAccount) return clearLastBot();
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("last bot shortcut target", () => {
   beforeEach(async () => {

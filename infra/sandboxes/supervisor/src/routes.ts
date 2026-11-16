@@ -22,6 +22,7 @@ import {
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -38,6 +39,7 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import {
+  computerComputeGpus,
   computerDns,
   computerMounts,
   controlViaLoopback,
@@ -127,20 +129,21 @@ function identityHeaders(c: Context) {
   };
 }
 
+/** The only paths that answer without the service token. */
+export const SUPERVISOR_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/health"]);
+
+app.use("*", async (c, next) => {
+  if (
+    !SUPERVISOR_PUBLIC_PATHS.has(c.req.path) &&
+    !hasValidBearerToken(c.req.header("authorization"), supervisorToken)
+  ) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  await next();
+});
+
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
 
-app.use("/computers", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
-    return c.json({ error: "unauthorized" }, 401);
-  }
-  await next();
-});
-app.use("/computers/*", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
-    return c.json({ error: "unauthorized" }, 401);
-  }
-  await next();
-});
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
 
@@ -255,6 +258,8 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // And GPUs: turning them on or off, or changing the count, replaces it too.
+          computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
           computerLocaleMatches(info.Config.Env, locale) &&
           controlPublishOk &&
@@ -320,6 +325,7 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          computeGpus: computerComputeGpus,
           locale,
         });
         let container: Docker.Container | undefined;
@@ -420,7 +426,12 @@ app.post("/computers/:id/exec", async (c) => {
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
   const encoder = new TextEncoder();
+  let stopKeepAlive = () => {};
   const stream = new ReadableStream({
+    // A caller that stops reading may leave a stuck command running; its keep-alive ends now.
+    cancel() {
+      stopKeepAlive();
+    },
     async start(controller) {
       let closed = false;
       const send = (event: {
@@ -438,13 +449,16 @@ app.post("/computers/:id/exec", async (c) => {
       // A silent command sends nothing for minutes, and the caller's HTTP client drops a
       // response that stays quiet for 5 minutes. Readers skip blank lines.
       const keepAlive = setInterval(() => {
-        if (closed) return;
         try {
           controller.enqueue(encoder.encode("\n"));
         } catch {
-          closed = true;
+          stopKeepAlive();
         }
       }, EXEC_KEEP_ALIVE_MS);
+      stopKeepAlive = () => {
+        closed = true;
+        clearInterval(keepAlive);
+      };
       try {
         let streamedStderr = "";
         const result = await runContainerCommand(
@@ -477,8 +491,7 @@ app.post("/computers/:id/exec", async (c) => {
         send({ type: "stderr", data: message });
         send({ type: "exit", code: 1 });
       } finally {
-        clearInterval(keepAlive);
-        closed = true;
+        stopKeepAlive();
         try {
           controller.close();
         } catch {
@@ -1145,11 +1158,16 @@ app.post("/computers/:id/stop", async (c) => {
     const { container } = await managedContainer(id, botId, spaceId);
     // The caller gave up on what is running: the computer may be unable to run the checkpoint.
     const discardUnsaved = c.req.header("x-rakazo-discard-unsaved") === "1";
-    await withComputerScreenLock(id, async () => {
-      const info = await container.inspect();
-      if (info.State.Running) {
-        try {
-          if (!discardUnsaved) {
+    if (discardUnsaved) {
+      // A screen command on a stuck computer can hold the screen lock forever, so this stop
+      // does not wait for it. Stopping the container ends that command and frees the lock.
+      if ((await container.inspect()).State.Running) await stopOrKill(container);
+      clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+    } else
+      await withComputerScreenLock(id, async () => {
+        const info = await container.inspect();
+        if (info.State.Running) {
+          try {
             // Every profile on the home volume, not only screens still held in memory.
             const checkpoint = await runContainerCommand(container, [
               "bash",
@@ -1158,15 +1176,14 @@ app.post("/computers/:id/stop", async (c) => {
             ]);
             if (checkpoint.code !== 0)
               throw new Error(checkpoint.stderr || "bot browsers failed to stop");
+          } finally {
+            // Failed profiles remain on the durable home for recovery after restart.
+            await stopOrKill(container);
+            clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
           }
-        } finally {
-          // Failed profiles remain on the durable home for recovery after restart.
-          await stopOrKill(container);
-          clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
         }
-      }
-      clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
-    });
+        clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+      });
     if (botId && screenNetworkMode !== "internal") {
       await reclaimComputerNetwork(container, botId).catch((error) => {
         getLogger().error("computer network reclaim failed", error);

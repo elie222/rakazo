@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import type { Bot } from "@rakazo/contracts";
 import type * as CoreModule from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -250,12 +252,8 @@ it.each([
   async (_name, change) => {
     const { calls, signOut, IncomingCall } = await load();
     calls.syncCallIdentity("user-a");
-    let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
-    mocks.answerCall.mockReturnValue(
-      new Promise((resolve) => {
-        deliver = resolve;
-      }),
-    );
+    const deliver = deferred<{ opening: string; reason: string }>();
+    mocks.answerCall.mockReturnValue(deliver.promise);
     const bot = {
       id: "bot-1",
       name: "Test bot",
@@ -280,7 +278,7 @@ it.each([
       await change(signOut);
       expect(mocks.reload.mock.calls.length + mocks.assign.mock.calls.length).toBe(1);
       // The page may still run briefly before it unloads.
-      await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+      await act(async () => deliver.resolve({ opening: "Ready?", reason: "Review" }));
       expect(calls.getSnapshot()).toBeNull();
       expect(mocks.speak).not.toHaveBeenCalled();
       expect(mocks.listen).not.toHaveBeenCalled();

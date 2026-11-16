@@ -58,9 +58,14 @@ describe("session gate", () => {
   });
 
   it("backs off between retries and stops growing", () => {
-    expect(sessionRetryDelayMs(0)).toBe(1_000);
-    expect(sessionRetryDelayMs(1)).toBe(2_000);
-    expect(sessionRetryDelayMs(3)).toBe(8_000);
-    expect(sessionRetryDelayMs(20)).toBe(15_000);
+    const exact = () => 0;
+    expect(sessionRetryDelayMs(0, exact)).toBe(1_000);
+    expect(sessionRetryDelayMs(1, exact)).toBe(2_000);
+    expect(sessionRetryDelayMs(3, exact)).toBe(8_000);
+    expect(sessionRetryDelayMs(20, exact)).toBe(15_000);
+  });
+
+  it("jitters each retry so clients that lost the server together come back apart", () => {
+    expect(sessionRetryDelayMs(3, () => 1)).toBe(4_000);
   });
 });

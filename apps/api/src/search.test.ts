@@ -267,3 +267,44 @@ it("guards name-derived snippets while preserving descriptions", async () => {
   ).toEqual(["", ""]);
   expect(hits.find((hit) => hit.botId === "bot-2")?.snippet).toBe("Keep __TestTok2__ literal");
 });
+
+describe("cancelled search", () => {
+  it("stops issuing queries once the request is cancelled", async () => {
+    const { prisma } = fixture(1);
+    const abort = new AbortController();
+    prisma.bot.findMany.mockImplementation(async () => {
+      abort.abort();
+      return [];
+    });
+    await expect(
+      querySpaceSearch(prisma as unknown as PrismaClient, actor, "report", abort.signal),
+    ).rejects.toBe(abort.signal.reason);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.artifact.findMany).not.toHaveBeenCalled();
+  });
+});
+
+it("finds text stored beside entries that are not blocks, in a bot chat and in a group", async () => {
+  const { prisma } = fixture(0);
+  const blocks = [{ text: "no kind" }, { kind: "text", text: "the quarterly report" }, null];
+  // The message scans are tagged templates: their first argument is the SQL's literal parts.
+  prisma.$queryRaw.mockImplementation(async (sql: readonly string[] | object) => {
+    const text = Array.isArray(sql) ? sql.join("") : "";
+    if (text.includes('b.id AS "botId"'))
+      return [
+        { id: "message-1", threadId: "thread-1", seq: 3, blocks, botId: "bot-1", botName: "Bot" },
+      ];
+    if (text.includes('g.id AS "groupId"'))
+      return [
+        { id: "message-2", threadId: "thread-2", seq: 4, blocks, groupId: "g-1", groupName: "G" },
+      ];
+    return [];
+  });
+
+  const hits = await querySpaceSearch(prisma as never, actor, "report");
+
+  expect(hits).toMatchObject([
+    { kind: "message", botId: "bot-1", messageId: "message-1", seq: 3 },
+    { kind: "message", groupId: "g-1", messageId: "message-2", seq: 4 },
+  ]);
+});

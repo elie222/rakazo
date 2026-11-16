@@ -187,7 +187,7 @@ export function logLoopGuardStop(
   target: RunLogTarget,
   stop: {
     tool: string;
-    reason: "repeated_calls" | "over_limit_actions";
+    reason: "repeated_calls" | "repeated_results" | "over_limit_actions";
     count: number;
     /** How many of the repeated calls in a row came back failed. */
     failures: number;

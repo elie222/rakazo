@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { setImmediate } from "node:timers/promises";
 import { promisify } from "node:util";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import {
   createToolkitDirectoryCache,
@@ -34,19 +35,16 @@ describe("composio toolkit directory cache", () => {
     });
     expect(first[0]?.slug).toBe("gmail");
     now = 50;
-    let resolveRefresh: (items: typeof first) => void = () => undefined;
-    const refresh = new Promise<typeof first>((resolve) => {
-      resolveRefresh = resolve;
-    });
+    const refresh = deferred<typeof first>();
     const stale = await cache.get(() => {
       loads += 1;
-      return refresh;
+      return refresh.promise;
     });
     expect(stale[0]?.slug).toBe("gmail");
     expect(loads).toBe(2);
-    resolveRefresh([{ slug: "slack", name: "Slack", logo: null, noAuth: false }]);
-    await refresh;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    refresh.resolve([{ slug: "slack", name: "Slack", logo: null, noAuth: false }]);
+    await refresh.promise;
+    await flush();
     const next = await cache.get(async () => {
       loads += 1;
       return [{ slug: "linear", name: "Linear", logo: null, noAuth: false }];
@@ -116,16 +114,13 @@ describe("composio toolkit directory cache", () => {
       { slug: "gmail", name: "Gmail", logo: null, noAuth: false },
     ]);
     now = 10;
-    let rejectRefresh: (error: Error) => void = () => undefined;
-    const refresh = new Promise<typeof first>((_resolve, reject) => {
-      rejectRefresh = reject;
-    });
-    const loader = vi.fn(() => refresh);
+    const refresh = deferred<typeof first>();
+    const loader = vi.fn(() => refresh.promise);
 
     expect(await cache.get(loader)).toBe(first);
     expect(await cache.get(loader)).toBe(first);
     expect(loader).toHaveBeenCalledTimes(1);
-    rejectRefresh(new Error("directory unavailable"));
+    refresh.reject(new Error("directory unavailable"));
     await setImmediate();
     expect(cache.peek()).toBe(first);
 
