@@ -964,6 +964,9 @@ export function runReplyEvent(
   lease?: RunLease,
   clientNonce?: string,
 ): AppendEventInput {
+  // Only what Run history shows is kept: a silent reply is never replayed to its bot, so the tool
+  // calls a message would keep in its hidden history are dropped rather than stored in the event.
+  blocks = splitToolHistory(blocks as MessageBlock[]).blocks;
   return {
     spaceId: run.spaceId,
     threadId: run.threadId,

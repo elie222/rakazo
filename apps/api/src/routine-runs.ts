@@ -4,6 +4,7 @@ import { MessageBlock, ROUTINE_HISTORY_PAGE_SIZE } from "@rakazo/contracts";
 import { RUN_REPLY_EVENT, runFailureError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 export async function listRoutineRuns(
   prisma: PrismaClient,
@@ -88,7 +89,12 @@ export async function listRoutineRuns(
     const blocks = MessageBlock.array().safeParse(
       (event.payload as { blocks?: unknown } | null)?.blocks,
     );
-    if (!event.runId || !blocks.success) continue;
+    if (!event.runId) continue;
+    // A stored reply that no longer reads as blocks is left out of the history, and logged.
+    if (!blocks.success) {
+      getLogger().warn("routine history reply unreadable", { "run.id": event.runId });
+      continue;
+    }
     heldReplyByRun.set(event.runId, [...(heldReplyByRun.get(event.runId) ?? []), ...blocks.data]);
   }
   return {
