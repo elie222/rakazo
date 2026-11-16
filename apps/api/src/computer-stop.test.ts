@@ -9,6 +9,7 @@ import {
   LocalAgentHomeStore,
   provisionComputer,
 } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -20,14 +21,6 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   planComputerSize: vi.fn(async () => "standard"),
 }));
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 describe("Stop during a computer reconnect", () => {
   it.each([false, true])(

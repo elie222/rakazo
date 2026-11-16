@@ -4,6 +4,7 @@ import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot, BotAvatarSet } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -41,7 +42,8 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", async () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { OptionSelect } = await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
   return {
@@ -59,8 +61,7 @@ vi.mock("@rakazo/ui-web", async () => {
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect,
     Switch: ({
       onCheckedChange,
       checked,
@@ -259,12 +260,18 @@ async function openModelPicker() {
   return [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')];
 }
 
-async function selectThinking(value: string) {
-  const select = container.querySelector<HTMLSelectElement>('select[id$="-thinking"]')!;
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+function thinkingField() {
+  return container.querySelector<HTMLElement>('[role="combobox"][id$="-thinking"]')!;
+}
+
+async function openOptions(trigger: HTMLElement) {
+  await act(async () => trigger.click());
+  return [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')];
+}
+
+async function selectThinking(label: string) {
+  const option = (await openOptions(thinkingField())).find((entry) => entry.textContent === label);
+  await act(async () => option?.click());
 }
 
 beforeEach(() => {
@@ -413,14 +420,12 @@ describe("BotSettings thinking options", () => {
     await act(() => flush());
     const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
     expect(checked?.dataset.value).toBe("openai-compatible::beta");
-    const thinking = container.querySelector('select[id$="-thinking"]');
-    if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
-    expect([...thinking.options].map((option) => option.value)).toEqual([
-      "",
-      "minimal",
-      "low",
-      "medium",
-      "high",
+    expect((await openOptions(thinkingField())).map((option) => option.textContent)).toEqual([
+      "Default (Medium)",
+      "Minimal",
+      "Low",
+      "Medium",
+      "High",
     ]);
   });
 });
@@ -446,15 +451,13 @@ describe("BotSettings model autosave", () => {
 
   it("saves a thinking change at once and puts back a refused one", async () => {
     await renderWithModels();
-    await selectThinking("high");
+    await selectThinking("High");
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelId: "beta", thinkingLevel: "high" });
     onSave.mockRejectedValueOnce(new Error("offline"));
-    await selectThinking("low");
+    await selectThinking("Low");
     expect(onSave.mock.lastCall?.[0]).toMatchObject({ thinkingLevel: "low" });
-    expect(container.querySelector<HTMLSelectElement>('select[id$="-thinking"]')?.value).toBe(
-      "high",
-    );
+    expect(thinkingField().textContent).toBe("High");
     expect(container.textContent).toContain("offline");
   });
 
@@ -867,7 +870,10 @@ describe("BotSettings cached data", () => {
       .mockClear()
       .mockReturnValueOnce(new Promise(() => undefined));
     await render("Billing", { autoSpeak: true });
-    expect(container.querySelector('[id$="-voice"]')?.textContent).toContain("Cached voice");
+    const voices = await openOptions(
+      container.querySelector<HTMLElement>('[role="combobox"][id$="-voice"]')!,
+    );
+    expect(voices.map((option) => option.textContent)).toContain("Cached voice");
     expect(rpc.voice.voices).toHaveBeenCalledTimes(1);
   });
 

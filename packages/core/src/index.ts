@@ -71,6 +71,7 @@ export * from "./message-text.js";
 export * from "./message-visibility.js";
 export * from "./messaging.prompt.js";
 export * from "./messaging-commands.js";
+export * from "./messaging-link-guard.js";
 export * from "./messaging-providers.js";
 export * from "./model-connection-error.js";
 export * from "./model-connection-form.js";

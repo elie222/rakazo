@@ -1,33 +1,28 @@
+// Relative source path: the edge middleware bundles this file and cannot resolve workspace packages.
+import { ANDROID_APP_STORE_URL } from "../../../packages/contracts/src/client-build.js";
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import { BLOG_CATEGORIES } from "./blog/categories";
+import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
+import { DOCS_SLUGS } from "./docs";
+import { ENTERPRISE_MARKDOWN } from "./enterprise";
+import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
+import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
+import { getHomeCopy, HOME_CHANNELS, HOME_FEATURE_KINDS, HOME_MODEL_PROVIDERS } from "./i18n/home";
 import {
   INTEGRATION_PLATFORMS,
   integrationPlatformMarkdown,
   integrationPlatformPath,
   integrationPlatformsHubMarkdown,
 } from "./integration-platforms";
+import { roundupMarkdown } from "./roundup";
 import { SANDBOXES, sandboxesHubMarkdown, sandboxMarkdown, sandboxPath } from "./sandboxes";
+import { APP_URL, GITHUB_URL, IOS_APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 import {
   VOICE_PROVIDERS,
   voiceProviderMarkdown,
   voiceProviderPath,
   voiceProvidersHubMarkdown,
 } from "./voice-providers";
-import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
-import { ENTERPRISE_MARKDOWN } from "./enterprise";
-import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
-import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
-import {
-  HOME_CHANNELS,
-  HOME_FEATURE_KINDS,
-  HOME_MODEL_PROVIDERS,
-  getHomeCopy,
-} from "./i18n/home";
-import { roundupMarkdown } from "./roundup";
-import { BLOG_CATEGORIES } from "./blog/categories";
-import { DOCS_SLUGS } from "./docs";
-// Relative source path: the edge middleware bundles this file and cannot resolve workspace packages.
-import { ANDROID_APP_STORE_URL } from "../../../packages/contracts/src/client-build.js";
-import { APP_URL, GITHUB_URL, IOS_APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -267,7 +262,10 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ),
   ...INTEGRATION_PLATFORMS.map(
     (platform) =>
-      [integrationPlatformPath(platform.slug).slice(0, -1), integrationPlatformMarkdown(platform)] as const,
+      [
+        integrationPlatformPath(platform.slug).slice(0, -1),
+        integrationPlatformMarkdown(platform),
+      ] as const,
   ),
   ...SANDBOXES.map(
     (sandbox) => [sandboxPath(sandbox.slug).slice(0, -1), sandboxMarkdown(sandbox)] as const,
@@ -292,10 +290,7 @@ function preferenceFor(accept: string, desiredType: string): MediaPreference {
   let best: MediaPreference = { quality: 0, specificity: -1 };
 
   for (const rawRange of accept.split(",")) {
-    const [rawType = "", ...rawParameters] = rawRange
-      .trim()
-      .toLowerCase()
-      .split(";");
+    const [rawType = "", ...rawParameters] = rawRange.trim().toLowerCase().split(";");
     const [major, minor] = rawType.trim().split("/");
     if (!major || !minor) continue;
 
@@ -309,9 +304,7 @@ function preferenceFor(accept: string, desiredType: string): MediaPreference {
             : -1;
     if (specificity < 0) continue;
 
-    const qualityParameter = rawParameters.find((parameter) =>
-      parameter.trim().startsWith("q="),
-    );
+    const qualityParameter = rawParameters.find((parameter) => parameter.trim().startsWith("q="));
     const parsedQuality = qualityParameter
       ? Number.parseFloat(qualityParameter.trim().slice(2))
       : 1;
@@ -331,9 +324,7 @@ function preferenceFor(accept: string, desiredType: string): MediaPreference {
   return best;
 }
 
-export function negotiateRepresentation(
-  acceptHeader: string | null,
-): Representation {
+export function negotiateRepresentation(acceptHeader: string | null): Representation {
   if (!acceptHeader?.trim()) return "html";
 
   const markdown = preferenceFor(acceptHeader, "text/markdown");
@@ -380,11 +371,7 @@ export function getMarkdownAlternate(pathname: string): string | undefined {
   return normalizedPathname === "/" ? "/index.md" : `${normalizedPathname}.md`;
 }
 
-export function markdownResponse(
-  body: string,
-  method = "GET",
-  status = 200,
-): Response {
+export function markdownResponse(body: string, method = "GET", status = 200): Response {
   return new Response(method === "HEAD" ? null : body, {
     status,
     headers: {

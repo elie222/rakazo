@@ -119,8 +119,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogHeader: Pass,
     DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   };
 });
 
@@ -1114,12 +1112,8 @@ it("lists saved models as checked rows before the server is probed", async () =>
   });
   try {
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
-    const select = view.container.querySelector("select[aria-label='Models from server']");
-    expect([...(select?.querySelectorAll("option") ?? [])].map((entry) => entry.value)).toEqual([
-      "model-a",
-      "model-b",
-      "",
-    ]);
+    await click(view.container.querySelector('[role="combobox"][aria-label="Models from server"]'));
+    expect(pickerOptions()).toEqual(["model-a", "model-b", "Other model…"]);
   } finally {
     await view.unmount();
   }
@@ -1258,21 +1252,9 @@ it("probes with the editing credential id without sending saved header values", 
 });
 
 function protocolField(container: HTMLElement) {
-  const select = container.querySelector('select[aria-label="Protocol"]');
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing protocol select");
-  return select;
-}
-
-async function chooseProtocol(container: HTMLElement, value: string) {
-  await selectValue(protocolField(container), value);
-}
-
-async function selectValue(select: HTMLSelectElement, value: string) {
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const trigger = container.querySelector<HTMLElement>('[role="combobox"][aria-label="Protocol"]');
+  if (!trigger) throw new Error("Missing protocol select");
+  return trigger;
 }
 
 it("offers the three wire protocols only on a custom endpoint, keeping the saved choice", async () => {
@@ -1281,14 +1263,10 @@ it("offers the three wire protocols only on a custom endpoint, keeping the saved
     apiProtocol: "anthropic-messages",
   });
   try {
-    const select = protocolField(view.container);
-    expect([...select.options].map((option) => option.value)).toEqual([
-      "chat-completions",
-      "responses",
-      "anthropic-messages",
-    ]);
-    expect(select.value).toBe("anthropic-messages");
-    await chooseProtocol(view.container, "responses");
+    expect(protocolField(view.container).textContent).toBe("Anthropic Messages");
+    await click(protocolField(view.container));
+    expect(pickerOptions()).toEqual(["Chat Completions", "Responses", "Anthropic Messages"]);
+    await choose("Responses");
     await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "responses" }),
@@ -1304,7 +1282,7 @@ it("offers the three wire protocols only on a custom endpoint, keeping the saved
   const catalog = await renderSettings();
   try {
     await manage();
-    expect(catalog.container.querySelector('select[aria-label="Protocol"]')).toBeNull();
+    expect(catalog.container.querySelector('[aria-label="Protocol"]')).toBeNull();
   } finally {
     await catalog.unmount();
   }
@@ -1318,7 +1296,7 @@ it("keeps the chosen protocol when the endpoint changes and probes with it", asy
   });
   try {
     await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
-    expect(protocolField(view.container).value).toBe("anthropic-messages");
+    expect(protocolField(view.container).textContent).toBe("Anthropic Messages");
     await click(buttons(view.container, "Find models")[0]);
     expect(models.probeOpenAiCompatible).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "anthropic-messages" }),

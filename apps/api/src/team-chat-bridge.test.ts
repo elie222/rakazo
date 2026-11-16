@@ -14,6 +14,7 @@ import {
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { userTurnMessageForRun } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient, SendUserMessageInput, SendUserMessageResult } from "@rakazo/db";
 import { SendClaimLostError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -499,16 +500,13 @@ describe("TeamChatBridge.receive", () => {
     // Two deliveries arriving together both miss the row before either records it.
     const lookup = chat.prisma.externalMessage.findUnique;
     let misses = 0;
-    let bothMissed!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      bothMissed = resolve;
-    });
+    const barrier = deferred();
     chat.prisma.externalMessage.findUnique = async (args) => {
       const row = await lookup(args);
       if (row || misses >= 2) return row;
       misses += 1;
-      if (misses === 2) bothMissed();
-      await barrier;
+      if (misses === 2) barrier.resolve();
+      await barrier.promise;
       return row;
     };
 
@@ -527,12 +525,9 @@ describe("TeamChatBridge.receive", () => {
   it("stores a mention's files before its run starts and hands them to the run", async () => {
     const chat = setup();
     const bytes = new Uint8Array([1, 2, 3]);
-    let release!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const blocked = deferred();
     chat.storeAttachment.mockImplementationOnce(async (input) => {
-      await blocked;
+      await blocked.promise;
       return chat.store(input);
     });
 
@@ -540,7 +535,7 @@ describe("TeamChatBridge.receive", () => {
     await vi.waitFor(() => expect(chat.storeAttachment).toHaveBeenCalledOnce());
     await new Promise((resolve) => setImmediate(resolve));
     expect(chat.sendUserMessage).not.toHaveBeenCalled();
-    release();
+    blocked.resolve();
     const target = await receiving;
 
     const fileBlock = {
@@ -741,12 +736,9 @@ describe("TeamChatBridge thread history", () => {
 
   it("waits for an unfinished backfill before recording later messages in the thread", async () => {
     const chat = setup({ history: [earlier("100.1", ["a.png"]), earlier("100.2")] });
-    let release!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const blocked = deferred();
     chat.storeAttachment.mockImplementationOnce(async (input) => {
-      await blocked;
+      await blocked.promise;
       return chat.store(input);
     });
 
@@ -757,7 +749,7 @@ describe("TeamChatBridge thread history", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(chat.rows().map(({ providerEventId }) => providerEventId)).toEqual(["100.1"]);
     expect(chat.sendUserMessage).not.toHaveBeenCalled();
-    release();
+    blocked.resolve();
     await Promise.all([first, second, ambient]);
 
     expect(chat.rows().map(({ providerEventId }) => providerEventId)).toEqual([
