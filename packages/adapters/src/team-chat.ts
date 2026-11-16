@@ -220,7 +220,8 @@ export class TeamChat {
     const conversation = message.externalConversation;
     const thread = conversation.thread;
     if (!thread) throw new Error("Team chat conversation has no Rakazo thread");
-    // A routine the previous release woke without claiming the message already answers it.
+    // compat-shim(after v0.11.0): a routine the previous release woke without claiming the message
+    // already answers it.
     if (await this.routineWoken(message)) {
       await this.settle(message.id, from, {
         status: "ignored",
@@ -340,7 +341,8 @@ export class TeamChat {
       }
       await this.mirrorTranscript(message);
       if (message.status === "received") await this.startAgentRun(message.id, ["received"]);
-      // The previous release's queueing claim, left by a process that stopped mid-way.
+      // compat-shim(after v0.11.0): the previous release's queueing claim, left by a process that
+      // stopped mid-way.
       else if (message.status === "queueing") await this.startAgentRun(message.id, ["queueing"]);
       else if (message.status === "deferred") await this.routeToAgent(message.id, message.kind);
     });

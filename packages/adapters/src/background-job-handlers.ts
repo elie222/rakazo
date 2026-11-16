@@ -176,7 +176,7 @@ export function createBackgroundJobHandlers(deps: {
     "computer.machine-cleanup": async (machine, _execution, attempt) => {
       await retryMachineCleanup(deps, machine, attempt);
     },
-    // The previous release's jobs, drained once by this one.
+    // compat-shim(after v0.11.0): the previous release's jobs, drained once by this one.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await retrySecretCleanup(cleanupDeps, {
         kind: "messaging_installation",
