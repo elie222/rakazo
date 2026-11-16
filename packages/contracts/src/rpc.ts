@@ -1552,13 +1552,20 @@ export const appContract = {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
      * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
-     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * `runs` that `runs.list` and `routines.history` may have, `routines` that `routines.list`
+     * may have, and `organizations` that `organizations.list` and `organizations.members.list`
      * may have; each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
+          type: z.enum([
+            "alert",
+            "roster",
+            ...SpaceChangeKind.options,
+            "organizations",
+            "heartbeat",
+          ]),
           alert: ChatAlertSchema.optional(),
         }),
       ),

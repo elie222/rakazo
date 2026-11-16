@@ -114,6 +114,7 @@ export function organizationsRoutes(ctx: RouterContext) {
               organizationId: input.organizationId,
               target: { type: "user", id: input.userId, label: input.role },
             });
+            void deps.events?.publishOrganizationChange?.(input.organizationId);
             return { ok: true as const };
           }),
         ),
@@ -164,6 +165,8 @@ export function organizationsRoutes(ctx: RouterContext) {
                 organizationId: input.organizationId,
                 target: { type: "user", id: input.userId },
               });
+            // The removed person's own list loses the organization too.
+            void deps.events?.publishOrganizationChange?.(input.organizationId, [input.userId]);
             return { ok: true as const };
           }),
         ),
@@ -180,13 +183,15 @@ export function organizationsRoutes(ctx: RouterContext) {
                 createHmac("sha256", deps.env.invitationRecipientKey).update(email).digest("hex"),
             });
             // Past an address's daily limit the pending invitation comes back unchanged.
-            if (invitation.created)
+            if (invitation.created) {
               await recordAuditEvent({
                 action: "organization.invitation.created",
                 actor: { type: "user", id: context.actor.userId },
                 organizationId: input.organizationId,
                 target: { type: "invitation", id: invitation.id },
               });
+              void deps.events?.publishOrganizationChange?.(input.organizationId);
+            }
             const url = invitationUrl(deps, invitation.id);
             const emailed =
               deps.email && invitation.send
@@ -206,13 +211,15 @@ export function organizationsRoutes(ctx: RouterContext) {
               invitationId: input.invitationId,
             });
             // Only a pending invitation of this organization's is recorded as cancelled.
-            if (cancelled)
+            if (cancelled) {
               await recordAuditEvent({
                 action: "organization.invitation.cancelled",
                 actor: { type: "user", id: context.actor.userId },
                 organizationId: input.organizationId,
                 target: { type: "invitation", id: input.invitationId },
               });
+              void deps.events?.publishOrganizationChange?.(input.organizationId);
+            }
             return { ok: true as const };
           }),
         ),
@@ -243,6 +250,7 @@ export function organizationsRoutes(ctx: RouterContext) {
               "seat count after a join",
               deps.billing?.syncSeats(joined.organizationId),
             );
+            void deps.events?.publishOrganizationChange?.(joined.organizationId);
             return { spaceId: joined.spaceId };
           }),
         ),
