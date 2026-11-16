@@ -1,4 +1,5 @@
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +9,7 @@ import {
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpOAuthRefusedError,
+  McpOAuthUnavailableError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
@@ -97,6 +99,7 @@ function chunkedBody(totalBytes: number, chunkBytes: number): ReadableStream<Uin
 async function rejectedOAuthBegin(
   register: (() => Response | Promise<Response>) | null,
   secret?: string,
+  put: () => Promise<unknown> = async () => ({ id: "secret-1", ciphertext: "encrypted" }),
 ): Promise<Error> {
   vi.stubGlobal(
     "fetch",
@@ -176,7 +179,7 @@ async function rejectedOAuthBegin(
     prisma as never,
     {
       load: vi.fn(() => JSON.stringify(secret ? { secret } : {})),
-      put: vi.fn(async () => ({ id: "secret-1", ciphertext: "encrypted" })),
+      put: vi.fn(put),
     } as never,
     TEST_NETWORK,
   );
@@ -2140,6 +2143,56 @@ describe("MCP OAuth", () => {
     expect(error).toBeInstanceOf(McpOAuthRefusedError);
     expect((error as Error).message).toBe("Could not start MCP OAuth");
     expect((error as Error).message).not.toContain("UPSTREAM_BODY_MARKER");
+  });
+
+  it("answers an unreachable sign-in server as unavailable, not as the person's mistake", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("connect refused"), {
+            code: "ECONNREFUSED",
+            syscall: "connect",
+          }),
+        });
+      }),
+    );
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "server-1",
+          endpoint: "https://mcp.example.test/mcp",
+          secretId: null,
+        }),
+      },
+      secret: { findFirst: vi.fn() },
+      mcpOAuthSession: oauthSessionStore(),
+    };
+    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never, TEST_NETWORK);
+
+    await expect(
+      broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      }),
+    ).rejects.toBeInstanceOf(McpOAuthUnavailableError);
+  });
+
+  it("lets a failure of our own during sign-in propagate as a fault", async () => {
+    const error = await rejectedOAuthBegin(
+      () =>
+        Response.json(
+          { client_id: "fake-client", redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"] },
+          { status: 201 },
+        ),
+      undefined,
+      async () => {
+        throw new Error("secret store write failed");
+      },
+    );
+    expect(error).not.toBeInstanceOf(ClientError);
   });
 
   it("reports the HTTP status and OAuth error when registration is rejected", async () => {

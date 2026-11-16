@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { InvalidGrantError, OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   OAuthClientInformation,
   OAuthClientInformationMixed,
@@ -32,6 +32,7 @@ import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { isUnreachableHost } from "./connector-source.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -419,6 +420,14 @@ export class McpOAuthClientRequiredError extends ClientError {
   constructor(readonly revision: number) {
     super("BAD_REQUEST", MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, MCP_OAUTH_CLIENT_REQUIRED);
     this.name = "McpOAuthClientRequiredError";
+  }
+}
+
+/** The server's authorization server could not be reached; trying again later may work. */
+export class McpOAuthUnavailableError extends ClientError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", options);
+    this.name = "McpOAuthUnavailableError";
   }
 }
 
@@ -870,7 +879,7 @@ function oauthFetch(
   fetch: typeof fetch;
   close: () => Promise<void>;
   headers: Record<string, string>;
-  publicError: (error: unknown, message: string) => McpOAuthRefusedError;
+  publicError: (error: unknown, message: string) => Error;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -902,9 +911,11 @@ function oauthFetch(
   // error code, and description instead of hiding them behind `message`.
   const networkErrors = new WeakSet<Error>();
   let rejection: OAuthRejection | undefined;
+  let lastAnswerFailed = false;
   const recordingFetch: typeof fetch = async (input, init) => {
     try {
       const response = await fallbackFetch(input, init);
+      lastAnswerFailed = !response.ok;
       if (!response.ok) {
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
@@ -920,12 +931,19 @@ function oauthFetch(
     fetch: recordingFetch,
     close: () => safeFetch.close(),
     publicError: (error, message) => {
-      if (error instanceof Error && networkErrors.has(error))
-        return new McpOAuthRefusedError(error.message, { cause: error });
       const secrets = oauthMaterialSecrets(material);
+      if (error instanceof Error && networkErrors.has(error)) {
+        const reason = sanitizeConnectorError(error, secrets);
+        return isUnreachableHost(error)
+          ? new McpOAuthUnavailableError(reason, { cause: error })
+          : new McpOAuthRefusedError(reason, { cause: error });
+      }
       const sdk = sanitizeConnectorError(error, secrets);
       const surfaced = rejection ? formatOAuthRejection(rejection, sdk, secrets) : undefined;
       getLogger().warn(`${message}: ${surfaced ?? sdk}`);
+      // Only a server's own answer is a refusal: a failure after a successful answer is ours.
+      if (!lastAnswerFailed && !(error instanceof OAuthError))
+        return new Error(`${message}: ${sdk}`);
       return new McpOAuthRefusedError(surfaced ? `${message}: ${surfaced}` : message, {
         cause: error,
       });
