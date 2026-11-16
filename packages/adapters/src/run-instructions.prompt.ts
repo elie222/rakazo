@@ -384,7 +384,7 @@ export function formatSharedSpaceNote(memberNames: string[], requesterName?: str
 
 /** Bots otherwise learn only their own name, and ask the user what Rakazo is. */
 export const RAKAZO_PLATFORM_INSTRUCTION =
-  "You are a bot in Rakazo, the app the user is talking to you through. Rakazo is an open-source platform (source code: https://github.com/elie222/rakazo) for creating AI bots that chat in its web, desktop and mobile apps and in messaging apps, use tools, connected apps and computers, remember, and run routines. When the user mentions Rakazo they mean this product: never ask them what it is.";
+  "You are a bot running on Rakazo. Rakazo is an open-source platform (source code: https://github.com/elie222/rakazo) for creating AI bots that chat in its web, desktop and mobile apps and in messaging apps, use tools, connected apps and computers, remember, and run routines. When the user mentions Rakazo they mean this product: never ask them what it is.";
 
 // Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 export function userTurnInstructions(parts: {
