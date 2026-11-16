@@ -18,6 +18,9 @@ import { useScreenQuery } from "../lib/screen-query";
 import { settingsTarget } from "../lib/settings-target";
 import { errorText } from "../lib/user-error";
 
+/** The menu action that shares a link instead of adding someone from the organization. */
+const LINK_ACTION = "link";
+
 export default function SpaceMembersScreen() {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -36,9 +39,14 @@ export default function SpaceMembersScreen() {
       : null;
   const change = useSave({
     target,
-    save: async (ask: { kind: "invite" | "cancel" } | { kind: "remove"; userId: string }, send) => {
+    save: async (
+      ask: { kind: "invite" | "cancel" } | { kind: "remove" | "add"; userId: string },
+      send,
+    ) => {
       if (ask.kind === "remove") {
         await send("spaces/members/remove", { spaceId, userId: ask.userId });
+      } else if (ask.kind === "add") {
+        await send("spaces/members/add", { spaceId, userId: ask.userId });
       } else if (ask.kind === "cancel") {
         await send("spaces/invites/cancel", { spaceId });
       } else {
@@ -59,9 +67,11 @@ export default function SpaceMembersScreen() {
       Alert.alert(
         ask.kind === "remove"
           ? t`Could not remove member`
-          : ask.kind === "cancel"
-            ? t`Could not cancel invites`
-            : t`Could not create invite link`,
+          : ask.kind === "add"
+            ? t`Could not add member`
+            : ask.kind === "cancel"
+              ? t`Could not cancel invites`
+              : t`Could not create invite link`,
         errorText(err, t`Try again.`),
       ),
   });
@@ -99,6 +109,20 @@ export default function SpaceMembersScreen() {
   }
 
   const canManage = members?.canManage === true;
+  const addable = members?.addable ?? [];
+  const inviteRow = (onPress?: () => void) => (
+    <SettingsRow
+      key="invite"
+      title={t`Invite`}
+      tinted
+      leading={
+        <NativeSymbol ios="person.badge.plus" android="person-add-outline" color={tokens.link} />
+      }
+      disabled={pending}
+      accessibilityRole="button"
+      onPress={onPress}
+    />
+  );
   return (
     <>
       <Stack.Screen options={cancelHeaderOptions(t`Close`, () => router.back())} />
@@ -148,22 +172,28 @@ export default function SpaceMembersScreen() {
                 row
               );
             })}
-            {canManage ? (
-              <SettingsRow
+            {canManage && addable.length ? (
+              // People already in the organization come first; a link is for anyone else.
+              <MenuView
                 key="invite"
-                title={t`Invite`}
-                tinted
-                leading={
-                  <NativeSymbol
-                    ios="person.badge.plus"
-                    android="person-add-outline"
-                    color={tokens.link}
-                  />
+                colorScheme={appearance}
+                actions={[
+                  ...addable.map((person) => ({
+                    id: person.userId,
+                    title: accountDisplay(person, person.email).label,
+                  })),
+                  { id: LINK_ACTION, title: t`Share invite link`, image: "link" },
+                ]}
+                onPressAction={({ nativeEvent }) =>
+                  nativeEvent.event === LINK_ACTION
+                    ? change.run({ kind: "invite" })
+                    : change.run({ kind: "add", userId: nativeEvent.event })
                 }
-                disabled={pending}
-                accessibilityRole="button"
-                onPress={() => change.run({ kind: "invite" })}
-              />
+              >
+                {inviteRow()}
+              </MenuView>
+            ) : canManage ? (
+              inviteRow(() => change.run({ kind: "invite" }))
             ) : null}
           </SettingsGroup>
         ) : null}

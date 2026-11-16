@@ -20,10 +20,22 @@ export function organizationOfSpace(
     : undefined;
 }
 
-/** Its owner can delete it while they still own another organization to land in. */
+/**
+ * Its owner can delete it while nobody else belongs to it and they still own another
+ * organization to land in.
+ */
 export function canDeleteOrganization(
   organizations: readonly Organization[],
   organization: Organization,
 ): boolean {
-  return organization.canManage && organizations.filter((each) => each.canManage).length > 1;
+  return (
+    organization.canManage &&
+    organization.memberCount === 1 &&
+    organizations.filter((each) => each.canManage).length > 1
+  );
+}
+
+/** The owner and admins invite people, change their roles and remove them. */
+export function canManageOrganizationMembers(organization: Organization): boolean {
+  return organization.role !== "member";
 }

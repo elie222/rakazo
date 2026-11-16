@@ -3,6 +3,7 @@ import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
+  addSpaceMember,
   cancelSpaceInvites,
   createExternalConversationRepos,
   createSpaceForMember,
@@ -150,6 +151,23 @@ export function spacesRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
             }),
           ),
+        ),
+        add: authed.spaces.members.add.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const added = await addSpaceMember(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+              memberUserId: input.userId,
+            });
+            if (added)
+              await recordAuditEvent({
+                action: "space.member.added",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+                target: { type: "user", id: input.userId },
+              });
+            return { ok: true as const };
+          }),
         ),
         remove: authed.spaces.members.remove.handler(({ context, input }) =>
           asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {

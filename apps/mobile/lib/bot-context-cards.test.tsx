@@ -2,27 +2,46 @@
 
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BotContextCards } from "../components/bot-context-cards";
+import { queryClient, rpcQuery } from "./query";
 
 const { rpc, push, focus } = vi.hoisted(() => ({
   rpc: vi.fn(),
   push: vi.fn(),
-  focus: { current: null as null | (() => (() => void) | undefined) },
+  focus: { effects: new Set<() => (() => void) | undefined>() },
 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useFocusEffect: (effect: () => (() => void) | undefined) => {
-    focus.current = effect;
-    useEffect(effect, [effect]);
+    useEffect(() => {
+      focus.effects.add(effect);
+      const cleanup = effect();
+      return () => {
+        focus.effects.delete(effect);
+        cleanup?.();
+      };
+    }, [effect]);
   },
 }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
@@ -78,6 +97,9 @@ vi.mock("react-native", () => {
   };
 });
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -88,6 +110,7 @@ beforeEach(() => {
   root = createRoot(container);
   rpc.mockReset();
   push.mockReset();
+  queryClient.clear();
 });
 
 afterEach(() => {
@@ -160,6 +183,75 @@ describe("bot context cards", () => {
     });
   });
 
+  it("completes an item once on a double tap and drops it, or shows why it could not", async () => {
+    const done = deferred<unknown>();
+    rpc.mockImplementation((method: string) =>
+      method === "scratchpad/update" ? done.promise : Promise.resolve(work),
+    );
+    await render();
+    const complete = () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click();
+    await act(async () => {
+      complete();
+      complete();
+    });
+    const updates = rpc.mock.calls.filter(([method]) => method === "scratchpad/update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]![1]).toEqual({ itemId: "work-a", status: "done" });
+    await act(async () => done.resolve({}));
+    expect(container.textContent).not.toContain("Review draft");
+
+    queryClient.clear();
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/update") throw new Error("Already done");
+      return work;
+    });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    await act(async () => complete());
+    expect(container.textContent).toContain("Already done");
+    expect(container.textContent).toContain("Review draft");
+  });
+
+  it("keeps a saved item when a read started before the save answers after it", async () => {
+    const staleRead = deferred<typeof work>();
+    let reads = 0;
+    rpc.mockImplementation((method: string) => {
+      if (method === "scratchpad/list")
+        return reads++ === 0 ? Promise.resolve(work) : staleRead.promise;
+      return Promise.resolve({});
+    });
+    await render();
+    await act(async () => {
+      void queryClient.refetchQueries({
+        queryKey: rpcQuery("scratchpad/list", { botId: "bot-a" }).queryKey,
+      });
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    await act(async () => staleRead.resolve(work));
+    expect(container.textContent).not.toContain("Review draft");
+  });
+
+  it("clears a failed complete when the screen is shown again", async () => {
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/update") throw new Error("Already done");
+      return work;
+    });
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    expect(container.textContent).toContain("Already done");
+    await act(async () => {
+      for (const effect of focus.effects) effect();
+    });
+    expect(container.textContent).not.toContain("Already done");
+    expect(container.textContent).toContain("Review draft");
+  });
+
   it("clears an earlier load error once the lists load", async () => {
     rpc.mockImplementation(async (method: string, { botId }: { botId: string }) => {
       if (botId === "bot-a" && method === "scratchpad/list") throw new Error("Request failed");
@@ -195,7 +287,7 @@ it.each(["save", "cancel"])(
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => {
-      focus.current!();
+      for (const effect of focus.effects) effect();
     });
     expect(container.querySelector<HTMLInputElement>("input")?.value).toBe("Retained draft");
     await act(async () =>
@@ -205,10 +297,11 @@ it.each(["save", "cancel"])(
     );
     expect(container.querySelector("input")).toBeNull();
     if (action === "save") {
-      expect(rpc).toHaveBeenCalledWith("scratchpad/create", {
-        botId: "bot-a",
-        title: "Retained draft",
-      });
+      expect(rpc).toHaveBeenCalledWith(
+        "scratchpad/create",
+        { botId: "bot-a", title: "Retained draft" },
+        expect.anything(),
+      );
       expect(container.textContent).toContain("Retained draft");
     } else {
       expect(rpc.mock.calls.filter(([method]) => method === "scratchpad/create")).toHaveLength(0);

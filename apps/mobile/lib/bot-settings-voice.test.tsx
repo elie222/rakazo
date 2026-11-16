@@ -2,6 +2,7 @@
 
 import { BOT_COLORS, BOT_SETTINGS_SECTIONS } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -11,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BotSettingsScreen from "../app/bot-settings";
 import { MenuPicker } from "../components/menu-picker";
 import { afterChatNotifyChange } from "./live-notifications";
+import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
   instructions: "",
@@ -65,6 +67,11 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   selectedSpaceId: () => "space-a",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://api.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-a" },
+  }),
   rpc: async (procedure: string, input?: unknown) => {
     if (
       [
@@ -103,8 +110,12 @@ vi.mock("./api", () => ({
     return [];
   },
 }));
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./session", () => ({
   loadSessionToken: async () => "token",
+  currentSessionGeneration: () => 1,
 }));
 vi.mock("./live-notifications", { spy: true });
 vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
@@ -338,6 +349,7 @@ describe("bot settings device voice menu", () => {
   let root: Root;
   let container: HTMLDivElement;
   beforeEach(() => {
+    queryClient.clear();
     mocks.crossSpaceCommunication = false;
     mocks.autoSpeak = false;
     mocks.dailyCheckIns = undefined;
