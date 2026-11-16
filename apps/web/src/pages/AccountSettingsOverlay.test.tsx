@@ -31,8 +31,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -70,9 +68,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   ),
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
-  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
-    <div data-testid={testId} />
-  ),
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
@@ -172,9 +168,9 @@ it.each([undefined, null, "device", "different"])(
           />,
         ),
       );
-      expect(
-        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
-      ).toBe(timezone ?? deviceTimezone);
+      expect(container.querySelector('[data-testid="timezone-select"]')?.textContent).toBe(
+        (timezone ?? deviceTimezone).replaceAll("_", " "),
+      );
       expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
         saved === "different",
       );

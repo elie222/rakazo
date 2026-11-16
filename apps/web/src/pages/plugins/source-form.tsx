@@ -1,18 +1,10 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type {
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import {
-  Button,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
-  NativeSelect,
-  NativeSelectOption,
-} from "@rakazo/ui-web";
+import { Button, Field, FieldDescription, FieldLabel, Input, OptionSelect } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ViewTitle } from "./parts";
 
@@ -100,6 +92,7 @@ export function SourceFormView({
   onBack: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useLingui();
   const {
     sourceKind,
     sourcePreset,
@@ -187,27 +180,17 @@ export function SourceFormView({
             <FieldLabel htmlFor="source-auth">
               <Trans>Authentication</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect<SourceAuth>
               id="source-auth"
-              className="w-full"
               value={authType}
-              onChange={(event) => setAuthType(event.target.value as typeof authType)}
-            >
-              <NativeSelectOption value="none">
-                <Trans>No authentication</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="bearer">
-                <Trans>Bearer token</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="header">
-                <Trans>API key header</Trans>
-              </NativeSelectOption>
-              {sourceKind === "mcp" ? (
-                <NativeSelectOption value="oauth">
-                  <Trans>OAuth</Trans>
-                </NativeSelectOption>
-              ) : null}
-            </NativeSelect>
+              options={[
+                { value: "none", label: t`No authentication` },
+                { value: "bearer", label: t`Bearer token` },
+                { value: "header", label: t`API key header` },
+                ...(sourceKind === "mcp" ? [{ value: "oauth" as const, label: t`OAuth` }] : []),
+              ]}
+              onValueChange={setAuthType}
+            />
           </Field>
         ) : null}
         {custom && authType === "header" ? (

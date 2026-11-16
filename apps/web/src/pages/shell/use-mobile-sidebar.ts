@@ -1,5 +1,6 @@
 import type { TouchEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useEventListener } from "../../lib/use-event-listener";
 
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
@@ -17,15 +18,12 @@ export function useMobileSidebar() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
-  useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 768px)");
-    function closeMobileSidebar() {
-      if (desktop.matches) setMobileSidebarOpen(false);
-    }
-    closeMobileSidebar();
-    desktop.addEventListener("change", closeMobileSidebar);
-    return () => desktop.removeEventListener("change", closeMobileSidebar);
-  }, []);
+  const [desktop] = useState(() => window.matchMedia("(min-width: 768px)"));
+  const closeMobileSidebar = () => {
+    if (desktop.matches) setMobileSidebarOpen(false);
+  };
+  useEffect(closeMobileSidebar, []);
+  useEventListener(desktop, "change", closeMobileSidebar);
 
   const swipeHandlers = {
     onTouchStartCapture: (event: TouchEvent) => {

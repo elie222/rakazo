@@ -16,7 +16,6 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { requireSpaceOwner } from "@rakazo/db";
-import { mapBotSecretInputError } from "./routes/bots.js";
 
 type AgentSecretDeps = {
   prisma: PrismaClient;
@@ -71,18 +70,13 @@ export async function putAgentSecret(
   if (!BotSecretName.safeParse(name).success) {
     throw new ORPCError("BAD_REQUEST", { message: "Variable names must start with a letter" });
   }
-  let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
-  try {
-    row = await storeBotSecret({
-      prisma: deps.prisma,
-      secretStore: deps.secrets,
-      scope: vaultScope(actor),
-      destination: { name, origin: "", auth: { type: "command" } },
-      plaintext: input.value,
-    });
-  } catch (error) {
-    throw mapBotSecretInputError(error);
-  }
+  const row = await storeBotSecret({
+    prisma: deps.prisma,
+    secretStore: deps.secrets,
+    scope: vaultScope(actor),
+    destination: { name, origin: "", auth: { type: "command" } },
+    plaintext: input.value,
+  });
   if (!row) throw new ORPCError("CONFLICT", { message: "Variable was not saved" });
   return agentSecretDto(row);
 }

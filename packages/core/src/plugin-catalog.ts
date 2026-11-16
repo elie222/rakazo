@@ -250,6 +250,23 @@ export function managedAppFor<T extends { name: string; slug: string }>(
   return apps.find((app) => keys.has(brandKey(app.name)) || keys.has(brandKey(app.slug)));
 }
 
+/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
+export function pluginSite(
+  entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">,
+): string | null {
+  const domain = entry.domains[0]?.replace(/^https?:\/\//, "").split("/")[0];
+  if (domain) return `https://${domain}`;
+  try {
+    if (!entry.homepage) return null;
+    const url = new URL(entry.homepage);
+    // A fully qualified name ends in a dot; it is still GitHub.
+    const host = url.hostname.replace(/\.$/, "");
+    return host === "github.com" || host.endsWith(".github.com") ? null : url.origin;
+  } catch {
+    return null;
+  }
+}
+
 /** Installs from before parts could be chosen added everything they had. */
 export function installedPluginParts(config: Record<string, unknown>): PluginPart[] {
   const parsed = PluginPartSchema.array().safeParse(config.parts);
