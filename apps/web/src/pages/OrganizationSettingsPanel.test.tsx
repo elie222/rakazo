@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -166,15 +167,8 @@ describe("renaming the organization", () => {
     );
     await settle();
   }
-  function deferred<T>() {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((done) => {
-      resolve = done;
-    });
-    return { promise, resolve };
-  }
   async function settle() {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
   }
   const nameInput = () => container.querySelector("input")!;
   const names = () => [...container.querySelectorAll("li")].map((item) => item.textContent);

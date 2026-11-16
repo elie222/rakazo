@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -118,14 +119,6 @@ async function render(shown = true) {
     ),
   );
   await act(async () => vi.advanceTimersByTimeAsync(0));
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 const alert = () => container.querySelector('[role="alert"]')?.textContent ?? null;
