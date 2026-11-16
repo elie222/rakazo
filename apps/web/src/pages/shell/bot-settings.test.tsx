@@ -383,13 +383,12 @@ describe("BotSettings disabled tools", () => {
   });
 
   it("keeps a newer disable when an earlier save fails", async () => {
-    let releaseFirst: (() => void) | undefined;
+    let releaseFirst: Deferred | undefined;
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async (patch) => {
       const tools = patch.disabledBuiltinTools ?? [];
       if (tools.includes("web_search") && !tools.includes("web_fetch")) {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        releaseFirst = deferred();
+        await releaseFirst.promise;
         throw new Error("Network failed");
       }
     });
@@ -398,14 +397,14 @@ describe("BotSettings disabled tools", () => {
     const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
     await submitToolName(input, "web_search");
-    expect(releaseFirst).toBeTypeOf("function");
+    expect(releaseFirst).toBeDefined();
     await submitToolName(input, "web_fetch");
 
     expect(container.querySelector('[id$="-disabled-web_search"]')).not.toBeNull();
     expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
 
     await act(async () => {
-      releaseFirst?.();
+      releaseFirst?.resolve();
     });
     await act(flush);
     await act(flush);
