@@ -53,14 +53,9 @@ it.each(examples)("%s offers manual copying when copying fails", async (label, m
 });
 
 it("Copy rows offers the text from the click when the table changes before the failure", async () => {
-  let fail: () => void = () => undefined;
+  const copy = deferred();
   Object.defineProperty(navigator, "clipboard", {
-    value: {
-      writeText: () =>
-        new Promise<void>((_, reject) => {
-          fail = () => reject();
-        }),
-    },
+    value: { writeText: () => copy.promise },
     configurable: true,
   });
   document.execCommand = vi.fn(() => false);
@@ -72,7 +67,7 @@ it("Copy rows offers the text from the click when the table changes before the f
   await act(async () =>
     root.render(<ChatMarkdown>{"| Item |\n| --- |\n| avocado |"}</ChatMarkdown>),
   );
-  await act(async () => fail());
+  await act(async () => copy.reject(new Error("denied")));
   const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
   expect(field?.value).toBe("Item\napple");
 });
