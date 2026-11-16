@@ -23,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
@@ -683,21 +684,23 @@ export function BotSettings({
           </Suspense>
         </ErrorBoundary>
         <div className="mt-6" data-testid="bot-settings-advanced">
-          <button
-            type="button"
-            aria-expanded={settingsOpen}
-            aria-controls={`${ids}-settings`}
-            onClick={() => setSettingsOpen((open) => !open)}
-            className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 text-start text-body text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Trans>Settings</Trans>
-            <ChevronDown
-              aria-hidden="true"
-              className={`size-4 text-muted-foreground transition-transform ${settingsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+          <SectionHeading variant="label" className="flex min-h-6 items-center">
+            <button
+              type="button"
+              aria-expanded={settingsOpen}
+              aria-controls={`${ids}-settings`}
+              onClick={() => setSettingsOpen((open) => !open)}
+              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Trans>Settings</Trans>
+              <ChevronDown
+                aria-hidden="true"
+                className={`size-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </SectionHeading>
           {/* Stays mounted so an instructions or description draft survives folding it away. */}
-          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-3">
+          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-2">
             <SettingsCard>
               <ModelRow
                 ids={ids}
