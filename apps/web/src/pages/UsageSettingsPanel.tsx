@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
@@ -24,14 +25,14 @@ import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 
-type UsageDateRange = "today" | "7d" | "30d" | "all";
-
 export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const [range, setRange] = useState<UsageDateRange>("30d");
-  const [botId, setBotId] = useState<string>("all");
-  const [modelKey, setModelKey] = useState<string>("all");
+  const [selectedBot, setSelectedBot] = useState<UsageBreakdownBot | null>(null);
+  const [selectedModel, setSelectedModel] = useState<{ key: string; label: string } | null>(null);
+  const botId = selectedBot?.id ?? "all";
+  const modelKey = selectedModel?.key ?? "all";
 
   const input = {
     range,
@@ -62,25 +63,29 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
 
   // The lists keep the previous result while the next one loads; the numbers never do, nor after a failed read.
   const fresh = isPlaceholderData || isError ? undefined : data;
-  const bots = data?.bots ?? [];
+  const bots = data?.bots ?? (selectedBot ? [selectedBot] : []);
   const models = fresh?.models ?? [];
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
   const modelNames = data?.modelOptions ?? [];
-  const modelOptions = modelNames.map((m) => ({
-    key: JSON.stringify([m.provider, m.model]),
-    label:
-      modelNames.filter((other) => other.model === m.model).length > 1
-        ? `${m.model} (${m.provider})`
-        : m.model,
-  }));
+  const modelOptions = data
+    ? modelNames.map((m) => ({
+        key: JSON.stringify([m.provider, m.model]),
+        label:
+          modelNames.filter((other) => other.model === m.model).length > 1
+            ? `${m.model} (${m.provider})`
+            : m.model,
+      }))
+    : selectedModel
+      ? [selectedModel]
+      : [];
 
   // A new date range can drop the selected bot or model from the lists: go back to all.
   useEffect(() => {
     if (!data || isPlaceholderData) return;
-    if (botId !== "all" && !data.bots.some((b) => b.id === botId)) setBotId("all");
-    if (modelKey !== "all" && !modelOptions.some((m) => m.key === modelKey)) setModelKey("all");
+    if (botId !== "all" && !data.bots.some((b) => b.id === botId)) setSelectedBot(null);
+    if (modelKey !== "all" && !modelOptions.some((m) => m.key === modelKey)) setSelectedModel(null);
   }, [data, isPlaceholderData, botId, modelKey, modelOptions]);
 
   const maxTokens = Math.max(1, ...overTime.map((p) => p.totalTokens ?? 0));
@@ -99,7 +104,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           </FieldLabel>
           <NativeSelect
             value={botId}
-            onChange={(e) => setBotId(e.target.value)}
+            onChange={(e) => setSelectedBot(bots.find((bot) => bot.id === e.target.value) ?? null)}
             aria-label={t`Bot`}
           >
             <NativeSelectOption value="all">{t`All bots`}</NativeSelectOption>
@@ -120,7 +125,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           </FieldLabel>
           <NativeSelect
             value={modelKey}
-            onChange={(e) => setModelKey(e.target.value)}
+            onChange={(e) =>
+              setSelectedModel(modelOptions.find((model) => model.key === e.target.value) ?? null)
+            }
             aria-label={t`Model`}
           >
             <NativeSelectOption value="all">{t`All models`}</NativeSelectOption>
@@ -204,7 +211,6 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                       <span
                         className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
                         style={{ height: `${height}%` }}
-                        title={`${day}: ${number(point.totalTokens)}, ${cost(point.costUsd)}`}
                       />
                     </span>
                     <span className="w-full truncate text-center text-caption text-muted-foreground">

@@ -205,7 +205,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(settings.getByRole("row").filter({ hasText: "example-large" })).toContainText(
     "300,000",
   );
-  await expect(settings.locator('[title="Nov 12: 330,000, $1.40"]')).toHaveCount(1);
+  await expect(settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" })).toHaveCount(
+    1,
+  );
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
   await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
   const bar = settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" });

@@ -207,8 +207,14 @@ it("does not show the previous selection's numbers while the next one loads", as
 it("says the request failed instead of showing zero spend", async () => {
   const panel = await renderPanel();
   try {
+    await panel.choose("Bot", "bot-a");
+    await panel.choose("Model", JSON.stringify(["p:1", "m1"]));
     breakdown.fetch.mockRejectedValue(new Error("offline"));
     await panel.pick("Today");
+    expect(panel.select("Bot").value).toBe("bot-a");
+    expect(panel.select("Bot").selectedOptions[0]?.textContent).toBe("Alpha");
+    expect(panel.select("Model").value).toBe(JSON.stringify(["p:1", "m1"]));
+    expect(panel.select("Model").selectedOptions[0]?.textContent).toBe("m1");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Could not load usage.");
     expect(panel.container.textContent).not.toContain("No usage for this selection.");
