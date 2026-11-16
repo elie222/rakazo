@@ -61,8 +61,8 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
    there is something to act on: a review finding you have not seen, a check
-   that newly failed, or every check run and commit status on the exact head
-   SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   that newly failed, or every check run, commit status and workflow run on the
+   exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
    Review bots usually answer long before the slowest check, so expect to
    handle comments while CI is still running.
 
@@ -186,7 +186,7 @@ gh api graphql -f query='mutation($id:ID!){
 Finish only when one observation of a single SHA proves all of:
 
 1. `VERDICT green` — local, upstream, and PR head agree; no failing check or
-   status.
+   status, and no workflow run still queued or running.
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.
