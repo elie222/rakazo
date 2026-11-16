@@ -594,6 +594,7 @@ export type ConnectedModelResolution = {
   credentialId?: string | null;
   hostedProvider?: string;
   codexCatalog?: CodexLiveCatalog;
+  reads?: CatalogReads;
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
 };
@@ -621,7 +622,7 @@ export async function findConnectedModelCredential(
   const readSecret = (credential: { id: string; secretId: string }) =>
     credential.id === replacement?.credentialId
       ? Promise.resolve(replacement.secret)
-      : loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+      : loadModelSecret(prisma, secretStore, actor.userId, credential.secretId, resolution.reads);
   const id = usableModelId(modelId);
   if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
   if (selected.defaultModel === id) return selected;
@@ -658,18 +659,36 @@ export async function hasReadyModelCredential(
   modelId: string,
   resolution: ConnectedModelResolution = {},
 ): Promise<boolean> {
+  const reads = resolution.reads ?? new Map();
+  const lookup = { ...resolution, reads };
   const credential = await findConnectedModelCredential(
     prisma,
     secretStore,
     actor,
     provider,
     modelId,
-    resolution,
+    lookup,
   );
   if (!credential) return false;
-  const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+  const secret = await loadModelSecret(
+    prisma,
+    secretStore,
+    actor.userId,
+    credential.secretId,
+    reads,
+  );
   if (!secret || (secret.kind === "oauth" && secret.reconnectRequired)) return false;
-  if (await validateConnectedModelChoice(prisma, secretStore, actor, provider, modelId, resolution))
+  if (
+    await validateSelectedModelChoice(
+      prisma,
+      secretStore,
+      actor,
+      provider,
+      modelId,
+      credential,
+      lookup,
+    )
+  )
     return false;
   const auth = await readStoredModelAuth(
     prisma,
@@ -679,6 +698,8 @@ export async function hasReadyModelCredential(
     provider,
     modelId,
     resolution.codexCatalog,
+    undefined,
+    reads,
   );
   return auth.status === "ready";
 }
@@ -910,6 +931,26 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
+  return validateSelectedModelChoice(
+    prisma,
+    secretStore,
+    actor,
+    provider,
+    modelId,
+    credential,
+    resolution,
+  );
+}
+
+async function validateSelectedModelChoice(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId: string,
+  credential: ModelCredential,
+  resolution: ConnectedModelResolution,
+) {
   if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
@@ -924,6 +965,7 @@ export async function validateConnectedModelChoice(
         provider,
         modelId,
         resolution.codexCatalog,
+        resolution.reads,
       ))
       ? undefined
       : "Unknown model for that provider";
@@ -938,7 +980,13 @@ export async function validateConnectedModelChoice(
     select: { credentialId: true },
   });
   if (savedChoice) return undefined;
-  const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+  const secret = await loadModelSecret(
+    prisma,
+    secretStore,
+    actor.userId,
+    credential.secretId,
+    resolution.reads,
+  );
   if (secret?.kind === "openai_compatible" && secret.enabledModelIds === undefined)
     return undefined;
   const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
