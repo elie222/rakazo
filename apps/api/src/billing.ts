@@ -4,6 +4,7 @@ import type {
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
+  BillingSubscriptionStatus,
   PartnerProgram,
   ProductAnalytics,
   SandboxProvider,
@@ -14,7 +15,7 @@ import {
   BillingNoMonthlyCreditsError,
   BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
-import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
+import { holdsBillingSubscription, sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
 import type {
   Actor,
   AnalyticsEvent,
@@ -122,7 +123,7 @@ export interface BillingService {
   switchToYearly(actor: Actor): Promise<void>;
   /** Moves the own-key plan to another tier at the same interval, billing the difference now. */
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
-  /** Re-fetches the customer's subscription from the provider and overwrites the stored snapshot. */
+  /** Re-fetches the customer's subscription and bills the member count if it drifted. */
   sync(customerId: string): Promise<void>;
   /**
    * Reports the customer's plan payments to the partner program and withdraws reversed ones, also
@@ -258,21 +259,21 @@ export function createBillingService(deps: {
     return deleting !== null;
   }
 
-  /** Every billing event and checkout return syncs, so a missed seat recount heals at the next. */
   async function sync(customerId: string): Promise<void> {
     await pull(customerId);
-    await bestEffort("seat count on a billing sync", reconcileSeats(customerId));
+    await bestEffort("seat count after a billing change", reconcileSeats({ customerId }));
   }
 
-  /** Bills the member count when a seat-billed plan stores another; pulls, never syncs, after. */
-  async function reconcileSeats(customerId: string): Promise<void> {
-    const account = await prisma.billingAccount.findUnique({ where: { customerId } });
-    if (!account || !hasBillingAccess(account.status)) return;
+  /** Bills the member count to a seat plan that stores another, unpaid and paused ones too. */
+  async function reconcileSeats(where: { customerId: string } | { organizationId: string }) {
+    const account = await prisma.billingAccount.findUnique({ where });
+    const status = account?.status as BillingSubscriptionStatus | null | undefined;
+    if (!account || !status || !holdsBillingSubscription(status)) return;
     if (account.creditAmountCents || account.byokPriceCents) return;
     const seats = await organizationSeatCount(prisma, account.organizationId);
     if (account.seats === seats) return;
-    await provider.updateSeats(customerId, seats);
-    await pull(customerId);
+    await provider.updateSeats(account.customerId, seats);
+    await pull(account.customerId);
   }
 
   /** Reads the provider's subscription and credit purchases into the account. */
@@ -955,7 +956,11 @@ export function createBillingService(deps: {
       });
     },
 
-    sync,
+    // Each billing event fixes missed seat counts; a failed update fails it, so it is redelivered.
+    async sync(customerId) {
+      await pull(customerId);
+      await reconcileSeats({ customerId });
+    },
     async reportPartnerSales(customerId) {
       const account = await prisma.billingAccount.findUnique({
         where: { customerId },
@@ -970,10 +975,7 @@ export function createBillingService(deps: {
       if (account) await sync(account.customerId);
     },
 
-    async syncSeats(organizationId) {
-      const account = await billingAccountForOrganization(prisma, organizationId);
-      if (account) await reconcileSeats(account.customerId);
-    },
+    syncSeats: (organizationId) => reconcileSeats({ organizationId }),
 
     async claimReferral(actor, code) {
       const { organizationId, isOwner } = await organization(actor);

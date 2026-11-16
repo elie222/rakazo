@@ -172,13 +172,18 @@ describePostgres("billing service (PostgreSQL)", () => {
       seats: 3,
     });
 
-    // Leaving is corrected the same way.
+    // Leaving is corrected the same way, also while a payment is overdue, so the subscription
+    // resumes with the right count.
+    emulator.setStatus(customerId, "unpaid");
     await prisma.user.delete({ where: { id: joinedId } });
     await billing.sync(customerId);
     expect(subscription().seats).toBe(2);
     await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      status: "unpaid",
       seats: 2,
     });
+    emulator.setStatus(customerId, "trialing");
+    await billing.sync(customerId);
   });
 
   it("stores the cancellation answer and reports it to the owner once", async () => {
