@@ -6,7 +6,7 @@ const native = vi.hoisted(() => ({
   refreshWorkActivity: vi.fn(async () => undefined),
   endWorkActivity: vi.fn(async () => undefined),
   endUnfollowedWorkActivity: vi.fn(async (_request: number) => undefined),
-  token: undefined as undefined | ((event: { token: string; request: number }) => void),
+  token: undefined as undefined | ((event: { token: string; request?: number }) => void),
   startToken: undefined as undefined | ((event: { token: string }) => void),
   addListener(name: string, callback: (event: { token: string; request?: number }) => void) {
     if (name === "onWorkActivityStartToken") native.startToken = callback;
@@ -136,6 +136,14 @@ it("leaves the card to the newest request when an older answer lands late", asyn
   // late answer names its own request and never ends the card outright.
   expect(native.endUnfollowedWorkActivity).toHaveBeenCalledExactlyOnceWith(1);
   expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it("ends the card outright on an app build that sends no request number", async () => {
+  rpc.mockResolvedValueOnce({ following: false });
+  native.token!({ token: "ab" });
+  await flush();
+  expect(native.endWorkActivity).toHaveBeenCalledOnce();
+  expect(native.endUnfollowedWorkActivity).not.toHaveBeenCalled();
 });
 
 it("hands the phone's token for starting cards to the server", async () => {

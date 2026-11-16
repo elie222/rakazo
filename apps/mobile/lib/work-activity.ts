@@ -17,11 +17,12 @@ type NativeWorkActivities = {
   ): Promise<void>;
   refreshWorkActivity(): Promise<void>;
   endWorkActivity(): Promise<void>;
-  /** Ends the card unless a request newer than this one asked whether it is followed. */
-  endUnfollowedWorkActivity(request: number): Promise<void>;
+  /** Ends the card unless a request newer than this one asked whether it is followed. Missing on
+   * app builds from before it, which also send no request number. */
+  endUnfollowedWorkActivity?(request: number): Promise<void>;
   addListener(
     name: "onWorkActivityToken",
-    callback: (event: { token: string; request: number }) => void,
+    callback: (event: { token: string; request?: number }) => void,
   ): { remove(): void };
   addListener(
     name: "onWorkActivityStartToken",
@@ -53,7 +54,11 @@ export function startWorkActivities(): () => void {
         if (generation !== currentSessionGeneration()) return;
         // Nothing would update it: no bot is at work or this server cannot reach the phone. The
         // native side skips an answer a newer request has overtaken, from here or the background.
-        if (!following) return card.endUnfollowedWorkActivity(request);
+        if (following) return;
+        if (request !== undefined && card.endUnfollowedWorkActivity) {
+          return card.endUnfollowedWorkActivity(request);
+        }
+        return card.endWorkActivity();
       })
       // An unanswered request proves nothing; the next open asks again.
       .catch(() => undefined);
