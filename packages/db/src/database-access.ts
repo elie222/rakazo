@@ -301,7 +301,8 @@ export async function timeZoneWarning(prisma: PrismaClient): Promise<string | un
   const [row] = await prisma.$queryRawUnsafe<Array<{ zone: string; login: string }>>(
     "SELECT current_setting('TimeZone') AS zone, current_user AS login",
   );
-  if (!row || /^(Etc\/)?(UTC|UCT|Universal|Zulu)$/i.test(row.zone)) return undefined;
+  if (!row || /^(Etc\/)?(UTC|UCT|Universal|Zulu|GMT|GMT[+-]?0|Greenwich)$/i.test(row.zone))
+    return undefined;
   // A time zone set on the login wins over the database's, so the fix may be either.
   return `The database time zone is ${row.zone}, so stored times are compared hours off. Run \`pnpm db:migrate\` as the database owner (or ALTER DATABASE <name> SET timezone TO 'UTC'); if the ${row.login} login has its own time zone, also run ALTER ROLE ${row.login} SET timezone TO 'UTC'.`;
 }
