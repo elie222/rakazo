@@ -6,6 +6,22 @@ import { serializeError } from "./serialize-error.js";
 import { createTestSink } from "./test-sink.js";
 
 describe("logger", () => {
+  it("drops only the line whose binding throws while it is read, without throwing", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broken = Object.defineProperty({}, "detail", {
+      enumerable: true,
+      get() {
+        throw new Error("unreadable");
+      },
+    });
+    expect(() => logger.warn("run.setup_failed", { broken })).not.toThrow();
+    logger.warn("run.failed");
+    expect(sink.events.map((event) => event.message)).toEqual(["run.failed"]);
+    error.mockRestore();
+  });
+
   it("filters levels including off", () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", level: "warn", sinks: [sink] });
