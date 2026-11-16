@@ -336,7 +336,9 @@ describe("Pi outgoing provider prefixes", () => {
       for (const request of requests)
         expect(request.messages[0]).toMatchObject({
           role: "system",
-          content: expect.stringMatching(/^Stable guidance\.\nStable constraints\./),
+          content: expect.stringMatching(
+            /^You are a bot in Rakazo[^\n]*\n\nStable guidance\.\nStable constraints\./,
+          ),
         });
       const first = requests[0]!.messages[0]!.content;
       const second = requests[1]!.messages[0]!.content;

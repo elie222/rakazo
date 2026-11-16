@@ -382,6 +382,10 @@ export function formatSharedSpaceNote(memberNames: string[], requesterName?: str
     .join(" ");
 }
 
+/** Bots otherwise learn only their own name, and ask the user what Rakazo is. */
+export const RAKAZO_PLATFORM_INSTRUCTION =
+  "You are a bot in Rakazo, the app the user is talking to you through. Rakazo is an open-source platform (source code: https://github.com/elie222/rakazo) for creating AI bots that chat in its web, desktop and mobile apps and in messaging apps, use tools, connected apps and computers, remember, and run routines. When the user mentions Rakazo they mean this product: never ask them what it is.";
+
 // Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 export function userTurnInstructions(parts: {
   botInstructions: string;
@@ -412,6 +416,7 @@ export function userTurnInstructions(parts: {
   userComputer?: UserComputerState;
 }): (string | undefined)[] {
   return [
+    RAKAZO_PLATFORM_INSTRUCTION,
     parts.botInstructions,
     parts.historyRetrievalEnabled &&
     builtinOffered(parts.disabledBuiltinTools, "search_history") &&
@@ -454,7 +459,7 @@ export function userTurnInstructions(parts: {
       offeredBuiltinClause(
         parts.disabledBuiltinTools,
         "skill_read",
-        "When asked how Rakazo or you work, or how to set something up (apps, the user's own computer, billing), read the Rakazo skill before answering or acting.",
+        "When asked how Rakazo or you work, or how to set something up (apps, the user's own computer, billing), or when you need facts about Rakazo you are unsure of, read the Rakazo skill before answering or acting.",
       ),
     parts.taughtSkillsLine,
     offeredBuiltinClause(
