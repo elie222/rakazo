@@ -101,11 +101,7 @@ describePostgres("machine cleanup (PostgreSQL)", () => {
     prisma = asSystem(db.prisma);
     jobs = new GraphileJobPublisher(db.pool, db.prisma);
     identity = await runAsSystem("machine cleanup fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const bot = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
     computerId = bot.computerId!;

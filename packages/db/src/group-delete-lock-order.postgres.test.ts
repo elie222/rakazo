@@ -60,11 +60,7 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     provisioned = true;
     actor = {

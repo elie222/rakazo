@@ -27,11 +27,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     db = createDb(url!);
     system = asSystem(db.prisma);
     const provisioned = await runAsSystem("routine prompt fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const { userId, spaceId, botId, threadId } = provisioned;
     identity = { userId, spaceId, botId, threadId };
