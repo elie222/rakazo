@@ -19,7 +19,11 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
-import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.prompt.js";
+import {
+  runAllowsSilentEmpty,
+  runNarratesLive,
+  runPromotesMidTurnNarration,
+} from "./run-replies.prompt.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
@@ -372,7 +376,10 @@ export async function showNarrationStatus(
     return;
   // With live narration the bot's statuses come with its tool calls, so text it writes between
   // steps never shows as written. The reset below clears it from the live message either way.
-  const live = openingAcknowledgementEnabled();
+  // Only a run whose model was told to narrate live leaves its notes off the line; any other
+  // run was asked for notes between steps, so they still show.
+  const live =
+    runNarratesLive(run.trigger) && !ctx.groupReplyOptional && ctx.replyMode !== "messages";
   let shown: string;
   if (!live) shown = narrationStatusLine(note);
   // The step brought the model's own status: it stays the line.

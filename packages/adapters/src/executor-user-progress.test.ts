@@ -2272,6 +2272,18 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
     },
   );
 
+  it("still shows notes between steps on a run that was not told to narrate live", async () => {
+    const { append } = await runTurn(
+      "Done.",
+      false,
+      ["I'll look it up.", "Found two sources, comparing them now."],
+      [],
+      "fyi",
+      { group: { optional: true } },
+    );
+    expect(statuses(append).filter(Boolean).length).toBeGreaterThan(0);
+  });
+
   it("does not post an opening sentence for a group message that named nobody", async () => {
     const { messages } = await runTurn("Done.", false, "I will check that.", [], "fyi", {
       group: { optional: true },

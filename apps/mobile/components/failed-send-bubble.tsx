@@ -1,7 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { isModelRequiredSendError } from "@rakazo/core";
 import { sendEntrance, typeScale } from "@rakazo/ui-tokens";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Image, Platform, Pressable, Text, View } from "react-native";
 import type { EntryExitAnimationFunction } from "react-native-reanimated";
 import Animated, { Easing, FadeIn, useReducedMotion, withTiming } from "react-native-reanimated";
@@ -61,14 +62,9 @@ export function FailedSendBubble({
   // The bubble is the message, so a quick send shows no caption: the hand-off to the saved
   // message then neither moves nor flashes. Only a slow send says it is still sending.
   const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!sending) {
-      setSlow(false);
-      return;
-    }
-    const timer = setTimeout(() => setSlow(true), SLOW_SEND_MS);
-    return () => clearTimeout(timer);
-  }, [sending]);
+  // A send that settled forgets it was slow, so a retry waits again before saying so.
+  if (!sending && slow) setSlow(false);
+  useTimeout(() => setSlow(true), sending ? SLOW_SEND_MS : null);
   const retryable = state === "failed" || state === "queued";
   // Once a model is connected, the saved missing-model error is stale and retrying can work.
   const modelRequired = isModelRequiredSendError(attempt.error) && needsModel !== false;

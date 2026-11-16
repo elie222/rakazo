@@ -42,6 +42,7 @@ import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { STEP_STATUS_DESCRIPTION, STEP_STATUS_FIELD } from "./step-status.tool-definition.js";
 import { providerToolCallId } from "./tool-call-ids.js";
 import { textContentArg } from "./tool-text.js";
 import { narrationStatusLine, openingAcknowledgementEnabled } from "./user-progress.js";
@@ -388,12 +389,6 @@ function toAgentTool(
 
 /** Tools whose own text is what the person reads, so a status line would only repeat it. */
 const STATUSLESS_TOOLS = new Set(["message_user", "ask_user", "request_secret"]);
-
-/** Named apart from any argument a tool may already call `status`. */
-export const STEP_STATUS_FIELD = "live_status";
-
-const STEP_STATUS_DESCRIPTION =
-  "Two to five words, in the person's language, saying what this call does for them, shown live while it runs (for example “Checking availability”). Not passed to the tool.";
 
 /**
  * Offers the model a `live_status` field on the tool, the line the thread shows while the call runs.

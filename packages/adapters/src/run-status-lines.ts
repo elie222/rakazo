@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { StatusLineWriter } from "./status-lines.js";
 
 export type LiveStatusLines = {
@@ -58,19 +59,16 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const show = (text: string, mine: number) => {
     showing = showing.then(async () => {
       if (closed || mine !== generation || target.held()) return;
-      await target.show(text).catch(() => {});
+      await bestEffort("show status line", target.show(text));
     });
     return showing;
   };
 
   // The writer, once the run's credentials are known; nothing is sent to the model before.
   const writer = Promise.all([target.writer, target.ready]).then(([found]) => found);
-  void target.writer.then(
-    (found) => {
-      hasWriter = Boolean(found);
-    },
-    () => {},
-  );
+  void bestEffort("set up status model", target.writer).then((found) => {
+    hasWriter = Boolean(found);
+  });
   function close() {
     closed = true;
     abort.abort();
@@ -80,8 +78,9 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   else target.signal?.addEventListener("abort", onRunAbort, { once: true });
 
   const opening = ++generation;
-  void writer
-    .then(async (writer) => {
+  void bestEffort(
+    "write opening status",
+    writer.then(async (writer) => {
       // A step or reply that came first owns the line: the opening is never requested.
       if (!writer || closed || opening !== generation) return;
       const line = await writer.opening(
@@ -89,22 +88,21 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
         AbortSignal.any([abort.signal, current.signal]),
       );
       if (line) await show(line, opening);
-    })
-    .catch(() => {});
+    }),
+  );
 
   return {
     active: () => hasWriter && !closed,
     step(text, { fallback = true } = {}) {
       const mine = ++generation;
       const signal = replaceCurrent();
-      void writer
-        .then((writer) => writer?.step(target.request, text, signal))
-        .catch(() => undefined)
-        .then((line) => {
-          const shown = line || (fallback ? text : undefined);
-          if (shown) return show(shown, mine);
-        })
-        .catch(() => {});
+      void bestEffort(
+        "write step status",
+        writer.then((writer) => writer?.step(target.request, text, signal)),
+      ).then((line) => {
+        const shown = line || (fallback ? text : undefined);
+        if (shown) return show(shown, mine);
+      });
     },
     supersede() {
       // Every streamed text delta supersedes; only the first after a status has work to do.

@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { ModelRoleChoice } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { deadlineSignal, redactSecrets, withAbort } from "@rakazo/core";
 import { recordUsage } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { effectiveModelRole } from "./model-roles.js";
@@ -110,9 +110,8 @@ export async function createStatusLineWriter(
       signal: AbortSignal,
     ): Promise<string> => {
       // The time limit covers resolving the model's key as well as the call.
-      const timeout = AbortSignal.timeout(STATUS_LINE_TIMEOUT_MS);
-      const deadline = AbortSignal.any([signal, timeout]);
-      const key = await untilAborted(keyFor(choice), deadline);
+      const deadline = deadlineSignal(STATUS_LINE_TIMEOUT_MS, signal);
+      const key = await withAbort(keyFor(choice), deadline);
       // Built only now, so it is redacted against the credentials just resolved too.
       const prompt = buildPrompt();
       const startedAt = Date.now();
@@ -182,7 +181,7 @@ export async function createStatusLineWriter(
           }
         }
       })();
-      await untilAborted(consume, deadline);
+      await withAbort(consume, deadline);
       if (problem || !text.trim()) {
         // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.
         console.warn(
@@ -241,25 +240,6 @@ export async function createStatusLineWriter(
 /** Text a runtime writes in place of an answer when the model call failed. */
 function isModelFailureText(text: string) {
   return /^(?:I hit a problem:|Unknown model )/i.test(text.trim());
-}
-
-/** The value, unless the signal aborts first. */
-function untilAborted<T>(value: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    value.then(
-      (result) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(result);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
 }
 
 /** A turn that ended or moved on cancels its pending status; that is no failure. */

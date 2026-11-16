@@ -604,7 +604,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   if (!heldNote) reply.narrationStatusShowing = false;
   // The status the model gave the call names the step in the finished reply too, over any text
   // held before it.
-  const status = event.status;
+  // Redacted now: a handoff between steps saves the note in the reply checkpoint as it is.
+  const status = event.status && redactSecrets(event.status, ctx.secrets);
   if (status && runPromotesMidTurnNarration(run.trigger) && !ctx.allowSilentEmptyRun) {
     flushPendingTools(reply);
     reply.messageSegments = noteLastToolStep(reply.messageSegments, status);
