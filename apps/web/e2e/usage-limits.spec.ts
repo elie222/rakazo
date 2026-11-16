@@ -1,6 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { BillingStatus, PlanLimits } from "@rakazo/contracts";
+import type { BillingStatus, PlanLimits, UsageBreakdownInput } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 const hours = (count: number) => new Date(Date.now() + count * 3_600_000).toISOString();
@@ -131,9 +131,26 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
 }, testInfo) => {
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
-  await page.route("**/rpc/usage/breakdown", (route) =>
-    route.fulfill({ json: { json: breakdown } }),
-  );
+  await page.route("**/rpc/usage/breakdown", (route) => {
+    const { json: input } = route.request().postDataJSON() as { json: UsageBreakdownInput };
+    const filtered = input.botId === "bot-1" && input.range === "7d";
+    const point = breakdown.overTime[2]!;
+    return route.fulfill({
+      json: {
+        json: {
+          ...breakdown,
+          range: input.range,
+          ...(filtered
+            ? {
+                totals: { ...point, runs: 14 },
+                models: [{ provider: "subscription", model: "example-large", ...point }],
+                overTime: [point],
+              }
+            : {}),
+        },
+      },
+    });
+  });
   const stamp = Date.now();
   await signup(page, `usage-limits-${stamp}@rakazo.test`, "password12", "Usage limits");
   await completeOnboarding(page);
@@ -182,6 +199,13 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
+  const totals = settings.getByTestId("usage-settings").locator("dl");
+  await expect(totals).toContainText("330,000");
+  await expect(totals).toContainText("$1.40");
+  await expect(settings.getByRole("row").filter({ hasText: "example-large" })).toContainText(
+    "300,000",
+  );
+  await expect(settings.locator('[title="Nov 12: 330,000, $1.40"]')).toHaveCount(1);
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
   await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "usage-limits-chart");
