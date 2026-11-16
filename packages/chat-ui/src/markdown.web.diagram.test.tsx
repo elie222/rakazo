@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -32,7 +33,7 @@ async function render(markdown: string, streaming = false) {
   });
   // Mermaid loads and draws asynchronously.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 
@@ -140,10 +141,10 @@ describe("web markdown diagrams", () => {
     );
     await act(async () => {
       document.documentElement.dataset.theme = "light";
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     expect(mermaid.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({ darkMode: false }),
