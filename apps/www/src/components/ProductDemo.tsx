@@ -1,11 +1,17 @@
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { DemoBot, DemoMessage, DemoRoutine, DemoRoutineRun, DemoScreen } from "../demo";
 import type { DemoMessages } from "../i18n/demo-text";
 import { fillDemoText } from "../i18n/demo-text";
 import { LandingBotAvatar } from "./LandingBotAvatar";
 import type { DemoTrigger } from "./product-demo-when";
-import { defaultTrigger, describeTrigger, displayRoutineWhen, parseWhen, resolveRoutineWhen } from "./product-demo-when";
+import {
+  defaultTrigger,
+  describeTrigger,
+  displayRoutineWhen,
+  parseWhen,
+  resolveRoutineWhen,
+} from "./product-demo-when";
 
 export type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
@@ -97,7 +103,6 @@ function cloneBots(source: DemoBot[]): LiveBot[] {
     answers: [],
   }));
 }
-
 
 function displayedWhen(when: string, text: DemoTranslator): string {
   return displayRoutineWhen(when, text);
@@ -247,7 +252,9 @@ export function ComputerDesktop({
           <div
             className="product-demo__window product-demo__window--list"
             style={windowStyle("list")}
-            onPointerDown={live ? () => onDeskChange?.((current) => raise(current, "list")) : undefined}
+            onPointerDown={
+              live ? () => onDeskChange?.((current) => raise(current, "list")) : undefined
+            }
           >
             {windowBar("list")}
             <div className="product-demo__window-split">
@@ -269,7 +276,9 @@ export function ComputerDesktop({
           <div
             className="product-demo__window product-demo__window--app"
             style={windowStyle("app")}
-            onPointerDown={live ? () => onDeskChange?.((current) => raise(current, "app")) : undefined}
+            onPointerDown={
+              live ? () => onDeskChange?.((current) => raise(current, "app")) : undefined
+            }
           >
             {windowBar("app", screen.host)}
             <div className="product-demo__window-body">
@@ -483,7 +492,13 @@ function OnboardThread({
   );
 }
 
-export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; strings: DemoMessages }) {
+export function ProductDemo({
+  bots: initialBots,
+  strings,
+}: {
+  bots: DemoBot[];
+  strings: DemoMessages;
+}) {
   const text: DemoTranslator = (source, values) => fillDemoText(strings, source, values);
   const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(initialBots));
   const [activeId, setActiveId] = useState("inbox");
@@ -1027,11 +1042,7 @@ export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; s
                     : text("{name}’s computer", { name: active.name })}
                 </span>
                 <div className="product-demo__panel-actions">
-                  <button
-                    type="button"
-                    aria-label={text("Bot settings")}
-                    onClick={openSettings}
-                  >
+                  <button type="button" aria-label={text("Bot settings")} onClick={openSettings}>
                     <svg
                       width="17"
                       height="17"
@@ -1061,9 +1072,7 @@ export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; s
                   type="button"
                   className="product-demo__screen"
                   onClick={takeControl}
-                  aria-label={
-                    hasControl ? text("Open computer") : text("Take control of computer")
-                  }
+                  aria-label={hasControl ? text("Open computer") : text("Take control of computer")}
                 >
                   <ComputerDesktop screen={active.screen} desk={desk} text={text} />
                 </button>
@@ -1153,11 +1162,7 @@ export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; s
             {panelMode === "routine" && routineDraft ? (
               <div className="product-demo__routine-editor">
                 <div className="product-demo__routine-nav">
-                  <button
-                    type="button"
-                    onClick={saveRoutine}
-                    aria-label={text("Back to computer")}
-                  >
+                  <button type="button" onClick={saveRoutine} aria-label={text("Back to computer")}>
                     ‹
                   </button>
                   <span>{text("Routine")}</span>
@@ -1360,9 +1365,7 @@ export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; s
                 <div className="product-demo__takeover-who">
                   <LandingBotAvatar color={active.color} size={32} />
                   <span>{text("{name}’s computer", { name: active.name })}</span>
-                  <span className="product-demo__takeover-pill">
-                    {text("You have control")}
-                  </span>
+                  <span className="product-demo__takeover-pill">{text("You have control")}</span>
                 </div>
                 <div className="product-demo__takeover-actions">
                   <button

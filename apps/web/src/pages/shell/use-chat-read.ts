@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { autoReadStillWanted } from "../../lib/auto-read";
 import type { createSpaceRpc } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 
 /**
  * Read state for the open chat: automatic reads while it is visible, Mark as Unread holds,
@@ -170,31 +171,26 @@ export function useChatRead({
     if (!active) return;
     // Opening a bot clears the manual unread flag so it can auto-read again.
     manuallyUnread.current.delete(active.id);
-    const markVisibleBotRead = () => {
-      markBotReadIfVisible(active.id);
-    };
-    markVisibleBotRead();
-    window.addEventListener("focus", markVisibleBotRead);
-    document.addEventListener("visibilitychange", markVisibleBotRead);
-    return () => {
-      window.removeEventListener("focus", markVisibleBotRead);
-      document.removeEventListener("visibilitychange", markVisibleBotRead);
-    };
+    markBotReadIfVisible(active.id);
   }, [active?.id, markBotReadIfVisible]);
+  const markVisibleBotRead = () => {
+    if (active) markBotReadIfVisible(active.id);
+  };
+  useEventListener(active ? window : null, "focus", markVisibleBotRead);
+  useEventListener(active ? document : null, "visibilitychange", markVisibleBotRead);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
     manuallyUnread.current.delete(activeGroup.id);
     readVisibleGroups.current.delete(groupId);
-    const markVisibleGroupRead = () => markGroupReadIfVisible(groupId);
-    markVisibleGroupRead();
-    window.addEventListener("focus", markVisibleGroupRead);
-    document.addEventListener("visibilitychange", markVisibleGroupRead);
-    return () => {
-      window.removeEventListener("focus", markVisibleGroupRead);
-      document.removeEventListener("visibilitychange", markVisibleGroupRead);
-    };
+    markGroupReadIfVisible(groupId);
   }, [activeGroup?.id, groupId, markGroupReadIfVisible]);
+  const groupOpen = Boolean(groupId && activeGroup);
+  const markVisibleGroupRead = () => {
+    if (groupId) markGroupReadIfVisible(groupId);
+  };
+  useEventListener(groupOpen ? window : null, "focus", markVisibleGroupRead);
+  useEventListener(groupOpen ? document : null, "visibilitychange", markVisibleGroupRead);
 
   /** Mark as Unread from a group message: the next open starts the New divider there. */
   const markGroupUnreadFrom = useCallback(
