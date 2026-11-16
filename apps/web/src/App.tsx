@@ -79,6 +79,9 @@ const NavLinkPage = lazyComponent(() =>
 const InvitePage = lazyComponent(() =>
   import("./pages/Invite").then((module) => module.InvitePage),
 );
+const JoinOrganizationPage = lazyComponent(() =>
+  import("./pages/JoinOrganization").then((module) => module.JoinOrganizationPage),
+);
 
 function SsoCallbackPage() {
   useEffect(() => {
@@ -266,6 +269,16 @@ function SessionApp() {
                     <AdminPluginsPage />
                   ) : (
                     <Navigate to="/sign-in?next=/admin/plugins" replace />
+                  )
+                }
+              />
+              <Route
+                path="/join/:invitationId"
+                element={
+                  user ? (
+                    <JoinOrganizationPage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
                   )
                 }
               />

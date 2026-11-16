@@ -47,6 +47,8 @@ const work: Organization = {
   defaultSpaceId: "space-a1",
   spaceIds: ["space-a1", "space-a2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const home: Organization = {
   id: "org-home",
@@ -54,6 +56,8 @@ const home: Organization = {
   defaultSpaceId: "space-b1",
   spaceIds: ["space-b1", "space-b2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 
 function seed(spaceId: string) {
@@ -122,6 +126,8 @@ describe("switchOrganization", () => {
       defaultSpaceId: "space-c1",
       spaceIds: ["space-c1"],
       canManage: true,
+      role: "owner" as const,
+      memberCount: 1,
     };
     let finishFirst: (() => void) | undefined;
     state.selectSpace.mockImplementationOnce(

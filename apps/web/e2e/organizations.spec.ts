@@ -61,13 +61,13 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await signup(page, `organizations-${stamp}@rakazo.test`, "password12", "Org Owner");
   await completeOnboarding(page);
 
-  // One organization: settings show only its name, and the avatar menu names it and opens a
-  // submenu that lists it and starts a new one.
+  // One organization: settings show only its name and its members, and the avatar menu names it
+  // and opens a submenu that lists it and starts a new one.
   let settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
   const single = settings.getByTestId("organization-settings");
   await expect(single.getByLabel("Name")).toHaveValue("Personal");
-  await expect(single.getByRole("button")).toHaveCount(0);
+  await expect(single.getByRole("button")).toHaveText([/^Members/]);
   await captureScreenshot(page, testInfo, "org-settings-single");
   await page.keyboard.press("Escape");
 

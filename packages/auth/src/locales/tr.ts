@@ -74,4 +74,11 @@ export const TR_MESSAGES: Record<string, string> = {
     "Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} sizi Rakazo'da {organization} kuruluşuna davet etti",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} sizi Rakazo'da {organization} kuruluşuna katılmaya davet etti.",
+  "Join {organization}": "{organization} kuruluşuna katıl",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Bu davetin süresi 7 gün içinde dolar. Kabul etmek için bu e-posta adresiyle oturum açın.",
 };
