@@ -69,7 +69,8 @@ export default function NewBot() {
                 if (!openChatFromInbox(href)) router.push(href);
               },
               send,
-              spaceId: params.spaceId,
+              // The chat opens in the Space the bot was written to.
+              spaceId: createdIn,
             });
         return outcome;
       } finally {

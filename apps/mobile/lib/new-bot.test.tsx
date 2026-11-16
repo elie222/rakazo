@@ -157,6 +157,13 @@ it("creates once on a double tap, through the save's send, and holds the form me
   expect(button("Creating…")?.disabled).toBe(true);
 });
 
+it("names the Space it creates in, so the chat opens there too", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  const [{ spaceId }] = createInboxBot.mock.calls[0] as [{ spaceId?: string }];
+  expect(spaceId).toBe("space-1");
+});
+
 it("keeps sending the new bot's onboarding to its Space after another is selected", async () => {
   await start();
   await act(async () => button("Create")!.click());
