@@ -42,12 +42,16 @@ export async function pollCloudAgent(
   // claim is kept with it while a deploy overlaps.
   const token = randomUUID();
   const claimUntil = () => new Date(Date.now() + LEASE_MS);
+  // Only while this worker holds the claim; one taken over by the previous release is a lost lease.
+  let holdsClaim = false;
   const renewClaim = async () => {
-    await deps.prisma.cloudAgent.updateMany({
+    if (!holdsClaim) return true;
+    const renewed = await deps.prisma.cloudAgent.updateMany({
       where: { id: stored.id, leaseToken: token },
       data: { leaseExpiresAt: claimUntil() },
     });
-    return true;
+    // A renewal racing the release below finds the claim already given back: not a loss.
+    return renewed.count > 0 || !holdsClaim;
   };
   await withLease(
     deps.prisma,
@@ -63,11 +67,13 @@ export async function pollCloudAgent(
         data: { leaseToken: token, leaseExpiresAt: claimUntil() },
       });
       if (!claimed.count) return;
+      holdsClaim = true;
       try {
         // Cut off while the claim was being taken: give it back rather than leave it to lapse.
         lease.signal.throwIfAborted();
         await reconcile(deps, { ...stored, leaseToken: token, lease }, connection.provider);
       } finally {
+        holdsClaim = false;
         // A concurrent user action can change version while remote I/O is in flight.
         // Release only our claim, preserving that action's pending intent and due date.
         await bestEffort(
