@@ -50,7 +50,11 @@ export function spaceInvitee(
   email: string,
 ): { kind: "member" } | { kind: "addable"; userId: string } | { kind: "outside" } | null {
   const address = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return null;
+  // Split, not a regular expression, so a long pasted string costs linear time.
+  const [local, domain = "", extra] = address.split("@");
+  const dot = domain.lastIndexOf(".");
+  if (!local || extra !== undefined || /\s/.test(address)) return null;
+  if (dot < 1 || dot === domain.length - 1) return null;
   const owns = (person: { email: string }) => person.email.toLowerCase() === address;
   if (list.members.some(owns)) return { kind: "member" };
   const person = list.addable?.find(owns);

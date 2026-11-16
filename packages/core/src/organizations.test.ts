@@ -73,7 +73,14 @@ describe("spaceInvitee", () => {
   };
 
   it("tells members, the organization's people and outsiders apart once it reads as an address", () => {
-    expect(spaceInvitee(list, "ana@exam")).toBeNull();
+    for (const partial of [
+      "ana@exam",
+      "ana@exam.",
+      "@example.test",
+      "a@b@example.test",
+      "a b@c.de",
+    ])
+      expect(spaceInvitee(list, partial)).toBeNull();
     expect(spaceInvitee(list, " ANA@example.test ")).toEqual({ kind: "member" });
     expect(spaceInvitee(list, "ben@example.test")).toEqual({ kind: "addable", userId: "u2" });
     expect(spaceInvitee(list, "cy@example.test")).toEqual({ kind: "outside" });
