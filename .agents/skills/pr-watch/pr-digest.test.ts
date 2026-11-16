@@ -479,6 +479,24 @@ describe("pr-digest", () => {
       expect(result.stdout).toContain("FAIL workflow ci [startup_failure]");
     });
 
+    it("judges a workflow by its newest run on the commit", () => {
+      const older = {
+        ...workflow,
+        workflow_id: 1,
+        status: "completed",
+        conclusion: "startup_failure",
+        created_at: "2026-01-01T00:00:00Z",
+      };
+      const newer = {
+        ...older,
+        conclusion: "success",
+        created_at: "2026-01-02T00:00:00Z",
+        html_url: `${workflow.html_url}0`,
+      };
+      const result = runDigest({ check: passed, workflows: [[newer, older]] });
+      expect(result.status).toBe(0);
+    });
+
     it("does not count a failed workflow twice when its job failed", () => {
       const job = {
         ...passed,
