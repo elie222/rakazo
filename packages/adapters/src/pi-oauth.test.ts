@@ -2356,7 +2356,7 @@ describe("PiOAuthLogins across API processes", () => {
         Buffer.from(ciphertext.slice("sealed:".length), "base64").toString(),
       ),
     };
-    return { rows, store: { prisma, secrets } as unknown as HandoffStore, secrets };
+    return { rows, prisma, store: { prisma, secrets } as unknown as HandoffStore, secrets };
   }
 
   /** One API process with a pasted-code provider: its own memory, the shared store. */
@@ -2520,6 +2520,59 @@ describe("PiOAuthLogins across API processes", () => {
       /not found/,
     );
     expect(after.seen).toEqual([]);
+  });
+
+  it("refuses a pasted code whose lease cannot be taken, and lets it be pasted again", async () => {
+    const { rows, prisma, store } = handoffStore();
+    const local = apiProcess(store);
+    const started = await local.logins.begin({ ...member, provider: "anthropic", persist: keep });
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(local.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
+      /Could not save/,
+    );
+    expect(rows.get(started.loginId)?.leaseExpiresAt).toBeNull();
+
+    const after = apiProcess(store);
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
+      /Could not save/,
+    );
+    expect(rows.get(started.loginId)?.leaseExpiresAt).toBeNull();
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).resolves.toEqual({
+      ok: true,
+    });
+    await flushMicrotasks();
+    expect([...local.seen, ...after.seen]).toEqual([
+      { verifier: expect.any(String), code: "the-code" },
+    ]);
+    await after.logins.abortAll();
+  });
+
+  it("keeps a resumed sign-in alive from when its lease is taken", async () => {
+    vi.useFakeTimers();
+    const { rows, store } = handoffStore();
+    const before = apiProcess(store);
+    const started = await before.logins.begin({ ...member, provider: "anthropic", persist: keep });
+    await before.logins.abortAll();
+    const called = deferred<void>();
+    const shown = deferred<void>();
+    const slowToStart = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
+      called.resolve();
+      await shown.promise;
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      return oauthCred({ access: await interaction.prompt({ type: "manual_code", message: "" }) });
+    }, store);
+    const submitting = slowToStart.submit(started.loginId, member, "the-code", keep);
+    await called.promise;
+    vi.setSystemTime(Date.now() + 20_000);
+    shown.resolve();
+    await submitting;
+    expect(rows.get(started.loginId)?.leaseExpiresAt?.getTime()).toBe(Date.now() + 30_000);
+    await slowToStart.abortAll();
   });
 
   it("lets one process take the code, and drops the sign-in when cancelled or disconnected", async () => {

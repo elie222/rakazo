@@ -15,7 +15,7 @@ import type { ModelOAuthBegin, ModelOAuthSignInMode, SettingsScope } from "@raka
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseLostError, runAsSystem, runAsTenant, withLease } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { StoredModelSecret } from "./model-secret.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
@@ -908,13 +908,17 @@ export class PiOAuthLogins<T = unknown> {
     const session = this.pending.get(loginId);
     if (session) {
       session.stored = true;
-      await this.holdLease(session);
+      const held = await this.holdLease(session);
       session.setup.resolve();
+      if (!held) await this.handBack(ref);
     }
     return session;
   }
 
-  /** Take the exchange of a pasted-code sign-in no process holds yet; false when one does. */
+  /**
+   * Take the exchange of a pasted-code sign-in no process holds yet; false when one does. Throws
+   * when its lease cannot be taken, handing the row back so the code can be pasted again.
+   */
   private async claim(ref: RowRef, where: { createdAt?: { gte: Date } } = {}): Promise<boolean> {
     const handoff = this.handoff;
     if (!handoff) return true;
@@ -926,8 +930,24 @@ export class PiOAuthLogins<T = unknown> {
     );
     if (claimed.count !== 1) return false;
     const session = this.pending.get(ref.id);
-    if (session === ref) await this.holdLease(session);
+    if (session === ref && !(await this.holdLease(session))) await this.handBack(ref);
     return true;
+  }
+
+  private async handBack(ref: RowRef): Promise<never> {
+    const handoff = this.handoff;
+    if (handoff) {
+      await bestEffort(
+        "hand back model sign-in",
+        runAsTenant({ userId: ref.userId, spaceId: ref.spaceId }, () =>
+          handoff.prisma.modelOAuthSession.updateMany({
+            where: { ...rowOf(ref), status: "pending" },
+            data: { leaseExpiresAt: null },
+          }),
+        ),
+      );
+    }
+    throw new ModelSignInError(SIGN_IN_SAVE_FAILED);
   }
 
   /**
@@ -944,11 +964,14 @@ export class PiOAuthLogins<T = unknown> {
     const ended = deferred<void>();
     const hold: HeldSignIn = { taken: taken.promise, end: () => ended.resolve() };
     session.lease = hold;
+    const takeSentAt = Date.now();
     void withLease(
       handoff.prisma,
       `model-sign-in:${session.id}`,
       { ttlMs: SIGN_IN_LEASE_MS, onRenew: () => this.renewRow(session) },
       async (lease) => {
+        // The first renewal is a fifth of the lease away; a slow take could outlast the row by then.
+        if (!(await this.renewRow(session, takeSentAt))) throw new LeaseLostError(lease.key);
         taken.resolve(lease);
         await ended.promise;
       },
@@ -970,13 +993,13 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   /** False once the sign-in was cancelled, replaced or disconnected on another process. */
-  private async renewRow(session: Session<T>): Promise<boolean> {
+  private async renewRow(session: Session<T>, from = Date.now()): Promise<boolean> {
     const handoff = this.handoff;
     if (!handoff) return true;
     const renewed = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
       handoff.prisma.modelOAuthSession.updateMany({
         where: { ...rowOf(session), status: { in: ["pending", "saving"] } },
-        data: { leaseExpiresAt: leaseEnd() },
+        data: { leaseExpiresAt: leaseEnd(from) },
       }),
     );
     return renewed.count > 0 || session.state !== "pending";
@@ -1373,8 +1396,8 @@ function unclaimedRow(ref: RowRef) {
   return { ...rowOf(ref), status: "pending", leaseExpiresAt: null };
 }
 
-function leaseEnd(): Date {
-  return new Date(Date.now() + SIGN_IN_LEASE_MS);
+function leaseEnd(from = Date.now()): Date {
+  return new Date(from + SIGN_IN_LEASE_MS);
 }
 
 function pastedCodeCutoff(): Date {
