@@ -149,7 +149,8 @@ export function spaceInboxItems(
     const snoozed = allChats.filter(isSnoozed);
     const chats = allChats.filter((item) => !isSnoozed(item));
     const items: InboxSpaceItem[] = [];
-    if (spaces.length > 1 || !space.isDefault || allChats.length === 0) {
+    // A Space with guests keeps its heading, which marks them, even as the only one.
+    if (spaces.length > 1 || !space.isDefault || allChats.length === 0 || space.hasGuests) {
       items.push({ type: "heading", key: space.id, title: space.name, space });
     }
     for (const group of groupBotsForSidebar(chats, space.botSections, {
