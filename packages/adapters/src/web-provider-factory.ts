@@ -1,8 +1,8 @@
 import type { WebProvider } from "@rakazo/adapter-kit";
-import { FakeWebProvider } from "./fake-web.js";
-import { KeenableWebProvider } from "./keenable-web.js";
-import { KeylessHttpWebProvider } from "./keyless-http-web.js";
-import { ParallelWebProvider } from "./parallel-web.js";
+import { FakeWebProvider } from "./providers/web/fake/fake-web.js";
+import { KeenableWebProvider } from "./providers/web/keenable/keenable-web.js";
+import { KeylessHttpWebProvider } from "./providers/web/keyless-http/keyless-http-web.js";
+import { ParallelWebProvider } from "./providers/web/parallel/parallel-web.js";
 
 /**
  * Pi 0.84 exposes no provider-neutral native-search API, so the default is keyless HTTP and core

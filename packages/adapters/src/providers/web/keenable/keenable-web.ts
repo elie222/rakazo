@@ -7,11 +7,11 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { z } from "zod";
-import { combineSignals } from "./connector-safety.js";
-import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { callRemoteMcpTool } from "./remote-mcp.js";
-import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
-import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
+import { combineSignals } from "../../../connector-safety.js";
+import type { RemoteTransportDependencies } from "../../../remote-mcp.js";
+import { callRemoteMcpTool } from "../../../remote-mcp.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "../../../web-limits.js";
+import { assertSafeWebUrl, withAbort } from "../../../web-ssrf.js";
 
 const ENDPOINT = "https://api.keenable.ai/mcp";
 const USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)";
