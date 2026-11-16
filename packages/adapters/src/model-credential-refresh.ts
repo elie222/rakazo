@@ -22,6 +22,8 @@ import {
   resolveModelAuth,
 } from "./pi-oauth.js";
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
+import type { SecretCleanupDeps } from "./secret-cleanup.js";
+import { persistPreparedSecret } from "./secret-persistence.js";
 import { holdSecretNotifications } from "./secret-store-factory.js";
 
 /** Bound on a detached credential refresh so it cannot pin the shared lock. */
@@ -31,6 +33,11 @@ const REFRESH_KICK_TIMEOUT_MS = 30_000;
  * timer that starts after ours: this backstop must not fire first and drop a rotated token.
  */
 const RUNTIME_REFRESH_BACKSTOP_MS = REFRESH_REQUEST_TIMEOUT_MS + 5_000;
+
+/** What a stored sign-in's refresh and retirement read and write, removing copies no row holds. */
+type ModelCredentialDb = Pick<PrismaClient, "$transaction" | "secret"> &
+  SecretCleanupDeps["prisma"];
+type ModelCredentialStore = Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
 
 /** Settings saves racing a retirement each restart it; past this the retirement gives up. */
 const RETIRE_ATTEMPTS = 3;
@@ -64,8 +71,8 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
  * unreferenced is deleted.
  */
 export function retireToReconnectMarker(
-  prisma: Pick<PrismaClient, "$transaction" | "secret">,
-  secretStore: Pick<SecretStore, "put" | "load" | "delete">,
+  prisma: ModelCredentialDb,
+  secretStore: ModelCredentialStore,
   scope: { userId: string; spaceId: string },
   credential: { id: string; secretId: string },
 ) {
@@ -109,31 +116,26 @@ export function retireToReconnectMarker(
       { recordId: credential.secretId },
     );
     const matchesFailed = failed ? failedMatcher(failed) : undefined;
-    let replaced = false;
-    try {
-      const retired = await retireModelCredential(prisma, {
-        userId: scope.userId,
-        credentialId: credential.id,
-        secretId: credential.secretId,
-        replacementCiphertext: replacement.ciphertext,
-        // A settings save since the read changes the copy, so its settings are never dropped.
-        matchesFailedSecret:
-          previous === undefined
-            ? matchesFailed
-            : async (secret) =>
-                secret.ciphertext === previous && (!matchesFailed || (await matchesFailed(secret))),
-      });
-      replaced = retired && previous !== undefined;
-      return retired;
-    } finally {
-      const unused = replaced ? previous : replacement.ciphertext;
-      if (unused)
-        await secretStore.delete(unused, credential.secretId).catch((error: unknown) => {
-          getLogger().error("unused model credential copy was not deleted", error, {
-            "secret.kind": "secret_row",
-          });
-        });
-    }
+    // The copy the row stops holding, or the marker it never took, is removed like any other.
+    return persistPreparedSecret(
+      prisma,
+      secretStore,
+      { id: credential.secretId, ciphertext: replacement.ciphertext },
+      () =>
+        retireModelCredential(prisma, {
+          userId: scope.userId,
+          credentialId: credential.id,
+          secretId: credential.secretId,
+          replacementCiphertext: replacement.ciphertext,
+          // A settings save since the read changes the copy, so its settings are never dropped.
+          matchesFailedSecret:
+            previous === undefined
+              ? matchesFailed
+              : async (secret) =>
+                  secret.ciphertext === previous &&
+                  (!matchesFailed || (await matchesFailed(secret))),
+        }),
+    );
   };
   return async (
     _reason: ModelCredentialRetireReason,
@@ -177,8 +179,8 @@ function lockModelCredential(tx: Prisma.TransactionClient, secretId: string): Pr
  * transaction ends, in retirement's own fenced transaction.
  */
 export async function resolveStoredModelAuth(
-  prisma: Pick<PrismaClient, "$transaction" | "secret">,
-  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  prisma: ModelCredentialDb,
+  secretStore: ModelCredentialStore,
   scope: { userId: string; spaceId: string },
   credential: { id?: string; secretId: string },
   plaintext: string,
@@ -256,8 +258,8 @@ export async function resolveStoredModelAuth(
  * every other refresh. `refresh` is the runtime's refresh of the stored copy.
  */
 export function refreshStoredModelCredential(
-  prisma: Pick<PrismaClient, "$transaction" | "secret">,
-  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  prisma: ModelCredentialDb,
+  secretStore: ModelCredentialStore,
   scope: { userId: string; spaceId: string },
   credential: { id: string; secretId: string },
   provider: string,
@@ -395,8 +397,8 @@ export function persistRefreshedModelCredential(
  * behind a run's own refresh is a no-op once the stored token is fresh.
  */
 export async function refreshExpiredModelCredential(
-  prisma: Pick<PrismaClient, "$transaction" | "secret">,
-  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  prisma: ModelCredentialDb,
+  secretStore: ModelCredentialStore,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,
@@ -432,8 +434,8 @@ const credentialRefreshKicks = new Map<string, Promise<void>>();
 
 /** Concurrent kicks for one credential collapse into a single refresh. */
 export function kickModelCredentialRefresh(
-  prisma: Pick<PrismaClient, "$transaction" | "secret">,
-  secretStore: Pick<SecretStore, "load" | "put" | "delete">,
+  prisma: ModelCredentialDb,
+  secretStore: ModelCredentialStore,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,

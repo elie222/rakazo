@@ -131,7 +131,7 @@ export async function readOwnBotSettings(
 export async function listDefaultVoices(
   deps: {
     prisma: PrismaClient;
-    secretStore: Pick<SecretStore, "load" | "put" | "delete">;
+    secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
     mcpAllowPrivateEndpoint?: boolean;
   },
   scope: Pick<Actor, "userId" | "spaceId">,

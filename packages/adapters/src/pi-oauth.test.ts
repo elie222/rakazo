@@ -1074,6 +1074,7 @@ describe("refreshExpiredModelCredential", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return {
@@ -1367,6 +1368,7 @@ describe("refreshExpiredModelCredential", () => {
       load: vi.fn(async (ciphertext: string) => ciphertext),
       put: vi.fn(async (next: string) => ({ id: "secret-1", ref: next, ciphertext: next })),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
     };
     // The provider rotates refresh tokens and rejects a spent one.
     const sent: string[] = [];
@@ -1444,6 +1446,7 @@ describe("kickModelCredentialRefresh", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return { id: "secret-1", ref: "next", ciphertext: "next" };
