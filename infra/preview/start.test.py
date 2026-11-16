@@ -55,6 +55,7 @@ class PreviewBoot(unittest.TestCase):
         self.preview = self.root / "infra/preview"
         self.preview.mkdir(parents=True)
         shutil.copy(Path(__file__).with_name("start.sh"), self.preview)
+        shutil.copy(Path(__file__).with_name("demo-account.env"), self.preview)
         (self.root / "apps/api").mkdir(parents=True)
         web = self.root / "apps/web/node_modules/.bin"
         web.mkdir(parents=True)
