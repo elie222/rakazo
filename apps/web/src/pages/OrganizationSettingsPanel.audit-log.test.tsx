@@ -3,12 +3,15 @@
 import type { AuditEvent } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ events: vi.fn() }));
+const api = vi.hoisted(() => ({
+  events: vi.fn(),
+  organizations: [] as unknown[],
+}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -28,24 +31,27 @@ vi.mock("../lib/rpc", () => ({
 }));
 vi.mock("../lib/organizations", () => ({
   organizationsQuery: () => ({ queryKey: ["organizations"] }),
-  useOrganizations: () => ({
-    organizations: [
-      {
-        id: "org-1",
-        name: "Work",
-        defaultSpaceId: "space-1",
-        spaceIds: ["space-1"],
-        canManage: true,
-      },
-    ],
-    activeOrganizationId: "org-1",
-  }),
+  useOrganizations: () => ({ organizations: api.organizations, activeOrganizationId: "org-1" }),
 }));
 vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { QueryUserProvider, queryClient } from "../lib/query";
-import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
+import type { OrganizationPage } from "./OrganizationSettingsPanel";
+import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
+
+/** What the settings page does: the menu in its header, the panel below, one page at a time. */
+function Page() {
+  const [page, setPage] = useState<OrganizationPage>("main");
+  return (
+    <>
+      <header>
+        {page === "main" ? <OrganizationOptionsMenu onActivityLog={() => setPage("log")} /> : null}
+      </header>
+      <OrganizationSettingsPanel page={page} onPageChange={setPage} />
+    </>
+  );
+}
 
 function event(id: string, overrides: Partial<AuditEvent> = {}): AuditEvent {
   return {
@@ -71,6 +77,19 @@ function event(id: string, overrides: Partial<AuditEvent> = {}): AuditEvent {
   };
 }
 
+function organization(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "org-1",
+    name: "Work",
+    defaultSpaceId: "space-1",
+    spaceIds: ["space-1"],
+    canManage: true,
+    role: "owner",
+    memberCount: 3,
+    ...overrides,
+  };
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -78,6 +97,7 @@ beforeEach(() => {
   queryClient.clear();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   api.events.mockReset();
+  api.organizations = [organization()];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -96,17 +116,22 @@ async function render() {
     root.render(
       <QueryClientProvider client={queryClient}>
         <QueryUserProvider value="user-a">
-          <OrganizationSettingsPanel />
+          <Page />
         </QueryUserProvider>
       </QueryClientProvider>,
     ),
   );
 }
 
+async function openMenu() {
+  await render();
+  await click(container.querySelector('header button[aria-label="Organization options"]')!);
+  return [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent);
+}
+
 /** Opens the organization options menu and chooses Activity log. */
 async function open() {
-  await render();
-  await click(container.querySelector('button[aria-label="Organization options"]')!);
+  await openMenu();
   await click(
     [...document.querySelectorAll('[role="menuitem"]')].find(
       (item) => item.textContent === "Activity log",
@@ -167,7 +192,14 @@ it("lists the organization's audit log and loads older events on request", async
 it("keeps the log off the organization page until Activity log is chosen, and Back returns", async () => {
   api.events.mockResolvedValue({ events: [event("e1")], nextCursor: null });
   await render();
-  expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull();
+  const body = container.querySelector('[data-testid="organization-settings"]')!;
+  expect(body).not.toBeNull();
+  // The body holds only Name and Members: no options menu, no Delete.
+  expect(container.querySelector('button[aria-label="Organization options"]')).not.toBeNull();
+  expect(body.querySelector('button[aria-label="Organization options"]')).toBeNull();
+  expect([...body.querySelectorAll("button")].map((each) => each.textContent)).toEqual([
+    "Members3",
+  ]);
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
   expect(api.events).not.toHaveBeenCalled();
 
@@ -179,10 +211,26 @@ it("keeps the log off the organization page until Activity log is chosen, and Ba
     (button) => button.getAttribute("aria-label") ?? button.textContent,
   );
   expect(labels).toEqual(expect.arrayContaining(["Back", "Export"]));
+  // The menu belongs to the main page only.
+  expect(container.querySelector('button[aria-label="Organization options"]')).toBeNull();
 
   await click(log.querySelector('button[aria-label="Back"]')!);
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
   expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull();
+});
+
+it("offers Delete organization in the header menu only to someone who may delete", async () => {
+  expect(await openMenu()).toEqual(["Activity log"]);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  api.organizations = [
+    organization({ memberCount: 1 }),
+    organization({ id: "org-2", name: "Home", spaceIds: ["space-2"], memberCount: 1 }),
+  ];
+  expect(await openMenu()).toEqual(["Activity log", "Delete organization"]);
+  expect(
+    container.querySelector('[data-testid="organization-settings"]')?.textContent,
+  ).not.toContain("Delete");
 });
 
 it("shows a failed load on the log page", async () => {

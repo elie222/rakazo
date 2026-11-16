@@ -9,9 +9,12 @@ test("an organization owner opens the activity log from the organization menu", 
   await rpc(page, "spaces/create", { name: "Audited space" });
 
   const settings = await openUserSettings(page, "organization");
-  // The organization page stays about the organization; the log is not on it.
+  // The organization page stays about the organization; the log is behind the header menu.
   await expect(settings.getByTestId("audit-log")).toHaveCount(0);
-  await settings.getByRole("button", { name: "Organization options" }).click();
+  await settings
+    .getByTestId("settings-header")
+    .getByRole("button", { name: "Organization options" })
+    .click();
   await page.getByRole("menuitem", { name: "Activity log" }).click();
 
   const log = settings.getByTestId("audit-log");
