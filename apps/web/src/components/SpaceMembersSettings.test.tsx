@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { SpaceMembers } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -226,4 +227,35 @@ it("adds someone from the organization, and keeps the link for anyone else", asy
   });
   await act(async () => buttonNamed("Invite")?.click());
   expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-2");
+});
+
+it("never shows a Space's people once another Space is open, even after an add", async () => {
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, addable: [colleague] });
+  rpc.spaces.members.add.mockResolvedValue({ ok: true });
+  await act(async () => buttonNamed("Cy Ray")?.click());
+  await vi.waitFor(() => expect(rpc.spaces.members.list).toHaveBeenCalledTimes(2));
+
+  const loading = deferred<SpaceMembers>();
+  rpc.spaces.members.list.mockReturnValue(loading.promise);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SpaceMembersSettings space={{ id: "space-other", name: "Work" }} onLeft={vi.fn()} />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(host.querySelector('ul[aria-label="Members"]')).toBeNull();
+  expect(buttonNamed("Cy Ray")).toBeUndefined();
+  await act(async () =>
+    loading.resolve({ spaceName: "Work", members: [owner, member], canManage: true }),
+  );
+  expect(
+    [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
+  ).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.testRemove"]);
 });

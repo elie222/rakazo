@@ -542,12 +542,13 @@ async function handOwnership(
 /**
  * Takes someone being removed from an organization out of each of its Spaces, as a removal from
  * each Space would. A Space they own passes to its longest-standing full member, else to
- * `removedBy` while they still manage the organization, so their work stays with it. Returns
- * each departure, already committed, for the caller's follow-up.
+ * `removedBy` while they still manage the organization, so their work stays with it. Each
+ * departure's follow-up runs once it commits, so a later failure loses no earlier one.
  */
 export async function leaveOrganizationSpaces(
   prisma: PrismaClient,
   input: { organizationId: string; userId: string; removedBy: string },
+  onDeparture: (departure: SpaceDeparture & { spaceId: string }) => Promise<void>,
 ): Promise<Array<SpaceDeparture & { spaceId: string }>> {
   const memberships = await prisma.spaceMember.findMany({
     where: { organizationId: input.organizationId, userId: input.userId },
@@ -566,7 +567,9 @@ export async function leaveOrganizationSpaces(
       if (error instanceof SpaceMemberNotFoundError) return null;
       throw error;
     });
-    if (departure) departures.push({ spaceId, ...departure });
+    if (!departure) continue;
+    departures.push({ spaceId, ...departure });
+    await onDeparture({ spaceId, ...departure });
   }
   return departures;
 }

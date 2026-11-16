@@ -129,17 +129,20 @@ export function organizationsRoutes(ctx: RouterContext) {
               "seat count after a removal",
               deps.billing?.syncSeats(input.organizationId),
             );
-            const departures = await leaveOrganizationSpaces(deps.prisma, {
-              organizationId: input.organizationId,
-              userId: input.userId,
-              removedBy: context.actor.userId,
-            });
-            for (const departure of departures)
-              await afterSpaceDeparture(
-                deps,
-                { spaceId: departure.spaceId, userId: context.actor.userId },
-                departure,
-              );
+            const departures = await leaveOrganizationSpaces(
+              deps.prisma,
+              {
+                organizationId: input.organizationId,
+                userId: input.userId,
+                removedBy: context.actor.userId,
+              },
+              (departure) =>
+                afterSpaceDeparture(
+                  deps,
+                  { spaceId: departure.spaceId, userId: context.actor.userId },
+                  departure,
+                ),
+            );
             // Whoever took over one of their Spaces sees it change, as when they leave it.
             if (departures.length)
               void deps.events?.publishRosterChange?.({

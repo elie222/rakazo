@@ -590,7 +590,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       data: { role: "member" },
     });
     await expect(
-      leaveOrganizationSpaces(prisma, { organizationId, userId: member.id, removedBy: admin.id }),
+      leaveOrganizationSpaces(
+        prisma,
+        { organizationId, userId: member.id, removedBy: admin.id },
+        async () => undefined,
+      ),
     ).rejects.toBeInstanceOf(OrganizationAdminRequiredError);
     await expect(
       system.spaceMember.findMany({ where: { spaceId: ownSpaceId }, select: { userId: true } }),

@@ -16,7 +16,7 @@ import {
   toast,
 } from "@rakazo/ui-web";
 import { Copy, Link, MoreHorizontal, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSave } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
@@ -44,19 +44,26 @@ export function SpaceMembersSettings({
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  /** The Space the shown list belongs to. */
+  const shownSpace = useRef<string | null>(null);
 
   // Not keyed on `t`: a new one each render must not reload the list.
   useEffect(() => {
     let active = true;
-    // Another space's people, error and link never show while this one loads; a reload after
-    // adding someone keeps showing the list it replaces.
-    if (!reload) setMembers(null);
+    // Another space's people, error and link never show while this one loads; a reload of the
+    // same Space after adding someone keeps showing the list it replaces.
+    if (shownSpace.current !== space.id) {
+      shownSpace.current = null;
+      setMembers(null);
+    }
     setError(null);
     setInviteUrl(null);
     rpc.spaces.members
       .list({ spaceId: space.id })
       .then((next) => {
-        if (active) setMembers(next);
+        if (!active) return;
+        shownSpace.current = space.id;
+        setMembers(next);
       })
       .catch((err: unknown) => {
         if (active) setError(errorText(err, t`Could not load members`));
