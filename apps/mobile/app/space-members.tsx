@@ -42,12 +42,19 @@ export default function SpaceMembersScreen() {
       } else if (ask.kind === "cancel") {
         await send("spaces/invites/cancel", { spaceId });
       } else {
-        const link = await send("spaces/invites/create", { spaceId });
-        // iOS shares a URL as a link; Android only takes text.
-        await Share.share(Platform.OS === "ios" ? { url: link.url } : { message: link.url });
+        return send("spaces/invites/create", { spaceId });
       }
     },
     stale: [membersRead.queryKey],
+    // Shared once the link exists and the list is read again, so a failed share hides nothing.
+    onSaved: async (link) => {
+      if (!link) return;
+      // iOS shares a URL as a link; Android only takes text.
+      await Share.share(Platform.OS === "ios" ? { url: link.url } : { message: link.url }).catch(
+        (err: unknown) =>
+          Alert.alert(t`Could not create invite link`, errorText(err, t`Try again.`)),
+      );
+    },
     onFailed: (err, ask) =>
       Alert.alert(
         ask.kind === "remove"

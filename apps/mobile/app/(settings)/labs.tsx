@@ -5,7 +5,7 @@ import { Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsGroup, SettingsSwitch, useStackedSettings } from "../../components/settings-group";
 import { useThemedStyles } from "../../lib/native";
-import { accountRpcQuery, useSave } from "../../lib/query";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
 import { useScreenQuery } from "../../lib/screen-query";
 import { createSettingsPageStyles } from "../../lib/settings-page-styles";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
@@ -25,7 +25,8 @@ export default function Labs() {
   const change = useSave({
     target: ACCOUNT_SETTINGS,
     save: async (labs: LabFeature[], send) => {
-      await send("preferences/update", { labs });
+      // The answer is the account as saved, so the switch keeps it if the read after it fails.
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", { labs }));
     },
     stale: [meRead.queryKey],
     onFailed: (cause) => Alert.alert(t`Labs`, errorText(cause, t`Could not save`)),

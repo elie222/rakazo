@@ -35,7 +35,7 @@ import {
 import type { MobileMe } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
 import { registerPushToken } from "../../lib/push";
-import { accountRpcQuery, useSave } from "../../lib/query";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
 import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
@@ -69,7 +69,8 @@ export default function General() {
   const botStyle = useSave({
     target: ACCOUNT_SETTINGS,
     save: async (botAvatarSet: NonNullable<MobileMe["botAvatarSet"]>, send) => {
-      await send("preferences/update", { botAvatarSet });
+      // The answer is the account as saved, so the picker keeps it if the read after it fails.
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", { botAvatarSet }));
     },
     stale: [meRead.queryKey],
     onFailed: () => Alert.alert(t`Couldn't update bot style`),
