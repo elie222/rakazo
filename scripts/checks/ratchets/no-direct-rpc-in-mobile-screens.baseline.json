@@ -3,7 +3,6 @@
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
   "apps/mobile/app/(settings)/billing.tsx": 10,
   "apps/mobile/app/(settings)/integrations.tsx": 17,
-  "apps/mobile/app/(settings)/messaging.tsx": 14,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
   "apps/mobile/app/(settings)/models.tsx": 2,
   "apps/mobile/app/(settings)/profile.tsx": 2,

@@ -2,6 +2,7 @@
 
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -10,12 +11,24 @@ import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
+import { queryClient } from "./query";
 
-const appState = vi.hoisted(() => ({ change: undefined as ((state: string) => void) | undefined }));
+const foreground = vi.hoisted(() => ({ active: true }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./api", () => ({
+  rpc: vi.fn(),
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-1",
+  subscribeSpaceSelection: () => () => undefined,
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: session.generation,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => foreground.active }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: {},
@@ -102,12 +115,6 @@ vi.mock("react-native", () => {
     ScrollView: View,
     Text: View,
     StyleSheet: { create: (styles: unknown) => styles },
-    AppState: {
-      addEventListener: (_: string, listener: (state: string) => void) => {
-        appState.change = listener;
-        return { remove: () => undefined };
-      },
-    },
     Linking: { openURL: vi.fn() },
   };
 });
@@ -116,8 +123,13 @@ const responses: Record<string, unknown> = {};
 let container: HTMLDivElement;
 let root: Root;
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
+  foreground.active = true;
   Object.assign(responses, {
     "bots/list": [{ id: "bot-1", name: "Chief" }],
     "spaces/list": {
@@ -199,6 +211,14 @@ async function press(row: string, label: string) {
   await act(async () => button(row, label).click());
 }
 
+/** The app goes to the background and returns with the screen still open. */
+async function comeBack() {
+  foreground.active = false;
+  await act(async () => root.render(<MessagingSettings />));
+  foreground.active = true;
+  await act(async () => root.render(<MessagingSettings />));
+}
+
 function listCalls() {
   return vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/channels/list").length;
 }
@@ -208,29 +228,53 @@ it("answers requests and manages conversations by their own ids, then refreshes"
   const before = listCalls();
 
   await press("Family", "Approve");
-  expect(rpc).toHaveBeenCalledWith("messaging/channels/respond", {
-    membershipId: "cm-invited",
-    accept: true,
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/channels/respond",
+    {
+      membershipId: "cm-invited",
+      accept: true,
+    },
+    expect.anything(),
+  );
   await press("Family", "Decline");
-  expect(rpc).toHaveBeenCalledWith("messaging/channels/respond", {
-    membershipId: "cm-invited",
-    accept: false,
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/channels/respond",
+    {
+      membershipId: "cm-invited",
+      accept: false,
+    },
+    expect.anything(),
+  );
   await press("Dana's Assistant", "Approve");
-  expect(rpc).toHaveBeenCalledWith("messaging/connections/respond", {
-    connectionId: "ac-in",
-    accept: true,
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/connections/respond",
+    {
+      connectionId: "ac-in",
+      accept: true,
+    },
+    expect.anything(),
+  );
   await press("Dana's Assistant", "Decline");
-  expect(rpc).toHaveBeenCalledWith("messaging/connections/respond", {
-    connectionId: "ac-in",
-    accept: false,
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/connections/respond",
+    {
+      connectionId: "ac-in",
+      accept: false,
+    },
+    expect.anything(),
+  );
   await press("Ops", "Leave");
-  expect(rpc).toHaveBeenCalledWith("messaging/channels/leave", { membershipId: "cm-joined" });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/channels/leave",
+    { membershipId: "cm-joined" },
+    expect.anything(),
+  );
   await press("Sam's Helper", "Revoke");
-  expect(rpc).toHaveBeenCalledWith("messaging/connections/revoke", { connectionId: "ac-ok" });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/connections/revoke",
+    { connectionId: "ac-ok" },
+    expect.anything(),
+  );
 
   expect(listCalls()).toBe(before + 6);
 });
@@ -241,7 +285,7 @@ it("says which line to send a link code to", async () => {
     (candidate) => candidate.textContent === "iMessage",
   );
   await act(async () => imessage?.click());
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" }, expect.anything());
   expect(container.textContent).toContain(
     "Send ABCD-2345 to +15550001111 from iMessage within 10 minutes.",
   );
@@ -265,8 +309,12 @@ it("falls back to the first bot when the selected one is archived elsewhere", as
     (candidate) => candidate.textContent === "iMessage",
   );
   await act(async () => imessage?.click());
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
-  expect(rpc).not.toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" }, expect.anything());
+  expect(rpc).not.toHaveBeenCalledWith(
+    "messaging/link/start",
+    { botId: "bot-2" },
+    expect.anything(),
+  );
 });
 
 it("opens a team conversation's room settings", async () => {
@@ -292,8 +340,12 @@ it("connects Slack to the default bot with workspace authorization", async () =>
     ),
   ).toBe(false);
   await act(async () => buttons.find((button) => button.textContent === "Connect")!.click());
-  expect(rpc).toHaveBeenCalledWith("messaging/installations/start", {});
-  expect(rpc).not.toHaveBeenCalledWith("messaging/link/start", expect.anything());
+  expect(rpc).toHaveBeenCalledWith("messaging/installations/start", {}, expect.anything());
+  expect(rpc).not.toHaveBeenCalledWith(
+    "messaging/link/start",
+    expect.anything(),
+    expect.anything(),
+  );
   expect(Linking.openURL).toHaveBeenCalledWith("https://slack.example.test/authorize");
 });
 
@@ -313,7 +365,7 @@ it("links DMs to the bot that answers in the workspace", async () => {
   };
   await act(async () => root.render(<MessagingSettings />));
   await press("Slack", "Link DMs");
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
   expect(container.textContent).toContain("ABCD-2345");
 });
 
@@ -330,8 +382,12 @@ it("lets a workspace member link DMs without installing the app again", async ()
       .find((button) => button.textContent === "Link DMs")!
       .click(),
   );
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
-  expect(rpc).not.toHaveBeenCalledWith("messaging/installations/start", expect.anything());
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" }, expect.anything());
+  expect(rpc).not.toHaveBeenCalledWith(
+    "messaging/installations/start",
+    expect.anything(),
+    expect.anything(),
+  );
 });
 
 it("keeps a new DM code visible when Slack is already linked in another workspace", async () => {
@@ -384,7 +440,7 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
       .find((candidate) => candidate.textContent === "Link DMs")!
       .click(),
   );
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
 });
 
 it("offers a retry when the first load fails, then lists what it found", async () => {
@@ -405,7 +461,7 @@ it("clears an old load error once a later load succeeds", async () => {
   await act(async () => root.render(<MessagingSettings />));
   expect(container.textContent).toContain("Something went wrong. Try again.");
 
-  await act(async () => appState.change?.("active"));
+  await comeBack();
   expect(container.textContent).toContain("Family");
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });
@@ -422,7 +478,7 @@ it("keeps a failed action's error when a refresh that was pending then succeeds"
     }
     return answer(path);
   });
-  await act(async () => appState.change?.("active"));
+  await comeBack();
 
   await press("Family", "Approve");
   expect(container.textContent).toContain("Something went wrong. Try again.");
@@ -468,9 +524,13 @@ it.each(["resolve", "reject"] as const)(
       expiresAt: new Date(Date.now() + 20_000).toISOString(),
     };
     await act(async () => click("iMessage"));
-    expect(rpc).toHaveBeenLastCalledWith("messaging/link/start", { botId: "bot-2" });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "messaging/link/start",
+      { botId: "bot-2" },
+      expect.anything(),
+    );
     expect(container.textContent).toContain("NEW-CODE");
-    expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+    expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
   },
 );
 
@@ -578,7 +638,11 @@ it("keeps workspace codes through picker changes and clears them on blur", async
     }),
   );
   expect(container.textContent).toContain("WORKSPACE-CODE");
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "workspace-bot" });
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/link/start",
+    { botId: "workspace-bot" },
+    expect.anything(),
+  );
   await act(async () => pick("Chief"));
   expect(container.textContent).toContain("WORKSPACE-CODE");
   await act(async () => blur?.());
@@ -643,4 +707,18 @@ it("does not block a new session on the previous session's request", async () =>
   );
   expect(container.textContent).not.toContain("OLD-SESSION");
   expect(container.textContent).toContain("NEW-SESSION");
+});
+
+it("answers a request once for a double tap", async () => {
+  await act(async () => root.render(<MessagingSettings />));
+  const answer = deferred<unknown>();
+  responses["messaging/channels/respond"] = answer.promise;
+  await act(async () => {
+    button("Family", "Approve").click();
+    button("Family", "Approve").click();
+  });
+  await act(async () => answer.resolve({ ok: true }));
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/channels/respond"),
+  ).toHaveLength(1);
 });
