@@ -10249,7 +10249,7 @@ msgstr "該地址缺少主機名稱"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "此伺服器不提供該語音，因此改用了 {served}。"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx

@@ -10248,7 +10248,7 @@ msgstr "W tym adresie brakuje hosta"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "Ten głos nie jest dostępny na tym serwerze, więc zamiast niego użyto {served}."
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx

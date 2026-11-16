@@ -10248,7 +10248,7 @@ msgstr "该地址缺少主机名"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "此服务器不提供该语音，因此改用了 {served}。"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
