@@ -380,6 +380,7 @@ function SpaceShell() {
         case "focus-composer":
           return focusComposer();
         case "quote-selection":
+          if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
         case "find":
           if (!active && !activeGroup) return false;
