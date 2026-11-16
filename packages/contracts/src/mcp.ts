@@ -50,7 +50,7 @@ export const MCP_OAUTH_ENV_FIELDS = [
 ] as const;
 export type McpOAuthEnvField = (typeof MCP_OAUTH_ENV_FIELDS)[number];
 
-const OAUTH_ENV_REFERENCE = /\{\{\s*oauth\.([^{}]*?)\s*\}\}/g;
+const OAUTH_ENV_REFERENCE = /\{\{\s*oauth\.([^{}]*)\}\}/g;
 
 function isOAuthEnvField(name: string): name is McpOAuthEnvField {
   return (MCP_OAUTH_ENV_FIELDS as readonly string[]).includes(name);

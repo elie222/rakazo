@@ -2,14 +2,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
 
-const fake = vi.hoisted(() => {
-  function deferred() {
-    let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-      resolve = done;
-    });
-    return { promise, resolve };
-  }
+const fake = await vi.hoisted(async () => {
+  const { deferred } = await import("@rakazo/core/test-async");
   type Tool = {
     name: string;
     execute(id: string, args: Record<string, unknown>): Promise<unknown>;

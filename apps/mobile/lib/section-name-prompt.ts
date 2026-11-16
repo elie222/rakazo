@@ -1,7 +1,5 @@
+import { BOT_SECTION_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { Alert } from "react-native";
-
-// The API's limit for a section name.
-const MAX_SECTION_NAME = 60;
 
 /**
  * Asks for a section name with the iOS system prompt (Alert.prompt is iOS-only). Empty and
@@ -22,7 +20,7 @@ export function promptSectionName(input: {
       {
         text: input.submitLabel,
         onPress: (value?: string) => {
-          const name = value?.trim().slice(0, MAX_SECTION_NAME);
+          const name = value?.trim().slice(0, BOT_SECTION_NAME_MAX_LENGTH);
           if (name && name !== input.defaultValue) input.onSubmit(name);
         },
       },
