@@ -2,20 +2,19 @@ import { ORPCError } from "@orpc/server";
 import { emailLocale, organizationInvitationEmail } from "@rakazo/auth";
 import {
   acceptOrganizationInvitation,
-  assertOrganizationMemberRemovable,
   cancelOrganizationInvitation,
   createOrganizationForUser,
   createOrganizationInvitation,
-  deleteOrganizationMember,
   firstOrganizationSpace,
+  forgetRevokedMember,
   InvalidSpaceNameError,
   leaveOrganizationSpaces,
   listMemberOrganizations,
   listOrganizationMembers,
-  OrganizationMemberBusyError,
   previewOrganizationInvitation,
   recordAuditEvent,
   renameOrganization,
+  revokeOrganizationMember,
   runAsSystem,
   setOrganizationMemberRole,
 } from "@rakazo/db";
@@ -24,9 +23,6 @@ import { deleteOrganization } from "../account-deletion.js";
 import type { RouterDeps } from "../router.js";
 import { afterSpaceDeparture } from "../space-departure.js";
 import type { RouterContext } from "./context.js";
-
-/** Someone who joins again, or leaves, before their removal finished: at most this many passes. */
-const REMOVAL_PASSES = 3;
 
 function invitationUrl(deps: RouterDeps, invitationId: string): string {
   return new URL(`/join/${invitationId}`, deps.env.webOrigin).toString();
@@ -126,32 +122,30 @@ export function organizationsRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               memberUserId: input.userId,
             };
-            await assertOrganizationMemberRemovable(deps.prisma, ref);
-            for (let pass = 0; ; pass += 1) {
-              const departures = await leaveOrganizationSpaces(deps.prisma, {
-                organizationId: input.organizationId,
-                userId: input.userId,
-                removedBy: context.actor.userId,
-              });
-              for (const departure of departures)
-                await afterSpaceDeparture(
-                  deps,
-                  { spaceId: departure.spaceId, userId: context.actor.userId },
-                  departure,
-                );
-              if (await deleteOrganizationMember(deps.prisma, ref)) break;
-              if (pass + 1 >= REMOVAL_PASSES) throw new OrganizationMemberBusyError();
-            }
+            await revokeOrganizationMember(deps.prisma, ref);
+            // Their seat ends with their membership, before their Spaces change hands.
+            await bestEffort(
+              "seat count after a removal",
+              deps.billing?.syncSeats(input.organizationId),
+            );
+            const departures = await leaveOrganizationSpaces(deps.prisma, {
+              organizationId: input.organizationId,
+              userId: input.userId,
+              removedBy: context.actor.userId,
+            });
+            for (const departure of departures)
+              await afterSpaceDeparture(
+                deps,
+                { spaceId: departure.spaceId, userId: context.actor.userId },
+                departure,
+              );
+            await forgetRevokedMember(deps.prisma, ref);
             await recordAuditEvent({
               action: "organization.member.removed",
               actor: { type: "user", id: context.actor.userId },
               organizationId: input.organizationId,
               target: { type: "user", id: input.userId },
             });
-            await bestEffort(
-              "seat count after a removal",
-              deps.billing?.syncSeats(input.organizationId),
-            );
             return { ok: true as const };
           }),
         ),
@@ -171,9 +165,13 @@ export function organizationsRoutes(ctx: RouterContext) {
               target: { type: "invitation", id: invitation.id },
             });
             const url = invitationUrl(deps, invitation.id);
-            const emailed = deps.email
-              ? await sendInvitation(deps, deps.email, context.actor.userId, { ...invitation, url })
-              : false;
+            const emailed =
+              deps.email && invitation.send
+                ? await sendInvitation(deps, deps.email, context.actor.userId, {
+                    ...invitation,
+                    url,
+                  })
+                : false;
             return { url, emailed };
           }),
         ),

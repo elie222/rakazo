@@ -12,6 +12,7 @@ import {
   createThreadEvents,
   installAuditEventStore,
   OwnedOrganizationHasMembersError,
+  revokeOrganizationMember,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
@@ -188,29 +189,64 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       system.invitation.findUniqueOrThrow({ where: { id: invitationId } }),
     ).resolves.toMatchObject({ email: invitee.email, status: "pending", role: "member" });
 
-    // Inviting the same address again renews it rather than adding another.
+    // Inviting the same address again sends a new link and retires the old one.
+    const sentBefore = sent.length;
     const again = await call(owner.actor, "organizations/invitations/create", {
       organizationId,
       email: invitee.email,
     });
-    expect(again.json.url).toBe(created.json.url);
+    expect(again.json).toMatchObject({ emailed: true });
+    expect(again.json.url).not.toBe(created.json.url);
+    expect(
+      (await call(invitee.actor, "organizations/invitations/preview", { invitationId })).status,
+    ).toBe(404);
+    // A third email is the day's last; after that the link comes back unsent.
+    const third = await call(owner.actor, "organizations/invitations/create", {
+      organizationId,
+      email: invitee.email,
+    });
+    const capped = await call(owner.actor, "organizations/invitations/create", {
+      organizationId,
+      email: invitee.email,
+    });
+    expect(capped.json).toEqual({ url: third.json.url, emailed: false });
+    expect(sent.length).toBe(sentBefore + 2);
+    // Cancelling does not reset the count.
+    await call(owner.actor, "organizations/invitations/cancel", {
+      organizationId,
+      invitationId: new URL(third.json.url as string).pathname.split("/").at(-1)!,
+    });
+    expect(
+      (
+        await call(owner.actor, "organizations/invitations/create", {
+          organizationId,
+          email: invitee.email,
+        })
+      ).status,
+    ).toBe(429);
+    // A fresh invitation for the rest of the test, as if a day had passed.
+    await system.invitation.updateMany({
+      where: { organizationId, email: invitee.email },
+      data: { createdAt: new Date(Date.now() - 2 * 24 * 3600_000) },
+    });
+    const latest = await invite(owner, organizationId, invitee.email);
 
     // Someone else holding the link learns nothing and cannot join.
     for (const path of ["preview", "accept"]) {
       const refused = await call(stranger.actor, `organizations/invitations/${path}`, {
-        invitationId,
+        invitationId: latest,
       });
       expect(refused.status).toBe(403);
       expect(JSON.stringify(refused.json)).not.toContain(invitee.email);
     }
 
     const preview = await call(invitee.actor, "organizations/invitations/preview", {
-      invitationId,
+      invitationId: latest,
     });
     expect(preview.json).toEqual({ organizationName: "Personal", inviterName: "owner" });
 
     const accepted = await call(invitee.actor, "organizations/invitations/accept", {
-      invitationId,
+      invitationId: latest,
     });
     expect(accepted.status).toBe(200);
     const ownSpaceId = accepted.json.spaceId as string;
@@ -226,7 +262,8 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     ]);
 
     expect(
-      (await call(invitee.actor, "organizations/invitations/accept", { invitationId })).status,
+      (await call(invitee.actor, "organizations/invitations/accept", { invitationId: latest }))
+        .status,
     ).toBe(404);
     const list = await call(invitee.actor, "organizations/list", {});
     expect(list.json.organizations).toContainEqual(
@@ -463,5 +500,55 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect((await call(memberActor, "organizations/members/list", { organizationId })).status).toBe(
       404,
     );
+  });
+
+  it("revokes a member before their Spaces change hands, so they cannot outrun the removal", async () => {
+    const owner = await person("owner");
+    const member = await person("member");
+    const organizationId = owner.organizationId;
+    const memberActor = await join(owner, member);
+
+    await revokeOrganizationMember(system, {
+      organizationId,
+      userId: owner.id,
+      memberUserId: member.id,
+    });
+    // Mid-removal they are a guest: a new Space goes to their own organization, and nobody can
+    // add them to another of this one's.
+    const created = await call(memberActor, "spaces/create", { name: "Escape" });
+    expect(created.status).toBe(200);
+    await expect(
+      system.space.findUniqueOrThrow({
+        where: { id: created.json.id as string },
+        select: { organizationId: true },
+      }),
+    ).resolves.toEqual({ organizationId: member.organizationId });
+    const team = await sharedSpace(owner, "Team");
+    expect(
+      (
+        await call({ ...owner.actor, spaceId: team }, "spaces/members/add", {
+          spaceId: team,
+          userId: member.id,
+        })
+      ).status,
+    ).toBe(404);
+    const list = await call(memberActor, "organizations/list", {});
+    expect(
+      (list.json.organizations as Array<{ id: string }>).map((organization) => organization.id),
+    ).not.toContain(organizationId);
+
+    // Asking again finishes the removal.
+    expect(
+      (
+        await call(owner.actor, "organizations/members/remove", {
+          organizationId,
+          userId: member.id,
+        })
+      ).status,
+    ).toBe(200);
+    await expect(role(organizationId, member.id)).resolves.toBeNull();
+    await expect(
+      system.spaceMember.count({ where: { organizationId, userId: member.id } }),
+    ).resolves.toBe(0);
   });
 });

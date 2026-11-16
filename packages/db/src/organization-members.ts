@@ -11,6 +11,11 @@ import { withTransactionRetry } from "./transaction-retry.js";
 export const ORGANIZATION_INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Pending invitations per organization, so a mistaken or abusive batch of email stays small. */
 export const MAX_PENDING_INVITATIONS = 50;
+/** Invitation emails to one address from one organization per day, resends included. */
+export const MAX_INVITATIONS_PER_RECIPIENT_PER_DAY = 3;
+/** Invitation emails one person sends per day across every organization they manage. */
+export const MAX_INVITATIONS_PER_INVITER_PER_DAY = 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
 /** The Space each person gets when they join, theirs alone until they share it. */
 const OWN_SPACE_NAME = "Personal";
 
@@ -31,11 +36,11 @@ export class OrganizationMemberNotFoundError extends ClientError {
   }
 }
 
-/** Someone kept being added to Spaces while their removal ran. */
-export class OrganizationMemberBusyError extends ClientError {
+/** One person sending more invitations in a day than anyone inviting colleagues would. */
+export class OrganizationInvitationRateError extends ClientError {
   constructor() {
-    super("CONFLICT", "They were added to a Space while being removed; try again");
-    this.name = "OrganizationMemberBusyError";
+    super("TOO_MANY_REQUESTS", "Too many invitations today; try again tomorrow");
+    this.name = "OrganizationInvitationRateError";
   }
 }
 
@@ -187,13 +192,22 @@ export async function listOrganizationMembers(
 }
 
 /**
- * Owner and admins. A pending invitation to the same address is renewed instead of repeated, so
- * sending again is how a lost email is resent.
+ * Owner and admins. Inviting the same address again replaces its pending invitation with a new
+ * one, which is how a lost email is resent. Every email is its own row, so the daily limits count
+ * resends too and cancelling cannot reset them. Past an address's limit the pending invitation is
+ * returned unsent, for its link to be shared by hand.
  */
 export async function createOrganizationInvitation(
   prisma: PrismaClient,
   input: { organizationId: string; userId: string; email: string },
-): Promise<{ id: string; email: string; organizationName: string; inviterName: string }> {
+): Promise<{
+  id: string;
+  email: string;
+  organizationName: string;
+  inviterName: string;
+  /** False when the address already got as many invitations today as it may. */
+  send: boolean;
+}> {
   const email = normalizeEmail(input.email);
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
@@ -209,44 +223,57 @@ export async function createOrganizationInvitation(
       });
       if (existing) throw new AlreadyOrganizationMemberError();
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + ORGANIZATION_INVITATION_TTL_MS);
-      const pending = await tx.invitation.findFirst({
-        where: { organizationId: input.organizationId, email, status: PENDING },
-        select: { id: true },
-      });
-      let id = pending?.id;
-      if (id) {
-        await tx.invitation.update({
-          where: { id },
-          data: { expiresAt, inviterId: input.userId },
-        });
-      } else {
-        const open = await tx.invitation.count({
-          where: { organizationId: input.organizationId, status: PENDING, expiresAt: { gt: now } },
-        });
-        if (open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();
-        id = randomUUID();
-        await tx.invitation.create({
-          data: {
-            id,
-            organizationId: input.organizationId,
-            email,
-            role: "member",
-            status: PENDING,
-            expiresAt,
-            createdAt: now,
-            inviterId: input.userId,
-          },
-        });
-      }
-      const [organization, inviter] = await Promise.all([
+      const today = { gt: new Date(now.getTime() - DAY_MS) };
+      const [organization, inviter, pending, toRecipient, byInviter, open] = await Promise.all([
         tx.organization.findUniqueOrThrow({
           where: { id: input.organizationId },
           select: { name: true },
         }),
         tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { name: true } }),
+        tx.invitation.findFirst({
+          where: {
+            organizationId: input.organizationId,
+            email,
+            status: PENDING,
+            expiresAt: { gt: now },
+          },
+          select: { id: true },
+        }),
+        tx.invitation.count({
+          where: { organizationId: input.organizationId, email, createdAt: today },
+        }),
+        tx.invitation.count({ where: { inviterId: input.userId, createdAt: today } }),
+        tx.invitation.count({
+          where: { organizationId: input.organizationId, status: PENDING, expiresAt: { gt: now } },
+        }),
       ]);
-      return { id, email, organizationName: organization.name, inviterName: inviter.name };
+      const names = { organizationName: organization.name, inviterName: inviter.name };
+      if (toRecipient >= MAX_INVITATIONS_PER_RECIPIENT_PER_DAY) {
+        if (pending) return { id: pending.id, email, ...names, send: false };
+        throw new OrganizationInvitationRateError();
+      }
+      if (byInviter >= MAX_INVITATIONS_PER_INVITER_PER_DAY)
+        throw new OrganizationInvitationRateError();
+      if (!pending && open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();
+      // Its link stops working: the new email carries the new one.
+      await tx.invitation.updateMany({
+        where: { organizationId: input.organizationId, email, status: PENDING },
+        data: { status: "canceled" },
+      });
+      const id = randomUUID();
+      await tx.invitation.create({
+        data: {
+          id,
+          organizationId: input.organizationId,
+          email,
+          role: "member",
+          status: PENDING,
+          expiresAt: new Date(now.getTime() + ORGANIZATION_INVITATION_TTL_MS),
+          createdAt: now,
+          inviterId: input.userId,
+        },
+      });
+      return { id, email, ...names, send: true };
     }),
   );
 }
@@ -411,39 +438,53 @@ export async function setOrganizationMemberRole(
   });
 }
 
-/** Checks a removal before any of the person's Spaces change hands. */
-export async function assertOrganizationMemberRemovable(
-  db: Pick<PrismaClient, "member">,
-  input: { organizationId: string; userId: string; memberUserId: string },
-): Promise<void> {
-  await requireManager(db, input.organizationId, input.userId);
-  if (input.memberUserId === input.userId) throw new OrganizationAdminRequiredError();
-  const target = await memberRole(db, input.organizationId, input.memberUserId);
-  if (!target) throw new OrganizationMemberNotFoundError();
-  if (target === "owner") throw new OrganizationOwnerUnchangeableError();
-}
-
 /**
- * The last step of a removal, once the person has left every Space there: their membership goes.
- * False when they belong to a Space again (someone added them meanwhile), so the caller has them
- * leave it and tries again.
+ * The first step of a removal, before any of the person's Spaces change hands: they become a
+ * guest at once, so from here they can no longer create Spaces in the organization, be added to
+ * its Spaces, or spend its credits, and leaving each Space then finishes the removal. A removal
+ * that stopped part way is finished by asking again, which finds them a guest already.
  */
-export async function deleteOrganizationMember(
+export async function revokeOrganizationMember(
   prisma: PrismaClient,
   input: { organizationId: string; userId: string; memberUserId: string },
-): Promise<boolean> {
-  return prisma.$transaction(async (tx) => {
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
     await lockOrganizationMembers(tx, input.organizationId);
-    // Checked again under the lock: the remover may have lost their role meanwhile.
-    await assertOrganizationMemberRemovable(tx, input);
-    const { count } = await tx.member.deleteMany({
+    await requireManager(tx, input.organizationId, input.userId);
+    if (input.memberUserId === input.userId) throw new OrganizationAdminRequiredError();
+    const target = await tx.member.findUnique({
       where: {
-        organizationId: input.organizationId,
-        userId: input.memberUserId,
-        spaceMemberships: { none: {} },
+        organizationId_userId: { organizationId: input.organizationId, userId: input.memberUserId },
       },
+      select: { role: true },
     });
-    return count === 1;
+    if (!target) throw new OrganizationMemberNotFoundError();
+    if (isOwnerRole(target.role)) throw new OrganizationOwnerUnchangeableError();
+    if (target.role !== GUEST_ROLE)
+      await tx.member.update({
+        where: {
+          organizationId_userId: {
+            organizationId: input.organizationId,
+            userId: input.memberUserId,
+          },
+        },
+        data: { role: GUEST_ROLE },
+      });
+  });
+}
+
+/** The last step: a removed person who belongs to no Space there any more is no longer listed. */
+export async function forgetRevokedMember(
+  prisma: Pick<PrismaClient, "member">,
+  input: { organizationId: string; memberUserId: string },
+): Promise<void> {
+  await prisma.member.deleteMany({
+    where: {
+      organizationId: input.organizationId,
+      userId: input.memberUserId,
+      role: GUEST_ROLE,
+      spaceMemberships: { none: {} },
+    },
   });
 }
 
