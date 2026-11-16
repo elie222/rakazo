@@ -14,11 +14,12 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
-import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
+import { writeSaved } from "@rakazo/core/query";
+import { useIsFocused, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { Alert, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc, selectedSpaceId } from "../../lib/api";
+import { selectedSpaceId } from "../../lib/api";
 import {
   currentPlan,
   openBillingPage,
@@ -26,8 +27,12 @@ import {
   planEndsAt,
 } from "../../lib/billing";
 import { dateLocaleForUi } from "../../lib/i18n";
+import type { SaveSend } from "../../lib/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
 import { rememberReferral } from "../../lib/referral";
+import { useScreenQuery } from "../../lib/screen-query";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
+import type { SettingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 
 function formatDate(iso: string) {
@@ -43,59 +48,43 @@ export default function BillingScreen() {
   const stacked = useStackedSettings();
   const { t } = useLingui();
   const router = useRouter();
-  const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<HeldCreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
-  const [pending, setPending] = useState(false);
-  // This screen shows the Space it opened in; every answer it gets, including a late one after a
-  // Space switch, is filed under that Space.
-  const [space] = useState(selectedSpaceId);
-  const show = useCallback(
-    (next: BillingStatus) => {
-      setStatus(next);
-      rememberReferral(space, next.referral);
-      setAmount(
-        HeldCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
-      );
+  // This screen shows the Space it opened in; its reads and saves stay there.
+  const [space] = useState(() => selectedSpaceId() ?? undefined);
+  const target: SettingsTarget | undefined = space ? { scope: "space", spaceId: space } : undefined;
+  // What is offered here depends on the status as it is now, so each visit reads it afresh.
+  const statusRead = formRead(rpcQuery("billing/status", undefined, space));
+  const statusQuery = useScreenQuery(statusRead);
+  const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  useEffect(() => {
+    if (!status) return;
+    rememberReferral(space ?? null, status.referral);
+    setAmount(
+      HeldCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
+    );
+  }, [status, space]);
+  const { error: readError, errorUpdatedAt } = statusQuery;
+  // A read that fails after leaving the screen must not alert over the page now shown.
+  const focused = useRef(false);
+  focused.current = useIsFocused();
+  useEffect(() => {
+    if (readError && focused.current) Alert.alert(t`Could not load billing`);
+  }, [readError, errorUpdatedAt, t]);
+  const change = useSave({
+    target,
+    save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
+      const next = await work(send);
+      if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);
     },
-    [space],
-  );
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      const load = () => {
-        void rpc("billing/status")
-          .then((next) => {
-            if (active) show(next);
-          })
-          .catch(() => {
-            if (active) Alert.alert(t`Could not load billing`);
-          });
-      };
-      load();
-      const subscription = AppState.addEventListener("change", (state) => {
-        if (state === "active") load();
-      });
-      return () => {
-        active = false;
-        subscription.remove();
-      };
-    }, [show, t]),
-  );
-  async function action(work: () => Promise<void>) {
-    if (pending) return;
-    setPending(true);
-    try {
-      await work();
-    } catch (error) {
+    onFailed: (error) =>
       Alert.alert(
         (error as { status?: number }).status === 402
           ? t`Your card was not charged`
           : t`Could not update billing`,
-      );
-    } finally {
-      setPending(false);
-    }
-  }
+      ),
+  });
+  const pending = change.pending;
+  const action = change.run;
   if (!status) return null;
 
   const plan = currentPlan(status);
@@ -142,10 +131,7 @@ export default function BillingScreen() {
         { text: t`Cancel`, style: "cancel" },
         {
           text: t`Switch`,
-          onPress: () =>
-            void action(async () => {
-              show(await rpc("billing/changeTier", { tier: offer.tier }));
-            }),
+          onPress: () => action((send) => send("billing/changeTier", { tier: offer.tier })),
         },
       ],
     );
@@ -232,10 +218,7 @@ export default function BillingScreen() {
                   { text: t`Cancel`, style: "cancel" },
                   {
                     text: t`Switch`,
-                    onPress: () =>
-                      void action(async () => {
-                        show(await rpc("billing/switchToYearly"));
-                      }),
+                    onPress: () => action((send) => send("billing/switchToYearly", undefined)),
                   },
                 ],
               )
@@ -278,10 +261,7 @@ export default function BillingScreen() {
                     { text: t`Cancel`, style: "cancel" },
                     {
                       text: t`Start plan`,
-                      onPress: () =>
-                        void action(async () => {
-                          show(await rpc("billing/endTrial"));
-                        }),
+                      onPress: () => action((send) => send("billing/endTrial", undefined)),
                     },
                   ],
                 )
@@ -293,9 +273,9 @@ export default function BillingScreen() {
               title={t`Renew plan`}
               disabled={pending}
               onPress={() =>
-                void action(async () => {
-                  const result = await rpc("billing/portal", { client: "mobile" });
-                  show(await openBillingPage(result.url));
+                action(async (send) => {
+                  const result = await send("billing/portal", { client: "mobile" });
+                  return openBillingPage(result.url, send);
                 })
               }
             />
@@ -357,11 +337,11 @@ export default function BillingScreen() {
                   }
                   disabled={pending}
                   onPress={() =>
-                    void action(async () => {
-                      await rpc("billing/setMonthlyCredits", {
+                    action(async (send) => {
+                      await send("billing/setMonthlyCredits", {
                         amountCents: ModelCreditAmountSchema.parse(amount),
                       });
-                      show(await rpc("billing/refresh"));
+                      return send("billing/refresh", undefined);
                     })
                   }
                 />
@@ -375,13 +355,13 @@ export default function BillingScreen() {
                 title: `$${value / 100}`,
               }))}
               onPressAction={({ nativeEvent }) =>
-                void action(async () => {
-                  const result = await rpc("billing/purchaseCredits", {
+                action(async (send) => {
+                  const result = await send("billing/purchaseCredits", {
                     amountCents: ModelCreditAmountSchema.parse(Number(nativeEvent.event)),
                     monthly: false,
                     client: "mobile",
                   });
-                  show(await openBillingPage(result.url));
+                  return openBillingPage(result.url, send);
                 })
               }
             >
@@ -397,9 +377,10 @@ export default function BillingScreen() {
               title={t`Use Rakazo credits`}
               disabled={pending || !status.creditPurchasesEnabled}
               onPress={() =>
-                void action(async () => {
-                  await rpc("billing/selectFunding", { funding: "credits" });
+                action(async (send) => {
+                  await send("billing/selectFunding", { funding: "credits" });
                   router.replace("/models");
+                  return undefined;
                 })
               }
             />
@@ -413,9 +394,9 @@ export default function BillingScreen() {
             chevron="right"
             disabled={pending}
             onPress={() =>
-              void action(async () => {
-                const result = await rpc("billing/portal", { client: "mobile" });
-                show(await openBillingPage(result.url));
+              action(async (send) => {
+                const result = await send("billing/portal", { client: "mobile" });
+                return openBillingPage(result.url, send);
               })
             }
           />
