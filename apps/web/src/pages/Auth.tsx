@@ -102,16 +102,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     let active = true;
     void fetchAuthCapabilities()
       .then((capabilities) => {
-        if (!active) return;
-        setReset(capabilities);
-        const demo = capabilities.demoAccount;
-        // A demo server has one account and no sign-ups, so it always lands on sign-in.
-        if (demo && mode === "up") {
-          navigate(`/sign-in${nextQuery}`, { replace: true });
-        } else if (demo && mode === "in") {
-          setEmail((current) => current || demo.email);
-          setPassword((current) => current || demo.password);
-        }
+        if (active) setReset(capabilities);
       })
       .catch(() => {
         if (active) setCapabilityError(true);
@@ -234,6 +225,23 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     // first beats it, so the guards bounce through sign-in and the shell.
     entering.current = true;
     setPending(true);
+  }
+
+  async function signInAsDemo(account: { email: string; password: string }) {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await authClient.signIn.email(account);
+      if (result.error) {
+        setError(authErrorText(result.error, t`Could not continue`));
+        return;
+      }
+      enterApp();
+    } catch {
+      setError(t`Could not reach the server`);
+    } finally {
+      if (!entering.current) setPending(false);
+    }
   }
 
   function leaveCodeStep() {
@@ -420,9 +428,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
-                      if (reset?.demoAccount && password === reset.demoAccount.password) {
-                        setPassword("");
-                      }
                       setEmailBlurred(false);
                     }}
                     onBlur={() => setEmailBlurred(true)}
@@ -506,6 +511,18 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   onSignedIn={enterApp}
                   onError={setError}
                 />
+              ) : null}
+              {reset?.demoAccount && mode !== "forgot" && !codeStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  disabled={pending}
+                  className={submitClass}
+                  onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
+                >
+                  <Trans>Sign in with demo account</Trans>
+                </Button>
               ) : null}
               {codeStep ? (
                 <Button
