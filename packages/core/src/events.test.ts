@@ -638,6 +638,53 @@ describe("projectMessages", () => {
     ]);
     expect(messages).toHaveLength(0);
   });
+
+  it("stops showing the run as working while it waits for input", () => {
+    const at = "2026-01-01T00:00:00.000Z";
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Where should it ship?" }],
+        },
+        createdAt: at,
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e4",
+        threadId: "t1",
+        seq: 3,
+        type: "run.waiting_input",
+        runId: "r1",
+        payload: {},
+        createdAt: at,
+      },
+    ]);
+    expect(messages.map((message) => message.id)).toEqual(["m1"]);
+  });
 });
 
 describe("toolNameFromLabel", () => {

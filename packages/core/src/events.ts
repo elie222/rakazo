@@ -151,13 +151,8 @@ export function projectMessages(
       });
       continue;
     }
-    if (
-      event.type === "run.completed" ||
-      event.type === "run.failed" ||
-      event.type === "run.cancelled"
-    ) {
-      clearLive(event);
-    }
+    // A run that ends or pauses for input or takeover is no longer working, as in the live reducer.
+    if (stopsRunHelpers(event)) clearLive(event);
   }
   let helpers = [...liveSubagents.values()];
   if (runs) {
