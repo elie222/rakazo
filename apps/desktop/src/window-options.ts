@@ -62,19 +62,21 @@ export function parseSavedWindow(raw: string): SavedWindow | null {
 }
 
 /**
- * The saved window, moved and shrunk to fit fully inside the display that holds its center; null
- * when no connected display does, so the window opens at its default.
+ * The saved window, moved and shrunk to fit fully inside the work area of the display that holds
+ * its center; null when no connected display does, so the window opens at its default. The center
+ * is looked for in the whole display: a taskbar or dock over it does not mean the display is gone.
  */
 export function restorableWindow(
   saved: SavedWindow | null,
-  workAreas: readonly Bounds[],
+  displays: readonly { bounds: Bounds; workArea: Bounds }[],
 ): SavedWindow | null {
   if (saved === null) return null;
   const centerX = saved.x + saved.width / 2;
   const centerY = saved.y + saved.height / 2;
-  const area = workAreas.find(
-    (a) => centerX >= a.x && centerX < a.x + a.width && centerY >= a.y && centerY < a.y + a.height,
-  );
+  const area = displays.find(
+    ({ bounds: b }) =>
+      centerX >= b.x && centerX < b.x + b.width && centerY >= b.y && centerY < b.y + b.height,
+  )?.workArea;
   if (!area) return null;
   const width = Math.min(saved.width, area.width);
   const height = Math.min(saved.height, area.height);

@@ -119,8 +119,12 @@ describe("window background", () => {
 });
 
 describe("saved window", () => {
-  const primary = { x: 0, y: 0, width: 1440, height: 875 };
-  const second = { x: 1440, y: 0, width: 1920, height: 1080 };
+  const display = (area: { x: number; y: number; width: number; height: number }) => ({
+    bounds: area,
+    workArea: area,
+  });
+  const primary = display({ x: 0, y: 0, width: 1440, height: 875 });
+  const second = display({ x: 1440, y: 0, width: 1920, height: 1080 });
   const onSecond = { x: 1600, y: 100, width: 1400, height: 900, maximized: true };
 
   it("reads only complete, usable bounds", () => {
@@ -153,6 +157,18 @@ describe("saved window", () => {
     expect(restorableWindow(past(-400, 100), [primary])).toMatchObject({ x: 0, y: 100 });
     expect(restorableWindow(past(100, 400), [primary])).toMatchObject({ x: 100, y: 175 });
     expect(restorableWindow(past(100, -20), [primary])).toMatchObject({ x: 100, y: 0 });
+  });
+
+  it("keeps a window whose center is under the taskbar, above the taskbar", () => {
+    const withTaskbar = {
+      bounds: { x: 0, y: 0, width: 1440, height: 900 },
+      workArea: { x: 0, y: 0, width: 1440, height: 840 },
+    };
+    expect(
+      restorableWindow({ x: 100, y: 500, width: 800, height: 700, maximized: false }, [
+        withTaskbar,
+      ]),
+    ).toEqual({ x: 100, y: 140, width: 800, height: 700, maximized: false });
   });
 
   it("shrinks to fit a smaller display", () => {

@@ -180,10 +180,7 @@ export function createWindow(url: string, partition: string | null) {
   const icon = developmentIcon();
   // A server switch destroys the window it replaces without a close, so save it first.
   if (desktop.mainWindow !== null) saveWindow(desktop.mainWindow);
-  const saved = restorableWindow(
-    readSavedWindow(),
-    screen.getAllDisplays().map((display) => display.workArea),
-  );
+  const saved = restorableWindow(readSavedWindow(), screen.getAllDisplays());
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height } : {}),
