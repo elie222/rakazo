@@ -75,6 +75,7 @@ import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot
 import { loadBotForRemoval } from "../bot-removal.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
 import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
+import { botUpdateData } from "../bot-update-data.js";
 import { botIntroPrompt } from "../hidden-turns.prompt.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { managedAppCatalog } from "../onboarding.js";
@@ -506,7 +507,6 @@ export function botsRoutes(ctx: RouterContext) {
           current: { provider: existing.modelProvider, model: existing.modelId },
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
-        const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
         // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
         const avatarSetPinned =
@@ -518,38 +518,7 @@ export function botsRoutes(ctx: RouterContext) {
                   select: { botAvatarSet: true },
                 })
                 .then((user) => input.avatarSet !== resolveBotAvatarSet(user.botAvatarSet));
-        const data = {
-          name: input.name,
-          description: input.description,
-          instructions: input.instructions,
-          color: input.color,
-          avatarSet: input.avatarSet,
-          avatarSetPinned,
-          pinned: input.pinned,
-          memoryScope: input.memoryScope,
-          sectionId: input.sectionId,
-          voiceId: input.voiceId,
-          autoSpeak: input.autoSpeak,
-          ...(input.modelProvider !== undefined
-            ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
-            : {}),
-          ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
-          ...(input.teamChatAmbientEnabled !== undefined
-            ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
-            : {}),
-          ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
-          ...(input.crossSpaceCommunication !== undefined
-            ? { crossSpaceCommunication: input.crossSpaceCommunication }
-            : {}),
-          ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
-          ...(input.fleetManagement !== undefined
-            ? { fleetManagement: input.fleetManagement }
-            : {}),
-          ...(input.replyMode !== undefined ? { replyMode: input.replyMode } : {}),
-          ...(input.disabledBuiltinTools !== undefined
-            ? { disabledBuiltinTools: input.disabledBuiltinTools }
-            : {}),
-        };
+        const data = botUpdateData(input, avatarSetPinned);
         // The member's notifications are theirs alone, so the change below compares with their own.
         const notifyBefore =
           input.notifyOnFinish === undefined
