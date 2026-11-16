@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import type { IpcChannel, IpcWindow } from "./ipc-channels.js";
 import { ipcChannels } from "./ipc-channels.js";
 
-const srcDir = import.meta.dirname;
+const srcDir = path.resolve(import.meta.dirname, "..");
 const channels: [string, IpcChannel][] = Object.entries(ipcChannels);
 /** The preload of the window whose page may call: one for an app window, replaced or not. */
 const PRELOADS = {
-  app: "preload.cjs",
-  appOrReplaced: "preload.cjs",
-  setup: "setup-preload.cjs",
+  app: "preload/preload.cjs",
+  appOrReplaced: "preload/preload.cjs",
+  setup: "preload/setup-preload.cjs",
 } as const satisfies Record<IpcWindow, string>;
 type Preload = (typeof PRELOADS)[IpcWindow];
 
@@ -31,10 +31,14 @@ function preloadChannels(file: Preload, method: "invoke" | "sendSync") {
 }
 
 function handledChannels() {
-  return readdirSync(srcDir, { recursive: true, encoding: "utf8" })
+  return readdirSync(import.meta.dirname, { recursive: true, encoding: "utf8" })
     .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "ipc.ts")
     .flatMap((file) =>
-      literalChannels(readFileSync(path.join(srcDir, file), "utf8"), /\bhandleIpc\(/, file),
+      literalChannels(
+        readFileSync(path.join(import.meta.dirname, file), "utf8"),
+        /\bhandleIpc\(/,
+        file,
+      ),
     )
     .sort();
 }
@@ -44,7 +48,7 @@ describe("desktop IPC channels", () => {
     expect(handledChannels()).toEqual(channels.map(([name]) => name).sort());
   });
 
-  it.each(["preload.cjs", "setup-preload.cjs"] as const)(
+  it.each(["preload/preload.cjs", "preload/setup-preload.cjs"] as const)(
     "exposes in %s exactly its window's channels",
     (file) => {
       const mapped = (sync: boolean) =>

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { associatedPasskeyRpIds, PASSKEY_RP_ID, passkeyEntitlements } from "./passkeys.js";
 import { RAKAZO_CLOUD_URL } from "./setup-config.js";
 
-const root = path.resolve(import.meta.dirname, "..");
+const root = path.resolve(import.meta.dirname, "../..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {
   build: { appId: string; mac: { entitlements: string; entitlementsInherit: string } };
 };

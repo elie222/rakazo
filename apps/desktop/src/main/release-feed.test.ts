@@ -5,12 +5,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 
-const script = path.resolve(import.meta.dirname, "../scripts/release-feed.mjs");
+const script = path.resolve(import.meta.dirname, "../../scripts/release-feed.mjs");
 
 it("requires every selected platform and rejects feeds naming absent assets", () => {
   const workflow = parse(
     readFileSync(
-      path.resolve(import.meta.dirname, "../../../.github/workflows/release-desktop.yml"),
+      path.resolve(import.meta.dirname, "../../../../.github/workflows/release-desktop.yml"),
       "utf8",
     ),
   );
@@ -51,7 +51,7 @@ it("requires every selected platform and rejects feeds naming absent assets", ()
 it.each([undefined, "false", "true", "invalid"])("selects release platforms for %j", (setting) => {
   const workflow = parse(
     readFileSync(
-      path.resolve(import.meta.dirname, "../../../.github/workflows/release-desktop.yml"),
+      path.resolve(import.meta.dirname, "../../../../.github/workflows/release-desktop.yml"),
       "utf8",
     ),
   );

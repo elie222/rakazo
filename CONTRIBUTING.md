@@ -82,7 +82,7 @@ generated `*.js`/`*.mjs` catalog files or unrelated changes to existing catalogs
 
 Update the shared and platform locale tests, including normalization and plural rules, and a
 UI E2E scenario for each supported surface. The marketing homepage in `apps/www` and the
-native Electron setup window and menus (`apps/desktop/src/i18n.ts` and `locales/`) have
+native Electron setup window and menus (`apps/desktop/src/main/i18n.ts` and `apps/desktop/src/main/locales/`) have
 separate localization paths; scope and test those changes explicitly instead of assuming the
 web catalog covers them.
 

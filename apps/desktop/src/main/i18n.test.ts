@@ -19,7 +19,7 @@ import { ES_MESSAGES } from "./locales/es.js";
 import { PL_MESSAGES } from "./locales/pl.js";
 import { readUiLocale, writeUiLocale } from "./setup-store.js";
 
-const srcDir = import.meta.dirname;
+const srcDir = path.resolve(import.meta.dirname, "..");
 /** Product and vendor names the setup page shows as they are. */
 const UNTRANSLATED = new Set([
   "Rakazo",
@@ -39,7 +39,7 @@ function translationIds(source: string): string[] {
 
 /** What setup.js translates in setup.html: its text and its title, aria-label and placeholder attributes. */
 function setupPageStrings(): string[] {
-  const html = readFileSync(path.join(srcDir, "setup.html"), "utf8");
+  const html = readFileSync(path.join(srcDir, "setup-renderer/setup.html"), "utf8");
   const text = [...html.matchAll(/>([^<>]*)</g)].map((match) => match[1]?.trim() ?? "");
   const attributes = [...html.matchAll(/\s(?:title|aria-label|placeholder)="([^"]*)"/g)].map(
     (match) => match[1] ?? "",
@@ -229,8 +229,9 @@ describe.each(Object.entries(CATALOGS))(
 
     it("translates every desktop t() id and setup page string, and nothing else", () => {
       const ids = new Set(setupPageStrings());
-      for (const file of readdirSync(srcDir)) {
+      for (const file of readdirSync(srcDir, { recursive: true, encoding: "utf8" })) {
         if (!/\.(ts|js|cjs)$/.test(file) || file.endsWith(".test.ts")) continue;
+        if (file.includes("locales")) continue;
         for (const id of translationIds(readFileSync(path.join(srcDir, file), "utf8"))) ids.add(id);
       }
       const missing = [...ids].filter((id) => !catalog[id]?.trim()).sort();
