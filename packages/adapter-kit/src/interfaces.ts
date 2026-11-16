@@ -612,7 +612,7 @@ export interface BillingProvider {
     headers: Headers,
   ): { customerId: string } | { paymentId: string } | "ignored" | null;
   /** The customer a payment named by `parseWebhook` belongs to, or null when it has none. */
-  customerForPayment?(paymentId: string): Promise<string | null>;
+  customerForPayment(paymentId: string): Promise<string | null>;
 }
 
 export interface ExecutionRunner {

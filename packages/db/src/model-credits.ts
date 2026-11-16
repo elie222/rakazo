@@ -68,8 +68,9 @@ export async function unexpiredCreditAccount(
 /**
  * Payment replay, refunds and disputes reconcile one durable grant. Refunds can never be
  * re-credited; credits an open dispute holds come back when it is won. `readAt` is the database
- * clock before the provider read: a read older than the one already applied is skipped, so it
- * cannot release a hold a newer read placed.
+ * clock before the provider read: a read older than one already applied to the account is
+ * skipped, so it cannot release a hold a newer read placed. Returns the micros a purchase seen
+ * for the first time granted.
  */
 export async function reconcileCreditPurchase(
   prisma: PrismaClient,
@@ -88,16 +89,28 @@ export async function reconcileCreditPurchase(
     throw new Error("Invalid credit purchase");
   await creditAccount(prisma, organizationId);
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
+    const [account] = await tx.$queryRaw<[{ purchasesSyncedAt: Date | null }]>`
+      SELECT "purchasesSyncedAt" FROM model_credit_accounts WHERE "organizationId" = ${organizationId} FOR UPDATE`;
+    if (readAt && account.purchasesSyncedAt && account.purchasesSyncedAt > readAt) return 0;
+    // Every purchase read since moves the mark, even one that changes nothing.
+    if (readAt && !(account.purchasesSyncedAt && account.purchasesSyncedAt >= readAt))
+      await tx.modelCreditAccount.update({
+        where: { organizationId },
+        data: { purchasesSyncedAt: readAt },
+      });
     const withheldMicros = await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const source = `purchase:${purchase.id}`;
     const existing = await tx.modelCreditEntry.findUnique({ where: { source } });
     if (existing && existing.organizationId !== organizationId)
       throw new Error("Credit purchase belongs to another account");
-    if (readAt && existing?.syncedAt && existing.syncedAt >= readAt) return 0;
     // Only what a dispute holds can come back; a refund or a lost dispute lowers the ceiling for good.
-    const ceiling = existing ? existing.amountMicros + existing.disputedMicros : undefined;
+    // A grant no ordered read has touched yet trusts its first one: releases before disputes were
+    // read zeroed a disputed purchase even after the dispute was won.
+    const ceiling =
+      existing && !(readAt && !existing.syncedAt)
+        ? existing.amountMicros + existing.disputedMicros
+        : undefined;
     const paid = BigInt(purchase.amountCents) * 10_000n;
     const kept = ceiling !== undefined && ceiling < paid ? ceiling : paid;
     const held = BigInt(disputedCents) * 10_000n;
@@ -143,7 +156,7 @@ export async function reconcileCreditPurchase(
     await resizeCreditLot(tx, entry.id, amountMicros, expiresAt);
     await syncLotBalance(tx, organizationId, withheldMicros);
     await expireCreditLots(tx, organizationId, now);
-    return Number(delta);
+    return existing ? 0 : Number(amountMicros);
   });
 }
 
@@ -317,7 +330,7 @@ export async function expireModelCredits(
   });
 }
 
-/** Reconciles every purchase the provider lists; true when any added credits. */
+/** Reconciles every purchase the provider lists; true when a new one added credits. */
 export async function syncCreditPurchases(
   prisma: PrismaClient,
   organizationId: string,

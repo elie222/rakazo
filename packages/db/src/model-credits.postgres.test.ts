@@ -110,6 +110,35 @@ dbTests("model credits ledger", () => {
     );
     expect(await balance()).toBe(0n);
   });
+  it("skips an older read after a newer one that changed nothing", async () => {
+    const id = `${organizationId}-unchanged`;
+    const read = (at: string, purchase: { amountCents: number; disputedCents?: number }) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id, ...purchase },
+        new Date(),
+        new Date(at),
+      );
+    await read("2030-01-01T00:00:00Z", { amountCents: 1000 });
+    await read("2030-01-01T00:00:02Z", { amountCents: 1000 });
+    await read("2030-01-01T00:00:01Z", { amountCents: 1000, disputedCents: 1000 });
+    expect(await balance()).toBe(10_000_000n);
+  });
+  it("reports only a first grant as added, not credits a won dispute returns", async () => {
+    const id = `${organizationId}-added`;
+    expect(await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 })).toBe(
+      10_000_000,
+    );
+    await reconcileCreditPurchase(prisma, organizationId, {
+      id,
+      amountCents: 1000,
+      disputedCents: 1000,
+    });
+    expect(await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 })).toBe(
+      0,
+    );
+  });
   it("holds a purchase first seen disputed against an older undisputed read", async () => {
     const id = `${organizationId}-stale-first`;
     await reconcileCreditPurchase(
@@ -127,6 +156,24 @@ dbTests("model credits ledger", () => {
       new Date("2030-01-01T00:00:00Z"),
     );
     expect(await balance()).toBe(0n);
+  });
+  it("restores a purchase an earlier release zeroed for a dispute that was won", async () => {
+    const id = `${organizationId}-legacy-dispute`;
+    await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 1000 });
+    await reconcileCreditPurchase(prisma, organizationId, { id, amountCents: 0 });
+    const read = (at: string, amountCents: number) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id, amountCents },
+        new Date(),
+        new Date(at),
+      );
+    await read("2030-01-01T00:00:00Z", 1000);
+    expect(await balance()).toBe(10_000_000n);
+    await read("2030-01-01T00:00:01Z", 400);
+    await read("2030-01-01T00:00:02Z", 1000);
+    expect(await balance()).toBe(4_000_000n);
   });
   it("keeps a lost dispute's credits gone", async () => {
     const id = `${organizationId}-lost`;

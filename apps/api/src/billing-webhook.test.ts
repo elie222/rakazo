@@ -32,7 +32,7 @@ function mount(
     billing: { sync, syncForActor } as unknown as BillingService,
     provider: {
       parseWebhook,
-      ...(options.customerForPayment ? { customerForPayment: options.customerForPayment } : {}),
+      customerForPayment: options.customerForPayment ?? (async () => null),
     },
     webOrigin: "https://app.example.com",
     authenticate: async () => (options.actor === undefined ? actor : options.actor),

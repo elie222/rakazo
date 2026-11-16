@@ -30,7 +30,7 @@ export function mountBillingRoutes(
       const customerId =
         "customerId" in parsed
           ? parsed.customerId
-          : await deps.provider.customerForPayment?.(parsed.paymentId);
+          : await deps.provider.customerForPayment(parsed.paymentId);
       if (customerId) await deps.billing.sync(customerId);
     } catch (error) {
       // A non-2xx makes the provider retry the delivery.

@@ -520,22 +520,16 @@ export class StripeBillingProvider implements BillingProvider {
         charge.payment_intent && charge.currency === "usd" && charge.paid && charge.captured,
     );
     // `disputed` stays set after a dispute is won, so each dispute's own status decides.
-    const disputes = new Map(
-      await Promise.all(
-        settled
-          .filter((charge) => charge.disputed)
-          .map(
-            async (charge) =>
-              [
-                charge.id,
-                await this.listPages(
-                  `/v1/disputes?charge=${encodeURIComponent(charge.id)}`,
-                  z.object({ amount: z.number().int(), status: z.string() }),
-                ),
-              ] as const,
-          ),
-      ),
-    );
+    // One at a time, so an account with many disputes cannot burst the rate limit.
+    const disputes = new Map<string, Array<{ amount: number; status: string }>>();
+    for (const charge of settled.filter((charge) => charge.disputed))
+      disputes.set(
+        charge.id,
+        await this.listPages(
+          `/v1/disputes?charge=${encodeURIComponent(charge.id)}`,
+          z.object({ amount: z.number().int(), status: z.string() }),
+        ),
+      );
     const netPaid = new Map<string, NetPayment>();
     for (const charge of settled) {
       const sum = (statuses: readonly string[]) =>
