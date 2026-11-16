@@ -495,7 +495,7 @@ async function postToExpo(
     return { status: response.status, body: await readExpoPushBody(response, attempt) };
   } catch (error) {
     getLogger().warn("expo push request failed", { error });
-    if (signal?.aborted || errorMessage(error) === RESPONSE_TOO_LARGE) throw error;
+    if (signal?.aborted || error instanceof ResponseTooLargeError) throw error;
     return { status: 503, body: { errors: [{ message: errorMessage(error) }] } };
   }
 }
