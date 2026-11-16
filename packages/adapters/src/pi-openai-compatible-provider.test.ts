@@ -13,6 +13,7 @@ import {
   ModelConnectInputSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
@@ -490,14 +491,11 @@ describe("openai-compatible provider", () => {
 
   it("cancels a pending connection without waiting for the connect timeout", async () => {
     const controller = new AbortController();
-    let markLookupStarted: () => void = () => {};
-    const lookupStarted = new Promise<void>((resolve) => {
-      markLookupStarted = resolve;
-    });
+    const lookupStarted = deferred();
     const safeFetch = createOpenAiCompatibleFetch(
       undefined,
       async () => {
-        markLookupStarted();
+        lookupStarted.resolve();
         return new Promise(() => {});
       },
       OWNER,
@@ -506,7 +504,7 @@ describe("openai-compatible provider", () => {
       signal: controller.signal,
     }).catch((error: unknown) => error);
     try {
-      await lookupStarted;
+      await lookupStarted.promise;
       controller.abort();
       await expect(outcome).resolves.toMatchObject({ name: "AbortError" });
     } finally {

@@ -1,4 +1,5 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
@@ -248,21 +249,15 @@ describe("integration credentials with Infisical", () => {
     });
     await store.start();
     let row: { id: string; ciphertext: string } | undefined;
-    let release!: () => void;
-    let started!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const saving = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const gate = deferred();
+    const saving = deferred();
     const prisma = {
       integrationProviderConfig: {
         findUnique: vi.fn(async () => row),
         upsert: vi.fn(async ({ create }: { create: { id: string; ciphertext: string } }) => {
           row = create;
-          started();
-          await gate;
+          saving.resolve();
+          await gate.promise;
           return row;
         }),
       },
@@ -280,13 +275,13 @@ describe("integration credentials with Infisical", () => {
     );
     try {
       const pending = settings.save({ provider: "composio", apiKey: "fake-initial" }, context);
-      await saving;
+      await saving.promise;
       fake.values.set(
         row!.ciphertext.split(":").at(-1)!,
         JSON.stringify({ provider: "composio", apiKey: "fake-rotated" }),
       );
       await vi.advanceTimersByTimeAsync(100);
-      release();
+      gate.resolve();
       await pending;
       const changed = vi.fn();
       store.onChange(changed);
@@ -310,7 +305,7 @@ describe("integration credentials with Infisical", () => {
       expect(factory).toHaveBeenLastCalledWith({ provider: "composio", apiKey: "fake-again" });
       expect(changed).not.toHaveBeenCalled();
     } finally {
-      release();
+      gate.resolve();
       await store.close();
       vi.useRealTimers();
     }

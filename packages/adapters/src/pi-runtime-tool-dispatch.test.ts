@@ -1,4 +1,5 @@
 import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
 
@@ -1310,11 +1311,8 @@ describe("Pi connector tool dispatch", () => {
   });
 
   it("does not wait for a slow tool completion hook", async () => {
-    let resolveAudit!: () => void;
-    const audit = new Promise<void>((resolve) => {
-      resolveAudit = resolve;
-    });
-    const onToolCompleted = vi.fn(() => audit);
+    const audit = deferred();
+    const onToolCompleted = vi.fn(() => audit.promise);
     let settled = false;
     const runtime = new PiAgentRuntime();
     const run = (async () => {
@@ -1350,7 +1348,7 @@ describe("Pi connector tool dispatch", () => {
       expect(settled).toBe(true);
       expect(onToolCompleted).toHaveBeenCalledOnce();
     } finally {
-      resolveAudit();
+      audit.resolve();
       await run;
     }
   });

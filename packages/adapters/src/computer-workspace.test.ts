@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -768,7 +769,7 @@ describe("Team bot folder cleanup", () => {
         20,
       );
       await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     } finally {
       logger.mockRestore();
     }
