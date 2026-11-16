@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { modelCatalogSearchText } from "@rakazo/core";
+import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -78,7 +78,7 @@ export function RoleModelPicker({
       const name = option.providerName ?? option.provider;
       grouped.set(name, [...(grouped.get(name) ?? []), option]);
     }
-    return [...grouped];
+    return [...grouped].map(([name, entries]) => [name, newestModelsFirst(entries)] as const);
   }, [visible]);
   const needle = query.trim();
   const matchingProviders = visible.flatMap((row) => (row.provider ? [row.provider] : []));

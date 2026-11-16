@@ -14,6 +14,7 @@ import {
   connectionForModelChoice,
   createModelRoleSettings,
   modelRoleListPatch,
+  modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
 import {
@@ -493,7 +494,9 @@ export function ModelRoleSettings({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
-                  {connection && onManageModel ? (
+                  {connection &&
+                  onManageModel &&
+                  modelSettingsEditable(connection, entryFor(choice), choice.modelId) ? (
                     <DropdownMenuItem
                       onClick={() =>
                         onManageModel({

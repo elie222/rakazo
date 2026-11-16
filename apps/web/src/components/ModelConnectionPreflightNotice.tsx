@@ -26,10 +26,6 @@ export function ModelPreflightFeedback({
   );
 }
 
-export function modelPreflightTestingLabel(
-  testing: boolean,
-  kind: "api-key" | "sign-in",
-): ReactNode {
-  if (testing) return <Trans>Testing…</Trans>;
-  return kind === "api-key" ? <Trans>Test API key</Trans> : <Trans>Test connection</Trans>;
+export function modelPreflightTestingLabel(testing: boolean): ReactNode {
+  return testing ? <Trans>Testing…</Trans> : <Trans>Test API key</Trans>;
 }
