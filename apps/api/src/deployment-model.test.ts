@@ -269,6 +269,27 @@ describe("deployment model settings", () => {
     expect(state.settings.allowedModels).toBeNull();
   });
 
+  it("fails a re-save rather than drop a saved endpoint key the store can't read", async () => {
+    const { deps, state } = makeDeps();
+    await connectDeploymentModel(deps, actor, {
+      provider: "openai-compatible",
+      apiKey: "fixture-endpoint-key",
+      baseUrl: ENDPOINT,
+      enabledModelIds: ["fixture/first"],
+    });
+    const saved = state.connections.get("openai-compatible")?.ciphertext;
+    vi.mocked(deps.secrets.load).mockRejectedValueOnce(new Error("store unavailable"));
+    await expect(
+      connectDeploymentModel(deps, actor, {
+        provider: "openai-compatible",
+        apiKey: "",
+        baseUrl: ENDPOINT,
+        enabledModelIds: ["fixture/first", "fixture/second"],
+      }),
+    ).rejects.toThrow("store unavailable");
+    expect(state.connections.get("openai-compatible")?.ciphertext).toBe(saved);
+  });
+
   it("refuses an endpoint that names no model, blanks included", async () => {
     const { deps, state } = makeDeps();
     await expect(

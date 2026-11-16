@@ -99,10 +99,12 @@ export async function findDeploymentVoice(
 ): Promise<DeploymentVoice | null> {
   const saved = await findSavedDeploymentVoice(prisma);
   if (saved) {
+    // Settings choose no speech model; the environment's still applies to its own provider.
+    const environment = resolveDeploymentVoiceEnv(env);
     return {
       provider: saved.provider,
       voiceId: saved.voiceId,
-      speechModel: "",
+      speechModel: environment?.provider === saved.provider ? environment.speechModel : "",
       source: "settings",
       loadKey: () => secrets.load(saved.ciphertext, DEPLOYMENT_VOICE_RECORD),
     };

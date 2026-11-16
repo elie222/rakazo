@@ -316,12 +316,9 @@ export async function connectDeploymentModel(
   );
   // A blank key keeps a saved provider key as it is.
   if (existing && provider !== OPENAI_COMPATIBLE_PROVIDER_ID && !input.apiKey) return view(deps);
-  const previous = existing
-    ? await bestEffort(
-        "read the saved deployment model key",
-        deps.secrets.load(existing.ciphertext, record),
-      )
-    : undefined;
+  // Read, not guessed: a saved endpoint left without its key, headers and vision settings on a
+  // store outage would replace the working connection for everyone, so the save fails instead.
+  const previous = existing ? await deps.secrets.load(existing.ciphertext, record) : undefined;
   const checkSignal = deadlineSignal(VERIFY_TIMEOUT_MS, signal);
   const { plaintext, models } = await checkedConnection(
     deps,

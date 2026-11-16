@@ -143,6 +143,26 @@ describe("findDeploymentVoice", () => {
     expect(secrets.load).toHaveBeenCalledWith("cipher-1", DEPLOYMENT_VOICE_RECORD);
   });
 
+  it("keeps the environment's speech model for a saved voice on the same provider only", async () => {
+    const modelEnv = {
+      ...env,
+      VOICE_DEFAULT_PROVIDER: "elevenlabs",
+      VOICE_DEFAULT_SPEECH_MODEL: "eleven_flash_v2_5",
+    };
+    const same = await findDeploymentVoice(
+      prismaWith({ provider: "elevenlabs", voiceId: "saved-voice", cipher: "cipher-1" }),
+      secrets,
+      modelEnv,
+    );
+    expect(same?.speechModel).toBe("eleven_flash_v2_5");
+    const other = await findDeploymentVoice(
+      prismaWith({ provider: "cartesia", voiceId: "saved-voice", cipher: "cipher-1" }),
+      secrets,
+      modelEnv,
+    );
+    expect(other?.speechModel).toBe("");
+  });
+
   it("falls back to the environment once the saved voice is cleared", async () => {
     for (const saved of [null, { provider: null, cipher: null }]) {
       const voice = await findDeploymentVoice(prismaWith(saved), secrets, env);
