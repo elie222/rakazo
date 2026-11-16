@@ -1203,7 +1203,7 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
   // Rename comes first, as in the chat rows' menu.
   expect(section.dataset.actions).toBe("rename delete");
   act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "rename" } }));
-  expect(promptRenameSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
+  expect(promptRenameSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" }, "space-home");
   expect(deleteSection).not.toHaveBeenCalled();
   act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
   expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });

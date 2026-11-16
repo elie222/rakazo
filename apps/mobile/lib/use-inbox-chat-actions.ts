@@ -294,6 +294,22 @@ export function useInboxChatActions({
     },
     [loadBots, snoozeQueue, setBots, setGroups, setSpaces, t],
   );
+  /** Renames a section from its heading's menu, with the iOS name prompt. */
+  const promptRenameSection = useCallback(
+    (section: { id: string; name: string }, spaceId?: string) =>
+      promptSectionName({
+        title: t`Rename section`,
+        cancelLabel: t`Cancel`,
+        submitLabel: t`Save`,
+        defaultValue: section.name,
+        onSubmit: (name) =>
+          void renameSection(section.id, name, spaceId).catch((err) =>
+            Alert.alert(t`Could not rename section`, errorText(err, t`Try again.`)),
+          ),
+      }),
+    [renameSection, t],
+  );
+
   const editSectionFromMenu = useCallback(
     (
       kind: InboxChatKind,
@@ -305,36 +321,21 @@ export function useInboxChatActions({
       const current =
         mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
+      if (current) {
+        promptRenameSection(current, chat.spaceId);
+        return;
+      }
       promptSectionName({
-        title: current ? t`Rename section` : t`New section`,
+        title: t`New section`,
         cancelLabel: t`Cancel`,
-        submitLabel: current ? t`Save` : t`Create`,
-        defaultValue: current?.name,
+        submitLabel: t`Create`,
         onSubmit: (name) =>
-          void (
-            current
-              ? renameSection(current.id, name, chat.spaceId)
-              : createSection(kind, chat.id, name, chat.spaceId)
-          ).catch((err) => Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`))),
+          void createSection(kind, chat.id, name, chat.spaceId).catch((err) =>
+            Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
+          ),
       });
     },
-    [createSection, renameSection, t],
-  );
-
-  /** Renames a section from its heading's menu, with the iOS name prompt. */
-  const promptRenameSection = useCallback(
-    (section: { id: string; name: string }) =>
-      promptSectionName({
-        title: t`Rename section`,
-        cancelLabel: t`Cancel`,
-        submitLabel: t`Save`,
-        defaultValue: section.name,
-        onSubmit: (name) =>
-          void renameSection(section.id, name).catch((err) =>
-            Alert.alert(t`Could not rename section`, errorText(err, t`Try again.`)),
-          ),
-      }),
-    [renameSection, t],
+    [createSection, promptRenameSection, t],
   );
 
   const deleteSection = useCallback(

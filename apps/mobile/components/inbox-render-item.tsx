@@ -355,7 +355,7 @@ export function useInboxRenderItem({
               Platform.OS === "ios" && item.sectionId
                 ? () => {
                     if (item.sectionId)
-                      promptRenameSection({ id: item.sectionId, name: item.title });
+                      promptRenameSection({ id: item.sectionId, name: item.title }, spaceId);
                   }
                 : undefined
             }
