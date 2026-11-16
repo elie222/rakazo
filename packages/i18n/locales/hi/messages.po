@@ -1803,7 +1803,7 @@ msgstr "अवतार स्टूडियो"
 
 #: apps/web/src/pages/shell/computer-panel.tsx
 msgid "Awake"
-msgstr ""
+msgstr "सक्रिय"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -6765,7 +6765,7 @@ msgstr "और"
 
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "More actions"
-msgstr ""
+msgstr "और कार्रवाइयाँ"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7684,7 +7684,7 @@ msgstr "आउटपुट"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Own computer"
-msgstr ""
+msgstr "अपना कंप्यूटर"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8137,7 +8137,7 @@ msgstr "उद्धरण"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Quote selection"
-msgstr ""
+msgstr "चयन उद्धृत करें"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -10240,7 +10240,7 @@ msgstr "उस URL में होस्ट नहीं है"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "यह आवाज़ इस सर्वर पर उपलब्ध नहीं है, इसलिए इसकी जगह {served} का उपयोग किया गया।"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -10941,7 +10941,7 @@ msgstr "मंगलवार"
 #. placeholder {0}: routine.name
 #: apps/web/src/pages/RoutineList.tsx
 msgid "Turn {0} on or off"
-msgstr ""
+msgstr "{0} चालू या बंद करें"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"

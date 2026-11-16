@@ -1803,7 +1803,7 @@ msgstr "아바타 스튜디오"
 
 #: apps/web/src/pages/shell/computer-panel.tsx
 msgid "Awake"
-msgstr ""
+msgstr "활성"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -6765,7 +6765,7 @@ msgstr "더보기"
 
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "More actions"
-msgstr ""
+msgstr "추가 작업"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7684,7 +7684,7 @@ msgstr "출력"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Own computer"
-msgstr ""
+msgstr "전용 컴퓨터"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8137,7 +8137,7 @@ msgstr "인용"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Quote selection"
-msgstr ""
+msgstr "선택 영역 인용"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -10240,7 +10240,7 @@ msgstr "URL에 호스트가 없습니다"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "이 서버에서 제공하지 않는 음성이어서 대신 {served}을(를) 사용했습니다."
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -10941,7 +10941,7 @@ msgstr "화요일"
 #. placeholder {0}: routine.name
 #: apps/web/src/pages/RoutineList.tsx
 msgid "Turn {0} on or off"
-msgstr ""
+msgstr "{0} 켜기 또는 끄기"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"

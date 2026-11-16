@@ -1803,7 +1803,7 @@ msgstr "Estudio de avatares"
 
 #: apps/web/src/pages/shell/computer-panel.tsx
 msgid "Awake"
-msgstr ""
+msgstr "Activo"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -6765,7 +6765,7 @@ msgstr "Más"
 
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "More actions"
-msgstr ""
+msgstr "Más acciones"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7684,7 +7684,7 @@ msgstr "Salida"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Own computer"
-msgstr ""
+msgstr "Ordenador propio"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8137,7 +8137,7 @@ msgstr "Citar"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Quote selection"
-msgstr ""
+msgstr "Citar selección"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -10240,7 +10240,7 @@ msgstr "A esa URL le falta el host"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "Este servidor no ofrece esa voz, así que se usó {served} en su lugar."
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -10941,7 +10941,7 @@ msgstr "martes"
 #. placeholder {0}: routine.name
 #: apps/web/src/pages/RoutineList.tsx
 msgid "Turn {0} on or off"
-msgstr ""
+msgstr "Activar o desactivar {0}"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"

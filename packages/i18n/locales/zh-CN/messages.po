@@ -1803,7 +1803,7 @@ msgstr "头像工作室"
 
 #: apps/web/src/pages/shell/computer-panel.tsx
 msgid "Awake"
-msgstr ""
+msgstr "运行中"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -6765,7 +6765,7 @@ msgstr "更多"
 
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "More actions"
-msgstr ""
+msgstr "更多操作"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7684,7 +7684,7 @@ msgstr "输出"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Own computer"
-msgstr ""
+msgstr "专属电脑"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8137,7 +8137,7 @@ msgstr "引用"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Quote selection"
-msgstr ""
+msgstr "引用所选内容"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -10941,7 +10941,7 @@ msgstr "周二"
 #. placeholder {0}: routine.name
 #: apps/web/src/pages/RoutineList.tsx
 msgid "Turn {0} on or off"
-msgstr ""
+msgstr "开启或关闭 {0}"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"

@@ -1803,7 +1803,7 @@ msgstr "Avatarstudio"
 
 #: apps/web/src/pages/shell/computer-panel.tsx
 msgid "Awake"
-msgstr ""
+msgstr "Actief"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -6765,7 +6765,7 @@ msgstr "Meer"
 
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "More actions"
-msgstr ""
+msgstr "Meer acties"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7684,7 +7684,7 @@ msgstr "Uitvoer"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Own computer"
-msgstr ""
+msgstr "Eigen computer"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8137,7 +8137,7 @@ msgstr "Citaat"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Quote selection"
-msgstr ""
+msgstr "Selectie citeren"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/general.tsx
@@ -10240,7 +10240,7 @@ msgstr "Die URL mist een host"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "That voice isn't offered by this server, so it used {served} instead."
-msgstr ""
+msgstr "Deze server biedt die stem niet aan, dus is in plaats daarvan {served} gebruikt."
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -10941,7 +10941,7 @@ msgstr "dinsdag"
 #. placeholder {0}: routine.name
 #: apps/web/src/pages/RoutineList.tsx
 msgid "Turn {0} on or off"
-msgstr ""
+msgstr "{0} aan- of uitzetten"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"
