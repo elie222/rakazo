@@ -4,11 +4,13 @@ import { test } from "node:test";
 import {
   codeBlock,
   createBudget,
+  exploredAny,
   fingerprint,
   fingerprintsIn,
   isoWeek,
   issueBody,
   issueTitle,
+  issueTitlePrefix,
   knownBugs,
   normalizePath,
   parseDemoAccount,
@@ -143,6 +145,18 @@ test("known bugs are read back from open issues for the matching feature", () =>
   ]);
 });
 
+test("known bugs read titles by the same prefix issues are filed with", () => {
+  const feature = `Spaces <and> ${"x".repeat(80)}`;
+  const filed = { ...bug, feature };
+  assert.ok(issueTitle(filed).startsWith(`${issueTitlePrefix(feature)} `));
+  assert.deepEqual(
+    knownBugs([{ title: issueTitle(filed), body: issueBody(filed, links) }], feature).map(
+      (b) => b.title,
+    ),
+    ["Archived shelf stays hidden"],
+  );
+});
+
 test("the budget prices token usage and stops once reached", () => {
   const budget = createBudget({ limitUsd: 1, inputUsdPerMTok: 2, outputUsdPerMTok: 10 });
   budget.charge({ prompt_tokens: 250_000, completion_tokens: 0 });
@@ -199,6 +213,15 @@ test("a worker that fails keeps the other workers' findings", async () => {
     stopped: "error: Demo sign-in failed with status 500",
     summary: "",
   });
+});
+
+test("a run fails only when no worker got to explore", () => {
+  const errored = { stopped: "error: Demo sign-in failed with status 500" };
+  assert.equal(exploredAny([errored, { stopped: "error: Model request failed" }]), false);
+  assert.equal(exploredAny([]), false);
+  for (const stopped of ["finished", "budget", "time limit", "step limit"]) {
+    assert.equal(exploredAny([errored, { stopped }]), true);
+  }
 });
 
 test("the demo account comes from the file the preview stack reads", () => {

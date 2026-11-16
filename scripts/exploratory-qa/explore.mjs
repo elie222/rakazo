@@ -11,6 +11,7 @@ import { exploreTools } from "./explore.tool-definition.mjs";
 import {
   clampInt,
   createBudget,
+  exploredAny,
   isoWeek,
   knownBugs,
   LIMITS,
@@ -62,6 +63,7 @@ const demoAccount = parseDemoAccount(
 );
 const openIssues = env.QA_KNOWN_ISSUES ? JSON.parse(readFileSync(env.QA_KNOWN_ISSUES, "utf8")) : [];
 
+// @playwright/test is a dependency of apps/web only, and pnpm does not hoist it to the root, so a static import from here cannot resolve it.
 const requireFromWeb = createRequire(new URL("apps/web/package.json", root));
 const playwright = await import(requireFromWeb.resolve("@playwright/test"));
 const { chromium } = playwright.default ?? playwright;
@@ -250,3 +252,7 @@ const lines = [
 ];
 writeFileSync(join(outDir, "summary.md"), `${lines.join("\n")}\n`);
 console.log(lines.join("\n"));
+if (!exploredAny(results)) {
+  console.error("No feature was explored: every worker stopped with an error.");
+  process.exitCode = 1;
+}

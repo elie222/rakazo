@@ -104,7 +104,12 @@ export function codeBlock(text, max = 600) {
 
 /** Issue titles are plain text on GitHub: no markup renders and no mention notifies. */
 export function issueTitle(finding) {
-  return `[QA] ${plainText(finding.feature, 60)}: ${plainText(finding.title, 100)}`;
+  return `${issueTitlePrefix(finding.feature)} ${plainText(finding.title, 100)}`;
+}
+
+/** The start of every issue title for a feature; knownBugs reads titles back by it. */
+export function issueTitlePrefix(featureName) {
+  return `[QA] ${plainText(featureName, 60)}:`;
 }
 
 /** Only our own parts are Markdown; every piece of model text sits in a code block. The feature name is ours, from PRODUCT.md. */
@@ -150,7 +155,7 @@ export function fingerprintsIn(issues) {
 
 /** Open bugs for a feature, so its agent can recognize them instead of reporting them again. */
 export function knownBugs(issues, featureName) {
-  const prefix = `[QA] ${featureName}:`.toLowerCase();
+  const prefix = issueTitlePrefix(featureName).toLowerCase();
   return issues
     .filter((issue) =>
       String(issue.title ?? "")
@@ -233,6 +238,11 @@ export async function runWorkers(features, work) {
           summary: "",
         },
   );
+}
+
+/** A run where no worker got to explore, such as every sign-in or model call failing, is a failed run rather than a clean one. */
+export function exploredAny(results) {
+  return results.some((result) => !String(result.stopped ?? "").startsWith("error:"));
 }
 
 /** The preview stack's demo account, from the same file its start script reads. */
