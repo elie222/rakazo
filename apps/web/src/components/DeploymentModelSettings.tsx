@@ -378,6 +378,9 @@ export function DeploymentModelSettings() {
                     <Input
                       id={contextId}
                       inputMode="numeric"
+                      // A whole number or blank: anything else can't be saved, so it never
+                      // reads as clearing a saved limit.
+                      pattern="[1-9][0-9]*"
                       value={draft.contextWindow}
                       onChange={(event) => set({ contextWindow: event.target.value })}
                     />
@@ -389,6 +392,9 @@ export function DeploymentModelSettings() {
                     <Input
                       id={maxTokensId}
                       inputMode="numeric"
+                      // A whole number or blank: anything else can't be saved, so it never
+                      // reads as clearing a saved limit.
+                      pattern="[1-9][0-9]*"
                       value={draft.maxTokens}
                       onChange={(event) => set({ maxTokens: event.target.value })}
                     />

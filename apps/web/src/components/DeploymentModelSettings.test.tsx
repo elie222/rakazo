@@ -277,3 +277,20 @@ it("offers the saved endpoint key only while its URL stays the same", async () =
   );
   expect(byLabel<HTMLInputElement>("API key").placeholder).toBe("");
 });
+
+it("won't save a limit that isn't a whole number, so it never clears a saved one", async () => {
+  await render();
+  const add = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Add provider",
+  )!;
+  await act(async () => add.click());
+  await act(async () => change(byLabel<HTMLSelectElement>("Provider"), "openai-compatible"));
+  await act(async () =>
+    change(byLabel<HTMLInputElement>("Base URL"), "https://eu.example.test/v1"),
+  );
+  await act(async () => change(byLabel<HTMLInputElement>("Models"), "model-a"));
+  await act(async () => change(byLabel<HTMLInputElement>("Maximum output tokens"), "lots"));
+  expect(byLabel<HTMLInputElement>("Maximum output tokens").checkValidity()).toBe(false);
+  await act(async () => container.querySelector("form")!.requestSubmit());
+  expect(deployment.connect).not.toHaveBeenCalled();
+});
