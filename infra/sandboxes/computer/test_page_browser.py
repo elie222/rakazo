@@ -188,6 +188,12 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(helper.parse_line('- textbox "  Frame\\n field " [ref=e3]').name, "Frame field")
         self.assertIsNone(helper.parse_line("not a line"))
 
+    def test_lists_file_inputs_the_page_hides_behind_its_own_button(self):
+        browser = FakeAgentBrowser(state={"uploads": [{"name": "", "accept": "image/*", "multiple": True}]})
+        result, _ = self.snapshot(browser)
+        self.assertIn("- file upload [ref=u0] accept: image/* (multiple)", result["tree"])
+        self.assertEqual(result["elements"][-1], {"ref": "u0", "role": "file upload", "name": ""})
+
     def test_page_text_comes_first_then_the_controls_with_their_refs(self):
         result, _ = self.snapshot()
         self.assertTrue(result["tree"].startswith("Portal\nWelcome back\n"))
@@ -1046,6 +1052,18 @@ class ActTest(unittest.TestCase):
                 self.assertTrue(result["ok"])
                 with self.assertRaisesRegex(RuntimeError, "inside"):
                     self.act([{"kind": "upload", "ref": "e2", "paths": ["/etc/passwd"]}])
+
+    def test_uploads_to_a_hidden_file_input_by_its_mark(self):
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, "ref.png").write_text("fake")
+            with patch.dict(os.environ, {"HOME": home}):
+                result, browser = self.act([{"kind": "upload", "ref": "u0", "paths": ["ref.png"]}])
+            self.assertTrue(result["ok"])
+            self.assertEqual(browser.actions(),
+                             [["upload", '[data-rakazo-upload="0"]', os.path.realpath(Path(home, "ref.png"))]])
+            # A mark names only an upload target.
+            with self.assertRaisesRegex(RuntimeError, "ref is required"):
+                self.act([{"kind": "click", "ref": "u0"}])
 
     def test_saved_logins_cards_and_pay_tokens_go_through_page_secrets_only(self):
         steps = [{"kind": "fill", "ref": "e3", "text": "fake-password", "origin": "https://portal.example.test",

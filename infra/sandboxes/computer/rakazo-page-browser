@@ -474,6 +474,19 @@ PAGE_STATE = r"""(() => {
   const holder = blocks.length !== 1 ? null : blocks[0].matches("[data-stripe-merchant-account]") ? blocks[0]
     : blocks[0].querySelector("[data-stripe-merchant-account]");
   const account = holder?.getAttribute("data-stripe-merchant-account") || "";
+  // Sites often hide the real file input behind a styled attach button, which leaves it out of the
+  // accessibility tree and so without a ref. Mark each one so upload can still reach it.
+  for (const el of document.querySelectorAll("[data-rakazo-upload]")) el.removeAttribute("data-rakazo-upload");
+  const uploads = [];
+  for (const el of document.querySelectorAll('input[type="file"]')) {
+    if (el.disabled || uploads.length >= 10) continue;
+    const listed = el.getClientRects().length && getComputedStyle(el).visibility !== "hidden"
+      && !el.closest('[aria-hidden="true"], [inert]');
+    if (listed) continue;
+    el.setAttribute("data-rakazo-upload", String(uploads.length));
+    uploads.push({ name: (el.getAttribute("aria-label") || el.title || el.name || "").slice(0, 100),
+      accept: (el.accept || "").slice(0, 200), multiple: el.multiple });
+  }
   return {
     url: location.href,
     title: (document.title || "").slice(0, 200),
@@ -482,6 +495,7 @@ PAGE_STATE = r"""(() => {
     masked,
     payToken: /^acct_[A-Za-z0-9]{1,64}$/.test(account) ? account : null,
     frames: [...document.querySelectorAll("iframe")].slice(0, 50).map((frame) => frame.src),
+    uploads,
   };
 })()"""
 
@@ -616,6 +630,33 @@ def describe_options(options: list[dict[str, Any]], total: int) -> str:
 CONTROL_ROLES = frozenset({"button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "listbox",
                            "option", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "switch", "slider",
                            "spinbutton", "treeitem", "Iframe"})
+
+
+# A file input the page hides behind its own attach button: listed by its mark, not agent-browser's ref.
+HIDDEN_UPLOAD_REF = re.compile(r"u\d")
+
+
+def hidden_uploads(found: Any) -> list[Control]:
+    """The hidden file inputs PAGE_STATE marked, as upload targets after the other controls."""
+    controls: list[Control] = []
+    for index, upload in enumerate(found if isinstance(found, list) else []):
+        if not isinstance(upload, dict) or index > 9:
+            break
+        ref, name, accept = f"u{index}", str(upload.get("name") or "")[:100], str(upload.get("accept") or "")[:200]
+        line = "- file upload" + (" " + json.dumps(name, ensure_ascii=False) if name else "") + f" [ref={ref}]"
+        if accept:
+            line += f" accept: {accept}"
+        if upload.get("multiple"):
+            line += " (multiple)"
+        node = Node(0, "file upload", name, f"ref={ref}")
+        controls.append(Control(MAX_CONTROLS + index, line, {"ref": ref, "role": "file upload", "name": name},
+                                node, name, ""))
+    return controls
+
+
+def upload_target(ref: str) -> str:
+    """What agent-browser's upload is given: a hidden input by its mark, any other by its ref."""
+    return f'[data-rakazo-upload="{ref[1:]}"]' if HIDDEN_UPLOAD_REF.fullmatch(ref) else f"@{ref}"
 
 
 class Control:
@@ -887,6 +928,7 @@ class PageBrowser:
                 render(node.children, depth + 1, "select" if options else inside)
 
         render(roots, 0, None)
+        uploads = hidden_uploads(state.get("uploads"))
         if card_shown:
             hints.append(PAYMENT_FRAME_HINT)
         account = state.get("payToken") or account
@@ -904,14 +946,14 @@ class PageBrowser:
                 notice = f"[controls matching {label}: showing {len(shown)} of {len(ranked)}]"
             else:
                 notice = f"[controls matching {label}]"
-            tree = "\n".join([notice, *(c.line for c in shown), *hints])
-            return {**page, "tree": tree, "elements": [c.entry for c in shown]}
+            tree = "\n".join([notice, *(c.line for c in shown + uploads), *hints])
+            return {**page, "tree": tree, "elements": [c.entry for c in shown + uploads]}
         shown = fit(controls, CONTROLS_BUDGET)
         start = self.view_start(controls) if len(shown) < len(controls) else 0
         if start:
             # From the first control in view on, then back up the page with the room left.
             shown = fit(controls[start:] + controls[start - 1::-1], CONTROLS_BUDGET)
-        listing = "\n".join(c.line for c in shown) or "(no interactive elements)"
+        listing = "\n".join(c.line for c in shown + uploads) or "(no interactive elements)"
         notices = (f"[controls: showing {len(shown)} of {len(controls)}. {CUT_CONTROLS}]\n"
                    if len(shown) < len(controls) else "")
         text = "\n".join([unframed(str(state.get("text") or "")), *frame_text])
@@ -922,7 +964,7 @@ class PageBrowser:
         if cut < len(text):
             notices += f"[page text: showing first {cut} of {len(text)} characters]\n"
         tree = notices + text[:cut] + "\n" + listing + "".join("\n" + hint for hint in hints)
-        return {**page, "tree": tree, "elements": [c.entry for c in shown]}
+        return {**page, "tree": tree, "elements": [c.entry for c in shown + uploads]}
 
     def view_start(self, controls: list[Control]) -> int:
         """Where the controls in view begin: just after the last one above the visible part of the page.
@@ -1207,7 +1249,9 @@ class PageBrowser:
         try:
             for step in actions:
                 kind, ref = step["kind"], step.get("ref")
-                node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
+                hidden = ref is not None and HIDDEN_UPLOAD_REF.fullmatch(ref)
+                node = (self.control(ref, check_disabled=kind in ("fill", "type"))
+                        if ref is not None and not hidden else None)
                 typed = kind == "type" or (kind == "fill" and not (node and native_options(node)))
                 uncertain = True
                 if kind == "pay_token" or step.get("origin"):
@@ -1231,7 +1275,7 @@ class PageBrowser:
                     self.step([*([["scrollintoview", f"@{frame.ref}"]] if frame else []),
                                ["focus" if native_options(node) else "click", f"@{ref}"]])  # type: ignore[arg-type]
                 elif kind == "upload":
-                    self.step([["upload", f"@{ref}", *step["files"]]])
+                    self.step([["upload", upload_target(ref), *step["files"]]])
                 elif kind == "fill" and native_options(node):  # type: ignore[arg-type]
                     self.step([["select", f"@{ref}", step["text"]]])
                 elif kind == "fill":
@@ -2489,7 +2533,9 @@ def validate_actions(actions: Any) -> None:
         if step.get("ref") is None and step["kind"] == "fill" and step.get("field") == "card":
             if step.get("cardField") not in page_secrets.CARD_AUTOCOMPLETE:
                 raise RuntimeError("A card fill without a ref needs its card field")
-        elif not isinstance(step.get("ref"), str) or not re.fullmatch(r"e\d+", step["ref"]):
+        elif not isinstance(step.get("ref"), str) or not (
+                re.fullmatch(r"e\d+", step["ref"])
+                or (step["kind"] == "upload" and HIDDEN_UPLOAD_REF.fullmatch(step["ref"]))):
             raise RuntimeError("Element ref is required")
         if step["kind"] == "upload":
             step["files"] = resolve_upload_paths(step.get("paths"), roots=step.get("roots"))
