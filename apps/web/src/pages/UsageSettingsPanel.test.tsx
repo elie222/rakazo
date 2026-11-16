@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -74,7 +75,7 @@ const usageFor = (input: Input) => ({
   overTime: [{ date: "2026-11-10T00:00:00.000Z", ...point(3, 400, 0.04) }],
 });
 
-const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+const settle = () => act(flush);
 
 async function renderPanel() {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -183,14 +184,14 @@ it("does not show the previous selection's numbers while the next one loads", as
   const panel = await renderPanel();
   try {
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
-    let finish: (value: unknown) => void = () => {};
-    breakdown.fetch.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    const pending = deferred<unknown>();
+    breakdown.fetch.mockImplementation(() => pending.promise);
     await panel.pick("Today");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Loading usage…");
     // The filters stay usable from the last result.
     expect(panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
-    await act(async () => finish(usageFor({ range: "today" })));
+    await act(async () => pending.resolve(usageFor({ range: "today" })));
     await settle();
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
   } finally {
