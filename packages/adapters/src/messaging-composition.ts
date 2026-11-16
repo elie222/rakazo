@@ -2,8 +2,8 @@ import type { MessagingSurface, SecretStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
 import { MessagingInstallations } from "./messaging-installations.js";
+import { SlackInstallProvider } from "./providers/messaging/slack/slack-install-provider.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
-import { SlackInstallProvider } from "./slack-install-provider.js";
 
 export function installedMessaging(
   prisma: PrismaClient,

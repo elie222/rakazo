@@ -6,7 +6,7 @@ const { implementationLoaded, sdkLoaded } = vi.hoisted(() => ({
   implementationLoaded: vi.fn(),
   sdkLoaded: vi.fn(),
 }));
-vi.mock("./lark/lark-adapter.js", async (original) => {
+vi.mock("./lark-adapter.js", async (original) => {
   implementationLoaded();
   return original();
 });
@@ -15,8 +15,8 @@ vi.mock("@larksuiteoapi/node-sdk", async (original) => {
   return original();
 });
 
-import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
 
 describe("Lark lazy loading", () => {
   it("loads neither module without credentials, including when another surface mounts", async () => {
@@ -60,7 +60,7 @@ describe("Lark lazy loading", () => {
   });
 
   it("forbids static SDK value imports and keeps implementation imports inside the Lark boundary", () => {
-    const root = new URL("../../../", import.meta.url);
+    const root = new URL("../../../../../../", import.meta.url);
     for (const dir of ["packages", "apps"]) {
       const base = new URL(`${dir}/`, root);
       for (const file of sourceFiles(base.pathname)) {
@@ -77,7 +77,7 @@ describe("Lark lazy loading", () => {
           source.match(/import\s+(?!type\b)(?:[^;]*?from\s*)?["']@larksuiteoapi\/node-sdk["']/g),
           `${dir}/${file}`,
         ).toBeNull();
-        if (!file.includes("/src/lark/")) {
+        if (!file.includes("/src/providers/messaging/lark/")) {
           expect(
             source.match(/import\s+(?!type\b)[^;]*?from\s*["'][^"']*lark-adapter\.js["']/g),
             `${dir}/${file}`,

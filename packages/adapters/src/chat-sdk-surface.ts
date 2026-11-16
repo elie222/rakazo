@@ -19,7 +19,7 @@ import { trimEndChars } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
-import { getLarkTextParts } from "./lark/text-parts.js";
+import { getLarkTextParts } from "./providers/messaging/lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of

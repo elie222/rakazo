@@ -9,10 +9,10 @@ import type {
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
-import { Domain, decodeThreadId, encodeThreadId } from "./lark/thread-id.js";
-import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import { LazyLarkAdapter } from "./lazy-adapter.js";
+import { Domain, decodeThreadId, encodeThreadId } from "./thread-id.js";
 
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 

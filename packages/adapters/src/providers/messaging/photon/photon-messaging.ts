@@ -1,8 +1,8 @@
 import { getLogger } from "@rakazo/logging";
-import type { MessagingPlatform } from "./chat-sdk-surface.js";
-import type { MessagingMountContext } from "./messaging-platform-descriptor.js";
-import { defineMessagingPlatform } from "./messaging-platform-descriptor.js";
-import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
+import type { MessagingPlatform } from "../../../chat-sdk-surface.js";
+import type { MessagingMountContext } from "../../../messaging-platform-descriptor.js";
+import { defineMessagingPlatform } from "../../../messaging-platform-descriptor.js";
+import { LazyPhotonAdapter } from "./lazy-adapter.js";
 
 /**
  * iMessage through Photon (Spectrum Cloud). Without a webhook secret the
