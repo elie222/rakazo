@@ -311,8 +311,8 @@ model Passkey {
   @@map("passkey")
 }
 
-// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin. Field names and
-// types must match the plugin's schema; the plugin reads and writes these tables directly.
+// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin, which reads and
+// writes these tables directly; a test in packages/auth compares them with its schema.
 
 model ScimConnectionBinding {
   id                              String    @id
