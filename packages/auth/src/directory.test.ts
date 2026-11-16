@@ -16,7 +16,11 @@ function prismaModels(schema: string): Map<string, string[]> {
   for (const [, name, body] of schema.matchAll(/^model (\w+) \{\n([\s\S]*?)^\}/gm)) {
     const columns = body!
       .split("\n")
-      .map((line) => /^\s+(\w+)\s+(String|Int|BigInt|Float|Decimal|Boolean|DateTime|Json|Bytes)(\??)(?:\s|$)/.exec(line))
+      .map((line) =>
+        /^\s+(\w+)\s+(String|Int|BigInt|Float|Decimal|Boolean|DateTime|Json|Bytes)(\??)(?:\s|$)/.exec(
+          line,
+        ),
+      )
       .filter((match) => match !== null)
       .map(([, column, type, optional]) => `${column}: ${type}${optional}`);
     models.set(name!, columns);
