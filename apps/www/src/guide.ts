@@ -163,8 +163,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   },
   {
     question: "Is hosted Rakazo available?",
-    answer:
-      "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
+    answer: "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
   },
   {
     question: "How does this compare with OpenClaw?",
@@ -321,7 +320,8 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   },
   {
     aspect: "Software cost",
-    rakazo: "No seat fee for the open source software. You pay the models and infrastructure you use.",
+    rakazo:
+      "No seat fee for the open source software. You pay the models and infrastructure you use.",
     openclaw: "The docs say there is no paid tier. You pay the models and the machine you run.",
   },
 ];
@@ -333,16 +333,15 @@ function faqMarkdown(items: readonly FaqItem[]): string {
 function selfHostOptionsMarkdown(): string {
   const header = "| Project | License | What you run | Built for |\n| --- | --- | --- | --- |";
   const rows = SELF_HOST_OPTIONS.map(
-    (option) => `| [${option.name}](${option.href}) | ${option.license} | ${option.run} | ${option.fit} |`,
+    (option) =>
+      `| [${option.name}](${option.href}) | ${option.license} | ${option.run} | ${option.fit} |`,
   );
   return [header, ...rows].join("\n");
 }
 
 function comparisonMarkdown(): string {
   const header = "| | Rakazo | OpenClaw |\n| --- | --- | --- |";
-  const rows = COMPARISON_ROWS.map(
-    (row) => `| ${row.aspect} | ${row.rakazo} | ${row.openclaw} |`,
-  );
+  const rows = COMPARISON_ROWS.map((row) => `| ${row.aspect} | ${row.rakazo} | ${row.openclaw} |`);
   return [header, ...rows].join("\n");
 }
 

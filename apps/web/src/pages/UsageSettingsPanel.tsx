@@ -3,8 +3,7 @@ import type { UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   ToggleGroup,
   ToggleGroupItem,
@@ -102,41 +101,41 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <FieldLabel>
             <Trans>Bot</Trans>
           </FieldLabel>
-          <NativeSelect
+          <OptionSelect
             value={botId}
-            onChange={(e) => setSelectedBot(bots.find((bot) => bot.id === e.target.value) ?? null)}
+            onValueChange={(id) => setSelectedBot(bots.find((bot) => bot.id === id) ?? null)}
             aria-label={t`Bot`}
-          >
-            <NativeSelectOption value="all">{t`All bots`}</NativeSelectOption>
-            {bots.map((bot) => (
-              <NativeSelectOption key={bot.id} value={bot.id}>
-                {bot.name == null
-                  ? t`Deleted bot`
-                  : bot.deleted
-                    ? t`${bot.name} (deleted)`
-                    : bot.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            className="w-fit"
+            options={[
+              { value: "all", label: t`All bots` },
+              ...bots.map((bot) => ({
+                value: bot.id,
+                label:
+                  bot.name == null
+                    ? t`Deleted bot`
+                    : bot.deleted
+                      ? t`${bot.name} (deleted)`
+                      : bot.name,
+              })),
+            ]}
+          />
         </Field>
         <Field className="min-w-[180px] flex-1">
           <FieldLabel>
             <Trans>Model</Trans>
           </FieldLabel>
-          <NativeSelect
+          <OptionSelect
             value={modelKey}
-            onChange={(e) =>
-              setSelectedModel(modelOptions.find((model) => model.key === e.target.value) ?? null)
+            onValueChange={(key) =>
+              setSelectedModel(modelOptions.find((model) => model.key === key) ?? null)
             }
             aria-label={t`Model`}
-          >
-            <NativeSelectOption value="all">{t`All models`}</NativeSelectOption>
-            {modelOptions.map((m) => (
-              <NativeSelectOption key={m.key} value={m.key}>
-                {m.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            className="w-fit"
+            options={[
+              { value: "all", label: t`All models` },
+              ...modelOptions.map((m) => ({ value: m.key, label: m.label })),
+            ]}
+          />
         </Field>
         <Field className="min-w-[220px]">
           <FieldLabel>

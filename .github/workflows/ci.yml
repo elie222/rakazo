@@ -386,13 +386,14 @@ jobs:
           project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
           # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
           # leave no body; ota-base.sh must not read either as "no published update".
+          # Filter before limiting: updates for other runtimes must not hide this runtime's base.
           response="$(
             curl -fsS --max-time 30 https://api.expo.dev/graphql \
               -H "authorization: Bearer $EXPO_TOKEN" \
               -H "content-type: application/json" \
-              --data "$(jq -n --arg id "$project" '{
-                query: "query($id: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
-                variables: { id: $id }
+              --data "$(jq -n --arg id "$project" --arg runtime "$runtime" '{
+                query: "query($id: String!, $runtime: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50, filter: { runtimeVersions: [$runtime] }) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
+                variables: { id: $id, runtime: $runtime }
               }')"
           )" || response=""
           decision="$(bash .github/scripts/ota-base.sh "$response")"
