@@ -17,7 +17,7 @@ vi.mock("@lingui/react/macro", () => {
     Trans: ({ children }: { children: ReactNode }) => children,
   };
 });
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Button: ({ size: _size, ...props }: ComponentProps<"button"> & { size?: string }) => (
     <button {...props} />
   ),
@@ -26,8 +26,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  OptionSelect: (await importOriginal<typeof import("@rakazo/ui-web")>()).OptionSelect,
 }));
 vi.mock("./ai/primitives", () => ({ SuccessPop: () => null }));
 const { deployment, account, me } = vi.hoisted(() => ({
@@ -101,7 +100,9 @@ it("saves an account's own desktop to the account, never the deployment", async 
   account.update.mockResolvedValue(saved);
   const onProviderChange = vi.fn();
   await act(async () => root.render(settings({ scope: "account", onProviderChange })));
-  expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("example-desktop");
+  expect(host.querySelector<HTMLInputElement>("input:not([aria-hidden])")?.value).toBe(
+    "example-desktop",
+  );
   // Loaded once, not again on every render.
   expect(account.get).toHaveBeenCalledOnce();
 
@@ -126,7 +127,7 @@ it("sends an account back to the deployment default", async () => {
   });
   const onProviderChange = vi.fn();
   await act(async () => root.render(settings({ scope: "account", onProviderChange })));
-  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector("input:not([aria-hidden])")).toBeNull();
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(account.update).toHaveBeenCalledWith({ provider: "default", values: {} });
   expect(onProviderChange).not.toHaveBeenCalled();
@@ -171,7 +172,7 @@ it("blocks the fields while a save is in flight", async () => {
   // The response replaces the draft, so an edit accepted meanwhile would be
   // silently lost while the form still claims "Saved".
   expect(host.querySelector("fieldset")?.disabled).toBe(true);
-  expect(host.querySelector<HTMLSelectElement>("select")?.matches(":disabled")).toBe(true);
+  expect(host.querySelector('[role="combobox"]')?.matches(":disabled")).toBe(true);
 
   finishSave();
   await act(async () => {});
