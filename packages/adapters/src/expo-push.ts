@@ -9,7 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { ResponseTooLargeError } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
@@ -265,11 +265,17 @@ export class ExpoPushProvider implements NotificationProvider {
     );
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0 && !call.ended) {
-      await Promise.allSettled(
-        (await this.deliverableTokens(userId)).map(async ({ token }) => {
-          if ((await this.sendCallPush(userId, token, call)) === "invalid")
-            await this.tokens.remove(userId, credentialDigest(token));
-        }),
+      // One device failing must not hold back the call on the others.
+      await Promise.all(
+        (await this.deliverableTokens(userId)).map(({ token }) =>
+          bestEffort(
+            "incoming call push to a legacy device",
+            (async () => {
+              if ((await this.sendCallPush(userId, token, call)) === "invalid")
+                await this.tokens.remove(userId, credentialDigest(token));
+            })(),
+          ),
+        ),
       );
     }
   }

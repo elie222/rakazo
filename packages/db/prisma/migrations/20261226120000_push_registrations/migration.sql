@@ -17,12 +17,13 @@ CREATE POLICY push_registrations_system ON "push_registrations"
 -- The previous release keeps writing push_tokens during the deploy; mirror its writes until the drop.
 CREATE FUNCTION push_tokens_mirror() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP <> 'INSERT' THEN
-    DELETE FROM "push_registrations" WHERE "userId" = OLD."userId" AND "tokenDigest" = OLD."tokenDigest";
-  END IF;
+  -- An old-release delete ends that session's device, even if the new release rotated its token.
   IF TG_OP = 'DELETE' THEN
+    DELETE FROM "push_registrations" WHERE "userId" = OLD."userId"
+      AND ("tokenDigest" = OLD."tokenDigest" OR "sessionId" = OLD."sessionId");
     RETURN OLD;
   END IF;
+  -- An old-release update overwrites its one row per account; another device's row stays.
   DELETE FROM "push_registrations"
     WHERE "tokenDigest" = NEW."tokenDigest"
       OR ("userId" = NEW."userId" AND "sessionId" = NEW."sessionId");
