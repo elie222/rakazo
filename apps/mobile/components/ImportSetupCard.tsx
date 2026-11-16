@@ -9,15 +9,15 @@ import {
 } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
 import type { ViewProps } from "react-native";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { rpc } from "../lib/api";
 import type { ImportSetupBlock } from "../lib/import-setup";
 import { importSetupDetail } from "../lib/import-setup";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
+import { rpcQuery } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
@@ -54,24 +54,13 @@ export function ImportSetupCard({
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const { width: windowWidth } = useWindowDimensions();
-  const [state, setState] = useState<AgentImportSetupState | null>(null);
   const retired = isRetiredImportSetup(block);
-
   // Read again on return from a routine or model screen, and when the thread brings a new block.
-  useFocusEffect(
-    useCallback(() => {
-      if (retired) return;
-      let current = true;
-      rpc("bots/importSetupState", importSetupStateInput(botId, block))
-        .then((next) => {
-          if (current) setState(next);
-        })
-        .catch(() => undefined);
-      return () => {
-        current = false;
-      };
-    }, [botId, block, retired]),
-  );
+  const state: AgentImportSetupState | null =
+    useScreenQuery(rpcQuery("bots/importSetupState", importSetupStateInput(botId, block)), {
+      enabled: !retired,
+      onForeground: false,
+    }).data ?? null;
 
   if (retired) return null;
   const cardStyle = [

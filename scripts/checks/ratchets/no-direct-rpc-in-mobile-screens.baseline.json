@@ -22,10 +22,6 @@
   "apps/mobile/app/routine.tsx": 1,
   "apps/mobile/app/sign-in.tsx": 1,
   "apps/mobile/components/AppConnectCard.tsx": 3,
-  "apps/mobile/components/ComputerCard.tsx": 2,
-  "apps/mobile/components/ImportSetupCard.tsx": 1,
   "apps/mobile/components/model-role-settings.tsx": 1,
-  "apps/mobile/components/space-bots-model.tsx": 1,
-  "apps/mobile/components/thread/special-message-card.tsx": 1,
-  "apps/mobile/components/thread/thread-screen.tsx": 2
+  "apps/mobile/components/space-bots-model.tsx": 1
 }
