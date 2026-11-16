@@ -95,6 +95,9 @@ class Tunnel:
         secure = url.scheme in ("https", "wss")
         if url.scheme not in ("http", "https", "ws", "wss") or not url.hostname:
             raise TunnelError("RAKAZO_NET_URL is not a valid tunnel address.")
+        # The token rides in the request, so only this machine's own loopback goes unencrypted.
+        if not secure and url.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise TunnelError("RAKAZO_NET_URL must use https.")
         try:
             sock = socket.create_connection(
                 (url.hostname, url.port or (443 if secure else 80)), timeout=30
@@ -179,7 +182,8 @@ class Tunnel:
         return data
 
     def recv(self):
-        """The next bytes from the far side; b"" once it has closed."""
+        """The next bytes from the far side; None once it has ended its sending (it may still
+        read), b"" once the tunnel has closed."""
         try:
             while True:
                 first, second = self._read(2)
@@ -191,8 +195,7 @@ class Tunnel:
                     (size,) = struct.unpack("!Q", self._read(8))
                 payload = self._read(size)
                 if opcode in (0x0, 0x1, 0x2):
-                    if payload:
-                        return payload
+                    return payload or None
                 elif opcode == 0x8:
                     self._frame(0x8, payload[:2])
                     return b""
@@ -212,8 +215,9 @@ class Tunnel:
             pass
 
 
-def pump(local_recv, local_send, local_end, tunnel):
-    """Copy both ways until the far side closes. Local end of input becomes a half-close."""
+def pump(local_recv, local_send, local_end, tunnel, local_half_end=lambda: None):
+    """Copy both ways until the tunnel closes. Each side's end of input becomes a half-close of
+    the other: the far side ending calls local_half_end while this side may still send."""
 
     def outbound():
         try:
@@ -231,6 +235,9 @@ def pump(local_recv, local_send, local_end, tunnel):
     try:
         while True:
             data = tunnel.recv()
+            if data is None:
+                local_half_end()
+                continue
             if not data:
                 break
             local_send(data)
@@ -249,7 +256,13 @@ def pump_socket(conn, tunnel):
             pass
         conn.close()
 
-    pump(lambda: conn.recv(CHUNK), conn.sendall, end, tunnel)
+    def half_end():
+        try:
+            conn.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+    pump(lambda: conn.recv(CHUNK), conn.sendall, end, tunnel, half_end)
 
 
 def command_nc(host, port):
@@ -261,7 +274,7 @@ def command_nc(host, port):
         stdout.write(data)
         stdout.flush()
 
-    pump(lambda: stdin.read(CHUNK), write, lambda: None, tunnel)
+    pump(lambda: stdin.read(CHUNK), write, lambda: None, tunnel, stdout.close)
 
 
 def parse_target(value):
@@ -453,8 +466,29 @@ def command_screens_start():
         with open(os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode), "wb") as file:
             file.write(content)
         os.replace(partial, path)
-    if screens_running(version):
-        return
+    if not screens_running(version):
+        start_screens_daemon(version)
+    wait_for_screens()
+
+
+# How long screens-start waits for the proxy to listen on the screens already up.
+SCREEN_READY_SECONDS = 10
+
+
+def wait_for_screens():
+    """Return once every screen's proxy port answers, so a browser's first visit finds it."""
+    deadline = time.monotonic() + SCREEN_READY_SECONDS
+    waiting = [SCREEN_PORT_BASE + display for display in screen_displays()]
+    while waiting and time.monotonic() < deadline:
+        port = waiting[0]
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            waiting.pop(0)
+        except OSError:
+            time.sleep(0.1)
+
+
+def start_screens_daemon(version):
     with open(os.path.join(SCREEN_DIR, "screens.log"), "ab") as log:
         daemon = subprocess.Popen(
             [sys.executable, "-I", SCREEN_HELPER, "screens-serve"],

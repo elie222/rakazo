@@ -6,7 +6,7 @@ import { connect as tlsConnect } from "node:tls";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
+import { cancelResponseBody, deadlineSignal } from "@rakazo/core";
 import { Agent } from "undici";
 import type { SafeRemoteFetch } from "./remote-mcp.js";
 import { isTailnetAddress, isTailnetHost } from "./tailnet-host.js";
@@ -51,6 +51,27 @@ export function tailnetEndpoint(value: string): URL | undefined {
  * only ciphertext for HTTPS; plain HTTP is still carried inside the tailnet's own encryption.
  */
 export function createTailnetFetch(route: TailnetRoute): SafeRemoteFetch {
+  // A pooled connection serves whichever request comes next, so its dial carries no one
+  // request's signal. It stops once every request waiting for a connection has gone away.
+  const waiting = new Set<{ signal: AbortSignal | undefined }>();
+  const dials = new Set<() => void>();
+  const unwanted = () =>
+    waiting.size > 0 && [...waiting].every((request) => request.signal?.aborted);
+  const recheckDials = () => {
+    for (const check of dials) check();
+  };
+  const dialSignal = (): { signal: AbortSignal; done: () => void } => {
+    const cancel = new AbortController();
+    const check = () => {
+      if (unwanted()) cancel.abort(new Error("No request is waiting for this connection."));
+    };
+    dials.add(check);
+    check();
+    return {
+      signal: deadlineSignal(DIAL_TIMEOUT_MS, cancel.signal),
+      done: () => dials.delete(check),
+    };
+  };
   const dispatcher = new Agent({
     keepAliveTimeout: KEEP_ALIVE_MS,
     keepAliveMaxTimeout: KEEP_ALIVE_MS,
@@ -58,8 +79,10 @@ export function createTailnetFetch(route: TailnetRoute): SafeRemoteFetch {
       const https = options.protocol === "https:";
       const host = options.hostname.replace(/^\[|\]$/g, "");
       const port = Number(options.port) || (https ? 443 : 80);
+      const dialing = dialSignal();
       route
-        .dial({ host, port }, AbortSignal.timeout(DIAL_TIMEOUT_MS))
+        .dial({ host, port }, dialing.signal)
+        .finally(dialing.done)
         .then((socket) => {
           if (!https) return callback(null, socket as Socket);
           const secure: TLSSocket = tlsConnect({
@@ -84,6 +107,10 @@ export function createTailnetFetch(route: TailnetRoute): SafeRemoteFetch {
     const url = new URL(String(input));
     if (!isTailnetUrl(url)) throw new Error(`${url.hostname} is not on a tailnet`);
     let response: Response;
+    const signal = init?.signal ?? undefined;
+    const request = { signal };
+    waiting.add(request);
+    signal?.addEventListener("abort", recheckDials, { once: true });
     try {
       response = await dispatcherFetch(url, {
         ...init,
@@ -95,6 +122,9 @@ export function createTailnetFetch(route: TailnetRoute): SafeRemoteFetch {
       throw new ConnectionSetupError(`Could not reach ${url.host}: ${refusal ?? reason(error)}`, {
         cause: error,
       });
+    } finally {
+      waiting.delete(request);
+      signal?.removeEventListener("abort", recheckDials);
     }
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);

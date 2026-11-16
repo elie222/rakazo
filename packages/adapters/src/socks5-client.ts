@@ -34,7 +34,8 @@ export async function socks5Connect(input: {
   port: number;
   signal: AbortSignal;
 }): Promise<Socket> {
-  const socket = connect({ host: input.proxy.host, port: input.proxy.port });
+  // Half-open, so the far side ending its sending leaves this side free to finish its own.
+  const socket = connect({ host: input.proxy.host, port: input.proxy.port, allowHalfOpen: true });
   socket.setNoDelay(true);
   const abort = () => socket.destroy(new Socks5Error("The connection was cancelled."));
   input.signal.addEventListener("abort", abort, { once: true });

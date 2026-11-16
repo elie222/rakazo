@@ -11,7 +11,7 @@ import {
 import type { Actor, TailnetStatus } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -88,21 +88,20 @@ export function prepareTailnetBrowser(
   const { deps, repos } = ctx;
   const computers = deps.tailnet?.computers;
   if (!computers) return;
-  void (async () => {
-    const bot = await repos.getBot(actor, botId);
-    const computer = bot.computer;
-    if (!computer?.providerRef || computer.state !== "running") return;
-    await computers.prepareComputer({
-      sandbox: deps.sandbox,
-      computerId: computer.id,
-      computer: toComputerRef(computer),
-      member: { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
-      context: computerContext(actor, bot.id, "takeover"),
-    });
-  })().catch((error: unknown) =>
-    getLogger().warn("tailnet browser proxy not prepared", {
-      error: error instanceof Error ? error.message : String(error),
-    }),
+  void bestEffort(
+    "prepare the tailnet browser proxy",
+    (async () => {
+      const bot = await repos.getBot(actor, botId);
+      const computer = bot.computer;
+      if (!computer?.providerRef || computer.state !== "running") return;
+      await computers.prepareComputer({
+        sandbox: deps.sandbox,
+        computerId: computer.id,
+        computer: toComputerRef(computer),
+        member: { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
+        context: computerContext(actor, bot.id, "takeover"),
+      });
+    })(),
   );
 }
 

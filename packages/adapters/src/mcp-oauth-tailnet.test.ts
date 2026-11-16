@@ -85,8 +85,8 @@ function nodeTo(port: number): { route: TailnetRoute; dials: string[] } {
   };
 }
 
-function broker() {
-  const sessions = new Map<string, Record<string, unknown>>();
+/** A broker in one process; `sessions` shared between two is the stored sign-in table. */
+function broker(sessions = new Map<string, Record<string, unknown>>()) {
   const server = { id: "server-1", endpoint: `${ORIGIN}/mcp`, secretId: null, revision: 1 };
   const tx = {
     $executeRaw: vi.fn().mockResolvedValue(1),
@@ -127,7 +127,9 @@ function broker() {
     fetch: () => Promise.reject(new Error("the server's own network was used")),
     resolveHostname: async () => [{ address: "100.101.102.103", family: 4 }],
   };
-  return { broker: new McpOAuthBroker(prisma as never, { put } as never, network), tx };
+  // Stored as given, so another broker can read what one stored.
+  const load = async (ciphertext: string) => ciphertext;
+  return { broker: new McpOAuthBroker(prisma as never, { put, load } as never, network), tx };
 }
 
 describe("signing in to an MCP server on a member's tailnet", () => {
@@ -187,6 +189,40 @@ describe("signing in to an MCP server on a member's tailnet", () => {
     await expect(complete(async () => node.route)).resolves.toMatchObject({
       serverId: "server-1",
     });
+  });
+
+  it("gives a sign-in finished on another process the bot node for its refreshes", async () => {
+    const { port, requests } = await oauthServer();
+    const node = nodeTo(port);
+    const sessions = new Map<string, Record<string, unknown>>();
+    const started = await broker(sessions).broker.begin({
+      serverId: "server-1",
+      ...ACTOR,
+      redirectUri: REDIRECT,
+      tailnet: async () => node.route,
+    });
+    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+    // Another API process, which knows the sign-in only from its stored session.
+    const elsewhere = broker(sessions);
+    const providers = vi.spyOn(
+      elsewhere.broker as unknown as { createProvider: (...args: unknown[]) => unknown },
+      "createProvider",
+    );
+    await elsewhere.broker.complete({
+      sessionId: started.sessionId,
+      state: started.sessionId,
+      code: "code",
+      ...ACTOR,
+      tailnet: async () => node.route,
+    });
+    expect(providers).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ tailnet: node.route }),
+    );
+    expect(requests).toContain("POST /token");
+    expect(elsewhere.tx.mcpServer.update).toHaveBeenCalled();
   });
 
   it("refuses to start without a route, as the server's own network can't reach it", async () => {

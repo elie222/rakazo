@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
-import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
+import { abortableDelay, anySignal, redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
 import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
@@ -468,6 +468,24 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
 }
 
 /** Tools that drive the bot's computer: screen, page browser and shell. */
+/** How long a screen action waits for the browsers' tailnet proxy to start. */
+const TAILNET_BROWSER_WAIT_MS = 15_000;
+
+/** Waits, at most briefly, for the screen browsers' tailnet proxy; a failure was logged. */
+async function screenBrowsersReady(ctx: RunContext): Promise<void> {
+  const starting = ctx.state.computerUse.tailnetBrowser;
+  if (!starting) return;
+  const waited = new AbortController();
+  try {
+    await Promise.race([
+      starting,
+      abortableDelay(TAILNET_BROWSER_WAIT_MS, anySignal([ctx.context.signal, waited.signal])),
+    ]);
+  } finally {
+    waited.abort();
+  }
+}
+
 export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
     const { deps, context } = ctx;
@@ -494,6 +512,7 @@ export const computerTools: ToolHandlers = {
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {
       const computer = await ctx.computer.get("tool", name);
+      await screenBrowsersReady(ctx);
       // Counted just before the press; a desktop press is never known not to have happened.
       const refused = await countPayment(ctx, call);
       if (refused) return { error: refused };

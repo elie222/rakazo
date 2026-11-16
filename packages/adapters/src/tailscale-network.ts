@@ -304,7 +304,7 @@ function keyDescription(value: string): string {
 }
 
 async function errorDetail(response: Response, secret: string): Promise<string> {
-  const text = await response.text().catch(() => "");
+  const text = (await bestEffort("read a tailnet API error body", response.text())) ?? "";
   let message = text;
   try {
     const parsed = JSON.parse(text) as { message?: unknown };

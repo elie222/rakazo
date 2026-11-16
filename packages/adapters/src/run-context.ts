@@ -85,6 +85,8 @@ export interface RunComputerUseState {
   tool: string | undefined;
   /** Set once the computer started, so cleanup releases its screen. */
   screenRelease: ScreenRelease | undefined;
+  /** The screen browsers' tailnet proxy starting, which screen actions wait for (bounded). */
+  tailnetBrowser?: Promise<unknown>;
 }
 
 export interface ReplyState {

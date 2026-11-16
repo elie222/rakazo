@@ -1,10 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig } from "@rakazo/contracts";
 import { TailnetConnectionConfigSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { isUniqueViolation } from "@rakazo/db";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
 /**
@@ -47,14 +48,13 @@ export async function saveTailnetConnection(input: {
   const { prisma, secretStore, scope } = input;
   const config = TailnetConnectionConfigSchema.parse(input.config);
   await input.verify(config).catch((error: unknown) => {
-    if (error instanceof PrivateNetworkError) {
-      throw new TailnetConnectionRefusedError(error.message, { cause: error });
-    }
+    if (error instanceof PrivateNetworkError) throw tailnetConnectionError(error);
     throw error;
   });
   const where = { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } };
   const existing = await prisma.tailnetConnection.findUnique({ where, select: { id: true } });
-  const id = existing?.id ?? randomBytes(12).toString("hex");
+  // A first connection's id comes from the member and Space, so two saves at once write one row.
+  const id = existing?.id ?? tailnetConnectionId(scope);
   // Writes go by id: secret persistence finds the replaced value with findMany, which takes no
   // compound unique key.
   const stored = await secretStore.put(
@@ -73,14 +73,31 @@ export async function saveTailnetConnection(input: {
     input.prisma,
     secretStore,
     { id, ciphertext: stored.ciphertext },
-    () =>
-      prisma.tailnetConnection.upsert({
-        where: { id },
-        create: { id, ...scope, tag: config.tag, ciphertext: stored.ciphertext },
-        update: { tag: config.tag, ciphertext: stored.ciphertext },
-        select: { tag: true, botIds: true },
-      }),
+    async () => {
+      const update = { tag: config.tag, ciphertext: stored.ciphertext };
+      const select = { tag: true, botIds: true };
+      try {
+        return await prisma.tailnetConnection.upsert({
+          where: { id },
+          create: { id, ...scope, ...update },
+          update,
+          select,
+        });
+      } catch (error) {
+        // Another save created the row between this one's read and its write: update it.
+        if (!isUniqueViolation(error)) throw error;
+        return await prisma.tailnetConnection.update({ where: { id }, data: update, select });
+      }
+    },
   );
+}
+
+/** The id of a member's first connection in a Space; stable, so concurrent saves agree on it. */
+function tailnetConnectionId(scope: TailnetScope): string {
+  return createHash("sha256")
+    .update(JSON.stringify(["tailnet", scope.spaceId, scope.userId]))
+    .digest("hex")
+    .slice(0, 24);
 }
 
 /** Remove this member's connection. Returns false when there was none. */
@@ -94,12 +111,26 @@ export async function removeTailnetConnection(input: {
   return count > 0;
 }
 
-/** The tailnet refused the client, or couldn't be reached to check it. */
+/** The tailnet refused the client, which the member can fix. */
 export class TailnetConnectionRefusedError extends ClientError {
   constructor(message: string, options?: ErrorOptions) {
     super("BAD_REQUEST", message, "BAD_REQUEST", options);
     this.name = "TailnetConnectionRefusedError";
   }
+}
+
+/** The tailnet's service couldn't be reached to check the client: try again later. */
+export class TailnetUnavailableError extends ClientError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", options);
+    this.name = "TailnetUnavailableError";
+  }
+}
+
+function tailnetConnectionError(error: PrivateNetworkError): ClientError {
+  return error.code === "unavailable"
+    ? new TailnetUnavailableError(error.message, { cause: error })
+    : new TailnetConnectionRefusedError(error.message, { cause: error });
 }
 
 /** The bot is not one of this Space's. */

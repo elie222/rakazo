@@ -1,3 +1,4 @@
+import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { EncryptedSecretStore } from "./secrets.js";
 import {
@@ -85,6 +86,50 @@ describe("tailnet connections", () => {
       }),
     ).rejects.toThrow("did not accept");
     expect(rows.size).toBe(0);
+  });
+
+  it("tells a refused client from a tailnet service that couldn't be reached", async () => {
+    const { rows, prisma } = database();
+    const save = (error: PrivateNetworkError) =>
+      saveTailnetConnection({
+        prisma,
+        secretStore,
+        scope: ALICE,
+        config: CONFIG,
+        verify: async () => {
+          throw error;
+        },
+      });
+    await expect(
+      save(new PrivateNetworkError("credentials", "Check its ID and secret.")),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST", message: "Check its ID and secret." });
+    await expect(
+      save(new PrivateNetworkError("unavailable", "Tailscale could not be reached.")),
+    ).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
+    expect(rows.size).toBe(0);
+  });
+
+  it("agrees on one row when two first connections are saved at once", async () => {
+    const { rows, prisma } = database();
+    const save = (secret: string) =>
+      saveTailnetConnection({
+        prisma,
+        secretStore,
+        scope: ALICE,
+        config: { ...CONFIG, clientSecret: secret },
+        verify: async () => undefined,
+      });
+    // The other save's insert lands between this one's read and its write.
+    const upsert = prisma.tailnetConnection.upsert.bind(prisma.tailnetConnection);
+    vi.spyOn(prisma.tailnetConnection, "upsert").mockImplementationOnce((async (
+      args: Parameters<typeof upsert>[0],
+    ) => {
+      await upsert(args);
+      throw Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    }) as never);
+    await Promise.all([save("tskey-client-kTEST-first"), save("tskey-client-kTEST-second")]);
+    expect(rows.size).toBe(1);
+    expect(await getTailnetConnection(prisma, ALICE)).toEqual({ tag: CONFIG.tag, botIds: [] });
   });
 
   it("replaces the client and keeps the allowed bots", async () => {

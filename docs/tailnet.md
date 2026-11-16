@@ -115,11 +115,17 @@ also revoke it in the Tailscale admin console.
 The server image ships Tailscale's `tailscaled` and `tailscale`, and the API runs one userspace
 `tailscaled` per bot device. No kernel device or extra privilege is needed.
 
-Bots' computers reach the API at the server's `WEB_ORIGIN`. When that is a loopback address such as
-`http://127.0.0.1:5173`, computers can't reach it, and tailnet access stays off. Reaching a local
-server from Docker computers isn't supported yet.
+Bots' computers reach the API at the server's `WEB_ORIGIN`, which must be an `https://` address:
+each computer's tunnel token travels with its requests. When it is plain HTTP, or a loopback address
+such as `http://127.0.0.1:5173` that computers can't reach, tailnet access stays off. Reaching a
+local server from Docker computers isn't supported yet.
+
+Each bot device takes connections on a loopback port inside the API or worker. Anything running in
+those processes' containers could reach the member's tailnet through it as that bot, which is one
+more reason to allow only stdio MCP servers you trust: they run there with the API's own access.
 
 The API runs devices for the tunnels it receives, and the API and worker each run devices for the
 MCP servers their runs call, so a bot can have a device on each. Every process checks its devices'
-access each minute, and takes off any whose bot was turned off elsewhere. Open tunnels check every
-few seconds, and close once the bot's access is off or their destination is no longer approved.
+access each minute, and takes off any whose bot was turned off elsewhere. Open tunnels close at once
+in the process where access is turned off, and other processes' tunnels within 30 seconds, as do
+tunnels whose destination is no longer approved.

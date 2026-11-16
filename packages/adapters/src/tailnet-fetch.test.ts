@@ -5,7 +5,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { connect, createServer as createTcpServer } from "node:net";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TailnetRoute } from "./tailnet-fetch.js";
 import { createTailnetFetch, isTailnetUrl } from "./tailnet-fetch.js";
 import { TAILNET_NOT_CONNECTED_MESSAGE } from "./tailnet-service.js";
@@ -90,6 +90,25 @@ describe("createTailnetFetch", () => {
     // A TLS handshake record whose ClientHello carries the name for SNI.
     expect(hello?.[0]).toBe(0x16);
     expect(hello?.toString("latin1")).toContain("nas.tail1234.ts.net");
+  });
+
+  it("stops dialing once the request that wanted the connection is cancelled", async () => {
+    let dialSignal: AbortSignal | undefined;
+    const tailnetFetch = fetchOver({
+      dial: (_destination, signal) => {
+        dialSignal = signal;
+        return new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+        );
+      },
+    });
+    const request = new AbortController();
+    const fetching = tailnetFetch("http://nas.tail1234.ts.net/mcp", { signal: request.signal });
+    await vi.waitFor(() => expect(dialSignal).toBeDefined());
+    expect(dialSignal?.aborted).toBe(false);
+    request.abort();
+    await expect(fetching).rejects.toThrow();
+    expect(dialSignal?.aborted).toBe(true);
   });
 
   it("says why the tailnet refused", async () => {

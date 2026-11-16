@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import type { IncomingMessage, Server } from "node:http";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { duplexPair } from "node:stream";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
@@ -78,7 +78,7 @@ async function gateway(overrides: Partial<TailnetTunnelDeps> = {}) {
       },
     });
   };
-  return { gateway, records, connect };
+  return { gateway, records, connect, port };
 }
 
 /** The refusal a client sees before any upgrade: status and the reason in the body. */
@@ -135,6 +135,8 @@ describe("TailnetTunnelGateway", () => {
     const { connect } = await gateway({
       dial: async () => {
         const [client, service] = duplexPair();
+        // Read what the computer sends, as a host does, so its end of sending can arrive.
+        service.resume();
         service.end(Buffer.alloc(size, 7));
         return client;
       },
@@ -143,6 +145,8 @@ describe("TailnetTunnelGateway", () => {
     let received = 0;
     socket.on("message", (data: Buffer) => {
       received += data.length;
+      // The far side has finished; this side ends too, and the tunnel closes.
+      if (data.length === 0) socket.send(Buffer.alloc(0));
     });
     await once(socket, "close");
     expect(received).toBe(size);
@@ -224,6 +228,27 @@ describe("TailnetTunnelGateway", () => {
     await once(first, "open");
     expect((await refusal(connect())).status).toBe(429);
     first.close();
+  });
+
+  it("refuses a malformed upgrade before dialing anything", async () => {
+    const dial = vi.fn(async () => duplexPair()[0]);
+    const { port } = await gateway({ dial });
+    const request = httpRequest({
+      host: "127.0.0.1",
+      port,
+      path: `${TAILNET_CONNECT_PATH}?host=nas.tail1234.ts.net&port=22`,
+      headers: {
+        connection: "Upgrade",
+        upgrade: "websocket",
+        "sec-websocket-key": "not-a-key",
+        "sec-websocket-version": "99",
+        authorization: `Bearer ${sealTailnetTunnelToken(CLAIMS, KEY)}`,
+      },
+    });
+    request.end();
+    const [response] = (await once(request, "response")) as [IncomingMessage];
+    expect(response.statusCode).toBe(400);
+    expect(dial).not.toHaveBeenCalled();
   });
 
   it("counts tunnels still being dialed toward the limit", async () => {
@@ -507,7 +532,7 @@ describe("tailnet settings for shell commands", () => {
     expect(await access({ available: false }).environment(run)).toBeUndefined();
   });
 
-  it("reaches the server at its public origin, never a loopback one", () => {
+  it("reaches the server at its public HTTPS origin, never a loopback or plain HTTP one", () => {
     expect(tailnetServerOrigin("https://rakazo.example.test/app")).toBe(
       "https://rakazo.example.test",
     );
@@ -516,6 +541,7 @@ describe("tailnet settings for shell commands", () => {
     );
     expect(tailnetServerOrigin("http://127.0.0.1:5173")).toBeUndefined();
     expect(tailnetServerOrigin("http://localhost:5173")).toBeUndefined();
+    expect(tailnetServerOrigin("http://rakazo.example.test")).toBeUndefined();
     expect(tailnetServerOrigin("not a url")).toBeUndefined();
   });
 });

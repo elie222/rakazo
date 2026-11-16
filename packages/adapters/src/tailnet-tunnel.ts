@@ -11,6 +11,7 @@ import { requestSite } from "@rakazo/core/egress";
 import type { PrismaClient } from "@rakazo/db";
 import { listApprovalRules, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { tailnetHelper } from "./page-browser-install.js";
 import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
@@ -21,8 +22,12 @@ import type { TailnetRun } from "./tailnet-service.js";
 const TOKEN_PREFIX = "rtn1";
 const PASS_PREFIX = "rcp1";
 const DIAL_TIMEOUT_MS = 20_000;
-/** How often open tunnels check that whoever opened them still may; the rest close. */
-const RECHECK_MS = 5_000;
+/**
+ * How often open tunnels check that whoever opened them still may; the rest close. Only a safety
+ * net: turning access off or disconnecting takes the bot's device off at once in the process that
+ * changed it, which closes its tunnels there; this reaches other processes and approval changes.
+ */
+const RECHECK_MS = 30_000;
 /** Pause reading the far side while this much is waiting to go out to the computer. */
 const SEND_HIGH_WATER = 1 << 20;
 /** Open tunnels one run may hold at once. */
@@ -258,6 +263,8 @@ export class TailnetTunnelGateway {
     const now = this.deps.now ?? Date.now;
     const url = new URL(request.url ?? "/", "http://tunnel");
     if (this.closed) return refuse(socket, 503, "The server is shutting down.");
+    // Checked before anything is dialed: a handshake ws would reject never reaches its callback.
+    if (!isWebSocketHandshake(request)) return refuse(socket, 400, "Expected a WebSocket upgrade.");
     const opened = await this.principal(request, url);
     if (!opened) {
       return refuse(
@@ -363,56 +370,82 @@ export class TailnetTunnelGateway {
       upstream.destroy();
       return refuse(socket, 503, "The server is shutting down.");
     }
-    // Upgrading completes in this call, so the tunnel joins its group before the slot is freed.
-    this.wss.handleUpgrade(request, socket, head, (ws) => {
-      const tunnel: Tunnel = { destination, close: () => ws.terminate() };
-      const group = this.join(key, opened);
-      group.tunnels.add(tunnel);
-      let bytesSent = 0;
-      let bytesReceived = 0;
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        this.leave(key, group, tunnel);
-        upstream.destroy();
-        ws.terminate();
-        record("closed", { bytesSent, bytesReceived });
-      };
-      ws.on("message", (data: Buffer, isBinary: boolean) => {
-        if (!isBinary) return finish();
-        // An empty message is the computer ending its sending side: a TCP half-close.
-        if (data.length === 0) return void upstream.end();
-        bytesSent += data.length;
-        if (!upstream.write(data)) {
-          ws.pause();
-          upstream.once("drain", () => ws.resume());
-        }
+    // Upgrading completes in this call, so the tunnel joins its group before the slot is freed,
+    // and a dialed connection the upgrade didn't take is closed here.
+    let upgraded = false;
+    try {
+      this.wss.handleUpgrade(request, socket, head, (ws) => {
+        upgraded = true;
+        this.relay(ws, { key, opened, destination, upstream, record });
       });
-      upstream.on("data", (chunk: Buffer) => {
-        bytesReceived += chunk.length;
-        // Each send reports once it has gone out; the one that drains the backlog resumes.
-        ws.send(chunk, { binary: true }, () => {
-          if (upstream.isPaused() && ws.bufferedAmount <= SEND_HIGH_WATER) upstream.resume();
-        });
-        if (ws.bufferedAmount > SEND_HIGH_WATER) upstream.pause();
-      });
-      // The far side ending closes the tunnel once what it sent has gone out.
-      upstream.on("end", () => ws.close(1000));
-      upstream.on("error", finish);
-      upstream.on("close", () => {
-        if (ws.readyState === ws.OPEN) ws.close(1000);
-      });
-      ws.on("close", finish);
-      ws.on("error", finish);
-      // A dialed connection arrives paused (see socks5Connect), and a data listener does not
-      // restart a stream paused on purpose. Without this a server that speaks first, such as
-      // SSH with its banner, is never heard.
-      upstream.resume();
-    });
+    } finally {
+      if (!upgraded) upstream.destroy();
+    }
   }
 
-  /** The group for this principal, checking every few seconds that it still may tunnel. */
+  /** Carries one upgraded tunnel both ways until either side ends it. */
+  private relay(
+    ws: WebSocket,
+    input: {
+      key: string;
+      opened: Opened;
+      destination: TailnetDestination;
+      upstream: Duplex;
+      record: (
+        outcome: TailnetTunnelRecord["outcome"],
+        extra?: Partial<TailnetTunnelRecord>,
+      ) => void;
+    },
+  ): void {
+    const { key, opened, destination, upstream, record } = input;
+    const tunnel: Tunnel = { destination, close: () => ws.terminate() };
+    const group = this.join(key, opened);
+    group.tunnels.add(tunnel);
+    let bytesSent = 0;
+    let bytesReceived = 0;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      this.leave(key, group, tunnel);
+      upstream.destroy();
+      ws.terminate();
+      record("closed", { bytesSent, bytesReceived });
+    };
+    ws.on("message", (data: Buffer, isBinary: boolean) => {
+      if (!isBinary) return finish();
+      // An empty message is the computer ending its sending side: a TCP half-close.
+      if (data.length === 0) return void upstream.end();
+      bytesSent += data.length;
+      if (!upstream.write(data)) {
+        ws.pause();
+        upstream.once("drain", () => ws.resume());
+      }
+    });
+    upstream.on("data", (chunk: Buffer) => {
+      bytesReceived += chunk.length;
+      // Each send reports once it has gone out; the one that drains the backlog resumes.
+      ws.send(chunk, { binary: true }, () => {
+        if (upstream.isPaused() && ws.bufferedAmount <= SEND_HIGH_WATER) upstream.resume();
+      });
+      if (ws.bufferedAmount > SEND_HIGH_WATER) upstream.pause();
+    });
+    // The far side ending its sending is passed on the same way, after what it sent; the
+    // computer may still send, and the tunnel closes once both sides have ended.
+    upstream.on("end", () => ws.send(Buffer.alloc(0), { binary: true }));
+    upstream.on("error", finish);
+    upstream.on("close", () => {
+      if (ws.readyState === ws.OPEN) ws.close(1000);
+    });
+    ws.on("close", finish);
+    ws.on("error", finish);
+    // A dialed connection arrives paused (see socks5Connect), and a data listener does not
+    // restart a stream paused on purpose. Without this a server that speaks first, such as
+    // SSH with its banner, is never heard.
+    upstream.resume();
+  }
+
+  /** The group for this principal, rechecking on a timer that it still may tunnel. */
   private join(key: string, opened: Opened): TunnelGroup {
     let group = this.open.get(key);
     if (group) return group;
@@ -421,7 +454,7 @@ export class TailnetTunnelGateway {
     created.timer = setInterval(() => {
       if (checking) return;
       checking = true;
-      void this.recheck(key, created, opened)
+      void this.recheck(created, opened)
         .catch((error: unknown) =>
           getLogger().warn("tailnet tunnel recheck failed", {
             error: error instanceof Error ? error.message : String(error),
@@ -441,11 +474,13 @@ export class TailnetTunnelGateway {
    * Close what may no longer stay open: every tunnel once whoever opened them can't, or the
    * member stops letting the bot on; a run's tunnel once its destination is no longer approved.
    */
-  private async recheck(key: string, group: TunnelGroup, opened: Opened): Promise<void> {
+  private async recheck(group: TunnelGroup, opened: Opened): Promise<void> {
     const { principal } = opened;
     const identity = principal.kind === "run" ? principal.run : principal.member;
+    // Only this group: by the time the check answers, a new one may hold the same key.
     if (!(await opened.current()) || !(await this.deps.allowed(identity))) {
-      return this.closeGroup(key);
+      for (const tunnel of [...group.tunnels]) tunnel.close();
+      return;
     }
     if (principal.kind !== "run") return;
     const verdicts = new Map<string, Promise<true | string>>();
@@ -473,6 +508,19 @@ function groupKey(principal: TailnetPrincipal): string {
   return principal.kind === "run"
     ? `run:${principal.run.runId}`
     : `member:${principal.member.spaceId}:${principal.member.userId}:${principal.member.botId}`;
+}
+
+/** A well-formed WebSocket upgrade, as ws accepts it; anything else it refuses unanswered. */
+function isWebSocketHandshake(request: IncomingMessage): boolean {
+  const key = request.headers["sec-websocket-key"];
+  const version = request.headers["sec-websocket-version"];
+  return (
+    request.method === "GET" &&
+    request.headers.upgrade?.toLowerCase() === "websocket" &&
+    typeof key === "string" &&
+    /^[+/0-9A-Za-z]{22}==$/.test(key) &&
+    (version === "8" || version === "13")
+  );
 }
 
 function refuse(socket: Duplex, status: number, message: string): void {
@@ -620,13 +668,14 @@ export interface TailnetCommandAccess {
 }
 
 /**
- * The origin bots' computers use to reach this server: the public web origin, unless it is a
- * loopback address only this machine can reach.
+ * The origin bots' computers use to reach this server: the public web origin, when it is HTTPS,
+ * so tunnel tokens never travel unencrypted, and not a loopback address only this machine can
+ * reach.
  */
 export function tailnetServerOrigin(webOrigin: string): string | undefined {
   try {
     const url = new URL(webOrigin);
-    return isLoopbackHost(url.hostname) ? undefined : url.origin;
+    return url.protocol === "https:" && !isLoopbackHost(url.hostname) ? url.origin : undefined;
   } catch {
     return undefined;
   }

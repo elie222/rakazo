@@ -1428,6 +1428,10 @@ export class McpOAuthBroker {
     if (pending && (pending.spaceId !== input.spaceId || pending.userId !== input.userId)) {
       pending = undefined;
     }
+    // Resolved before the session is consumed, so a member without a bot on their tailnet can
+    // retry, and before a stored session's provider is rebuilt, so its refreshes use it too.
+    let tailnet: TailnetRoute | undefined;
+    let routed = false;
     if (!pending) {
       const session = await this.prisma.mcpOAuthSession.findFirst({
         where: {
@@ -1451,6 +1455,8 @@ export class McpOAuthBroker {
         material: await this.read(session.oauthCiphertext, session.id),
         ...(server.secretId ? { secretId: server.secretId } : {}),
       };
+      tailnet = await input.tailnet?.(session.endpoint);
+      routed = true;
       pending = {
         serverId: server.id,
         spaceId: input.spaceId,
@@ -1461,13 +1467,13 @@ export class McpOAuthBroker {
         provider: this.createProvider(server, context, loaded, {
           redirectUri: session.redirectUri,
           state: session.id,
+          tailnet,
         }),
         createdAt: session.createdAt.getTime(),
         expiry: undefined,
       };
     }
-    // Before consuming the session, so a member without a bot on their tailnet can retry.
-    const tailnet = await input.tailnet?.(pending.endpoint);
+    if (!routed) tailnet = await input.tailnet?.(pending.endpoint);
     // Consume the session up front so a failed token exchange cannot be
     // retried with a replayed code; the user starts a fresh flow instead.
     this.pending.delete(input.sessionId);

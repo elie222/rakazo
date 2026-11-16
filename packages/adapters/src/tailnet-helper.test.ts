@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import { tailnetHelper } from "./page-browser-install.js";
@@ -39,6 +40,9 @@ const run = promisify(execFile);
 
 let gatewayServer: Server;
 let echo: NetServer;
+/** Greets, ends its own sending at once, then reports what it still heard. */
+let greeter: NetServer;
+let heardAfterGreeting = deferred<string>();
 let web: Server;
 let gatewayPort = 0;
 let refuse: string | undefined;
@@ -90,14 +94,27 @@ beforeAll(async () => {
     socket.on("data", (chunk) => chunks.push(chunk));
     socket.on("end", () => socket.end(Buffer.concat(chunks)));
   });
+  greeter = createNetServer({ allowHalfOpen: true }, (socket) => {
+    let heard = "";
+    socket.on("data", (chunk) => {
+      heard += chunk;
+    });
+    socket.on("end", () => {
+      heardAfterGreeting.resolve(heard);
+      socket.destroy();
+    });
+    socket.end("hi\n");
+  });
   web = createServer((request, response) =>
     response.writeHead(200, { "content-type": "text/plain" }).end(`tailnet web ${request.url}`),
   );
   await Promise.all([
     new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve)),
+    new Promise<void>((resolve) => greeter.listen(0, "127.0.0.1", resolve)),
     new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve)),
   ]);
   services.set("nas.tail1234.ts.net:7", () => port(echo));
+  services.set("nas.tail1234.ts.net:9", () => port(greeter));
   services.set("web.tail1234.ts.net:80", () => port(web));
   const deps: TailnetTunnelDeps = {
     key: KEY,
@@ -112,7 +129,8 @@ beforeAll(async () => {
     dial: async (_run, destination) => {
       const local = services.get(tailnetDestinationKey(destination));
       if (!local) throw new Error("unknown service");
-      const socket = connect(local(), "127.0.0.1");
+      // Half-open, as a node's connection is.
+      const socket = connect({ port: local(), host: "127.0.0.1", allowHalfOpen: true });
       await once(socket, "connect");
       return socket;
     },
@@ -127,7 +145,9 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const child of children) child.kill();
   await Promise.all(
-    [gatewayServer, echo, web].map((server) => new Promise((resolve) => server.close(resolve))),
+    [gatewayServer, echo, greeter, web].map(
+      (server) => new Promise((resolve) => server.close(resolve)),
+    ),
   );
 });
 
@@ -135,6 +155,28 @@ describe("rakazo-net", () => {
   it("connects stdin and stdout to a tailnet host, with a half-close", async () => {
     const result = await helper(["nc", "nas.tail1234.ts.net", "7"], "hello over the tailnet");
     expect(result).toMatchObject({ code: 0, stdout: "hello over the tailnet" });
+  });
+
+  it("keeps sending to a host that has finished sending", async () => {
+    heardAfterGreeting = deferred<string>();
+    const child = spawn("python3", [HELPER, "nc", "nas.tail1234.ts.net", "9"], {
+      env: environment(),
+    });
+    children.push(child);
+    child.stdout.setEncoding("utf8");
+    let output = "";
+    await new Promise<void>((resolve) => {
+      child.stdout.on("data", (chunk: string) => {
+        output += chunk;
+        if (output.includes("hi")) resolve();
+      });
+    });
+    // The host has ended its side by now; the reply still reaches it.
+    child.stdin.end("late reply");
+    expect(await heardAfterGreeting.promise).toBe("late reply");
+    const [code] = await once(child, "exit");
+    expect(code).toBe(0);
+    expect(output).toBe("hi\n");
   });
 
   it("prints Rakazo's reason when a connection is refused", async () => {
@@ -229,6 +271,16 @@ describe("rakazo-net", () => {
       code: 1,
       stderr: "rakazo-net: example.com is not a tailnet host.\n",
     });
+  });
+
+  it("never sends its token unencrypted off this machine", async () => {
+    const { stderr } = await run("python3", [HELPER, "nc", "nas.tail1234.ts.net", "7"], {
+      env: {
+        ...environment(),
+        RAKAZO_NET_URL: `http://rakazo.example.test${TAILNET_CONNECT_PATH}`,
+      },
+    }).catch((error: { stderr: string }) => error);
+    expect(stderr).toBe("rakazo-net: RAKAZO_NET_URL must use https.\n");
   });
 
   it("explains a secure connection that fails, without a traceback", async () => {
