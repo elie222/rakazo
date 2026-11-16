@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { isToolActivityBlock } from "./tool-activity.js";
 
 /** A fenced block becomes a mention of itself, with its language if known. */
 function describeCodeBlock(fence: string): string {
@@ -293,9 +294,11 @@ export function narrateTool(toolName: string): string | null {
   return /^[\w .:/-]+$/.test(short) ? `running ${short}` : null;
 }
 
+/** What a voice reads from a message: the bot's own words, never its tool activity. */
 export function speechFromBlocks(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
+      if (isToolActivityBlock(block)) return "";
       if (block.kind === "text" || block.kind === "progress" || block.kind === "meta")
         return block.text;
       if (block.kind === "ask") return block.text;

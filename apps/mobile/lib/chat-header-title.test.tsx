@@ -51,9 +51,6 @@ vi.mock("../components/chat-title-label", () => ({
 }));
 vi.mock("../components/thread-header-styles", () => ({ createThreadHeaderStyles: () => ({}) }));
 vi.mock("./native", () => ({ useThemedStyles: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "http://api.test" }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 1,

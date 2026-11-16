@@ -2,6 +2,8 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import type { AddressInfo, Socket } from "node:net";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -16,6 +18,7 @@ import {
   NATIVE_PORTS_FILE,
   NativeStackController,
   POSTGRES_IMAGE,
+  postgresAnswers,
   restartDelay,
 } from "./native-stack.js";
 
@@ -178,6 +181,7 @@ function harness(
     randomHex: (bytes) => "cd".repeat(bytes),
     spawn,
     sleep: async () => undefined,
+    databaseAnswers: async () => undefined,
     portFree: async () => true,
     allocatePort: async () => nextPort++,
     installers: {
@@ -668,6 +672,42 @@ describe("NativeStackController", () => {
     expect(children).toEqual([]);
   });
 
+  it("migrates only once Postgres answers on the published port", async () => {
+    const order: string[] = [];
+    let refusals = 2;
+    const { deps } = harness({
+      databaseAnswers: async (port) => {
+        order.push(`ask ${port}`);
+        if (refusals-- > 0) throw new Error("read ECONNRESET");
+      },
+    });
+    const controller = new NativeStackController({
+      ...deps,
+      run: async (binary, args, options) => {
+        if (args[0]?.endsWith("migrate-database.js")) order.push("migrate");
+        return deps.run(binary, args, options);
+      },
+    });
+    expect((await controller.start()).phase).toBe("ready");
+    expect(order).toEqual(["ask 40000", "ask 40000", "ask 40000", "migrate"]);
+    await controller.stop();
+  });
+
+  it("fails without migrating when Postgres never answers on the published port", async () => {
+    const { deps, runs } = harness({
+      databaseAnswers: async () => {
+        throw new Error("read ECONNRESET");
+      },
+    });
+    const state = await new NativeStackController(deps).start();
+    expect(state.phase).toBe("failed");
+    expect(state.message).toBe(
+      "Rakazo services did not start. Check the output below, then retry.",
+    );
+    expect(state.output).toContain("Postgres did not answer on 127.0.0.1:40000: read ECONNRESET");
+    expect(runs.some((call) => call.args[0]?.endsWith("migrate-database.js"))).toBe(false);
+  });
+
   it("imports a Docker stack once, into an emptied database, before migrating", async () => {
     const order: string[] = [];
     const { deps, runs } = harness({
@@ -727,5 +767,33 @@ describe("NativeStackController", () => {
     await third.start();
     expect(imported).toHaveLength(2);
     await third.stop();
+  });
+});
+
+describe("postgresAnswers", () => {
+  async function listen(onSocket: (socket: Socket) => void) {
+    const server = createServer(onSocket);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return { server, port: (server.address() as AddressInfo).port };
+  }
+
+  it("resolves when the server answers the SSL request", async () => {
+    const received: Buffer[] = [];
+    const { server, port } = await listen((socket) =>
+      socket.once("data", (data) => {
+        received.push(data);
+        socket.end("N");
+      }),
+    );
+    await expect(postgresAnswers(port, new AbortController().signal)).resolves.toBeUndefined();
+    expect(received[0]?.readInt32BE(0)).toBe(8);
+    expect(received[0]?.readInt32BE(4)).toBe(80877103);
+    server.close();
+  });
+
+  it("rejects when the port accepts and then resets", async () => {
+    const { server, port } = await listen((socket) => socket.resetAndDestroy());
+    await expect(postgresAnswers(port, new AbortController().signal)).rejects.toThrow();
+    server.close();
   });
 });

@@ -1,5 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import type { ResolveHostname } from "../../../network-address.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { MAX_HONCHO_CONCLUSION_BYTES } from "./honcho-client.js";
 import {
   createHonchoProvider,
@@ -10,8 +12,6 @@ import {
   prepareHonchoConnection,
   UNRESERVED_HONCHO_PEER_PATTERN,
 } from "./honcho-memory-provider.js";
-import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 const context: AdapterContext = {
   operationId: "op-1",

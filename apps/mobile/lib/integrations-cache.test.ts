@@ -19,9 +19,6 @@ const state = vi.hoisted(() => ({
   saved: vi.fn(),
   save: vi.fn(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => state.base,
   selectedSpaceId: () => state.space,

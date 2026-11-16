@@ -16,9 +16,6 @@ import { resumeLiveNotifications } from "./live-notifications";
 import { UI_LOCALE_STORAGE_KEY, UI_LOCALES } from "./ui-locale";
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 const scope = vi.hoisted(() => ({ spaceId: "space-1" }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://rakazo.test",

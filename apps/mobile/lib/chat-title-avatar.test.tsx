@@ -37,9 +37,6 @@ vi.mock("../components/bot-avatar", () => ({
 }));
 vi.mock("./native", () => ({ useThemedStyles: <T,>(factory: () => T) => factory() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ secondary: "secondary-fill" }) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "http://api.test" }));
 const session = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("./session", () => ({

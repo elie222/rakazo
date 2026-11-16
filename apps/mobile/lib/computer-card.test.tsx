@@ -10,9 +10,6 @@ import { ComputerCard } from "../components/ComputerCard";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",

@@ -1,21 +1,21 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
 import {
-  createHonchoProvider,
-  honchoRequiresPrivateEndpoint,
-  prepareHonchoConnection,
-  UNRESERVED_HONCHO_PEER_PATTERN,
-} from "./honcho-memory-provider.js";
-import {
   classifyLocalServiceSettings,
   revalidateLocalServiceSettings,
-} from "./local-service-endpoint.js";
-import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
+} from "../../../local-service-endpoint.js";
+import type { MemoryProviderDefinition } from "../../../memory-provider-descriptor.js";
 import {
   connectionModeFields,
   MEMORY_SECRET_MIN_LENGTH,
   selfHostedLabel,
   serviceTarget,
-} from "./memory-provider-descriptor.js";
+} from "../../../memory-provider-descriptor.js";
+import {
+  createHonchoProvider,
+  honchoRequiresPrivateEndpoint,
+  prepareHonchoConnection,
+  UNRESERVED_HONCHO_PEER_PATTERN,
+} from "./honcho-memory-provider.js";
 
 const RESOURCE_ID = {
   pattern: "^[A-Za-z0-9_-]{1,512}$",

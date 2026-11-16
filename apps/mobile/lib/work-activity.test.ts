@@ -5,9 +5,10 @@ const native = vi.hoisted(() => ({
   startWorkActivity: vi.fn(async () => undefined),
   refreshWorkActivity: vi.fn(async () => undefined),
   endWorkActivity: vi.fn(async () => undefined),
-  token: undefined as undefined | ((event: { token: string }) => void),
+  endUnfollowedWorkActivity: vi.fn(async (_request: number) => undefined),
+  token: undefined as undefined | ((event: { token: string; request?: number }) => void),
   startToken: undefined as undefined | ((event: { token: string }) => void),
-  addListener(name: string, callback: (event: { token: string }) => void) {
+  addListener(name: string, callback: (event: { token: string; request?: number }) => void) {
     if (name === "onWorkActivityStartToken") native.startToken = callback;
     else native.token = callback;
     return { remove() {} };
@@ -95,29 +96,54 @@ it("ignores preflight support from a previous session", async () => {
 
 it("ends the card only when the server says nothing would update it", async () => {
   rpc.mockResolvedValueOnce({ following: true });
-  native.token!({ token: "ab" });
+  native.token!({ token: "ab", request: 1 });
   await flush();
   expect(rpc).toHaveBeenCalledWith("notifications/followWorkActivity", { token: "ab" });
-  expect(native.endWorkActivity).not.toHaveBeenCalled();
+  expect(native.endUnfollowedWorkActivity).not.toHaveBeenCalled();
 
   rpc.mockRejectedValueOnce(new Error("offline"));
-  native.token!({ token: "ab" });
+  native.token!({ token: "ab", request: 1 });
   await flush();
-  expect(native.endWorkActivity).not.toHaveBeenCalled();
+  expect(native.endUnfollowedWorkActivity).not.toHaveBeenCalled();
 
   // A reply that lands after the account changed is ignored.
   const reply = deferred<{ following: boolean }>();
   rpc.mockReturnValueOnce(reply.promise);
-  native.token!({ token: "ab" });
+  native.token!({ token: "ab", request: 1 });
   app.generation += 1;
   reply.resolve({ following: false });
   await flush();
-  expect(native.endWorkActivity).not.toHaveBeenCalled();
+  expect(native.endUnfollowedWorkActivity).not.toHaveBeenCalled();
 
+  rpc.mockResolvedValueOnce({ following: false });
+  native.token!({ token: "ab", request: 1 });
+  await flush();
+  expect(native.endUnfollowedWorkActivity).toHaveBeenCalledExactlyOnceWith(1);
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it("leaves the card to the newest request when an older answer lands late", async () => {
+  const older = deferred<{ following: boolean }>();
+  const newer = deferred<{ following: boolean }>();
+  rpc.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+  native.token!({ token: "ab", request: 1 });
+  native.token!({ token: "ab", request: 2 });
+  newer.resolve({ following: true });
+  await flush();
+  older.resolve({ following: false });
+  await flush();
+  // Only the native side knows every request, including those made in the background, so the
+  // late answer names its own request and never ends the card outright.
+  expect(native.endUnfollowedWorkActivity).toHaveBeenCalledExactlyOnceWith(1);
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+});
+
+it("ends the card outright on an app build that sends no request number", async () => {
   rpc.mockResolvedValueOnce({ following: false });
   native.token!({ token: "ab" });
   await flush();
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
+  expect(native.endUnfollowedWorkActivity).not.toHaveBeenCalled();
 });
 
 it("hands the phone's token for starting cards to the server", async () => {

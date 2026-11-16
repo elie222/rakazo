@@ -16,9 +16,6 @@ const scope = vi.hoisted(() => ({
   /** Stands in for the context a save pins, when a test needs one that is not the current one. */
   pinned: undefined as unknown,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => scope.spaceId,

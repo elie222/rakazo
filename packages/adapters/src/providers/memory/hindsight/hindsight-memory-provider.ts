@@ -12,6 +12,16 @@ import type {
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import {
+  assertLocalServiceBaseUrlSync,
+  LocalServiceHost,
+  localServiceTrust,
+  localServiceTrustSettings,
+  parseServiceBaseUrl,
+  pinLocalServiceHost,
+} from "../../../local-service-endpoint.js";
+import type { ResolveHostname } from "../../../network-address.js";
+import { truncateUtf8 } from "../../../utf8.js";
 import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,
@@ -29,16 +39,6 @@ import {
   reflectHindsight,
   retainHindsight,
 } from "./hindsight-client.js";
-import {
-  assertLocalServiceBaseUrlSync,
-  LocalServiceHost,
-  localServiceTrust,
-  localServiceTrustSettings,
-  parseServiceBaseUrl,
-  pinLocalServiceHost,
-} from "./local-service-endpoint.js";
-import type { ResolveHostname } from "./network-address.js";
-import { truncateUtf8 } from "./utf8.js";
 
 export const HINDSIGHT_PROVIDER_ID = "hindsight";
 

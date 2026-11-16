@@ -1,21 +1,21 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
 import {
-  createHindsightProvider,
-  hindsightRequiresPrivateEndpoint,
-  parseRecallBanks,
-  prepareHindsightConnection,
-} from "./hindsight-memory-provider.js";
-import {
   classifyLocalServiceSettings,
   revalidateLocalServiceSettings,
-} from "./local-service-endpoint.js";
-import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
+} from "../../../local-service-endpoint.js";
+import type { MemoryProviderDefinition } from "../../../memory-provider-descriptor.js";
 import {
   connectionModeFields,
   MEMORY_SECRET_MIN_LENGTH,
   selfHostedLabel,
   serviceTarget,
-} from "./memory-provider-descriptor.js";
+} from "../../../memory-provider-descriptor.js";
+import {
+  createHindsightProvider,
+  hindsightRequiresPrivateEndpoint,
+  parseRecallBanks,
+  prepareHindsightConnection,
+} from "./hindsight-memory-provider.js";
 
 function apiKey(mode: string, required: boolean): ProviderSettingsField {
   return {
