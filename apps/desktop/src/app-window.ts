@@ -37,6 +37,9 @@ export const PROBE_TIMEOUT_MS = 8_000;
 export class ServerUnavailable extends Error {}
 const bundledRendererInstallations = new Set<string>();
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
+/** Test hook: how long a loaded page may take to mount the app before the server is rejected. */
+const appMountTimeout = Number(process.env.RAKAZO_APP_MOUNT_TIMEOUT_MS);
+const APP_MOUNT_TIMEOUT_MS = appMountTimeout > 0 ? appMountTimeout : undefined;
 export function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
 }
@@ -346,7 +349,7 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
         );
         return;
       }
-      void waitForMountedAppDocument(contents)
+      void waitForMountedAppDocument(contents, APP_MOUNT_TIMEOUT_MS)
         .then((state) => {
           contents.removeListener("render-process-gone", onGone);
           if (contents.isCrashed()) {
