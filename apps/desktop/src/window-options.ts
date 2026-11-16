@@ -35,6 +35,58 @@ export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkAr
   };
 }
 
+type Bounds = { x: number; y: number; width: number; height: number };
+/** The app window as it was last closed: its normal (unmaximized) bounds. */
+export type SavedWindow = Bounds & { maximized: boolean };
+
+// Smaller saved sizes are treated as damaged: the window would be too small to use.
+const MIN_SAVED_WIDTH = 400;
+const MIN_SAVED_HEIGHT = 300;
+
+export function parseSavedWindow(raw: string): SavedWindow | null {
+  try {
+    const value = JSON.parse(raw) as Partial<Record<keyof SavedWindow, unknown>> | null;
+    const { x, y, width, height, maximized } = value ?? {};
+    if (![x, y, width, height].every(Number.isFinite)) return null;
+    if ((width as number) < MIN_SAVED_WIDTH || (height as number) < MIN_SAVED_HEIGHT) return null;
+    return {
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      width: Math.round(width as number),
+      height: Math.round(height as number),
+      maximized: maximized === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The saved window, moved and shrunk to fit fully inside the display that holds its center; null
+ * when no connected display does, so the window opens at its default.
+ */
+export function restorableWindow(
+  saved: SavedWindow | null,
+  workAreas: readonly Bounds[],
+): SavedWindow | null {
+  if (saved === null) return null;
+  const centerX = saved.x + saved.width / 2;
+  const centerY = saved.y + saved.height / 2;
+  const area = workAreas.find(
+    (a) => centerX >= a.x && centerX < a.x + a.width && centerY >= a.y && centerY < a.y + a.height,
+  );
+  if (!area) return null;
+  const width = Math.min(saved.width, area.width);
+  const height = Math.min(saved.height, area.height);
+  return {
+    x: Math.min(Math.max(saved.x, area.x), area.x + area.width - width),
+    y: Math.min(Math.max(saved.y, area.y), area.y + area.height - height),
+    width,
+    height,
+    maximized: saved.maximized,
+  };
+}
+
 /**
  * Unpackaged (dev) launches set the dock/taskbar icon by hand. macOS draws the file as-is,
  * so it needs the squircle-with-margins asset; packaged builds already use icon.icns.

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
@@ -30,7 +30,14 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
+import type { SavedWindow } from "./window-options.js";
+import {
+  browserWindowOptions,
+  developmentIconFile,
+  parseSavedWindow,
+  restorableWindow,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
 /** The server or the network refused the page; the setup window says so and the server logs its side. */
@@ -48,6 +55,31 @@ export function developmentIcon() {
   if (app.isPackaged) return undefined;
   const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
   return existsSync(icon) ? icon : undefined;
+}
+function savedWindowFile() {
+  return path.join(app.getPath("userData"), "window-bounds.json");
+}
+function readSavedWindow(): SavedWindow | null {
+  try {
+    return parseSavedWindow(readFileSync(savedWindowFile(), "utf8"));
+  } catch {
+    return null;
+  }
+}
+/** Windows reports a minimized window as not maximized, so its last state is kept here. */
+const maximizedWindows = new WeakSet<BrowserWindow>();
+/** Written synchronously: on quit the process can exit before an async write finishes. */
+function saveWindow(win: BrowserWindow) {
+  if (win.isDestroyed()) return;
+  const saved: SavedWindow = {
+    ...win.getNormalBounds(),
+    maximized: win.isMinimized() ? maximizedWindows.has(win) : win.isMaximized(),
+  };
+  try {
+    writeFileSync(savedWindowFile(), JSON.stringify(saved), { mode: 0o600 });
+  } catch {
+    // Losing the size only means the next launch opens at the default.
+  }
 }
 function sessionPartitionKey(targetUrl: string) {
   return sessionPartitionForServerUrl(targetUrl);
@@ -146,8 +178,17 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
+  // A server switch destroys the window it replaces without a close, so save it first.
+  if (desktop.mainWindow !== null) saveWindow(desktop.mainWindow);
+  const saved = restorableWindow(
+    readSavedWindow(),
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
+    ...(saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height } : {}),
+    // A window that reopens maximized is shown once maximized, so its normal size never flashes.
+    ...(saved?.maximized ? { show: false } : {}),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -157,6 +198,12 @@ export function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
+  win.on("maximize", () => maximizedWindows.add(win));
+  win.on("unmaximize", () => maximizedWindows.delete(win));
+  if (saved?.maximized) {
+    win.maximize();
+    win.show();
+  }
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
   );
@@ -240,6 +287,7 @@ export function createWindow(url: string, partition: string | null) {
     popup.webContents.on("will-navigate", (details) => capture(details));
   });
   win.on("close", (event) => {
+    saveWindow(win);
     if (
       process.platform === "darwin" &&
       !desktop.quitting &&
