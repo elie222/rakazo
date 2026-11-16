@@ -111,6 +111,7 @@ describe("web markdown diagrams", () => {
   it.each([
     ["blockquote", "> ", "> "],
     ["nested blockquote", "> > ", "> > "],
+    ["tight nested blockquote", ">> ", ">> "],
     ["list", "- ", "  "],
     ["quoted list", "> - ", ">   "],
   ])("waits for a streaming fence inside a %s to close", async (_name, first, rest) => {
@@ -126,6 +127,12 @@ describe("web markdown diagrams", () => {
     await render(`${open}\n${rest}\`\`\`\n\nMore`, true);
     expect(container.querySelector('[data-testid="chat-diagram"] img')).not.toBeNull();
     expect(mermaid.render).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks a long quoted last line of a streaming fence quickly", async () => {
+    // A backtracking check never finishes on this line, so the test's own timeout catches it.
+    await render(`\`\`\`mermaid\n${freshDiagram()}\n${"\t>".repeat(100)}x`, true);
+    expect(mermaid.parse).not.toHaveBeenCalled();
   });
 
   it("leaves other fences and empty mermaid fences as code", async () => {

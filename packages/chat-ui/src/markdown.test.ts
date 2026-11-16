@@ -36,6 +36,13 @@ function linkHrefs(text: string) {
     .map((token) => token.attrGet("href"));
 }
 
+/** The input is sized so a backtracking pattern takes far longer, so a slow runner never trips the limit. */
+function expectLinearTime(work: () => unknown) {
+  const started = performance.now();
+  work();
+  expect(performance.now() - started).toBeLessThan(3_000);
+}
+
 describe("linkifyExplicitUrls", () => {
   it("links bare http(s) URLs and email addresses", () => {
     expect(
@@ -69,6 +76,15 @@ describe("plainTextLinkParts", () => {
       true,
     );
     expect(visible(text)).toBe(text);
+  });
+
+  it("reads escaped page titles and stays fast on unclosed brackets", () => {
+    expect(plainTextLinkParts(String.raw`[A \[draft\]](page:p1) after`)).toEqual([
+      { type: "page", value: "A [draft]", pageId: "p1" },
+      { type: "text", value: " after" },
+    ]);
+    const text = `[${String.raw`\[`.repeat(100_000)}`;
+    expectLinearTime(() => expect(visible(text)).toBe(text));
   });
 
   it("leaves file names, bare domains, and unopenable schemes as text", () => {

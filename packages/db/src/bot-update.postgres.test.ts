@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -118,15 +118,18 @@ describePostgres("commitBotUpdate against a moving default avatar set (PostgreSQ
   async function waitForBlockedOn(holder: number, what: string, deadline: number): Promise<number> {
     const monitor = await db.pool.connect();
     try {
-      while (performance.now() < deadline) {
-        const { rows } = await monitor.query(
-          "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
-          [holder],
-        );
-        if (rows.length > 0) return rows[0]!.pid;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
+      return await vi.waitFor(
+        async () => {
+          const { rows } = await monitor.query(
+            "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
+            [holder],
+          );
+          if (rows.length === 0)
+            throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
+          return rows[0]!.pid;
+        },
+        { interval: 100, timeout: Math.max(0, deadline - performance.now()) },
+      );
     } finally {
       monitor.release();
     }

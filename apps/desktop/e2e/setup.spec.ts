@@ -22,12 +22,12 @@ const execFileAsync = promisify(execFile);
 
 let server: Server;
 let serverUrl: string;
-let closedUrl: string;
 let userData: string;
 let app: ElectronApplication | undefined;
 let monitoringRequests = 0;
 
-/** A port nothing listens on, so a connection attempt is refused rather than blocked. */
+/** A port nothing listens on, so a connection attempt is refused rather than blocked. Reserved by
+ * each test just before use: a port freed earlier in the run can be taken by a later server. */
 async function reserveClosedPort() {
   const probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -68,7 +68,6 @@ test.beforeAll(async () => {
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("stub server has no port");
   serverUrl = `http://127.0.0.1:${address.port}`;
-  closedUrl = await reserveClosedPort();
 });
 
 test.afterAll(async () => {
@@ -317,6 +316,7 @@ test("Continue verifies and remembers the instance so setup does not run again",
 });
 
 test("an unreachable address is reported instead of being saved", async () => {
+  const closedUrl = await reserveClosedPort();
   app = await launch();
   const setup = await app.firstWindow();
 
@@ -617,6 +617,7 @@ test("the setup probe refuses redirects instead of following them", async () => 
 });
 
 test("an unreachable saved server falls back to setup with a recovery message", async () => {
+  const closedUrl = await reserveClosedPort();
   await writeFile(
     path.join(userData, "setup.json"),
     `${JSON.stringify({ mode: "existing", serverUrl: closedUrl }, null, 2)}\n`,

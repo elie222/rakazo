@@ -8,11 +8,11 @@ import {
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const provider = vi.hoisted(() => ({ errorMessage: "", rejectRequest: false }));
+const provider = vi.hoisted(() => ({ errorMessage: "", rejectRequest: false, status: 400 }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
-    state = { errorMessage: provider.errorMessage, messages: [] };
+    state = { errorMessage: provider.errorMessage, messages: [] as unknown[] };
     constructor(
       private readonly options: {
         streamFn: (model: unknown, context: unknown, options: unknown) => AsyncIterable<unknown>;
@@ -27,8 +27,9 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         { systemPrompt: "SYSTEM-PROMPT-secret", messages: [] },
         {},
       );
-      for await (const _event of stream) {
-        // Drain the request so its response hooks run.
+      // Drain the request so its response hooks run; the agent keeps the failed reply.
+      for await (const event of stream as AsyncIterable<{ type: string; error?: unknown }>) {
+        if (event.type === "error") this.state.messages.push(event.error);
       }
     }
     async waitForIdle() {}
@@ -68,7 +69,7 @@ vi.mock("@earendil-works/pi-ai/providers/all", async () => {
             },
             model,
           );
-          await options.onResponse?.({ status: 400, headers: {} }, model);
+          await options.onResponse?.({ status: provider.status, headers: {} }, model);
           const error = {
             role: "assistant",
             content: [],
@@ -133,6 +134,7 @@ describe("Pi runtime errors", () => {
   beforeEach(() => {
     provider.errorMessage = "Request was aborted by policy";
     provider.rejectRequest = false;
+    provider.status = 400;
   });
 
   it("attaches the shape of a request a provider rejected for no known reason", async () => {
@@ -262,6 +264,37 @@ describe("Pi runtime errors", () => {
       await expect(failure).rejects.toThrow("Invalid request parameters");
     },
   );
+
+  it.each([
+    ["openai-compatible", "example-model"],
+    ["local", "example-local"],
+  ])(
+    "marks a failure the user's own %s endpoint reports after accepting the request as transient",
+    async (endpoint, id) => {
+      provider.errorMessage = "This model is offline right now; try again or pick another";
+      provider.rejectRequest = true;
+      provider.status = 200;
+      const failure = consume({ provider: endpoint, id });
+      await expect(failure).rejects.toBeInstanceOf(TransientModelError);
+      await expect(failure).rejects.toThrow("This model is offline right now");
+    },
+  );
+
+  it("keeps an unexplained failure from the user's own endpoint a server error when it never answered", async () => {
+    provider.errorMessage = "This model is offline right now; try again or pick another";
+    const failure = consume({ provider: "openai-compatible", id: "example-model" });
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+  });
+
+  it("keeps a named provider's failure after accepting the request a server error", async () => {
+    provider.errorMessage = "This model is offline right now; try again or pick another";
+    provider.rejectRequest = true;
+    provider.status = 200;
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+  });
 
   it("keeps a named provider's bare 400 a server error, since Rakazo may have built it wrong", async () => {
     provider.errorMessage = '400 "Invalid request parameters"';

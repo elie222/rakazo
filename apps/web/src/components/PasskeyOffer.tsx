@@ -10,6 +10,7 @@ import {
   usePasskeysSupported,
   usePasskeysVersion,
 } from "../lib/passkeys";
+import { useSave } from "../lib/query";
 
 function readDismissed(key: string): boolean {
   try {
@@ -35,8 +36,22 @@ export function PasskeyOffer() {
   // A passkey added in settings must close the offer too.
   const passkeysVersion = usePasskeysVersion();
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const offer = useSave({
+    save: async () => {
+      const result = await authClient.passkey.addPasskey().catch(() => {
+        throw new Error(t`Could not reach the server`);
+      });
+      // A cancelled prompt fails without a message, so nothing is shown.
+      if (result.error)
+        throw new Error(passkeyErrorText(result.error, t`Could not continue`) ?? "");
+    },
+    onSaved: () => {
+      close();
+      passkeysChanged();
+    },
+  });
+  const pending = offer.pending;
+  const error = offer.error?.message || null;
   const userId = session?.user.id;
   // Timestamps, so a session refetch with equal dates does not re-check.
   const userCreatedAt = session ? new Date(session.user.createdAt).getTime() : Number.NaN;
@@ -74,24 +89,6 @@ export function PasskeyOffer() {
     setOpen(false);
   }
 
-  async function add() {
-    setPending(true);
-    setError(null);
-    try {
-      const result = await authClient.passkey.addPasskey();
-      if (result.error) {
-        setError(passkeyErrorText(result.error, t`Could not continue`));
-        return;
-      }
-      close();
-      passkeysChanged();
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <section
       data-testid="passkey-offer"
@@ -116,7 +113,7 @@ export function PasskeyOffer() {
           {error}
         </p>
       ) : null}
-      <Button size="sm" className="mt-2" disabled={pending} onClick={() => void add()}>
+      <Button size="sm" className="mt-2" disabled={pending} onClick={() => offer.run()}>
         <Trans>Add passkey</Trans>
       </Button>
     </section>
