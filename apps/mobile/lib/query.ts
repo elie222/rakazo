@@ -36,6 +36,14 @@ function spaceScope(spaceId?: string): string[] {
   return [...sessionScope(), `space:${spaceId ?? selectedSpaceId() ?? ""}`];
 }
 
+function saveScope(target: SettingsTarget | undefined): string {
+  return (
+    target?.scope === "account"
+      ? sessionScope()
+      : spaceScope(target?.scope === "space" ? target.spaceId : undefined)
+  ).join("\n");
+}
+
 /**
  * The scope of a pinned request, read from what the request itself carries: the server it goes
  * to, the session it presents and the Space it names.
@@ -114,6 +122,12 @@ export function formRead<T>(read: {
 /** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
 export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
 
+/** Writes with this request context, or with the current one when there is none. */
+export function sendWith(requestContext: ApiRequestContext | undefined): SaveSend {
+  return (proc, body) =>
+    rpc(proc, ...([body, requestContext && { requestContext }] as RpcArgs<typeof proc>));
+}
+
 /**
  * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
  * reads are marked stale and read again, and a read that fails reports itself, never the save.
@@ -132,9 +146,11 @@ export function useSave<Input = void, Saved = unknown>(options: {
   save: (input: Input, send: SaveSend) => Promise<Saved>;
   /**
    * What the screen edits when it is not the selected Space: the Space its `rpcQuery` reads name,
-   * or the account, as `accountRpcQuery` and `targetRpcQuery` read it.
+   * or the account, as `accountRpcQuery` and `targetRpcQuery` read it. A list whose rows belong
+   * to different Spaces names each save's own; the hook then shows no `pending`, `input` or
+   * `error`, so it reports through `onFailed`.
    */
-  target?: SettingsTarget;
+  target?: SettingsTarget | ((input: Input) => SettingsTarget | undefined);
   stale?: readonly QueryKey[];
   onSaved?: (saved: Saved, input: Input) => unknown;
   /** For an alert or undoing an optimistic change; `error` is for showing the failure inline. */
@@ -143,9 +159,10 @@ export function useSave<Input = void, Saved = unknown>(options: {
   closesScreen?: boolean;
 }) {
   const { target } = options;
-  const account = target?.scope === "account";
-  const namedSpace = target?.scope === "space" ? target.spaceId : undefined;
-  const scopeKey = () => (account ? sessionScope() : spaceScope(namedSpace)).join("\n");
+  const targetOf = (input: Input) => (typeof target === "function" ? target(input) : target);
+  const scopeKey = (input: Input) => saveScope(targetOf(input));
+  // The scope whose save the hook shows; none when each save names its own.
+  const reportedScope = () => (typeof target === "function" ? undefined : saveScope(target));
   const [saves, setSaves] = useState<
     Record<string, { input: Input; pending: boolean; error: Error | null }>
   >({});
@@ -154,6 +171,8 @@ export function useSave<Input = void, Saved = unknown>(options: {
   // What the screen shows by the time a save ends, which can differ from what it was started for.
   const shownScope = useRef(scopeKey);
   shownScope.current = scopeKey;
+  const shownReported = useRef(reportedScope);
+  shownReported.current = reportedScope;
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -161,10 +180,12 @@ export function useSave<Input = void, Saved = unknown>(options: {
       mounted.current = false;
     };
   }, []);
-  const current = saves[scopeKey()];
+  const reported = reportedScope();
+  const current = reported === undefined ? undefined : saves[reported];
   /** Forgets a finished save's error for the scope shown; the same function on every render. */
   const reset = useCallback(() => {
-    const scope = shownScope.current();
+    const scope = shownReported.current();
+    if (scope === undefined) return;
     setSaves((now) => {
       const { [scope]: shown, ...rest } = now;
       return shown && !shown.pending ? rest : now;
@@ -172,18 +193,22 @@ export function useSave<Input = void, Saved = unknown>(options: {
   }, []);
   return {
     run(input: Input) {
-      const scope = scopeKey();
+      const saveTarget = targetOf(input);
+      const account = saveTarget?.scope === "account";
+      const scope = saveScope(saveTarget);
       if (inFlight.current.has(scope)) return;
       inFlight.current.add(scope);
       setSaves((now) => ({ ...now, [scope]: { input, pending: true, error: null } }));
       const { save, stale = [], onSaved, onFailed, closesScreen } = options;
-      const shown = () => mounted.current && shownScope.current() === scope;
+      const shown = () => mounted.current && shownScope.current(input) === scope;
       const finish = (error: Error | null) => {
         inFlight.current.delete(scope);
         setSaves((now) => ({ ...now, [scope]: { input, pending: false, error } }));
       };
       // Pinned in the tick `scope` was read in; an account save is sent with the Space selected now.
-      const pinned = captureApiRequestContext(namedSpace).then(
+      const pinned = captureApiRequestContext(
+        saveTarget?.scope === "space" ? saveTarget.spaceId : undefined,
+      ).then(
         (requestContext) => ({ requestContext }),
         (failure: Error) => ({ failure }),
       );
@@ -192,9 +217,9 @@ export function useSave<Input = void, Saved = unknown>(options: {
         if ("failure" in pin) throw pin.failure;
         const { requestContext } = pin;
         const sent = requestScope(requestContext, account);
-        if (sent !== scope || sent !== scopeKey())
+        if (sent !== scope || sent !== scopeKey(input))
           throw new Error(t`Something went wrong. Try again.`);
-        return rpc(proc, ...([body, { requestContext }] as RpcArgs<typeof proc>));
+        return sendWith(requestContext)(proc, body);
       };
       void (async () => {
         const saved = await save(input, send);
