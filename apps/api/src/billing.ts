@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
   BillingByokPlan,
@@ -31,11 +30,12 @@ import {
   sandboxAllowanceHours,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
-import type { BillingAccount, Prisma, PrismaClient } from "@rakazo/db";
+import { retry } from "@rakazo/core";
+import type { BillingAccount, HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import {
+  assertLeaseHeld,
   billingAccountForOrganization,
   byokFreeUntil,
-  checkoutLeaseHeld,
   claimCheckoutLease,
   createBillingAccount,
   creditAccount,
@@ -44,6 +44,8 @@ import {
   hasBillingAccess,
   hasModelAccess,
   isLockTimeout,
+  LeaseHeldError,
+  LeaseLostError,
   lockCheckoutLease,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
@@ -60,8 +62,9 @@ import {
   syncBillingSnapshot,
   syncCreditPurchases,
   unexpiredCreditAccount,
+  withLease,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
 import { createExperiments } from "./experiments.js";
 import { createPartnerSales } from "./partner-sales.js";
@@ -73,8 +76,6 @@ export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
-/** Keeps a held lease valid through a provider operation longer than one lease period. */
-const CHECKOUT_LEASE_RENEW_MS = CHECKOUT_LEASE_MS / 4;
 /** Runs `write` in one transaction while this request still holds the checkout lease. */
 type UnderLease = <R>(write: (tx: Prisma.TransactionClient) => Promise<R>) => Promise<R>;
 
@@ -423,52 +424,72 @@ export function createBillingService(deps: {
 
   /**
    * Runs `work` holding the organization's checkout lease, one at a time across API instances.
-   * `underLease` runs writes that must not outlive the lease.
+   * `underLease` runs writes that must not outlive the lease. The lease also holds the billing
+   * account's checkout claim, which the previous release takes instead, so the two keep out of
+   * each other during a deploy.
    */
   async function withCheckoutLease<T>(
     organizationId: string,
     work: (underLease: UnderLease) => Promise<T>,
   ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
-    let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
-    while (!leaseId) {
-      if (Date.now() > deadline) throw new ORPCError("CONFLICT");
-      await sleep(CHECKOUT_LEASE_POLL_MS);
-      leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
-    }
-    // A provider operation can outlast the lease's validity, so renew it while work runs; a
-    // deletion's cancellation then waits for the operation instead of taking the lease over
-    // mid-flight. A renewal that finds the lease lapsed leaves it to the next claimant.
-    const renew = setInterval(
-      () =>
-        void renewCheckoutLease(prisma, organizationId, leaseId, CHECKOUT_LEASE_MS).catch(() => {}),
-      CHECKOUT_LEASE_RENEW_MS,
-    );
-    renew.unref();
-    // The lease row stays locked until the writes commit, so no claimant takes it meanwhile.
     const busy = () => new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
-    const underLease: UnderLease = (write) =>
-      prisma
-        .$transaction(async (tx) => {
-          if (!(await lockCheckoutLease(tx, organizationId, leaseId))) throw busy();
-          return write(tx);
-        })
-        .catch((error: unknown) => {
-          // A write that waited too long on another lock rolled back: busy, like a lost lease.
-          if (isLockTimeout(error)) throw busy();
-          throw error;
-        });
+    const attempt = () => {
+      let claimId: string | null = null;
+      // The claim's row stays locked until the writes commit, so no claimant takes it meanwhile.
+      const underLease =
+        (lease: HeldLease): UnderLease =>
+        (write) =>
+          prisma
+            .$transaction(async (tx) => {
+              if (!(await lockCheckoutLease(tx, organizationId, claimId!))) throw busy();
+              await assertLeaseHeld(tx, lease);
+              return write(tx);
+            })
+            .catch((error: unknown) => {
+              // A write that waited too long on another lock rolled back: busy, like a lost lease.
+              if (isLockTimeout(error) || error instanceof LeaseLostError) throw busy();
+              throw error;
+            });
+      return withLease(
+        prisma,
+        `billing-checkout:${organizationId}`,
+        {
+          ttlMs: CHECKOUT_LEASE_MS,
+          // A provider operation can outlast one lease period, so the claim is kept fresh with the
+          // lease; a deletion's cancellation then waits for the operation instead of taking over.
+          onRenew: async () =>
+            !claimId || renewCheckoutLease(prisma, organizationId, claimId, CHECKOUT_LEASE_MS),
+        },
+        async (lease) => {
+          claimId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
+          if (!claimId) throw new LeaseHeldError(lease.key);
+          try {
+            // Cut off while the claim was being taken: give it back rather than leave it to lapse.
+            lease.signal.throwIfAborted();
+            const result = await work(underLease(lease));
+            // A cancellation that took the lease over expired the sessions open at that moment,
+            // so a session created after it must not be handed back.
+            await prisma.$transaction((tx) => assertLeaseHeld(tx, lease));
+            return result;
+          } finally {
+            await bestEffort(
+              "release checkout claim",
+              releaseCheckoutLease(prisma, organizationId, claimId),
+            );
+          }
+        },
+      );
+    };
     try {
-      const result = await work(underLease);
-      // Renewal keeps the lease unless the database refused every attempt for a whole lease
-      // period. A cancellation that still took the lease over expired the sessions open at
-      // that moment, so a session created after it must not be handed back.
-      if (!(await checkoutLeaseHeld(prisma, organizationId, leaseId)))
-        throw new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
-      return result;
-    } finally {
-      clearInterval(renew);
-      await releaseCheckoutLease(prisma, organizationId, leaseId);
+      return await retry(attempt, {
+        attempts: Number.POSITIVE_INFINITY,
+        retryable: (error) => error instanceof LeaseHeldError && Date.now() < deadline,
+        delayMs: CHECKOUT_LEASE_POLL_MS,
+      });
+    } catch (error) {
+      if (error instanceof LeaseHeldError || error instanceof LeaseLostError) throw busy();
+      throw error;
     }
   }
 
