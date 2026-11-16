@@ -356,7 +356,6 @@ export async function assertSpaceDeletable(
   return memberships;
 }
 
-/** Throws the error `claimSpaceDeletionForMember` would for a caller who may not delete the Space. */
 /**
  * Claim a Space before tearing down its content. Bot and group creation take the same
  * advisory lock and reject a claimed Space, so once claimed it only loses content. A stale
