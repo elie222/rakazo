@@ -520,6 +520,8 @@ function SpaceShell() {
     inGroup || !active || thread.routinesBotId === active.id
       ? undefined
       : queryClient.getQueryData(queries.routines.list.queryKey({ input: { botId: active.id } }));
+  // The on/off choice still to send for each routine whose switch was just pressed.
+  const routineToggles = useRef(new Map<string, boolean>());
   const activeRoutines =
     inGroup || !active
       ? []
@@ -1302,10 +1304,24 @@ function SpaceShell() {
             thread.setRoutines((current) =>
               current.map((item) => (item.id === routine.id ? { ...item, active: on } : item)),
             );
-            void rpc.routines
-              .update({ routineId: routine.id, active: on })
-              .catch((error: unknown) => composer.setSendError(errorText(error)))
-              .finally(() => void refreshThread(routine.botId).catch(() => undefined));
+            // One update per routine at a time, so quick presses cannot race; the last one wins.
+            const queued = routineToggles.current.get(routine.id);
+            routineToggles.current.set(routine.id, on);
+            if (queued !== undefined) return;
+            void (async () => {
+              let sent: boolean | undefined;
+              try {
+                while (routineToggles.current.get(routine.id) !== sent) {
+                  sent = routineToggles.current.get(routine.id);
+                  await rpc.routines.update({ routineId: routine.id, active: sent });
+                }
+              } catch (error) {
+                composer.setSendError(errorText(error));
+              } finally {
+                routineToggles.current.delete(routine.id);
+                void refreshThread(routine.botId).catch(() => undefined);
+              }
+            })();
           },
         }}
         routineEditorProps={routineEditorProps}

@@ -267,11 +267,13 @@ export function computerRoutes(ctx: RouterContext) {
         }
       }),
       reset: authed.computer.reset.handler(async ({ context, input }) => {
+        const status = await runComputerReplace(deps, context, input.botId, "reset", "reset");
+        // Counted once the reset ran, so a refused request is not a repair.
         deps.analytics?.capture(context.actor.userId, {
           name: "computer_repair_started",
           action: "reset",
         });
-        return runComputerReplace(deps, context, input.botId, "reset", "reset");
+        return status;
       }),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

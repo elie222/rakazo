@@ -84,7 +84,8 @@ function OwnerPages({
   const rename = useMutation(actions.rename);
   const [deleting, setDeleting] = useState<PageSummary | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null);
-  if (preview && !pages.data?.pages.some((read) => read.items.length > 0)) return null;
+  if (preview && !pages.isError && !pages.data?.pages.some((read) => read.items.length > 0))
+    return null;
   if (pages.isPending) {
     return (
       <div className="grid place-items-center py-6 text-muted-foreground">

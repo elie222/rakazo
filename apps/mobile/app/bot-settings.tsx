@@ -91,6 +91,7 @@ export default function BotSettingsScreen() {
   // A setting this screen no longer offers still shows while the bot has it changed from the
   // default, so it can be put back. Decided once, so the row stays to undo a change.
   const [changed, setChanged] = useState<{
+    botId: string;
     readAloud: boolean;
     dailyCheckIns: boolean;
     crossSpaceCommunication: boolean;
@@ -216,7 +217,8 @@ export default function BotSettingsScreen() {
         fleetSave.reset(next.fleetManagement);
         setChanged(
           (current) =>
-            current ?? {
+            (current?.botId === next.id ? current : null) ?? {
+              botId: next.id,
               readAloud: next.autoSpeak,
               dailyCheckIns: next.dailyCheckIns === false,
               crossSpaceCommunication: next.crossSpaceCommunication === false,
