@@ -315,8 +315,8 @@ model Passkey {
   @@map("passkey")
 }
 
-// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin. Field names and
-// types must match the plugin's schema; the plugin reads and writes these tables directly.
+// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin, which reads and
+// writes these tables directly; a test in packages/auth compares them with its schema.
 
 model ScimConnectionBinding {
   id                              String    @id
@@ -1403,6 +1403,7 @@ model CloudAgent {
   generation          Int      @default(0)
   wakeGeneration      Int      @default(-1)
   version             Int      @default(0)
+  /// Kept only for the previous release, which claims the row instead of taking the agent's lease.
   leaseToken          String?
   leaseExpiresAt      DateTime?
   nextPollAt          DateTime? @default(now())

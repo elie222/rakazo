@@ -258,7 +258,8 @@ export const GroupDetailSchema = GroupSchema.extend({
   messages: z.array(ThreadMessageSchema).optional(),
 });
 
-export const BotSectionName = z.string().trim().min(1).max(60);
+export const BOT_SECTION_NAME_MAX_LENGTH = 60;
+export const BotSectionName = z.string().trim().min(1).max(BOT_SECTION_NAME_MAX_LENGTH);
 
 export const BotSectionSchema = z.object({
   id: Id,

@@ -247,18 +247,18 @@ describe("expireStuckRun", () => {
   });
 
   it("leaves the task running when a sibling attempt is still active", async () => {
-    const client = tx({ sibling: true, status: "waiting_input" });
+    const client = tx({ sibling: true, status: "queued" });
     await expireStuckRun(client as unknown as Prisma.TransactionClient, {
       runId: "run-1",
       threadId: "thread-1",
-      status: "waiting_input",
+      status: "queued",
       updatedAt,
       now,
     });
     expect(client.task.updateMany).not.toHaveBeenCalled();
     expect(client.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        blocks: [{ kind: "meta", text: stuckWorkStatusMessage("waiting_input") }],
+        blocks: [{ kind: "meta", text: stuckWorkStatusMessage("queued") }],
       }),
     });
   });

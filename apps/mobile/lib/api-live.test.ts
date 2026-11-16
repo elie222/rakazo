@@ -1,9 +1,10 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
+import { IDLE_TIMEOUT_MS } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_MOBILE_RPC_RESPONSE_BYTES } from "./api.js";
-import { IDLE_TIMEOUT_MS, subscribeIncomingCallEvents, subscribeThread } from "./api-live.js";
+import { subscribeIncomingCallEvents, subscribeThread } from "./api-live.js";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),

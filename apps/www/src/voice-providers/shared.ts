@@ -73,7 +73,6 @@ export const PRICING_SOURCES = {
   hetzner: { label: "Hetzner, cloud servers", href: "https://www.hetzner.com/cloud/" },
 } satisfies Record<string, SourceLink>;
 
-
 /** The speaking pace every per-hour figure assumes: 150 words, about 900 characters, a minute. */
 export const CHARS_PER_MINUTE = 900;
 export const CHARS_PER_HOUR = CHARS_PER_MINUTE * 60;
@@ -549,7 +548,11 @@ const cost = WORKLOAD_COST;
 const WORKLOAD_ROWS = {
   elevenlabs: {
     topic: "[ElevenLabs](/voice-providers/elevenlabs/)",
-    cells: [usd(cost.elevenlabs.speech), usd(cost.elevenlabs.transcription), aboutTotal("elevenlabs")],
+    cells: [
+      usd(cost.elevenlabs.speech),
+      usd(cost.elevenlabs.transcription),
+      aboutTotal("elevenlabs"),
+    ],
   },
   openai: {
     topic: "[OpenAI](/voice-providers/openai/)",
@@ -641,7 +644,9 @@ export function withPricingSources(
     ...(tables.prices ?? []).flatMap((row) => PRICE_ROW_SOURCES[row]),
     ...(tables.workload ?? []).flatMap((row) => WORKLOAD_ROW_SOURCES[row]),
   ];
-  return all.filter((source, index) => all.findIndex((other) => other.href === source.href) === index);
+  return all.filter(
+    (source, index) => all.findIndex((other) => other.href === source.href) === index,
+  );
 }
 
 /** "cheaper than", "more expensive than" or, within 10%, "about the same as". */

@@ -544,7 +544,8 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     const cli = fakeClaude(scenario);
     const controller = new AbortController();
     const running = run(hello, { signal: controller.signal });
-    await vi.waitFor(() => expect(cli.started()).toBe(true));
+    // hang-auth records on the second launch, after the version probe: two process starts.
+    await vi.waitFor(() => expect(cli.started()).toBe(true), { timeout: 10_000 });
     controller.abort();
     expect((await running).message.stopReason).toBe("aborted");
     expect(await cli.survived()).toBe(false);
