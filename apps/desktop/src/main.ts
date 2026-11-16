@@ -104,7 +104,7 @@ import {
 } from "./setup-config.js";
 import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
 import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup-window.js";
-import { StackStopMenuAvailability } from "./stop-local-stack.js";
+import { StackStopMenuAvailability, stopStackLeftBehind } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
 import { registerWindowControls } from "./window-controls.js";
@@ -916,6 +916,14 @@ app.whenReady().then(async () => {
     commitPendingAppSwitch,
     abandonPendingAppSwitch,
     recoverFromCrashedSave,
+    stopStackLeftBehind: (previousMode) =>
+      stopStackLeftBehind({
+        mode: desktop.currentSetup?.mode,
+        serverUrl: desktop.currentSetup?.serverUrl,
+        previousMode,
+        stack: desktop.localStack,
+        rebuildMenu: () => installApplicationMenu(),
+      }),
     settleLocalStack,
   });
 

@@ -107,6 +107,7 @@ type SetupIpcDeps = {
     previousSetup: DesktopSetup | null,
     previousUrl: string | null,
   ) => Promise<string>;
+  stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
   /** Picks the stack This computer runs on, if launch left that open. */
   settleLocalStack: () => Promise<void>;
 };
@@ -121,6 +122,7 @@ export function registerSetupIpc({
   commitPendingAppSwitch,
   abandonPendingAppSwitch,
   recoverFromCrashedSave,
+  stopStackLeftBehind,
   settleLocalStack,
 }: SetupIpcDeps) {
   // Synchronous so the setup page has its language before it first paints.
@@ -213,6 +215,8 @@ export function registerSetupIpc({
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
         }
+        // Only now is the switch final; a crash rollback above may restore the local server.
+        stopStackLeftBehind(previousSetup?.mode);
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);

@@ -243,6 +243,15 @@ describe("NativeStackController", () => {
     expect(controller.managedStackRunning()).toBe(false);
   });
 
+  it("does not offer a stack that is stopping for reuse", async () => {
+    const { deps } = harness();
+    const controller = new NativeStackController(deps);
+    await controller.start();
+    const stopping = controller.stop();
+    await expect(controller.matchesDesiredStack()).resolves.toBe(false);
+    await stopping;
+  });
+
   it("brings up the database, migrations and the three services on loopback", async () => {
     const { deps, runs, byName } = harness({
       hostComputer: { url: "http://host.docker.internal:47000", token: "host-token" },

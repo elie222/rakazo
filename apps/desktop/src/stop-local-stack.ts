@@ -1,12 +1,17 @@
-import type { DesktopInstanceMode, DesktopLocalStackPhase } from "@rakazo/contracts";
+import type {
+  DesktopInstanceMode,
+  DesktopLocalStackPhase,
+  DesktopLocalStackState,
+} from "@rakazo/contracts";
 import type { MenuItemConstructorOptions } from "electron";
 import { t } from "./i18n.js";
+import type { StackController } from "./local-stack.js";
 import { reportDesktopError } from "./monitoring.js";
+import { managedLocalOpenUrl } from "./setup-config.js";
 
 /**
- * The menu's stack off-switch applies whenever the app manages a local stack: connected
- * in `new` mode, or one that may still be running after the app switched to another
- * server. A setup without such a stack has nothing to stop.
+ * Quit and Stop Bots applies whenever the app manages a local stack: connected in `new`
+ * mode, or one that may still be running while a switch away from it stops it.
  */
 export function stackStopAvailable(
   mode: DesktopInstanceMode | null | undefined,
@@ -15,30 +20,72 @@ export function stackStopAvailable(
   return mode === "new" || stackRunning;
 }
 
-export function stopLocalStackItem(input: {
+export function quitAndStopBotsItem(input: {
   mode: DesktopInstanceMode | null | undefined;
   stackRunning: boolean;
   /** Deactivates local computer access and stops the stack. */
-  stop: () => unknown;
+  stop: () => Promise<DesktopLocalStackState>;
+  quit: () => void;
   rebuildMenu: () => void;
 }): MenuItemConstructorOptions {
   return {
-    id: "stop-local-stack",
-    label: t("Stop Local Stack"),
+    id: "quit-and-stop-bots",
+    label: t("Quit and Stop Bots"),
     visible: stackStopAvailable(input.mode, input.stackRunning),
-    // The stack keeps running after quit (bots are always on); this is the explicit off switch.
+    // A plain quit leaves the stack running (bots are always on); this is the explicit off switch.
     click: () => {
-      const stopped = Promise.resolve(input.stop());
+      const stopped = input.stop();
       // Immediate rebuild: deactivating computer access changes other menu items.
       input.rebuildMenu();
-      // A stop that only ended a reused stack changes no phase, so no lifecycle event
-      // follows; the settled state decides the item's visibility. A rejected stop is
+      // A failed stop stays open so its error can be read and retried. A rejected stop is
       // reported, so the menu's click handler never leaks an unhandled rejection.
       void stopped
+        .then((state) => {
+          if (state.phase !== "failed") input.quit();
+        })
         .catch((error: unknown) => reportDesktopError(error, "desktop.menu"))
         .finally(() => input.rebuildMenu());
     },
   };
+}
+
+const STARTING = new Set<DesktopLocalStackPhase>([
+  "checking-docker",
+  "docker-not-running",
+  "preparing",
+  "pulling",
+  "starting",
+  "waiting-healthy",
+]);
+
+/** Bots on a stack the user switched away from would keep running out of sight. */
+export function stopStackLeftBehind(input: {
+  mode: DesktopInstanceMode | null | undefined;
+  serverUrl: string | undefined;
+  previousMode: DesktopInstanceMode | null | undefined;
+  stack: Pick<StackController, "managedStackRunning" | "state" | "stop" | "webUrl">;
+  rebuildMenu: () => void;
+}): void {
+  if (input.mode === "new") return;
+  // Its own address entered as an existing server still needs it running.
+  if (
+    input.serverUrl !== undefined &&
+    managedLocalOpenUrl(input.serverUrl, input.stack.webUrl()) !== null
+  )
+    return;
+  // Leaving This computer always stops it: containers from an older version can still run
+  // unflagged. A start still pulling or waiting for Docker has not launched anything yet, but would.
+  if (
+    input.previousMode !== "new" &&
+    !input.stack.managedStackRunning() &&
+    !STARTING.has(input.stack.state().phase)
+  )
+    return;
+  // A stop that only ended a reused stack changes no phase, so the settled state rebuilds the menu.
+  void input.stack
+    .stop()
+    .catch((error: unknown) => reportDesktopError(error, "desktop.ipc"))
+    .finally(() => input.rebuildMenu());
 }
 
 /**

@@ -447,7 +447,7 @@ for (const hasStackFiles of [false, true]) {
     expect(await readLog()).toEqual([]);
     expect(
       await app.evaluate(
-        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible,
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("quit-and-stop-bots")?.visible,
       ),
     ).toBe(false);
   });
