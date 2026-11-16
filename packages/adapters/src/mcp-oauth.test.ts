@@ -7,6 +7,7 @@ import {
   launchArgSecrets,
   McpOAuthBroker,
   McpOAuthClientRequiredError,
+  McpOAuthRefusedError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
@@ -892,7 +893,11 @@ describe("MCP OAuth", () => {
         spaceId: shared.context.spaceId,
         userId: shared.context.userId,
       }),
-    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    ).rejects.toMatchObject({
+      name: "McpOAuthRefusedError",
+      kind: "BAD_REQUEST",
+      message: "MCP OAuth session is invalid or expired",
+    });
   });
 
   it("keeps a reconnection's client when the earlier flow's tokens land late", async () => {
@@ -2131,7 +2136,8 @@ describe("MCP OAuth", () => {
         () => null,
         (caught: unknown) => caught,
       );
-    expect(error).toBeInstanceOf(Error);
+    // The server's own refusal of the sign-in is the person's to fix, not a fault.
+    expect(error).toBeInstanceOf(McpOAuthRefusedError);
     expect((error as Error).message).toBe("Could not start MCP OAuth");
     expect((error as Error).message).not.toContain("UPSTREAM_BODY_MARKER");
   });

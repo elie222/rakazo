@@ -2016,6 +2016,27 @@ describe("OpenAPI connector import", () => {
     );
   });
 
+  it("answers what is wrong with a source the person is adding as a setup error", async () => {
+    const setupError = { name: "ConnectionSetupError" };
+    // Settings they entered.
+    await expect(
+      verifyMcpInstall({
+        source: "https://connectors.example.test/mcp",
+        config: { preset: "custom", auth: { type: "magic" } },
+      }),
+    ).rejects.toMatchObject(setupError);
+    // How their server answered the check, with the credential they gave redacted.
+    const fetch = vi.fn().mockRejectedValue(new Error("connection reset for fake-credential-1"));
+    const failed = prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "bearer" } },
+      credential: "fake-credential-1",
+      remote: { fetch },
+    });
+    await expect(failed).rejects.toMatchObject(setupError);
+    await expect(failed).rejects.not.toThrow("fake-credential-1");
+  });
+
   it("refuses credentials embedded in a persisted MCP URL", async () => {
     await expect(
       verifyMcpInstall({

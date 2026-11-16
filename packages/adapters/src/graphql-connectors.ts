@@ -4,7 +4,9 @@ import {
   applyCredential,
   asRecord,
   assertNoSensitiveQuery,
+  checkConnectorSource,
   PublicHeadersSchema,
+  parseConnectorSetting,
   readBoundedText,
   requireCredential,
 } from "./connector-http.js";
@@ -153,18 +155,20 @@ export async function prepareGraphqlInstall(input: {
   /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
-  const auth = AuthSchema.parse(input.config.auth);
+  const auth = parseConnectorSetting(AuthSchema, input.config.auth);
   requireCredential(auth, input.credential);
-  const headers = PublicHeadersSchema.parse(input.config.headers);
+  const headers = parseConnectorSetting(PublicHeadersSchema, input.config.headers);
   assertNoSensitiveQuery(input.source);
   const remote = { ...input.remote, allowPrivateEndpoint: input.allowPrivateEndpoint };
-  await assertSafeRemoteUrl(input.source, remote.resolveHostname, remote);
-
   const endpoint = new URL(input.source);
   const requestHeaders = graphqlRequestHeaders(endpoint, headers, auth, input.credential);
-  const document = await introspectGraphqlEndpoint(endpoint, requestHeaders, input.signal, remote);
-  const operations = importGraphqlSchema(document);
-  const config = GraphqlConfigSchema.parse({ auth, headers, operations });
+  const operations = await checkConnectorSource(async () => {
+    await assertSafeRemoteUrl(input.source, remote.resolveHostname, remote);
+    return importGraphqlSchema(
+      await introspectGraphqlEndpoint(endpoint, requestHeaders, input.signal, remote),
+    );
+  }, input);
+  const config = parseConnectorSetting(GraphqlConfigSchema, { auth, headers, operations });
   return {
     source: input.source,
     config,

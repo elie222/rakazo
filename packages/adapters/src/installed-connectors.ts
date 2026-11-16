@@ -8,6 +8,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
@@ -18,10 +19,12 @@ import {
   applyCredential,
   asRecord,
   assertNoSensitiveQuery,
+  checkConnectorSource,
   HeaderName,
   isSensitiveHeader,
   isTransportHeader,
   PublicHeadersSchema,
+  parseConnectorSetting,
   readBoundedText,
   requireCredential,
 } from "./connector-http.js";
@@ -430,16 +433,20 @@ export async function verifyMcpInstall(input: {
   allowPrivateEndpoint?: boolean;
 }): Promise<{ config: Record<string, unknown>; toolCount: number }> {
   assertNoSensitiveQuery(input.source);
-  const config = McpConfigSchema.parse(input.config);
+  const config = parseConnectorSetting(McpConfigSchema, input.config);
   requireCredential(config.auth, input.credential);
-  const tools = await listRemoteMcpTools({
-    ...input.remote,
-    endpoint: input.source,
-    headers: connectorHeaders(config, input.credential),
-    signal: input.signal,
-    allowPrivateEndpoint: input.allowPrivateEndpoint,
-  });
-  if (tools.length === 0) throw new Error("MCP server returned no tools");
+  const tools = await checkConnectorSource(
+    () =>
+      listRemoteMcpTools({
+        ...input.remote,
+        endpoint: input.source,
+        headers: connectorHeaders(config, input.credential),
+        signal: input.signal,
+        allowPrivateEndpoint: input.allowPrivateEndpoint,
+      }),
+    input,
+  );
+  if (tools.length === 0) throw new ConnectionSetupError("MCP server returned no tools");
   return { config, toolCount: tools.length };
 }
 
@@ -452,9 +459,9 @@ export async function prepareApiInstall(input: {
   /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
-  const auth = AuthSchema.parse(input.config.auth);
+  const auth = parseConnectorSetting(AuthSchema, input.config.auth);
   requireCredential(auth, input.credential);
-  const headers = PublicHeadersSchema.parse(input.config.headers);
+  const headers = parseConnectorSetting(PublicHeadersSchema, input.config.headers);
   assertNoSensitiveQuery(input.source);
   const remote = { ...input.remote, allowPrivateEndpoint: input.allowPrivateEndpoint };
   let source = input.source;
@@ -466,13 +473,25 @@ export async function prepareApiInstall(input: {
       ...headers,
     };
     applyCredential(documentUrl, documentHeaders, auth, input.credential);
-    const document = await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote);
-    const imported = importOpenApiDocument(document);
+    const imported = await checkConnectorSource(
+      async () =>
+        importOpenApiDocument(
+          await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote),
+        ),
+      input,
+    );
     source = imported.baseUrl;
     operationsValue = imported.operations;
   }
-  await assertSafeRemoteUrl(source, remote.resolveHostname, remote);
-  const config = ApiConfigSchema.parse({ auth, headers, operations: operationsValue });
+  await checkConnectorSource(
+    () => assertSafeRemoteUrl(source, remote.resolveHostname, remote),
+    input,
+  );
+  const config = parseConnectorSetting(ApiConfigSchema, {
+    auth,
+    headers,
+    operations: operationsValue,
+  });
   return {
     source,
     config,

@@ -1,4 +1,7 @@
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { z } from "zod";
+import { sanitizeIntegrationError } from "./composio-connector.js";
+import { sanitizeConnectorError } from "./connector-safety.js";
 
 const HeaderValue = z.string().max(2_048);
 export const HeaderName = z
@@ -33,8 +36,40 @@ export const PublicHeadersSchema = z
     }
   });
 
+/** Settings the person entered for a connector source: what is wrong with them is theirs to fix. */
+export function parseConnectorSetting<Schema extends z.ZodType>(
+  schema: Schema,
+  value: unknown,
+): z.output<Schema> {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success)
+    throw new ConnectionSetupError(parsed.error.message, { cause: parsed.error });
+  return parsed.data;
+}
+
+/**
+ * Runs the check of a connector source against the person's server. However that server answers
+ * is theirs to fix, so a failure reaches them as a setup error with the credential redacted.
+ */
+export async function checkConnectorSource<T>(
+  check: () => Promise<T>,
+  input: { credential?: string; signal?: AbortSignal },
+): Promise<T> {
+  try {
+    return await check();
+  } catch (error) {
+    if (error instanceof ConnectionSetupError || input.signal?.aborted) throw error;
+    const secrets = input.credential ? [input.credential] : [];
+    throw new ConnectionSetupError(
+      sanitizeConnectorError(sanitizeIntegrationError(error), secrets),
+      { cause: error },
+    );
+  }
+}
+
 export function requireCredential(auth: z.infer<typeof AuthSchema>, credential?: string): void {
-  if (auth.type !== "none" && !credential) throw new Error("This connector requires a credential");
+  if (auth.type !== "none" && !credential)
+    throw new ConnectionSetupError("This connector requires a credential");
 }
 
 export function applyCredential(
@@ -45,12 +80,12 @@ export function applyCredential(
 ): void {
   if (!credential || auth.type === "none") return;
   if (auth.type === "query") {
-    if (!auth.name) throw new Error("Authentication query name is required");
+    if (!auth.name) throw new ConnectionSetupError("Authentication query name is required");
     url.searchParams.set(auth.name, credential);
     return;
   }
   const name = auth.type === "header" ? auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
+  if (!name) throw new ConnectionSetupError("Authentication header name is required");
   headers[name] = auth.type === "bearer" ? `Bearer ${credential}` : credential;
 }
 
@@ -69,10 +104,13 @@ export function assertNoSensitiveQuery(value: string): void {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Connector URL is invalid");
+    throw new ConnectionSetupError("Connector URL is invalid");
   }
   const name = sensitiveQueryParameter(url);
-  if (name) throw new Error(`Connector URL must put ${name} in the encrypted credential field`);
+  if (name)
+    throw new ConnectionSetupError(
+      `Connector URL must put ${name} in the encrypted credential field`,
+    );
 }
 
 export function sensitiveQueryParameter(url: URL): string | undefined {

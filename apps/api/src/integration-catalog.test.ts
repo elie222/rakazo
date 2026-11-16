@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { searchIntegrationCatalog } from "./integration-catalog.js";
+import {
+  IntegrationCatalogUnavailableError,
+  searchIntegrationCatalog,
+} from "./integration-catalog.js";
 
 describe("searchIntegrationCatalog", () => {
   it("normalizes an integrations.sh-compatible feed and keeps unsupported surfaces visible", async () => {
@@ -183,6 +186,32 @@ describe("searchIntegrationCatalog", () => {
       },
     ]);
   });
+
+  it.each([
+    ["cannot be reached", async () => Promise.reject(new TypeError("fetch failed"))],
+    ["fails", async () => new Response("down", { status: 502 })],
+    ["answers with something other than JSON", async () => new Response("<html>")],
+  ])(
+    "answers a catalog that %s as unavailable, not as the person's mistake",
+    async (_case, answer) => {
+      await expect(
+        searchIntegrationCatalog({
+          baseUrl: "https://mirror.example/catalog",
+          query: "github.com",
+          signal: new AbortController().signal,
+          fetch: vi.fn<typeof globalThis.fetch>(answer),
+        }),
+      ).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
+      await expect(
+        searchIntegrationCatalog({
+          baseUrl: "https://mirror.example/catalog",
+          query: "github.com",
+          signal: new AbortController().signal,
+          fetch: vi.fn<typeof globalThis.fetch>(answer),
+        }),
+      ).rejects.toBeInstanceOf(IntegrationCatalogUnavailableError);
+    },
+  );
 });
 
 const RESPONSE_SIZE_OVER_LIMIT = 1_000_001;
