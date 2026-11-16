@@ -649,6 +649,26 @@ export async function findConnectedModelCredential(
   return selectCompatibleModelCredential(preferred, candidates, id)?.credential ?? selected;
 }
 
+/** Whether runtime selection finds a readable connection that does not require sign-in again. */
+export async function hasReadyModelCredential(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId: string,
+): Promise<boolean> {
+  const credential = await findConnectedModelCredential(
+    prisma,
+    secretStore,
+    actor,
+    provider,
+    modelId,
+  );
+  if (!credential) return false;
+  const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+  return Boolean(secret && !(secret.kind === "oauth" && secret.reconnectRequired));
+}
+
 export type BotModelChangeDeps = {
   hostedProvider?: string;
   prisma: PrismaClient;

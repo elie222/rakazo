@@ -11,6 +11,7 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasReadyModelCredential,
   hiddenCatalogModel,
   isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
@@ -223,11 +224,14 @@ export function createRouterContext(deps: RouterDeps) {
         : { env: process.env };
     let deploymentPrimary = deploymentModelRole(role, defaults).primary;
     if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
-      const credential = await deps.prisma.userModelCredential.findFirst({
-        where: { userId: actor.userId, provider: deploymentPrimary.provider },
-        select: { id: true },
-      });
-      if (!credential) deploymentPrimary = null;
+      const ready = await hasReadyModelCredential(
+        deps.prisma,
+        deps.secrets,
+        actor,
+        deploymentPrimary.provider,
+        deploymentPrimary.modelId,
+      );
+      if (!ready) deploymentPrimary = null;
     }
     return { ...settings, deploymentPrimary };
   };

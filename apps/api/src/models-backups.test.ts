@@ -17,6 +17,7 @@ const owner: Actor = {
 function setup(
   options: {
     actor?: Actor;
+    credentialProvider?: string;
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
     /** An openai-compatible connection with this stored list and own model. */
@@ -28,7 +29,8 @@ function setup(
   const credential = {
     id: "credential-one",
     userId: owner.userId,
-    provider: options.compatible ? "openai-compatible" : "openrouter",
+    provider:
+      options.credentialProvider ?? (options.compatible ? "openai-compatible" : "openrouter"),
     label: "fixture",
     secretId: "secret-one",
     createdAt: new Date(0),
@@ -108,12 +110,16 @@ function setup(
     spaceModelRoleChoice,
     spaceSettingOverride,
     userModelCredential: {
-      findMany: vi.fn(async ({ where }: { where: { userId: string; provider?: string } }) =>
-        !options.credits &&
-        where.userId === owner.userId &&
-        (!where.provider || where.provider === credential.provider)
-          ? [credential]
-          : [],
+      findMany: vi.fn(
+        async ({ where }: { where: { userId: string; provider?: string | { in: string[] } } }) =>
+          !options.credits &&
+          where.userId === owner.userId &&
+          (!where.provider ||
+            (typeof where.provider === "string"
+              ? where.provider === credential.provider
+              : where.provider.in.includes(credential.provider)))
+            ? [credential]
+            : [],
       ),
       findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
         !options.credits && where.userId === owner.userId && where.id === credential.id
@@ -201,7 +207,7 @@ function setup(
         modelId,
         position: Number(position) - 1,
       }));
-  return { rows, roles, prisma, userModelRoleChoice, spaceModelRoleChoice, call };
+  return { rows, roles, prisma, deps, userModelRoleChoice, spaceModelRoleChoice, call };
 }
 
 const availableModel = listPiCatalog().find(
@@ -500,7 +506,7 @@ describe("role-based model settings API", () => {
       async (scope) => {
         clearApprovalEnvironment();
         const { call, prisma } = setup();
-        vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+        vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
         for (const procedure of ["models/role", "models/setRole"]) {
           const { response } = await call(procedure, { role: "approval", scope });
           expect(response.status).toBe(200);
@@ -509,9 +515,8 @@ describe("role-based model settings API", () => {
             deploymentPrimary: null,
           });
         }
-        expect(prisma.userModelCredential.findFirst).toHaveBeenCalledWith({
+        expect(prisma.userModelCredential.findMany).toHaveBeenCalledWith({
           where: { userId: owner.userId, provider: "openrouter" },
-          select: { id: true },
         });
       },
     );
@@ -521,13 +526,13 @@ describe("role-based model settings API", () => {
       async (configuration) => {
         clearApprovalEnvironment();
         const { call, prisma } = setup();
-        vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+        const credentials = await prisma.userModelCredential.findMany({
+          where: { userId: owner.userId },
+        });
+        vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
         if (configuration === "deployment") vi.stubEnv("OPENROUTER_API_KEY", "fake-key");
         if (configuration === "connection") {
-          const [credential] = await prisma.userModelCredential.findMany({
-            where: { userId: owner.userId, provider: "openrouter" },
-          });
-          vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(credential!);
+          vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue(credentials);
         }
         if (configuration === "local") vi.stubEnv("RAKAZO_LOCAL_MODELS", "local-judge");
         const { response } = await call("models/role", { role: "approval" });
@@ -545,11 +550,44 @@ describe("role-based model settings API", () => {
       const primary = { provider: availableModel.provider, modelId: availableModel.id };
       const saved = await call("models/setRole", { role: "approval", primary });
       expect(saved.response.status).toBe(200);
-      vi.mocked(prisma.userModelCredential.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
       const { response } = await call("models/role", { role: "approval" });
       expect(response.status).toBe(200);
       expect((await response.json()).json).toMatchObject({ primary, deploymentPrimary: null });
     });
+
+    it("keeps an approval default served by a connection stored under a provider alias", async () => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "azure");
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "gpt-4o");
+      const { call } = setup({ credentialProvider: "azure-openai-responses" });
+      const { response } = await call("models/role", { role: "approval" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).json.deploymentPrimary).toEqual({
+        provider: "azure",
+        modelId: "gpt-4o",
+      });
+    });
+
+    it.each(["retired", "missing", "unreadable"])(
+      "omits an approval default with %s authentication",
+      async (state) => {
+        clearApprovalEnvironment();
+        const { call, prisma, deps } = setup();
+        if (state === "retired") {
+          vi.mocked(deps.secrets.load).mockResolvedValue(
+            serializeModelSecret({ kind: "oauth", reconnectRequired: true }),
+          );
+        } else if (state === "missing") {
+          vi.mocked(prisma.secret.findFirst).mockResolvedValue(null);
+        } else {
+          vi.mocked(deps.secrets.load).mockRejectedValue(new Error("Unreadable fixture"));
+        }
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toBeNull();
+      },
+    );
   });
 
   it("saves a computer-use model only when it can see images", async () => {
