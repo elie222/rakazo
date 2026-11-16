@@ -73,9 +73,10 @@ const breakdown = {
     modelCalls: 180,
   },
   models: summary.models,
+  overTimeUnit: "day",
   overTime: [
     {
-      date: "2026-11-10T00:00:00.000Z",
+      date: "2026-11-10",
       inputTokens: 310_000,
       outputTokens: 26_000,
       totalTokens: 336_000,
@@ -83,7 +84,7 @@ const breakdown = {
       modelCalls: 60,
     },
     {
-      date: "2026-11-11T00:00:00.000Z",
+      date: "2026-11-11",
       inputTokens: 300_000,
       outputTokens: 30_000,
       totalTokens: 330_000,
@@ -91,7 +92,7 @@ const breakdown = {
       modelCalls: 60,
     },
     {
-      date: "2026-11-12T00:00:00.000Z",
+      date: "2026-11-12",
       inputTokens: 300_000,
       outputTokens: 30_000,
       totalTokens: 330_000,

@@ -175,8 +175,13 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           </p>
           <div className="flex h-28 items-end gap-1">
             {overTime.map((point, index) => {
+              const unknown = point.totalTokens == null;
               const value = point.totalTokens ?? 0;
-              const height = Math.max(4, Math.round((value / maxTokens) * 100));
+              const height = unknown
+                ? 100
+                : value === 0
+                  ? 0
+                  : Math.max(4, Math.round((value / maxTokens) * 100));
               const day = new Date(`${point.date}T00:00:00Z`).toLocaleDateString(
                 i18n.locale,
                 monthly
@@ -188,7 +193,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                 <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                   <div className="flex w-full flex-1 items-end">
                     <div
-                      className="w-full rounded-sm bg-foreground/70"
+                      className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
                       style={{ height: `${height}%` }}
                       title={`${day}: ${number(point.totalTokens)}, ${cost(point.costUsd)}`}
                     />
