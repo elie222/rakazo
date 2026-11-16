@@ -4,7 +4,7 @@ import type { JudgeInput } from "./judge.js";
 import type { RoutineEvidence } from "./silence.js";
 import { hasVisibleMessage } from "./silence.js";
 
-export const INITIATIVE_FIXTURE_VERSION = "initiative-v1";
+export const INITIATIVE_FIXTURE_VERSION = "initiative-v2";
 
 const COMMITMENT =
   "I'll send you the signed lease for unit 4B on Friday at 5pm. Once you have it, file it in results/lease.txt.";
