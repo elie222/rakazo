@@ -8,6 +8,8 @@ on:
       - ".github/workflows/dependency-security.yml"
       - "scripts/checks/dependency-audit.mjs"
       - "pnpm-lock.yaml"
+      # Its packageManager field picks the pnpm that runs the audit.
+      - "package.json"
   push:
     branches: [main]
   schedule:
