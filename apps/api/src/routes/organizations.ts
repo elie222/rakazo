@@ -1,6 +1,5 @@
-import { createHmac } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { emailLocale, organizationInvitationEmail } from "@rakazo/auth";
+import { organizationInvitationEmail } from "@rakazo/auth";
 import {
   acceptOrganizationInvitation,
   cancelOrganizationInvitation,
@@ -22,6 +21,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { deleteOrganization } from "../account-deletion.js";
+import { invitationRecipientKey, sendInvitationEmail } from "../invitation-email.js";
 import type { RouterDeps } from "../router.js";
 import { afterSpaceDeparture } from "../space-departure.js";
 import type { RouterContext } from "./context.js";
@@ -114,6 +114,7 @@ export function organizationsRoutes(ctx: RouterContext) {
               organizationId: input.organizationId,
               target: { type: "user", id: input.userId, label: input.role },
             });
+            void deps.events?.publishOrganizationChange?.(input.organizationId);
             return { ok: true as const };
           }),
         ),
@@ -125,45 +126,51 @@ export function organizationsRoutes(ctx: RouterContext) {
               memberUserId: input.userId,
             };
             await revokeOrganizationMember(deps.prisma, ref);
-            // Their seat ends with their membership, before their Spaces change hands.
-            await bestEffort(
-              "seat count after a removal",
-              deps.billing?.syncSeats(input.organizationId),
-            );
-            await leaveOrganizationSpaces(
-              deps.prisma,
-              {
-                organizationId: input.organizationId,
-                userId: input.userId,
-                removedBy: context.actor.userId,
-              },
-              async (departure) => {
-                await afterSpaceDeparture(
-                  deps,
-                  { spaceId: departure.spaceId, userId: context.actor.userId },
-                  departure,
-                );
-                // Whoever took the Space over sees it change, as when they leave it.
-                void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });
-              },
-            );
-            await forgetRevokedMember(deps.prisma, ref);
-            // Someone who accepted a new invitation meanwhile stays, and is not recorded as removed.
-            const rejoined = await deps.prisma.member.findFirst({
-              where: {
-                organizationId: input.organizationId,
-                userId: input.userId,
-                role: { not: GUEST_ROLE },
-              },
-              select: { id: true },
-            });
-            if (!rejoined)
-              await recordAuditEvent({
-                action: "organization.member.removed",
-                actor: { type: "user", id: context.actor.userId },
-                organizationId: input.organizationId,
-                target: { type: "user", id: input.userId },
+            // The members changed once the revocation committed, so they hear it even if a later
+            // step fails; the removed person's own list loses the organization too.
+            try {
+              // Their seat ends with their membership, before their Spaces change hands.
+              await bestEffort(
+                "seat count after a removal",
+                deps.billing?.syncSeats(input.organizationId),
+              );
+              await leaveOrganizationSpaces(
+                deps.prisma,
+                {
+                  organizationId: input.organizationId,
+                  userId: input.userId,
+                  removedBy: context.actor.userId,
+                },
+                async (departure) => {
+                  await afterSpaceDeparture(
+                    deps,
+                    { spaceId: departure.spaceId, userId: context.actor.userId },
+                    departure,
+                  );
+                  // Whoever took the Space over sees it change, as when they leave it.
+                  void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });
+                },
+              );
+              await forgetRevokedMember(deps.prisma, ref);
+              // Someone who accepted a new invitation meanwhile stays, and is not recorded as removed.
+              const rejoined = await deps.prisma.member.findFirst({
+                where: {
+                  organizationId: input.organizationId,
+                  userId: input.userId,
+                  role: { not: GUEST_ROLE },
+                },
+                select: { id: true },
               });
+              if (!rejoined)
+                await recordAuditEvent({
+                  action: "organization.member.removed",
+                  actor: { type: "user", id: context.actor.userId },
+                  organizationId: input.organizationId,
+                  target: { type: "user", id: input.userId },
+                });
+            } finally {
+              void deps.events?.publishOrganizationChange?.(input.organizationId, [input.userId]);
+            }
             return { ok: true as const };
           }),
         ),
@@ -176,25 +183,24 @@ export function organizationsRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               email: input.email,
               sendsEmail: Boolean(deps.email),
-              recipientKey: (email) =>
-                createHmac("sha256", deps.env.invitationRecipientKey).update(email).digest("hex"),
+              recipientKey: invitationRecipientKey(deps),
             });
             // Past an address's daily limit the pending invitation comes back unchanged.
-            if (invitation.created)
+            if (invitation.created) {
               await recordAuditEvent({
                 action: "organization.invitation.created",
                 actor: { type: "user", id: context.actor.userId },
                 organizationId: input.organizationId,
                 target: { type: "invitation", id: invitation.id },
               });
+              void deps.events?.publishOrganizationChange?.(input.organizationId);
+            }
             const url = invitationUrl(deps, invitation.id);
             const emailed =
-              deps.email && invitation.send
-                ? await sendInvitation(deps, deps.email, context.actor.userId, {
-                    ...invitation,
-                    url,
-                  })
-                : false;
+              invitation.send &&
+              (await sendInvitationEmail(deps, context.actor.userId, invitation.email, (locale) =>
+                organizationInvitationEmail(invitation.email, { ...invitation, url }, locale),
+              ));
             return { url, emailed };
           }),
         ),
@@ -206,13 +212,15 @@ export function organizationsRoutes(ctx: RouterContext) {
               invitationId: input.invitationId,
             });
             // Only a pending invitation of this organization's is recorded as cancelled.
-            if (cancelled)
+            if (cancelled) {
               await recordAuditEvent({
                 action: "organization.invitation.cancelled",
                 actor: { type: "user", id: context.actor.userId },
                 organizationId: input.organizationId,
                 target: { type: "invitation", id: input.invitationId },
               });
+              void deps.events?.publishOrganizationChange?.(input.organizationId);
+            }
             return { ok: true as const };
           }),
         ),
@@ -243,6 +251,7 @@ export function organizationsRoutes(ctx: RouterContext) {
               "seat count after a join",
               deps.billing?.syncSeats(joined.organizationId),
             );
+            void deps.events?.publishOrganizationChange?.(joined.organizationId);
             return { spaceId: joined.spaceId };
           }),
         ),
@@ -265,34 +274,4 @@ function invalidOrganizationName() {
   return new ORPCError("BAD_REQUEST", {
     message: "Organization name must be readable and between 1 and 60 characters",
   });
-}
-
-/** Whether the email went out; when it did not, the inviter shares the link by hand. */
-async function sendInvitation(
-  deps: RouterDeps,
-  email: NonNullable<RouterDeps["email"]>,
-  inviterId: string,
-  invitation: { email: string; organizationName: string; inviterName: string; url: string },
-): Promise<boolean> {
-  // The invitation is saved by now: whatever stops the email, the inviter still gets the link.
-  try {
-    // The invitee's own language when they have an account here, else the inviter's.
-    const [invitee, inviter] = await Promise.all([
-      deps.prisma.user.findFirst({
-        where: { email: { equals: invitation.email, mode: "insensitive" } },
-        select: { locale: true },
-      }),
-      deps.prisma.user.findUnique({ where: { id: inviterId }, select: { locale: true } }),
-    ]);
-    const message = await organizationInvitationEmail(
-      invitation.email,
-      invitation,
-      emailLocale(invitee?.locale ?? inviter?.locale),
-    );
-    await email.send(message);
-    return true;
-  } catch (error) {
-    deps.onEmailError?.(error);
-    return false;
-  }
 }

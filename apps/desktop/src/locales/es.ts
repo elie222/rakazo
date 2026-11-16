@@ -5,11 +5,11 @@ export const ES_MESSAGES: Record<string, string> = {
   "Computer Access…": "Acceso a la computadora…",
   "Revoke Local Computer Access": "Revocar el acceso a la computadora local",
   "Change Rakazo Server…": "Cambiar servidor de Rakazo…",
-  "Stop Local Stack": "Detener stack local",
   "Hide {name}": "Ocultar {name}",
   "Hide Others": "Ocultar otros",
   "Show All": "Mostrar todo",
   "Quit {name}": "Salir de {name}",
+  "Quit and Stop Bots": "Salir y detener bots",
   File: "Archivo",
   Exit: "Salir",
   Quit: "Salir",
@@ -237,8 +237,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker está instalado pero no se está ejecutando. Ábrelo para continuar.",
   "Starting {app}…": "Iniciando {app}…",
-  "Waiting for Docker Desktop…": "Esperando a Docker Desktop…",
-  "Waiting for Docker…": "Esperando a Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker está instalado pero no se está ejecutando. Inicia el servicio de Docker para continuar.",
 };

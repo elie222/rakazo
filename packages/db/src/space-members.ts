@@ -8,7 +8,13 @@ import { computerScopeKey, userControlHeldBy } from "./computers.js";
 import { appendEventInTransaction } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
-import { OrganizationAdminRequiredError, organizationRole } from "./organization-members.js";
+import {
+  invitationEmailAllowance,
+  normalizeEmail,
+  OrganizationAdminRequiredError,
+  organizationRole,
+  recordInvitationEmail,
+} from "./organization-members.js";
 import { runAsSystem } from "./row-security.js";
 import {
   lockSpaceDeletion,
@@ -121,17 +127,21 @@ export async function listSpaceMembers(
     email: string;
     image: string | null;
     role: "owner" | "member";
+    guest: boolean;
   }>;
   canManage: boolean;
   openInvites: number;
   addable?: Array<{ userId: string; name: string; email: string; image: string | null }>;
+  organizationName?: string;
 }> {
   const rows = await prisma.spaceMember.findMany({
     where: { spaceId: input.spaceId },
     select: {
       userId: true,
       role: true,
-      space: { select: { name: true, organizationId: true } },
+      space: {
+        select: { name: true, organizationId: true, organization: { select: { name: true } } },
+      },
       member: {
         select: { role: true, user: { select: { name: true, email: true, image: true } } },
       },
@@ -147,6 +157,7 @@ export async function listSpaceMembers(
       email: row.member.user.email,
       image: row.member.user.image,
       role: isOwnerRole(row.role) ? ("owner" as const) : ("member" as const),
+      guest: row.member.role === GUEST_ROLE,
     }))
     .sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   const canManage = isOwnerRole(self.role);
@@ -171,7 +182,14 @@ export async function listSpaceMembers(
       : [],
   ]);
   const addable = others.map(({ userId, user }) => ({ userId, ...user }));
-  return { spaceName: self.space.name, members, canManage, openInvites, addable };
+  return {
+    spaceName: self.space.name,
+    members,
+    canManage,
+    openInvites,
+    addable,
+    organizationName: self.space.organization.name,
+  };
 }
 
 /**
@@ -229,14 +247,33 @@ export async function addSpaceMember(
   });
 }
 
-/** A new single-use link. Only its SHA-256 is stored; the token is returned once. */
+/**
+ * A new single-use link. Only its SHA-256 is stored; the token is returned once. With an address,
+ * the link is also for emailing there, under the daily limits organization invitations count
+ * with: `email` comes back only when it may go out now, and otherwise the owner shares the link
+ * by hand. Whoever opens it from outside the organization joins as a guest in this Space alone.
+ */
 export async function createSpaceInvite(
   prisma: PrismaClient,
-  input: SpaceRef,
-): Promise<{ token: string; expiresAt: Date }> {
+  input: SpaceRef & {
+    email?: {
+      address: string;
+      sendsEmail: boolean;
+      /** Names the address in the security log: a hash keyed with a server secret. */
+      recipientKey: (email: string) => string;
+    };
+  },
+): Promise<{
+  token: string;
+  expiresAt: Date;
+  email?: { to: string; spaceName: string; inviterName: string };
+}> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
-  await prisma.$transaction(async (tx) => {
+  const to = input.email && normalizeEmail(input.email.address);
+  const mail =
+    input.email && to ? { ...input.email, to, recipient: input.email.recipientKey(to) } : null;
+  const email = await prisma.$transaction(async (tx) => {
     // Serializes concurrent links for one Space, so the cap holds, and checks the owner under
     // the same lock a handover takes.
     await lockSpaceDeletion(tx, input.spaceId);
@@ -250,13 +287,16 @@ export async function createSpaceInvite(
     // A Space being deleted would refuse the link the moment it is opened.
     const space = await tx.space.findUnique({
       where: { id: input.spaceId },
-      select: { deletingAt: true },
+      select: { deletingAt: true, name: true },
     });
     if (!space || space.deletingAt) throw new SpaceNotFoundError();
     const open = await tx.spaceInvite.count({
       where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
     });
     if (open >= MAX_OPEN_SPACE_INVITES) throw new SpaceInviteLimitError();
+    const { send } = mail
+      ? await invitationEmailAllowance(tx, { userId: input.userId, ...mail })
+      : { send: false };
     await tx.spaceInvite.create({
       data: {
         spaceId: input.spaceId,
@@ -265,8 +305,18 @@ export async function createSpaceInvite(
         expiresAt,
       },
     });
+    if (!mail || !send) return undefined;
+    await recordInvitationEmail(tx, {
+      userId: input.userId,
+      metadata: { spaceId: input.spaceId, recipient: mail.recipient },
+    });
+    const inviter = await tx.user.findUniqueOrThrow({
+      where: { id: input.userId },
+      select: { name: true },
+    });
+    return { to: mail.to, spaceName: space.name, inviterName: inviter.name };
   });
-  return { token, expiresAt };
+  return { token, expiresAt, ...(email ? { email } : {}) };
 }
 
 /** Every link not yet used stops working. */

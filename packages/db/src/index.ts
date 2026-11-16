@@ -49,6 +49,7 @@ export * from "./model-credentials.js";
 export * from "./model-credit-cap.js";
 export * from "./model-credits.js";
 export * from "./model-roles.js";
+export * from "./organization-changes.js";
 export * from "./organization-members.js";
 export * from "./organizations.js";
 export * from "./page-shares.js";

@@ -4,11 +4,11 @@ export const TR_MESSAGES: Record<string, string> = {
   "Computer Access…": "Bilgisayar Erişimi…",
   "Revoke Local Computer Access": "Yerel Bilgisayar Erişimini İptal Et",
   "Change Rakazo Server…": "Rakazo Sunucusunu Değiştir…",
-  "Stop Local Stack": "Yerel Yığını Durdur",
   "Hide {name}": "{name} Uygulamasını Gizle",
   "Hide Others": "Diğerlerini Gizle",
   "Show All": "Tümünü Göster",
   "Quit {name}": "{name} Uygulamasından Çık",
+  "Quit and Stop Bots": "Çık ve Botları Durdur",
   File: "Dosya",
   Exit: "Çıkış",
   Quit: "Çık",
@@ -217,8 +217,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker yüklü ama çalışmıyor. Devam etmek için açın.",
   "Starting {app}…": "{app} başlatılıyor…",
-  "Waiting for Docker Desktop…": "Docker Desktop bekleniyor…",
-  "Waiting for Docker…": "Docker bekleniyor…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker yüklü ama çalışmıyor. Devam etmek için Docker hizmetini başlatın.",
 };

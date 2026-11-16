@@ -4,11 +4,11 @@ export const NL_MESSAGES: Record<string, string> = {
   "Computer Access…": "Computertoegang…",
   "Revoke Local Computer Access": "Toegang tot lokale computer intrekken",
   "Change Rakazo Server…": "Rakazo-server wijzigen…",
-  "Stop Local Stack": "Lokale stack stoppen",
   "Hide {name}": "Verberg {name}",
   "Hide Others": "Verberg andere",
   "Show All": "Toon alles",
   "Quit {name}": "Stop {name}",
+  "Quit and Stop Bots": "Afsluiten en bots stoppen",
   File: "Archief",
   Exit: "Afsluiten",
   Quit: "Stop",
@@ -225,8 +225,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker is geïnstalleerd maar draait niet. Open het om door te gaan.",
   "Starting {app}…": "{app} wordt gestart…",
-  "Waiting for Docker Desktop…": "Wachten op Docker Desktop…",
-  "Waiting for Docker…": "Wachten op Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker is geïnstalleerd maar draait niet. Start de Docker-service om door te gaan.",
 };

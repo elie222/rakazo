@@ -72,4 +72,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Join {organization}": "加入 {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "此邀請將在 7 天後過期。請使用此電子郵件地址登入以接受邀請。",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} 邀請你加入 Rakazo 上的 {space}",
+  "{inviter} invited you to join {space} on Rakazo.": "{inviter} 邀請你加入 Rakazo 上的 {space}。",
+  "Join {space}": "加入 {space}",
+  "This invitation expires in 7 days.": "此邀請將在 7 天後過期。",
 };

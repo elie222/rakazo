@@ -307,43 +307,6 @@ html[data-platform="darwin"] .titlebar {
   color: var(--muted-foreground);
 }
 
-.stack-waiting {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-
-.stack-waiting[hidden] {
-  display: none;
-}
-
-.pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--muted-foreground);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.25;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pulse {
-    animation: none;
-  }
-}
-
 .status {
   margin: 14px 0 0;
   min-height: 20px;

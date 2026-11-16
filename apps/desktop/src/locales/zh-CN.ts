@@ -4,11 +4,11 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Computer Access…": "电脑访问权限…",
   "Revoke Local Computer Access": "撤销本地电脑访问权限",
   "Change Rakazo Server…": "更换 Rakazo 服务器…",
-  "Stop Local Stack": "停止本地服务栈",
   "Hide {name}": "隐藏 {name}",
   "Hide Others": "隐藏其他",
   "Show All": "全部显示",
   "Quit {name}": "退出 {name}",
+  "Quit and Stop Bots": "退出并停止 Bot",
   File: "文件",
   Exit: "退出",
   Quit: "退出",
@@ -202,8 +202,6 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker 已安装但未运行。打开它即可继续。",
   "Starting {app}…": "正在启动 {app}…",
-  "Waiting for Docker Desktop…": "正在等待 Docker Desktop…",
-  "Waiting for Docker…": "正在等待 Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker 已安装但未运行。请启动 Docker 服务以继续。",
 };

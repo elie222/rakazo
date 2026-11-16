@@ -4,11 +4,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Computer Access…": "Доступ к компьютеру…",
   "Revoke Local Computer Access": "Отозвать доступ к локальному компьютеру",
   "Change Rakazo Server…": "Сменить сервер Rakazo…",
-  "Stop Local Stack": "Остановить локальный стек",
   "Hide {name}": "Скрыть {name}",
   "Hide Others": "Скрыть остальные",
   "Show All": "Показать все",
   "Quit {name}": "Завершить {name}",
+  "Quit and Stop Bots": "Выйти и остановить ботов",
   File: "Файл",
   Exit: "Выход",
   Quit: "Выйти",
@@ -223,8 +223,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Docker is installed but not running. Open it to continue.":
     "Docker установлен, но не запущен. Откройте его, чтобы продолжить.",
   "Starting {app}…": "Запуск {app}…",
-  "Waiting for Docker Desktop…": "Ожидание Docker Desktop…",
-  "Waiting for Docker…": "Ожидание Docker…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker установлен, но не запущен. Запустите службу Docker, чтобы продолжить.",
 };
