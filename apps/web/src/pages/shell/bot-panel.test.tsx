@@ -439,10 +439,9 @@ describe("BotSettings model picker", () => {
       thinkingLevel: null,
     });
 
-    const thinking = container.querySelector('select[id$="-thinking"]');
-    if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
-    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
-    await selectThinking("high");
+    const levels = await openOptions(thinkingField());
+    expect(levels.map((option) => option.textContent).slice(1)).toEqual(["Low", "High"]);
+    await act(async () => levels.find((option) => option.textContent === "High")?.click());
     expect(onSave.mock.lastCall?.[0]).toMatchObject({
       modelProvider: "fixture-cloud",
       modelId: "large",

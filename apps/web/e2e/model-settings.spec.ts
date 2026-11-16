@@ -354,9 +354,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     const settings = page.getByTestId("bot-settings");
     // The model row names the model in use and opens the list; each change saves at once.
     await settings.getByRole("button", { name: /^Model/ }).click();
-    const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
+    // From the start of the name, since the default's row also names the model: "Default (model)".
+    const startsWith = (id: string) => new RegExp(`^${id}`);
+    const localModel = page.getByRole("option", { name: startsWith(LOCAL_MODEL_ID) });
     await expect(localModel).toBeVisible();
-    await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
+    await expect(page.getByRole("option", { name: startsWith(SECOND_MODEL_ID) })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
     const modelSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
