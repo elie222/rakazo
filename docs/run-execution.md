@@ -24,9 +24,9 @@ within moments of a deploy. With `RUN_DRAIN_ENABLED`, a stopping worker first le
 each run it is executing end its turn, for up to `RUN_DRAIN_MS`, because a turn cut
 off mid-step repeats its model call or tool call; it keeps renewing those leases and
 claims nothing new meanwhile. A turn that finishes a step while its process is
-stopping does not start another: it saves the turn and hands the run back, and the
-next process resumes with the next model call. A turn whose step was its last
-simply ends. A stopping API requeues its runs at once on SIGTERM. `deploy-main.sh`
+stopping does not start another: it saves the turn, with the reply built so far, and
+hands the run back, and the next process resumes with the next model call. A turn
+whose step was its last simply ends. A stopping API requeues its runs at once on SIGTERM. `deploy-main.sh`
 instead sends a replaced API the signal its image's `org.rakazo.run-drain-signal`
 label names: it closes its listener, so the proxy sends requests and live streams to
 the new API, and drains its runs the same way. A SIGTERM during that drain hands them

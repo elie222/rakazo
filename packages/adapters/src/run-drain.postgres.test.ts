@@ -9,6 +9,7 @@ import type {
   BackgroundJobHandlers,
   JobPublisher,
 } from "@rakazo/adapter-kit";
+import type { ToolHistory } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -17,6 +18,7 @@ import {
   cancelRunsInTransaction,
   createDb,
   createThreadEvents,
+  loadRunTurnCheckpoint,
   runAsSystem,
   runAsTenant,
 } from "@rakazo/db";
@@ -215,6 +217,13 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
           } finally {
             context.signal.removeEventListener("abort", onAbort);
           }
+          if (steps === 1) continue;
+          // The step's model call asked for a tool, which runs before the next step.
+          const call = { name: "list_files", executionId: `step-${step}` };
+          const args = { path: `step-${step}` };
+          yield { type: "tool" as const, ...call, args, response: step };
+          const result = await request.executeTool!(call.name, args, call.executionId);
+          await request.onToolCompleted?.({ ...call, durationMs: 0, result });
         }
         yield { type: "done" as const, text: `Hello from ${workerId}.` };
       },
@@ -360,6 +369,23 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
       system.externalEffect.count({ where: { runId, kind: "runtime_checkpoint" } });
     const stepsOf = (on: ReturnType<typeof startProcess>, runId: string) =>
       on.turnsOf(runId).map((turn) => turn.step);
+    /** The reply's steps, and the calls later turns replay from its tool history. */
+    const replyOf = async (runId: string) => {
+      const reply = await system.message.findFirstOrThrow({
+        where: { runId, role: "bot" },
+        select: { blocks: true, toolHistory: true },
+      });
+      const blocks = reply.blocks as Array<{ kind: string; steps?: unknown[] }>;
+      const history = JSON.parse(reply.toolHistory ?? "null") as ToolHistory | null;
+      return {
+        steps: blocks.find((block) => block.kind === "steps")?.steps,
+        replayed: history?.steps.flatMap((step) => step?.calls.map((call) => call.arguments)),
+      };
+    };
+    const everyStep = {
+      steps: [{ label: "List files", count: 3, outcomes: { succeeded: 3 } }],
+      replayed: ["step-0", "step-1", "step-2"].map((path) => JSON.stringify({ path })),
+    };
 
     it("is handed back after the step in flight once its process is stopping, and resumes from the next step elsewhere", async () => {
       const { createRun } = await seedBot();
@@ -398,6 +424,44 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
       // Each step ran once: the step finished before the stop was not repeated.
       expect(stepsOf(leaving, run.id)).toEqual([0]);
       expect(await savedTurns(run.id)).toBe(0);
+      // The step done before the hand-back is in the reply and its history, as if never stopped.
+      expect(await replyOf(run.id)).toEqual(everyStep);
+    });
+
+    it("resumes a turn a previous release handed back, whose saved turn has no reply", async () => {
+      const { createRun } = await seedBot();
+      const run = await createRun();
+      const leaving = startProcess("leaving", { drains: true, steps: 3 });
+      await leaving.start();
+      const first = await runInFlight(leaving, run);
+      leaving.signalStop();
+      first.finish.resolve();
+      await leaving.stop();
+      const blob = await runAsSystem("run drain fixture", () => loadRunTurnCheckpoint(prisma, run));
+      const { reply, ...previousRelease } = JSON.parse(blob!);
+      expect(reply).toBeDefined();
+      // Stored unencrypted, which the loader also reads, as a release without the reply wrote it.
+      await system.externalEffect.updateMany({
+        where: { runId: run.id, kind: "runtime_checkpoint" },
+        data: { result: JSON.stringify(previousRelease) },
+      });
+
+      const replacement = startProcess("replacement", { drains: false, steps: 3 });
+      await replacement.start();
+      await wake(replacement, run);
+      for (const step of [1, 2]) {
+        await wait(() => expect(stepsOf(replacement, run.id)).toContain(step));
+        replacement.turnsOf(run.id).at(-1)!.finish.resolve();
+      }
+      await wait(async () => expect((await runRow(run.id)).status).toBe("completed"));
+
+      expect(stepsOf(replacement, run.id)).toEqual([1, 2]);
+      expect(await repliesOf(run.id)).toBe(1);
+      // Without a saved reply the resumed attempt keeps only its own steps, as before.
+      expect(await replyOf(run.id)).toEqual({
+        steps: [{ label: "List files", count: 2, outcomes: { succeeded: 2 } }],
+        replayed: everyStep.replayed.slice(1),
+      });
     });
 
     it("runs every step in one attempt on a process that is not stopping", async () => {
@@ -416,6 +480,7 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
       expect(stepsOf(staying, run.id)).toEqual([0, 1, 2]);
       expect(await repliesOf(run.id)).toBe(1);
       expect(await savedTurns(run.id)).toBe(0);
+      expect(await replyOf(run.id)).toEqual(everyStep);
     });
   });
 

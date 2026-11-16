@@ -47,6 +47,7 @@ import {
 } from "./history-compaction.js";
 import { connectorStepNames } from "./pi-runtime-tools.js";
 import { rejectedRequestsOf } from "./provider-request-shape.js";
+import { snapshotReply } from "./reply-snapshot.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -537,7 +538,7 @@ async function handBackBetweenSteps(ctx: RunContext, event: RuntimeEvent<"yielde
   const { deps, runId, workerId, fence } = ctx;
   await publishMidTurnNarration(ctx);
   await ctx.computer.checkpoint.flush();
-  await saveTurnCheckpoint(ctx, event.checkpoint);
+  await saveTurnCheckpoint(ctx, event.checkpoint, snapshotReply(ctx.state.reply));
   ctx.state.lease.handedBack = await requeueInterruptedRun(deps, runId, workerId, fence);
 }
 

@@ -1,0 +1,92 @@
+import { MessageBlock, storedImageMimeType, ToolStepCallSchema } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
+import type { ReplyState } from "./run-context.js";
+
+const ReplySnapshotSchema = z.object({
+  version: z.literal(1),
+  assembled: z.string(),
+  currentTextSegment: z.string(),
+  messageSegments: z.array(MessageBlock),
+  pendingToolNames: z.array(z.string()),
+  toolCalls: z.array(
+    z.object({ label: z.string(), executionId: z.string(), tool: z.string().optional() }),
+  ),
+  toolOutcomes: z.array(z.tuple([z.string(), z.enum(["succeeded", "failed", "stopped"])])),
+  toolStepCalls: z.array(z.tuple([z.string(), ToolStepCallSchema])),
+  keptResultChars: z.number(),
+  latestScreenshot: z
+    .object({ executionId: z.string(), mimeType: z.string(), data: z.string() })
+    .optional(),
+  workingNotes: z.array(z.string()),
+  narrationSoFar: z.string(),
+  textSinceLastStep: z.string(),
+  discardedMidTurnNarration: z.boolean(),
+  lastDiscardedMidTurnNarration: z.string(),
+  explicitNoResponse: z.boolean(),
+  publishedTerminalSubagent: z.boolean(),
+  computerTaskStarted: z.boolean(),
+  assistantTurnBreakPending: z.boolean(),
+  progressBudgetStart: z.number(),
+});
+export type ReplySnapshot = z.infer<typeof ReplySnapshotSchema>;
+
+/**
+ * What a turn handed back between steps has built of its reply, saved with its checkpoint. The
+ * resumed attempt reruns none of those steps, so it finishes the reply from here.
+ */
+export function snapshotReply(reply: ReplyState): ReplySnapshot {
+  const shot = reply.latestScreenshot;
+  return {
+    version: 1,
+    assembled: reply.assembled,
+    currentTextSegment: reply.currentTextSegment,
+    messageSegments: reply.messageSegments,
+    pendingToolNames: reply.pendingToolNames,
+    toolCalls: reply.toolCalls,
+    toolOutcomes: [...reply.toolOutcomes],
+    toolStepCalls: [...reply.toolStepCalls],
+    keptResultChars: reply.keptResultChars,
+    ...(shot && {
+      latestScreenshot: {
+        executionId: shot.executionId,
+        mimeType: shot.mimeType,
+        data: Buffer.from(shot.data).toString("base64"),
+      },
+    }),
+    workingNotes: reply.workingNotes,
+    narrationSoFar: reply.narrationSoFar,
+    textSinceLastStep: reply.textSinceLastStep,
+    discardedMidTurnNarration: reply.discardedMidTurnNarration,
+    lastDiscardedMidTurnNarration: reply.lastDiscardedMidTurnNarration,
+    explicitNoResponse: reply.explicitNoResponse,
+    publishedTerminalSubagent: reply.publishedTerminalSubagent,
+    computerTaskStarted: reply.computerTaskStarted,
+    assistantTurnBreakPending: reply.assistantTurnBreakPending,
+    progressBudgetStart: reply.progressBudgetStart,
+  };
+}
+
+/**
+ * Continues the reply a handed-back attempt saved. A checkpoint without one (a pause, or an
+ * older release) or with one this release cannot read starts the reply empty, as before.
+ */
+export function restoreReply(reply: ReplyState, saved: unknown): void {
+  if (saved === undefined) return;
+  const parsed = ReplySnapshotSchema.safeParse(saved);
+  if (!parsed.success) {
+    getLogger().warn("turn checkpoint reply unreadable", { issues: parsed.error.issues.length });
+    return;
+  }
+  const { latestScreenshot, toolOutcomes, toolStepCalls, version: _, ...rest } = parsed.data;
+  Object.assign(reply, rest);
+  reply.toolOutcomes = new Map(toolOutcomes);
+  reply.toolStepCalls = new Map(toolStepCalls);
+  const mimeType = latestScreenshot && storedImageMimeType(latestScreenshot.mimeType);
+  if (latestScreenshot && mimeType)
+    reply.latestScreenshot = {
+      executionId: latestScreenshot.executionId,
+      mimeType,
+      data: new Uint8Array(Buffer.from(latestScreenshot.data, "base64")),
+    };
+}

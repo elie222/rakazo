@@ -32,6 +32,8 @@ export interface TurnCheckpoint {
   ownInstructionsBaseline?: string;
   /** Executor-assigned occurrences include canonical arguments and the paused call. */
   effectOccurrences?: Array<{ executionId: string; fingerprint: string; occurrence: number }>;
+  /** The reply so far, saved only when the turn was handed back between steps. */
+  reply?: unknown;
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */
   executionMode?: "parallel" | "sequential";
 }
