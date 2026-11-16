@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../../lib/query-root.test-support";
 
 const { bots, client, toast } = vi.hoisted(() => {
   const bots = { list: vi.fn(), update: vi.fn() };
@@ -67,12 +66,7 @@ function button(label: string) {
   return [...document.body.querySelectorAll("button")].find((node) => node.textContent === label);
 }
 
-const queryClient = new QueryClient();
-const view = (mainModelKey: string) => (
-  <QueryClientProvider client={queryClient}>
-    <SpaceBotsModelButton mainModelKey={mainModelKey} />
-  </QueryClientProvider>
-);
+const view = (mainModelKey: string) => <SpaceBotsModelButton mainModelKey={mainModelKey} />;
 
 async function render(mainModelKey = "s:a:one") {
   const host = document.createElement("div");

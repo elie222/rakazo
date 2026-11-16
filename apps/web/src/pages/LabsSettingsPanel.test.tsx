@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
@@ -58,13 +57,7 @@ async function render(props: React.ComponentProps<typeof LabsSettingsPanel>) {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <QueryClientProvider client={new QueryClient()}>
-        <LabsSettingsPanel {...props} />
-      </QueryClientProvider>,
-    ),
-  );
+  await act(async () => root?.render(<LabsSettingsPanel {...props} />));
   return container;
 }
 

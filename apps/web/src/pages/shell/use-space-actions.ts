@@ -22,7 +22,7 @@ export function useSpaceActions({
   bootstrapMe: Roster["bootstrapMe"];
   closePanel: () => void;
 }) {
-  async function renameSpace(spaceId: string, name: string, client: RpcClient = rpc) {
+  async function renameSpace(spaceId: string, name: string, client: RpcClient) {
     await commitSpaceRename({
       rename: async () => {
         await client.spaces.rename({ spaceId, name });

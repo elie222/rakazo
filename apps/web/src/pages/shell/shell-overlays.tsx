@@ -189,7 +189,6 @@ export function SettingsOverlays({
           onTimezoneChange={async (timezone, client) => {
             const nextMe = await client.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
-            void queryClient.invalidateQueries({ queryKey: queries.usage.breakdown.key() });
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {

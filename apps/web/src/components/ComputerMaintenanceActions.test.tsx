@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import type { ComputerStatus, ComputerUpdate } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { computerUpdates } from "../lib/computer-updates";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { ComputerMaintenanceActions } from "./ComputerMaintenanceActions";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -57,9 +56,7 @@ const status = (botId: string, extra: Partial<ComputerStatus> = {}) =>
 const render = (status: ComputerStatus, onChanged: () => Promise<void> = async () => {}) =>
   act(() =>
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
-        <ComputerMaintenanceActions botId="bot-settings" computer={status} onChanged={onChanged} />
-      </QueryClientProvider>,
+      <ComputerMaintenanceActions botId="bot-settings" computer={status} onChanged={onChanged} />,
     ),
   );
 const labels = () => [...host.querySelectorAll("button")].map((button) => button.textContent);

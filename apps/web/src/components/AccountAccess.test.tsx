@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 import type { AccountSecurity } from "@rakazo/contracts";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot as createReactRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { AccountAccess, LinkSsoRow } from "./AccountAccess";
@@ -291,14 +290,3 @@ it("preserves a configured organization label when linking", async () => {
   await click("Link Company Login");
   expect(authClient.linkSocial).toHaveBeenCalledWith(expect.objectContaining({ provider: "oidc" }));
 });
-
-/** Saves need a query client; each root gets its own. */
-function createRoot(container: Element) {
-  const root = createReactRoot(container);
-  const queryClient = new QueryClient();
-  return {
-    render: (node: ReactNode) =>
-      root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>),
-    unmount: () => root.unmount(),
-  };
-}

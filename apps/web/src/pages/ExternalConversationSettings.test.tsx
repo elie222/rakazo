@@ -3,11 +3,10 @@
 import type { Bot, ExternalConversation } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import { createRoot as createReactRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
@@ -26,17 +25,6 @@ vi.mock("../lib/rpc", () => ({
 }));
 
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
-
-/** Saves need a query client. */
-function createRoot(container: HTMLElement) {
-  const root = createReactRoot(container);
-  const queryClient = new QueryClient();
-  return {
-    render: (node: ReactNode) =>
-      root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>),
-    unmount: () => root.unmount(),
-  };
-}
 
 const bot = {
   id: "bot-1",

@@ -10,7 +10,9 @@ import {
   modelSettingsFields,
   modelSettingsRequest,
 } from "@rakazo/core";
+import { writeSaved } from "@rakazo/core/query";
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import { useSave, useSpaceQueries } from "../../lib/query";
@@ -35,9 +37,19 @@ export function ModelSettingsPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
   const persist = useSave({
-    save: (settings: ModelSettings, rpc) =>
-      rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings }),
+    save: async (settings: ModelSettings, rpc) => {
+      await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
+      // Shown as saved even if reading the connections again fails.
+      await writeSaved(queryClient, queries.models.credentials.queryKey(), (current = []) =>
+        current.map((entry) =>
+          entry.id === credential.id
+            ? { ...entry, modelSettings: { ...entry.modelSettings, [modelId]: settings } }
+            : entry,
+        ),
+      );
+    },
     stale: [queries.models.credentials.key(), queries.models.list.key()],
     onSaved: () => {
       setEdited(null);

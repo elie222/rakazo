@@ -2,11 +2,10 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { rpc } from "../lib/rpc";
 import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { ComputerDeviceSettings } from "./ComputerDeviceSettings";
@@ -88,11 +87,9 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
 function renderSettings() {
   return act(async () =>
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
-        <I18nProvider i18n={i18n}>
-          <ComputerDeviceSettings />
-        </I18nProvider>
-      </QueryClientProvider>,
+      <I18nProvider i18n={i18n}>
+        <ComputerDeviceSettings />
+      </I18nProvider>,
     ),
   );
 }

@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 
 import { flush } from "@rakazo/core/test-async";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -106,11 +105,9 @@ afterEach(() => {
 /** The shell binds its window's space, which is what `client` names. */
 function panel(client: RpcClient, spaceId: string) {
   return (
-    <QueryClientProvider client={new QueryClient()}>
-      <SpaceRpcProvider spaceId={spaceId}>
-        <BillingSettingsPanel client={client} />
-      </SpaceRpcProvider>
-    </QueryClientProvider>
+    <SpaceRpcProvider spaceId={spaceId}>
+      <BillingSettingsPanel client={client} />
+    </SpaceRpcProvider>
   );
 }
 
