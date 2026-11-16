@@ -504,9 +504,19 @@ describe("createDeadJobPruner", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rowCount: 1_000 })
-      .mockResolvedValueOnce({ rowCount: 3 })
-      .mockResolvedValue({ rowCount: 0 });
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "computer.sleep", removed: 600 },
+          { identifier: "run.interactive", removed: 400 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { identifier: "run.continue", removed: 1 },
+          { identifier: "computer.sleep", removed: 2 },
+        ],
+      })
+      .mockResolvedValue({ rows: [] });
     const prune = createDeadJobPruner({ query } as never);
 
     await prune();
@@ -520,7 +530,11 @@ describe("createDeadJobPruner", () => {
     expect(sql).toContain("jobs.attempts >= jobs.max_attempts and jobs.locked_at is null");
     expect(sql).toContain("tasks.identifier <> 'routine.retry'");
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ message: "jobs.dead_pruned", "jobs.removed": 1_003 }),
+      expect.objectContaining({
+        message: "jobs.dead_pruned",
+        "jobs.removed": 1_003,
+        "jobs.removed_by_type": "computer.sleep=602,run.continue=401",
+      }),
     );
 
     now += 60 * 60 * 1000;

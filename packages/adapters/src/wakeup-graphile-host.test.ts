@@ -828,6 +828,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
               payload: unknown;
               attempts: number;
               max_attempts: number;
+              created_at: Date;
             };
             error: unknown;
           }) => void)
@@ -839,6 +840,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
           payload: wrapJobPayload({ threadId: "thread-9" }),
           attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
           max_attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+          created_at: new Date(),
         },
         error: new Error("The operation was aborted due to timeout"),
       });
@@ -848,6 +850,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
           payload: wrapJobPayload({ runId: "run-1" }),
           attempts: 25,
           max_attempts: 25,
+          created_at: new Date(),
         },
         error: new Error("handler failed"),
       });
@@ -859,6 +862,12 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     expect(sink.events).toEqual([
       expect.objectContaining({
         level: "error",
+        message: "job.gave_up",
+        "job.type": "history.compact",
+        "job.attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
+      }),
+      expect.objectContaining({
+        level: "error",
         message: "history.compact failed permanently",
         "thread.id": "thread-9",
         "history.compact.reason": "attempts_exhausted",
@@ -867,7 +876,15 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
         "job.max_attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
         error: expect.objectContaining({ message: "The operation was aborted due to timeout" }),
       }),
+      expect.objectContaining({
+        level: "error",
+        message: "job.gave_up",
+        "job.type": "run.continue",
+        "job.attempts": 25,
+        error: expect.objectContaining({ message: "handler failed" }),
+      }),
     ]);
+    expect(JSON.stringify(sink.events.at(-1))).not.toContain("run-1");
   });
 
   it("wakes a pending restart delay when stop is called", async () => {

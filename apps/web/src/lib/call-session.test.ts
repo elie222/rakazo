@@ -8,6 +8,8 @@ import {
   reduceThreadSnapshot,
   runThreadSubscription,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pickUp } from "./call-pickup.js";
 import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
@@ -667,15 +669,11 @@ describe("call session", () => {
   });
 
   it("drops a send that finishes after the same bot is called again", async () => {
-    let finishSend: (value: { runId: string; taskId: string }) => void = () => undefined;
-    let failSend: (error: Error) => void = () => undefined;
-    send.mockImplementation(
-      () =>
-        new Promise((resolve, reject) => {
-          finishSend = resolve;
-          failSend = reject;
-        }) as never,
-    );
+    let sending: Deferred<{ runId: string; taskId: string }> | undefined;
+    send.mockImplementation(() => {
+      sending = deferred();
+      return sending.promise as never;
+    });
 
     await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
     const first = heard("book the flight");
@@ -685,7 +683,7 @@ describe("call session", () => {
     await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
     const listens = listen.mock.calls.length;
     getThread.mockClear();
-    finishSend({ runId: "run-old", taskId: "task-old" });
+    sending?.resolve({ runId: "run-old", taskId: "task-old" });
     await first;
 
     expect(getThread).not.toHaveBeenCalled();
@@ -701,7 +699,7 @@ describe("call session", () => {
     endCall();
     await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
     const listensAfter = listen.mock.calls.length;
-    failSend(new Error("offline"));
+    sending?.reject(new Error("offline"));
     await second;
 
     expect(getSnapshot()).toMatchObject({
@@ -1388,14 +1386,6 @@ async function speakingReply(text: string) {
 function interim(transcript: string) {
   const watcher = vi.mocked(dictation.subscribe).mock.calls.at(-1)?.[0];
   watcher?.({ status: "listening", transcript });
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 function eventStream() {

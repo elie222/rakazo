@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -154,7 +154,7 @@ async function renderArtifacts() {
   if (vi.isFakeTimers()) {
     await act(async () => vi.advanceTimersByTimeAsync(0));
   } else {
-    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
   }
   return {
     container,
@@ -274,16 +274,15 @@ it("reopens with cached artifacts and refreshes them in the background", async (
   await first.cleanup();
   await queryClient.invalidateQueries();
 
-  let finish: (page: { items: ReturnType<typeof artifact>[]; nextCursor: null }) => void = () =>
-    undefined;
-  api.listSpace.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  const finish = deferred<{ items: ReturnType<typeof artifact>[]; nextCursor: null }>();
+  api.listSpace.mockImplementationOnce(() => finish.promise);
   const page = await renderArtifacts();
   try {
     // Painted from the cache while the refresh is still out, with no spinner.
     expect(page.container.textContent).toContain("Cached notes");
     expect(page.container.querySelector('[aria-label="Loading…"]')).toBeNull();
     await act(async () =>
-      finish({ items: [artifact("Fresh report", "artifact-2")], nextCursor: null }),
+      finish.resolve({ items: [artifact("Fresh report", "artifact-2")], nextCursor: null }),
     );
     await act(async () => {
       await vi.waitFor(() => expect(page.container.textContent).toContain("Fresh report"));
