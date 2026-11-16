@@ -7,7 +7,6 @@ import {
   hasPluginConnector,
   managedPluginParams,
   pluginCategories,
-  pluginSite,
   pluginSkillCount,
   skillPacks,
   sourceHref,
@@ -29,16 +28,6 @@ const entry = (overrides: Partial<PluginMarketplaceEntry>): PluginMarketplaceEnt
   hasConnector: true,
   skillCount: 0,
   ...overrides,
-});
-
-it("uses the product's own site for an icon, never GitHub's", () => {
-  expect(pluginSite(entry({ domains: ["cal.com"] }))).toBe("https://cal.com");
-  expect(pluginSite(entry({ homepage: "https://sentry.io/for/ai" }))).toBe("https://sentry.io");
-  expect(pluginSite(entry({ homepage: "https://github.com/acme/plugin" }))).toBeNull();
-  expect(pluginSite(entry({ homepage: "https://docs.github.com/acme" }))).toBeNull();
-  expect(pluginSite(entry({ homepage: "https://notgithub.com/acme" }))).toBe(
-    "https://notgithub.com",
-  );
 });
 
 it("filters by category and matches word prefixes, including the category label", () => {

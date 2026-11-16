@@ -12,6 +12,7 @@ import {
   matchesPluginQuery,
   OTHER_PLUGINS,
   PLUGIN_CATEGORIES,
+  pluginSite,
 } from "@rakazo/core";
 
 /** What the plugin screen needs, from a catalog entry or a pasted GitHub URL. */
@@ -43,21 +44,6 @@ export function pluginParams(entry: PluginMarketplaceEntry): PluginParams {
 export function gitImportParams(url: string): PluginParams {
   const source = url.trim().replace(/\/$/, "");
   return { source, installedSource: source, name: source.split("/").pop() || source };
-}
-
-/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
-export function pluginSite(
-  entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">,
-): string | null {
-  const domain = entry.domains[0]?.replace(/^https?:\/\//, "").split("/")[0];
-  if (domain) return `https://${domain}`;
-  try {
-    if (!entry.homepage) return null;
-    const { hostname, origin } = new URL(entry.homepage);
-    return hostname === "github.com" || hostname.endsWith(".github.com") ? null : origin;
-  } catch {
-    return null;
-  }
 }
 
 /**
