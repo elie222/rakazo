@@ -122,7 +122,7 @@ export function renameSkillMd(content: string, name: string): string {
   // A block scalar name continues on indented lines; replace those lines too.
   if (/^[|>]/.test(value)) {
     const rest = body.slice(line.index + line[0].length);
-    const continuation = /^(?:\r?\n(?:[ \t]+.*|[ \t]*)(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
+    const continuation = /^(?:\r?\n(?:[ \t].*)?(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
     end = line.index + line[0].length + continuation.length;
     replacement = ` ${yamlScalar(name)}${line[2] ?? ""}`;
   }
