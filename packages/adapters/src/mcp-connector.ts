@@ -1110,9 +1110,10 @@ export class McpConnector implements ConnectorProvider {
           where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
           select: { secretId: true },
         });
-        // The server was edited or reconnected after this run read it; later runs see the change.
+        // The server was edited, reconnected or removed from the space after this run read it.
+        // Re-adding it keeps its revision, so only wait briefly.
         if (!current)
-          throw new McpConnectFailure("MCP server changed while connecting", "reconnect");
+          throw new McpConnectFailure("MCP server changed while connecting", "unreachable");
         if (current.secretId) {
           secret = await this.prisma.secret.findFirst({
             where: { id: current.secretId, ...itemSecretIn(context) },
