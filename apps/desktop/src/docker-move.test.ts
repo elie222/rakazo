@@ -95,6 +95,23 @@ describe("settleStackWhenNeeded", () => {
     expect(used).toEqual(["native"]);
   });
 
+  it("asks again after a failed attempt", async () => {
+    let asked = 0;
+    const settle = settleStackWhenNeeded(
+      "ask",
+      async () => {
+        asked += 1;
+        if (asked === 1) throw new Error("dialog failed");
+        return "docker";
+      },
+      async () => {},
+    );
+    await expect(settle()).rejects.toThrow("dialog failed");
+    await settle();
+    await settle();
+    expect(asked).toBe(2);
+  });
+
   it("keeps a stack already decided at launch", async () => {
     const used: string[] = [];
     const settle = settleStackWhenNeeded(

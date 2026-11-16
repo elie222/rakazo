@@ -53,7 +53,7 @@ export function moveAccepted(input: StackFacts): boolean {
 
 /**
  * Settles an unanswered move the first time This computer's stack is needed, which may be after
- * launch when the person switches to it. Asked at most once per launch; a decided stack is kept.
+ * launch when the person switches to it. Answered at most once per launch; a decided stack is kept.
  */
 export function settleStackWhenNeeded(
   choice: StackChoice | "ask",
@@ -62,7 +62,13 @@ export function settleStackWhenNeeded(
 ): () => Promise<void> {
   let settling: Promise<void> | undefined = choice === "ask" ? undefined : Promise.resolve();
   return () => {
-    settling ??= ask().then(use);
+    settling ??= ask()
+      .then(use)
+      .catch((error: unknown) => {
+        // A failed attempt is asked again on the next start.
+        settling = undefined;
+        throw error;
+      });
     return settling;
   };
 }

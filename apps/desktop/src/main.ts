@@ -661,15 +661,16 @@ app.whenReady().then(async () => {
         override: process.env.RAKAZO_SERVER_BUNDLE,
       })
     : null;
-  const stacks = stackExists(userStackDir, existsSync);
-  // Installed but not running keeps the Docker path; no Docker at all leaves nothing to keep.
-  const dockerInstalled = resolveDockerBinary(process.platform, process.env, existsSync) !== null;
-  const choice = chooseStack({
-    eligible: serverBundle !== null,
-    ...stacks,
-    dockerInstalled,
+  // Read again when the choice is settled later: Docker or either stack may have changed since.
+  const stackFacts = async () => ({
+    ...stackExists(userStackDir, existsSync),
+    // Installed but not running keeps the Docker path; no Docker at all leaves nothing to keep.
+    dockerInstalled: resolveDockerBinary(process.platform, process.env, existsSync) !== null,
     choice: await readStackChoice(userStackDir),
   });
+  const decideStack = async () =>
+    chooseStack({ eligible: serverBundle !== null, ...(await stackFacts()) });
+  const choice = await decideStack();
   const moveDeps = {
     stackDir: userStackDir,
     platform: process.platform,
@@ -679,11 +680,7 @@ app.whenReady().then(async () => {
     sleep: defaultSleep,
   };
   const nativeStack = async (bundle: ServerBundle) => {
-    const moving = moveAccepted({
-      ...stacks,
-      dockerInstalled,
-      choice: await readStackChoice(userStackDir),
-    });
+    const moving = moveAccepted(await stackFacts());
     return new NativeStackController({
       hostComputer: desktop.hostComputer?.connection,
       stackDir: userStackDir,
@@ -725,7 +722,10 @@ app.whenReady().then(async () => {
         });
   const settleLocalStack = settleStackWhenNeeded(
     choice,
-    () => offerDockerMove(userStackDir),
+    async () => {
+      const settled = await decideStack();
+      return settled === "ask" ? offerDockerMove(userStackDir) : settled;
+    },
     async (settled) => {
       if (settled === "native" && serverBundle !== null)
         desktop.localStack = await nativeStack(serverBundle);
