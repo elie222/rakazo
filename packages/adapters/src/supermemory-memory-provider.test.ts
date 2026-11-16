@@ -147,11 +147,11 @@ describe("SupermemoryMemoryProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not fetch when a saved local base URL is a public address", async () => {
+  it("does not fetch when a server saved as private is now a public address", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const result = await new SupermemoryMemoryProvider({
-      baseUrl: "http://203.0.113.10:6767",
+      baseUrl: "https://203.0.113.10:6767",
       apiKey: "sm_test_key",
     }).recall({ query: "project", scope: "isolated", botId: "bot-1", limit: 1 }, context);
 
@@ -275,23 +275,44 @@ describe("Supermemory local base URL", () => {
     );
   });
 
-  it.each(["http://example.com:6767", "https://memory.example.com"])(
-    "rejects public host %s",
-    async (baseUrl) => {
-      const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
+  it("connects a public HTTPS host without the private-endpoint setting, pinned", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response("[]"),
+    );
+    const resolveHostname = vi.fn(publicResolver);
 
-      await expect(
-        prepareSupermemoryConnection({ mode: "local", baseUrl }, credentials, {
-          allowPrivateEndpoint: true,
-          resolveHostname: publicResolver,
-        }),
-      ).rejects.toThrow(/private-network/);
-      expect(fetchMock).not.toHaveBeenCalled();
-    },
-  );
+    const prepared = await prepareSupermemoryConnection(
+      { mode: "local", baseUrl: "https://memory.example.com" },
+      credentials,
+      { allowPrivateEndpoint: false, resolveHostname, fetch: fetchMock },
+    );
 
-  it("rejects a Compose name that resolves to a public address", async () => {
+    expect(prepared.settings).toEqual({
+      mode: "local",
+      baseUrl: "https://memory.example.com",
+      endpointTrust: "public",
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://memory.example.com/v3/container-tags/list",
+    );
+    expect(resolveHostname).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a public host over plain HTTP", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      prepareSupermemoryConnection(
+        { mode: "local", baseUrl: "http://example.com:6767" },
+        credentials,
+        { allowPrivateEndpoint: true, resolveHostname: publicResolver },
+      ),
+    ).rejects.toThrow(/HTTPS/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a Compose name that resolves to a public address as public", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -301,7 +322,7 @@ describe("Supermemory local base URL", () => {
         credentials,
         { allowPrivateEndpoint: true, resolveHostname: publicResolver },
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow(/HTTPS/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -343,7 +364,7 @@ describe("Supermemory local base URL", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects private endpoints for a non-owner before DNS or probe", async () => {
+  it("rejects private endpoints for a non-owner before any probe", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi.fn(privateResolver);
@@ -362,8 +383,15 @@ describe("Supermemory local base URL", () => {
         { allowPrivateEndpoint: false, resolveHostname },
       ),
     ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
+    // A public-looking name is private when it resolves privately.
+    await expect(
+      prepareSupermemoryConnection(
+        { mode: "local", baseUrl: "https://memory.example.com" },
+        credentials,
+        { allowPrivateEndpoint: false, resolveHostname },
+      ),
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
 
-    expect(resolveHostname).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -448,7 +476,7 @@ describe("Supermemory private host reuse", () => {
       memory.recall({ query: "project", scope: "isolated", botId: "bot-1", limit: 1 }, context),
     ).resolves.toEqual({
       ok: false,
-      error: "Local mode requires a loopback or private-network address.",
+      error: "Memory base URL did not resolve to an address.",
     });
     expect(fetchMock).not.toHaveBeenCalled();
 

@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises";
 import { MemoryProviderPrivateEndpointRequiredError } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -8,6 +9,12 @@ import {
   updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
+
+function resolvesTo(address: string) {
+  vi.mocked(lookup).mockResolvedValue([{ address, family: 4 }] as never);
+}
 
 const actor = {
   userId: "user-1",
@@ -215,26 +222,25 @@ describe("persistMemoryProviderConfig", () => {
     },
   );
 
-  it.each([
-    "http://127.0.0.1:8123/internal-action#",
-    "http://localhost:6767",
-    "http://10.0.0.8:6767",
-    "http://supermemory:6767",
-  ])("rejects ordinary Space owners before any local probe or write: %s", async (baseUrl) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
-    vi.stubGlobal("fetch", fetchMock);
-    const { deps, transaction } = makeDeps();
-    try {
-      await expect(
-        persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(deps.secrets.put).not.toHaveBeenCalled();
-      expect(transaction).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
+  it.each(["http://localhost:6767", "http://10.0.0.8:6767", "http://supermemory:6767"])(
+    "rejects ordinary Space owners before any local probe or write: %s",
+    async (baseUrl) => {
+      resolvesTo("172.18.0.5");
+      const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
+      vi.stubGlobal("fetch", fetchMock);
+      const { deps, transaction } = makeDeps();
+      try {
+        await expect(
+          persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(deps.secrets.put).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("still requires Space ownership for a deployment owner", async () => {
     const fetchMock = vi.fn();
@@ -307,7 +313,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local", "http://203.0.113.10:6767"),
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow(/HTTPS/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -332,6 +338,54 @@ describe("persistMemoryProviderConfig", () => {
         }),
       }),
     );
+    vi.unstubAllGlobals();
+  });
+
+  it("connects a public HTTPS self-hosted server without the private-endpoint setting", async () => {
+    resolvesTo("203.0.113.10");
+    const saved = {
+      mode: "local",
+      baseUrl: "https://memory.example.test",
+      endpointTrust: "public",
+    };
+    const prepareConnection = vi.fn(async () => ({
+      provider: "supermemory",
+      settings: saved,
+      credentials: { apiKey: "sm_test_key_12345" },
+    }));
+    const { deps, upsert } = makeDeps();
+
+    await persistMemoryProviderConfig(
+      { ...deps, prepareConnection },
+      actor,
+      connectionInput("local", "https://memory.example.test"),
+    );
+
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ settings: saved, allowPrivateEndpoint: false }),
+    );
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ settings: saved }) }),
+    );
+  });
+
+  it.each([
+    ["a public-looking name that resolves privately", {}],
+    ["a submitted public mark", { endpointTrust: "public" }],
+  ])("refuses %s without the setting, before any request", async (_, extra) => {
+    resolvesTo("10.0.0.5");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+    const input = connectionInput("local", "https://memory.example.test");
+    await expect(
+      persistMemoryProviderConfig(deps, actor, {
+        ...input,
+        settings: { ...input.settings, ...extra },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 

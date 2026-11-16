@@ -5,7 +5,10 @@ import {
   prepareHonchoConnection,
   UNRESERVED_HONCHO_PEER_PATTERN,
 } from "./honcho-memory-provider.js";
-import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import {
+  classifyLocalServiceSettings,
+  revalidateLocalServiceSettings,
+} from "./local-service-endpoint.js";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
 import {
   connectionModeFields,
@@ -81,6 +84,7 @@ export const honchoMemory: MemoryProviderDefinition = {
     },
   },
   requiresPrivateEndpoint: honchoRequiresPrivateEndpoint,
+  classifySettings: classifyLocalServiceSettings,
   revalidate: revalidateLocalServiceSettings,
   prepare: prepareHonchoConnection,
   create: createHonchoProvider,

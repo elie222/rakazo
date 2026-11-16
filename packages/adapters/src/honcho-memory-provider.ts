@@ -27,12 +27,12 @@ import {
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
+  localServiceTrust,
+  localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
 } from "./local-service-endpoint.js";
 import type { ResolveHostname } from "./network-address.js";
-import { egressRefused } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { truncateUtf8 } from "./utf8.js";
 
 export const HONCHO_PROVIDER_ID = "honcho";
@@ -52,11 +52,12 @@ const MAX_COPIES_PER_SEARCH = 100;
 const MAX_DELETIONS_PER_FORGET = 200;
 
 /**
- * Local mode reaches the server network, so the operator must authorize private endpoints.
- * Fails closed: any mode other than an absent one or "cloud" needs the owner.
+ * A self-hosted server needs the operator's setting unless it was checked to be public.
+ * Fails closed: any mode other than an absent one or "cloud" needs the owner otherwise.
  */
 export function honchoRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
-  return settings.mode !== undefined && settings.mode !== "cloud";
+  if (settings.mode === undefined || settings.mode === "cloud") return false;
+  return settings.mode !== "local" || localServiceTrust(settings) === "private";
 }
 
 /** Spaces do not share memory implicitly, so each Space gets its own Honcho workspace by default. */
@@ -121,7 +122,12 @@ function parseHonchoConnection(
     throw new Error("userPeerId requires the workspace that holds that peer");
   }
   return {
-    connection: { baseUrl, apiKey, reasoningLevel },
+    connection: {
+      baseUrl,
+      apiKey,
+      reasoningLevel,
+      ...(local ? { trust: localServiceTrust(settings) } : {}),
+    },
     workspaceId,
     userPeerId,
     local,
@@ -141,21 +147,12 @@ export async function prepareHonchoConnection(
     settings,
     credentials,
   );
-  // Loopback needs no DNS pin, so refuse non-owners here before any request is sent.
-  if (local && options?.allowPrivateEndpoint !== true) {
-    throw egressRefused(
-      URL.parse(connection.baseUrl)?.hostname ?? "",
-      new MemoryProviderPrivateEndpointRequiredError(),
-    );
-  }
-  const pinnedAddresses = local
-    ? await pinLocalServiceHost(connection.baseUrl, options)
-    : undefined;
+  const pin = local ? await pinLocalServiceHost(connection.baseUrl, options) : undefined;
   const probeConnection: HonchoConnectionConfig = {
     ...connection,
     fetch: options?.fetch,
     resolveHostname: options?.resolveHostname,
-    ...(pinnedAddresses ? { pinnedAddresses } : {}),
+    ...pin,
   };
   // An explicit workspace must accept this key. Without one, each Space creates its own
   // workspace on first use, which only an admin key may do; listing checks that without writing.
@@ -172,6 +169,7 @@ export async function prepareHonchoConnection(
   return {
     settings: {
       ...(local ? { mode: "local", baseUrl: connection.baseUrl } : {}),
+      ...localServiceTrustSettings(pin),
       reasoningLevel: connection.reasoningLevel,
       ...(workspaceId ? { workspaceId } : {}),
       ...(userPeerId ? { userPeerId } : {}),
@@ -220,7 +218,11 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
     private readonly settings: Record<string, string>,
   ) {
     if (settings.mode === "local") {
-      this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
+      this.localHost = new LocalServiceHost(
+        connection.baseUrl,
+        connection.trust ?? "private",
+        connection.resolveHostname,
+      );
     }
   }
 

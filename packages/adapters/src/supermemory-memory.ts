@@ -1,5 +1,8 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
-import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import {
+  classifyLocalServiceSettings,
+  revalidateLocalServiceSettings,
+} from "./local-service-endpoint.js";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
 import {
   connectionModeFields,
@@ -38,6 +41,7 @@ export const supermemoryMemory: MemoryProviderDefinition = {
       settings.mode === "cloud" ? "Supermemory Cloud" : selfHostedLabel(settings),
   },
   requiresPrivateEndpoint: supermemoryRequiresPrivateEndpoint,
+  classifySettings: classifyLocalServiceSettings,
   revalidate: revalidateLocalServiceSettings,
   prepare: prepareSupermemoryConnection,
   create: createSupermemoryProvider,

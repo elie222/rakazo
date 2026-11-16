@@ -1190,7 +1190,6 @@ describe("Hindsight reflect", () => {
 describe("Hindsight connection", () => {
   const LOCAL_URL = "http://hindsight.example.test:8888";
   const privateResolver: ResolveHostname = async () => [{ address: "fd12:3456::7", family: 6 }];
-  const publicResolver: ResolveHostname = async () => [{ address: "203.0.113.10", family: 4 }];
 
   it("includes stalled DNS in the setup deadline", async () => {
     const deadline = new AbortController();
@@ -1203,7 +1202,7 @@ describe("Hindsight connection", () => {
         { apiKey: "" },
         { allowPrivateEndpoint: true, resolveHostname, fetch },
       );
-      const rejected = expect(preparing).rejects.toThrow("Local mode requires");
+      const rejected = expect(preparing).rejects.toThrow("did not resolve");
       expect(resolveHostname).toHaveBeenCalledOnce();
       deadline.abort();
       await rejected;
@@ -1356,11 +1355,10 @@ describe("Hindsight connection", () => {
       prepareHindsightConnection(
         { mode: "local", baseUrl: "https://hindsight.example.com" },
         { apiKey: "" },
-        { allowPrivateEndpoint: true, resolveHostname: publicResolver, fetch },
+        { resolveHostname, fetch },
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
     expect(fetch).not.toHaveBeenCalled();
-    expect(resolveHostname).not.toHaveBeenCalled();
   });
 
   it("requires a cloud key but lets a self-hosted server run without one", async () => {

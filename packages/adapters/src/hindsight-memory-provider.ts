@@ -32,12 +32,12 @@ import {
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
+  localServiceTrust,
+  localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
 } from "./local-service-endpoint.js";
 import type { ResolveHostname } from "./network-address.js";
-import { egressRefused } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { truncateUtf8 } from "./utf8.js";
 
 export const HINDSIGHT_PROVIDER_ID = "hindsight";
@@ -121,11 +121,12 @@ function conversationContext(request: SemanticMemoryConversationRequest): string
 }
 
 /**
- * Local mode reaches the server network, so the operator must authorize private endpoints.
- * Fails closed: any mode other than an absent one or "cloud" needs the owner.
+ * A self-hosted server needs the operator's setting unless it was checked to be public.
+ * Fails closed: any mode other than an absent one or "cloud" needs the owner otherwise.
  */
 export function hindsightRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
-  return settings.mode !== undefined && settings.mode !== "cloud";
+  if (settings.mode === undefined || settings.mode === "cloud") return false;
+  return settings.mode !== "local" || localServiceTrust(settings) === "private";
 }
 
 interface HindsightOptions {
@@ -196,7 +197,7 @@ function parseHindsightConnection(
     throw new Error("recallFacts must be true or false");
   }
   return {
-    connection: { baseUrl, apiKey },
+    connection: { baseUrl, apiKey, ...(local ? { trust: localServiceTrust(settings) } : {}) },
     options: {
       recallBanks: parseRecallBanks(settings.recallBanks),
       retainConversations: settings.retainConversations !== "false",
@@ -219,22 +220,15 @@ export async function prepareHindsightConnection(
   },
 ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
   const { connection, options: parsed, local } = parseHindsightConnection(settings, credentials);
-  // Loopback needs no DNS pin, so refuse non-owners here before any request is sent.
-  if (local && options?.allowPrivateEndpoint !== true) {
-    throw egressRefused(
-      URL.parse(connection.baseUrl)?.hostname ?? "",
-      new MemoryProviderPrivateEndpointRequiredError(),
-    );
-  }
   const signal = AbortSignal.timeout(HINDSIGHT_CONNECTION_TIMEOUT_MS);
-  const pinnedAddresses = local
+  const pin = local
     ? await pinLocalServiceHost(connection.baseUrl, { ...options, signal })
     : undefined;
   const probeConnection: HindsightConnectionConfig = {
     ...connection,
     fetch: options?.fetch,
     resolveHostname: options?.resolveHostname,
-    ...(pinnedAddresses ? { pinnedAddresses } : {}),
+    ...pin,
   };
   const probe = await probeHindsightKey(probeConnection, signal);
   if (!probe.ok) throw new Error(probe.error);
@@ -253,6 +247,7 @@ export async function prepareHindsightConnection(
   return {
     settings: {
       ...(local ? { mode: "local", baseUrl: connection.baseUrl } : {}),
+      ...localServiceTrustSettings(pin),
       ...(recallBanks.length ? { recallBanks: recallBanks.join(",") } : {}),
       ...(retainConversations ? {} : { retainConversations: "false" }),
       ...(autoRecall ? {} : { autoRecall: "false" }),
@@ -411,7 +406,11 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     // Standalone adapters have instance-local hints; persisted cleanup requires a stored identity.
     this.stateKey = this.connectionIdentity ?? randomUUID();
     if (local) {
-      this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
+      this.localHost = new LocalServiceHost(
+        connection.baseUrl,
+        connection.trust ?? "private",
+        connection.resolveHostname,
+      );
     }
     if (options.retainConversations) {
       this.retainConversation = (request, context) => this.retainTurn(request, context);
