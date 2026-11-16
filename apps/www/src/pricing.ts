@@ -92,8 +92,7 @@ const SELF_HOSTED_PLAN: PricingPlan = {
 
 const OWN_MODEL_PLAN: PricingPlan = {
   name: "Your model",
-  price:
-    STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
+  price: STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
   note:
     STANDARD.annualPriceCents === null
       ? undefined
@@ -172,7 +171,11 @@ export const PRICING_COMPARISON = {
     ...TIERS.map((tier) => ({
       name: tier.name,
       price: tier.price,
-      action: { ...OWN_MODEL_PLAN.action, label: "Start trial", ariaLabel: `Start ${tier.name} trial` },
+      action: {
+        ...OWN_MODEL_PLAN.action,
+        label: "Start trial",
+        ariaLabel: `Start ${tier.name} trial`,
+      },
     })),
     { name: CREDITS_PLAN.name, price: CREDITS_PRICE, action: CREDITS_PLAN.action },
   ],
