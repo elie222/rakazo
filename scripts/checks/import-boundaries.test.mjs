@@ -126,7 +126,10 @@ function extractImports(source) {
         ? "type"
         : "static"
       : match[0].startsWith("import")
-        ? "dynamic"
+        ? // `typeof import("pkg")` is a type query: it loads nothing.
+          /\btypeof\s*$/.test(source.slice(Math.max(0, match.index - 16), match.index))
+          ? "type"
+          : "dynamic"
         : "static";
     imports.push({ specifier, kind });
   }
@@ -468,6 +471,9 @@ test("flags a static import of a package that server code loads with import()", 
     source("packages/adapters/src/node.ts", 'await import("node:fs"); import fs from "node:fs";'),
     source("apps/web/src/chart.tsx", 'await import("charts"); import "charts/style.css";'),
     source("apps/web/src/table.tsx", 'import { draw } from "charts";'),
+    // A type query loads nothing, so it does not make "pg" a lazily loaded package.
+    source("packages/db/src/pool.ts", 'type Pg = typeof import("pg");'),
+    source("packages/db/src/client.ts", 'import { Pool } from "pg";'),
   ];
   assert.deepEqual(findEagerImports(sources).map(entry), [
     "packages/adapters/src/eager.ts -> @vendor/sdk",
