@@ -241,6 +241,12 @@ export async function createSpaceInvite(
     // the same lock a handover takes.
     await lockSpaceDeletion(tx, input.spaceId);
     await requireSpaceOwner(tx, input);
+    // An owner being removed from the organization is a guest already, and invites nobody.
+    const owner = await tx.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.userId } },
+      select: { member: { select: { role: true } } },
+    });
+    if (owner?.member.role === GUEST_ROLE) throw new SpaceOwnerRequiredError();
     // A Space being deleted would refuse the link the moment it is opened.
     const space = await tx.space.findUnique({
       where: { id: input.spaceId },
@@ -791,6 +797,10 @@ async function departSpace(
           await tx.actionAutoReviewPreference.deleteMany({ where: own });
           await tx.notificationPreference.deleteMany({ where: own });
           await tx.secret.deleteMany({ where: own });
+          // Links they made stop working, so nobody, them included, joins on their word now.
+          await tx.spaceInvite.deleteMany({
+            where: { spaceId, createdByUserId: userId, acceptedAt: null },
+          });
           // Model, voice and role preferences, setting overrides, AI consents and their read state
           // in each chat cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });

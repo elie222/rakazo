@@ -627,11 +627,21 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     const organizationId = owner.organizationId;
     const memberActor = await join(owner, member);
 
+    // A link they made to their own Space before the removal.
+    const saved = await call(memberActor, "spaces/invites/create", {
+      spaceId: memberActor.spaceId,
+    });
+    expect(saved.status).toBe(200);
+    const savedToken = new URL(saved.json.url as string).pathname.split("/").at(-1)!;
     await revokeOrganizationMember(system, {
       organizationId,
       userId: owner.id,
       memberUserId: member.id,
     });
+    // Mid-removal they make no new links.
+    expect(
+      (await call(memberActor, "spaces/invites/create", { spaceId: memberActor.spaceId })).status,
+    ).toBe(403);
     // Mid-removal they are a guest: a new Space goes to their own organization, and nobody can
     // add them to another of this one's.
     const created = await call(memberActor, "spaces/create", { name: "Escape" });
@@ -690,6 +700,10 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         })
       ).status,
     ).toBe(200);
+    // The link they saved no longer brings them back into the Space that was theirs.
+    expect((await call(memberActor, "spaces/invites/accept", { token: savedToken })).status).toBe(
+      404,
+    );
     await expect(role(organizationId, member.id)).resolves.toBeNull();
     await expect(
       system.spaceMember.count({ where: { organizationId, userId: member.id } }),
