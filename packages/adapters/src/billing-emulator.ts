@@ -19,7 +19,7 @@ import {
   parseStripeWebhook,
   pickBillingSubscription,
   signStripeWebhook,
-} from "./stripe-billing.js";
+} from "./providers/billing/stripe/stripe-billing.js";
 
 const WEBHOOK_SECRET = "billing-emulator-webhook-secret";
 const BYOK_PRICE_ID = "price_byok_emulated";
