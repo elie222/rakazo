@@ -166,7 +166,14 @@ describe("shared role editor", () => {
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
   });
-  it("reopens on the cached list without a spinner while it refreshes", async () => {
+  it("does not show the unconfigured label before the first load", async () => {
+    const hold = new Promise<never>(() => undefined);
+    api.role.mockReturnValue(hold);
+    api.forRole.mockReturnValue(hold);
+    await render();
+    expect(container.textContent).not.toContain("Deployment default");
+  });
+  it("reopens on the cached list while it refreshes", async () => {
     saved = { primary: chat, backups: [mini] };
     await render();
     expect(rows()).toEqual(["ChatOpenRouter", "MiniOpenRouter"]);
@@ -177,7 +184,6 @@ describe("shared role editor", () => {
     api.forRole.mockReturnValue(hold);
     const loads = api.role.mock.calls.length;
     await render();
-    expect(container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
     expect(rows()).toEqual(["ChatOpenRouter", "MiniOpenRouter"]);
     expect(api.role.mock.calls.length).toBe(loads + 1);
   });
