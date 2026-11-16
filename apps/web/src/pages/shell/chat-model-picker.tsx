@@ -48,6 +48,7 @@ export function ChatModelPicker({
   const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
+  const model = selectedLabel ?? selected?.label ?? "";
 
   function openChange(next: boolean) {
     setOpen(next);
@@ -61,11 +62,11 @@ export function ChatModelPicker({
         <PopoverTrigger
           id={id}
           disabled={disabled}
-          aria-label={t`Model: ${selectedLabel ?? selected?.label ?? ""}`}
+          aria-label={t`Model: ${model}`}
           aria-describedby={textOnly ? imagesHintId : undefined}
           className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
         >
-          <span className="min-w-0 truncate">{selectedLabel ?? selected?.label}</span>
+          <span className="min-w-0 truncate">{model}</span>
           {textOnly ? <TextOnlyMark /> : null}
           <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
         </PopoverTrigger>

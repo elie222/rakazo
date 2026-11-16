@@ -34,6 +34,7 @@ export function ComposerModelPicker({
         thinkingLevel: null,
       });
     },
+    stale: [queries.bots.list.key()],
     onSaved,
     onFailed: (error) => toast.error(errorText(error, t`Could not change the model`)),
   });
