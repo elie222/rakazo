@@ -84,6 +84,7 @@
     "packages/adapters/src/providers/memory/hindsight/hindsight-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
     "packages/adapters/src/providers/memory/honcho/honcho-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
     "packages/adapters/src/providers/memory/supermemory/supermemory-memory-provider.test.ts -> ../serenity/serenity-memory-provider.js",
+    "packages/adapters/src/providers/object-storage/azure-blob/azure-blob-object-storage.test.ts -> ../s3/s3-object-storage.js",
     "packages/adapters/src/providers/voice/openai-compatible/openai-compatible-voice.ts -> ../openai/openai-voice.js"
   ]
 }

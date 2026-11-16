@@ -1,10 +1,10 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createObjectStorage } from "../../../create-object-storage.js";
+import { objectStorageConformance } from "../../../object-storage.test-support.js";
+import { S3ObjectStorage } from "../s3/s3-object-storage.js";
 import { AzureBlobObjectStorage, azureBlobConfigFromEnv } from "./azure-blob-object-storage.js";
-import { createObjectStorage } from "./create-object-storage.js";
-import { objectStorageConformance } from "./object-storage.test-support.js";
-import { S3ObjectStorage } from "./s3-object-storage.js";
 
 /**
  * Just enough of the Blob REST API, addressed as `<host>/<account>/<container>/<blob>`, to

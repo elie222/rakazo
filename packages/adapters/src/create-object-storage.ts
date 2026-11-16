@@ -1,6 +1,12 @@
 import type { ObjectStorage } from "@rakazo/adapter-kit";
-import { AzureBlobObjectStorage, azureBlobConfigFromEnv } from "./azure-blob-object-storage.js";
-import { objectStorageConfigFromEnv, S3ObjectStorage } from "./s3-object-storage.js";
+import {
+  AzureBlobObjectStorage,
+  azureBlobConfigFromEnv,
+} from "./providers/object-storage/azure-blob/azure-blob-object-storage.js";
+import {
+  objectStorageConfigFromEnv,
+  S3ObjectStorage,
+} from "./providers/object-storage/s3/s3-object-storage.js";
 
 /**
  * The object storage this deployment is configured for, or undefined when

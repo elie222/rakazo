@@ -4,7 +4,10 @@ import type { AddressInfo } from "node:net";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { MemoryObjectStorage, objectStorageConformance } from "./object-storage.test-support.js";
+import {
+  MemoryObjectStorage,
+  objectStorageConformance,
+} from "../../../object-storage.test-support.js";
 import {
   objectStorageConfigFromEnv,
   objectStorageRequestHandler,
