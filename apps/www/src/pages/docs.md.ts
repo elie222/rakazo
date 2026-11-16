@@ -1,5 +1,5 @@
-import type { APIRoute } from "astro";
 import { getEntry } from "astro:content";
+import type { APIRoute } from "astro";
 import { markdownResponse } from "../agent-content";
 import { DOCS_SLUGS } from "../docs";
 
