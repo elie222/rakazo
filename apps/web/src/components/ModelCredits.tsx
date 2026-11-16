@@ -4,10 +4,12 @@ import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@r
 import {
   ByokIntervalSchema,
   ByokTierSchema,
+  billingNote,
   byokTierChangeOffered,
   byokYearlySavingsPercent,
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
+  cancelPlanOffered,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -696,6 +698,22 @@ export function ModelCreditsSettings({
           date: billingDateLabel(status, i18n.locale || "en"),
         }
       : null;
+  const cancelOffered = cancelPlanOffered(status);
+  const note = billingNote(status);
+  const cancelButton = cancelOffered ? (
+    <Button
+      variant="ghost"
+      disabled={pending}
+      onClick={() =>
+        void action(async () => {
+          const { url } = await client.billing.portal({ intent: "cancel" });
+          window.location.assign(url);
+        })
+      }
+    >
+      {cancelOffered === "trial" ? <Trans>Cancel trial</Trans> : <Trans>Cancel plan</Trans>}
+    </Button>
+  ) : null;
   const yearlySavings = byokYearlySwitchSavings(status);
   const tiers = status.byokTiers ?? [];
   const currentTier = tiers.find(
@@ -746,7 +764,7 @@ export function ModelCreditsSettings({
                 : `${currentTier.name} · ${computer(currentTier)}`}
             </p>
           ) : null}
-          {tierChange || yearlySavings !== null ? (
+          {tierChange || yearlySavings !== null || cancelButton ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
               {tierChange ? (
                 <ByokTierSelect
@@ -765,6 +783,7 @@ export function ModelCreditsSettings({
                   <span className="text-success">−{yearlySavings}%</span>
                 </Button>
               ) : null}
+              {cancelButton}
             </div>
           ) : null}
         </div>
@@ -1033,21 +1052,32 @@ export function ModelCreditsSettings({
             </Button>
           </div>
           {status.hasCustomer ? (
-            <Button
-              className="mt-4"
-              variant="ghost"
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  const { url } = await client.billing.portal();
-                  window.location.assign(url);
-                })
-              }
-            >
-              <Trans>Manage billing</Trans>
-            </Button>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() =>
+                  void action(async () => {
+                    const { url } = await client.billing.portal();
+                    window.location.assign(url);
+                  })
+                }
+              >
+                <Trans>Manage billing</Trans>
+              </Button>
+              {ownKeyPlan ? null : cancelButton}
+            </div>
           ) : null}
         </div>
+      ) : null}
+      {note ? (
+        <p className="text-body text-muted-foreground">
+          {note === "owner_only" ? (
+            <Trans>Only the organization owner can change or cancel billing.</Trans>
+          ) : (
+            <Trans>No payment method on file. Nothing will be charged.</Trans>
+          )}
+        </p>
       ) : null}
       {status.canManage && status.funding === "byok" && (status.balanceUsd ?? 0) > 0 ? (
         <Button

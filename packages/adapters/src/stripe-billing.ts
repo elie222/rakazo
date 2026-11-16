@@ -718,11 +718,21 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  async createPortal(input: { customerId: string; returnUrl: string }) {
+  async createPortal(input: {
+    customerId: string;
+    returnUrl: string;
+    cancelSubscriptionId?: string;
+  }) {
     const session = urlSchema.parse(
       await this.request("POST", "/v1/billing_portal/sessions", {
         customer: input.customerId,
         return_url: input.returnUrl,
+        flow_data: input.cancelSubscriptionId
+          ? {
+              type: "subscription_cancel",
+              subscription_cancel: { subscription: input.cancelSubscriptionId },
+            }
+          : undefined,
       }),
     );
     return { url: session.url };

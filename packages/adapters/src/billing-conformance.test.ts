@@ -100,6 +100,13 @@ for (const [name, create] of Object.entries(factories)) {
       expect(
         (await harness.provider.createPortal({ customerId, returnUrl: urls.successUrl })).url,
       ).toMatch(/^https:\/\//);
+      const subscriptionId = snapshot?.subscriptionId;
+      const cancel = await harness.provider.createPortal({
+        customerId,
+        returnUrl: urls.successUrl,
+        cancelSubscriptionId: subscriptionId,
+      });
+      expect(cancel.url).toMatch(/^https:\/\//);
     });
 
     it("ends a trial early and starts the first paid period now", async () => {

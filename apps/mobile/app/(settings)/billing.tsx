@@ -4,9 +4,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
   ByokTierSchema,
+  billingNote,
   byokTierChangeOffered,
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
+  cancelPlanOffered,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -18,7 +20,12 @@ import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
+import {
+  SettingsFooter,
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings-group";
 import { selectedSpaceId } from "../../lib/api";
 import {
   currentPlan,
@@ -85,8 +92,18 @@ export default function BillingScreen() {
   });
   const pending = change.pending;
   const action = change.run;
+  const openPortal = (intent?: "cancel") =>
+    action(async (send) => {
+      const result = await send("billing/portal", {
+        client: "mobile",
+        ...(intent ? { intent } : {}),
+      });
+      return openBillingPage(result.url, send);
+    });
   if (!status) return null;
 
+  const cancelOffered = cancelPlanOffered(status);
+  const note = billingNote(status);
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
   const ownKeyCents = ownKeySubscriptionCents(status);
@@ -269,16 +286,7 @@ export default function BillingScreen() {
             />
           ) : null}
           {cancelledTrial && status.canManage && status.hasCustomer ? (
-            <SettingsRow
-              title={t`Renew plan`}
-              disabled={pending}
-              onPress={() =>
-                action(async (send) => {
-                  const result = await send("billing/portal", { client: "mobile" });
-                  return openBillingPage(result.url, send);
-                })
-              }
-            />
+            <SettingsRow title={t`Renew plan`} disabled={pending} onPress={() => openPortal()} />
           ) : null}
         </SettingsGroup>
       ) : null}
@@ -393,14 +401,23 @@ export default function BillingScreen() {
             title={t`Manage billing`}
             chevron="right"
             disabled={pending}
-            onPress={() =>
-              action(async (send) => {
-                const result = await send("billing/portal", { client: "mobile" });
-                return openBillingPage(result.url, send);
-              })
-            }
+            onPress={() => openPortal()}
           />
+          {cancelOffered ? (
+            <SettingsRow
+              title={cancelOffered === "trial" ? t`Cancel trial` : t`Cancel plan`}
+              disabled={pending}
+              onPress={() => openPortal("cancel")}
+            />
+          ) : null}
         </SettingsGroup>
+      ) : null}
+      {note ? (
+        <SettingsFooter>
+          {note === "owner_only"
+            ? t`Only the organization owner can change or cancel billing.`
+            : t`No payment method on file. Nothing will be charged.`}
+        </SettingsFooter>
       ) : null}
     </ScrollView>
   );

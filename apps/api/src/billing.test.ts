@@ -1,5 +1,5 @@
 import type { BillingProvider } from "@rakazo/adapter-kit";
-import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
+import { BillingCustomerNotFoundError, BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -74,6 +74,104 @@ describe("billing status", () => {
       code: "PAYMENT_REQUIRED",
       status: 402,
     });
+  });
+});
+
+describe("opening the portal on cancelling", () => {
+  type Stored = Record<string, unknown>;
+  const stored: Stored = {
+    organizationId: "org-1",
+    customerId: "cus-1",
+    subscriptionId: "sub-stale",
+    status: "trialing",
+    cancelAtPeriodEnd: false,
+  };
+
+  function portalService(account: Stored, live: Stored | null) {
+    const current = { ...account };
+    const { billing, prisma, provider } = service(async () => price);
+    vi.mocked(prisma.billingAccount.findUnique).mockImplementation((async () => current) as never);
+    Object.assign(prisma.billingAccount, {
+      findUniqueOrThrow: vi.fn(async () => current),
+      updateMany: vi.fn(async ({ data }: { data: Stored }) => {
+        Object.assign(current, data);
+        return { count: 1 };
+      }),
+      count: vi.fn().mockResolvedValue(1),
+    });
+    Object.assign(prisma, {
+      $queryRaw: vi.fn().mockResolvedValue([{ startedAt: new Date() }]),
+    });
+    Object.assign(prisma.user, { updateMany: vi.fn().mockResolvedValue({ count: 0 }) });
+    Object.assign(provider, {
+      getCustomerSubscription: vi.fn(async () => live),
+      createPortal: vi.fn(async () => ({ url: "https://portal.example.com" })),
+    });
+    return { billing, provider };
+  }
+
+  const liveSubscription = {
+    subscriptionId: "sub-live",
+    subscriptionItemId: "si-1",
+    priceId: "price-1",
+    status: "trialing",
+    seats: 1,
+    trialEndsAt: null,
+    currentPeriodStartsAt: null,
+    currentPeriodEndsAt: null,
+    cancelAtPeriodEnd: false,
+    endedAt: null,
+  };
+
+  it("names the subscription the provider reports, not a stale stored one", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    await expect(billing.portal(actor, "mobile", "cancel")).resolves.toEqual({
+      url: "https://portal.example.com",
+    });
+    expect(provider.createPortal).toHaveBeenCalledWith({
+      customerId: "cus-1",
+      returnUrl: "https://app.example.com/api/v1/billing/return?client=mobile",
+      cancelSubscriptionId: "sub-live",
+    });
+  });
+
+  it("opens the plain portal without the intent", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    await billing.portal(actor);
+    expect(provider.createPortal).toHaveBeenCalledWith({
+      customerId: "cus-1",
+      returnUrl: "https://app.example.com/app",
+    });
+  });
+
+  it("refuses when the plan ended or is already set to end", async () => {
+    for (const live of [
+      null,
+      { ...liveSubscription, status: "canceled" },
+      { ...liveSubscription, cancelAtPeriodEnd: true },
+    ]) {
+      const { billing, provider } = portalService(stored, live);
+      await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(provider.createPortal).not.toHaveBeenCalled();
+    }
+  });
+
+  it("replaces a customer the provider deleted and then finds no plan to cancel", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    vi.mocked(provider.getCustomerSubscription).mockImplementation(async (customerId) => {
+      if (customerId === "cus-1") throw new BillingCustomerNotFoundError();
+      return null;
+    });
+    Object.assign(provider, {
+      createCustomer: vi.fn(async () => ({ customerId: "cus-2" })),
+    });
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(provider.createCustomer).toHaveBeenCalledTimes(1);
+    expect(provider.createPortal).not.toHaveBeenCalled();
   });
 });
 

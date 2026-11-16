@@ -604,7 +604,12 @@ export interface BillingProvider {
   createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
   /** Expires every open checkout session of the customer; resolves once none can be paid. */
   expireOpenCheckouts(customerId: string): Promise<void>;
-  createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
+  /** Opens the customer's billing page; with `cancelSubscriptionId`, straight on cancelling that subscription. */
+  createPortal(input: {
+    customerId: string;
+    returnUrl: string;
+    cancelSubscriptionId?: string;
+  }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
   /** Sets seats on the customer's subscription; a no-op when none can still take updates. */

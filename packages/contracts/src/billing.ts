@@ -199,6 +199,24 @@ export function modelCreditsUsd(status: BillingStatus | null | undefined): numbe
   return status.funding === "credits" || balance > 0 ? balance : null;
 }
 
+/** What an owner may cancel: a subscription that still bills or can resume and is not set to end. */
+export function cancelPlanOffered(status: BillingStatus): "trial" | "plan" | null {
+  if (
+    !status.canManage ||
+    !status.hasCustomer ||
+    status.cancelAtPeriodEnd ||
+    !["trialing", "active", "past_due", "unpaid", "paused"].includes(status.state)
+  )
+    return null;
+  return status.state === "trialing" ? "trial" : "plan";
+}
+
+/** Why billing has nothing to change: a member cannot manage it, or no customer is on file. */
+export function billingNote(status: BillingStatus): "owner_only" | "nothing_charged" | null {
+  if (!status.canManage) return "owner_only";
+  return status.hasCustomer ? null : "nothing_charged";
+}
+
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;

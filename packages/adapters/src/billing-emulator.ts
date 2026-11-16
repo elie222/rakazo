@@ -256,9 +256,16 @@ export class BillingEmulator implements BillingProvider {
     return purchase;
   }
 
-  async createPortal(input: { customerId: string; returnUrl: string }) {
+  async createPortal(input: {
+    customerId: string;
+    returnUrl: string;
+    cancelSubscriptionId?: string;
+  }) {
     this.requireCustomer(input.customerId);
-    return { url: `https://billing.emulator.invalid/portal/${input.customerId}` };
+    const cancel = input.cancelSubscriptionId
+      ? `/cancel/${encodeURIComponent(input.cancelSubscriptionId)}`
+      : "";
+    return { url: `https://billing.emulator.invalid/portal/${input.customerId}${cancel}` };
   }
 
   async getCustomerSubscription(customerId: string) {

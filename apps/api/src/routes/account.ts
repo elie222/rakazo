@@ -149,7 +149,7 @@ export function accountRoutes(ctx: RouterContext) {
         requireBilling(deps).checkout(context.actor, input?.client, input?.interval, input?.tier),
       ),
       portal: authed.billing.portal.handler(async ({ context, input }) =>
-        requireBilling(deps).portal(context.actor, input?.client),
+        requireBilling(deps).portal(context.actor, input?.client, input?.intent),
       ),
       endTrial: authed.billing.endTrial.handler(async ({ context }) => {
         const billing = requireBilling(deps);

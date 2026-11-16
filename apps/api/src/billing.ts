@@ -117,7 +117,8 @@ export interface BillingService {
     interval?: ByokInterval,
     tier?: ByokTier,
   ): Promise<{ url: string }>;
-  portal(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
+  /** `intent: "cancel"` opens the portal on cancelling the live plan, and refuses when there is none. */
+  portal(actor: Actor, client?: BillingClient, intent?: "cancel"): Promise<{ url: string }>;
   /** Ends the organization's trial and bills the first period now. */
   endTrial(actor: Actor): Promise<void>;
   switchToYearly(actor: Actor): Promise<void>;
@@ -909,16 +910,32 @@ export function createBillingService(deps: {
       }
     },
 
-    async portal(actor, client) {
+    async portal(actor, client, intent) {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-      return withLiveCustomer(actor, account, (customerId) =>
-        provider.createPortal({
+      return withLiveCustomer(actor, account, async (customerId) => {
+        let cancelSubscriptionId: string | undefined;
+        if (intent === "cancel") {
+          // Decide from the provider, not a snapshot a missed webhook may have left stale. Inside
+          // the wrapper, so a customer the provider deleted is replaced and then has no plan.
+          await sync(customerId);
+          const current = await billingAccountForOrganization(prisma, organizationId);
+          const status = current?.status ?? null;
+          if (
+            !current?.subscriptionId ||
+            !(hasBillingAccess(status) || needsBillingPortal(status)) ||
+            current.cancelAtPeriodEnd
+          )
+            throw new ORPCError("CONFLICT", { message: "No plan to cancel" });
+          cancelSubscriptionId = current.subscriptionId;
+        }
+        return provider.createPortal({
           customerId,
           returnUrl: client === "mobile" ? mobileReturnUrl : appUrl,
-        }),
-      );
+          ...(cancelSubscriptionId ? { cancelSubscriptionId } : {}),
+        });
+      });
     },
 
     async endTrial(actor) {

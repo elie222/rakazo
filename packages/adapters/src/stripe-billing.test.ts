@@ -370,6 +370,24 @@ describe("Stripe billing HTTP boundary", () => {
     await expect(provider.cancelCustomerSubscriptions(customerId)).resolves.toBeUndefined();
   });
 
+  it("opens the portal on cancelling one subscription only when asked", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createPortal({ customerId, returnUrl: urls.successUrl });
+    expect(wire.requests.at(-1)!.form).not.toHaveProperty("flow_data[type]");
+
+    await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      cancelSubscriptionId: "sub_fake_9",
+    });
+    expect(wire.requests.at(-1)!.form).toMatchObject({
+      customer: customerId,
+      "flow_data[type]": "subscription_cancel",
+      "flow_data[subscription_cancel][subscription]": "sub_fake_9",
+    });
+  });
+
   it("uses a fresh idempotency key per call and the same one across its retries", async () => {
     const { wire, provider } = setup();
     // A fixed per-organization key would replay the first customer or reject the new email.

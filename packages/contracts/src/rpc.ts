@@ -386,7 +386,15 @@ export const appContract = {
       )
       .output(z.object({ url: z.string().url() })),
     portal: oc
-      .input(z.object({ client: BillingClientSchema }).optional())
+      .input(
+        z
+          .object({
+            client: BillingClientSchema,
+            /** Opens the portal straight on cancelling the live subscription; refused when there is none. */
+            intent: z.literal("cancel").optional(),
+          })
+          .optional(),
+      )
       .output(z.object({ url: z.string().url() })),
     /** Owners only: ends the running trial and bills the first period now. */
     endTrial: oc.output(BillingStatusSchema),

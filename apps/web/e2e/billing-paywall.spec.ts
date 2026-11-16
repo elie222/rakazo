@@ -480,6 +480,77 @@ test("a cancelled trial explains its missing computer hours and offers renewal",
   await expect.poll(() => portalOpened).toBe(true);
 });
 
+test("cancel a trial from billing settings", async ({ page }, testInfo) => {
+  await signup(page, `trial-cancel-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const trial = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1000,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "trialing",
+    trialEndsAt: "2030-01-15T12:00:00.000Z",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+    computerHoursLeft: 4,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
+  let portalInput: unknown = null;
+  await page.route("**/rpc/billing/portal", async (route) => {
+    portalInput = route.request().postDataJSON();
+    await route.fulfill({ json: { json: { url: "/app" } } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(settings.getByRole("button", { name: "Cancel plan", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "billing-cancel-trial");
+  await settings.getByRole("button", { name: "Cancel trial", exact: true }).click();
+  await expect.poll(() => portalInput).toMatchObject({ json: { intent: "cancel" } });
+});
+
+test("a member is told only the owner manages billing", async ({ page }, testInfo) => {
+  await signup(page, `billing-member-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const member = billingStatus({
+    access: true,
+    canManage: false,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1000,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "active",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: member } }));
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(
+    settings.getByText("Only the organization owner can change or cancel billing.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Cancel plan", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "billing-member-owner-only");
+});
+
 test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
   await signup(page, `byok-switch-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
