@@ -45,7 +45,7 @@ const screenUrl = vi.fn(async () => screenAnswer());
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
-    panel: "computer",
+    panel: "settings",
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
   });
@@ -93,6 +93,8 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(<Harness />));
+  // The screen is read only while the full computer window is open.
+  await act(async () => state.setComputerOpen(true));
 });
 
 afterEach(() => {
@@ -514,7 +516,7 @@ it("still reads the screen when the refresh after this tab's release fails", asy
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -538,6 +540,8 @@ it("still reads the screen when the refresh after this tab's release fails", asy
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   await act(async () => {
     await controls.releaseComputer();
@@ -561,7 +565,7 @@ it("reads the new screen beside the thread refresh after this tab releases contr
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -583,6 +587,8 @@ it("reads the new screen beside the thread refresh after this tab releases contr
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   let released!: Promise<void>;
   await act(async () => {

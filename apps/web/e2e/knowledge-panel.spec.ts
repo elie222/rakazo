@@ -6,7 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
-  openBotPanelTab,
+  openBotSettings,
   openUserSettings,
   rpc,
   signup,
@@ -146,7 +146,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     documentId: seededDocs[0]!.id,
     content: "# Chief\n\nA remembered preference.\n",
   });
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   const settings = page.getByTestId("bot-settings");
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   const botMemory = settings.getByTestId("bot-knowledge-memory");
@@ -298,7 +298,7 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
   const memoryLoaded = page.waitForResponse(
     (response) => response.url().includes("/rpc/memory/list") && response.ok(),
   );
-  await openBotPanelTab(page, "Advanced");
+  await openBotSettings(page);
   await memoryLoaded;
   await page.evaluate(
     () =>

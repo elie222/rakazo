@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
 import { MessagingDelivery } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -425,13 +426,10 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     );
     const trustedConnection = await requestConnection(trusted, target);
     // The provider accepts the trusted request, but only after its send's transaction timed out.
-    let arrived!: () => void;
-    const reached = new Promise<void>((resolve) => {
-      arrived = resolve;
-    });
+    const reached = deferred();
     const sendToThread = vi.fn(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
-      arrived();
+      reached.resolve();
       return { handle: "h-trusted" };
     });
     squeezeMs = 500;
@@ -440,7 +438,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     } finally {
       squeezeMs = null;
     }
-    await reached;
+    await reached.promise;
     expect(
       await system.messagingOutbound.findUniqueOrThrow({
         where: { idempotencyKey: `connect:${trusted.botId}:${target.botId}` },

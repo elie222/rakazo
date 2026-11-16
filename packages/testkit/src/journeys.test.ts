@@ -27,6 +27,7 @@ import {
   stuckWorkStatusMessages,
 } from "@rakazo/core";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import { deferred } from "@rakazo/core/test-async";
 import {
   appendEvent,
   createThreadEvents,
@@ -203,16 +204,13 @@ describeJourneys("required product journeys", () => {
       { path: "notes.txt", content: new TextEncoder().encode("durable work") },
       ctx,
     );
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     const destroyed = vi.spyOn(sandbox, "destroy");
     const exportWorkspace = sandbox.exportWorkspace.bind(sandbox);
     const spy = vi
       .spyOn(sandbox, "exportWorkspace")
       .mockImplementation(async function* (ref, context) {
-        await gate;
+        await gate.promise;
         yield* exportWorkspace(ref, context);
       });
     try {
@@ -241,7 +239,7 @@ describeJourneys("required product journeys", () => {
         body: JSON.stringify({ json: { botId: bot.id, mode: "dedicated" } }),
       });
       expect(switched.status).toBe(409);
-      release();
+      gate.resolve();
       await waitForDatabase(
         async () =>
           (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
@@ -261,7 +259,7 @@ describeJourneys("required product journeys", () => {
         ),
       ).toBe("durable work");
     } finally {
-      release();
+      gate.resolve();
       spy.mockRestore();
       destroyed.mockRestore();
     }
@@ -284,18 +282,12 @@ describeJourneys("required product journeys", () => {
     );
     await rpc(app, cookie, "bots/setComputer", { botId: bot.id, mode: "dedicated" });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let stopping!: () => void;
-    const stopStarted = new Promise<void>((resolve) => {
-      stopping = resolve;
-    });
+    const gate = deferred();
+    const stopStarted = deferred();
     const stop = sandbox.stop.bind(sandbox);
     const spy = vi.spyOn(sandbox, "stop").mockImplementationOnce(async (...args) => {
-      stopping();
-      await gate;
+      stopStarted.resolve();
+      await gate.promise;
       return stop(...args);
     });
     try {
@@ -304,12 +296,12 @@ describeJourneys("required product journeys", () => {
         headers: { "Content-Type": "application/json", Cookie: cookie },
         body: JSON.stringify({ json: { botId: bot.id, mode: "team" } }),
       });
-      await stopStarted;
+      await stopStarted.promise;
       await rpc(app, cookie, "bots/remove", { botId: bot.id });
-      release();
+      gate.resolve();
       expect((await switched).status).toBe(404);
     } finally {
-      release();
+      gate.resolve();
       spy.mockRestore();
     }
   });
@@ -1169,14 +1161,8 @@ describeJourneys("required product journeys", () => {
     });
 
     const originalSetScreenControl = sandbox.setScreenControl;
-    let signalReleaseRevocation!: () => void;
-    let allowReleaseRevocation!: () => void;
-    const releaseRevocationReached = new Promise<void>((resolve) => {
-      signalReleaseRevocation = resolve;
-    });
-    const releaseRevocationAllowed = new Promise<void>((resolve) => {
-      allowReleaseRevocation = resolve;
-    });
+    const releaseRevocationReached = deferred();
+    const releaseRevocationAllowed = deferred();
     const revokedLeases: string[] = [];
     sandbox.setScreenControl = async (_computer, interactive, context, controlToken) => {
       expect(interactive).toBe(false);
@@ -1184,8 +1170,8 @@ describeJourneys("required product journeys", () => {
       if (revokedLeases.length !== 1) return;
       expect(context.botId).toBe(writer.id);
       expect(controlToken).toBe(writerLease.leaseId);
-      signalReleaseRevocation();
-      await releaseRevocationAllowed;
+      releaseRevocationReached.resolve();
+      await releaseRevocationAllowed.promise;
     };
 
     let staleRelease: Promise<{ ok: true }> | undefined;
@@ -1194,17 +1180,17 @@ describeJourneys("required product journeys", () => {
       // Pause Release after it captures Writer's lease but before database finalization. The
       // replacement takeover then commits first, so the resumed Release must lose its lease CAS.
       staleRelease = rpc<{ ok: true }>(app, cookie, "computer/release", { botId: writer.id });
-      await releaseRevocationReached;
+      await releaseRevocationReached.promise;
       researcherLease = await rpc<{ leaseId: string; expiresAt: string }>(
         app,
         cookie,
         "computer/takeover",
         { botId: researcher.id },
       );
-      allowReleaseRevocation();
+      releaseRevocationAllowed.resolve();
       await staleRelease;
     } finally {
-      allowReleaseRevocation();
+      releaseRevocationAllowed.resolve();
       await staleRelease?.catch(() => undefined);
       sandbox.setScreenControl = originalSetScreenControl;
     }
@@ -1320,17 +1306,14 @@ describeJourneys("required product journeys", () => {
 
     const originalSetScreenControl = sandbox.setScreenControl;
     let revocations = 0;
-    let releaseRevocations!: () => void;
-    const bothRevocationsReached = new Promise<void>((resolve) => {
-      releaseRevocations = resolve;
-    });
-    const barrierTimeout = setTimeout(releaseRevocations, 1_000);
+    const bothRevocationsReached = deferred();
+    const barrierTimeout = setTimeout(bothRevocationsReached.resolve, 1_000);
     sandbox.setScreenControl = async (_computer, interactive, _context, controlToken) => {
       expect(interactive).toBe(false);
       expect(controlToken).toBe(writerLease.leaseId);
       revocations += 1;
-      if (revocations === 2) releaseRevocations();
-      await bothRevocationsReached;
+      if (revocations === 2) bothRevocationsReached.resolve();
+      await bothRevocationsReached.promise;
     };
 
     let responses: Response[] = [];
@@ -1341,7 +1324,7 @@ describeJourneys("required product journeys", () => {
       ]);
     } finally {
       clearTimeout(barrierTimeout);
-      releaseRevocations();
+      bothRevocationsReached.resolve();
       sandbox.setScreenControl = originalSetScreenControl;
     }
 
@@ -5006,21 +4989,21 @@ async function answerPendingApproval(
 }
 
 async function waitFor(app: App, cookie: string, botId: string, pred: (snap: Snap) => boolean) {
-  const start = Date.now();
-  let last: Snap | null = null;
-  while (Date.now() - start < 20_000) {
-    last = await rpc<Snap>(app, cookie, "threads/get", { botId });
-    if (pred(last)) return last;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+  return vi.waitFor(
+    async () => {
+      const last = await rpc<Snap>(app, cookie, "threads/get", { botId });
+      if (pred(last)) return last;
+      throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+    },
+    { timeout: 20_000, interval: 100 },
+  );
 }
 
 async function waitForDatabase(pred: () => Promise<boolean>) {
-  const start = Date.now();
-  while (Date.now() - start < 10_000) {
-    if (await pred()) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("timeout waiting for database state");
+  await vi.waitFor(
+    async () => {
+      if (!(await pred())) throw new Error("timeout waiting for database state");
+    },
+    { timeout: 10_000, interval: 25 },
+  );
 }

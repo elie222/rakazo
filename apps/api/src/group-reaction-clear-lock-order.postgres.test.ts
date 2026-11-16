@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -115,14 +116,8 @@ describe.skipIf(!enabled)("group reaction and clear lock order (PostgreSQL)", ()
     if (target.kind !== "group") throw new Error("group target expected");
     const { groupId, threadId } = target;
     const probe = await runAsSystem("lock probe", () => pool.connect());
-    let locked!: (xactId: string) => void;
-    const groupLocked = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let proceed!: () => void;
-    const resumed = new Promise<void>((resolve) => {
-      proceed = resolve;
-    });
+    const groupLocked = deferred<string>();
+    const resumed = deferred();
     let groupWriter: Promise<unknown> = Promise.resolve();
     let work: Promise<unknown> = Promise.resolve();
     try {
@@ -131,15 +126,15 @@ describe.skipIf(!enabled)("group reaction and clear lock order (PostgreSQL)", ()
           await lockSpaceGroup(tx, actor, groupId);
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await resumed;
+          groupLocked.resolve(rows[0]?.xactId ?? "");
+          await resumed.promise;
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         },
         { timeout: TRANSACTION_TIMEOUT_MS },
       );
       groupWriter.catch(() => undefined);
       const xactId = await Promise.race([
-        groupLocked,
+        groupLocked.promise,
         groupWriter.then(() => {
           throw new Error("the group writer finished before it held the group lock");
         }),
@@ -158,12 +153,12 @@ describe.skipIf(!enabled)("group reaction and clear lock order (PostgreSQL)", ()
         if (Date.now() >= deadline) throw new Error("the write never queued on the group writer");
         await sleep(WAIT_INTERVAL_MS);
       }
-      proceed();
+      resumed.resolve();
 
       const settled = await Promise.allSettled([groupWriter, work]);
       expect(settled.map(outcome)).toEqual(["committed", "committed"]);
     } finally {
-      proceed();
+      resumed.resolve();
       await Promise.allSettled([groupWriter, work]);
       probe.release();
     }
