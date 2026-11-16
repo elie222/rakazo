@@ -13,7 +13,7 @@ import {
   retryWhileDatabaseUnavailable,
   settleReleasedTakeoverCards,
 } from "@rakazo/db";
-import { enrichLogContext, getLogger } from "@rakazo/logging";
+import { bestEffort, enrichLogContext, getLogger } from "@rakazo/logging";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
   acquireComputerExecutionLease,
@@ -254,7 +254,10 @@ async function startClaimedAttempt(
       data: { startedAt: executionStartedAt, lateSince: firstLateSince },
     });
     if (executionStarted.count !== 1) {
-      await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+      await bestEffort(
+        "release computer execution lease",
+        releaseComputerExecutionLease(deps.prisma, computerLease),
+      );
       return;
     }
     getLogger().info("run.execution_started", {
@@ -264,7 +267,10 @@ async function startClaimedAttempt(
       data: { runId, fence, status: "running" },
     });
   } catch (error) {
-    await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+    await bestEffort(
+      "release computer execution lease",
+      releaseComputerExecutionLease(deps.prisma, computerLease),
+    );
     throw error;
   }
   return { computerLease, attempt, executionStartedAt, firstLateSince };
