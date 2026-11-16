@@ -522,6 +522,63 @@ describe("team chat engagement judge", () => {
     },
   );
 
+  it("meters hosted credits on the operator's key even when an admin connected that provider", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("PI_DEFAULT_MODEL", "fixture-model");
+    vi.stubEnv("OPENROUTER_API_KEY", "fixture-operator-key");
+    try {
+      const load = vi.fn().mockResolvedValue("fixture-admin-key");
+      const run = vi.fn(async function* (_request: unknown) {
+        yield { type: "done", text: '{"act":false}' };
+      });
+      const judge = new ModelTeamChatEngagementJudge({
+        prisma: {
+          deploymentSettings: {
+            findUnique: async () => ({
+              modelCreditsEnabled: true,
+              modelConnections: [{ provider: "openrouter", ciphertext: "cipher-admin" }],
+            }),
+          },
+          userModelPreference: { findFirst: async () => null },
+          userModelCredential: { findFirst: async () => null },
+          secret: { findFirst: async () => null },
+          space: {
+            findFirst: async () => ({ organization: { modelCredits: { mode: "credits" } } }),
+            findUnique: async () => ({ organizationId: "org" }),
+          },
+          member: { findUnique: async () => ({ role: "owner" }) },
+          billingAccount: { findUnique: async () => null },
+          modelCreditAccount: { upsert: async () => ({ mode: "credits" }) },
+        } as never,
+        runtime: { run } as never,
+        secrets: { load } as never,
+        deploymentProvider: "openrouter",
+        deploymentModel: "fixture-model",
+        deploymentModelKey: "fixture-operator-key",
+      });
+      await judge.decide({
+        bot: {
+          id: "bot",
+          spaceId: "space",
+          userId: "user",
+          name: "Fixture",
+          modelProvider: null,
+          modelId: null,
+        },
+        channelId: "channel",
+        rules: "",
+        messages: [],
+      });
+      expect(run).toHaveBeenCalledOnce();
+      expect(run.mock.calls[0]?.[0]).toMatchObject({
+        model: { apiKey: "fixture-operator-key", callObserver: expect.any(Object) },
+      });
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("runs on the deployment's own endpoint with its URL and headers", async () => {
     const run = vi.fn(async function* (_request: unknown) {
       yield { type: "done", text: '{"act":false}' };

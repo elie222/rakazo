@@ -203,18 +203,17 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       where: { id: "default" },
       include: DEPLOYMENT_MODEL_SETTINGS,
     });
-    const models = await loadDeploymentModels(
-      this.deps.prisma,
+    // The environment's models as this process read them, before any admin setting.
+    const environment =
       this.deps.deploymentModels ??
-        defaultOnlyDeploymentModels({
-          provider: this.deps.deploymentProvider,
-          model: this.deps.deploymentModel,
-          key: this.deps.deploymentModelKey,
-          configured: Boolean(this.deps.deploymentModelKey),
-          hostCredentials: false,
-        }),
-      settings,
-    );
+      defaultOnlyDeploymentModels({
+        provider: this.deps.deploymentProvider,
+        model: this.deps.deploymentModel,
+        key: this.deps.deploymentModelKey,
+        configured: Boolean(this.deps.deploymentModelKey),
+        hostCredentials: false,
+      });
+    const models = await loadDeploymentModels(this.deps.prisma, environment, settings);
     const scope = { userId: bot.userId, spaceId: bot.spaceId };
     const member = await resolveMemberMainModel(
       { prisma: this.deps.prisma, secretStore: this.deps.secrets },
@@ -251,7 +250,9 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       // A deployment key goes only to a model members may run on it, as it does for a run.
       const secret = await deploymentConnectionSecret(
         this.deps.secrets,
-        entitledDeploymentConnection(models, {
+        // Hosted credits pay for the operator's own key, which an admin's connection for that
+        // provider must not replace.
+        entitledDeploymentConnection(hosted ? environment : models, {
           environmentProvider:
             this.deps.deploymentModels?.default.provider ?? this.deps.deploymentProvider,
           provider,
