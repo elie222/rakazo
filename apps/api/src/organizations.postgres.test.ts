@@ -11,6 +11,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { BillingEmulator, ObjectAgentHomeStore, PrismaAgentHomeRecords } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import {
   asSystem,
@@ -554,14 +555,8 @@ describePostgres("organizations (PostgreSQL)", () => {
     const work = await client(ada).organizations.create({ name: "Work" });
     const ref = `sb-late-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
-    let billingCalled!: () => void;
-    const called = new Promise<void>((resolve) => {
-      billingCalled = resolve;
-    });
-    let returnBilling!: () => void;
-    const held = new Promise<void>((resolve) => {
-      returnBilling = resolve;
-    });
+    const called = deferred();
+    const held = deferred();
     const deadline = new AbortController();
     // Going on after its deadline, the attempt's next step would be a query; record any it makes.
     let billingReturned = false;
@@ -573,8 +568,8 @@ describePostgres("organizations (PostgreSQL)", () => {
           prisma: recordingQueries(prisma, () => billingReturned, queriesAfterBilling),
           billing: {
             cancelForDeletedOrganization: async () => {
-              billingCalled();
-              await held;
+              called.resolve();
+              await held.promise;
             },
           },
         } as Parameters<typeof deleteOrganization>[0],
@@ -583,7 +578,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         deadline.signal,
       ),
     );
-    await called;
+    await called.promise;
     deadline.abort(new Error("Organization deletion timed out"));
     await expect(late).rejects.toThrow("timed out");
     // Its lease lapses, and a retry takes over and starts tearing the bot down.
@@ -596,7 +591,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     await until(() => sandbox.started.includes(ref));
 
     billingReturned = true;
-    returnBilling();
+    held.resolve();
     // The cut-off attempt resumes within these microtasks, so by now it has stopped or gone on.
     await new Promise(setImmediate);
     expect(queriesAfterBilling).toEqual([]);
@@ -613,14 +608,8 @@ describePostgres("organizations (PostgreSQL)", () => {
     const work = await client(ada).organizations.create({ name: "Work" });
     const ref = `sb-lost-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
-    let billingCalled!: () => void;
-    const called = new Promise<void>((resolve) => {
-      billingCalled = resolve;
-    });
-    let returnBilling!: () => void;
-    const held = new Promise<void>((resolve) => {
-      returnBilling = resolve;
-    });
+    const called = deferred();
+    const held = deferred();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       const stale = runAsSystem("an attempt whose renewals stopped landing", () =>
@@ -629,8 +618,8 @@ describePostgres("organizations (PostgreSQL)", () => {
             ...deps(),
             billing: {
               cancelForDeletedOrganization: async () => {
-                billingCalled();
-                await held;
+                called.resolve();
+                await held.promise;
               },
             },
           } as Parameters<typeof deleteOrganization>[0],
@@ -639,7 +628,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         ),
       );
       stale.catch(() => undefined);
-      await called;
+      await called.promise;
       // Its lease lapses, and a retry takes the claim over and starts tearing the bot down.
       await system.space.updateMany({
         where: { organizationId: work.id },
@@ -652,7 +641,7 @@ describePostgres("organizations (PostgreSQL)", () => {
       // The first attempt's next renewal finds the claim taken; then its billing call returns.
       await vi.advanceTimersByTimeAsync(60_000);
       await new Promise((resolve) => setTimeout(resolve, 200));
-      returnBilling();
+      held.resolve();
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
       release();
@@ -829,22 +818,16 @@ describePostgres("organizations (PostgreSQL)", () => {
     sandbox.failDestroy.add(`sb-takeover-${suffix}`);
 
     // The placing attempt stalls in billing, after its claim is in place.
-    let claimPlaced!: () => void;
-    const placed = new Promise<void>((resolve) => {
-      claimPlaced = resolve;
-    });
-    let failBilling!: () => void;
-    const stalled = new Promise<void>((resolve) => {
-      failBilling = resolve;
-    });
+    const placed = deferred();
+    const stalled = deferred();
     const placing = runAsSystem("an earlier deletion attempt", () =>
       deleteOrganization(
         {
           ...deps(),
           billing: {
             cancelForDeletedOrganization: async () => {
-              claimPlaced();
-              await stalled;
+              placed.resolve();
+              await stalled.promise;
               throw new Error("billing unavailable");
             },
           },
@@ -853,7 +836,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         work.id,
       ),
     );
-    await placed;
+    await placed.promise;
     // Its lease lapses, as if it had stopped renewing it.
     await system.space.updateMany({
       where: { organizationId: work.id },
@@ -865,7 +848,7 @@ describePostgres("organizations (PostgreSQL)", () => {
       "provider unavailable",
     );
 
-    failBilling();
+    stalled.resolve();
     await expect(placing).rejects.toThrow("billing unavailable");
 
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
@@ -1088,9 +1071,9 @@ function fakeSandbox() {
     failDestroy,
     /** Keeps destroying this sandbox pending until the returned release is called. */
     hold(providerRef: string) {
-      let release!: () => void;
-      held.set(providerRef, new Promise((resolve) => (release = resolve)));
-      return () => release();
+      const gate = deferred();
+      held.set(providerRef, gate.promise);
+      return () => gate.resolve();
     },
     async destroy(computer: ComputerRef) {
       if (failDestroy.has(computer.providerRef)) throw new Error("provider unavailable");

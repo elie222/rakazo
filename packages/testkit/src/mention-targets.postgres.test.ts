@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
@@ -235,23 +236,17 @@ describeWithDatabase("structured @ mention targets", () => {
         const slowThread = await prisma.thread.findUniqueOrThrow({ where: { botId: slow.id } });
         const clientNonce = `send-race-${name}-${stamp}`;
         // Holding the slow bot's thread stops B on its first run insert, after its saved-run lookup.
-        let release!: () => void;
-        const released = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let locked!: () => void;
-        const holding = new Promise<void>((resolve) => {
-          locked = resolve;
-        });
+        const released = deferred();
+        const holding = deferred();
         const holder = prisma.$transaction(
           async (tx) => {
             await tx.$queryRaw`SELECT id FROM threads WHERE id = ${slowThread.id} FOR UPDATE`;
-            locked();
-            await released;
+            holding.resolve();
+            await released.promise;
           },
           { timeout: 20_000 },
         );
-        await holding;
+        await holding.promise;
         const second = raw(app, cookie, "threads/sendWithRoutines", {
           botId: other.id,
           clientNonce,
@@ -271,7 +266,7 @@ describeWithDatabase("structured @ mention targets", () => {
           text,
           routineIds: [digest.id],
         });
-        release();
+        released.resolve();
         await holder;
         const response = await second;
 

@@ -1,4 +1,5 @@
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -76,14 +77,8 @@ describePostgres("thread row before run rows for clear and control release (Post
 
   /** A second transaction holding one row, standing in for the concurrent actor. */
   function holdRow(table: "threads" | "computers", id: string) {
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const done = system.$transaction(
       async (tx) => {
         await tx.$queryRaw(
@@ -91,12 +86,12 @@ describePostgres("thread row before run rows for clear and control release (Post
         );
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
           SELECT pg_current_xact_id()::text AS "xactId"`;
-        locked(rows[0]?.xactId ?? "");
-        await opened;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
       },
       { timeout: 30_000 },
     );
-    return { lockTaken, open: () => open(), done };
+    return { lockTaken: lockTaken.promise, open: () => opened.resolve(), done };
   }
 
   /**

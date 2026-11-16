@@ -13,6 +13,7 @@ import {
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
+import { deferred } from "@rakazo/core/test-async";
 import { appliedModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
@@ -310,25 +311,19 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const failures = cleanupFailures();
 
     // Another flow holds this user's scope for the app, as it does across its provider call.
-    let lockTaken = () => {};
-    const locked = new Promise<void>((resolve) => {
-      lockTaken = resolve;
-    });
-    let release = () => {};
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const locked = deferred();
+    const released = deferred();
     const holder = runAsSystem("hold a connection scope", () =>
       handles.prisma.$transaction(
         async (tx) => {
           await lockProviderConnectionScope(tx, actor, "composio", "GMAIL");
-          lockTaken();
-          await released;
+          locked.resolve();
+          await released.promise;
         },
         { timeout: 30_000 },
       ),
     );
-    await locked;
+    await locked.promise;
     try {
       await runCleanupNow(cleanup);
       expect(cancelled).not.toHaveBeenCalled();
@@ -336,7 +331,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       expect(cleanupFailures()).toBe(failures);
       expect(queuedCleanup(cleanup)?.availableAt?.getTime()).toBeGreaterThan(Date.now());
     } finally {
-      release();
+      released.resolve();
       await holder;
     }
 

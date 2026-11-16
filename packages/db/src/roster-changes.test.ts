@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { RosterScope } from "./roster-changes.js";
 import { followRosterChanges, publishRosterChange } from "./roster-changes.js";
@@ -24,8 +25,6 @@ function fakeFanout() {
   };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 describe("followRosterChanges", () => {
   it("signals on open, then on chat events and roster changes, re-reading what it watches", async () => {
     const fanout = fakeFanout();
@@ -45,19 +44,19 @@ describe("followRosterChanges", () => {
     ]);
 
     let next = iterator.next();
-    await tick();
+    await flush();
     scope = { spaceIds: ["space-1"], threadIds: ["thread-1", "thread-2"] };
     await fanout.publish("thread:thread-1", JSON.stringify({ cursor: 4 }));
     expect((await next).done).toBe(false);
     expect(fanout.topics()).toContain("thread:thread-2");
 
     next = iterator.next();
-    await tick();
+    await flush();
     await publishRosterChange(fanout as never, { spaceIds: ["space-1"] });
     expect((await next).done).toBe(false);
 
     next = iterator.next();
-    await tick();
+    await flush();
     await publishRosterChange(fanout as never, { userIds: ["user-1"] });
     expect((await next).done).toBe(false);
     await iterator.return(undefined);
@@ -106,10 +105,10 @@ describe("followRosterChanges", () => {
     );
     await iterator.next();
     const next = iterator.next();
-    await tick();
+    await flush();
     await publishRosterChange(fanout as never, { spaceIds: ["space-2"], userIds: ["user-2"] });
     await fanout.publish("thread:thread-9", "");
-    await tick();
+    await flush();
     controller.abort();
     expect((await next).done).toBe(true);
   });
@@ -174,7 +173,7 @@ describe("publishRosterChange", () => {
       { spaceIds: ["space-1"], userIds: ["user-1"] },
       { sleep: async () => {} },
     );
-    await tick();
+    await flush();
     expect(calls).toEqual(["roster-space:space-1", "roster-user:user-1", "roster-space:space-1"]);
   });
 });
