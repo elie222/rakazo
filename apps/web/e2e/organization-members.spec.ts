@@ -11,11 +11,26 @@ test("an owner invites someone to the organization, who joins with a private Spa
 }, testInfo) => {
   const owner = await browser.newContext();
   const invitee = await browser.newContext();
-  await owner.grantPermissions(["clipboard-read", "clipboard-write"]);
   const ownerPage = await owner.newPage();
   const inviteePage = await invitee.newPage();
   const stamp = Date.now();
   const inviteeEmail = `org-invitee-${stamp}@rakazo.test`;
+  const emailApi = process.env.API_URL ?? "http://127.0.0.1:3110";
+  // Workers share one outbox, so read only this address's mail.
+  async function lastEmailTo(to: string, subject: RegExp) {
+    const matching = async () => {
+      const response = await ownerPage.request.get(`${emailApi}/__e2e/emails`);
+      const sent = (await response.json()) as Array<{
+        to: string;
+        subject: string;
+        text: string;
+        html: string;
+      }>;
+      return sent.filter((message) => message.to === to && subject.test(message.subject));
+    };
+    await expect.poll(async () => (await matching()).length).toBeGreaterThan(0);
+    return (await matching()).at(-1)!;
+  }
 
   await signup(ownerPage, `org-owner-${stamp}@rakazo.test`, "password12", "Ada Owner");
   await completeOnboarding(ownerPage);
@@ -36,17 +51,28 @@ test("an owner invites someone to the organization, who joins with a private Spa
   await expect(members.getByTestId("settings-page-title")).toHaveText("Members");
   await members.getByRole("textbox", { name: "Email" }).fill(inviteeEmail);
   await members.getByRole("button", { name: "Invite", exact: true }).click();
-  // This server sends no email, so the link is copied to share by hand.
-  await expect(ownerPage.getByText("Invite link copied")).toBeVisible();
-  const joinUrl = await ownerPage.evaluate(() => navigator.clipboard.readText());
-  expect(joinUrl).toMatch(/\/join\//);
+  await expect(ownerPage.getByText("Invitation sent")).toBeVisible();
+  const invitation = await lastEmailTo(inviteeEmail, /invited you/);
+  const joinUrl = invitation.text.match(/https?:\/\/\S+\/join\/\S+/)?.[0];
+  expect(joinUrl).toBeTruthy();
+  const emailPreview = await owner.newPage();
+  await emailPreview.setContent(invitation.html);
+  await expect(emailPreview.getByRole("link", { name: "Join Acme" })).toHaveAttribute(
+    "href",
+    joinUrl!,
+  );
+  await captureScreenshot(emailPreview, testInfo, "org-invitation-email");
+  await emailPreview.close();
   await expect(members.getByText(inviteeEmail)).toBeVisible();
   await expect(members.getByText("Invited", { exact: true })).toBeVisible();
   await captureScreenshot(ownerPage, testInfo, "org-members-invited");
 
   await signup(inviteePage, inviteeEmail, "password12", "Bob Invitee");
   await completeOnboarding(inviteePage);
-  await inviteePage.goto(new URL(joinUrl).pathname);
+  // This server sends email, so joining takes the invited address, verified.
+  const verification = await lastEmailTo(inviteeEmail, /Verify/);
+  await inviteePage.goto(verification.text.match(/https?:\/\/\S+/)![0]);
+  await inviteePage.goto(new URL(joinUrl!).pathname);
   await expect(inviteePage.getByRole("heading", { name: "Join Acme" })).toBeVisible();
   await expect(inviteePage.getByText("Ada Owner invited you")).toBeVisible();
   await captureScreenshot(inviteePage, testInfo, "org-join");
