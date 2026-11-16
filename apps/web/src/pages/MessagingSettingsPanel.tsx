@@ -156,8 +156,6 @@ export function MessagingSettingsPanel() {
   async function act(action: () => Promise<unknown>) {
     linkGuard.invalidate();
     setError(null);
-    // A displayed code must always match the current selection and link
-    // state; the link action re-sets it after issuing.
     setLinkRequest(null);
     try {
       await action();
