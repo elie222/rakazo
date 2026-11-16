@@ -586,6 +586,7 @@ it("does not issue another code while one request is in flight", async () => {
   const pending = deferred<{ code: string; expiresAt: string }>();
   messaging.link.start.mockReturnValueOnce(pending.promise);
   await renderOverlay();
+  const reads = messaging.status.mock.calls.length;
   await act(async () => {
     telegramItem()?.click();
     telegramItem()?.click();
@@ -595,6 +596,7 @@ it("does not issue another code while one request is in flight", async () => {
     pending.resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
   );
   expect(container.textContent).toContain("ONE-CODE");
+  expect(messaging.status).toHaveBeenCalledTimes(reads);
 });
 
 it("ignores a code that arrives after the panel closes", async () => {

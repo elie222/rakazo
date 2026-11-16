@@ -190,7 +190,6 @@ export default function MessagingSettings() {
     setLink(null);
     try {
       const issued = await rpc("messaging/link/start", { botId: linkBotId });
-      request.finish();
       if (!request.isCurrent()) return;
       setLink({
         ...issued,
@@ -200,7 +199,6 @@ export default function MessagingSettings() {
           status?.identities.map((identity) => [identity.id, identity.botId]) ?? [],
         ),
       });
-      await refresh();
     } catch (err) {
       if (request.isCurrent()) setError(errorText(err));
     } finally {

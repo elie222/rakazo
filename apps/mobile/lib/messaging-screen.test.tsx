@@ -468,7 +468,7 @@ it.each(["resolve", "reject"] as const)(
       expiresAt: new Date(Date.now() + 20_000).toISOString(),
     };
     await act(async () => click("iMessage"));
-    expect(rpc).toHaveBeenLastCalledWith("spaces/list");
+    expect(rpc).toHaveBeenLastCalledWith("messaging/link/start", { botId: "bot-2" });
     expect(container.textContent).toContain("NEW-CODE");
     expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
   },
@@ -478,6 +478,7 @@ it("does not issue another code while one request is in flight", async () => {
   const pending = deferred<unknown>();
   responses["messaging/link/start"] = pending.promise;
   await act(async () => root.render(<MessagingSettings />));
+  const reads = listCalls();
   const button = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "iMessage",
   )!;
@@ -492,6 +493,7 @@ it("does not issue another code while one request is in flight", async () => {
     pending.resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
   );
   expect(container.textContent).toContain("ONE-CODE");
+  expect(listCalls()).toBe(reads);
 });
 
 it("ignores a code that arrives after leaving settings", async () => {

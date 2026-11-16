@@ -235,10 +235,8 @@ export function MessagingSettingsPanel() {
     setLinkRequest(null);
     try {
       const issued = await rpc.messaging.link.start({ botId });
-      request.finish();
       if (!request.isCurrent()) return;
       setLinkRequest({ ...issued, botId, provider });
-      await refresh();
     } catch {
       if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
     } finally {
