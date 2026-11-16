@@ -2,11 +2,13 @@ import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { OrganizationList } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
+import type { ReactNode } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { resolveMobileAppearance } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
 import {
   activeOrganization,
+  organizationActions,
   organizationForAction,
   organizationSwitchActions,
   switchOrganization,
@@ -57,6 +59,52 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
           color={native.secondaryLabel}
         />
       </View>
+    </MenuView>
+  );
+}
+
+const NEW_ORGANIZATION = "new-organization";
+const ORGANIZATION_SETTINGS = "organization-settings";
+
+/**
+ * Wraps the account's organization row: a menu that switches organization, starts a new one,
+ * or opens the active one's settings.
+ */
+export function OrganizationRowMenu({
+  list,
+  onCreate,
+  onSettings,
+  children,
+}: {
+  list: OrganizationList;
+  onCreate: () => void;
+  onSettings: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useLingui();
+  const onSwitch = useOrganizationMenuAction(list);
+  const active = activeOrganization(list);
+  return (
+    <MenuView
+      actions={[
+        {
+          id: "organizations",
+          title: "",
+          displayInline: true,
+          subactions: organizationActions(list),
+        },
+        { id: NEW_ORGANIZATION, title: t`New organization`, image: "plus" },
+        { id: ORGANIZATION_SETTINGS, title: t`Organization settings`, image: "gearshape" },
+      ]}
+      colorScheme={resolveMobileAppearance()}
+      onPressAction={({ nativeEvent }) => {
+        const action = nativeEvent.event;
+        if (action === NEW_ORGANIZATION) onCreate();
+        else if (action === ORGANIZATION_SETTINGS) onSettings();
+        else if (organizationForAction(list, action)?.id !== active?.id) onSwitch(action);
+      }}
+    >
+      {children}
     </MenuView>
   );
 }
