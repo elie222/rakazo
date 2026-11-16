@@ -49,26 +49,35 @@ export default function NewBot() {
   const modelCheck = useRef<Promise<boolean>>(Promise.resolve(false));
   const trimmed = name.trim();
   const identity = newBotPreviewIdentity(avatarSet, look);
-  const createdIn = params.spaceId ?? selectedSpaceId() ?? undefined;
+  // The Space the bot is created in, kept from the Create tap so a later switch leaves it shown.
+  const tappedIn = useRef<string | undefined>(undefined);
+  const createdIn = tappedIn.current ?? params.spaceId ?? selectedSpaceId() ?? undefined;
   const creation = useSave({
     // The bot's onboarding and focus prompt still reach its Space after another is selected.
     target: createdIn ? { scope: "space", spaceId: createdIn } : undefined,
     save: async (input: NewBotInput, send): Promise<InboxBotOutcome | "asked"> => {
-      // That check is asking for a model and closing the screen.
-      if (await modelCheck.current) return "asked";
-      return createInboxBot({
-        input,
-        openChat: (href) => {
-          if (gone.current) return;
-          router.dismiss();
-          if (!openChatFromInbox(href)) router.push(href);
-        },
-        send,
-        spaceId: params.spaceId,
-      });
-    },
-    onFailed: () => {
-      started.current = false;
+      let outcome: InboxBotOutcome | "asked" | undefined;
+      try {
+        // That check is asking for a model and closing the screen.
+        outcome = (await modelCheck.current)
+          ? "asked"
+          : await createInboxBot({
+              input,
+              openChat: (href) => {
+                if (gone.current) return;
+                router.dismiss();
+                if (!openChatFromInbox(href)) router.push(href);
+              },
+              send,
+              spaceId: params.spaceId,
+            });
+        return outcome;
+      } finally {
+        // Cleared here, not in onFailed, which a save no longer shown skips.
+        if (outcome !== "created") started.current = false;
+        // A failed create is tried again in the Space selected then.
+        if (outcome === undefined) tappedIn.current = undefined;
+      }
     },
     // A model is needed first, or the account or space changed: nothing is left to do here.
     onSaved: (outcome) => {
@@ -107,6 +116,7 @@ export default function NewBot() {
   function create() {
     if (!trimmed) return;
     started.current = true;
+    tappedIn.current = createdIn;
     creation.run({ name: trimmed, ...newBotLookInput(avatarSet, look) });
   }
 

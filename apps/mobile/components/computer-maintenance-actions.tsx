@@ -47,8 +47,11 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
   });
   const error = repair.error ? errorText(repair.error, t`Could not update computer`) : null;
 
+  // A status from an earlier visit is never repaired from: the computer may have recovered since.
+  if (!status.isFetchedAfterMount) return [];
   if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
-  const busy = Boolean(computer.busyBotName) || repair.pending;
+  // While the status is read again, it may no longer be broken.
+  const busy = Boolean(computer.busyBotName) || repair.pending || status.isFetching;
   const pending = repair.pending;
 
   // Recover rebuilds the system where the computer can update in place; otherwise Reset

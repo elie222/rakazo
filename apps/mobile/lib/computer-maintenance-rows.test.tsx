@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComputerStatus } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -175,6 +176,33 @@ describe("computer maintenance rows", () => {
       { botId: "bot-fixture" },
       { requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": "space-1" } }) },
     );
+  });
+
+  it("offers no repair from an earlier visit's status until it is read again", async () => {
+    rpc.mockResolvedValue(status({ canUpdate: false }));
+    await act(async () => root.render(createElement(Rows)));
+    expect(button("Reset computer")).toBeDefined();
+    await act(async () => root.unmount());
+    // The computer recovered elsewhere; the return visit's read is still out.
+    const reread = deferred<ComputerStatus>();
+    rpc.mockReturnValue(reread.promise);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(Rows)));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    await act(async () => reread.resolve(status({ state: "running" })));
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("disables the repair while its status is read again", async () => {
+    rpc.mockResolvedValue(status({ canUpdate: false }));
+    await act(async () => root.render(createElement(Rows)));
+    const reread = deferred<ComputerStatus>();
+    rpc.mockReturnValue(reread.promise);
+    const listener = subscribe.mock.lastCall![0] as () => void;
+    await act(async () => listener());
+    expect(button("Reset computer")!.disabled).toBe(true);
+    await act(async () => reread.resolve(status({ canUpdate: false })));
+    expect(button("Reset computer")!.disabled).toBe(false);
   });
 
   it("shows nothing while the computer is not broken", async () => {
