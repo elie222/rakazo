@@ -20,6 +20,7 @@ import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
   normalizeOpenAiCompatibleBaseUrl,
+  openAiCompatAllowPublicHosts,
 } from "./openai-compatible-url.js";
 import { OPENAI_VOICES } from "./openai-voice.js";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
@@ -33,6 +34,7 @@ import {
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 export { DEFAULT_COMPATIBLE_STT_MODEL, DEFAULT_COMPATIBLE_TTS_MODEL };
 export const OPENAI_COMPATIBLE_VOICE_PROVIDER_ID = OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -619,3 +621,14 @@ function mediaType(res: Response): string {
 function isNetworkError(error: Error): boolean {
   return error.name === "TypeError" || error.name === "AbortError" || error.name === "TimeoutError";
 }
+
+export const openAiCompatibleVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Self-hosted",
+    description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
+    transcribe: true,
+  },
+  listed: ({ allowPrivateEndpoint }) =>
+    allowPrivateEndpoint === true || openAiCompatAllowPublicHosts(),
+  create: ({ allowPrivateEndpoint }) => new OpenAiCompatibleVoiceProvider({ allowPrivateEndpoint }),
+};

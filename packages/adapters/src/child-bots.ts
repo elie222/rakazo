@@ -337,9 +337,7 @@ export async function archiveBot(
       select: { spaceId: true, controlLeaseId: true },
     });
     await tx.computer.updateMany({
-      where: {
-        OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
-      },
+      where: { controlBotId: bot.id },
       data: releasedComputerLease(),
     });
     for (const { spaceId, controlLeaseId } of held) {
@@ -479,7 +477,7 @@ export async function destroyBot(
       await tx.computer.updateMany({
         where: {
           ...(dedicated ? { id: { not: dedicated.id } } : {}),
-          OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
+          controlBotId: bot.id,
         },
         data: releasedComputerLease(),
       });
@@ -717,14 +715,6 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   if (cancelledRuns.length) {
     const runIds = cancelledRuns.map((run) => run.id);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: runIds } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
   }
   if (affectedGroups.length) {
     await tx.chatGroupMember.deleteMany({ where: { botId } });
@@ -780,9 +770,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    executionRunId: null,
-    executionBotId: null,
-    executionLeaseExpiresAt: null,
   };
 }
 

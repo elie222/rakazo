@@ -21,6 +21,7 @@ import {
   voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
+import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
@@ -388,3 +389,14 @@ function languageLabel(value: unknown): string {
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .join(", ");
 }
+
+export const fishAudioVoice: VoiceProviderDefinition = {
+  catalog: {
+    name: "Fish Audio",
+    description: "Voice models, cloning, and expressive speech with optional transcription.",
+    transcribe: true,
+    speechModel: true,
+    languages: true,
+  },
+  create: () => new FishAudioVoiceProvider(),
+};

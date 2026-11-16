@@ -1,8 +1,4 @@
 {
-  "apps/desktop/src/monitoring.test.ts": 2,
-  "apps/desktop/src/native-crashes.test.ts": 1,
-  "apps/web/src/pages/Onboarding.test.tsx": 1,
-  "apps/web/src/pages/shell/bot-settings.test.tsx": 1,
   "packages/db/src/bot-update.postgres.test.ts": 1,
   "packages/db/src/content-encryption.postgres.test.ts": 1,
   "packages/logging/src/hono.test.ts": 1,
