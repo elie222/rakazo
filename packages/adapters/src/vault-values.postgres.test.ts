@@ -3,6 +3,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { decodeLoginSecret } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import {
   asSystem,
   ciphertextKeyId,
@@ -14,7 +15,7 @@ import {
   runAsSystem,
   runAsTenant,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   LOGIN_ALREADY_SAVED,
   LOGIN_VALUE_CHANGED,
@@ -248,18 +249,18 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
       // Holds the save inside its transaction, after it read the item and before it writes,
       // while migrate runs: until migrate is done or waiting on a lock the save holds, such as
       // the member's, which creating the member's vault key waits on from its own connection.
-      const blocked = async () => {
-        for (let tries = 0; tries < 500; tries++) {
-          const { rows } = await sealing.pool.query<{ n: number }>(
-            `SELECT count(*)::int AS n FROM pg_stat_activity
-             WHERE application_name IN ($1, $1 || '-keys') AND wait_event_type = 'Lock'`,
-            [applicationName],
-          );
-          if (rows[0]!.n > 0) return;
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        throw new Error("migrate neither finished nor waited");
-      };
+      const blocked = () =>
+        vi.waitFor(
+          async () => {
+            const { rows } = await sealing.pool.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM pg_stat_activity
+               WHERE application_name IN ($1, $1 || '-keys') AND wait_event_type = 'Lock'`,
+              [applicationName],
+            );
+            if (!(rows[0]!.n > 0)) throw new Error("migrate neither finished nor waited");
+          },
+          { timeout: 10_000, interval: 20 },
+        );
       const barrier = async () => {
         migration = runAsSystem("vault race migration", () =>
           migrateVaultValues(migrating.prisma, secretStore, context, {
@@ -738,15 +739,12 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
         const before = await versions();
         const controller = new AbortController();
         // The key manager answers when the test lets it, which is after the command has stopped.
-        let answerNow = () => {};
-        const answered = new Promise<void>((resolve) => {
-          answerNow = resolve;
-        });
+        const answered = deferred();
         const wrap = provider.wrap.bind(provider);
         provider.wrap = (key, context) => {
           controller.abort(new Error("interrupted"));
           if (answer === "never answers") return new Promise(() => {});
-          return answered.then(() => wrap(key, context));
+          return answered.promise.then(() => wrap(key, context));
         };
         // The key creations the command starts, to wait for the one it gave up on.
         const ring = contentEncryptionOf(command.prisma)!.ring;
@@ -772,7 +770,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
           await expect(runAsSystem("vault interruption", run)).rejects.toThrow("interrupted");
           // A key manager that never answers leaves nothing to wait for.
           if (answer === "answers after the interruption") {
-            answerNow();
+            answered.resolve();
             await Promise.allSettled(creations);
           }
           expect(await versions()).toBe(before);

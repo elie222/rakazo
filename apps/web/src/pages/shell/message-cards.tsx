@@ -15,6 +15,7 @@ import { importChunk } from "../../lib/preload-recovery";
 import { useSave } from "../../lib/query";
 import { rpc } from "../../lib/rpc";
 import { useArtifactImage } from "../../lib/use-artifact-image";
+import { useEventListener } from "../../lib/use-event-listener";
 import type { ErrorDetails } from "../../lib/user-error";
 import { errorDetails, errorText } from "../../lib/user-error";
 
@@ -457,13 +458,12 @@ export function ChartBlockView({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
-  useEffect(() => {
-    if (!expanded) return;
+  const measureViewport = () =>
     setViewport({ width: window.innerWidth, height: window.innerHeight });
-    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+  useEffect(() => {
+    if (expanded) measureViewport();
   }, [expanded]);
+  useEventListener(expanded ? window : null, "resize", measureViewport);
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>

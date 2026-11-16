@@ -67,30 +67,9 @@ jobs:
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
-      - name: Postgres cache week
-        if: steps.areas.outputs.e2e != 'false'
-        id: postgres-cache-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - name: Restore Postgres image cache
-        if: steps.areas.outputs.e2e != 'false'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
-      - name: Load or pull Postgres image
-        if: steps.areas.outputs.e2e != 'false'
-        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.e2e != 'false'
-        run: |
-          docker run -d --name ci-postgres \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=rakazo \
-            -p 5432:5432 \
-            mirror.gcr.io/library/postgres:18-alpine \
-            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
-          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+        uses: ./.github/actions/start-postgres
       - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
@@ -156,16 +135,7 @@ jobs:
           key: ${{ steps.cjk-key.outputs.key }}
       - name: Wait for Postgres
         if: steps.areas.outputs.e2e != 'false'
-        run: |
-          for i in $(seq 1 30); do
-            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Postgres did not become ready" >&2
-          docker logs ci-postgres >&2 || true
-          exit 1
+        run: bash .github/actions/start-postgres/wait.sh
       - name: Run Playwright tests
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
@@ -211,30 +181,9 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - name: Postgres cache week
-        if: steps.areas.outputs.e2e != 'false'
-        id: postgres-cache-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - name: Restore Postgres image cache
-        if: steps.areas.outputs.e2e != 'false'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/docker-postgres-cache
-          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
-      - name: Load or pull Postgres image
-        if: steps.areas.outputs.e2e != 'false'
-        run: bash .github/scripts/restore-postgres-image.sh
       - name: Start Postgres
         if: steps.areas.outputs.e2e != 'false'
-        run: |
-          docker run -d --name ci-postgres \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=rakazo \
-            -p 5432:5432 \
-            mirror.gcr.io/library/postgres:18-alpine \
-            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
-          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+        uses: ./.github/actions/start-postgres
       - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
@@ -251,16 +200,7 @@ jobs:
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
       - name: Wait for Postgres
         if: steps.areas.outputs.e2e != 'false'
-        run: |
-          for i in $(seq 1 30); do
-            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Postgres did not become ready" >&2
-          docker logs ci-postgres >&2 || true
-          exit 1
+        run: bash .github/actions/start-postgres/wait.sh
       - name: Run Playwright tests
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
@@ -328,14 +268,12 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: ./.github/actions/setup-workspace
         if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: ${{ !inputs.publish_report }}
         with:
           node-version: 24
-          cache: ${{ inputs.publish_report && 'pnpm' || '' }}
-      - run: pnpm install --frozen-lockfile
-        if: inputs.publish_report
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: playwright-shard-*-${{ github.run_id }}-*

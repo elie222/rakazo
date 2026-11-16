@@ -6,18 +6,12 @@ import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
-import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
   bot: Bot;
   computer: ComputerStatus | null;
   computerOpen: boolean;
-  embeddedScreenUrl: string | null;
-  /** Changes to load the screen again in a new frame. */
-  screenFrameKey?: string;
-  heldScreen?: { url: string; key: string } | null;
-  screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
   booting: boolean;
@@ -75,10 +69,6 @@ function ComputerPreview({
   bot,
   computer,
   computerOpen,
-  embeddedScreenUrl,
-  screenFrameKey,
-  heldScreen,
-  screenFrameRef,
   computerScreenError,
   computerBooting,
   booting,
@@ -99,34 +89,62 @@ function ComputerPreview({
     !showComputerRecoveryHint &&
     !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
+  const rowClass = "flex min-h-14 items-center gap-3 rounded-xl bg-muted/50 px-4 text-body";
+  // The bot stands in for its screen: a live screen here would hold the computer awake.
+  const tile = (asleep: boolean) => (
+    <span aria-hidden className="relative shrink-0">
+      <BotAvatar
+        avatarSet={bot.avatarSet}
+        color={bot.color}
+        identity={bot.id}
+        size={28}
+        className={asleep ? "opacity-50 grayscale" : undefined}
+      />
+      {asleep ? (
+        <span className="absolute -end-2 -top-1.5 text-caption font-medium leading-none text-muted-foreground/70">
+          z<sup>z</sup>
+        </span>
+      ) : null}
+    </span>
+  );
   if (idle) {
     return (
-      <div
-        data-testid="computer-preview"
-        data-state="idle"
-        className="flex flex-col items-center gap-3 rounded-[14px] bg-muted/50 px-6 py-7"
-      >
-        <div className="relative">
-          <BotAvatar
-            avatarSet={bot.avatarSet}
-            color={bot.color}
-            identity={bot.id}
-            size={44}
-            className="opacity-50 grayscale"
-          />
-          <span
-            aria-hidden
-            className="absolute -end-3 -top-2 text-caption font-medium leading-none text-muted-foreground/70"
-          >
-            z<sup>z</sup>
-          </span>
-        </div>
-        <span className="text-body text-muted-foreground">
+      <div data-testid="computer-preview" data-state="idle" className={rowClass}>
+        {tile(true)}
+        <span className="min-w-0 flex-1 text-muted-foreground">
           <Trans>Asleep</Trans>
         </span>
         <Button variant="secondary" size="sm" data-testid="computer-preview-open" onClick={onOpen}>
           <Trans>Wake</Trans>
         </Button>
+      </div>
+    );
+  }
+  // A running computer is a row too; its screen is one click away.
+  if (
+    !runsOnUserMachine(computer) &&
+    computer?.state === "running" &&
+    !booting &&
+    !computerBooting &&
+    !computerScreenError &&
+    !showingRecoveryHint
+  ) {
+    return (
+      <div data-testid="computer-preview" data-state="running" className={rowClass}>
+        {tile(false)}
+        <span className="min-w-0 flex-1 text-muted-foreground">
+          {computerOpen ? <Trans>Open in full window</Trans> : <Trans>Awake</Trans>}
+        </span>
+        {computerOpen ? null : (
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="computer-preview-open"
+            onClick={onOpen}
+          >
+            <Trans>Open</Trans>
+          </Button>
+        )}
       </div>
     );
   }
@@ -139,8 +157,8 @@ function ComputerPreview({
     <div>
       <div
         data-testid="computer-preview"
-        className={`group relative rounded-[14px] bg-background ${
-          showingRecoveryHint ? "" : "aspect-[16/10] overflow-hidden"
+        className={`group relative rounded-xl bg-muted/50 ${
+          showingRecoveryHint ? "" : "overflow-hidden py-6"
         }`}
       >
         {computerOpen ? (
@@ -153,21 +171,6 @@ function ComputerPreview({
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
-        ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-          screenFrames(screenFrameKey, embeddedScreenUrl, heldScreen).map((frame) => (
-            <iframe
-              key={frame.key}
-              title={frame.held ? undefined : t`Bot screen preview`}
-              aria-hidden={frame.held || undefined}
-              tabIndex={frame.held ? -1 : undefined}
-              ref={frame.held ? undefined : screenFrameRef}
-              src={frame.url}
-              sandbox={screenIframeSandbox(frame.url)}
-              className={`h-full w-full border-0 bg-black${frame.held ? " absolute inset-0" : ""}`}
-              allow="clipboard-read; clipboard-write"
-              style={{ pointerEvents: "none" }}
-            />
-          ))
         ) : (
           <div
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}

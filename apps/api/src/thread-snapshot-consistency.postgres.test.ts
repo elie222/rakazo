@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, ThreadSnapshot } from "@rakazo/contracts";
 import { reduceThreadSnapshot } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -116,14 +117,8 @@ describe.skipIf(!enabled)("thread snapshot matches its cursor (PostgreSQL)", () 
     write: (tx: Prisma.TransactionClient) => Promise<number>,
   ): Promise<{ snapshot: ThreadSnapshot; seq: number }> {
     const probe = await runAsSystem("lock probe", () => pool.connect());
-    let locked!: (xactId: string) => void;
-    const threadLocked = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let proceed!: () => void;
-    const resumed = new Promise<void>((resolve) => {
-      proceed = resolve;
-    });
+    const threadLocked = deferred<string>();
+    const resumed = deferred();
     let writer: Promise<number> | undefined;
     let reader: Promise<ThreadSnapshot> | undefined;
     try {
@@ -132,15 +127,15 @@ describe.skipIf(!enabled)("thread snapshot matches its cursor (PostgreSQL)", () 
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await resumed;
+          threadLocked.resolve(rows[0]?.xactId ?? "");
+          await resumed.promise;
           return write(tx);
         },
         { timeout: TRANSACTION_TIMEOUT_MS },
       );
       writer.catch(() => undefined);
       const xactId = await Promise.race([
-        threadLocked,
+        threadLocked.promise,
         writer.then(() => {
           throw new Error("the writer finished before it held the thread lock");
         }),
@@ -159,12 +154,12 @@ describe.skipIf(!enabled)("thread snapshot matches its cursor (PostgreSQL)", () 
         if (Date.now() >= deadline) throw new Error("the snapshot never queued on the writer");
         await sleep(WAIT_INTERVAL_MS);
       }
-      proceed();
+      resumed.resolve();
 
       const [seq, snapshot] = await Promise.all([writer, reader]);
       return { snapshot, seq };
     } finally {
-      proceed();
+      resumed.resolve();
       await Promise.allSettled([writer, reader]);
       probe.release();
     }

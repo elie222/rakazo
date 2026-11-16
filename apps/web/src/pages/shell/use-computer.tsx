@@ -20,6 +20,7 @@ import {
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { screenReadLoaded } from "../../lib/thread-events";
+import { useEventListener } from "../../lib/use-event-listener";
 
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
@@ -355,27 +356,19 @@ export function useComputerState({
       }
     };
   }, [screenFrame]);
+  const viewport = computerOpen ? window.visualViewport : null;
+  const syncViewport = () => {
+    if (viewport) setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
+  };
   useEffect(() => {
-    if (!computerOpen) {
-      setComputerViewport(null);
-      return;
-    }
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const sync = () => {
-      setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
-    };
-    sync();
-    viewport.addEventListener("resize", sync);
-    viewport.addEventListener("scroll", sync);
-    return () => {
-      viewport.removeEventListener("resize", sync);
-      viewport.removeEventListener("scroll", sync);
-    };
+    if (computerOpen) syncViewport();
+    else setComputerViewport(null);
   }, [computerOpen]);
+  useEventListener(viewport, "resize", syncViewport);
+  useEventListener(viewport, "scroll", syncViewport);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "computer" || computerOpen;
+  computerVisible.current = computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 

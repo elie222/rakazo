@@ -9,8 +9,10 @@ import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 import { useTextEditDialog } from "./profile-edit-dialog";
+import { SettingsGroup, SettingsRow } from "./settings-group";
 
-export function BotContextCards({ botId }: { botId: string }) {
+/** A bot's open work, or its memory notes; each shows only once it has something. */
+export function BotContextCards({ botId, section }: { botId: string; section: "work" | "memory" }) {
   const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
@@ -25,24 +27,26 @@ export function BotContextCards({ botId }: { botId: string }) {
     useCallback(() => {
       let current = true;
       setError(null);
-      void rpc("scratchpad/list", { botId })
-        .then((items) => {
-          if (current) setWork(items);
-        })
-        .catch((err) => {
-          if (current) setError(errorText(err));
-        });
-      void rpc("memory/list", { botId, scope: "bot" })
-        .then((documents) => {
-          if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
-        })
-        .catch((err) => {
-          if (current) setError(errorText(err));
-        });
+      if (section === "work")
+        void rpc("scratchpad/list", { botId })
+          .then((items) => {
+            if (current) setWork(items);
+          })
+          .catch((err) => {
+            if (current) setError(errorText(err));
+          });
+      else
+        void rpc("memory/list", { botId, scope: "bot" })
+          .then((documents) => {
+            if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
+          })
+          .catch((err) => {
+            if (current) setError(errorText(err));
+          });
       return () => {
         current = false;
       };
-    }, [botId]),
+    }, [botId, section]),
   );
   const addWork = useTextEditDialog(t`Add open work`, 200);
   async function createWork(title: string) {
@@ -146,48 +150,29 @@ export function BotContextCards({ botId }: { botId: string }) {
       ) : null}
       {addWork.dialog}
       {docs.length ? (
-        <View style={{ marginTop: 24 }}>
-          <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>
-            {t`Memory`}
-          </Text>
-          <View style={card}>
+        <View style={{ marginTop: section === "memory" ? 0 : 24 }}>
+          <SettingsGroup label={t`Memory`}>
             {(allDocs ? docs : docs.slice(0, 5)).map((doc) => (
-              <Pressable
+              <SettingsRow
                 key={doc.id}
                 accessibilityRole="button"
-                accessibilityLabel={doc.path}
+                title={doc.path}
+                chevron="right"
                 onPress={() =>
                   router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
                 }
-                style={{
-                  minHeight: 44,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
-              >
-                <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 14, flex: 1 }}>
-                  {doc.path}
-                </Text>
-                <NativeSymbol
-                  ios="chevron.right"
-                  android="chevron-forward"
-                  size={14}
-                  color={native.tertiaryLabel}
-                />
-              </Pressable>
+              />
             ))}
             {!allDocs && docs.length > 5 ? (
-              <Pressable
+              <SettingsRow
+                key="show-more"
                 accessibilityRole="button"
+                title={t`Show more`}
+                dimmed
                 onPress={() => setAllDocs(true)}
-                style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
-              </Pressable>
+              />
             ) : null}
-          </View>
+          </SettingsGroup>
         </View>
       ) : null}
       {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}

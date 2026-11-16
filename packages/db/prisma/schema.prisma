@@ -1914,6 +1914,17 @@ model HomeDeletionNotice {
   @@map("home_deletion_notices")
 }
 
+/// One holder at a time for long work across processes. `withLease` in packages/db/src/leases.ts
+/// is the only writer. A release deletes its row; `fence` comes from `leases_fence_seq`, so a key's
+/// next holder always outranks every earlier one.
+model Lease {
+  key       String   @id
+  fence     BigInt
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@map("leases")
+}
+
 /// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
 /// attributed to the computer's owning user and space. Run time is what sandbox providers bill.
 ///
