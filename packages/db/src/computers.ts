@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
-import { isTerminal } from "@rakazo/core";
+import { ClientError, isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
@@ -146,9 +146,20 @@ export function resolveMaxComputersPerUser(
   return limit;
 }
 
-export class ComputerLimitError extends Error {
+/** The computer a new bot gets when its request names none: COMPUTER_DEFAULT_MODE, else Team. */
+export function resolveDefaultComputerMode(
+  value = process.env.COMPUTER_DEFAULT_MODE,
+): ComputerMode {
+  const mode = value?.trim() || "team";
+  if (mode !== "team" && mode !== "dedicated") {
+    throw new Error("COMPUTER_DEFAULT_MODE must be team or dedicated");
+  }
+  return mode;
+}
+
+export class ComputerLimitError extends ClientError {
   constructor(limit: number) {
-    super(`User computer limit (${limit}) reached`);
+    super("BAD_REQUEST", `User computer limit (${limit}) reached`);
     this.name = "ComputerLimitError";
   }
 }
@@ -242,7 +253,7 @@ export async function restoreBotUnderComputerQuota(
   }
 
   if (isTransactionClient(prisma)) {
-    return restore(prisma as RestoreTx);
+    return restore(prisma);
   }
   if (limit <= 0) {
     await prisma.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
@@ -361,10 +372,10 @@ async function ensureComputerRecordWithQuota(
     select: { id: true },
   });
   if (!existing) {
-    // This bot's current reference leaves the live set when this link commits
-    // (createBot links the team computer first, then re-links the bot to the new
-    // dedicated one; setBotComputer switches the same way), so exclude it or a
-    // transaction ending with exactly one active computer is refused at cap 1.
+    // When setBotComputer switches computers, this bot's current reference leaves
+    // the live set when the link commits, so exclude it or a transaction ending
+    // with exactly one active computer is refused at cap 1. createBot links the
+    // chosen computer directly, so it has no current reference to exclude.
     const inUse = await countInUseComputersForUser(tx, input.userId, input.botId);
     // The new row itself will be referenced by this bot after the link, so
     // the post-transaction set is one more than the remaining live set.

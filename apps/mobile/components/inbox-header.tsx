@@ -23,6 +23,7 @@ export function InboxHeader({
   runCreateAction,
   columnInsets,
   title,
+  embedded = false,
 }: {
   initials: string;
   activityMode: boolean;
@@ -30,6 +31,7 @@ export function InboxHeader({
   runCreateAction: (action: CreateAction) => void;
   columnInsets: { left: number; right: number };
   title?: ReactNode;
+  embedded?: boolean;
 }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
@@ -42,7 +44,12 @@ export function InboxHeader({
       style={[
         styles.header,
         {
-          paddingTop: Math.max(insets.top, 20) + 8,
+          // The split inbox shares the native toolbar row. The window's expanded status
+          // area can extend over the chat without occupying the sidebar's controls.
+          paddingTop:
+            embedded && Platform.OS === "ios"
+              ? Math.min(insets.top, 20) + 4
+              : Math.max(insets.top, 20) + 8,
           paddingLeft: 16 + columnInsets.left,
           paddingRight: 16 + columnInsets.right,
         },

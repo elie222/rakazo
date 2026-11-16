@@ -1,9 +1,10 @@
+import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -57,7 +58,7 @@ dbTests("model credit billing service", () => {
       creditPurchasesEnabled: false,
     });
     await expect(
-      unavailable.purchaseCredits(actor, { amountCents: 1000, monthly: true }),
+      unavailable.purchaseCredits(actor, { amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(provider.creditCheckouts.size).toBe(0);
     expect(await billingAccountForOrganization(prisma, organizationId)).toBeNull();
@@ -83,7 +84,7 @@ dbTests("model credit billing service", () => {
     });
   });
   it("does not grant credits for checkout creation, grants a paid monthly invoice once", async () => {
-    await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     await expect(service.status(actor)).resolves.toMatchObject({ funding: null, balanceUsd: 0 });
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
     provider.completeCreditCheckout(customer);
@@ -91,8 +92,8 @@ dbTests("model credit billing service", () => {
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({
       funding: "credits",
-      balanceUsd: 10,
-      monthlyAmountCents: 1000,
+      balanceUsd: 20,
+      monthlyAmountCents: 2000,
       state: "active",
       trialAvailable: false,
     });
@@ -103,8 +104,8 @@ dbTests("model credit billing service", () => {
     provider.completeCreditCheckout(customer);
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({
-      balanceUsd: 30,
-      monthlyAmountCents: 1000,
+      balanceUsd: 40,
+      monthlyAmountCents: 2000,
     });
     expect(provider.subscriptions).toHaveLength(1);
   });
@@ -154,7 +155,7 @@ dbTests("model credit billing service", () => {
   it("refuses purchasing and changing plans without organization ownership", async () => {
     const other = { ...actor, userId: `non-member-${stamp}` };
     await expect(
-      service.purchaseCredits(other, { amountCents: 1000, monthly: false }),
+      service.purchaseCredits(other, { amountCents: 2000, monthly: false }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(service.setMonthlyCredits(other, 2000)).rejects.toMatchObject({
       code: "FORBIDDEN",
@@ -167,5 +168,14 @@ dbTests("model credit billing service", () => {
       code: "CONFLICT",
     });
     await expect(service.status(actor)).resolves.toMatchObject({ state: "canceled" });
+  });
+  it("answers payment required when the card is not charged for an upgrade", async () => {
+    vi.spyOn(provider, "setMonthlyCredits").mockRejectedValueOnce(
+      new BillingPaymentNotCompletedError(),
+    );
+    await expect(service.setMonthlyCredits(actor, 5000)).rejects.toMatchObject({
+      code: "PAYMENT_REQUIRED",
+      status: 402,
+    });
   });
 });

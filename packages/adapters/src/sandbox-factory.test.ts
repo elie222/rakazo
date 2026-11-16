@@ -1,7 +1,7 @@
-import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
+import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
 
 const ctx = {
   operationId: "op",
@@ -32,6 +32,7 @@ describe("createSandboxProvider", () => {
     expect((await createSandboxProvider("createos", {})).describe().id).toBe("none");
     expect((await createSandboxProvider("boat", {})).describe().id).toBe("none");
     expect((await createSandboxProvider("boxd", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("instabox", {})).describe().id).toBe("none");
     await expect(
       (await createSandboxProvider("e2b", {})).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
@@ -51,6 +52,10 @@ describe("createSandboxProvider", () => {
     expect(
       (await createSandboxProvider("boxd", { boxdApiKey: "test-boxd-key" })).describe().id,
     ).toBe("boxd");
+    expect(
+      (await createSandboxProvider("instabox", { instaboxApiKey: "test-instabox-key" })).describe()
+        .id,
+    ).toBe("instabox");
   });
 
   it("refuses the desktop provider in a production server process", async () => {
@@ -144,13 +149,13 @@ describe("createSandboxProvider", () => {
 
   it("throws on unknown provider", async () => {
     await expect(createSandboxProvider("bogus", {})).rejects.toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | incus | wuying | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | wuying | desktop | fake.',
     );
   });
 
   it("accepts only sandbox kinds, including none", async () => {
-    expect(SandboxKind.options).toContain("none");
-    for (const kind of SandboxKind.options) {
+    expect(knownSandboxKinds).toContain("none");
+    for (const kind of knownSandboxKinds) {
       await expect(createSandboxProvider(kind, {})).resolves.toBeDefined();
     }
     await expect(createSandboxProvider("not-a-provider", {})).rejects.toThrow(

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -149,19 +151,17 @@ describe("SpaceSettingsPanel", () => {
   });
 
   it("holds the dialog busy while a rename is saving", async () => {
-    let finish: () => void = () => undefined;
-    const onRename = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let finish: Deferred | undefined;
+    const onRename = vi.fn(() => {
+      finish = deferred();
+      return finish.promise;
+    });
     const onBusyChange = vi.fn();
     await render({ onRename, onBusyChange });
     await type("Help desk");
     await commit();
     expect(onBusyChange).toHaveBeenLastCalledWith(true);
-    await act(async () => finish());
+    await act(async () => finish?.resolve());
     expect(onBusyChange).toHaveBeenLastCalledWith(false);
   });
 

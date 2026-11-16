@@ -1,7 +1,9 @@
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
+import { flush } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hasSavedUnsentSends } from "./outbox-disk";
 import { loadVerifiedIntegrationsScope, snapshotSessionToken } from "./session";
 import type { SendAttempt } from "./thread-feedback";
 import {
@@ -31,7 +33,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./artifact-cache-session", () => ({ artifactCacheSession: async () => "ns-a" }));
 vi.mock("./integrations-cache", () => ({}));
-vi.mock("./outbox-disk", () => ({ outboxDisk: {} }));
+vi.mock("./outbox-disk", () => ({ outboxDisk: {}, hasSavedUnsentSends: vi.fn(() => false) }));
 vi.mock("./session", () => ({
   currentReadySessionGeneration: () => session.ready,
   currentSessionGeneration: () => session.generation,
@@ -103,7 +105,7 @@ describe("startUnsentSends", () => {
     vi.mocked(hasUnsentSends).mockReturnValue(false);
     session.generation = session.ready = 3;
     session.listener();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(sendWaitingMessages).toHaveBeenCalledTimes(2);
     stop();
   });
@@ -144,7 +146,7 @@ describe("unsentSendsRestored", () => {
     const restored = unsentSendsRestored().then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(settled).toBe(false);
     expect(restoreUnsentSends).not.toHaveBeenCalled();
 
@@ -197,7 +199,7 @@ describe("unsentSendsRestored", () => {
       }),
     );
     const restored = unsentSendsRestored();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     // A reachability retry restores the queue while the session is still being read.
     await prepareUnsentSends();
     readSession({ ok: true, value: "fake-token" });
@@ -210,6 +212,26 @@ describe("unsentSendsRestored", () => {
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
     await expect(prepareUnsentSends()).rejects.toThrow("signed out");
     await expect(unsentSendsRestored()).resolves.toBe(true);
+  });
+
+  it("reports an unknown queue when signed out with messages a rejected session left on disk", async () => {
+    session.generation = 29;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    vi.mocked(hasSavedUnsentSends).mockReturnValueOnce(true);
+    await expect(prepareUnsentSends()).rejects.toThrow("signed out");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
+  });
+
+  it("reports an unknown queue when signed out and the saved queue cannot be read", async () => {
+    session.generation = 30;
+    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
+    vi.mocked(hasSavedUnsentSends).mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    await expect(prepareUnsentSends()).rejects.toThrow("signed out");
+    await expect(unsentSendsRestored()).resolves.toBe(false);
   });
 
   it("follows a restore that replaces the awaited one", async () => {
@@ -230,7 +252,7 @@ describe("unsentSendsRestored", () => {
     void prepareUnsentSends();
     scopeA.resolve();
     await first;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     expect(settled).toBe(false);
 
     scopeB.resolve();

@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KeenableWebProvider } from "./keenable-web.js";
 import { keenableMcpFixture } from "./keenable-web.test-support.js";
@@ -279,14 +280,11 @@ describe("optional Keenable web provider", () => {
   );
 
   it.each(["cancel", "timeout"])("interrupts an active MCP call on %s", async (mode) => {
-    let started!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const opened = deferred();
     const peer = keenableMcpFixture({
       call: async (request) =>
         new Promise<Response>((_resolve, reject) => {
-          started();
+          opened.resolve();
           request.signal.addEventListener("abort", () => reject(request.signal.reason), {
             once: true,
           });
@@ -300,7 +298,7 @@ describe("optional Keenable web provider", () => {
     const result = provider
       .search({ query: "q", signal: controller.signal }, context)
       .catch((error: unknown) => error);
-    await opened;
+    await opened.promise;
     if (mode === "cancel") controller.abort(new Error("Stopped"));
     expect(await result).toBeInstanceOf(Error);
     expect(peer.requests.findLast((request) => request.method === "POST")!.signal.aborted).toBe(

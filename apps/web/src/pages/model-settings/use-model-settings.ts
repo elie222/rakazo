@@ -3,9 +3,8 @@ import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
   connectionDisplayName,
-  MAX_MODEL_CONTEXT_WINDOW,
-  MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
+  modelRoutingDirty,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -14,7 +13,6 @@ import {
   compatibleModelRows,
   connectionFormFields,
   connectionFormModelId,
-  connectionMaxTokensField,
   modelConnectRequest,
   popularModelProvidersFirst,
   savedCompatibleModelIds,
@@ -90,22 +88,21 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     apiProtocol,
     applyFields,
     baseUrl,
-    contextWindow,
+    connectionErrorText,
     enabledModelIds,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
     isOpenAiCompatible,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     modelProbe,
     modelsForProvider,
     openConnection,
     probeModels,
     provider,
-    reasoning,
     resetOpenAiCompatibleProbe,
     runPreflight,
     selected,
@@ -116,7 +113,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setNotice,
     setProvider,
     setThinkingLevel,
-    supportsImages,
     thinkingLevel,
   } = form;
   const [codeCopied, copyOAuthCode] = useCopyText();
@@ -305,14 +301,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     probeModels,
   );
   const defaultModelOptions = [...new Set([...enabledModelIds, modelId])];
-  // Saved-connection settings edited without a new key (output limit, gateway ids).
+  // Saved-connection settings edited without a new key (gateway ids).
   const settingsDirty =
     !isOpenAiCompatible &&
     Boolean(credential) &&
-    (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (needsRouting &&
-        (accountId.trim() !== (credential?.accountId ?? "") ||
-          gatewayId.trim() !== (credential?.gatewayId ?? ""))));
+    needsRouting &&
+    modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
 
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(
@@ -367,8 +361,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     });
   }
 
-  // settingsOnly saves a connected catalog provider's limits and gateway ids
-  // without touching the key field; key replacement stays on its own button.
+  // settingsOnly saves a connected catalog provider's gateway ids without touching
+  // the key field; key replacement stays on its own button.
   async function connectKey({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
     if (!selected) return;
     // Closing the dialog mid-save must not drop the slot this connection is for.
@@ -381,14 +375,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         baseUrl,
         apiProtocol,
         headerRows,
-        reasoning,
         thinkingLevel,
-        maxTokens,
-        contextWindow,
-        supportsImages,
-        maxImagesPerPrompt,
         accountId,
         gatewayId,
+        projectId,
+        region,
       },
       selected,
       credential,
@@ -397,17 +388,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
     });
     if (request.status === "incomplete") return;
-    if (request.status === "invalid") {
-      setError(
-        request.field === "maxTokens"
-          ? t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`
-          : request.field === "maxImagesPerPrompt"
-            ? t`Enter a whole number from 1 to 1000 for the image limit.`
-            : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
-      );
-      return;
-    }
-    const { input, savingLimitOnly, activeModelId } = request;
+    const { input, savingWithoutKey, activeModelId } = request;
     setError(null);
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");
@@ -433,9 +414,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
           credentialId: saved?.id,
         });
       // A fresh connection speaks for itself through the Active model row.
-      if (isOpenAiCompatible || savingLimitOnly) setNotice(t`Saved.`);
+      if (isOpenAiCompatible || savingWithoutKey) setNotice(t`Saved.`);
     } catch (err) {
-      if (stillSelected()) setError(errorText(err, t`Could not connect this provider`));
+      if (stillSelected()) setError(connectionErrorText(err, t`Could not connect this provider`));
     } finally {
       setPending(null);
     }

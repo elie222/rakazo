@@ -45,6 +45,8 @@ type Session = {
   finish: () => void;
   /** Permissions are settled and the microphone is in use. */
   live: boolean;
+  /** The clip is recorded and its transcription is in flight. */
+  transcribing: boolean;
   /** The app is in the background while setup is still running. */
   hidden: boolean;
 };
@@ -80,6 +82,13 @@ export function useComposerDictation({
     return true;
   }
 
+  /** The microphone is closed. Blur and background must not drop the words still in flight. */
+  function markTranscribing(mine: Session) {
+    mine.live = false;
+    mine.transcribing = true;
+    setStatus("transcribing");
+  }
+
   function cancel() {
     const mine = session.current;
     if (!mine) return;
@@ -94,7 +103,12 @@ export function useComposerDictation({
   // A hidden composer must not keep listening: leaving the chat or the app drops the session
   // and its audio.
   useEffect(() => {
-    const unsubscribe = navigation.addListener("blur", cancel);
+    const unsubscribe = navigation.addListener("blur", () => {
+      // Leaving the screen while the mic is open still cancels. A clip already being
+      // transcribed is kept; unmount is what drops it if the composer goes away.
+      if (session.current?.transcribing) return;
+      cancel();
+    });
     // Android reports a permission prompt as background, so during setup a background move only
     // marks the session; it is dropped unless the app is back in front before the mic opens.
     const appState = AppState.addEventListener("change", (state) => {
@@ -102,6 +116,7 @@ export function useComposerDictation({
       if (!mine) return;
       if (state === "active") mine.hidden = false;
       else if (state === "background") {
+        if (mine.transcribing) return;
         if (mine.live) cancel();
         else mine.hidden = true;
       }
@@ -160,7 +175,7 @@ export function useComposerDictation({
       const stopped = new AbortController();
       mine.finish = () => {
         stopped.abort();
-        setStatus("transcribing");
+        markTranscribing(mine);
       };
       const clip = await recordClip(mine.cancel.signal, stopped.signal);
       if (session.current !== mine) return;
@@ -169,7 +184,7 @@ export function useComposerDictation({
         end(mine);
         return;
       }
-      setStatus("transcribing");
+      markTranscribing(mine);
       // The recording is already stopped; a second tap must not throw it away. A stalled
       // request ends at the deadline below.
       mine.finish = () => {};
@@ -231,6 +246,7 @@ export function useComposerDictation({
       cancel: new AbortController(),
       finish: () => cancel(),
       live: false,
+      transcribing: false,
       hidden: false,
     };
     session.current = mine;

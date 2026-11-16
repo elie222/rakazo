@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as LastBot from "./last-bot";
@@ -117,26 +118,22 @@ describe("last bot ownership", () => {
     await lastBot.saveLastBotId("researcher", "space-a");
     const savedWhileWaiting = account.ownerCalls;
 
-    let release!: () => void;
-    account.ownerGate = new Promise<void>((done) => {
-      release = done;
-    });
+    const release = deferred();
+    account.ownerGate = release.promise;
     const switched = lastBot.loadLastBotId();
     await vi.waitFor(() => expect(account.ownerCalls).toBe(savedWhileWaiting + 1));
     account.selectedSpace = "space-b";
-    release();
+    release.resolve();
     await expect(switched).resolves.toBe("");
 
     account.selectedSpace = "space-a";
-    let resolveReturn!: () => void;
-    account.ownerGate = new Promise<void>((done) => {
-      resolveReturn = done;
-    });
+    const resolveReturn = deferred();
+    account.ownerGate = resolveReturn.promise;
     const returned = lastBot.loadLastBotId();
     await vi.waitFor(() => expect(account.ownerCalls).toBe(savedWhileWaiting + 2));
     account.selectedSpace = "space-b";
     account.selectedSpace = "space-a";
-    resolveReturn();
+    resolveReturn.resolve();
     await expect(returned).resolves.toBe("researcher");
   });
 

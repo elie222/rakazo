@@ -1,3 +1,5 @@
+import { jitterMs } from "@rakazo/core";
+
 export interface SessionGateInput {
   data: { user?: unknown } | null | undefined;
   isPending: boolean;
@@ -52,8 +54,8 @@ export function showSessionUnavailable(gate: SessionGate, holding: boolean): boo
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 15_000;
 
-/** Exponential backoff for retrying an unreachable session lookup. */
-export function sessionRetryDelayMs(attempt: number): number {
+/** Jittered exponential backoff for retrying an unreachable session lookup. */
+export function sessionRetryDelayMs(attempt: number, random: () => number = Math.random): number {
   const exponent = Math.max(0, attempt);
-  return Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** exponent);
+  return jitterMs(Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** exponent), random);
 }

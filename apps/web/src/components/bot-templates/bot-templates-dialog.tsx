@@ -29,11 +29,9 @@ import {
   Telescope,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { cronLabels } from "../../lib/cron";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorDetails } from "../../lib/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { PluginLogo, ROW_HOVER } from "../integrations/plugin-marketplace";
@@ -185,17 +183,35 @@ function TemplateDetail({
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const { name, summary, sample } = useBotTemplateCopy()(template);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<ErrorDetails | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  // Set when the preview closes, so a request that finishes later doesn't open its bot.
-  const left = useRef(false);
-  useEffect(() => {
-    left.current = false;
-    return () => {
-      left.current = true;
-    };
-  }, []);
+  const open = useSave({
+    save: async (input: { create: true } | { botId: string }, rpc) =>
+      "botId" in input
+        ? rpc.bots.get({ botId: input.botId })
+        : (
+            await rpc.bots.createFromTemplate({
+              templateId: template.id,
+              version: template.version,
+              name,
+            })
+          ).bot,
+    stale: (input) => ("botId" in input ? [] : [queries.bots.list.key()]),
+    closesScreen: true,
+    onSaved: (bot) => onOpenBot(bot),
+    onFailed: (error, input) => {
+      if (!("botId" in input) && isBotTemplateChanged(error)) onChanged();
+    },
+  });
+  const pending = open.pending;
+  const creating = !(open.input && "botId" in open.input);
+  const error = open.error
+    ? errorDetails(
+        creating && isBotTemplateChanged(open.error)
+          ? t`This template was just updated. Check it again.`
+          : open.error,
+        creating ? t`Could not create the bot` : t`Could not open the bot`,
+      )
+    : null;
   const catalog = useQuery({
     ...queries.connections.catalog.queryOptions({ input: {} }),
     enabled: template.apps.length > 0,
@@ -203,42 +219,6 @@ function TemplateDetail({
   const apps = botTemplateApps(template, catalog.data ?? []);
   const schedule = (crons: string[]) =>
     crons.map((cron) => formatCron(cron, cronLabels(i18n.locale))).join(", ");
-
-  async function create() {
-    setPending(true);
-    setError(null);
-    try {
-      const { bot } = await rpc.bots.createFromTemplate({
-        templateId: template.id,
-        version: template.version,
-        name,
-      });
-      if (!left.current) onOpenBot(bot);
-    } catch (err) {
-      if (left.current) return;
-      const changed = isBotTemplateChanged(err);
-      setError(
-        errorDetails(
-          changed ? t`This template was just updated. Check it again.` : err,
-          t`Could not create the bot`,
-        ),
-      );
-      if (changed) onChanged();
-      setPending(false);
-    }
-  }
-
-  async function openExisting(botId: string) {
-    setPending(true);
-    try {
-      const bot = await rpc.bots.get({ botId });
-      if (!left.current) onOpenBot(bot);
-    } catch (err) {
-      if (left.current) return;
-      setError(errorDetails(err, t`Could not open the bot`));
-      setPending(false);
-    }
-  }
 
   const rows: { key: string; icon: LucideIcon; title: string; detail: string; body?: string }[] = [
     {
@@ -288,12 +268,17 @@ function TemplateDetail({
             <Button
               variant="secondary"
               disabled={pending}
-              onClick={() => void openExisting(template.botId!)}
+              onClick={() => open.run({ botId: template.botId! })}
             >
               <Trans>Open</Trans>
             </Button>
           ) : (
-            <Button size="lg" className="px-5" disabled={pending} onClick={() => void create()}>
+            <Button
+              size="lg"
+              className="px-5"
+              disabled={pending}
+              onClick={() => open.run({ create: true })}
+            >
               {pending ? <Trans>Creating…</Trans> : <Trans>Create bot</Trans>}
             </Button>
           )}

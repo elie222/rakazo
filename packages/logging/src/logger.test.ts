@@ -3,9 +3,46 @@ import { createConsoleSink } from "./console-sink.js";
 import { createLogger } from "./logger.js";
 import { sanitizedError } from "./monitoring.js";
 import { serializeError } from "./serialize-error.js";
+import { logSinkHealth } from "./sink-guard.js";
 import { createTestSink } from "./test-sink.js";
 
 describe("logger", () => {
+  it("drops only the line whose binding throws while it is read, without throwing", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broken = Object.defineProperty({}, "detail", {
+      enumerable: true,
+      get() {
+        throw new Error("unreadable");
+      },
+    });
+    expect(() => logger.warn("run.setup_failed", { broken })).not.toThrow();
+    logger.warn("run.failed");
+    expect(sink.events.map((event) => event.message)).toEqual(["run.failed"]);
+    error.mockRestore();
+  });
+
+  it("counts a line lost while it is built as dropped, without marking the sinks unhealthy", () => {
+    const logger = createLogger({ service: "rakazo-worker", sinks: [createTestSink()] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const before = logSinkHealth();
+    const broken = Object.defineProperty({}, "detail", {
+      enumerable: true,
+      get() {
+        throw new Error("unreadable");
+      },
+    });
+    logger.warn("run.setup_failed", { broken });
+
+    expect(logSinkHealth()).toMatchObject({
+      failures: before.failures,
+      lastFailureAt: before.lastFailureAt,
+      droppedLines: before.droppedLines + 1,
+    });
+    error.mockRestore();
+  });
+
   it("filters levels including off", () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", level: "warn", sinks: [sink] });
@@ -164,6 +201,11 @@ describe("error serialization", () => {
     expect(JSON.stringify(serialized)).not.toContain("supersecret");
     expect(JSON.stringify(serialized)).not.toContain("person@example.com");
     expect(serialized.message).toContain("[Redacted]");
+  });
+
+  it("redacts secrets in error names", () => {
+    const error = Object.assign(new Error("failed"), { name: "Bearer supersecret" });
+    expect(serializeError(error).name).not.toContain("supersecret");
   });
 
   it("redacts user profile paths in error messages and stacks", () => {

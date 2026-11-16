@@ -7,6 +7,7 @@ import {
   reduceThreadSnapshot,
   resolveComposerSendPlan,
 } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { act, createElement, useMemo } from "react";
@@ -410,16 +411,13 @@ describe("scoped mobile outbox", () => {
     disk.save.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     });
-    let releaseUpload!: (value: { id: string }) => void;
-    const held = new Promise<{ id: string }>((resolve) => {
-      releaseUpload = resolve;
-    });
+    const held = deferred<{ id: string }>();
     let heldOnce = false;
     request.mockImplementation(async (proc: string) => {
       if (proc === "artifacts/create") {
         if (!heldOnce) {
           heldOnce = true;
-          return held;
+          return held.promise;
         }
         return { id: "artifact-b" };
       }
@@ -452,7 +450,7 @@ describe("scoped mobile outbox", () => {
     // attachments the running delivery is uploading.
     feedback.sendAttempt(payload("Second"));
     await act(async () => {
-      releaseUpload({ id: "artifact-a" });
+      held.resolve({ id: "artifact-a" });
       await sending;
     });
     const uploads = request.mock.calls
@@ -466,16 +464,13 @@ describe("scoped mobile outbox", () => {
     // The sending attempt's own admission and the saves while it queues and turns pending
     // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
     const written = diskFolders(() => ++admissions <= 3);
-    let releaseUpload!: (value: { id: string }) => void;
-    const held = new Promise<{ id: string }>((resolve) => {
-      releaseUpload = resolve;
-    });
+    const held = deferred<{ id: string }>();
     let heldOnce = false;
     request.mockImplementation(async (proc: string) => {
       if (proc === "artifacts/create") {
         if (!heldOnce) {
           heldOnce = true;
-          return held;
+          return held.promise;
         }
         return { id: "artifact-b" };
       }
@@ -493,7 +488,7 @@ describe("scoped mobile outbox", () => {
     expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
     expect(disk.save).toHaveBeenCalledWith([attempt, second]);
     await act(async () => {
-      releaseUpload({ id: "artifact-a" });
+      held.resolve({ id: "artifact-a" });
       await sending;
     });
     expect(attempt.acceptedSeq).toBe(42);

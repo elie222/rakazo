@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 import { useBotsSidebarWidth } from "./shell/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
@@ -53,13 +54,9 @@ export function ResizableSidePanel({
   }, [preferredWidth]);
 
   useEffect(() => {
-    function syncMax() {
-      setViewportWidth(window.innerWidth);
-    }
-    syncMax();
-    window.addEventListener("resize", syncMax);
-    return () => window.removeEventListener("resize", syncMax);
+    setViewportWidth(window.innerWidth);
   }, []);
+  useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
 
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
     drag.current = null;

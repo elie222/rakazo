@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   CommandRequest,
@@ -14,7 +15,9 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import type { ComputerSize } from "@rakazo/contracts";
+import { boundedSandboxCommandTimeoutMs, retry } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import {
@@ -25,15 +28,22 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { installPageBrowserCommand, privatePageInput } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
+import {
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+  sandboxNotFoundError,
+} from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
+/** The page tools are optional, so a stalled download gives up as Boat's and Daytona's do. */
+const PAGE_BROWSER_INSTALL_MS = 120_000;
 const REMOTE_WORKSPACE = "/home/user/rakazo-home";
 const REMOTE_BROWSER_PROFILES = `${REMOTE_WORKSPACE}/.browser-profiles`;
 
-/** Common boundary used by the E2B and Novita desktop SDKs. */
+/** Common boundary used by the E2B, Novita and instabox desktop SDKs. */
 export interface CommandResult {
   exitCode: number;
   stdout: string;
@@ -79,10 +89,17 @@ export interface RemoteDesktop {
 }
 
 export interface RemoteDesktopSdk {
+  /** `size` is the plan's size for a new computer; an SDK without sizes ignores it. */
   create(
     template: string,
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size?: ComputerSize,
   ): Promise<RemoteDesktop>;
+  /**
+   * Moves a stopped or paused computer to `size` before it starts; a running one keeps its size.
+   * Throws `SandboxSizeUnavailableError` when the computer cannot start at that size.
+   */
+  resize?(id: string, size: ComputerSize, options: { apiKey: string }): Promise<void>;
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<RemoteDesktop>;
   connectRunning?(
     id: string,
@@ -153,24 +170,36 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       const result = await this.runSetupCommand(computer, command, context.signal);
       return { code: result.exitCode, stdout: result.stdout, stderr: result.stderr };
     },
+    runWithInput: (computer, command, input, timeoutMs, context) =>
+      this.runWithPrivateInput(computer, command, input, timeoutMs, context),
     screenUrl: async (computer, port) =>
       `https://${(await this.box(computer)).getHost(port)}/vnc.html`,
   });
   private readonly boxes = new Map<string, RemoteDesktop>();
   private readonly connections = new Map<string, Promise<RemoteDesktop>>();
   private readonly lastTouchedAt = new Map<string, number>();
+  readonly pageBrowser?: SandboxProvider["pageBrowser"];
 
   constructor(
     private readonly config: {
-      id: "e2b" | "novita";
+      id: ComputerRef["kind"];
+      /** Header carrying the sandbox's traffic token, where the provider's gateway requires one. */
+      trafficAccessHeader?: string;
       label: string;
       apiKey: string;
       sdk: RemoteDesktopSdk;
       template: string;
       fallbackTemplate?: string;
       isTimeoutError: (error: unknown) => boolean;
+      /** Installs and serves the page tools; set only where they were verified on its computers. */
+      pageBrowser?: boolean;
     },
-  ) {}
+  ) {
+    // Bots are offered page tools only where these computers install them.
+    if (config.pageBrowser)
+      this.pageBrowser = (computer, request, context) =>
+        this.desktops.pageBrowser(computer, request, context);
+  }
 
   describe() {
     return {
@@ -275,11 +304,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      size?: ComputerSize;
     },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === this.config.id) {
       try {
+        if (request.size && this.config.sdk.resize) {
+          await this.config.sdk.resize(request.providerRef, request.size, {
+            apiKey: this.config.apiKey,
+          });
+        }
         const desktop = await this.box(
           {
             id: request.providerRef,
@@ -304,6 +339,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     }
     const desktop = await this.createDesktop(
       remoteDesktopCreateOptions(request.botId, this.config.apiKey),
+      request.size,
     );
     this.boxes.set(desktop.sandboxId, desktop);
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
@@ -335,6 +371,134 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     const result = await this.runSetupCommand(computer, PREPARE_LINUX_DESKTOP, context.signal);
     if (result.exitCode !== 0)
       throw new Error(result.stderr || "could not prepare computer desktop tools");
+    if (this.config.pageBrowser) await this.installPageBrowser(computer, context);
+  }
+
+  /** Without the page tools, bots keep the desktop tools, which still work. */
+  private async installPageBrowser(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    // The installer carries the helper's files, more than one command may hold, so it runs from a file.
+    const script = `/tmp/rakazo-page-browser-${randomUUID()}.sh`;
+    let installed = false;
+    let unsafeStop = false;
+    let stage = "transfer";
+    let exitCode: number | undefined;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), PAGE_BROWSER_INSTALL_MS);
+    const signal = AbortSignal.any([context.signal, deadline.signal]);
+    try {
+      await this.use(computer, (desktop) =>
+        desktop.files.write(
+          [{ path: script, data: toArrayBuffer(Buffer.from(installPageBrowserCommand())) }],
+          { signal },
+        ),
+      );
+      stage = "install";
+      signal.throwIfAborted();
+      const result = await this.runSetupCommand(
+        computer,
+        `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
+        signal,
+        PAGE_BROWSER_INSTALL_MS,
+      );
+      exitCode = result.exitCode;
+      installed = exitCode === 0;
+    } catch (error) {
+      unsafeStop = isSandboxUnsafeStopError(error);
+      if (unsafeStop) throw error;
+      context.signal.throwIfAborted();
+      // A deleted computer is not ready.
+      if (isSandboxGoneError(error)) throw error;
+    } finally {
+      clearTimeout(timer);
+      if (!unsafeStop)
+        await this.runSetupCommand(
+          computer,
+          `rm -f -- ${shellQuote(script)}`,
+          undefined,
+          10_000,
+        ).catch((error: unknown) => {
+          if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+        });
+    }
+    context.signal.throwIfAborted();
+    if (!installed)
+      getLogger().warn("sandbox.page_browser", {
+        provider: this.config.id,
+        outcome: "install_failed",
+        stage,
+        exitCode,
+        timedOut: deadline.signal.aborted,
+      });
+  }
+
+  /** Hands a page request to a command on its stdin, through a private file. */
+  private async runWithPrivateInput(
+    computer: ComputerRef,
+    command: string,
+    input: string,
+    timeoutMs: number,
+    context: AdapterContext,
+  ): Promise<{ code: number; stdout: string }> {
+    context.signal.throwIfAborted();
+    let unsafeStop = false;
+    const page = privatePageInput();
+    const created = await this.run(computer, page.create, { timeoutMs: 10_000 });
+    if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
+    try {
+      context.signal.throwIfAborted();
+      try {
+        await this.use(computer, (desktop) =>
+          desktop.files.write([{ path: page.file, data: toArrayBuffer(Buffer.from(input)) }], {
+            signal: context.signal,
+          }),
+        );
+      } catch (error) {
+        unsafeStop = isSandboxUnsafeStopError(error);
+        if (isSandboxGoneError(error) || unsafeStop) throw error;
+        throw new Error("Could not transfer browser input");
+      }
+      context.signal.throwIfAborted();
+      // Not cancelled midway: an action already sent finishes, then the abort is reported.
+      let result: CommandResult;
+      try {
+        result = await this.run(computer, page.run(command), { timeoutMs });
+      } catch (error) {
+        unsafeStop = isSandboxUnsafeStopError(error);
+        if (isSandboxGoneError(error) || unsafeStop) throw error;
+        context.signal.throwIfAborted();
+        // The bot gets the page tools' own failure, never the provider's error text.
+        throw new Error("Page browser unavailable or interrupted");
+      }
+      context.signal.throwIfAborted();
+      return { code: result.exitCode, stdout: result.stdout };
+    } finally {
+      let cleaned = false;
+      if (!unsafeStop) {
+        await retry(
+          async () => {
+            const result = await this.run(computer, page.cleanup, { timeoutMs: 10_000 });
+            if (result.exitCode !== 0) throw new Error("Browser input cleanup failed");
+          },
+          {
+            attempts: 2,
+            delayMs: 0,
+            retryable: (error) => !isSandboxGoneError(error) && !isSandboxUnsafeStopError(error),
+          },
+        ).then(
+          () => {
+            cleaned = true;
+          },
+          (error: unknown) => {
+            if (isSandboxGoneError(error) || isSandboxUnsafeStopError(error)) throw error;
+          },
+        );
+      }
+      if (!cleaned)
+        getLogger().warn("sandbox.page_browser", {
+          provider: this.config.id,
+          outcome: "input_cleanup_failed",
+        });
+    }
   }
 
   async *execute(
@@ -370,15 +534,16 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       await this.desktops.connectTerminal(computer, request, context),
     );
   }
-  /** Restricted E2B sandboxes require this header; a missing token stays off the request. */
+  /** A missing token stays off the request. */
   private withTrafficAccess<T extends { url: string | null }>(
     computer: ComputerRef,
     session: T,
   ): T & { headers?: Record<string, string> } {
-    if (this.config.id !== "e2b") return session;
+    const header = this.config.trafficAccessHeader;
+    if (!header) return session;
     const token = this.boxes.get(sandboxId(computer))?.trafficAccessToken;
     if (!token) return session;
-    return { ...session, headers: { "e2b-traffic-access-token": token } };
+    return { ...session, headers: { [header]: token } };
   }
   async setScreenControl(
     computer: ComputerRef,
@@ -436,13 +601,13 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       if (options?.maxBytes !== undefined) {
         const info = await desktop.files.getInfo(target, { signal: context.signal });
         if (info.size > options.maxBytes) {
-          throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(options.maxBytes);
         }
       }
       const content = await desktop.files.read(target, { format: "bytes", signal: context.signal });
       // The file can grow between the size check and the read.
       if (options?.maxBytes !== undefined && content.byteLength > options.maxBytes) {
-        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(options.maxBytes);
       }
       return content;
     });
@@ -525,9 +690,14 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   /** Prefer the right-sized template; an account that has not built it keeps the stock one. */
   private async createDesktop(
     options: ReturnType<typeof remoteDesktopCreateOptions>,
+    size: ComputerSize | undefined,
   ): Promise<RemoteDesktop> {
+    const create = (template: string) =>
+      size
+        ? this.config.sdk.create(template, options, size)
+        : this.config.sdk.create(template, options);
     try {
-      return await this.config.sdk.create(this.config.template, options);
+      return await create(this.config.template);
     } catch (error) {
       if (!this.config.fallbackTemplate || !isTemplateMissingError(error)) throw error;
       getLogger().warn(
@@ -536,7 +706,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           template: this.config.template,
         },
       );
-      return this.config.sdk.create(this.config.fallbackTemplate, options);
+      return create(this.config.fallbackTemplate);
     }
   }
 
@@ -557,11 +727,12 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     computer: ComputerRef,
     command: string,
     signal?: AbortSignal,
+    timeoutMs = boundedSandboxCommandTimeoutMs(undefined),
   ): Promise<CommandResult> {
     // The SDK's outer login shell can fail its logout hook under `set -e`, even after `exit 0`.
     return this.run(computer, `bash -c ${shellQuote(command)}`, {
       ...(signal ? { signal } : {}),
-      timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
+      timeoutMs,
     });
   }
 

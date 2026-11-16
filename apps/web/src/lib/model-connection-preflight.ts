@@ -1,5 +1,6 @@
 import { plural, t } from "@lingui/core/macro";
 import type { ModelCredential } from "@rakazo/contracts";
+import { sanitizeModelConnectionError } from "@rakazo/core";
 
 type ModelPreflightOutcome =
   | "timeout"
@@ -19,35 +20,31 @@ export type ModelPreflightFailure = {
 
 type StoredModelAuthKind = NonNullable<ModelCredential["authKind"]>;
 
-const SECRET_PATTERNS: RegExp[] = [
-  /\bsk-[a-zA-Z0-9_-]{8,}\b/g,
-  /\bBearer\s+[a-zA-Z0-9._-]+\b/gi,
-  /\bapi[_-]?key[=:]\s*\S+/gi,
-];
+type KnownSecrets = ReadonlyArray<string | null | undefined>;
 
-/** Strip patterns that look like credentials from user-visible errors. */
-export function sanitizeModelConnectionError(raw: string): string {
-  let text = raw.trim();
-  for (const pattern of SECRET_PATTERNS) {
-    text = text.replace(pattern, "•••");
-  }
-  return text;
+function messageFromError(error: unknown, secrets?: KnownSecrets): string {
+  return sanitizeModelConnectionError(
+    error instanceof Error ? error.message : String(error),
+    secrets,
+  );
 }
 
-function messageFromError(error: unknown): string {
-  if (error instanceof Error) return sanitizeModelConnectionError(error.message);
-  return sanitizeModelConnectionError(String(error));
-}
-
+/** `secrets` are the credentials the connection was tested with; the message never shows them. */
 export function classifyModelConnectionFailure(
   error: unknown,
-  context: { modelId?: string; discoveredModels?: string[]; manualEntry?: boolean } = {},
+  context: {
+    modelId?: string;
+    discoveredModels?: string[];
+    manualEntry?: boolean;
+    secrets?: KnownSecrets;
+  } = {},
 ): ModelPreflightFailure {
-  const message = messageFromError(error);
-  const lower = message.toLowerCase();
+  const message = messageFromError(error, context.secrets);
+  // Read from what the provider said: hiding a credential can take the word that names the failure.
+  const lower = (error instanceof Error ? error.message : String(error)).toLowerCase();
 
   if (context.modelId && context.discoveredModels && context.discoveredModels.length > 0) {
-    const modelId = sanitizeModelConnectionError(context.modelId.trim());
+    const modelId = sanitizeModelConnectionError(context.modelId.trim(), context.secrets);
     if (modelId && !context.discoveredModels.includes(context.modelId.trim())) {
       return {
         outcome: "unavailable_model",
@@ -68,7 +65,7 @@ export function classifyModelConnectionFailure(
     };
   }
 
-  if (lower.includes("429") || lower.includes("rate limit") || lower.includes("rate-limit")) {
+  if (/\b429\b/.test(lower) || lower.includes("rate limit") || lower.includes("rate-limit")) {
     return {
       outcome: "rate_limit",
       message: message || t`The provider is rate-limiting requests.`,
@@ -77,8 +74,7 @@ export function classifyModelConnectionFailure(
   }
 
   if (
-    lower.includes("401") ||
-    lower.includes("403") ||
+    /\b(401|403)\b/.test(lower) ||
     lower.includes("unauthorized") ||
     lower.includes("invalid api key") ||
     lower.includes("authentication")
@@ -292,7 +288,10 @@ export async function runModelConnectionPreflight(
   } catch (error) {
     return {
       ok: false,
-      failure: classifyModelConnectionFailure(error, { modelId: trimmedModel }),
+      failure: classifyModelConnectionFailure(error, {
+        modelId: trimmedModel,
+        secrets: [trimmedKey],
+      }),
     };
   }
 }

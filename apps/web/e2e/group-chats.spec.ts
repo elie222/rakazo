@@ -201,12 +201,17 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     });
   }
   await expect(cityAsk).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Edit first" }).click();
-  await page.getByRole("textbox", { name: "Answer" }).fill("Paris");
-  await page.getByRole("button", { name: "Send answer" }).click();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole("button", { name: "Edit first" })).toHaveCount(0);
+  await composer.fill("Paris");
+  await composer.press("Enter");
+  const cityAnswer = page.getByTestId("message-user-bubble").filter({ hasText: /^Paris$/ });
+  await expect(cityAnswer).toBeVisible({ timeout: 30_000 });
+  const answeredQuestion = page
+    .getByTestId("question-card")
+    .filter({ hasText: "Which city should I use?" });
+  await expect(answeredQuestion).toHaveClass(/opacity-50/);
+  await expect(answeredQuestion).not.toContainText("Paris");
+  await captureScreenshot(page, testInfo, "answered-question-composer-reply");
 
   const firstMessage = transcript.locator("[data-message-id]").first();
   await firstMessage.hover();
@@ -245,7 +250,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
   await page.unroute("**/rpc/threads/get");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
+  await expect(cityAnswer).toBeVisible();
 
   await composer.fill(
     "@Researcher write path notes/group-preview.md and attach it to the thread says # Group artifact",
@@ -290,4 +295,47 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.goto(`/app/g/${reviewGroup.id}`);
   await page.waitForURL(/\/app\/(?!g\/)[^/]+$/);
   await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
+});
+
+test("subagents keep group approvals answerable across reload while conversation continues", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `group-subagent-${Date.now()}@rakazo.test`, "password12", "Group Delegation");
+  await completeOnboarding(page);
+  const researcherId = await createBot(page, "Researcher");
+  const writerId = await createBot(page, "Writer");
+  const group = await rpc<{ id: string }>(page, "groups/create", {
+    name: "Delegation team",
+    botIds: [researcherId, writerId],
+  });
+  await rpc(page, "autoReview/set", { mode: "ask" });
+  await rpc(page, "approvalRules/set", {
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "web_fetch",
+  });
+  await page.goto(`/app/g/${group.id}`);
+  const composer = page.getByRole("combobox", { name: "Message Delegation team" });
+  await composer.fill(
+    "@Researcher delegate to a helper: fetch https://group-approval.rakazo.test/notes",
+  );
+  await page.keyboard.press("Enter");
+  const allow = page.getByRole("button", { name: "Allow once", exact: true });
+  await expect(allow).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(allow).toBeVisible();
+  await expect(allow).toBeEnabled();
+  await composer.fill("@Researcher this is a safe test");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("message-bot-bubble").getByText("Running the taught skill", { exact: false }),
+  ).toBeVisible();
+  await expect(allow).toBeEnabled();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "group-subagent-approval-chat-free");
+  await allow.click();
+  await expect(page.getByTestId("subagent-card")).toContainText("Completed", { timeout: 30_000 });
+  await expect(allow).toBeHidden();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "group-subagent-completed");
 });

@@ -63,6 +63,7 @@ describePostgres("account deletion on bot computers (PostgreSQL)", () => {
         {
           ...(secrets ? { secrets } : {}),
           prisma,
+          memoryProviders: { resolve: async () => null },
           sandbox: sandbox as unknown as SandboxProvider,
           home,
           jobs: { cancel: vi.fn() } as unknown as JobPublisher,

@@ -1,5 +1,5 @@
 import { encodeTerminalInput, encodeTerminalResize } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeTerminalGateway } from "./fake-terminal.js";
 
 const gateways: FakeTerminalGateway[] = [];
@@ -26,13 +26,14 @@ async function connect(
     socket.addEventListener("open", resolve, { once: true });
     socket.addEventListener("error", reject, { once: true });
   });
-  const waitFor = async (pattern: RegExp) => {
-    for (let i = 0; i < 250; i += 1) {
-      if (pattern.test(output)) return output;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error(`fake terminal output did not match ${pattern}: ${JSON.stringify(output)}`);
-  };
+  const waitFor = (pattern: RegExp) =>
+    vi.waitFor(
+      () => {
+        if (pattern.test(output)) return output;
+        throw new Error(`fake terminal output did not match ${pattern}: ${JSON.stringify(output)}`);
+      },
+      { interval: 20, timeout: 5_000 },
+    );
   const closed = new Promise((resolve) =>
     socket.addEventListener("close", resolve, { once: true }),
   );

@@ -4,6 +4,7 @@ import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
 import type { SkillSource } from "@rakazo/core";
 import {
   buildSkillMd,
+  ClientError,
   findSkillByName,
   isSkillReadOnly,
   mergeBuiltinSkills,
@@ -106,19 +107,12 @@ export function resolveSkillContent(input: {
       message: "Provide content (SKILL.md) or name + description (+ optional body)",
     });
   }
-  let content: string;
-  try {
-    content = buildSkillMd({
-      name,
-      description,
-      body,
-      frontmatter: priorParsed && !("error" in priorParsed) ? priorParsed.frontmatter : undefined,
-    });
-  } catch (error) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "Invalid skill fields.",
-    });
-  }
+  const content = buildSkillMd({
+    name,
+    description,
+    body,
+    frontmatter: priorParsed && !("error" in priorParsed) ? priorParsed.frontmatter : undefined,
+  });
   const validated = parseSkillMd(content);
   if ("error" in validated) {
     throw new ORPCError("BAD_REQUEST", { message: validated.error });
@@ -217,7 +211,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         return mapAgentSkill(row);
       } catch (error) {
         if (isUniqueViolation(error)) {
-          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
+          throw new ClientError("CONFLICT", "A skill with that name already exists.");
         }
         throw error;
       }
@@ -270,7 +264,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       } catch (error) {
         if (error instanceof IsolationError) throw error;
         if (isUniqueViolation(error)) {
-          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
+          throw new ClientError("CONFLICT", "A skill with that name already exists.");
         }
         throw error;
       }
@@ -290,5 +284,3 @@ export function createAgentSkillsService(prisma: PrismaClient) {
     },
   };
 }
-
-export type AgentSkillsService = ReturnType<typeof createAgentSkillsService>;

@@ -48,9 +48,11 @@ import {
   LOGIN_FIELD_LIMIT,
   LoginFieldInput,
   StoredBotSecretName,
+  VAULT_ACTIVITY_LIMIT,
   VaultPutInput,
   VaultRevealed,
   VaultRevealInput,
+  VaultUse,
 } from "./bot-secrets.js";
 import {
   BotTemplateListingSchema,
@@ -62,6 +64,7 @@ import {
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
+  ComputerScreenSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
 } from "./computer.js";
@@ -115,6 +118,7 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  PlanLimitsSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
@@ -164,6 +168,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { LabFeatureSchema } from "./labs.js";
 import {
   BotMcpServerSchema,
   McpServerConfigInput,
@@ -183,6 +188,7 @@ import {
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSettingsSaveSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
@@ -200,6 +206,7 @@ import {
   SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
+import { MemoryProviderDescriptorSchema } from "./provider-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -212,6 +219,7 @@ import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
+import { VaultImportInput, VaultImportResult } from "./vault-import.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -288,6 +296,10 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
   routineIds: z.array(Id).min(1).max(64),
 });
 
+/** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
+export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
+
 const spaceName = z.string().trim().min(1).max(60);
 const organizationName = spaceName;
 /** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
@@ -339,6 +351,8 @@ export const appContract = {
           client: BillingClientSchema,
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
+          /** The own-key plan's tier; Standard when omitted. */
+          tier: ByokTierSchema.optional(),
         }),
       )
       /** `url` is the checkout to pay for the own-key plan before it has access. */
@@ -398,13 +412,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Replaces the account's Labs list. */
+            labs: z.array(LabFeatureSchema).optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.labs !== undefined,
             { message: "Nothing to update" },
           ),
       )
@@ -457,7 +474,9 @@ export const appContract = {
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
   },
-  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  bootstrap: oc
+    .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
+    .output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -588,6 +607,7 @@ export const appContract = {
     rename: oc
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
+    saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -640,7 +660,16 @@ export const appContract = {
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
-      .output(z.object({ ok: z.literal(true) })),
+      // Optional for clients talking to older servers; current servers return committed group IDs.
+      .output(
+        z.object({
+          ok: z.literal(true),
+          removedGroupIds: z.array(Id).optional(),
+          alreadyRemoved: z.boolean().optional(),
+        }),
+      ),
+    /** Groups this delete removes because fewer than two active bots would remain. */
+    removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
     emailAddresses: oc.output(BotEmailAddressesSchema),
     claimEmailAddress: oc
@@ -850,6 +879,10 @@ export const appContract = {
         z.object({
           botId: Id,
           reason: ComputerReleaseReasonSchema.optional(),
+          /** The run a needs-you card answers; the release applies only while it waits on the caller. */
+          runId: Id.optional(),
+          /** The lease this page took; a late release from an old page leaves newer control alone. */
+          leaseId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -886,7 +919,17 @@ export const appContract = {
     commands: oc
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
-    screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    screenUrl: oc.input(botId).output(ComputerScreenSchema),
+    /** A still of the screen as an image data URL, or null when the computer is not running. */
+    preview: oc
+      .input(
+        z.object({
+          botId: Id,
+          /** The run a needs-you card shows; no image once that run stops waiting. */
+          runId: Id.optional(),
+        }),
+      )
+      .output(z.object({ image: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
@@ -906,6 +949,8 @@ export const appContract = {
     remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
+    /** The providers a Space can connect, with the settings form each one asks for. */
+    providers: oc.output(z.array(MemoryProviderDescriptorSchema)),
     connectProvider: oc
       .input(
         z.object({
@@ -918,6 +963,15 @@ export const appContract = {
       .output(SpaceMemoryConfigSchema),
     setDefaultScope: oc
       .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
+      .output(SpaceMemoryConfigSchema),
+    /** Change a connected provider's settings; credentials left out keep the stored ones. */
+    updateProvider: oc
+      .input(
+        z.object({
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()).default({}),
+        }),
+      )
       .output(SpaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
@@ -1062,7 +1116,7 @@ export const appContract = {
       .output(z.object({ runId: Id })),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). */
+  /** Skills: reusable how-to recipes (not taught/demo skills). */
   agentSkills: {
     list: oc.output(z.array(AgentSkillCatalogEntrySchema)),
     get: oc
@@ -1241,7 +1295,8 @@ export const appContract = {
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
           provider: z.string(),
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -1258,7 +1313,8 @@ export const appContract = {
     begin: oc
       .input(
         z.object({
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
           provider: z.string(),
           displayName: z.string(),
         }),
@@ -1462,6 +1518,8 @@ export const appContract = {
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
     summary: oc.output(UsageSummarySchema),
+    /** Subscription sign-ins whose allowance could be read; others are left out. */
+    limits: oc.output(z.array(PlanLimitsSchema)),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
@@ -1472,11 +1530,16 @@ export const appContract = {
     accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
-    /** Run alerts for the signed-in user's chats in this space, live while connected. */
+    /**
+     * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
+     * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
+     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * may have; each is sent once when the stream opens.
+     */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "heartbeat"]),
+          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),
@@ -1522,9 +1585,17 @@ export const appContract = {
     /**
      * Keeps this phone's live status card of the user's bots at work up to date. `following` is
      * false when the server cannot update the card or no bot is at work, so the app ends it.
+     * Omit `token` to check server support before creating a card; this does not follow work.
      */
     followWorkActivity: oc
-      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .input(
+        z.object({
+          token: z
+            .string()
+            .regex(/^[a-fA-F0-9]{64,512}$/)
+            .optional(),
+        }),
+      )
       .output(z.object({ following: z.boolean() })),
     /**
      * Lets the server start this phone's live status card when the user's bots get to work from
@@ -1585,6 +1656,10 @@ export const appContract = {
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */
             baseUrl: z.string().max(2048).optional(),
+            /** Blank means the server at `baseUrl` transcribes; omitted keeps the saved one. */
+            sttBaseUrl: z.string().max(2048).optional(),
+            /** Sent only to the transcription server; blank keeps the saved one. */
+            sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
             /** Where the connection becomes the default voice. */
@@ -1659,6 +1734,10 @@ export const appContract = {
     put: oc.input(VaultPutInput).output(BotSecretMetadata),
     /** Needs a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED). */
     reveal: oc.input(VaultRevealInput).output(VaultRevealed),
+    import: oc.input(VaultImportInput).output(VaultImportResult),
+    activity: oc
+      .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
+      .output(z.array(VaultUse).max(VAULT_ACTIVITY_LIMIT)),
     remove: oc
       .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
       .output(z.object({ ok: z.literal(true) })),

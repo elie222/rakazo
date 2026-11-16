@@ -82,24 +82,14 @@ describe("ChatModelPicker", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-  it("keeps the native select for a short list", () => {
+  it("lists a short list in the popover without a search box", () => {
     render(choices(9), "");
-    expect(container.querySelector("select")?.options).toHaveLength(10);
-  });
-
-  it("marks a short list's selected model when it cannot read images", () => {
-    const list = choices(2).map((choice, index) =>
-      index === 1 ? { ...choice, images: false } : { ...choice, images: true },
-    );
-    render(list, "openrouter::vendor/model-1");
-    const select = container.querySelector("select")!;
-    const hint = () => document.getElementById(select.getAttribute("aria-describedby") ?? "");
-    expect(container.querySelector('[title="Can\'t read images"]')).not.toBeNull();
-    expect(hint()?.textContent).toBe("Can't read images");
-
-    render(list, "openrouter::vendor/model-2");
-    expect(container.querySelector('[title="Can\'t read images"]')).toBeNull();
-    expect(select.hasAttribute("aria-describedby")).toBe(false);
+    expect(container.querySelector("select")).toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
+    expect(trigger.textContent).toBe("ModelSpace default");
+    act(() => trigger.click());
+    expect(options()).toHaveLength(10);
+    expect(document.querySelector('input[aria-label="Search models"]')).toBeNull();
   });
 
   it("marks text-only rows and the selected model in a long list", () => {
@@ -123,7 +113,7 @@ describe("ChatModelPicker", () => {
     render(choices(11), "openrouter::vendor/model-2");
     expect(container.querySelector("select")).toBeNull();
     const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
-    expect(trigger.textContent).toBe("Model 2 (OpenRouter)");
+    expect(trigger.textContent).toBe("ModelModel 2 (OpenRouter)");
 
     act(() => trigger.click());
     expect(options()).toHaveLength(12);
@@ -170,13 +160,15 @@ describe("ChatModelPicker", () => {
       ],
       "",
     );
-    const select = container.querySelector("select")!;
-    expect(select.options[0]?.textContent).toBe("Space default");
+    act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
+    expect(options()[0]?.textContent).toBe("Space default");
     expect(
-      [...select.querySelectorAll("optgroup")].map((group) => [
-        group.label,
-        [...group.querySelectorAll("option")].map((option) => option.textContent),
-      ]),
+      [...document.querySelectorAll("[cmdk-group]")]
+        .map((group) => [
+          group.querySelector("[cmdk-group-heading]")?.textContent ?? "",
+          [...group.querySelectorAll('[role="option"]')].map((option) => option.textContent),
+        ])
+        .filter(([heading]) => heading),
     ).toEqual([
       ["OpenRouter", ["Model 1"]],
       ["Fixture Cloud", ["Small"]],
@@ -201,22 +193,21 @@ describe("ChatModelPicker", () => {
 
   it("keeps a short list's unavailable model selected and marks it", () => {
     render(withUnavailable(2), unavailable.key);
-    const select = container.querySelector("select")!;
-    expect(select.value).toBe(unavailable.key);
-    expect(select.options[1]?.textContent).toBe("retired");
+    const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
+    expect(trigger.textContent).toBe("ModelretiredUnavailable");
     expect(marks(container)).toHaveLength(1);
-    const hint = document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    const hint = document.getElementById(trigger.getAttribute("aria-describedby") ?? "");
     expect(hint?.textContent).toBe("Unavailable");
 
     render(withUnavailable(2), "");
     expect(marks(container)).toHaveLength(0);
-    expect(select.hasAttribute("aria-describedby")).toBe(false);
+    expect(trigger.hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("marks a long list's unavailable model on the trigger and its row", () => {
     render(withUnavailable(11), unavailable.key);
     const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
-    expect(trigger.textContent).toBe("retiredUnavailable");
+    expect(trigger.textContent).toBe("ModelretiredUnavailable");
     const hintId = trigger.getAttribute("aria-describedby");
     expect(document.getElementById(hintId ?? "")?.textContent).toBe("Unavailable");
 

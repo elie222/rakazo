@@ -2,10 +2,11 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../adapters/src/approval-ask.js";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
-import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
+import { builtinAgentTools } from "../../adapters/src/builtin.tool-definition.js";
 import { PiAgentRuntime } from "../../adapters/src/pi-runtime.js";
 import type { TurnCheckpoint } from "../../adapters/src/turn-checkpoint.js";
 import * as turnCheckpoints from "../../adapters/src/turn-checkpoint.js";
@@ -23,10 +24,7 @@ async function collect(events: AsyncIterable<AgentRuntimeEvent>) {
 describe("paused turn context", () => {
   it("keeps checkpointed tool batches parallel without serializing successful calls", async () => {
     const started: string[] = [];
-    let release!: () => void;
-    const bothStarted = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const bothStarted = deferred();
     const snapshots: unknown[] = [];
     const serialize = vi.spyOn(turnCheckpoints, "serializeTurnCheckpoint");
     let overlapped = false;
@@ -62,9 +60,9 @@ describe("paused turn context", () => {
           },
           executeTool: async (_name, args) => {
             started.push(String(args.path));
-            if (started.length === 2) release();
+            if (started.length === 2) bothStarted.resolve();
             await Promise.race([
-              bothStarted,
+              bothStarted.promise,
               new Promise((_, reject) =>
                 setTimeout(() => {
                   timedOut = started.length < 2;
@@ -92,10 +90,7 @@ describe("paused turn context", () => {
   });
   it("includes a finished sibling but excludes a late sibling at persistence", async () => {
     const controller = new AbortController();
-    let releaseLate!: () => void;
-    const late = new Promise<void>((resolve) => {
-      releaseLate = resolve;
-    });
+    const late = deferred();
     const captures = new Map<string, () => string>();
     let saved = "";
     const model = await startModelEmulator({
@@ -147,10 +142,10 @@ describe("paused turn context", () => {
           await new Promise<void>((resolve) => setImmediate(resolve));
           saved = captures.get(executionId)!();
           controller.abort();
-          releaseLate();
+          late.resolve();
           return approvalPausedToolResult();
         }
-        if (args.path === "late.txt") await late;
+        if (args.path === "late.txt") await late.promise;
         return { evidence: "finished-evidence" };
       },
     };
@@ -171,7 +166,7 @@ describe("paused turn context", () => {
       expect(replay).toHaveBeenCalledOnce();
       model.assertComplete();
     } finally {
-      releaseLate();
+      late.resolve();
       await model.close();
     }
   });

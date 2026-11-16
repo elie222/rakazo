@@ -5,11 +5,11 @@ import type {
   TelemetrySpan,
 } from "@earendil-works/pi-telemetry";
 import type { Attributes, Context, Link, Span, SpanContext, Tracer } from "@opentelemetry/api";
-import { ROOT_CONTEXT, SpanStatusCode, trace } from "@opentelemetry/api";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { getLogContext } from "@rakazo/logging";
+
+// The OTel packages load on demand: this module is only reached through a dynamic import, and
+// bundling inlines it, so static imports here would still load with every server bundle.
+const { ROOT_CONTEXT, SpanStatusCode, trace } = await import("@opentelemetry/api");
 
 // Allowlist metadata: unknown attributes (including future Pi payload fields) stay private.
 const safeAttributes = new Set([
@@ -123,7 +123,16 @@ export function otelPiContext(
   };
 }
 
-export function createPiTelemetryExporter() {
+export async function createPiTelemetryExporter() {
+  const [
+    { BatchSpanProcessor, TracerProvider },
+    { OTLPTraceExporter },
+    { resourceFromAttributes },
+  ] = await Promise.all([
+    import("@opentelemetry/sdk-trace"),
+    import("@opentelemetry/exporter-trace-otlp-http"),
+    import("@opentelemetry/resources"),
+  ]);
   const provider = new TracerProvider({
     resource: resourceFromAttributes({
       "service.name": process.env.OTEL_SERVICE_NAME?.trim() || "rakazo-worker",

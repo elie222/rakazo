@@ -1,14 +1,17 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { EVAL_CASES } from "./evals/cases.js";
+import { describe, expect, it, vi } from "vitest";
+import { EVAL_CASES, PRODUCT_JUDGE_VERSION } from "./evals/cases.js";
+import type { EvalJudge } from "./evals/judge.js";
 import { runTrial } from "./evals/runner.js";
 import { EvalSandboxProvider } from "./evals/sandbox.js";
 import type { ModelEmulatorRequest } from "./model-emulator.js";
 import { startModelEmulator } from "./model-emulator.js";
 
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
+const reply =
+  "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the production SSO incident, and engineering is testing a configuration fix.";
 
 describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () => {
   it("runs the messaging, Salesforce, Zendesk, and reply path through the product", async () => {
@@ -61,10 +64,7 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
             expect(result?.tool_call_id).toBe("zendesk-tickets");
             expect(String(result?.content)).toContain("ZD-1842");
           },
-          response: {
-            type: "text",
-            text: "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the production SSO incident, and engineering is testing a configuration fix.",
-          },
+          response: { type: "text", text: reply },
         },
       ],
     });
@@ -72,6 +72,10 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
     try {
       const { createApp } = await import("@rakazo/api/app");
       const scenario = EVAL_CASES.find((candidate) => candidate.id === "slack-customer-update")!;
+      const judge = vi.fn<EvalJudge>(async () => ({
+        pass: true,
+        reason: "Offline fixture verdict",
+      }));
       const result = await runTrial(scenario, 1, {
         connection: {
           provider: model.model.provider,
@@ -83,6 +87,7 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
         },
         timeoutMs: 20_000,
         maxToolCalls: 8,
+        judge,
         createApp: (composio, messaging) => {
           const sandbox = new EvalSandboxProvider();
           return createApp({
@@ -118,6 +123,12 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
         toolCalls: 4,
       });
       expect(result.criteria.every((criterion) => criterion.pass)).toBe(true);
+      // What the reply says is the judge's to grade, from the message that reached the thread.
+      expect(judge).toHaveBeenCalledWith(
+        { rubric: expect.stringContaining(`${PRODUCT_JUDGE_VERSION}:`), evidence: { reply } },
+        expect.any(AbortSignal),
+      );
+      expect(result.judgment).toEqual({ pass: true, reason: "Offline fixture verdict" });
     } finally {
       try {
         await model.close();

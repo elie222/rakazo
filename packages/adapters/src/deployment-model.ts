@@ -35,6 +35,10 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import {
+  CLAUDE_CODE_CREDENTIAL_SOURCE,
+  CLAUDE_CODE_PROVIDER_ID,
+} from "./cli-models/claude-code/provider-id.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
@@ -72,6 +76,7 @@ const HOST_CREDENTIALS = "<authenticated>";
 const HOST_CREDENTIAL_SOURCES: Record<string, string> = {
   "amazon-bedrock": "AWS IAM",
   "google-vertex": "Google Cloud",
+  [CLAUDE_CODE_PROVIDER_ID]: CLAUDE_CODE_CREDENTIAL_SOURCE,
 };
 
 /** The kind of host credentials a provider authenticates with, e.g. "AWS IAM". */
@@ -85,8 +90,9 @@ export function hostCredentialSource(provider: string): string {
  *
  * Keyless host authentication requires explicit opt-in and a model id. Bedrock resolves
  * its credential chain (including instance roles) at request time; local models must be
- * declared by the operator; other providers must report host credentials in the process
- * environment. Host credentials never become `key`.
+ * declared by the operator; the Claude Code CLI uses the operator's own sign-in on this host;
+ * other providers must report host credentials in the process environment. Host credentials
+ * never become `key`.
  *
  * Vendor env names and model ids live here, in the adapter layer, not in core.
  */
@@ -105,7 +111,9 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     // Bedrock also resolves EC2 instance roles through IMDS at request time.
     (provider === LOCAL_PROVIDER_ID
       ? localModelIds(env).includes(explicitModel!)
-      : provider === "amazon-bedrock" || getEnvApiKey(provider) === HOST_CREDENTIALS);
+      : provider === CLAUDE_CODE_PROVIDER_ID ||
+        provider === "amazon-bedrock" ||
+        getEnvApiKey(provider) === HOST_CREDENTIALS);
   return {
     provider,
     model:
