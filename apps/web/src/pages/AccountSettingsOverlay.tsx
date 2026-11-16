@@ -13,8 +13,6 @@ import {
   FieldLabel,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   SectionHeading,
   Switch,
@@ -371,20 +369,18 @@ export function GeneralSettingsPanels({
                 </span>
               }
               control={
-                <NativeSelect
+                <OptionSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
                   value={selectedTimezone}
                   disabled={timezonePending}
-                  onChange={(event) => chooseTimezone(event.target.value)}
+                  options={timezoneOptions(selectedTimezone).map((zone) => ({
+                    value: zone,
+                    label: zone.replaceAll("_", " "),
+                  }))}
+                  onValueChange={(zone) => chooseTimezone(zone)}
                   className="w-56 max-w-full"
-                >
-                  {timezoneOptions(selectedTimezone).map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone.replaceAll("_", " ")}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                />
               }
             >
               {!sameTimeZone(selectedTimezone, deviceTimezone) ? (

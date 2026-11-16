@@ -19,8 +19,7 @@ import {
 import {
   Button,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Select,
   SelectContent,
@@ -186,27 +185,19 @@ export function ExternalConversationSettings({
                     <span className="min-w-0 truncate text-body text-foreground">
                       {sender.name}
                     </span>
-                    <NativeSelect
+                    <OptionSelect<AutomatedSenderPolicyMode>
                       size="sm"
                       aria-label={t`${sender.name} handling`}
                       value={policy.mode}
-                      onChange={(event) =>
-                        updatePolicies((current) =>
-                          withSenderMode(
-                            current,
-                            sender,
-                            event.target.value as AutomatedSenderPolicyMode,
-                          ),
-                        )
+                      onValueChange={(mode) =>
+                        updatePolicies((current) => withSenderMode(current, sender, mode))
                       }
-                      className="max-w-[165px]"
-                    >
-                      {AUTOMATED_SENDER_MODES.map((value) => (
-                        <NativeSelectOption key={value} value={value}>
-                          {senderModeLabels[value]}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
+                      className="w-fit max-w-[165px]"
+                      options={AUTOMATED_SENDER_MODES.map((value) => ({
+                        value,
+                        label: senderModeLabels[value],
+                      }))}
+                    />
                   </div>
                   {policy.mode === "rollup" ? (
                     <label
