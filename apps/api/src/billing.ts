@@ -30,7 +30,7 @@ import {
   sandboxAllowanceHours,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
-import { retry } from "@rakazo/core";
+import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import {
   assertLeaseHeld,
@@ -76,6 +76,14 @@ export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
+/** Another checkout, cancellation or plan change holds the organization's billing right now. */
+export class BillingBusyError extends ClientError {
+  constructor(options?: ErrorOptions) {
+    super("CONFLICT", "Billing is busy; try again shortly", "CONFLICT", options);
+    this.name = "BillingBusyError";
+  }
+}
+
 /** Runs `write` in one transaction while this request still holds the checkout lease. */
 type UnderLease = <R>(write: (tx: Prisma.TransactionClient) => Promise<R>) => Promise<R>;
 
@@ -433,7 +441,6 @@ export function createBillingService(deps: {
     work: (underLease: UnderLease) => Promise<T>,
   ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
-    const busy = () => new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
     const attempt = () => {
       let claimId: string | null = null;
       // The claim's row stays locked until the writes commit, so no claimant takes it meanwhile.
@@ -442,13 +449,15 @@ export function createBillingService(deps: {
         (write) =>
           prisma
             .$transaction(async (tx) => {
-              if (!(await lockCheckoutLease(tx, organizationId, claimId!))) throw busy();
+              if (!(await lockCheckoutLease(tx, organizationId, claimId!)))
+                throw new BillingBusyError();
               await assertLeaseHeld(tx, lease);
               return write(tx);
             })
             .catch((error: unknown) => {
               // A write that waited too long on another lock rolled back: busy, like a lost lease.
-              if (isLockTimeout(error) || error instanceof LeaseLostError) throw busy();
+              if (isLockTimeout(error) || error instanceof LeaseLostError)
+                throw new BillingBusyError({ cause: error });
               throw error;
             });
       return withLease(
@@ -475,9 +484,14 @@ export function createBillingService(deps: {
             // Cut off while the claim was being taken: give it back rather than leave it to lapse.
             lease.signal.throwIfAborted();
             const result = await work(underLease(lease));
-            // A cancellation that took the lease over expired the sessions open at that moment,
-            // so a session created after it must not be handed back.
-            await prisma.$transaction((tx) => assertLeaseHeld(tx, lease));
+            // A cancellation that took the lease or the previous release's claim over expired the
+            // sessions open at that moment, so a session created after it must not be handed back.
+            await prisma.$transaction(async (tx) => {
+              await assertLeaseHeld(tx, lease);
+              if (!(await lockCheckoutLease(tx, organizationId, claimId!))) {
+                throw new BillingBusyError();
+              }
+            });
             return result;
           } finally {
             const held = claimId;
@@ -497,7 +511,8 @@ export function createBillingService(deps: {
         delayMs: CHECKOUT_LEASE_POLL_MS,
       });
     } catch (error) {
-      if (error instanceof LeaseHeldError || error instanceof LeaseLostError) throw busy();
+      if (error instanceof LeaseHeldError || error instanceof LeaseLostError)
+        throw new BillingBusyError({ cause: error });
       throw error;
     }
   }
