@@ -1,6 +1,7 @@
 import type { PrismaClient } from "./client.js";
 import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
+import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
 
 // A reserved effect kind/status keeps transcripts out of approval queues and
 // client events while reusing run/space cascades and latest-only upsert storage.
@@ -70,7 +71,7 @@ export async function saveRunTurnCheckpoint(
       },
       update: { result },
     });
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 /** Drop a running run's saved turn, only while this worker still holds its lease. */
@@ -87,7 +88,7 @@ export async function dropRunTurnCheckpoint(
     });
     if (locked.count !== 1) throw new Error("Run lease expired before checkpoint");
     await clearRunTurnCheckpoints(tx, [run.id]);
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
 /** Call after the terminal status write; its fence rejects later checkpoint writes. */
