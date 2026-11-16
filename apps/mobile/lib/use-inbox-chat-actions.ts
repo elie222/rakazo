@@ -8,12 +8,18 @@ import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import {
+  alertGroupNotDeleted,
+  confirmDeleteBot,
+  confirmDeleteGroup,
+  deleteGroup,
+} from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
+import type { SaveSend } from "./query";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
@@ -216,7 +222,15 @@ export function useInboxChatActions({
             requestContext,
             confirmation!.finish,
           );
-        } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
+        } else {
+          const pinned = requestContext && { requestContext, skipSpaceAuthRecovery: true };
+          const send: SaveSend = (proc, input) =>
+            rpc(proc, ...([input, pinned] as RpcArgs<typeof proc>));
+          confirmDeleteGroup(
+            chat,
+            () => void deleteGroup(chat.id, send).then(deleted, alertGroupNotDeleted),
+          );
+        }
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>

@@ -337,9 +337,7 @@ function PluginScreen() {
             kind="install"
             id={install.id}
             availability={install.availability}
-            onChanged={() =>
-              Promise.all(reads.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
-            }
+            stale={reads}
           />
         ) : null}
 

@@ -1,19 +1,34 @@
 // @vitest-environment jsdom
 
 import type { ComputerStatus } from "@rakazo/contracts";
+import { notifyManager } from "@tanstack/react-query";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
+import { queryClient } from "./query";
 
 const { rpc, alert, start, subscribe } = vi.hoisted(() => ({
   subscribe: vi.fn((_listener: () => void) => () => undefined),
   rpc: vi.fn(),
   alert: vi.fn(),
-  start: vi.fn(async () => undefined),
+  start: vi.fn(async (..._args: unknown[]) => undefined),
 }));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./computer-updates", () => ({
   computerUpdates: { start, subscribe },
 }));
@@ -33,6 +48,9 @@ vi.mock("../components/settings-group", () => ({
   }) => createElement("button", { type: "button", onClick: onPress, disabled }, title),
 }));
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 function Rows() {
   return createElement("div", null, ...useComputerMaintenanceRows("bot-fixture"));
 }
@@ -47,6 +65,7 @@ describe("computer maintenance rows", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
     container = document.createElement("div");
     root = createRoot(container);
   });
@@ -66,7 +85,15 @@ describe("computer maintenance rows", () => {
       (action: { text: string }) => action.text === "Recover computer",
     );
     await act(async () => recover.onPress());
-    expect(start).toHaveBeenCalledWith("bot-fixture", "recover");
+    expect(start).toHaveBeenCalledWith("bot-fixture", "recover", expect.any(Function));
+    // The start is sent through the save, pinned to the Space it was asked in.
+    const begin = start.mock.lastCall![2] as (botId: string, action: string) => Promise<unknown>;
+    await begin("bot-fixture", "recover");
+    expect(rpc).toHaveBeenLastCalledWith(
+      "computer/recover",
+      { botId: "bot-fixture" },
+      { requestContext: expect.objectContaining({ apiBase: "http://api.test" }) },
+    );
   });
 
   it("offers a confirmed Reset otherwise and disables it while busy", async () => {
@@ -78,12 +105,12 @@ describe("computer maintenance rows", () => {
       "Reset computer",
     ]);
     await act(async () => button("Reset computer")!.click());
-    expect(rpc).not.toHaveBeenCalledWith("computer/reset", expect.anything());
+    expect(rpc).not.toHaveBeenCalledWith("computer/reset", expect.anything(), expect.anything());
     const reset = alert.mock.lastCall![2].find(
       (action: { text: string }) => action.text === "Reset",
     );
     await act(async () => reset.onPress());
-    expect(rpc).toHaveBeenCalledWith("computer/reset", { botId: "bot-fixture" });
+    expect(rpc).toHaveBeenCalledWith("computer/reset", { botId: "bot-fixture" }, expect.anything());
 
     rpc.mockResolvedValue(status({ canUpdate: false, busyBotName: "Other" }));
     await act(async () => root.unmount());
@@ -115,11 +142,13 @@ describe("computer maintenance rows", () => {
         }),
     );
     await act(async () => root.render(createElement(Rows)));
-    // A finished update re-reads status while the first read is still out.
+    await act(async () => reads[0]!(status({ busyBotName: "Other" })));
+    // A finished update re-reads status while the previous re-read is still out.
     const listener = subscribe.mock.lastCall![0] as () => void;
     await act(async () => listener());
-    await act(async () => reads[1]!(status({ busyBotName: null })));
-    await act(async () => reads[0]!(status({ busyBotName: "Other" })));
+    await act(async () => listener());
+    await act(async () => reads[2]!(status({ busyBotName: null })));
+    await act(async () => reads[1]!(status({ busyBotName: "Other" })));
     expect(button("Recover computer")!.disabled).toBe(false);
   });
 

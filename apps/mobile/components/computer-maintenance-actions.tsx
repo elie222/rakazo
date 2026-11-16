@@ -1,58 +1,58 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ComputerStatus } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { Alert } from "react-native";
-import { rpc } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
+import { queryClient, rpcQuery, useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
 /** The one repair a bot's computer offers, and only while that computer is broken. */
 export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
-  const [computer, setComputer] = useState<ComputerStatus | null>(null);
-  const [pending, setPending] = useState<"reset" | "recover" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const latestRead = useRef(0);
-  const refresh = useCallback(async () => {
-    const read = ++latestRead.current;
-    if (!botId) return;
-    // A stale status could offer an action the computer can no longer take.
-    const next = await rpc("computer/status", { botId }).catch(() => null);
-    if (read === latestRead.current) setComputer(next);
-  }, [botId]);
+  const statusRead = rpcQuery("computer/status", { botId: botId ?? "" });
+  const status = useQuery({ ...statusRead, enabled: Boolean(botId) }, queryClient);
+  const { refetch } = status;
+  // A stale status could offer an action the computer can no longer take.
+  const computer = status.error ? null : status.data;
 
   useFocusEffect(
     useCallback(() => {
-      void refresh();
-    }, [refresh]),
+      if (botId) void refetch({ cancelRefetch: false });
+    }, [botId, refetch]),
   );
   // A queued update or recovery reports progress here; its status changes with it.
-  useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
+  useEffect(
+    () =>
+      computerUpdates.subscribe(() => {
+        if (botId) void refetch();
+      }),
+    [botId, refetch],
+  );
+  const repair = useSave({
+    save: async ({ botId, action }: { botId: string; action: "reset" | "recover" }, send) => {
+      if (action === "reset") await send("computer/reset", { botId });
+      else
+        await computerUpdates.start(botId, action, (id, step) =>
+          send(`computer/${step}`, { botId: id }),
+        );
+    },
+    stale: [statusRead.queryKey],
+  });
+  const error = repair.error ? errorText(repair.error, t`Could not update computer`) : null;
 
   if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
-  const busy = Boolean(computer.busyBotName) || pending !== null;
+  const busy = Boolean(computer.busyBotName) || repair.pending;
+  const pending = repair.pending;
 
   // Recover rebuilds the system where the computer can update in place; otherwise Reset
   // restores the last saved workspace.
   const action = computer.canUpdate ? "recover" : "reset";
 
-  async function run() {
-    if (!botId || busy) return;
-    setPending(action);
-    setError(null);
-    try {
-      if (action === "reset") await rpc("computer/reset", { botId });
-      else await computerUpdates.start(botId, "recover");
-      await refresh();
-    } catch (err) {
-      setError(errorText(err, t`Could not update computer`));
-    } finally {
-      setPending(null);
-    }
+  function run() {
+    if (botId && !busy) repair.run({ botId, action });
   }
 
   return [
@@ -83,7 +83,7 @@ export function useComputerMaintenanceRows(botId: string | undefined): ReactElem
             {
               text: action === "recover" ? t`Recover computer` : t`Reset`,
               style: "destructive",
-              onPress: () => void run(),
+              onPress: run,
             },
           ],
         )
