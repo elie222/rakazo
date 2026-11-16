@@ -145,9 +145,11 @@ export function SpaceMembersSettings({
   }
 
   const adding = useSave({
-    save: (userId: string, client) => client.spaces.members.add({ spaceId: space.id, userId }),
+    save: (ask: { spaceId: string; userId: string }, client) => client.spaces.members.add(ask),
     onSaved: () => setReload((value) => value + 1),
   });
+  // A failure to add someone to another Space stays with that Space.
+  const addError = adding.input?.spaceId === space.id ? adding.error : null;
   const canManage = members?.canManage === true;
   const memberName =
     confirm?.kind === "remove" ? accountDisplay(confirm.member, confirm.member.email).label : "";
@@ -170,7 +172,10 @@ export function SpaceMembersSettings({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto max-w-72 min-w-44">
             {addable.map((person) => (
-              <DropdownMenuItem key={person.userId} onClick={() => adding.run(person.userId)}>
+              <DropdownMenuItem
+                key={person.userId}
+                onClick={() => adding.run({ spaceId: space.id, userId: person.userId })}
+              >
                 <span className="truncate">{accountDisplay(person, person.email).label}</span>
               </DropdownMenuItem>
             ))}
@@ -246,9 +251,9 @@ export function SpaceMembersSettings({
           </p>
         )}
       </SettingsGroup>
-      {members && (error || adding.error) ? (
+      {members && (error || addError) ? (
         <p className="px-1 text-body-sm text-destructive">
-          {error ?? errorText(adding.error, t`Could not add member`)}
+          {error ?? errorText(addError, t`Could not add member`)}
         </p>
       ) : null}
       {canManage && inviteUrl ? (

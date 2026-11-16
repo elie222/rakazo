@@ -612,9 +612,18 @@ async function departSpace(
           }
           const departing = await tx.spaceMember.findUnique({
             where: { spaceId_userId: { spaceId, userId } },
-            select: { id: true, organizationId: true, role: true },
+            select: {
+              id: true,
+              organizationId: true,
+              role: true,
+              member: { select: { role: true } },
+            },
           });
           if (!departing) throw new SpaceMemberNotFoundError();
+          // A removal from the organization stops for someone who has joined it again meanwhile:
+          // they are a full member once more, and keep their Spaces.
+          if (fallbackOwnerId && departing.member.role !== GUEST_ROLE)
+            throw new SpaceMemberNotFoundError();
           const others = await tx.spaceMember.findMany({
             where: { spaceId, userId: { not: userId } },
             select: { userId: true, role: true, member: { select: { role: true } } },

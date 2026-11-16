@@ -665,6 +665,23 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       (list.json.organizations as Array<{ id: string }>).map((organization) => organization.id),
     ).not.toContain(organizationId);
 
+    // Rejoining before the removal finishes stops it: they keep their Spaces.
+    await system.member.update({
+      where: { organizationId_userId: { organizationId, userId: member.id } },
+      data: { role: "member" },
+    });
+    await expect(
+      leaveOrganizationSpaces(
+        system,
+        { organizationId, userId: member.id, removedBy: owner.id },
+        async () => undefined,
+      ),
+    ).resolves.toEqual([]);
+    await system.member.update({
+      where: { organizationId_userId: { organizationId, userId: member.id } },
+      data: { role: "guest" },
+    });
+
     // Asking again finishes the removal.
     expect(
       (
