@@ -54,6 +54,10 @@ import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
 import { createMcpServers } from "../mcp-servers.js";
 import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
+import {
+  ModelCreditOfferingUnavailableError,
+  UnsupportedThinkingLevelError,
+} from "../model-role-errors.js";
 import { rosterChangeFor } from "../roster-procedures.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
@@ -423,15 +427,13 @@ export function createRouterContext(deps: RouterDeps) {
           entry.creditOfferingId !== choice.creditOfferingId ||
           (role === "computer" && entry.images === false)
         )
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Selected credit offering is unavailable",
-          });
+          throw new ModelCreditOfferingUnavailableError();
         if (
           choice.thinkingLevel &&
           entry.thinkingLevels &&
           !entry.thinkingLevels.includes(choice.thinkingLevel)
         )
-          throw new ORPCError("BAD_REQUEST", { message: "Unsupported thinking level" });
+          throw new UnsupportedThinkingLevelError();
         continue;
       }
       // A row pinned to a connection runs only there, never on the deployment's.

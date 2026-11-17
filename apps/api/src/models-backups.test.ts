@@ -1,3 +1,4 @@
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
@@ -8,6 +9,7 @@ import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const owner: Actor = {
   userId: "user-one",
@@ -188,7 +190,9 @@ function setup(
     dataDir: "C:/scratch/rakazo-model-backups",
   } as unknown as RouterDeps;
   const actor = options.actor ?? owner;
-  const handler = new RPCHandler(createRouter(deps));
+  const handler = new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
   const call = async (procedure: string, input: unknown) => {
     const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/${procedure}`, {
@@ -1162,14 +1166,14 @@ it("persists an explicit approved credit route alongside the personal route", as
         })
       ).response.status,
     ).toBe(400);
-    expect(
-      (
-        await call("models/setRole", {
-          role: "main",
-          primary: { ...credit, creditOfferingId: "unapproved" },
-        })
-      ).response.status,
-    ).toBe(400);
+    const refused = await call("models/setRole", {
+      role: "main",
+      primary: { ...credit, creditOfferingId: "unapproved" },
+    });
+    expect(refused.response.status).toBe(400);
+    expect(await refused.response.json()).toMatchObject({
+      json: { code: "MODEL_CREDIT_OFFERING_UNAVAILABLE" },
+    });
     vi.stubEnv(
       "MODEL_CREDIT_OFFERINGS",
       JSON.stringify({ defaultOfferingId: null, offerings: [] }),

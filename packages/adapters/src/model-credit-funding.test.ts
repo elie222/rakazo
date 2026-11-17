@@ -46,6 +46,7 @@ function setup() {
     billingEnabled: true,
     prisma: {
       userModelCredential: { findUnique, findFirst: vi.fn(async () => personal) },
+      userModelPreference: { findFirst: vi.fn(async () => null) },
       space: {
         findFirst: vi.fn(async () => ({
           organization: { modelCredits: { mode: "credits", balanceMicros: 1000000n } },
@@ -82,6 +83,7 @@ describe("explicit model credit funding", () => {
   it("keeps included operator checks outside the purchased-credit allowlist", async () => {
     const { deps, load, findUnique } = setup();
     vi.stubEnv("OPENROUTER_API_KEY", "fake-included-checker-key");
+    const registerSecrets = vi.fn();
     const result = await resolveModelKey(
       deps,
       scope.userId,
@@ -89,10 +91,11 @@ describe("explicit model credit funding", () => {
       null,
       "openrouter",
       "typesafe/jev-1.14",
-      undefined,
+      registerSecrets,
       { operatorFunded: true },
     );
     expect(result.apiKey).toBe("fake-included-checker-key");
+    expect(registerSecrets).toHaveBeenCalledWith(["fake-included-checker-key"]);
     expect(result.callObserver).toBeUndefined();
     expect(result.connectionId).toBeUndefined();
     expect(load).not.toHaveBeenCalled();
@@ -196,5 +199,23 @@ describe("explicit model credit funding", () => {
       ),
     ).rejects.toThrow("unavailable");
     expect(load).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps an unpinned legacy backup on the exact approved offering", async () => {
+  const { deps } = setup();
+  vi.mocked(deps.prisma.userModelCredential.findFirst).mockResolvedValue(null);
+  const result = await resolveConnectedModelKey(
+    deps,
+    scope,
+    offering.provider,
+    offering.modelId,
+    undefined,
+    true,
+  );
+  expect(result.resolved).toMatchObject({
+    apiKey: "fake-operator-key",
+    connectionId: `credits:${offering.id}`,
+    callObserver: expect.any(Object),
   });
 });

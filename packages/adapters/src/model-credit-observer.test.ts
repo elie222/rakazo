@@ -6,6 +6,7 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpDecisionProvider } from "./http-decisions.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
 
 vi.mock("@rakazo/db", () => ({
@@ -139,4 +140,128 @@ describe("approved model tariffs", () => {
     const withdrawn = await hostedModelCreditObserver({} as never, scope);
     await expect(withdrawn.beforeCall(call)).rejects.toThrow("personal connection");
   });
+});
+
+it("releases an unsent tariff call while retaining a pending tariff before dispatch", async () => {
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({
+      defaultOfferingId: "decision",
+      offerings: [
+        {
+          id: "decision",
+          connectionId: "operator",
+          provider: "decision-provider",
+          modelId: "decision-model",
+          price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    }),
+  );
+  vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
+  vi.mocked(reserveModelCredits).mockResolvedValue("hold");
+  const observer = await hostedModelCreditObserver({} as never, scope);
+  await observer.beforeCall({
+    provider: "decision-provider",
+    modelId: "decision-model",
+    inputTokensEstimate: 100,
+    maxOutputTokens: null,
+  });
+  expect(reserveModelCredits).toHaveBeenCalledWith(
+    {},
+    "org-1",
+    0.0001,
+    expect.objectContaining({
+      usage: expect.objectContaining({
+        costUsd: null,
+        usageSource: "pending",
+        pricingVersion: "deployment-tariff:decision",
+      }),
+    }),
+  );
+  await expect(observer.afterCall("hold", null)).resolves.toMatchObject({
+    costUsd: 0,
+    usageSource: "not-started",
+  });
+  expect(recordModelCreditReceipt).toHaveBeenCalledWith(
+    {},
+    "hold",
+    expect.objectContaining({ costUsd: 0, usageSource: "not-started" }),
+  );
+});
+it("refuses a paid output tariff when the protocol cannot bound output", async () => {
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({
+      defaultOfferingId: "decision",
+      offerings: [
+        {
+          id: "decision",
+          connectionId: "operator",
+          provider: "decision-provider",
+          modelId: "decision-model",
+          price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    }),
+  );
+  vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
+  const observer = await hostedModelCreditObserver({} as never, scope);
+  await expect(
+    observer.beforeCall({
+      provider: "decision-provider",
+      modelId: "decision-model",
+      inputTokensEstimate: 100,
+      maxOutputTokens: null,
+    }),
+  ).rejects.toThrow("zero output tariff");
+  expect(reserveModelCredits).not.toHaveBeenCalled();
+});
+
+it("settles an unsent decision through its actual observer without charging credits", async () => {
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({
+      defaultOfferingId: "decision",
+      offerings: [
+        {
+          id: "decision",
+          connectionId: "operator",
+          provider: "openrouter",
+          modelId: "typesafe/jev-1.14",
+          price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    }),
+  );
+  vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
+  vi.mocked(reserveModelCredits).mockResolvedValue("hold");
+  const observer = await hostedModelCreditObserver({} as never, scope);
+  const provider = new HttpDecisionProvider("openrouter", {
+    apiKey: "fake-key",
+    callObserver: observer,
+    fetch: async () => {
+      throw new TypeError("connection failed");
+    },
+  });
+  await expect(
+    provider.decide(
+      { model: "typesafe/jev-1.14", state: {}, questions: {} },
+      {
+        operationId: "decision",
+        traceId: "decision",
+        ...scope,
+        signal: new AbortController().signal,
+      },
+    ),
+  ).rejects.toBeDefined();
+  expect(recordModelCreditReceipt).toHaveBeenCalledWith(
+    {},
+    "hold",
+    expect.objectContaining({
+      costUsd: 0,
+      usageSource: "not-started",
+      pricingVersion: "deployment-tariff:decision",
+    }),
+  );
 });

@@ -56,7 +56,9 @@ describe("deployment model credit offerings", () => {
     ).toMatchObject({ costUsd: 5, costSource: "deployment-tariff" });
   });
   it("retains unknown usage and preserves the tariff for recovery", () => {
-    expect(offeringUsage(entry, null)).toMatchObject({
+    expect(
+      offeringUsage(entry, { inputTokens: null, outputTokens: null, costUsd: null }),
+    ).toMatchObject({
       costUsd: null,
       pricingSnapshot: { connectionId: entry.connectionId },
     });
@@ -64,4 +66,21 @@ describe("deployment model credit offerings", () => {
       { costUsd: null },
     );
   });
+});
+
+it("reuses validated configuration until the environment value changes", () => {
+  const env = { MODEL_CREDIT_OFFERINGS: JSON.stringify(configuration) };
+  const first = modelCreditOfferings(env);
+  expect(modelCreditOfferings(env)).toBe(first);
+  env.MODEL_CREDIT_OFFERINGS = '{"defaultOfferingId":null,"offerings":[]}';
+  expect(modelCreditOfferings(env)).not.toBe(first);
+  env.MODEL_CREDIT_OFFERINGS = "invalid";
+  expect(() => modelCreditOfferings(env)).toThrow("Invalid MODEL_CREDIT_OFFERINGS");
+});
+it("prices only measured buckets with nonzero customer rates", () => {
+  const usage = { inputTokens: 1000000, outputTokens: 1000000, costUsd: 0 };
+  expect(
+    offeringUsage({ ...entry, price: { ...entry.price, cacheRead: 0, cacheWrite: 0 } }, usage),
+  ).toMatchObject({ costUsd: 5 });
+  expect(offeringUsage(entry, usage)).toMatchObject({ costUsd: null });
 });

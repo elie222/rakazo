@@ -32,11 +32,13 @@ export async function hostedModelCreditObserver(
       );
       if (configuration && !offering)
         throw new HostedModelCreditsRequiredError("This model requires a personal connection");
+      if (offering && call.maxOutputTokens === null && offering.price.output > 0)
+        throw new HostedModelCreditsRequiredError("This protocol requires a zero output tariff");
       const maximum = offering
         ? maximumModelCallCost(
             offering.price,
             call.inputTokensEstimate,
-            call.maxOutputTokens,
+            call.maxOutputTokens ?? 0,
             call.cacheWriteRetention,
           )
         : call.maxCostUsd;
@@ -51,7 +53,16 @@ export async function hostedModelCreditObserver(
           runId: call.runId,
           provider: call.provider,
           model: call.modelId,
-          ...(offering ? { usage: offeringUsage(offering, null)! } : {}),
+          ...(offering
+            ? {
+                usage: offeringUsage(offering, {
+                  inputTokens: null,
+                  outputTokens: null,
+                  costUsd: null,
+                  usageSource: "pending",
+                })!,
+              }
+            : {}),
         },
       );
       if (offering) snapshots.set(reservation, offering);
@@ -59,7 +70,13 @@ export async function hostedModelCreditObserver(
     },
     afterCall: async (reservationId, usage) => {
       const offering = snapshots.get(reservationId);
-      const priced = offering ? offeringUsage(offering, usage) : usage;
+      const receipt = usage ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        usageSource: "not-started",
+      };
+      const priced = offering ? offeringUsage(offering, receipt) : receipt;
       await recordModelCreditReceipt(prisma, reservationId, priced);
       if (offering) snapshots.delete(reservationId);
       return priced ?? undefined;

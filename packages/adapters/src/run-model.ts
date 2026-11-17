@@ -204,6 +204,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   if (!material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
     throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
   }
+  const apiKey = material.apiKey ?? runtimeKey;
+  if (apiKey) args[6]?.([apiKey]);
   const callObserver =
     !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
   const fundingOfferingId =
@@ -213,7 +215,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
       : undefined);
   return {
     ...material,
-    apiKey: material.apiKey ?? runtimeKey,
+    apiKey,
+    redact: [...new Set([...material.redact, ...(apiKey ? [apiKey] : [])])],
     callObserver,
     connectionId: fundingOfferingId ? `credits:${fundingOfferingId}` : credential?.id,
   };
@@ -504,7 +507,7 @@ export async function resolveConnectedModelKey(
     provider,
     modelId,
     registerSecrets,
-    { requireStoredSecret },
+    { requireStoredSecret: requireStoredSecret && Boolean(credentialId || credential) },
   );
   return { credential, resolved };
 }

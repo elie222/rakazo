@@ -196,10 +196,7 @@ export async function writeModelRole(
       : choice.credentialId !== undefined
         ? choice.credentialId
         : savedConnection(choice);
-    const owners = saved.filter((item) => backupChoiceKey(item) === backupChoiceKey(choice));
-    const creditOfferingId =
-      choice.creditOfferingId ??
-      (!choice.credentialId && owners.length === 1 ? owners[0]!.creditOfferingId : undefined);
+    const creditOfferingId = choice.creditOfferingId;
     return {
       ...choice,
       ...(creditOfferingId ? { creditOfferingId } : {}),

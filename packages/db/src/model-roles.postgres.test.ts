@@ -108,6 +108,21 @@ describePostgres("model roles (PostgreSQL)", () => {
     },
   );
 
+  it.each(["account", "space"] as const)(
+    "clears an explicit credit choice for rollback in %s settings",
+    async (targetScope) => {
+      const target = { userId, spaceId, scope: targetScope };
+      const primary = { provider: "azure", modelId: "gpt-5", creditOfferingId: "offering-example" };
+      await updateModelRole(prisma, target, "main", { primary });
+      await updateModelRole(prisma, target, "main", {
+        primary: { provider: primary.provider, modelId: primary.modelId },
+      });
+      expect(
+        (await getModelRole(prisma, target, "main")).primary?.creditOfferingId,
+      ).toBeUndefined();
+    },
+  );
+
   it("writes the main model to the role table", async () => {
     await updateModelRole(prisma, scope, "main", {
       primary: { provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },

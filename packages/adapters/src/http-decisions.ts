@@ -54,7 +54,7 @@ export class HttpDecisionProvider implements DecisionProvider {
       modelId: request.model,
       operationKind: "setup",
       inputTokensEstimate,
-      maxOutputTokens: 0,
+      maxOutputTokens: null,
       maxCostUsd: pricing
         ? (inputTokensEstimate * pricing.inputUsdPerMillion) / 1_000_000
         : undefined,

@@ -29,7 +29,10 @@ commercial recommendation:
 ```
 
 Each price is the customer USD charge per million tokens in that measured bucket.
-Input and output rates must be positive; cache rates must be nonnegative. Prices
+The input rate must be positive; output and cache rates must be nonnegative.
+Use zero customer cache rates for protocols that do not report cache buckets. A decision
+protocol that cannot enforce an output limit requires a zero output tariff; a positive
+output tariff is refused before dispatch rather than reserving an incomplete bound. Prices
 are independent of the provider's invoice, free allowance, or promotional credits.
 Cache writes use the configured customer write rate regardless of upstream cache
 retention; reservations conservatively allow the long-retention bound.

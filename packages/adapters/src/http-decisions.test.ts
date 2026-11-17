@@ -45,6 +45,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       callObserver: { beforeCall, afterCall },
     }).decide(request, context);
     expect(result.answers.decision).toEqual({ type: "choice", choice: "pass", confidence: 0.9 });
+    expect(beforeCall).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: null }));
     expect(fetchMock).toHaveBeenCalledWith(
       provider === "openrouter"
         ? "https://openrouter.ai/api/alpha/decisions"

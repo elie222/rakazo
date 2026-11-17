@@ -115,14 +115,12 @@ export function selectConfiguredModel(input: {
       credential ||
         (provider &&
           input.hostedProvider &&
-          (provider === input.hostedProvider ||
-            (modelId && approvedModelCreditOffering(provider, modelId)))),
+          (modelCreditOfferings()
+            ? modelId && approvedModelCreditOffering(provider, modelId)
+            : provider === input.hostedProvider)),
     );
   // The override provider, model and credential must win together.
-  const useOverride =
-    hasOverride &&
-    (Boolean(modelCreditOfferings()) ||
-      runnable(bot?.modelProvider, overrideCredential, bot?.modelId));
+  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
   const useMain =
     !useOverride &&
     main !== null &&

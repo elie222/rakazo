@@ -2,9 +2,11 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type * as ModelSelection from "./model-selection.js";
+import { findConnectedModelCredential } from "./model-selection.js";
 import { resolveRuntimeModel } from "./pi-runtime-models.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type * as RunModel from "./run-model.js";
+import { resolveModelKey } from "./run-model.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -78,9 +80,7 @@ it("uses operator auth for an available included checker even when a personal co
   vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
   vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "");
   vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "");
-  const selection = await import("./model-selection.js");
-  const runModel = await import("./run-model.js");
-  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  vi.mocked(findConnectedModelCredential).mockClear();
   const deps = {
     billingEnabled: true,
     prisma: {
@@ -108,8 +108,8 @@ it("uses operator auth for an available included checker even when a personal co
     options,
     { provider: "openrouter", model: "typesafe/jev-1.14" },
   );
-  expect(selection.findConnectedModelCredential).not.toHaveBeenCalled();
-  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+  expect(findConnectedModelCredential).not.toHaveBeenCalled();
+  expect(resolveModelKey).toHaveBeenLastCalledWith(
     deps,
     "user-fixture",
     "space-fixture",
@@ -122,9 +122,7 @@ it("uses operator auth for an available included checker even when a personal co
 });
 
 it("preserves personal authentication for a legacy hosted deployment checker", async () => {
-  const selection = await import("./model-selection.js");
-  const runModel = await import("./run-model.js");
-  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  vi.mocked(findConnectedModelCredential).mockClear();
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
@@ -132,8 +130,8 @@ it("preserves personal authentication for a legacy hosted deployment checker", a
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "google-vertex", model: "gemini-4-hydrogen" },
   );
-  expect(selection.findConnectedModelCredential).toHaveBeenCalledOnce();
-  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+  expect(findConnectedModelCredential).toHaveBeenCalledOnce();
+  expect(resolveModelKey).toHaveBeenLastCalledWith(
     deps,
     "user",
     "space",
@@ -147,9 +145,7 @@ it("preserves personal authentication for a legacy hosted deployment checker", a
 
 it("keeps a personal decision connection when hosted auth is unavailable", async () => {
   vi.stubEnv("OPENROUTER_API_KEY", "");
-  const selection = await import("./model-selection.js");
-  const runModel = await import("./run-model.js");
-  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  vi.mocked(findConnectedModelCredential).mockClear();
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
@@ -157,8 +153,8 @@ it("keeps a personal decision connection when hosted auth is unavailable", async
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14" },
   );
-  expect(selection.findConnectedModelCredential).toHaveBeenCalledOnce();
-  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+  expect(findConnectedModelCredential).toHaveBeenCalledOnce();
+  expect(resolveModelKey).toHaveBeenLastCalledWith(
     deps,
     "user",
     "space",
@@ -172,9 +168,7 @@ it("keeps a personal decision connection when hosted auth is unavailable", async
 
 it("keeps an explicitly credit-funded checker separate from the included checker", async () => {
   vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
-  const selection = await import("./model-selection.js");
-  const runModel = await import("./run-model.js");
-  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  vi.mocked(findConnectedModelCredential).mockClear();
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
@@ -182,8 +176,8 @@ it("keeps an explicitly credit-funded checker separate from the included checker
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14", creditOfferingId: "member-offering" },
   );
-  expect(selection.findConnectedModelCredential).not.toHaveBeenCalled();
-  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+  expect(findConnectedModelCredential).not.toHaveBeenCalled();
+  expect(resolveModelKey).toHaveBeenLastCalledWith(
     deps,
     "user",
     "space",

@@ -800,7 +800,8 @@ export interface ModelCallObserver {
     provider: string;
     modelId: string;
     inputTokensEstimate: number;
-    maxOutputTokens: number;
+    /** Null when the protocol cannot enforce an output bound. */
+    maxOutputTokens: number | null;
     /** Conservative dollar bound from the resolved model pricing; absent means unknown. */
     maxCostUsd?: number;
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
@@ -808,6 +809,7 @@ export interface ModelCallObserver {
   }): string | Promise<string>;
   afterCall(
     reservationId: string,
+    /** Null proves the call did not start; uncertain dispatched usage needs an explicit receipt. */
     usage: AgentUsage | null,
   ): void | AgentUsage | Promise<void> | Promise<AgentUsage | undefined>;
   onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;

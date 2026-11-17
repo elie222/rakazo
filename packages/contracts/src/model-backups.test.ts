@@ -8,6 +8,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { ModelRoleSettingsSchema } from "./model-roles.js";
 import { expectLinearTime } from "./timing.test-support.js";
 
 const catalog: ModelCatalogEntry[] = [
@@ -431,4 +432,15 @@ it("offers credit and personal funding for the same model as separate connection
   );
   expect(options).toContainEqual(expect.objectContaining({ credentialId: "personal-example" }));
   expect(new Set(options.map(modelRoleChoiceKey)).size).toBe(2);
+});
+
+it("accepts distinct unpinned and credit-funded backups but rejects duplicate funding", () => {
+  const choice = { provider: "provider-example", modelId: "model-example" };
+  const credit = { ...choice, creditOfferingId: "offering-example" };
+  expect(
+    ModelRoleSettingsSchema.safeParse({ primary: null, backups: [choice, credit] }).success,
+  ).toBe(true);
+  expect(
+    ModelRoleSettingsSchema.safeParse({ primary: null, backups: [credit, credit] }).success,
+  ).toBe(false);
 });

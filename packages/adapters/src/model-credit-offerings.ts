@@ -10,10 +10,7 @@ const price = z
     cacheRead: rate,
     cacheWrite: rate,
   })
-  .refine(
-    (value) => value.input > 0 && value.output > 0,
-    "Input and output prices must be positive",
-  );
+  .refine((value) => value.input > 0, "Input price must be positive");
 const offering = z.strictObject({
   id,
   connectionId: id,
@@ -44,11 +41,17 @@ const configuration = z
   });
 export type ModelCreditOffering = z.infer<typeof offering>;
 
+let cached: { raw: string; value: z.infer<typeof configuration> } | undefined;
+
 /** Deployment-owned allowlist. Never include key material or endpoints in this JSON. */
 export function modelCreditOfferings(env: NodeJS.ProcessEnv = process.env) {
-  if (env.MODEL_CREDIT_OFFERINGS === undefined) return undefined;
+  const raw = env.MODEL_CREDIT_OFFERINGS;
+  if (raw === undefined) return undefined;
+  if (cached?.raw === raw) return cached.value;
   try {
-    return configuration.parse(JSON.parse(env.MODEL_CREDIT_OFFERINGS));
+    const value = configuration.parse(JSON.parse(raw));
+    cached = { raw, value };
+    return value;
   } catch {
     // Configuration errors must not echo input, which could contain misplaced secrets.
     throw new Error("Invalid MODEL_CREDIT_OFFERINGS configuration");
@@ -66,37 +69,23 @@ export function offeringUsage(
   entry: ModelCreditOffering,
   usage: AgentUsage | null,
 ): AgentUsage | null {
-  if (!usage)
-    usage = {
-      inputTokens: null,
-      outputTokens: null,
-      cacheReadTokens: null,
-      cacheWriteTokens: null,
-      costUsd: null,
-    };
-  const counts = [
-    usage.inputTokens,
-    usage.outputTokens,
-    usage.cacheReadTokens,
-    usage.cacheWriteTokens,
-  ];
-  const known = counts.every(
-    (count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0,
+  if (!usage) return null;
+  const buckets = [
+    [usage.inputTokens, entry.price.input],
+    [usage.outputTokens, entry.price.output],
+    [usage.cacheReadTokens, entry.price.cacheRead],
+    [usage.cacheWriteTokens, entry.price.cacheWrite],
+  ] as const;
+  const known = buckets.every(
+    ([count, rate]) =>
+      rate === 0 || (typeof count === "number" && Number.isSafeInteger(count) && count >= 0),
   );
   const rejected =
     usage.costSource === "provider-rejection" ||
     usage.usageSource === "not-started" ||
     usage.usageSource === "provider-rejected";
   const cost = known
-    ? counts.reduce<number>(
-        (sum, count, index) =>
-          sum +
-          count! *
-            [entry.price.input, entry.price.output, entry.price.cacheRead, entry.price.cacheWrite][
-              index
-            ]!,
-        0,
-      ) / 1_000_000
+    ? buckets.reduce((sum, [count, rate]) => sum + (rate === 0 ? 0 : count! * rate), 0) / 1_000_000
     : null;
   return {
     ...usage,

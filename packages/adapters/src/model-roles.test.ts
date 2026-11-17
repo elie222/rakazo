@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DeploymentModelDefaults, MemberMainModel } from "./model-roles.js";
 import {
   deploymentModelRole,
@@ -345,4 +345,33 @@ describe("model roles", () => {
     expect(resolved).toMatchObject({ provider: "openai-compatible", modelId: "model-b" });
     expect(resolved?.credential?.id).toBe("b");
   });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+it("falls back from an unapproved bot override even on an approved provider", () => {
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({
+      defaultOfferingId: "approved",
+      offerings: [
+        {
+          id: "approved",
+          connectionId: "operator",
+          provider: "bot-provider",
+          modelId: "approved-model",
+          price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    }),
+  );
+  expect(
+    selectConfiguredModel({ ...defaults, override: bot, hostedProvider: "bot-provider" }),
+  ).toMatchObject({ provider: main.provider, id: main.modelId, credential: main.credential });
+  expect(
+    selectConfiguredModel({
+      ...defaults,
+      override: { ...bot, modelId: "approved-model" },
+      hostedProvider: "bot-provider",
+    }),
+  ).toMatchObject({ provider: "bot-provider", id: "approved-model", credential: null });
 });

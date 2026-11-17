@@ -10,6 +10,7 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { offeringUsage } from "./model-credit-offerings.js";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -183,6 +184,26 @@ dbTests("durable model credit audit", () => {
       ).toMatchObject({ pending: false, reconciliationState: "complete" });
     },
   );
+  it("releases a tariff hold for a definitively unsent call", async () => {
+    const f = await fixture();
+    const receipt = offeringUsage(
+      {
+        id: "offering-example",
+        connectionId: "operator-example",
+        provider: "openrouter",
+        modelId: "fixture",
+        price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+      { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "not-started" },
+    );
+    await recordModelCreditReceipt(prisma, f.callId, receipt);
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+    expect(await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } })).toMatchObject(
+      { pending: false },
+    );
+    await createModelCreditReconciler({ prisma, now: () => new Date(Date.now() + 10 * 60_000) })();
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+  });
   it("keeps both the estimate and authoritative correction in the journal", async () => {
     const f = await fixture();
     await recordModelCreditReceipt(prisma, f.callId, {
