@@ -185,6 +185,7 @@ async function failRun(scenario: Scenario) {
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    userVoicePreference: { findFirst: async () => null },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) =>
         where.role !== "main"
