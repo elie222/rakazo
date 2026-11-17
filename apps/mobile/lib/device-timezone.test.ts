@@ -97,3 +97,9 @@ it("switches nothing once the session that asked is gone", async () => {
   lastPrompt().press("Switch");
   expect(rpc).not.toHaveBeenCalled();
 });
+
+it("still checks another account while one account's question is open", async () => {
+  await checkDeviceTimezone("user-1", "Europe/London", active);
+  await checkDeviceTimezone("user-2", null, active);
+  expect(rpc).toHaveBeenCalledWith("preferences/adoptTimezone", { timezone: "Asia/Tokyo" });
+});

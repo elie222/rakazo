@@ -12,7 +12,8 @@ const keptKey = (userId: string) => `rakazo.timezone-kept.${userId}`;
 const kept = new Map<string, KeptTimezone | null>();
 /** Accounts whose empty zone this launch already filled, so each poll does not send it again. */
 const adopted = new Set<string>();
-let asking = false;
+/** The account whose question is on screen. */
+let asking: string | null = null;
 
 function parseStored(raw: string | null): KeptTimezone | null {
   try {
@@ -43,11 +44,11 @@ export async function checkDeviceTimezone(
   isActive: () => boolean,
 ): Promise<void> {
   // A server that predates timezones leaves it out.
-  if (accountZone === undefined || asking) return;
+  if (accountZone === undefined || asking === userId) return;
   const device = localTimezone();
   const step = deviceTimezoneStep(device, accountZone, await keptZone(userId));
   // The read above can outlive the session: a write now would land on the next account.
-  if (step === null || asking || !isActive()) return;
+  if (step === null || asking === userId || !isActive()) return;
   if (step === "adopt") {
     if (adopted.has(userId)) return;
     adopted.add(userId);
@@ -61,10 +62,12 @@ export async function checkDeviceTimezone(
     return;
   }
   if (accountZone === null) return;
-  asking = true;
+  // One question at a time; another account's load asks once this one is answered.
+  if (asking !== null) return;
+  asking = userId;
   const answer: KeptTimezone = { device, account: accountZone };
   const keep = () => {
-    asking = false;
+    asking = null;
     kept.set(userId, answer);
     void SecureStore.setItemAsync(keptKey(userId), JSON.stringify(answer)).catch(() => undefined);
   };
@@ -76,7 +79,7 @@ export async function checkDeviceTimezone(
       isPreferred: true,
       onPress: () => {
         if (!isActive()) {
-          asking = false;
+          asking = null;
           return;
         }
         rpc("preferences/update", { timezone: device })
@@ -84,7 +87,7 @@ export async function checkDeviceTimezone(
             Alert.alert(errorText(error, t`Couldn't update your timezone`)),
           )
           .finally(() => {
-            asking = false;
+            asking = null;
           });
       },
     },
@@ -95,5 +98,5 @@ export async function checkDeviceTimezone(
 export function resetDeviceTimezoneForTests(): void {
   kept.clear();
   adopted.clear();
-  asking = false;
+  asking = null;
 }

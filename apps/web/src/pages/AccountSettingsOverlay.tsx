@@ -168,14 +168,15 @@ export function GeneralSettingsPanels({
   const queryUserId = useQueryUserId();
   const deviceTimezone = localTimezone();
   const timezoneSave = useSave({
-    save: (next: string, client) => onTimezoneChange?.(next, client) ?? Promise.resolve(),
-    // Usage is grouped by day in the account's timezone.
-    stale: [queries.usage.breakdown.key()],
-    // A zone picked by hand answers the device's prompt too, so it does not ask right after.
-    onSaved: (_, next) => {
+    save: async (next: string, client) => {
+      await onTimezoneChange?.(next, client);
+      // A zone picked by hand answers the device's prompt too, so it does not ask right after,
+      // even when Settings closed while it saved.
       if (queryUserId && !sameTimeZone(next, deviceTimezone))
         keepTimezone(queryUserId, { device: deviceTimezone, account: next });
     },
+    // Usage is grouped by day in the account's timezone.
+    stale: [queries.usage.breakdown.key()],
   });
   const timezonePending = timezoneSave.pending;
   const selectedTimezone = timezone ?? deviceTimezone;

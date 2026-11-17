@@ -48,6 +48,7 @@ describe("timeZonePlace", () => {
     expect(timeZonePlace("Asia/Tokyo")).toBe("Tokyo");
     expect(timeZonePlace("America/Argentina/Buenos_Aires")).toBe("Buenos Aires");
     expect(timeZonePlace("UTC")).toBe("UTC");
+    expect(timeZonePlace("Etc/GMT-9")).toBe("GMT+9");
   });
 });
 

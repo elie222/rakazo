@@ -16,8 +16,25 @@ export function sameTimeZone(a: string, b: string): boolean {
   return a === b || canonicalTimeZone(a) === canonicalTimeZone(b);
 }
 
-/** The place a zone is named after, for "Switch to Tokyo time?": "America/New_York" reads "New York". */
+/**
+ * The place a zone is named after, for "Switch to Tokyo time?": "America/New_York" reads
+ * "New York". A fixed-offset zone reads as its offset, "GMT+9" for Etc/GMT-9, whose sign
+ * is inverted.
+ */
 export function timeZonePlace(zone: string): string {
+  if (zone.startsWith("Etc/")) {
+    try {
+      const offset = new Intl.DateTimeFormat("en-US", {
+        timeZone: zone,
+        timeZoneName: "shortOffset",
+      })
+        .formatToParts(0)
+        .find((part) => part.type === "timeZoneName")?.value;
+      if (offset) return offset;
+    } catch {
+      // An unknown zone falls back to its name.
+    }
+  }
   return (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
 }
 
