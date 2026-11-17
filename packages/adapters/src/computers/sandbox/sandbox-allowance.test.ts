@@ -96,7 +96,8 @@ describe("computer allowance", () => {
         )
       )?.limitMicros;
     expect(await limit("active", "pro")).toBe(20_000_000);
-    expect(await limit("past_due", "max")).toBe(40_000_000);
+    // An overdue plan's tier waits for its payment.
+    expect(await limit("past_due", "max")).toBe(5_000_000);
     // Rows synced before tiers existed are Standard.
     expect(await limit("active", null)).toBe(5_000_000);
     // A lapsed plan's tier no longer applies.

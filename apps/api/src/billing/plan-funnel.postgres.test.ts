@@ -94,7 +94,10 @@ dbTests("plan choice funnel", () => {
     provider.setStatus(customer, "trialing");
     await service.sync(customer);
     await service.sync(customer);
+    // The trial's charge is collected after the subscription turns active.
     provider.setStatus(customer, "active");
+    await service.sync(customer);
+    provider.pay(customer);
     await service.sync(customer);
     await service.sync(customer);
     expect(events).toEqual([

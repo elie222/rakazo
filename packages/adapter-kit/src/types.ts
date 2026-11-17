@@ -1677,9 +1677,9 @@ export interface AutoReviewResult {
 export type BillingSubscriptionStatus =
   | "trialing"
   | "active"
-  | "past_due"
   | "incomplete"
   /** No access; the subscription resumes from the billing portal, so a new checkout would double-bill. */
+  | "past_due"
   | "unpaid"
   | "paused"
   | "canceled";
@@ -1745,6 +1745,8 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** When the latest invoice was settled, if it billed anything: a trial's free invoice is no payment. */
+  paidAt?: Date;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
   /** What the own-key plan bills each period, which stays at the price it was bought at. */

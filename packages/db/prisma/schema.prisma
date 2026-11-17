@@ -510,7 +510,7 @@ model BillingAccount {
   cancellationReason  String?
   cancellationComment String?
   subscribedAt        DateTime?
-  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  /// When a subscription payment first went through, so a trial that never paid is not a paid plan.
   paidAt              DateTime?
   syncedAt            DateTime?
   createdAt           DateTime     @default(now())
