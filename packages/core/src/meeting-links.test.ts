@@ -112,6 +112,23 @@ describe("findMeetingLinks", () => {
     }
   });
 
+  it("reads links that touch each other with punctuation as separate links", () => {
+    expect(find(`${link(1)},${link(2)};${link(3, "?pwd=abc")}`).map((found) => found.url)).toEqual([
+      link(1),
+      link(2),
+      link(3, "?pwd=abc"),
+    ]);
+  });
+
+  it("reads a meeting linked inside another address, without a passcode the wrapper encoded", () => {
+    expect(
+      find(`https://wrapper.example/url?q=${link(1, "?pwd=abc")}`).map((found) => found.url),
+    ).toEqual([link(1, "?pwd=abc")]);
+    expect(
+      find(`https://wrapper.example/url?q=${link(1)}?pwd%3Dabc`).map((found) => found.url),
+    ).toEqual([link(1)]);
+  });
+
   it("ignores look-alike links next to a real one", () => {
     expect(
       find(`https://evilcalls.example/j/100000001 ${link(1)}`).map((found) => found.url),
@@ -258,6 +275,12 @@ describe("a passcode next to punctuation", () => {
 });
 
 describe("the text limit", () => {
+  it("does not read a link that touches a straddling link but starts after the limit", () => {
+    expect(
+      find(`${FILLER(999_990)}${link(1, "?pwd=abc")},${link(2)}`).map((found) => found.url),
+    ).toEqual([link(1, "?pwd=abc")]);
+  });
+
   const link1 = link(1, "?pwd=abc");
 
   it("reads a link that straddles the limit to its end", () => {

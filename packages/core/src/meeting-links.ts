@@ -52,7 +52,8 @@ export function meetingTokenParam(query: URLSearchParams, key: string): string |
 
 /**
  * The meeting a link joins, or null when no recognizer reads it as one: another scheme, an
- * address with a login or a port, or a page of a service that is not a meeting. Never throws.
+ * address with a login or a port, or a page of a service that is not a meeting. Never throws
+ * for any input; a recognizer that itself throws is a bug in its provider and is not hidden.
  */
 export function parseMeetingLink(
   input: unknown,
@@ -93,7 +94,8 @@ export function parseMeetingLink(
   return null;
 }
 
-const LINK_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+/** A link runs to whitespace or markup, or to the next `http(s)://`, so `a,https://b` is two links. */
+const LINK_IN_TEXT = /\bhttps?:\/\/(?:(?!https?:\/\/)[^\s<>"'`])+/gi;
 const LINK_END = /[\s<>"'`]/;
 const ENTITY = /&(amp|lt|gt|quot|#0{0,4}38|#x0{0,4}26);/gi;
 const ENTITY_TEXT: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"' };
@@ -116,7 +118,7 @@ const MAX_ENTITY = 12;
  * values and amount of text (a string cut by the limit uses up all of it); a link that straddles the text limit is read to its end, or left out
  * when it has none within MAX_LINK characters, never read short. It reads plain objects and arrays
  * by their own data properties, never running a getter, skips a value that throws when inspected,
- * and ignores everything else. Never throws.
+ * and ignores everything else. Never throws for any value; a recognizer that throws is not hidden.
  */
 export function findMeetingLinks(
   value: unknown,
@@ -213,8 +215,8 @@ function readableText(raw: string, limit: number): { text: string; cut: boolean 
     if (from >= cut) break;
     const last = from + match[0].length;
     if (last > cut || (open && last === cut)) {
-      const ended = end < stop || (end === text.length && complete);
-      return { text: text.slice(0, ended ? end : start + from), cut: true };
+      const ended = start + last < end || end < stop || (end === text.length && complete);
+      return { text: text.slice(0, ended ? start + last : start + from), cut: true };
     }
   }
   return { text: text.slice(0, at), cut: true };
