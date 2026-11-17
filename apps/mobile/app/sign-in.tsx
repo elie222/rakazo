@@ -25,11 +25,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
-import { NativeActionButton } from "../components/native-action-button";
-import { SocialSignInButtons } from "../components/social-sign-in-buttons";
-import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import { currentApiBase } from "../lib/api";
-import type { PasswordResetCapabilities } from "../lib/api-auth";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SocialSignInButtons } from "../components/settings/social-sign-in-buttons";
+import { currentApiBase } from "../lib/api/api";
+import { displayApiHost, usesCustomApiBase } from "../lib/api/endpoint";
+import { loadSessionToken } from "../lib/api/session";
+import { credentialIssueText, errorText } from "../lib/api/user-error";
+import type { PasswordResetCapabilities } from "../lib/auth/api-auth";
 import {
   passwordResetCapabilities,
   requestPasswordReset,
@@ -37,19 +39,17 @@ import {
   signIn,
   signInWithCode,
   signUp,
-} from "../lib/api-auth";
-import type { AuthMode } from "../lib/auth-routing";
-import { initialAuthMode } from "../lib/auth-routing";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { displayApiHost, usesCustomApiBase } from "../lib/endpoint";
-import { hasIncomingShare } from "../lib/incoming-share";
-import { useMobileTokens } from "../lib/native";
-import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
-import { queryClient, rpcQuery } from "../lib/query";
-import { loadSessionToken } from "../lib/session";
-import { continueWithSso } from "../lib/sso";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { credentialIssueText, errorText } from "../lib/user-error";
+} from "../lib/auth/api-auth";
+import type { AuthMode } from "../lib/auth/auth-routing";
+import { initialAuthMode } from "../lib/auth/auth-routing";
+import { passkeysAvailable, signInWithPasskey } from "../lib/auth/passkey";
+import { continueWithSso } from "../lib/auth/sso";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { hasIncomingShare } from "../lib/composer/incoming-share";
+import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
+import { useMobileTokens } from "../lib/native/native";
+import { queryClient, rpcQuery } from "../lib/query/query";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 const CODE_LENGTH = 6;
 
