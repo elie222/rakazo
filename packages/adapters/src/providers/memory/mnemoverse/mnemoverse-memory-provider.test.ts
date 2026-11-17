@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MNEMOVERSE_BASE_URL } from "./mnemoverse-client.js";
 import {
@@ -168,9 +169,16 @@ describe("Mnemoverse recall", () => {
       }
       return base(url, init);
     });
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     const result = await recallOf("shared");
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     expect(reads).toBe(1);
     expect(result.ok && result.value.map((item) => item.id)).toEqual(["b"]);
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]?.level).toBe("warn");
+    expect(JSON.stringify(sink.events[0])).toContain("Mnemoverse recall failed: 500");
+    expect(JSON.stringify(sink.events[0])).toContain(BOT);
   });
 
   it("fails when every domain fails, whether the service answered or threw", async () => {
@@ -207,14 +215,110 @@ describe("Mnemoverse save", () => {
     expect(calls[0]?.body).toEqual({ content: "Likes tea", domain: BOT });
   });
 
-  it("writes a shared memory to the Space's domain only", async () => {
+  const sharedSave = {
+    content: "Team uses UTC",
+    scope: "shared" as const,
+    botId: "bot-1",
+    source: { kind: "durable" as const },
+  };
+
+  it("writes a shared memory to the bot's domain and the Space's", async () => {
     const { calls } = mnemoverse();
-    await provider().save(
-      { content: "Team uses UTC", scope: "shared", botId: "bot-1", source: { kind: "durable" } },
+    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
+    expect(
+      calls
+        .map((call) => call.body)
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    ).toEqual([
+      { content: "Team uses UTC", domain: BOT },
+      { content: "Team uses UTC", domain: SPACE },
+    ]);
+  });
+
+  it("keeps a shared fact recallable by the bot after it goes back to Isolated", async () => {
+    mnemoverse();
+    await provider().save(sharedSave, context);
+    const result = await recallOf("isolated");
+    expect(result.ok && result.value.map((item) => item.entity)).toEqual([BOT]);
+  });
+
+  it("counts a shared save as saved when one copy was written and the other refused as a duplicate", async () => {
+    const { atoms } = mnemoverse([], {});
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (String(url).endsWith("/memory/write") && JSON.parse(String(init?.body)).domain === BOT) {
+        return Response.json({ stored: false, atom_id: null, reason: "too similar" });
+      }
+      return base(url, init);
+    });
+    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
+    expect(atoms.map((atom) => atom.domain)).toEqual([SPACE]);
+  });
+
+  it("lists a fact saved in both domains once when recalling as shared", async () => {
+    mnemoverse();
+    await provider().save(sharedSave, context);
+    const result = await recallOf("shared");
+    expect(result.ok && result.value.map((item) => item.memory)).toEqual(["Team uses UTC"]);
+  });
+
+  it("finishes a half-done shared save when it is retried", async () => {
+    const { atoms } = mnemoverse();
+    const stored = vi.mocked(fetch).getMockImplementation()!;
+    let failSpace = true;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (String(url).endsWith("/memory/write")) {
+        const body = JSON.parse(String(init?.body));
+        if (failSpace && body.domain === SPACE) return new Response("{}", { status: 500 });
+        if (atoms.some((atom) => atom.domain === body.domain && atom.content === body.content)) {
+          return Response.json({ stored: false, reason: "too similar" });
+        }
+      }
+      return stored(url, init);
+    });
+    const first = await provider().save(sharedSave, context);
+    expect(!first.ok && first.error).toContain("Saved to one domain but not all");
+    expect(!first.ok && first.error).toContain("500");
+    failSpace = false;
+    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
+    expect(atoms.map((atom) => atom.domain).sort()).toEqual([BOT, SPACE]);
+  });
+
+  it("reports a shared save when one copy fails, or when both are refused as duplicates", async () => {
+    mnemoverse([], {});
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (
+        String(url).endsWith("/memory/write") &&
+        JSON.parse(String(init?.body)).domain === SPACE
+      ) {
+        return new Response("{}", { status: 500 });
+      }
+      return base(url, init);
+    });
+    const partial = await provider().save(sharedSave, context);
+    expect(!partial.ok && partial.error).toContain("500");
+
+    mnemoverse([], {
+      "POST /memory/write": () => Response.json({ stored: false, reason: "too similar" }),
+    });
+    const both = await provider().save(sharedSave, context);
+    expect(!both.ok && both.error).toContain("too close");
+  });
+
+  it("refuses content over the service limit without calling it", async () => {
+    const { fetchMock } = mnemoverse();
+    const result = await provider().save(
+      { ...sharedSave, scope: "isolated", content: `${"a".repeat(10_000)}b` },
       context,
     );
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.body).toEqual({ content: "Team uses UTC", domain: SPACE });
+    expect(!result.ok && result.error).toContain("10000");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const exact = await provider().save(
+      { ...sharedSave, scope: "isolated", content: "a".repeat(10_000) },
+      context,
+    );
+    expect(exact.ok).toBe(true);
   });
 
   it("keeps compaction summaries out of the service", async () => {
@@ -393,6 +497,14 @@ describe("Mnemoverse forget", () => {
     expect(!thrown.ok && thrown.error).toContain("reset");
   });
 
+  it("counts a delete as done when the atom is already gone", async () => {
+    mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }], {
+      [`DELETE /memory/atoms/${ATOM_A}`]: () =>
+        Response.json({ code: "NOT_FOUND" }, { status: 404 }),
+    });
+    expect((await forget(ATOM_A)).ok).toBe(true);
+  });
+
   it("refuses an id that is not a UUID before any request", async () => {
     const { fetchMock } = mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }]);
     for (const id of ["..", ".", "a/b?c", "not-an-id"]) expect((await forget(id)).ok).toBe(false);
@@ -419,6 +531,10 @@ describe("Mnemoverse connection", () => {
     await expect(prepareMnemoverseConnection({}, { apiKey: "short" })).rejects.toThrow(
       "at least 8",
     );
+    const error = await prepareMnemoverseConnection({}, { apiKey: "mk_live_abc\ndef" }).catch(
+      (caught: Error) => caught,
+    );
+    expect((error as Error).message).toBe("apiKey must be printable text without spaces");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

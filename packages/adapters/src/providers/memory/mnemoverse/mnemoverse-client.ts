@@ -33,6 +33,11 @@ export interface MnemoverseItem {
 
 export type MnemoverseResponse<T = void> = { ok: true; value: T } | { ok: false; error: string };
 
+/** A write also says when the novelty check refused it, which a shared save treats differently. */
+export type MnemoverseWriteResponse =
+  | MnemoverseResponse
+  | { ok: false; error: string; duplicate: true };
+
 type Reply = { ok: true; data: unknown } | { ok: false; status?: number; error: string };
 
 function failure(action: string, error: unknown): string {
@@ -134,7 +139,7 @@ export async function readMnemoverse(
     body: { query: query.slice(0, MAX_QUERY_CHARS), domain, top_k: boundedLimit(limit) },
     signal,
   });
-  return reply.ok ? { ok: true, value: parseItems(reply.data) } : reply;
+  return reply.ok ? { ok: true, value: parseItems(reply.data) } : { ok: false, error: reply.error };
 }
 
 /**
@@ -146,20 +151,27 @@ export async function writeMnemoverse(
   content: string,
   domain: string,
   signal?: AbortSignal,
-): Promise<MnemoverseResponse> {
-  const memory = content.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
+): Promise<MnemoverseWriteResponse> {
+  const memory = content.trim();
   if (!memory) return { ok: false, error: "Mnemoverse save skipped: memory content is empty." };
+  if (memory.length > MAX_MEMORY_CONTENT_CHARS) {
+    return {
+      ok: false,
+      error: `Mnemoverse save skipped: memory content is longer than ${MAX_MEMORY_CONTENT_CHARS} characters. Save a shorter fact.`,
+    };
+  }
   const reply = await request(config, "save", "POST", "/memory/write", {
     body: { content: memory, domain },
     signal,
   });
-  if (!reply.ok) return reply;
+  if (!reply.ok) return { ok: false, error: reply.error };
   const written = reply.data as { stored?: unknown; reason?: unknown } | null;
   if (written?.stored === false) {
     const reason =
       typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
     return {
       ok: false,
+      duplicate: true,
       error: `Mnemoverse did not store this memory because it is too close to one already saved${reason}. Forget the older memory first if this one replaces it.`,
     };
   }
@@ -179,12 +191,14 @@ export async function getMnemoverseAtomDomain(
     `/memory/atoms/${encodeURIComponent(atomId)}`,
     { signal },
   );
-  if (!reply.ok) return reply.status === 404 ? { ok: true, value: null } : reply;
+  if (!reply.ok) {
+    return reply.status === 404 ? { ok: true, value: null } : { ok: false, error: reply.error };
+  }
   const domain = (reply.data as { domain?: unknown } | null)?.domain;
   return { ok: true, value: typeof domain === "string" ? domain : null };
 }
 
-/** Deleting an atom that is already gone succeeds, so a retry is safe. */
+/** An atom that is already gone counts as deleted, so a retry or a race is safe. */
 export async function deleteMnemoverseAtom(
   config: MnemoverseConnectionConfig,
   atomId: string,
@@ -197,5 +211,6 @@ export async function deleteMnemoverseAtom(
     `/memory/atoms/${encodeURIComponent(atomId)}`,
     { signal },
   );
-  return reply.ok ? { ok: true, value: undefined } : reply;
+  if (reply.ok || reply.status === 404) return { ok: true, value: undefined };
+  return { ok: false, error: reply.error };
 }
