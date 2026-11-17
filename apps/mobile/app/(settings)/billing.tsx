@@ -102,9 +102,10 @@ export default function BillingScreen() {
         });
         return await openBillingPage(result.url, send);
       } catch (error) {
-        // The server found no plan to cancel: show the status it just read, so the row goes
-        // instead of failing again. Any other refusal, busy billing included, is not it.
-        if (isNoPlanToCancel(error)) return send("billing/refresh", undefined);
+        // The server found no plan to cancel and stored what it read: a plain status read shows
+        // it, so the row goes instead of failing again, without the full provider sync a refresh
+        // runs (which can fail on its own). Any other refusal, busy billing included, is not it.
+        if (isNoPlanToCancel(error)) return send("billing/status", undefined);
         throw error;
       }
     });

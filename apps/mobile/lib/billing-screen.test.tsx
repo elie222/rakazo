@@ -168,23 +168,25 @@ it("does not alert over another page when the status read fails after leaving", 
 
 it("re-reads the status when the server finds no plan to cancel", async () => {
   let refused = false;
+  let statusReads = 0;
   mocks.rpc.mockImplementation(async (method: string) => {
     if (method === "billing/status")
-      return { ...status, state: "trialing", cancelAtPeriodEnd: false };
+      return statusReads++ === 0
+        ? { ...status, state: "trialing", cancelAtPeriodEnd: false }
+        : { ...status, state: "trialing", cancelAtPeriodEnd: true };
     if (method === "billing/portal") {
       refused = true;
       throw Object.assign(new Error("No plan to cancel"), { code: "NO_PLAN_TO_CANCEL" });
     }
-    if (method === "billing/refresh")
-      return { ...status, state: "trialing", cancelAtPeriodEnd: true };
     throw new Error(`Unexpected ${method}`);
   });
   await render();
   await act(async () => button("Cancel trial").click());
-  await vi.waitFor(() => expect(sent("billing/refresh")).toHaveLength(1));
+  await vi.waitFor(() => expect(statusReads).toBe(2));
   expect(refused).toBe(true);
   expect(mocks.openAuthSessionAsync).not.toHaveBeenCalled();
   await vi.waitFor(() => expect(container.textContent).not.toContain("Cancel trial"));
+  expect(sent("billing/refresh")).toHaveLength(0);
   expect(mocks.alert).not.toHaveBeenCalled();
 });
 
