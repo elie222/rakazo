@@ -84,6 +84,11 @@ function withDropReason(error: unknown): unknown {
  * here so a captured builtin is not handed the package Agent. */
 const nodeFetch = globalThis.fetch;
 
+/** Whether this is Node's own fetch, not a replacement a caller or test installed. */
+export function isNodeFetch(fetcher: typeof globalThis.fetch): boolean {
+  return fetcher === nodeFetch;
+}
+
 /** Package fetch for an `Agent` from this undici.
  *
  * A missing transport, the fetch currently installed as `globalThis.fetch`,

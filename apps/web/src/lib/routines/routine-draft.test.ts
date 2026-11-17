@@ -93,6 +93,7 @@ it("reads whether a routine runs in the chat", () => {
     timezone: "UTC",
     active: true,
     notify: true,
+    sendToChat: false,
     inChat: true,
     webhookEnabled: false,
     githubEnabled: false,

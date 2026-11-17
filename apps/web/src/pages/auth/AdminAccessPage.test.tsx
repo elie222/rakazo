@@ -35,7 +35,7 @@ vi.mock("../../lib/query/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("../WindowChrome", () => ({ WindowChrome: () => null }));
+vi.mock("../../components/WindowChrome", () => ({ WindowChrome: () => null }));
 vi.mock("../../components/PageLoading", () => ({ PageLoading: () => null }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({

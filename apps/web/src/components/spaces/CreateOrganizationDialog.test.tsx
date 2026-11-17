@@ -37,7 +37,7 @@ vi.mock("../../lib/query/rpc", () => ({
   createSpaceRpc: () => ({ organizations }),
   selectedSpaceId: () => "space-a",
 }));
-vi.mock("../../lib/auth/organizations", () => ({
+vi.mock("../../lib/spaces/organizations", () => ({
   openOrganizationSpace,
   organizationsQuery: (userId: string | null) => ({
     queryKey: [`user:${userId ?? ""}`, "organizations"],
@@ -45,8 +45,8 @@ vi.mock("../../lib/auth/organizations", () => ({
   }),
 }));
 
-import { organizationsQuery } from "../../lib/auth/organizations";
 import { QueryUserProvider } from "../../lib/query/query";
+import { organizationsQuery } from "../../lib/spaces/organizations";
 import { CreateOrganizationDialog } from "./CreateOrganizationDialog";
 
 /** The settings page behind the dialog, which shows the list. */

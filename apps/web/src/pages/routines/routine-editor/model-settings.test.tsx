@@ -25,7 +25,14 @@ async function open(draft: RoutineDraftState, onChange = vi.fn()) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>
-    root.render(<RoutineModelSettings draft={draft} onChange={onChange} fieldId="routine" />),
+    root.render(
+      <RoutineModelSettings
+        draft={draft}
+        onChange={onChange}
+        fieldId="routine"
+        chatLinked={false}
+      />,
+    ),
   );
   const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Advanced"]')!;
   await act(async () => trigger.click());

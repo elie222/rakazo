@@ -1,6 +1,6 @@
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
-import type { CronPreset } from "../primitives/cron.js";
-import { presetFromCron } from "../primitives/cron.js";
+import type { CronPreset } from "./schedule.js";
+import { presetFromCron } from "./schedule.js";
 
 /** The fields every routine editor changes; an editor that offers more triggers adds its own. */
 export type RoutineDraft = {

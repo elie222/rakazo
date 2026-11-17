@@ -33,7 +33,7 @@ import {
 } from "../../lib/auth/passkey";
 import { continueWithSso } from "../../lib/auth/sso";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
-import { promptSectionName } from "../../lib/inbox/section-name-prompt";
+import { promptSectionName } from "../../lib/inbox/sections/section-name-prompt";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";

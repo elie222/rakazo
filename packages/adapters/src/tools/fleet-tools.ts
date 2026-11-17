@@ -14,7 +14,12 @@ import {
   TimeZoneSchema,
   UpdateGroupInput,
 } from "@rakazo/contracts";
-import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
+import {
+  CARD_TITLE_ESCAPED_CHARACTERS,
+  messagingProviderNamed,
+  ONCE_ROUTINE_CRON,
+  redactSecrets,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   commitBotUpdate,
@@ -38,12 +43,20 @@ import { asRecord } from "../connectors/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
+import {
+  hasRoutineEvents,
+  NO_ROUTINE_EVENTS,
+  resolveRoutineEvents,
+  routineEventsView,
+  toolEventsFromArg,
+} from "../routines/routine-triggers.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { listPiCatalog, scriptedCatalogEntry } from "../runtime/pi/models/pi-models.js";
 import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
   compactScheduleInput,
   createScheduleFromTool,
+  eventsResult,
   isScheduleValueProvided,
   resolveScheduleTiming,
   scheduleTimingArgs,
@@ -79,6 +92,8 @@ export type FleetDeps = {
 
 export type FleetPrepareDeps = {
   prisma: PrismaClient;
+  /** Where this server receives mail, if it does; an email trigger needs it. */
+  inboundEmailDomain?: string;
   modelChange: Omit<BotModelChangeDeps, "prisma">;
 };
 
@@ -340,14 +355,34 @@ async function prepareChildRoutine(
   if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }
-  const resolved = resolveScheduleTiming(compactScheduleInput(scheduleTimingArgs(args)), timezone);
-  if (!resolved.ok) return refuse(resolved.error);
+  const timing = compactScheduleInput(scheduleTimingArgs(args));
+  const on = argumentGiven(args.on) ? toolEventsFromArg(args.on) : undefined;
+  if (on && "error" in on) return refuse(on.error);
+  const asksEvents = Boolean(on && (on.on.webhook || on.on.git || on.on.chat || on.on.email));
+  const eventsOnly = asksEvents && Object.keys(timing).length === 0;
+  const resolved = eventsOnly ? undefined : resolveScheduleTiming(timing, timezone);
+  if (resolved && !resolved.ok) return refuse(resolved.error);
+  if (asksEvents && resolved?.oneShot) return refuse("A one-time schedule takes no events (on).");
 
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse("That bot has no thread.");
+  // Checked before the card too, so the owner is never asked to approve what cannot be saved.
+  const checked =
+    on && asksEvents
+      ? await resolveRoutineEvents(deps, child, run.userId, on.on)
+      : { ok: true as const, events: NO_ROUTINE_EVENTS };
+  if ("error" in checked) return refuse(checked.error);
+  const events = routineEventsView(checked.events);
+  const eventLine = hasRoutineEvents(checked.events)
+    ? [
+        `Starts on ${Object.entries(events)
+          .map(([key, value]) => (value === true ? key : `${key} ${value}`))
+          .join(", ")}`,
+      ]
+    : [];
 
-  const when = formatTime(resolved.nextRunAt, timezone);
+  const when = resolved ? formatTime(resolved.nextRunAt, timezone) : "";
   return {
     ok: true,
     canonical: {
@@ -362,22 +397,30 @@ async function prepareChildRoutine(
       // routine in the old zone.
       ...(namedTimezone === undefined ? { timezoneFromAccount: true } : {}),
       // A one-shot keeps its absolute time so a delay is not measured again at approval,
-      // and a delayed repeat keeps its first run.
-      schedule: resolved.oneShot
-        ? { runAt: resolved.nextRunAt.toISOString() }
-        : {
-            cron: resolved.cron,
-            ...(isScheduleValueProvided(args.startAt)
-              ? { startAt: resolved.nextRunAt.toISOString() }
-              : {}),
-          },
+      // and a delayed repeat keeps its first run. Only events start a routine without one.
+      schedule: !resolved
+        ? {}
+        : resolved.oneShot
+          ? { runAt: resolved.nextRunAt.toISOString() }
+          : {
+              cron: resolved.cron,
+              ...(isScheduleValueProvided(args.startAt)
+                ? { startAt: resolved.nextRunAt.toISOString() }
+                : {}),
+            },
+      ...(hasRoutineEvents(checked.events) ? { on: events } : {}),
     },
     summary: {
       title: `Schedule “${cardName(name)}” for ${cardName(child.name)}?`,
       lines: [
-        resolved.oneShot
-          ? `Runs at ${when}`
-          : `Repeats ${singleLine(resolved.cron)}, next at ${when}`,
+        ...(!resolved
+          ? []
+          : [
+              resolved.oneShot
+                ? `Runs at ${when}`
+                : `Repeats ${singleLine(resolved.cron)}, next at ${when}`,
+            ]),
+        ...eventLine,
         `Prompt: ${prompt}`,
       ],
     },
@@ -1009,9 +1052,24 @@ export async function createChildRoutine(
   if ("error" in child) return { error: child.error };
   if (!child.thread || child.thread.id !== canonical.threadId) return { error: NOT_FOUND };
 
+  const on = asRecord(canonical.on);
+  // The approved app, as the bot is linked now: a routine for an app it was linked to before
+  // is not the approved one.
+  const linked =
+    typeof on?.chat === "string"
+      ? await deps.prisma.messagingIdentity.findUnique({
+          where: { botId: child.id },
+          select: { provider: true },
+        })
+      : null;
+  // A chat app the bot no longer links matches nothing (""), and creation then refuses it.
+  const chatProvider =
+    typeof on?.chat === "string"
+      ? ((linked && messagingProviderNamed(on.chat, [linked.provider])) ?? "")
+      : null;
   const runAt = text(schedule.runAt);
   const cron = runAt ? ONCE_ROUTINE_CRON : text(schedule.cron);
-  if (!cron) return { error: "The approved routine is incomplete." };
+  if (!cron && !on) return { error: "The approved routine is incomplete." };
   // A zone that came from the account is re-read under the account lock at creation,
   // not replayed from the approval. The identical-routine lookup filters on the
   // account's current zone for such routines — the move keeps them on it — instead of
@@ -1029,11 +1087,26 @@ export async function createChildRoutine(
       name,
       prompt,
       timezone: replayTimezone,
-      crons: { equals: [cron] },
+      crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
+      // The identical routine has the approved events too, so a retry returns it instead of a
+      // twin. A bot links one chat app, so any chat event on it is the approved one.
+      webhookEnabled: on?.webhook === true,
+      githubEnabled: on?.git === true,
+      messageProvider: chatProvider,
+      emailSenders: typeof on?.email === "string" ? on.email : null,
     },
-    select: { id: true, name: true, crons: true, nextRunAt: true },
+    select: {
+      id: true,
+      name: true,
+      crons: true,
+      nextRunAt: true,
+      webhookEnabled: true,
+      githubEnabled: true,
+      messageProvider: true,
+      emailSenders: true,
+    },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
   if (existing) {
@@ -1044,6 +1117,7 @@ export async function createChildRoutine(
       cron: existing.crons[0],
       nextRunAt: existing.nextRunAt?.toISOString() ?? null,
       oneShot: Boolean(runAt),
+      ...eventsResult(existing),
       ...target,
     };
   }
@@ -1057,6 +1131,7 @@ export async function createChildRoutine(
     prompt,
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
+    ...(on ? { on } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }
@@ -1104,6 +1179,7 @@ const botSelect = {
   modelProvider: true,
   modelId: true,
   thinkingLevel: true,
+  userId: true,
   thread: { select: { id: true } },
 } satisfies Prisma.BotSelect;
 
