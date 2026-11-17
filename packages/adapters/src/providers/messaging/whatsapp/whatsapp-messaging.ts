@@ -15,16 +15,18 @@ export const whatsappMessaging = defineMessagingPlatform({
     whatsappPhoneNumberId: { name: "WHATSAPP_PHONE_NUMBER_ID", required: true },
     whatsappAppSecret: { name: "WHATSAPP_APP_SECRET", required: true },
     whatsappVerifyToken: { name: "WHATSAPP_VERIFY_TOKEN", required: true },
+    whatsappApiUrl: { name: "WHATSAPP_API_URL" },
+    whatsappBotUsername: { name: "WHATSAPP_BOT_USERNAME" },
   },
   mount(env) {
-    // The same defaults createWhatsAppAdapter applies, which the subclass does not get for free.
+    // The defaults createWhatsAppAdapter applies, which the subclass does not get for free.
     const adapter = new WhatsAppGraph({
       accessToken: env.whatsappAccessToken,
-      apiUrl: process.env.WHATSAPP_API_URL,
+      apiUrl: env.whatsappApiUrl,
       appSecret: env.whatsappAppSecret,
       logger: new ConsoleLogger("info").child("whatsapp"),
       phoneNumberId: env.whatsappPhoneNumberId,
-      userName: process.env.WHATSAPP_BOT_USERNAME ?? "whatsapp-bot",
+      userName: env.whatsappBotUsername ?? "whatsapp-bot",
       verifyToken: env.whatsappVerifyToken,
     });
     return {

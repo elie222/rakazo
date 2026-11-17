@@ -501,8 +501,8 @@ describe("parseSendblueStatuses", () => {
 });
 
 describe("WhatsApp file sizes", () => {
-  const whatsapp = () =>
-    messagingPlatformsFromEnv(fullEnv).find((platform) => platform.provider === "whatsapp")!;
+  const whatsapp = (env: MessagingEnvironmentValues = fullEnv) =>
+    messagingPlatformsFromEnv(env).find((platform) => platform.provider === "whatsapp")!;
 
   it("reads the size WhatsApp reports for a file from its media lookup", async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
@@ -531,15 +531,16 @@ describe("WhatsApp file sizes", () => {
       Response.json({ file_size: 5 }),
     );
     vi.stubGlobal("fetch", fetch);
-    vi.stubEnv("WHATSAPP_API_URL", "https://graph.example.test");
     try {
       const signal = new AbortController().signal;
-      await whatsapp().attachmentSize!({ type: "file", fetchMetadata: { mediaId: "m/1" } }, signal);
+      await whatsapp({ ...fullEnv, whatsappApiUrl: "https://graph.example.test" }).attachmentSize!(
+        { type: "file", fetchMetadata: { mediaId: "m/1" } },
+        signal,
+      );
       const url = fetch.mock.calls[0]![0];
       expect(url.startsWith("https://graph.example.test/v")).toBe(true);
       expect(url.endsWith("/m%2F1")).toBe(true);
     } finally {
-      vi.unstubAllEnvs();
       vi.unstubAllGlobals();
     }
   });
