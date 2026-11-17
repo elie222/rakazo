@@ -1,0 +1,14 @@
+{
+  "apps/api/src": 291,
+  "apps/mobile/components": 163,
+  "apps/mobile/lib": 567,
+  "apps/web/e2e": 131,
+  "apps/web/src/components": 95,
+  "apps/web/src/lib": 199,
+  "apps/web/src/pages": 92,
+  "apps/web/src/pages/shell": 122,
+  "packages/adapters/src": 868,
+  "packages/contracts/src": 113,
+  "packages/testkit/src": 103,
+  "packages/testkit/src/evals": 61
+}

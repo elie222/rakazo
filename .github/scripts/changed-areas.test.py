@@ -116,7 +116,7 @@ class ChangedAreasTests(unittest.TestCase):
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
             (".agents/skills/translate/catalog-gaps.ts", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
-            ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/core/src/runs/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
             (".github/workflows/playwright.yml", expect(*AREAS)),
@@ -209,7 +209,7 @@ class ChangedAreasTests(unittest.TestCase):
     def test_marketing_screenshots_follow_the_packages_the_site_imports(self):
         cases = [
             ("packages/contracts/src/client-build.ts", expect(*EVERY_BROWSER_AREA)),
-            ("packages/db/src/client.ts", expect(*PRODUCT)),
+            ("packages/db/src/database/client.ts", expect(*PRODUCT)),
             ("apps/api/src/server.ts", expect(*PRODUCT)),
         ]
         for path, expected in cases:

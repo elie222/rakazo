@@ -297,7 +297,11 @@ export function SidebarFooter({
               <Trans>Connect apps</Trans>
             </span>
           </span>
-          <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar" />
+          <AppMarkStack
+            marks={logos.slice(0, markCount)}
+            // The secondary button's surface, at rest and on hover.
+            ringClassName="ring-secondary group-hover/button:ring-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
+          />
         </Button>
       ) : null}
       {update.available ? (
