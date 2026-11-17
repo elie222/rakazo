@@ -1,6 +1,6 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { ResendEmailProvider } from "./resend-email.js";
-import { SmtpEmailProvider } from "./smtp-email.js";
+import { ResendEmailProvider } from "./providers/email/resend/resend-email.js";
+import { SmtpEmailProvider } from "./providers/email/smtp/smtp-email.js";
 
 export type EmailProviderConfig = {
   provider?: string;
