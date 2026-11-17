@@ -492,10 +492,15 @@ const LOAD_OLDER_PAGE = `(async () => {
   return performance.now() - started;
 })()`;
 
-async function settle(page: Page) {
+/** Waits until the frame after the next one, so work already started has painted. */
+async function nextFrames(page: Page) {
   await page.evaluate(
     "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
   );
+}
+
+async function settle(page: Page) {
+  await nextFrames(page);
   await page.waitForTimeout(500);
 }
 
@@ -743,7 +748,7 @@ async function measureTyping(page: Page, session: CDPSession, thread: BenchThrea
   const before = await cdpMetrics(session);
   // About three frames between keys, so each keystroke's work lands in its own frames.
   await page.keyboard.type("a".repeat(TYPED_KEYS), { delay: 50 });
-  await settle(page);
+  await nextFrames(page);
   const after = await cdpMetrics(session);
   await composer.fill("");
   await settle(page);
@@ -759,7 +764,7 @@ async function measureResize(page: Page, session: CDPSession) {
     await page.setViewportSize({ width, height: VIEWPORT.height });
     await page.evaluate("new Promise((resolve) => requestAnimationFrame(() => resolve()))");
   }
-  await settle(page);
+  await nextFrames(page);
   const after = await cdpMetrics(session);
   return roundMetric(durationDelta(before, after, "TaskDuration") / RESIZE_WIDTHS.length, 3);
 }
