@@ -992,17 +992,47 @@ export async function updateScheduleFromTool(
     // The change is saved even if the thread signal fails.
   }
 
+  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
   return {
     ok: true as const,
     routineId: existing.id,
     name: name ?? existing.name,
-    prompt: prompt ?? existing.prompt,
     active,
     crons,
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),
-    ...describeRoutineTiming({ crons, timezone, nextRunAt }),
+    ...timing,
+    // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
+    changes: routineChanges(
+      {
+        name: existing.name,
+        prompt: existing.prompt,
+        active: existing.active,
+        ...describeRoutineTiming(existing),
+      },
+      { name: name ?? existing.name, prompt: prompt ?? existing.prompt, active, ...timing },
+    ),
   };
+}
+
+type RoutineView = {
+  name: string;
+  prompt: string;
+  active: boolean;
+  timezone: string;
+  schedule?: string;
+  nextRun: string | null;
+};
+
+/** Before and after for each field an update changed; a field that kept its value is left out. */
+function routineChanges(before: RoutineView, after: RoutineView) {
+  const changes: Record<string, { before: unknown; after: unknown }> = {};
+  for (const key of ["name", "prompt", "active", "timezone", "schedule", "nextRun"] as const) {
+    if (before[key] !== after[key]) {
+      changes[key] = { before: before[key] ?? null, after: after[key] ?? null };
+    }
+  }
+  return changes;
 }
 
 /** Cancel a bot routine, optionally restricted to the current group thread. */
