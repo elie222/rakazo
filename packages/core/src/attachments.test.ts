@@ -78,6 +78,8 @@ describe("attachment helpers", () => {
   });
   it("accepts zip archives and rejects unsupported mime types and empty payloads", () => {
     expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
+    expect(() => validateAttachmentMimeType("application/vnd.rar")).not.toThrow();
+    expect(() => validateAttachmentMimeType("application/x-7z-compressed")).not.toThrow();
     expect(() => validateAttachmentMimeType("application/octet-stream")).toThrow(
       AttachmentValidationError,
     );
@@ -179,6 +181,44 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("archive.ZIP", reportedType)).toBe("application/zip");
     expect(attachmentExtensionForMimeType("application/zip")).toBe(".zip");
   });
+
+  it.each([
+    [
+      "rar",
+      "application/vnd.rar",
+      [
+        undefined,
+        "",
+        "application/vnd.rar",
+        "application/x-rar-compressed",
+        "application/x-rar",
+        "application/rar",
+        "application/octet-stream",
+      ],
+    ],
+    [
+      "7z",
+      "application/x-7z-compressed",
+      [
+        undefined,
+        "",
+        "application/x-7z-compressed",
+        "application/x-7z",
+        "application/octet-stream",
+      ],
+    ],
+  ])(
+    "infers %s archive attachments across reported types",
+    (extension, mimeType, reportedTypes) => {
+      for (const reportedType of reportedTypes) {
+        expect(inferAttachmentMimeType(`archive.${extension}`, reportedType)).toBe(mimeType);
+        expect(inferAttachmentMimeType(`ARCHIVE.${extension.toUpperCase()}`, reportedType)).toBe(
+          mimeType,
+        );
+      }
+      expect(attachmentExtensionForMimeType(mimeType)).toBe(`.${extension}`);
+    },
+  );
 
   it("scopes current-turn images to user-triggered runs", () => {
     const messages = [
@@ -445,6 +485,8 @@ describe("artifactTypeLabel", () => {
     expect(artifactTypeLabel("text/markdown")).toBe("MD");
     expect(artifactTypeLabel("application/pdf")).toBe("PDF");
     expect(artifactTypeLabel("image/png")).toBe("PNG");
+    expect(artifactTypeLabel("application/vnd.rar")).toBe("RAR");
+    expect(artifactTypeLabel("application/x-7z-compressed")).toBe("7Z");
     expect(
       artifactTypeLabel("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
     ).toBe("XLSX");
