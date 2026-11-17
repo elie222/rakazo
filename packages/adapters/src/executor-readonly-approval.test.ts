@@ -2893,7 +2893,7 @@ describe("command watch creation approval", () => {
     await f.run();
     expect(f.results[0]).toEqual({
       error:
-        'An active routine named "Inbox check" already exists (routine-1). Update or cancel it instead.',
+        'An active routine named "Inbox check" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     });
     expect(f.effects).toEqual([]);
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
