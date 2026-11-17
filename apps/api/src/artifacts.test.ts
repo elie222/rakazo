@@ -1,6 +1,7 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { attachmentComputerPath } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -434,6 +435,26 @@ describe("configured artifact upload limit", () => {
       expect.anything(),
     );
     put.mockClear();
+    for (const [name, mimeType, expected] of [
+      ["bundle.rar", "application/x-rar-compressed", "application/vnd.rar"],
+      ["bundle.RAR", "application/octet-stream", "application/vnd.rar"],
+      ["bundle.7z", "application/x-7z", "application/x-7z-compressed"],
+      ["bundle.7Z", "application/octet-stream", "application/x-7z-compressed"],
+    ] as const) {
+      await expect(
+        createOwnedArtifact(deps, actor, {
+          botId: "bot-1",
+          name,
+          mimeType,
+          contentBase64: "YXJjaGl2ZQ==",
+        }),
+      ).rejects.toBe(reachedStorage);
+      expect(put).toHaveBeenCalledWith(
+        expect.objectContaining({ mimeType: expected }),
+        expect.anything(),
+      );
+      put.mockClear();
+    }
     await expect(
       createOwnedArtifact(deps, actor, {
         botId: "bot-1",
@@ -493,15 +514,12 @@ describe("storeInboundAttachment", () => {
     vi.useFakeTimers();
     try {
       const { put, store } = setup();
-      let finish!: (bytes: Uint8Array) => void;
-      const download = new Promise<Uint8Array>((resolve) => {
-        finish = resolve;
-      });
-      const result = store({ name: "a.png", mimeType: "image/png", fetch: () => download });
+      const download = deferred<Uint8Array>();
+      const result = store({ name: "a.png", mimeType: "image/png", fetch: () => download.promise });
       const rejected = expect(result).rejects.toThrow("Attachment download timed out");
       await vi.advanceTimersByTimeAsync(2_000);
       await rejected;
-      finish(new Uint8Array(3));
+      download.resolve(new Uint8Array(3));
       await Promise.resolve();
       expect(put).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);

@@ -11,8 +11,7 @@ import {
   GroupAvatar,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
@@ -267,25 +266,20 @@ function ActivityFilters({
               <Label htmlFor={statusId} className="text-body-sm text-muted-foreground/80">
                 <Trans>Status</Trans>
               </Label>
-              <NativeSelect
+              <OptionSelect<ActivityListFilters["status"]>
                 id={statusId}
                 data-testid="activity-status-filter"
                 value={filters.status}
-                onChange={(event) =>
-                  onChange({
-                    ...filters,
-                    status: event.target.value as ActivityListFilters["status"],
-                  })
-                }
-                className="mt-1 w-full"
-              >
-                <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
-                {STATUS_FILTERS.map((status) => (
-                  <NativeSelectOption key={status} value={status}>
-                    {statusLabel(status)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={(status) => onChange({ ...filters, status })}
+                className="mt-1"
+                options={[
+                  { value: "all", label: t`All statuses` },
+                  ...STATUS_FILTERS.map((status) => ({
+                    value: status,
+                    label: statusLabel(status),
+                  })),
+                ]}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0">

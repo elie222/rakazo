@@ -15,11 +15,10 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
-import { COMPUTER_USING_RUNS, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
+import { computerUsingRuns, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
   isUniqueViolation,
@@ -450,14 +449,6 @@ export async function sleepComputerIfIdle(
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
-  if (computer.executionRunId) {
-    // A legacy binding a pre-lease release left behind. Both suspension claims below
-    // require it null, and a stranded one names a run nothing will clean up, so the
-    // computer could never sleep. Runs that may still execute are left to their owner.
-    await clearEndedExecutionRunBinding(deps.prisma, computer.id);
-    computer = await loadComputer(deps.prisma, computerId);
-    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
-  }
 
   const ref = toComputerRef(computer);
   const ctx: AdapterContext = {
@@ -521,7 +512,6 @@ export async function sleepComputerIfIdle(
       maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
-      executionRunId: null,
       executionLeases: await noBlockingExecutionLease(deps.prisma, computerId, checkpointedAt),
     },
     data: { state: "suspending", updatedAt: checkpointedAt },
@@ -748,7 +738,6 @@ async function suspendStoppedComputer(
       maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
-      executionRunId: null,
       executionLeases: await noBlockingExecutionLease(deps.prisma, computer.id, new Date()),
     },
     data: {
@@ -827,7 +816,7 @@ async function announceSuspended(
 }
 
 /** System notes reach users and the bot through the existing thread history. */
-async function announceUnsavedHome(
+export async function announceUnsavedHome(
   deps: { prisma: PrismaClient; events: ThreadEvents },
   computer: { id: string; spaceId: string; homeRevisionAt: Date | null; runningSince: Date | null },
   error: WorkspaceTooLargeError,
@@ -1013,7 +1002,6 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseId: true,
       controlLeaseExpiresAt: true,
       controlBotId: true,
-      executionRunId: true,
       runningSince: true,
       homeRevisionAt: true,
       updatedAt: true,
@@ -1030,7 +1018,7 @@ function findActiveRun(
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       status: { in: statuses as (typeof QUEUE_HOLDING_RUN_STATUSES)[number][] },
       ...(liveLeaseOnly ? { leaseExpiresAt: { gt: new Date(Date.now()) } } : {}),
     },

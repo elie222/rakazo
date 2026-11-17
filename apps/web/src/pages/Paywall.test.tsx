@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -97,7 +98,7 @@ async function renderPaywall(status: Record<string, unknown>) {
     click: async (selector: string) => {
       await act(async () => {
         (container.querySelector(selector) as HTMLElement).click();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await flush();
       });
     },
     cleanup: () => {

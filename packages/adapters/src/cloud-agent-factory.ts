@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CloudAgentProvider } from "@rakazo/adapter-kit";
 import { EmulatorCloudAgentProvider } from "./cloud-agent-emulator.js";
 import { resolveCloudAgentProvider } from "./cloud-agent-provider-env.js";
-import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
+import { CursorCloudAgentProvider } from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
 
 /** The composition root binds a credential to exactly one authorized Space. */
 export interface CloudAgentConnection {

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
@@ -34,6 +35,14 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 
+const client = vi.hoisted(() => ({ preferences: {} }));
+vi.mock("../lib/rpc", () => ({
+  rpc: client,
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => null,
+}));
+
 import { LabsSettingsPanel } from "./LabsSettingsPanel";
 
 let root: ReturnType<typeof createRoot> | undefined;
@@ -61,7 +70,7 @@ it("turns Board on by saving the whole Labs list", async () => {
 
   await act(async () => toggle?.click());
 
-  expect(onLabsChange).toHaveBeenCalledExactlyOnceWith(["board"]);
+  expect(onLabsChange).toHaveBeenCalledExactlyOnceWith(["board"], client);
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
@@ -75,6 +84,23 @@ it("turns Board off and shows an error when the save fails", async () => {
     container.querySelector<HTMLButtonElement>('[data-testid="lab-board-toggle"]')?.click(),
   );
 
-  expect(onLabsChange).toHaveBeenCalledExactlyOnceWith([]);
+  expect(onLabsChange).toHaveBeenCalledExactlyOnceWith([], client);
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Couldn't update Labs");
+});
+
+it("holds the switch while the save is in flight and sends one save for a double click", async () => {
+  const pending = deferred<void>();
+  const onLabsChange = vi.fn(() => pending.promise);
+  const container = await render({ labs: [], available: ["board"], onLabsChange });
+  const toggle = container.querySelector<HTMLButtonElement>('[data-testid="lab-board-toggle"]');
+
+  await act(async () => {
+    toggle?.click();
+    toggle?.click();
+  });
+
+  expect(onLabsChange).toHaveBeenCalledTimes(1);
+  expect(toggle?.disabled).toBe(true);
+  await act(async () => pending.resolve());
+  expect(toggle?.disabled).toBe(false);
 });

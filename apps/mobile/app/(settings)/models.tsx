@@ -18,8 +18,6 @@ import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
 import { SpaceBotsModel } from "../../components/space-bots-model";
-// Connections belong to the account, so renaming and removing them go to the selected Space.
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import type { ModelConnectionRequest } from "../../lib/model-connection-request";
@@ -27,8 +25,9 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { settingsTarget } from "../../lib/settings-target";
+import type { SaveSend } from "../../lib/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { ACCOUNT_SETTINGS, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -65,7 +64,6 @@ export default function Models() {
   const bots =
     useQuery({ ...rpcQuery("bots/list", undefined, spaceId), enabled: false }, queryClient).data ??
     noBots;
-  const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const openedRef = useRef(false);
   const pickerRequestRef = useRef<string | null>(null);
@@ -228,14 +226,23 @@ export default function Models() {
     });
   }
 
-  async function changeConnection(action: () => Promise<unknown>, failure: string) {
-    try {
-      await action();
-      setError(null);
-    } catch (err) {
-      setError(errorText(err, failure));
-    }
-    await load();
+  // Connections belong to the account, so renaming and removing them go to the selected Space.
+  const connectionChange = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (
+      input: { action: (send: SaveSend) => Promise<unknown>; failure: string },
+      send,
+    ) => {
+      await input.action(send);
+    },
+    onSaved: () => load(),
+    onFailed: () => load(),
+  });
+  const error = connectionChange.error
+    ? errorText(connectionChange.error, connectionChange.input?.failure)
+    : null;
+  function changeConnection(action: (send: SaveSend) => Promise<unknown>, failure: string) {
+    connectionChange.run({ action, failure });
   }
 
   // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
@@ -272,7 +279,7 @@ export default function Models() {
           <LoadFailure
             message={failure}
             onRetry={() => {
-              setError(null);
+              connectionChange.reset();
               setLoadError(null);
               void load();
             }}
@@ -314,15 +321,15 @@ export default function Models() {
                 onManage={manage}
                 onAdd={addProvider}
                 onRename={(credential, label) =>
-                  void changeConnection(
-                    () => rpc("models/rename", { credentialId: credential.id, label }),
+                  changeConnection(
+                    (send) => send("models/rename", { credentialId: credential.id, label }),
                     t`Could not update name`,
                   )
                 }
                 onDisconnect={(credential) =>
-                  void changeConnection(
-                    () =>
-                      rpc("models/disconnect", {
+                  changeConnection(
+                    (send) =>
+                      send("models/disconnect", {
                         provider: credential.provider,
                         credentialId: credential.id,
                       }),

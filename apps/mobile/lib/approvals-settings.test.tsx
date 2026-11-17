@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -41,9 +43,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -187,14 +186,14 @@ const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
 
 async function render() {
   await act(async () => root.render(createElement(Approvals)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function press(node: HTMLElement | undefined) {
   await act(async () => node!.click());
 }
 async function renderPicker() {
   await act(async () => root.render(createElement(AddApprovalRule)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 const tool = (label: string) =>
   [...container.querySelectorAll("span")].find((node) => node.textContent === label);
@@ -343,7 +342,7 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(rows()).toEqual([]);
 
   await act(async () => retry()!.click());
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   expect(rows()).toEqual(["Always allow: Send email"]);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
@@ -426,7 +425,7 @@ it("offers a retry when the picker's tools fail to load", async () => {
   expect(tool("Shell")).toBeUndefined();
 
   await act(async () => retry()!.click());
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   expect(tool("Shell")).toBeDefined();
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
@@ -493,19 +492,20 @@ it("drops Never ask dimming when a later mode read fails", async () => {
 it("keeps a saved move when a read that started before it lands later", async () => {
   state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
   await render();
-  let finishRead!: (rules: Rule[]) => void;
+  let finishRead!: Deferred<Rule[]>;
   const fallback = state.rpc.getMockImplementation()!;
-  state.rpc.mockImplementation((proc: string, ...rest: unknown[]) =>
-    proc === "approvalRules/list"
-      ? new Promise((resolve) => (finishRead = resolve))
-      : fallback(proc, ...(rest as [Record<string, unknown>])),
-  );
+  state.rpc.mockImplementation((proc: string, ...rest: unknown[]) => {
+    if (proc !== "approvalRules/list")
+      return fallback(proc, ...(rest as [Record<string, unknown>]));
+    finishRead = deferred<Rule[]>();
+    return finishRead.promise;
+  });
   await act(async () => root.render(createElement("div")));
   await render();
   await press(menuButton("example.com", "Blocked"));
   expect(rows()).toEqual(["Blocked: example.com"]);
   await act(async () =>
-    finishRead([rule({ id: "site", matchKind: "site", matchValue: "example.com" })]),
+    finishRead.resolve([rule({ id: "site", matchKind: "site", matchValue: "example.com" })]),
   );
   expect(rows()).toEqual(["Blocked: example.com"]);
 });

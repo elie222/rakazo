@@ -1,5 +1,6 @@
 import type * as Adapters from "@rakazo/adapters";
 import { destroyBot } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
@@ -17,6 +18,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
+  assertOrganizationOwner: vi.fn(async () => undefined),
   claimOrganizationForDeletion: vi.fn(),
   keepOrganizationTrialUse: vi.fn(async () => undefined),
   setOrganizationDeletionLease: vi.fn(),
@@ -26,14 +28,6 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => undefined),
 }));
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 describe("deleteOrganization lease", () => {
   let spacesLeft: number;
   const prisma = {
@@ -42,6 +36,9 @@ describe("deleteOrganization lease", () => {
     bot: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
     space: { count: vi.fn(async () => spacesLeft) },
+    // The lease table: every take, renewal, release and fence check finds the row.
+    $queryRaw: vi.fn(async () => [{ fence: 1 }]),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
   const deps = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -132,7 +129,7 @@ describe("deleteOrganization lease", () => {
     await vi.waitFor(() => expect(billingCalled).toBe(true));
     await vi.advanceTimersByTimeAsync(4 * 60_000);
 
-    await expect(deleting).rejects.toThrow("lost its claim");
+    await expect(deleting).rejects.toThrow("Lost the lease");
     billing.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(prisma.artifact.findMany).not.toHaveBeenCalled();

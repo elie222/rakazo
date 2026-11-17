@@ -1,12 +1,13 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
 import { appConnectCard, matchAppCatalog, matchesAppConnection } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { DEFAULT_CONNECTOR_ID } from "./connector-registry.js";
 
 const RECENT_MESSAGES = 50;
 
@@ -63,15 +64,15 @@ export async function connectApp(
     // Only recent cards count as already shown; an old one far up the chat should not block a new one.
     const recent = await tx.message.findMany({
       where: { threadId: target.threadId },
-      select: { blocks: true },
+      select: { id: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
     });
     if (
       recent.some((message) =>
-        (message.blocks as MessageBlock[]).some(
+        storedMessageBlocks(message).some(
           (candidate) =>
-            matchesAppConnection(candidate, entry.connectorId, entry.slug) &&
+            matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
             candidate.status === "pending",
         ),
       )

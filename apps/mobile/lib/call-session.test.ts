@@ -1,4 +1,4 @@
-import type { AiConsentStatus } from "@rakazo/contracts";
+import type { AiConsentStatus, MessageBlock } from "@rakazo/contracts";
 import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import {
   AiConsentBlocked,
@@ -7,6 +7,8 @@ import {
   ensureAiDataConsent,
   INTERIM_BARGE_IN_MS,
 } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hapticImpact, hapticSuccess } from "./haptics";
 
@@ -108,7 +110,6 @@ const expoAudioMock = vi.hoisted(() => () => ({
   setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
 }));
 vi.mock("expo-audio", () => expoAudioMock());
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   // The live session's context, so the production recorder's voice consent check can run.
@@ -119,9 +120,6 @@ vi.mock("./api", () => ({
   })),
   rpc: vi.fn(),
 }));
-vi.mock("./mobile-types", () => ({
-  blockText: vi.fn(),
-}));
 vi.mock("./api-server", () => ({
   configureSessionEndHangUp: vi.fn(),
 }));
@@ -129,23 +127,6 @@ vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-};
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
-
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const CALL_SESSION = {
   category: "playAndRecord",
   categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
@@ -2291,6 +2272,66 @@ describe("mobile call session on a timer", () => {
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
   });
+
+  it("speaks the bot's reply without its tool activity, and listens again after activity alone", async () => {
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
+    vi.mocked(rpc).mockResolvedValue(idleThread("bot-1") as never);
+    let push: Parameters<typeof subscribeThread>[2] = () => undefined;
+    vi.mocked(subscribeThread).mockImplementation(
+      (_target, _cursor, onEvent, signal) =>
+        new Promise((resolve) => {
+          push = onEvent;
+          signal.addEventListener("abort", () => resolve(undefined as never));
+        }),
+    );
+    const fake = fakes({ onDevice: true });
+    const { watch: _watch, ...deps } = fake.deps;
+    const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
+    await tick();
+    let seq = 0;
+    const message = (
+      messageId: string,
+      runId: string,
+      role: "user" | "bot",
+      blocks: MessageBlock[],
+    ) =>
+      push({
+        type: "thread.message.created",
+        seq: ++seq,
+        botId: "bot-1",
+        runId,
+        payload: { messageId, role, blocks, ...(role === "user" ? { callId: id } : {}) },
+      });
+    const shell: MessageBlock = { kind: "steps", steps: [{ label: "Shell", count: 1 }] };
+
+    fake.hear("Clean the build folder.");
+    await tick();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    message("turn-1", "run-1", "user", [{ kind: "text", text: "Clean the build folder." }]);
+    message("reply-1", "run-1", "bot", [
+      shell,
+      { kind: "progress", text: "Using shell", activity: true },
+    ]);
+    await tick();
+    expect(fake.spoken).toEqual([]);
+    expect(getSnapshot()?.phase).toBe("listening");
+
+    fake.send.mockResolvedValueOnce("run-2");
+    fake.hear("Is the build green?");
+    await tick();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    message("turn-2", "run-2", "user", [{ kind: "text", text: "Is the build green?" }]);
+    message("reply-2", "run-2", "bot", [
+      shell,
+      { kind: "text", text: "The build is green." },
+      { kind: "ask", text: "Should I deploy it?", status: "pending" },
+    ]);
+    await tick();
+    expect(fake.spoken).toEqual(["The build is green.\nShould I deploy it?"]);
+    vi.mocked(rpc).mockReset();
+    vi.mocked(subscribeThread).mockReset();
+  });
 });
 
 // Kept above the hang-up describe: its audio-import test resets modules, and the
@@ -2468,17 +2509,11 @@ describe("mobile call microphone after hang-up", () => {
   it("does not ask for the microphone when the call ends during the audio import", async () => {
     vi.resetModules();
     const requestPermission = vi.fn(async () => ({ granted: true }));
-    let finishImport!: () => void;
-    let importStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      importStarted = resolve;
-    });
-    const pendingImport = new Promise<void>((resolve) => {
-      finishImport = resolve;
-    });
+    const started = deferred();
+    const pendingImport = deferred();
     vi.doMock("expo-audio", async () => {
-      importStarted();
-      await pendingImport;
+      started.resolve();
+      await pendingImport.promise;
       return {
         AudioModule: { requestRecordingPermissionsAsync: requestPermission },
         RecordingPresets: { HIGH_QUALITY: {} },
@@ -2489,9 +2524,9 @@ describe("mobile call microphone after hang-up", () => {
       const session = await import("./call-session");
       const { record: _record, ...deps } = fakes().deps;
       session.startCall({ botId: "bot-1", botName: "Ada" }, deps);
-      await started;
+      await started.promise;
       session.endCall();
-      finishImport();
+      pendingImport.resolve();
       await flush();
       expect(requestPermission).not.toHaveBeenCalled();
     } finally {

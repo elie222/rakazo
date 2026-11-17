@@ -6,12 +6,18 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   settleRunSubagents,
+  showsAsLiveStep,
   stopsRunHelpers,
   subagentBlockFromPayload,
 } from "./events.js";
 import { mergeThreadHistory, upsertMessageById } from "./message-pages.js";
 import { payloadAuthor, replyMetadata } from "./message-replies.js";
-import { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from "./run-state.js";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isActive,
+  isBackgroundRunTrigger,
+  QUEUE_HOLDING_RUN_STATUSES,
+} from "./run-state.js";
 import { takeLiveMessage, updateCloudAgentMessages } from "./thread-message-updates.js";
 
 /** A thread event as a client receives it from the live stream. */
@@ -183,7 +189,8 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
         taskId: runId,
         ...(userId ? { userId } : {}),
         status,
-        trigger: "bot_message",
+        trigger:
+          payload.trigger === BACKGROUND_HELPER_TRIGGER ? BACKGROUND_HELPER_TRIGGER : "bot_message",
         routineId: null,
         modelProvider: null,
         modelId: null,
@@ -198,7 +205,9 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       ];
       const promoteWaiting =
         !prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
+        (waitingRun.trigger !== BACKGROUND_HELPER_TRIGGER &&
+          prev.run.status !== "waiting_input" &&
+          prev.run.status !== "waiting_takeover");
       return {
         ...prev,
         cursor,
@@ -278,6 +287,7 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       activeRuns,
     };
   }
+  if (event.type === "agent.tool.called" && !showsAsLiveStep(payload.name)) return advanced();
   if (event.type === "thread.progress" || event.type === "agent.tool.called") {
     const liveId = progressMessageId(event);
     const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
@@ -343,7 +353,25 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
     const without = remaining.filter(
       (message) => message.id === id || !replacedSubagent(message, replacedSubagentIds),
     );
-    return { ...prev, cursor, messages: upsertMessageById(without, next) };
+    // Helper execution stays in its own thread. Answering its visible card ends the
+    // chat's waiting state; no hidden run.started event will arrive here to do that.
+    const requestRunId = event.runId ?? known?.runId;
+    const answeredHelper =
+      blocks.some((block) => block.kind === "ask") &&
+      blocks.every((block) => block.kind !== "ask" || block.status === "answered") &&
+      activeThreadRuns(prev).some(
+        (run) => run.id === requestRunId && run.trigger === BACKGROUND_HELPER_TRIGGER,
+      );
+    const activeRuns = answeredHelper
+      ? activeThreadRuns(prev).filter((run) => run.id !== requestRunId)
+      : prev.activeRuns;
+    return {
+      ...prev,
+      cursor,
+      messages: upsertMessageById(without, next),
+      activeRuns,
+      run: answeredHelper && prev.run?.id === requestRunId ? (activeRuns?.[0] ?? null) : prev.run,
+    };
   }
   return prev;
 }

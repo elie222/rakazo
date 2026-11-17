@@ -23,11 +23,10 @@ describe("provisionMessagingIdentity", () => {
       thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
       user: { create: vi.fn() },
     };
-    const result = await provisionMessagingIdentity(
-      prisma as unknown as PrismaClient,
-      { provider: "sendblue", address: "+15551234567" },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+15551234567",
+    });
 
     expect(result).toEqual({
       provider: "sendblue",
@@ -48,11 +47,10 @@ describe("provisionMessagingIdentity", () => {
     const prisma = { messagingIdentity: { findUnique: vi.fn() } };
     for (const bad of ["", "+1 (555) 123-4567", "has space", "a".repeat(129)]) {
       await expect(
-        provisionMessagingIdentity(
-          prisma as unknown as PrismaClient,
-          { provider: "sendblue", address: bad },
-          { signupsEnabled: undefined, signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+          provider: "sendblue",
+          address: bad,
+        }),
       ).rejects.toThrow(/Invalid messaging address/);
     }
     expect(prisma.messagingIdentity.findUnique).not.toHaveBeenCalled();
@@ -78,11 +76,10 @@ describe("provisionMessagingIdentity", () => {
       thread: { findFirst: vi.fn(async () => null) },
     };
     await expect(
-      provisionMessagingIdentity(
-        prisma as unknown as PrismaClient,
-        { provider: "sendblue", address: "+15551234567" },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+        provider: "sendblue",
+        address: "+15551234567",
+      }),
     ).rejects.toThrow(/thread/i);
   });
 });
@@ -124,11 +121,10 @@ describe("provisionMessagingIdentity create race", () => {
         ),
       },
     };
-    const result = await provisionMessagingIdentity(
-      prisma as unknown as PrismaClient,
-      { provider: "sendblue", address: "+15551234567" },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+15551234567",
+    });
 
     expect(result).toEqual({
       provider: "sendblue",
@@ -217,11 +213,7 @@ describe("messaging identity isolation", () => {
       },
     };
     const provision = (provider: string, address: string) =>
-      provisionMessagingIdentity(
-        prisma as unknown as PrismaClient,
-        { provider, address },
-        { signupsEnabled: "true", signupAllowlist: "" },
-      );
+      provisionMessagingIdentity(prisma as unknown as PrismaClient, { provider, address });
     return { prisma, users, provision };
   }
 

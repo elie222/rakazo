@@ -15,6 +15,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   clearEndedRunState,
+  conversationRunsWhere,
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -77,7 +78,7 @@ export function cancelThreadRuns(
       where: {
         ...(helperMessageId
           ? { ...helpers, sourceMessageId: helperMessageId }
-          : { OR: [{ threadId: target.threadId }, helpers] }),
+          : conversationRunsWhere(target.threadId)),
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
@@ -104,33 +105,18 @@ export function cancelThreadRuns(
       });
     }
     // Snapshot teardown coordinates before commit. Once cancellation becomes
-    // visible, a worker can release its lease / execution columns immediately; a
-    // later lookup would then miss the sandbox work this request must stop.
-    // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
-    // only a legacy secondary path and is not written by current acquisition.
+    // visible, a worker can release its lease immediately; a later lookup would
+    // then miss the sandbox work this request must stop.
     const leases = ids.length
       ? await tx.computerExecutionLease.findMany({
           where: { runId: { in: ids } },
           select: { computerId: true, botId: true, runId: true, fence: true },
         })
       : [];
-    const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
-    const computers = ids.length
+    const computers = leases.length
       ? await tx.computer.findMany({
-          where:
-            leaseComputerIds.length > 0
-              ? {
-                  OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
-                }
-              : { executionRunId: { in: ids } },
-          select: {
-            id: true,
-            homeKey: true,
-            kind: true,
-            providerRef: true,
-            executionBotId: true,
-            executionRunId: true,
-          },
+          where: { id: { in: [...new Set(leases.map((lease) => lease.computerId))] } },
+          select: { id: true, homeKey: true, kind: true, providerRef: true },
         })
       : [];
     // One terminal event per cancelled run, in the same commit as the status
@@ -242,7 +228,7 @@ export async function finishThreadStop(
     computer: (typeof computers)[number];
     botId: string;
     runId: string;
-    lease: (typeof leases)[number] | null;
+    lease: (typeof leases)[number];
   }> = [];
   const seenTargets = new Set<string>();
   for (const lease of leases) {
@@ -256,24 +242,6 @@ export async function finishThreadStop(
       botId: lease.botId,
       runId: lease.runId,
       lease,
-    });
-  }
-  const cancelledRunIds = new Set(runIds);
-  for (const computer of computers) {
-    if (!computer.executionBotId || !computer.executionRunId) continue;
-    // Computers may enter the snapshot via a cancelled lease while
-    // Computer.executionRunId still points at an unrelated live run. Only treat
-    // the legacy columns as a teardown target when they belong to a run we
-    // cancelled in this transaction.
-    if (!cancelledRunIds.has(computer.executionRunId)) continue;
-    const key = `${computer.id}:${computer.executionRunId}`;
-    if (seenTargets.has(key)) continue;
-    seenTargets.add(key);
-    teardownTargets.push({
-      computer,
-      botId: computer.executionBotId,
-      runId: computer.executionRunId,
-      lease: null,
     });
   }
   await Promise.all(
@@ -296,12 +264,4 @@ export async function finishThreadStop(
     }),
   );
   await expireComputerExecutionLeases(deps.prisma, { runId: { in: runIds } });
-  await deps.prisma.computer.updateMany({
-    where: { executionRunId: { in: runIds } },
-    data: {
-      executionRunId: null,
-      executionBotId: null,
-      executionLeaseExpiresAt: null,
-    },
-  });
 }

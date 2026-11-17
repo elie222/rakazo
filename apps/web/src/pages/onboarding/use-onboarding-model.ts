@@ -15,7 +15,6 @@ import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 import { rpc } from "../../lib/rpc";
 import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { errorText } from "../../lib/user-error";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
@@ -72,6 +71,7 @@ export function useOnboardingModel({
     apiKey,
     apiProtocol,
     baseUrl,
+    connectionErrorText,
     routingReady,
     gatewayId,
     projectId,
@@ -252,7 +252,7 @@ export function useOnboardingModel({
       }
       onConnected();
     } catch (err) {
-      setError(errorText(err, t`Could not save model`));
+      setError(connectionErrorText(err, t`Could not save model`));
     }
   }
 

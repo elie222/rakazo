@@ -2,6 +2,7 @@
 
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -44,7 +45,7 @@ const screenUrl = vi.fn(async () => screenAnswer());
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
-    panel: "computer",
+    panel: "settings",
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
   });
@@ -92,6 +93,8 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(<Harness />));
+  // The screen is read only while the full computer window is open.
+  await act(async () => state.setComputerOpen(true));
 });
 
 afterEach(() => {
@@ -344,13 +347,8 @@ it("reconnects again after its read ends on an already rejoined screen", async (
 it("shows the error when a reconnect read never settles", async () => {
   await read();
   await report("connected");
-  let settle: ((value: ScreenAnswer) => void) | undefined;
-  screenUrl.mockImplementationOnce(
-    () =>
-      new Promise<ScreenAnswer>((resolve) => {
-        settle = resolve;
-      }),
-  );
+  const settle = deferred<ScreenAnswer>();
+  screenUrl.mockImplementationOnce(() => settle.promise);
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -365,7 +363,7 @@ it("shows the error when a reconnect read never settles", async () => {
   // An answer that arrives after the deadline does not commit: the screen keeps waiting
   // for Retry.
   await act(async () => {
-    settle?.(screenAnswer());
+    settle.resolve(screenAnswer());
   });
   expect(code()).toBeNull();
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
@@ -518,7 +516,7 @@ it("still reads the screen when the refresh after this tab's release fails", asy
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -542,6 +540,8 @@ it("still reads the screen when the refresh after this tab's release fails", asy
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   await act(async () => {
     await controls.releaseComputer();
@@ -565,7 +565,7 @@ it("reads the new screen beside the thread refresh after this tab releases contr
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -587,6 +587,8 @@ it("reads the new screen beside the thread refresh after this tab releases contr
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   let released!: Promise<void>;
   await act(async () => {
@@ -738,13 +740,8 @@ it("takes control when a view-only boot is already in progress", async () => {
 });
 
 it("ignores a second take while the first control request is pending", async () => {
-  let finish!: (value: { leaseId: string; expiresAt: string }) => void;
-  const takeover = vi.fn(
-    () =>
-      new Promise<{ leaseId: string; expiresAt: string }>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  const finish = deferred<{ leaseId: string; expiresAt: string }>();
+  const takeover = vi.fn(() => finish.promise);
   const { takeControl } = await renderTakingControl(takeover);
   let first!: Promise<boolean>;
   await act(async () => {
@@ -756,7 +753,7 @@ it("ignores a second take while the first control request is pending", async () 
   expect(takeover).toHaveBeenCalledTimes(1);
   expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
   await act(async () => {
-    finish({ leaseId: "lease-1", expiresAt: "" });
+    finish.resolve({ leaseId: "lease-1", expiresAt: "" });
     await first;
   });
 });

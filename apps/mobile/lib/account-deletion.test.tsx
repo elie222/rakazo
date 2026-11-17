@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -221,18 +222,14 @@ describe("passwordless account deletion", () => {
 
   it("cannot be swiped away while a deletion is in flight", async () => {
     vi.mocked(continueWithSso).mockResolvedValue(true);
-    let fail!: (error: Error) => void;
-    vi.mocked(deleteAccount).mockReturnValue(
-      new Promise((_, reject) => {
-        fail = reject;
-      }) as never,
-    );
+    const fail = deferred<never>();
+    vi.mocked(deleteAccount).mockReturnValue(fail.promise as never);
     await open();
     await click("Sign in again");
     vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...passwordless, freshOidcAuth: true });
     await click("Delete");
     expect(container.querySelector("section")!.dataset.swipe).toBe("false");
-    await act(async () => fail(new Error("offline")));
+    await act(async () => fail.reject(new Error("offline")));
     expect(container.querySelector("section")!.dataset.swipe).toBe("true");
   });
 

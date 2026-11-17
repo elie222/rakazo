@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import type { ReactElement, ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -15,9 +16,6 @@ const state = vi.hoisted(() => ({
   focused: true,
   header: undefined as undefined | (() => ReactElement<{ label: string; onPress: () => void }>),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
@@ -155,8 +153,8 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<PluginRoute />));

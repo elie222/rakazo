@@ -1,61 +1,66 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { rpc } from "../lib/api";
 import { native, useMobileTokens } from "../lib/native";
+import { queryClient, rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 import { useTextEditDialog } from "./profile-edit-dialog";
+import { SettingsGroup, SettingsRow } from "./settings-group";
 
-export function BotContextCards({ botId }: { botId: string }) {
+/** A bot's open work, or its memory notes; each shows only once it has something. */
+export function BotContextCards({ botId, section }: { botId: string; section: "work" | "memory" }) {
   const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
-  const [work, setWork] = useState<ScratchpadItem[]>([]);
-  const [docs, setDocs] = useState<MemoryDocument[]>([]);
   const [allWork, setAllWork] = useState(false);
   const [allDocs, setAllDocs] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Reload on return, so an edited or deleted note shows its saved state.
-  useFocusEffect(
-    useCallback(() => {
-      let current = true;
-      setError(null);
-      void rpc("scratchpad/list", { botId })
-        .then((items) => {
-          if (current) setWork(items);
-        })
-        .catch((err) => {
-          if (current) setError(errorText(err));
-        });
-      void rpc("memory/list", { botId, scope: "bot" })
-        .then((documents) => {
-          if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
-        })
-        .catch((err) => {
-          if (current) setError(errorText(err));
-        });
-      return () => {
-        current = false;
-      };
-    }, [botId]),
+  // Read again on return, so an edited or deleted note shows its saved state.
+  const workRead = rpcQuery("scratchpad/list", { botId });
+  const workQuery = useScreenQuery(workRead, {
+    enabled: section === "work",
+    onForeground: false,
+  });
+  const docsQuery = useScreenQuery(rpcQuery("memory/list", { botId, scope: "bot" }), {
+    enabled: section === "memory",
+    onForeground: false,
+  });
+  const work = (section === "work" && workQuery.data) || [];
+  const docs = useMemo(
+    () =>
+      (section === "memory" ? (docsQuery.data ?? []) : []).filter((doc) => !isEmptyBotMemory(doc)),
+    [section, docsQuery.data],
   );
+  const change = useSave({
+    save: async (
+      action: { kind: "create"; title: string } | { kind: "complete"; itemId: string },
+      send,
+    ) => {
+      if (action.kind === "create") {
+        const item = await send("scratchpad/create", { botId, title: action.title });
+        await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
+      } else {
+        await send("scratchpad/update", { itemId: action.itemId, status: "done" });
+        await writeSaved(queryClient, workRead.queryKey, (items) =>
+          (items ?? []).filter((entry) => entry.id !== action.itemId),
+        );
+      }
+    },
+  });
+  // A failed add or complete is not shown again on return, as the lists are read again then.
+  const { reset } = change;
+  useFocusEffect(useCallback(() => reset(), [reset]));
+  const busy = change.pending;
+  const readError = section === "work" ? workQuery.error : docsQuery.error;
+  const failure = change.error ?? readError;
+  const error = failure ? errorText(failure) : null;
   const addWork = useTextEditDialog(t`Add open work`, 200);
-  async function createWork(title: string) {
-    if (!title || busy) return;
-    setBusy(true);
-    try {
-      const item = await rpc("scratchpad/create", { botId, title });
-      setWork((items) => [item, ...items]);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+  function createWork(title: string) {
+    if (title && !busy) change.run({ kind: "create", title });
   }
   const heading = { color: tokens.mutedForeground, fontSize: 12, fontWeight: "500" as const };
   const card = { backgroundColor: native.fill, borderRadius: 12, padding: 16, gap: 12 };
@@ -84,7 +89,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 justifyContent: "center",
                 alignItems: "flex-end",
               }}
-              onPress={() => addWork.ask("", (title) => void createWork(title))}
+              onPress={() => addWork.ask("", createWork)}
             >
               <NativeSymbol ios="plus" android="add" size={18} color={tokens.mutedForeground} />
             </Pressable>
@@ -107,13 +112,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                     justifyContent: "center",
                   }}
                   disabled={busy}
-                  onPress={() => {
-                    setBusy(true);
-                    void rpc("scratchpad/update", { itemId: item.id, status: "done" })
-                      .then(() => setWork((items) => items.filter((entry) => entry.id !== item.id)))
-                      .catch((err) => setError(errorText(err)))
-                      .finally(() => setBusy(false));
-                  }}
+                  onPress={() => change.run({ kind: "complete", itemId: item.id })}
                 >
                   <NativeSymbol
                     ios="circle"
@@ -146,48 +145,29 @@ export function BotContextCards({ botId }: { botId: string }) {
       ) : null}
       {addWork.dialog}
       {docs.length ? (
-        <View style={{ marginTop: 24 }}>
-          <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>
-            {t`Memory`}
-          </Text>
-          <View style={card}>
+        <View style={{ marginTop: section === "memory" ? 0 : 24 }}>
+          <SettingsGroup label={t`Memory`}>
             {(allDocs ? docs : docs.slice(0, 5)).map((doc) => (
-              <Pressable
+              <SettingsRow
                 key={doc.id}
                 accessibilityRole="button"
-                accessibilityLabel={doc.path}
+                title={doc.path}
+                chevron="right"
                 onPress={() =>
                   router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
                 }
-                style={{
-                  minHeight: 44,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
-              >
-                <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 14, flex: 1 }}>
-                  {doc.path}
-                </Text>
-                <NativeSymbol
-                  ios="chevron.right"
-                  android="chevron-forward"
-                  size={14}
-                  color={native.tertiaryLabel}
-                />
-              </Pressable>
+              />
             ))}
             {!allDocs && docs.length > 5 ? (
-              <Pressable
+              <SettingsRow
+                key="show-more"
                 accessibilityRole="button"
+                title={t`Show more`}
+                dimmed
                 onPress={() => setAllDocs(true)}
-                style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
-              </Pressable>
+              />
             ) : null}
-          </View>
+          </SettingsGroup>
         </View>
       ) : null}
       {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}

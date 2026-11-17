@@ -11,12 +11,15 @@ const streams = vi.hoisted(
     [] as Array<{
       signal: () => void;
       change: (kind: string) => void;
+      organizations: () => void;
       end: () => void;
       fail: (error: unknown) => void;
     }>,
 );
 const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn() }));
 vi.mock("./computer-updates", () => ({ computerUpdates }));
+const organizations = vi.hoisted(() => ({ refreshOrganizationReads: vi.fn() }));
+vi.mock("./organizations", () => organizations);
 const spaceSelection = vi.hoisted(() => new Set<() => void>());
 vi.mock("./api", () => ({
   subscribeSpaceSelection: (listener: () => void) => {
@@ -50,11 +53,13 @@ vi.mock("./api-live", () => ({
     onSignal: () => void,
     signal: AbortSignal,
     onSpaceChange: (kind: string) => void,
+    onOrganizationsChange: () => void,
   ) =>
     new Promise<void>((resolve, reject) => {
       streams.push({
         signal: onSignal,
         change: onSpaceChange,
+        organizations: onOrganizationsChange,
         end: resolve,
         fail: reject,
       });
@@ -144,6 +149,12 @@ describe("useRosterSignals", () => {
     await act(async () => root.render(<Harness enabled onChange={vi.fn()} />));
     await act(async () => streams[0]!.change("computerUpdates"));
     expect(computerUpdates.signalled).toHaveBeenCalledOnce();
+  });
+
+  it("re-reads organizations on their signal", async () => {
+    await act(async () => root.render(<Stream />));
+    await act(async () => streams[0]!.organizations());
+    expect(organizations.refreshOrganizationReads).toHaveBeenCalledOnce();
   });
 
   it("holds the stream and reads on each change of its own kind", async () => {

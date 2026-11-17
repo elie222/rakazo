@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -20,7 +21,7 @@ vi.mock("../components/pages/PublicPageShell", () => ({
 
 async function settle() {
   for (let tick = 0; tick < 10; tick++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
   }
 }
 

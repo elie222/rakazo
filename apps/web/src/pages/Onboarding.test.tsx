@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,18 +8,15 @@ import type { NavigateFunction } from "react-router-dom";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const account = vi.hoisted(() => ({ load: (_me: unknown) => {}, fail: (_error: Error) => {} }));
+let account = deferred<unknown>();
 
 vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => null,
   rpc: {
-    me: vi.fn(
-      () =>
-        new Promise((resolve, reject) => {
-          account.load = resolve;
-          account.fail = reject;
-        }),
-    ),
+    me: vi.fn(() => {
+      account = deferred();
+      return account.promise;
+    }),
     models: {
       list: vi.fn(async () => [
         {
@@ -82,7 +80,7 @@ it("marks onboarding as usable for the desktop only once a step shows", async ()
   expect(marked()).toBeNull();
 
   await act(async () =>
-    account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+    account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
   );
   expect(host.querySelector("h1")?.textContent).toBe("Connect a model");
   expect(marked()).not.toBeNull();
@@ -101,7 +99,7 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
     ),
   );
   await act(async () =>
-    account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+    account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
   );
   await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
   await act(async () =>
@@ -145,9 +143,9 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
 it.each([
   [
     "arrives",
-    () => account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+    () => account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
   ],
-  ["fails", () => account.fail(new Error("offline"))],
+  ["fails", () => account.reject(new Error("offline"))],
 ])("stays on the next page when the account read %s after leaving", async (_outcome, settle) => {
   const router = {} as { navigate: NavigateFunction; pathname: string };
   function Router() {

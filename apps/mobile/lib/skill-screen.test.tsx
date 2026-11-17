@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -23,9 +24,6 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -119,7 +117,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<SkillScreen />));
@@ -269,10 +267,8 @@ it("creates a new skill from the template and goes back", async () => {
 
 it("reads the skill again on a later visit instead of showing the earlier copy", async () => {
   mocks.params = { id: own.id };
-  let answer!: (skill: typeof own) => void;
-  mocks.rpc
-    .mockResolvedValueOnce(own)
-    .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  const answer = deferred<typeof own>();
+  mocks.rpc.mockResolvedValueOnce(own).mockReturnValueOnce(answer.promise);
   await render();
   expect(editor().value).toBe(own.content);
   await act(async () => root.render(null));
@@ -280,7 +276,7 @@ it("reads the skill again on a later visit instead of showing the earlier copy",
 
   await render();
   expect(container.querySelector("textarea")).toBeNull();
-  await act(async () => answer({ ...own, content: "Edited since.\n" }));
+  await act(async () => answer.resolve({ ...own, content: "Edited since.\n" }));
   await settle();
   expect(editor().value).toBe("Edited since.\n");
 });

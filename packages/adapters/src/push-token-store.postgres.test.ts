@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { credentialDigest } from "./credential-digest.js";
@@ -45,7 +46,7 @@ suite("database push registrations", () => {
   });
   beforeEach(async () => {
     await runAsSystem("clear fixture push registrations", () =>
-      a.prisma.pushToken.deleteMany({ where: { userId: { startsWith: prefix } } }),
+      a.prisma.pushRegistration.deleteMany({ where: { userId: { startsWith: prefix } } }),
     );
   });
   afterAll(async () => {
@@ -58,22 +59,22 @@ suite("database push registrations", () => {
 
   it("shares encrypted registrations across independent connections and restricts row access", async () => {
     await api.save(user("a"), token("a"), session("a"));
-    expect(await worker.load(user("a"))).toEqual({ token: token("a"), sessionId: session("a") });
+    expect(await worker.list(user("a"))).toEqual([{ token: token("a"), sessionId: session("a") }]);
     const row = await runAsSystem("inspect fixture ciphertext", () =>
-      a.prisma.pushToken.findUniqueOrThrow({ where: { userId: user("a") } }),
+      a.prisma.pushRegistration.findFirstOrThrow({ where: { userId: user("a") } }),
     );
     expect(row.ciphertext).not.toContain(token("a"));
     expect(row.tokenDigest).toBe(credentialDigest(token("a")));
     await runAsTenant({ userId: user("b"), spaceId: "unused" }, async () => {
-      expect(await a.prisma.pushToken.findMany()).toEqual([]);
+      expect(await a.prisma.pushRegistration.findMany()).toEqual([]);
     });
   });
 
   it("keeps the native presentation capability across replicas and clears it on legacy registration", async () => {
     await api.save(user("a"), token("a"), session("a"), "android_sender");
-    expect((await worker.load(user("a")))?.presentation).toBe("android_sender");
+    expect((await worker.list(user("a")))[0]?.presentation).toBe("android_sender");
     await api.save(user("a"), token("a"), session("a"));
-    expect((await worker.load(user("a")))?.presentation).toBeUndefined();
+    expect((await worker.list(user("a")))[0]?.presentation).toBeUndefined();
   });
 
   it("serializes concurrent device handovers so only one account owns a token", async () => {
@@ -83,11 +84,11 @@ suite("database push registrations", () => {
       api.save(user("c"), token("shared"), session("c")),
     ]);
     const registrations = await Promise.all([
-      api.load(user("a")),
-      worker.load(user("b")),
-      api.load(user("c")),
+      api.list(user("a")),
+      worker.list(user("b")),
+      api.list(user("c")),
     ]);
-    expect(registrations.filter(Boolean)).toHaveLength(1);
+    expect(registrations.flat()).toHaveLength(1);
   });
 
   it("keeps newer registrations when an old receipt or logout arrives", async () => {
@@ -95,29 +96,49 @@ suite("database push registrations", () => {
     await worker.save(user("a"), token("new"), session("a2"));
     await api.remove(user("a"), credentialDigest(token("a")));
     await api.endSession(user("a"), session("a"));
-    expect((await worker.load(user("a")))?.token).toBe(token("new"));
+    expect((await worker.list(user("a")))[0]?.token).toBe(token("new"));
     await api.remove(user("a"), credentialDigest(token("new")));
-    expect(await worker.load(user("a"))).toBeUndefined();
+    expect(await worker.list(user("a"))).toEqual([]);
+  });
+
+  it("keeps every device an account signs in on and signs each out on its own", async () => {
+    await api.save(user("a"), token("phone"), session("a"));
+    await worker.save(user("a"), token("tablet"), session("a2"));
+    const tokens = async () => (await api.list(user("a"))).map((row) => row.token).sort();
+    expect(await tokens()).toEqual([token("phone"), token("tablet")].sort());
+    await worker.endSession(user("a"), session("a"));
+    expect(await api.list(user("a"))).toEqual([
+      { token: token("tablet"), sessionId: session("a2") },
+    ]);
+  });
+
+  it("replaces a device's rotated token instead of pushing to both", async () => {
+    await api.save(user("a"), token("phone"), session("a"));
+    await worker.save(user("a"), token("tablet"), session("a2"));
+    await api.save(user("a"), token("phone-rotated"), session("a"));
+    expect((await api.list(user("a"))).map((row) => row.token).sort()).toEqual(
+      [token("phone-rotated"), token("tablet")].sort(),
+    );
   });
 
   it("retargets only the replaced session and cannot reclaim a handed-over device", async () => {
     await api.save(user("a"), token("shared"), session("a"));
     await worker.endSession(user("a"), session("a"), session("a2"));
     await api.endSession(user("a"), session("a"));
-    expect((await worker.load(user("a")))?.sessionId).toBe(session("a2"));
+    expect((await worker.list(user("a")))[0]?.sessionId).toBe(session("a2"));
     await worker.save(user("b"), token("shared"), session("b"));
     await api.endSession(user("a"), session("a2"), session("a"));
-    expect(await api.load(user("a"))).toBeUndefined();
-    expect((await worker.load(user("b")))?.token).toBe(token("shared"));
+    expect(await api.list(user("a"))).toEqual([]);
+    expect((await worker.list(user("b")))[0]?.token).toBe(token("shared"));
   });
 
   it("imports only unclaimed devices and accounts, including concurrent imports", async () => {
     await api.save(user("b"), token("owned"), session("b"));
     expect(await worker.importLegacy(user("a"), token("owned"), session("a"))).toBe(false);
-    expect(await worker.load(user("a"))).toBeUndefined();
-    expect((await api.load(user("b")))?.token).toBe(token("owned"));
+    expect(await worker.list(user("a"))).toEqual([]);
+    expect((await api.list(user("b")))[0]?.token).toBe(token("owned"));
     expect(await worker.importLegacy(user("b"), token("stale"), session("b"))).toBe(false);
-    expect((await api.load(user("b")))?.token).toBe(token("owned"));
+    expect((await api.list(user("b")))[0]?.token).toBe(token("owned"));
     const imported = await Promise.all([
       api.importLegacy(user("a"), token("unclaimed"), session("a")),
       worker.importLegacy(user("c"), token("unclaimed"), session("c")),
@@ -130,8 +151,8 @@ suite("database push registrations", () => {
       api.importLegacy(user("a"), token("racing"), session("a")),
       worker.save(user("b"), token("racing"), session("b")),
     ]);
-    expect(await api.load(user("a"))).toBeUndefined();
-    expect((await worker.load(user("b")))?.token).toBe(token("racing"));
+    expect(await api.list(user("a"))).toEqual([]);
+    expect((await worker.list(user("b")))[0]?.token).toBe(token("racing"));
   });
 
   it("rejects expired, missing and another account's sessions without stealing tokens", async () => {
@@ -146,32 +167,26 @@ suite("database push registrations", () => {
     await expect(worker.save(user("c"), token("shared"), session("c"))).rejects.toBeInstanceOf(
       PushSessionEndedError,
     );
-    expect((await api.load(user("a")))?.token).toBe(token("shared"));
+    expect((await api.list(user("a")))[0]?.token).toBe(token("shared"));
   });
 
   it("does not publish a registration after a concurrent session deletion commits", async () => {
-    let release!: () => void;
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const ready = deferred();
+    const hold = deferred();
     const deletion = runAsSystem("delete fixture session concurrently", () =>
       a.prisma.$transaction(async (tx) => {
         await tx.session.delete({ where: { id: session("a2") } });
-        locked();
-        await hold;
+        ready.resolve();
+        await hold.promise;
       }),
     );
-    await ready;
+    await ready.promise;
     const registering = worker.save(user("a"), token("late"), session("a2"));
     // Attach rejection handling before releasing the blocked registration.
     const rejected = expect(registering).rejects.toBeInstanceOf(PushSessionEndedError);
-    release();
+    hold.resolve();
     await deletion;
     await rejected;
-    expect(await api.load(user("a"))).toBeUndefined();
+    expect(await api.list(user("a"))).toEqual([]);
   });
 });

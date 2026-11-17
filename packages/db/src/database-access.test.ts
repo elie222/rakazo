@@ -4,6 +4,7 @@ import {
   provisionRuntimeRole,
   rowSecurityWarning,
   scramSha256Verifier,
+  timeZoneWarning,
 } from "./database-access.js";
 
 const sent = vi.hoisted(() => [] as string[]);
@@ -97,5 +98,24 @@ describe("provisionRuntimeRole", () => {
     const setPassword = sent.find((sql) => sql.includes("PASSWORD"));
     expect(setPassword).toMatch(/^CREATE ROLE "rakazo_app" LOGIN PASSWORD 'SCRAM-SHA-256\$4096:/);
     expect(sent.join("\n")).not.toContain("app-password");
+  });
+});
+
+describe("timeZoneWarning", () => {
+  const session = (zone: string) =>
+    ({ $queryRawUnsafe: async () => [{ zone, login: "rakazo_app", database: "rakazo" }] }) as never;
+
+  it.each(["UTC", "Etc/UTC", "GMT", "Etc/GMT", "GMT0", "Etc/GMT+0", "Greenwich", "Zulu"])(
+    "stays quiet for %s",
+    async (zone) => {
+      await expect(timeZoneWarning(session(zone))).resolves.toBeUndefined();
+    },
+  );
+
+  it("warns for a zone with an offset, naming the database and the login", async () => {
+    const warning = await timeZoneWarning(session("Europe/London"));
+    expect(warning).toContain("ALTER DATABASE rakazo SET timezone TO 'UTC'");
+    expect(warning).toContain("ALTER ROLE rakazo_app");
+    expect(warning).not.toContain("db:migrate");
   });
 });

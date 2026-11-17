@@ -17,8 +17,9 @@ x-app-environment: &app-environment # Runtime
   AWS_KMS_SECRET_ACCESS_KEY:
   # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible or Azure Blob storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_PROTOCOL:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
   OBJECT_STORAGE_ACCESS_KEY_ID:
@@ -64,6 +65,7 @@ x-app-environment: &app-environment # Runtime
   LOG_LEVEL:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -477,6 +479,7 @@ services:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
+      DUB_API_KEY:
       CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
@@ -530,6 +533,7 @@ services:
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
+      RUN_DRAIN_ENABLED:
     volumes:
       - ../../data:/data
     depends_on:

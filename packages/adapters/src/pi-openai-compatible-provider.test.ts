@@ -8,7 +8,12 @@ import {
   normalizeContext,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import {
+  ConnectionSetupError,
+  ModelConnectInputSchema,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
@@ -486,14 +491,11 @@ describe("openai-compatible provider", () => {
 
   it("cancels a pending connection without waiting for the connect timeout", async () => {
     const controller = new AbortController();
-    let markLookupStarted: () => void = () => {};
-    const lookupStarted = new Promise<void>((resolve) => {
-      markLookupStarted = resolve;
-    });
+    const lookupStarted = deferred();
     const safeFetch = createOpenAiCompatibleFetch(
       undefined,
       async () => {
-        markLookupStarted();
+        lookupStarted.resolve();
         return new Promise(() => {});
       },
       OWNER,
@@ -502,7 +504,7 @@ describe("openai-compatible provider", () => {
       signal: controller.signal,
     }).catch((error: unknown) => error);
     try {
-      await lookupStarted;
+      await lookupStarted.promise;
       controller.abort();
       await expect(outcome).resolves.toMatchObject({ name: "AbortError" });
     } finally {
@@ -824,6 +826,60 @@ describe("openai-compatible provider", () => {
         OWNER,
       ),
     ).rejects.toThrow(/redirect.*explicit model id/is);
+  });
+
+  it.each([
+    ["a refused address", "ftp://127.0.0.1:8000/v1", async () => Response.json({ data: [] })],
+    [
+      "an error status",
+      "http://127.0.0.1:8000/v1",
+      async () => new Response("no", { status: 500 }),
+    ],
+    ["an unreadable answer", "http://127.0.0.1:8000/v1", async () => new Response("<html>")],
+    [
+      "a server that cannot be reached",
+      "http://127.0.0.1:8000/v1",
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+  ])("raises %s as a setup error written for the person", async (_case, baseUrl, fetchImpl) => {
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl }, fetchImpl, undefined, OWNER),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+  });
+
+  it("leaves a failure that is not about the server as it was thrown", async () => {
+    const fault = new RangeError("buffer pool exhausted");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        async () => {
+          throw fault;
+        },
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toBe(fault);
+  });
+
+  it("leaves a TypeError raised outside the request and its answer as a fault", async () => {
+    const fault = new TypeError("Cannot read properties of undefined");
+    // Read while the probe prepares its request, before anything is sent.
+    const options = Object.defineProperty({ ...OWNER }, "catalogProbe", {
+      enumerable: true,
+      get() {
+        throw fault;
+      },
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        async () => Response.json({ data: [] }),
+        undefined,
+        options,
+      ),
+    ).rejects.toBe(fault);
   });
 
   it("clarifies non-2xx probe failures with status and hand-fill hint", async () => {

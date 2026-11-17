@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -19,9 +21,6 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -120,7 +119,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<AiDataSharing />));
@@ -190,14 +189,14 @@ it("shows each service's permission, and allows one only after its consent promp
 });
 
 it("holds the controls during the consent prompt, and saves nothing when it is declined", async () => {
-  let answer!: (allowed: boolean) => void;
-  mocks.prompt.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  const answer = deferred<boolean>();
+  mocks.prompt.mockReturnValue(answer.promise);
   const allow = hold("aiConsent/allow");
   await render();
   await act(async () => toggle("Allow Speech on mobile").click());
   expect(controls().map((control) => control.disabled)).toEqual([true, true, true]);
 
-  await act(async () => answer(false));
+  await act(async () => answer.resolve(false));
   await settle();
   expect(allow.calls()).toEqual([]);
   expect(toggle("Allow Speech on mobile").checked).toBe(false);
@@ -237,10 +236,8 @@ it("withdraws every permission only after a destructive confirm", async () => {
 });
 
 it("offers a retry in an alert when the permissions fail to load", async () => {
-  let answer!: (status: typeof opened) => void;
-  mocks.rpc
-    .mockRejectedValueOnce(new Error("Server said no"))
-    .mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  const answer = deferred<typeof opened>();
+  mocks.rpc.mockRejectedValueOnce(new Error("Server said no")).mockReturnValue(answer.promise);
   await render();
   expect(container.textContent).toContain("Could not load permissions.");
   expect(container.querySelector("input")).toBeNull();
@@ -250,7 +247,7 @@ it("offers a retry in an alert when the permissions fail to load", async () => {
   await settle();
   expect(container.querySelector('[role="status"]')).not.toBeNull();
   expect(container.textContent).not.toContain("Could not load permissions.");
-  await act(async () => answer(opened));
+  await act(async () => answer.resolve(opened));
   await settle();
   expect(toggle("Allow Models on mobile").checked).toBe(true);
   expect(mocks.alert).toHaveBeenCalledTimes(1);
@@ -296,14 +293,16 @@ it("keeps a change when a read that started before it lands afterwards", async (
   const revoke = hold("aiConsent/revoke");
   await render();
   const answer = mocks.rpc.getMockImplementation()!;
-  let land!: (read: typeof opened) => void;
-  mocks.rpc.mockImplementation((proc: string) =>
-    proc === "aiConsent/status" ? new Promise((resolve) => (land = resolve)) : answer(proc),
-  );
+  let land!: Deferred<typeof opened>;
+  mocks.rpc.mockImplementation((proc: string) => {
+    if (proc !== "aiConsent/status") return answer(proc);
+    land = deferred<typeof opened>();
+    return land.promise;
+  });
   await act(async () => void queryClient.refetchQueries());
   await act(async () => toggle("Allow Models on mobile").click());
   await revoke.finish(status({ Models: false, Speech: false }));
-  await act(async () => land(opened));
+  await act(async () => land.resolve(opened));
   await settle();
   expect(toggle("Allow Models on mobile").checked).toBe(false);
 });

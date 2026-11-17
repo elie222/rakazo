@@ -11,6 +11,7 @@ import {
 } from "./purchase-service.js";
 import { releaseUnpaidPurchase } from "./spending-gate.js";
 import { wakeRun } from "./wake-run.js";
+import { purchaseWakePrompt } from "./wakes.prompt.js";
 
 /** Providers expire approval requests after 30 minutes; stop asking a little later. */
 export const PURCHASE_POLL_DEADLINE_MS = 35 * 60_000;
@@ -143,7 +144,7 @@ async function settle(
         botId: purchase.botId,
         threadId: purchase.threadId,
         userId: purchase.userId,
-        prompt: `Purchase ${purchase.id} is ${next.status}. Use purchase_status to continue.`,
+        prompt: purchaseWakePrompt(purchase.id, next.status),
         status: "queued",
       },
     });

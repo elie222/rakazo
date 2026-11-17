@@ -34,6 +34,7 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
   const jobs = {
     enqueue: vi.fn(async () => undefined),
     enqueueIn: vi.fn(async () => undefined),
+    enqueueManyIn: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
@@ -146,15 +147,18 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     what: string,
     deadline: number,
   ): Promise<number> {
-    while (performance.now() < deadline) {
-      const { rows } = await monitor.query(
-        "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
-        [holder],
-      );
-      if (rows.length > 0) return rows[0]!.pid;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
+    return vi.waitFor(
+      async () => {
+        const { rows } = await monitor.query(
+          "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pg_blocking_pids(pid) @> ARRAY[$1::int]",
+          [holder],
+        );
+        if (rows.length === 0)
+          throw new Error(`timed out waiting for ${what} to block on backend ${holder}`);
+        return rows[0]!.pid;
+      },
+      { interval: 100, timeout: Math.max(0, deadline - performance.now()) },
+    );
   }
 
   /** An operation set whose failures are handled at once and drained at cleanup. */

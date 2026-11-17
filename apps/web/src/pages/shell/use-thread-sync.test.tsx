@@ -2,6 +2,7 @@
 
 import type { ProductEvent, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -24,15 +25,6 @@ vi.mock("@rakazo/core/query", () => ({ fetchFresh: vi.fn(async () => []) }));
 
 const ref = <T,>(current: T) => ({ current });
 const flush = () => act(async () => {});
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 function syncInput({
   inGroup,
@@ -634,18 +626,19 @@ it.each([false, true])(
     const input = syncInput({ inGroup: false, get, commitSnapshot: vi.fn() });
     let state!: ReturnType<typeof useComputerState>;
     let controls!: ReturnType<typeof useComputerControls>;
+    let sync!: ReturnType<typeof useThreadSync>;
     function Probe() {
       state = useComputerState({
         rpc: rpc as never,
-        panel: "computer",
+        panel: "settings",
         activeId: "bot-1",
         activeBotId: input.activeBotId,
       });
-      const sync = useThreadSync({ ...input, rpc: rpc as never, computerState: state });
+      sync = useThreadSync({ ...input, rpc: rpc as never, computerState: state });
       controls = useComputerControls({
         rpc: rpc as never,
         state,
-        panel: "computer",
+        panel: "settings",
         active: bot as never,
         bots: [bot as never],
         botsRef: { current: [bot as never] },
@@ -661,6 +654,11 @@ it.each([false, true])(
     }
     const root = createRoot(document.createElement("div"));
     await act(async () => root.render(createElement(Probe)));
+    // The full computer window is open on the running computer, its screen read.
+    await act(async () => state.setComputerOpen(true));
+    await act(async () => {
+      await sync.refreshThread("bot-1");
+    });
     await flush();
     expect(state.screenUrl).toBe("https://screen.test/before");
     // After the takeover's own read, any further read fails.

@@ -13,7 +13,6 @@ import type {
 import type {
   CloudAgentConnection,
   CodexLiveCatalog,
-  ComposioProvider,
   ConnectorRegistry,
   FaviconResolver,
   IntegrationProviderSettings,
@@ -62,8 +61,9 @@ import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import { threadsRoutes } from "./routes/threads.js";
 import type { VoiceDeps } from "./voice.js";
 
+export { botIntroPrompt } from "./hidden-turns.prompt.js";
 export { nextConnectionLabel } from "./model-credentials.js";
-export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
+export { enqueueBotIntroRun } from "./routes/bots.js";
 export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
 
@@ -108,7 +108,6 @@ export interface RouterDeps {
     provider: string,
   ) => void;
   integrationSettings?: IntegrationProviderSettings;
-  composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
   /** Probes MCP server health; without it servers are never probed from here. */
   mcp?: Pick<McpConnector, "probe">;
@@ -153,6 +152,8 @@ export interface RouterDeps {
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;
+    /** Keys the hash that names an invited address in the security log, so it can't be guessed. */
+    invitationRecipientKey: string;
     sandboxProvider: string;
     gitSha?: string;
     integrationsCatalogUrl?: string;

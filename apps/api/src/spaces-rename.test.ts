@@ -1,9 +1,11 @@
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const actor = {
   spaceId: "space-current",
@@ -61,7 +63,11 @@ function renameHarness(target: TargetSpace, currentOrganizationId: string | null
     },
     dataDir: "/tmp/rakazo-space-rename-test",
   } as unknown as RouterDeps;
-  return { update, transaction, handler: new RPCHandler(createRouter(deps)) };
+  // As the app does, so a domain error answers with its own status.
+  const handler = new RPCHandler(createRouter(deps), {
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+  });
+  return { update, transaction, handler };
 }
 
 function renameRequest(name: string, spaceId = "space-target") {

@@ -103,7 +103,7 @@ function within<T>(context: DbContext, fn: () => T | PromiseLike<T>): Promise<T>
 
 export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "BillingAuditEvent",
-  "PushToken",
+  "PushRegistration",
   "CallPushDevice",
   "WorkActivityToken",
   "WorkActivityStartToken",

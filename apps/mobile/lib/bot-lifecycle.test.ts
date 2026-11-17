@@ -1,4 +1,6 @@
 import { i18n } from "@lingui/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoisted(() => ({
@@ -9,15 +11,17 @@ const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoist
 }));
 const session = vi.hoisted(() => ({ generation: 2 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc, captureApiRequestContext }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox }));
 vi.mock("react-native", () => ({ Alert: { alert } }));
 vi.mock("./user-error", () => ({ errorText: () => "Try again." }));
 
-import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-lifecycle";
+import {
+  confirmDeleteBot,
+  confirmDeleteGroup,
+  deleteGroup,
+  restoreArchivedBot,
+} from "./bot-lifecycle";
 
 beforeEach(() => {
   i18n.load("en", {});
@@ -73,8 +77,8 @@ describe("archived bot lifecycle", () => {
 
 describe("group deletion", () => {
   it("asks with a named deletion title and retention message and removes nothing on cancel", () => {
-    const deleted = vi.fn();
-    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
+    const confirmed = vi.fn();
+    confirmDeleteGroup({ name: "Team" }, confirmed);
     const [title, message, buttons] = alert.mock.calls[0]!;
     expect([title, message]).toEqual(["Delete Team?", "Bots and their own chats stay."]);
     expect(
@@ -83,26 +87,21 @@ describe("group deletion", () => {
       ["Cancel", "cancel"],
       ["Delete", "destructive"],
     ]);
-    expect(rpc).not.toHaveBeenCalled();
-    expect(deleted).not.toHaveBeenCalled();
+    expect(confirmed).not.toHaveBeenCalled();
+    buttons[1].onPress();
+    expect(confirmed).toHaveBeenCalledOnce();
   });
 
-  it("removes the group only after Delete succeeds, and alerts on failure", async () => {
-    const deleted = vi.fn();
-    rpc.mockResolvedValueOnce({ ok: true });
-    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
-    alert.mock.calls[0]![2][1].onPress();
-    await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
-    expect(rpc).toHaveBeenCalledWith("groups/remove", { groupId: "group-fixture" });
+  it("deletes through the caller's client and leaves search only once it succeeds", async () => {
+    const send = vi.fn().mockResolvedValueOnce({ ok: true });
+    await deleteGroup("group-fixture", send);
+    expect(send).toHaveBeenCalledWith("groups/remove", { groupId: "group-fixture" });
     expect(removeFromSearchInbox).toHaveBeenCalledWith("group-fixture");
 
-    rpc.mockRejectedValueOnce(new Error("offline"));
-    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
-    alert.mock.calls[1]![2][1].onPress();
-    await vi.waitFor(() => expect(alert).toHaveBeenCalledTimes(3));
-    expect(alert.mock.calls[2]!.slice(0, 2)).toEqual(["Could not delete group", "Try again."]);
-    expect(deleted).toHaveBeenCalledOnce();
+    send.mockRejectedValueOnce(new Error("offline"));
+    await expect(deleteGroup("group-fixture", send)).rejects.toThrow("offline");
     expect(removeFromSearchInbox).toHaveBeenCalledOnce();
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
 
@@ -164,17 +163,15 @@ describe("bot deletion preview", () => {
   });
 
   it("waits for the preview before offering destructive choices", async () => {
-    let resolve!: (value: unknown[]) => void;
-    rpc.mockImplementationOnce(
-      () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
-    );
+    let held!: Deferred<unknown[]>;
+    rpc.mockImplementationOnce(() => {
+      held = deferred<unknown[]>();
+      return held.promise;
+    });
     const pending = confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, vi.fn());
     expect(alert).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
-    resolve([]);
+    held.resolve([]);
     await pending;
     expect(alert).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledOnce();
@@ -248,20 +245,18 @@ it.each(["cancel", "dismiss", "success", "failure", "stale"] as const)(
 it("pins default preview and deletion to the initial Space despite selection changes", async () => {
   const context = { apiBase: "https://example.test", headers: { "x-rakazo-space-id": "space-a" } };
   captureApiRequestContext.mockResolvedValueOnce(context);
-  let finish!: (groups: unknown[]) => void;
-  rpc.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let finish!: Deferred<unknown[]>;
+  rpc.mockImplementationOnce(() => {
+    finish = deferred<unknown[]>();
+    return finish.promise;
+  });
   const pending = confirmDeleteBot({ id: "fixture", name: "Fixture" }, vi.fn());
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
   captureApiRequestContext.mockResolvedValue({
     ...context,
     headers: { "x-rakazo-space-id": "space-b" },
   });
-  finish([]);
+  finish.resolve([]);
   await pending;
   alert.mock.calls[0]![2][1].onPress();
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
@@ -330,18 +325,16 @@ it("does not update a replacement session after deletion completes", async () =>
     headers: {},
     sessionGeneration: 2,
   });
-  let resolve!: (value: unknown) => void;
-  rpc.mockResolvedValueOnce([]).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  let pending!: Deferred<unknown>;
+  rpc.mockResolvedValueOnce([]).mockImplementationOnce(() => {
+    pending = deferred<unknown>();
+    return pending.promise;
+  });
   const deleted = vi.fn();
   await confirmDeleteBot({ id: "bot-fixture", name: "Fixture" }, deleted);
   alert.mock.calls[0]![2][1].onPress();
   session.generation = 3;
-  resolve({ ok: true, removedGroupIds: [] });
+  pending.resolve({ ok: true, removedGroupIds: [] });
   await Promise.resolve();
   expect(deleted).not.toHaveBeenCalled();
   expect(removeFromSearchInbox).not.toHaveBeenCalled();

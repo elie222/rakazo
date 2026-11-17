@@ -92,10 +92,6 @@ async function cancelInThread(
     .map((run) => run.id);
   if (idle.length) {
     await expireComputerExecutionLeases(tx, { runId: { in: idle } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: idle } },
-      data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
-    });
   }
   await tx.steeringMessage.deleteMany({ where: { userId, message: { threadId } } });
   // Teammates' follow-ups that waited behind a cancelled run start now, as they would once it

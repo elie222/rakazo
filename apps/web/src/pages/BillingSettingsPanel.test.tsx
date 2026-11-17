@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -28,6 +29,7 @@ vi.mock("@rakazo/ui-web", () => {
   return {
     Button,
     Skeleton: (props: ComponentProps<"div">) => <div {...props} />,
+    SectionHeading: Container,
     Card: Container,
     CardContent: Container,
     CardFooter: Container,
@@ -56,7 +58,9 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc } from "../lib/rpc";
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 
 /** A trialing own-key plan whose trial can be ended from the panel. */
@@ -98,6 +102,15 @@ afterEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 });
 
+/** The shell binds its window's space, which is what `client` names. */
+function panel(client: RpcClient, spaceId: string) {
+  return (
+    <SpaceRpcProvider spaceId={spaceId}>
+      <BillingSettingsPanel client={client} />
+    </SpaceRpcProvider>
+  );
+}
+
 function button(container: HTMLElement, label: string) {
   const found = [...container.querySelectorAll("button")].find(
     (candidate) => candidate.textContent === label,
@@ -112,8 +125,8 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<BillingSettingsPanel client={createSpaceRpc("space-a")} />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    root.render(panel(createSpaceRpc("space-a"), "space-a"));
+    await flush();
   });
 
   // The panel loaded this organization's status.
@@ -135,7 +148,7 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   expect(container.textContent).toMatch(/charged \$20(\.00)? today/);
   await act(async () => {
     button(container, "Start plan").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
@@ -153,8 +166,8 @@ it("acts on the window's space when another tab switched before the panel opened
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<BillingSettingsPanel client={client} />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    root.render(panel(client, "space-a"));
+    await flush();
   });
   expect(requests[0]).toMatchObject({
     url: expect.stringContaining("/billing/status"),
@@ -166,10 +179,61 @@ it("acts on the window's space when another tab switched before the panel opened
   });
   await act(async () => {
     button(container, "Start plan").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
+  act(() => root.unmount());
+  container.remove();
+});
+
+it("opens the billing portal of the window's space, and says so when it cannot", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const managed = { state: "active", canManage: true, hasCustomer: true, seats: 1 };
+  let portalFails = true;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request, init?: RequestInit) => {
+      requests.push({
+        url: request.url,
+        spaceId: new Headers(init?.headers ?? request.headers).get("x-rakazo-space-id"),
+      });
+      if (request.url.endsWith("/billing/portal") && portalFails)
+        return Response.json({ json: { message: "down" } }, { status: 500 });
+      return Response.json({
+        json: request.url.endsWith("/billing/portal") ? { url: "about:blank#portal" } : managed,
+      });
+    }),
+  );
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  localStorage.setItem("rakazo:space-id", "space-b");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(panel(createSpaceRpc("space-a"), "space-a"));
+    await flush();
+  });
+
+  await act(async () => {
+    button(container, "Manage").click();
+    await flush();
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not open billing");
+  expect(button(container, "Manage").disabled).toBe(false);
+
+  portalFails = false;
+  await act(async () => {
+    button(container, "Manage").click();
+    await flush();
+  });
+  expect(assign).toHaveBeenCalledExactlyOnceWith("about:blank#portal");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(requests.filter(({ url }) => url.endsWith("/billing/portal"))).toEqual([
+    expect.objectContaining({ spaceId: "space-a" }),
+    expect.objectContaining({ spaceId: "space-a" }),
+  ]);
   act(() => root.unmount());
   container.remove();
 });

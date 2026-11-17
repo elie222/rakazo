@@ -116,6 +116,9 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  OrganizationInvitationPreviewSchema,
+  OrganizationMembersSchema,
+  OrganizationRoleSchema,
   PlanLimitsSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
@@ -153,6 +156,8 @@ import {
   UpdateBotInput,
   UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
+  UsageBreakdownInputSchema,
+  UsageBreakdownSchema,
   UsageRecordSchema,
   UsageSummarySchema,
   VoiceCatalogEntrySchema,
@@ -201,6 +206,7 @@ import {
   SpendingPaymentSchema,
   SpendingStatusSchema,
 } from "./payments.js";
+import { MemoryProviderDescriptorSchema } from "./provider-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -303,10 +309,14 @@ export const OrganizationListSchema = z.object({
     z.object({
       id: Id,
       name: z.string(),
+      /** Where the user lands in it: its default Space if they belong to it, else their own. */
       defaultSpaceId: Id,
       spaceIds: z.array(Id),
       /** Whether the user owns it, so can rename or delete it. */
       canManage: z.boolean(),
+      role: OrganizationRoleSchema,
+      /** Everyone in it but guests, the user included. */
+      memberCount: z.number().int().positive(),
     }),
   ),
 });
@@ -434,6 +444,10 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
     members: {
       list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. Adds someone already in the Space's organization. */
+      add: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
       /** Owner only. The removed person's bots, chats and routines stay with the space. */
       remove: oc
         .input(z.object({ spaceId: Id, userId: Id }))
@@ -444,8 +458,13 @@ export const appContract = {
         .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
     },
     invites: {
-      /** Owner only. A new single-use link each call. */
-      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      /**
+       * Owner only. A new single-use link each call, emailed when an address is given. Whoever
+       * joins from outside the organization is a guest in this Space alone.
+       */
+      create: oc
+        .input(z.object({ spaceId: Id, email: z.email().max(254).optional() }))
+        .output(SpaceInviteLinkSchema),
       preview: oc
         .input(z.object({ token: z.string().min(1).max(200) }))
         .output(SpaceInvitePreviewSchema),
@@ -467,6 +486,35 @@ export const appContract = {
     remove: oc
       .input(z.object({ organizationId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ organizationId: Id })).output(OrganizationMembersSchema),
+      /** Owner and admins. The owner's role never changes. */
+      setRole: oc
+        .input(
+          z.object({
+            organizationId: Id,
+            userId: Id,
+            role: OrganizationRoleSchema.exclude(["owner"]),
+          }),
+        )
+        .output(z.object({ ok: z.literal(true) })),
+      /** Owner and admins. What the person made in shared Spaces stays there. */
+      remove: oc
+        .input(z.object({ organizationId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+    },
+    invitations: {
+      /** Owner and admins. Inviting the same address again renews its invitation. */
+      create: oc
+        .input(z.object({ organizationId: Id, email: z.email().max(254) }))
+        .output(z.object({ url: z.string().url(), emailed: z.boolean() })),
+      cancel: oc
+        .input(z.object({ organizationId: Id, invitationId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** The invited person, signed in with the address it went to. */
+      preview: oc.input(z.object({ invitationId: Id })).output(OrganizationInvitationPreviewSchema),
+      accept: oc.input(z.object({ invitationId: Id })).output(z.object({ spaceId: Id })),
+    },
   },
   bootstrap: oc
     .input(z.object({ botId: Id.optional(), groupId: Id.optional() }))
@@ -924,6 +972,8 @@ export const appContract = {
     remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
+    /** The providers a Space can connect, with the settings form each one asks for. */
+    providers: oc.output(z.array(MemoryProviderDescriptorSchema)),
     connectProvider: oc
       .input(
         z.object({
@@ -1089,7 +1139,7 @@ export const appContract = {
       .output(z.object({ runId: Id })),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). */
+  /** Skills: reusable how-to recipes (not taught/demo skills). */
   agentSkills: {
     list: oc.output(z.array(AgentSkillCatalogEntrySchema)),
     get: oc
@@ -1268,7 +1318,8 @@ export const appContract = {
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
           provider: z.string(),
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -1285,7 +1336,8 @@ export const appContract = {
     begin: oc
       .input(
         z.object({
-          connectorId: z.string().default("composio"),
+          /** Omitted for the server's default connector. */
+          connectorId: z.string().optional(),
           provider: z.string(),
           displayName: z.string(),
         }),
@@ -1489,6 +1541,7 @@ export const appContract = {
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
     summary: oc.output(UsageSummarySchema),
+    breakdown: oc.input(UsageBreakdownInputSchema).output(UsageBreakdownSchema),
     /** Subscription sign-ins whose allowance could be read; others are left out. */
     limits: oc.output(z.array(PlanLimitsSchema)),
   },
@@ -1504,13 +1557,20 @@ export const appContract = {
     /**
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
      * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
-     * `runs` that `runs.list` and `routines.history` may have, and `routines` that `routines.list`
+     * `runs` that `runs.list` and `routines.history` may have, `routines` that `routines.list`
+     * may have, and `organizations` that `organizations.list` and `organizations.members.list`
      * may have; each is sent once when the stream opens.
      */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "roster", ...SpaceChangeKind.options, "heartbeat"]),
+          type: z.enum([
+            "alert",
+            "roster",
+            ...SpaceChangeKind.options,
+            "organizations",
+            "heartbeat",
+          ]),
           alert: ChatAlertSchema.optional(),
         }),
       ),

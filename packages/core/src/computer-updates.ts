@@ -135,9 +135,17 @@ export function createComputerUpdates(client: {
       state = { ...state, openId: id };
       emit();
     },
-    async start(botId: string, action: "update" | "recover" = "update") {
+    /** `begin` sends the start through the caller's own client instead of this store's. */
+    async start(
+      botId: string,
+      action: "update" | "recover" = "update",
+      begin: (
+        botId: string,
+        action: "update" | "recover",
+      ) => Promise<ComputerUpdate> = client.start,
+    ) {
       const epoch = generation;
-      const update = await client.start(botId, action);
+      const update = await begin(botId, action);
       if (epoch !== generation) return;
       revision++;
       state = {

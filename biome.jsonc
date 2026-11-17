@@ -21,7 +21,9 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/apps/www/.astro",
+      "!**/apps/www/.vercel",
+      "!**/apps/www/**/*.{css,json,mjs}"
     ]
   },
   "plugins": [
@@ -62,7 +64,7 @@
             "patterns": [
               {
                 "group": [
-                  "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
+                  "@{alicloud,aws-sdk,axiomhq,azure,boatdev,boxd-sh,chat-adapter}/**",
                   "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
                   "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
                   "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
@@ -179,7 +181,7 @@
     {
       "includes": [
         "packages/adapters/**",
-        "apps/desktop/src/monitoring.ts",
+        "apps/desktop/src/main/monitoring.ts",
         "apps/web/src/lib/monitoring.ts",
         "apps/mobile/lib/monitoring.ts",
         "packages/logging/src/sentry.ts",

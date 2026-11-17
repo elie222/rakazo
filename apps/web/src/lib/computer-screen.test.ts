@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootComputerOnce,
@@ -47,16 +48,11 @@ describe("computer screen requests", () => {
   it.each(["success", "failure"])(
     "ignores a stale %s after a newer screen failure",
     async (outcome) => {
-      let finish!: (screen: { url: string | null }) => void;
-      let fail!: (error: Error) => void;
-      const deferred = new Promise<{ url: string | null }>((resolve, reject) => {
-        finish = resolve;
-        fail = reject;
-      });
+      const screen = deferred<{ url: string | null }>();
       let current = 1;
       const commit = vi.fn();
       const stale = loadComputerScreen({
-        load: () => deferred,
+        load: () => screen.promise,
         isCurrent: () => current === 1,
         commit,
         fallbackError: "Could not connect",
@@ -70,8 +66,8 @@ describe("computer screen requests", () => {
         commit,
         fallbackError: "Could not connect",
       });
-      if (outcome === "success") finish({ url: "https://stale.example/vnc.html" });
-      else fail(new Error("Stale connection failed"));
+      if (outcome === "success") screen.resolve({ url: "https://stale.example/vnc.html" });
+      else screen.reject(new Error("Stale connection failed"));
       await expect(stale).resolves.toBeNull();
       expect(commit).toHaveBeenCalledExactlyOnceWith({
         url: null,
@@ -173,21 +169,11 @@ describe("screenIframeSandbox", () => {
   });
 });
 
-function pendingBoot() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 describe("computer boot ownership", () => {
   it("starts B independently and refuses a second A after switching A to B to A", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
-    const b = pendingBoot();
+    const a = deferred();
+    const b = deferred();
     const duplicate = vi.fn();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const second = bootComputerOnce(inFlight, "b", () => b.promise);
@@ -205,7 +191,7 @@ describe("computer boot ownership", () => {
 
   it("lets takeover proceed while a boot request is in flight", async () => {
     const inFlight = new Map<string, symbol>();
-    const boot = pendingBoot();
+    const boot = deferred();
     const first = bootComputerOnce(inFlight, "a", () => boot.promise);
     const duplicateBoot = vi.fn();
     const takeover = vi.fn();
@@ -220,7 +206,7 @@ describe("computer boot ownership", () => {
 
   it("allows a retry after failure", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
+    const a = deferred();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const rejected = expect(first).rejects.toThrow("Boot failed");
     a.reject(new Error("Boot failed"));
@@ -232,7 +218,7 @@ describe("computer boot ownership", () => {
 
   it("does not release a replacement owner's marker when an older request finishes", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
+    const a = deferred();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const replacement = Symbol("replacement");
     inFlight.set("a", replacement);

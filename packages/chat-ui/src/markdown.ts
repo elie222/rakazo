@@ -219,7 +219,8 @@ export type PlainTextPart =
   | { type: "page"; value: string; pageId: string };
 
 // The link pageReply puts before a sent reply: `[title](page:<pageId>)`, title brackets escaped.
-const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
+// The bound fits any escaped title and keeps unclosed brackets from rescanning the message.
+const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n]){0,400})\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
 
 function appendPlainText(parts: PlainTextPart[], value: string) {
   if (!value) return;

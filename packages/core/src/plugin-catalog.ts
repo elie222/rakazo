@@ -238,7 +238,13 @@ export function matchesPluginQuery(
 }
 
 function brandKey(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const key = name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/ς/g, "σ")
+    .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+  // Marks alone (such as emoji variation selectors) do not name a brand.
+  return /[\p{L}\p{N}]/u.test(key) ? key : "";
 }
 
 /** The managed app a plugin is for, matched by name, so one brand is listed once. */
@@ -246,8 +252,25 @@ export function managedAppFor<T extends { name: string; slug: string }>(
   entry: Pick<PluginMarketplaceEntry, "name" | "displayName">,
   apps: readonly T[],
 ): T | undefined {
-  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)]);
+  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)].filter(Boolean));
   return apps.find((app) => keys.has(brandKey(app.name)) || keys.has(brandKey(app.slug)));
+}
+
+/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
+export function pluginSite(
+  entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">,
+): string | null {
+  const domain = entry.domains[0]?.replace(/^https?:\/\//, "").split("/")[0];
+  if (domain) return `https://${domain}`;
+  try {
+    if (!entry.homepage) return null;
+    const url = new URL(entry.homepage);
+    // A fully qualified name ends in a dot; it is still GitHub.
+    const host = url.hostname.replace(/\.$/, "");
+    return host === "github.com" || host.endsWith(".github.com") ? null : url.origin;
+  } catch {
+    return null;
+  }
 }
 
 /** Installs from before parts could be chosen added everything they had. */

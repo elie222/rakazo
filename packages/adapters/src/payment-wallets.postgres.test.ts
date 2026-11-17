@@ -156,6 +156,7 @@ describePostgres("payment wallets (PostgreSQL contract)", () => {
         enqueueIn: (tx, job) => queue.enqueueIn(tx, job),
         enqueue: async () => undefined,
         cancel: (key) => queue.cancel(key),
+        cancelIn: (tx, key) => queue.cancelIn(tx, key),
       },
       paymentWallet: testWallet(),
     };

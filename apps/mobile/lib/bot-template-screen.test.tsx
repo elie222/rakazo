@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -24,9 +25,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./i18n", () => ({ useUiLocale: () => "en" }));
 vi.mock("./cron", () => ({ cronLabels: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -122,7 +120,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<BotTemplateScreen />));

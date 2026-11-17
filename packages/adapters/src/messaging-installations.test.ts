@@ -1,4 +1,5 @@
 import type { MessagingInstallProvider, SecretStore } from "@rakazo/adapter-kit";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
@@ -400,3 +401,37 @@ function credential(installationId: string, ref: string) {
 function stored(recordId: unknown) {
   return expect.objectContaining({ recordId });
 }
+it("refuses a link that cannot finish as one the person can act on", async () => {
+  const f = fixture();
+  await expect(f.manager.complete(actor, "forged", "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+  const state = await begin(f);
+  f.setInstallation({
+    id: "other",
+    spaceId: "space-b",
+    userId: "user-b",
+    botId: "bot-b",
+    ciphertext: "other-secret",
+  });
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+});
+it("refuses a workspace another space installed first", async () => {
+  const f = fixture();
+  const state = await begin(f);
+  f.prisma.messagingInstallation.create.mockRejectedValueOnce(
+    Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+  );
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+});
+it("keeps a failure to save the installation a fault", async () => {
+  const f = fixture();
+  const state = await begin(f);
+  const outage = new Error("Authorization expired: connection reset");
+  f.prisma.messagingInstallation.create.mockRejectedValueOnce(outage);
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBe(outage);
+});

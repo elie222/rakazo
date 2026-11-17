@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import { startHostComputerServer } from "./host-computer-server.js";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
-} from "./boat-sandbox.test-support.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { HostComputerSandbox } from "./host-computer-sandbox.js";
-import { startHostComputerServer } from "./host-computer-server.js";
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { provisionPrepared } from "./sandbox-test-support.js";
 
 let restoreFetch: () => void;

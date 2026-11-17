@@ -21,11 +21,7 @@ describePostgres("the Space of a linked chat (PostgreSQL)", () => {
     users.push(userId);
     const email = `${userId}@rakazo.test`;
     await system.user.create({ data: { id: userId, name: userId, email, emailVerified: false } });
-    const { spaceId } = await bootstrapUserSpace(
-      system,
-      { id: userId },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const { spaceId } = await bootstrapUserSpace(system, { id: userId });
     return { userId, spaceId, email, isDeploymentOwner: false };
   }
 

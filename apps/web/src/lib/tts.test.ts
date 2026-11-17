@@ -1,4 +1,6 @@
 import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Speaker } from "./tts.js";
 
@@ -183,23 +185,21 @@ describe("Speaker", () => {
       return new Promise(() => undefined);
     });
     const speaker = new Speaker();
-    let prepared!: (utterances: string[]) => void;
+    let prepared!: Deferred<string[]>;
     vi.spyOn(
       speaker as unknown as { prepare: () => Promise<string[]> },
       "prepare",
-    ).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          prepared = resolve;
-        }),
-    );
+    ).mockImplementation(() => {
+      prepared = deferred();
+      return prepared.promise;
+    });
 
     const pending = speaker.speak("Hello.");
     expect(speaker.state.status).toBe("preparing");
     speaker.unlock();
     expect(played).toEqual([expect.stringMatching(/^data:audio\/wav/)]);
 
-    prepared(["Hello."]);
+    prepared.resolve(["Hello."]);
     await vi.waitFor(() => expect(speaker.state.status).toBe("speaking"));
     speaker.unlock();
     expect(played).toEqual([expect.stringMatching(/^data:audio\/wav/), "blob:voice"]);
@@ -261,18 +261,13 @@ describe("Speaker", () => {
 
   it("does not report a failure for a request a newer one replaced", async () => {
     const speaker = new Speaker();
-    let fail: (error: Error) => void = () => undefined;
+    const fail = deferred<string[]>();
     vi.spyOn(speaker as unknown as { prepare: () => Promise<string[]> }, "prepare")
-      .mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            fail = reject;
-          }),
-      )
+      .mockImplementationOnce(() => fail.promise)
       .mockResolvedValueOnce([]);
     const first = speaker.speak("First.", { messageId: "m1" });
     await speaker.speak("Second.", { messageId: "m2" });
-    fail(new Error("Your voice provider is out of credit."));
+    fail.reject(new Error("Your voice provider is out of credit."));
     await expect(first).resolves.toBeUndefined();
     expect(speaker.state.error).toBeUndefined();
   });

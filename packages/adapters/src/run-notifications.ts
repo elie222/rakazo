@@ -68,6 +68,7 @@ export async function notifyRun(
     threadId: string;
     trigger: string;
     routineId?: string | null;
+    sourceMessageId?: string | null;
   },
   message: NotificationMessage,
   options: { retryOnFailure?: boolean } = {},
@@ -77,6 +78,15 @@ export async function notifyRun(
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER && run.sourceMessageId) {
+    const card = await deps.prisma.message.findFirst({
+      where: { id: run.sourceMessageId, botId: run.botId, thread: { spaceId: run.spaceId } },
+      select: { threadId: true },
+    });
+    if (!card) return;
+    run = { ...run, threadId: card.threadId };
+    message = { ...message, threadId: card.threadId };
+  }
   const routineId = message.kind === "failure" ? run.routineId : null;
   const notice = await runNotice(deps.prisma, run, routineId).catch((error) => {
     if (options.retryOnFailure) throw error;

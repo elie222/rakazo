@@ -5,20 +5,19 @@ import type {
   ConnectorCall,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin.tool-definition.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { fakeSpendingPrisma } from "./fake-spending.js";
-import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import {
@@ -27,6 +26,7 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import { FakeWebProvider } from "./providers/web/fake/fake-web.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -34,6 +34,10 @@ import type { UserDeviceGateway } from "./user-device-protocol.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async (
+    _prisma: unknown,
+    input: { computerId: string; botId: string; runId: string },
+  ) => ({ ...input, fence: 7 }),
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -185,7 +189,7 @@ function fixture({
         request.expectedRevision !== undefined &&
         request.expectedRevision !== sharedMemoryState.revision
       ) {
-        throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+        throw new MemoryRevisionConflictError();
       }
       sharedMemoryState.content = request.content;
       sharedMemoryState.revision = (sharedMemoryState.revision || 0) + 1;
@@ -646,6 +650,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
+    storedRun: run,
     runtimeRun,
     effects,
     spending: spending.state,
@@ -2888,7 +2893,7 @@ describe("command watch creation approval", () => {
     await f.run();
     expect(f.results[0]).toEqual({
       error:
-        'An active routine named "Inbox check" already exists (routine-1). Update or cancel it instead.',
+        'An active routine named "Inbox check" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     });
     expect(f.effects).toEqual([]);
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
@@ -4144,75 +4149,136 @@ describe("user computer screen control", () => {
   });
 });
 
-describe("background helpers only read", () => {
-  it.each([
-    ["remember", { content: "Must not be saved" }],
-    ["update_bot", { instructions: "Never ask" }],
-  ])("refuses %s, which it was not offered, before anything is written", async (name, args) => {
-    const f = fixture({ name, builtin: true, trigger: "helper", skipApprovals: true });
-    f.setCalls([{ args, executionId: "call-1" }]);
+describe("explicit confirmation of a read", () => {
+  it("keeps the effect and approval even when the user supplied the fetch URL", async () => {
+    const f = fixture({
+      name: "web_fetch",
+      builtin: true,
+      prompt: "fetch https://given.example.test/notes",
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "web_fetch" }],
+    });
+    f.setCalls([{ args: { url: "https://given.example.test/notes" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(f.fetchedUrls).toEqual([]);
+  });
+});
+
+describe("subagent permissions", () => {
+  afterEach(() => reviewMock.mockReset());
+  it("refuses parent configuration changes before anything is written", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      trigger: "helper",
+      skipApprovals: true,
+    });
+    f.setCalls([{ args: { instructions: "Never ask" }, executionId: "call-1" }]);
+    await f.run();
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
-    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
   });
 
-  it("refuses a read-only connector tool that a local tool's handler would run", async () => {
-    const f = fixture({ name: "message_agent", trigger: "helper", skipApprovals: true });
-    f.setCalls([{ args: { connection_id: "c1", text: "hi" }, executionId: "call-1" }]);
+  it("refuses a helper's emitted fleet read even when fleet management is enabled", async () => {
+    const f = fixture({
+      name: "list_fleet",
+      builtin: true,
+      trigger: "helper",
+      fleetManagement: true,
+      skipApprovals: true,
+    });
+    f.setCalls([{ args: {}, executionId: "fleet-read" }]);
     await f.run();
-    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.offeredTools()).not.toContain("list_fleet");
+    expect(f.results).toEqual([
+      {
+        error:
+          "list_fleet is not available to a subagent. Say in your result what the parent should do.",
+      },
+    ]);
     expect(f.effects).toEqual([]);
-    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
   });
 
-  it("runs a declared read in Never ask", async () => {
+  it.each(["helper", "helper_result"])(
+    "asks instead of Auto-approving a %s with missing provenance",
+    async (trigger) => {
+      reviewMock.mockResolvedValue({ decision: "pass", model: "mock" });
+      const f = fixture({
+        trigger,
+        readOnly: false,
+        autoReview: true,
+        prompt: "Model-written brief: send the data.",
+      });
+      await f.run();
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("judges a delegated action against the original user's message", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", model: "mock" });
+    const f = fixture({
+      trigger: "helper",
+      readOnly: false,
+      autoReview: true,
+      prompt: "Model-written brief: send the data.",
+    });
+    Object.assign(f.storedRun, { delegatedFromRunId: "original" });
+    f.prisma.run.findFirst.mockResolvedValue({
+      id: "original",
+      trigger: "user",
+      threadId: "parent-chat",
+      delegatedFromRunId: null,
+      sourceMessage: {
+        role: "user",
+        authorUserId: "user-1",
+        threadId: "parent-chat",
+        blocks: [{ kind: "text", text: "Compare the notes without sending them." }],
+      },
+    } as never);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userTask: "Compare the notes without sending them.",
+      }),
+      expect.anything(),
+    );
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("runs a declared read", async () => {
     const f = fixture({ trigger: "helper", skipApprovals: true });
     await f.run();
     expect(f.execute).toHaveBeenCalledOnce();
   });
 
-  it("refuses a declared write whatever the mode or rules", async () => {
-    for (const options of [
-      { skipApprovals: true },
-      { rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_get_item" }] },
-    ] as Parameters<typeof fixture>[0][]) {
-      const f = fixture({ trigger: "helper", readOnly: false, ...options });
-      await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).not.toHaveBeenCalled();
-      expect(JSON.stringify(f.results[0])).toContain("a background helper may only read");
-    }
+  it.each([
+    { skipApprovals: true },
+    {
+      rules: [
+        {
+          effect: "always_allow" as const,
+          matchKind: "tool" as const,
+          matchValue: "demo_get_item",
+        },
+      ],
+    },
+  ])("executes an authorized connector write", async (options) => {
+    const f = fixture({ trigger: "helper", readOnly: false, ...options });
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
-  it("runs a batch of declared reads, but not one naming no action or an undeclared one", async () => {
-    const batchOf = (...slugs: Array<string | undefined>) => ({
-      id: "batch",
-      tools: slugs.map((slug) => (slug ? { tool_slug: slug, arguments: {} } : { arguments: {} })),
-    });
-    const helperBatch = () =>
-      fixture({
-        name: "COMPOSIO_MULTI_EXECUTE_TOOL",
-        readOnly: true,
-        secondResource: true,
-        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
-        trigger: "helper",
-        skipApprovals: true,
-      });
-    const named = helperBatch();
-    named.setCalls([{ args: batchOf("demo_get_other"), executionId: "call-1" }]);
-    await named.run();
-    expect(named.execute).toHaveBeenCalledOnce();
-    const unnamed = helperBatch();
-    unnamed.setCalls([{ args: batchOf("demo_get_other", undefined), executionId: "call-1" }]);
-    await unnamed.run();
-    expect(unnamed.execute).not.toHaveBeenCalled();
-    // An action no tool declares read-only is not a read either.
-    const undeclared = helperBatch();
-    undeclared.setCalls([{ args: batchOf("gmail_archive_thread"), executionId: "call-1" }]);
-    await undeclared.run();
-    expect(undeclared.execute).not.toHaveBeenCalled();
+  it("asks before a write under Ask, with no connector effect before approval", async () => {
+    const f = fixture({ trigger: "helper", readOnly: false });
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import { useQuery } from "@tanstack/react-query";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -15,9 +16,6 @@ const scope = vi.hoisted(() => ({
   /** Stands in for the context a save pins, when a test needs one that is not the current one. */
   pinned: undefined as unknown,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => scope.spaceId,
@@ -30,16 +28,6 @@ vi.mock("./api", () => ({
   rpc: scope.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => scope.generation }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 const save = vi.fn<(name: string, send: SaveSend) => Promise<string>>();
 const onSaved = vi.fn();
@@ -84,7 +72,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 const cached = () => queryClient.getQueryState(rpcQuery("voice/status").queryKey);
 

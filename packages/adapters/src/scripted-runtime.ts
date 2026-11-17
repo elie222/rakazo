@@ -99,34 +99,6 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         }
         for (const call of turn.toolCalls ?? []) {
           const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
-          if (call.name === "run_subagent" && call.args.background !== true) {
-            const agentId = `${request.runId}:subagent`;
-            const name = String(call.args.name ?? "helper");
-            const task = String(call.args.task ?? request.prompt);
-            yield {
-              type: "subagent",
-              agentId,
-              name,
-              task,
-              status: "running",
-              progress: "working…",
-            };
-            yield {
-              type: "tool",
-              name: call.name,
-              args: call.args,
-              executionId,
-            };
-            yield {
-              type: "subagent",
-              agentId,
-              name,
-              task,
-              status: "completed",
-              result: `done. i handled: ${task.slice(0, 180)}`,
-            };
-            continue;
-          }
           yield {
             type: "tool",
             name: call.name,
@@ -716,7 +688,7 @@ code-b
     return [
       {
         assistant: "a background helper is on it; ask me anything meanwhile.",
-        toolCalls: [{ name: "run_subagent", args: { name: "helper", task, background: true } }],
+        toolCalls: [{ name: "run_subagent", args: { name: "helper", task } }],
         complete: true,
       },
     ];

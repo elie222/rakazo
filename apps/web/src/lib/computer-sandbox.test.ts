@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   canChooseOwnComputer,
   computersAreUnavailable,
+  runsOnUserMachine,
   sandboxCheckFailureMessage,
 } from "./computer-sandbox.js";
+
+describe("runsOnUserMachine", () => {
+  it("takes the server's word, and reads the kind only when an older server gives none", () => {
+    expect(runsOnUserMachine({ kind: "any-kind", runsOnUserMachine: true })).toBe(true);
+    expect(runsOnUserMachine({ kind: "desktop", runsOnUserMachine: false })).toBe(false);
+    expect(runsOnUserMachine({ kind: "desktop" })).toBe(true);
+    expect(runsOnUserMachine({ kind: "any-kind" })).toBe(false);
+    expect(runsOnUserMachine(null)).toBe(false);
+  });
+});
 
 describe("computersAreUnavailable", () => {
   it("treats none and empty as unavailable", () => {

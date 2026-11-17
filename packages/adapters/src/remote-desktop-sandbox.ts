@@ -15,8 +15,10 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs, retry } from "@rakazo/core";
+import { retry } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import {
@@ -600,13 +602,13 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       if (options?.maxBytes !== undefined) {
         const info = await desktop.files.getInfo(target, { signal: context.signal });
         if (info.size > options.maxBytes) {
-          throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(options.maxBytes);
         }
       }
       const content = await desktop.files.read(target, { format: "bytes", signal: context.signal });
       // The file can grow between the size check and the read.
       if (options?.maxBytes !== undefined && content.byteLength > options.maxBytes) {
-        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+        throw new SandboxFileTooLargeError(options.maxBytes);
       }
       return content;
     });

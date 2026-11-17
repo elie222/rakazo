@@ -1,21 +1,16 @@
 import * as z from "zod";
 
-export const IntegrationProviderIdSchema = z.enum(["composio", "pipedream"]);
-export const IntegrationProviderConfigSchema = z.discriminatedUnion("provider", [
-  z.object({ provider: z.literal("composio"), apiKey: z.string().trim().min(1).max(16384) }),
-  z.object({
-    provider: z.literal("pipedream"),
-    clientId: z.string().trim().min(1).max(512),
-    clientSecret: z.string().trim().min(1).max(16384),
-    projectId: z.string().trim().min(1).max(512),
-    environment: z.enum(["production", "development"]).default("production"),
-  }),
-]);
-export type IntegrationProviderConfig = z.infer<typeof IntegrationProviderConfigSchema>;
+/**
+ * An integration provider's id. Opaque here: the adapters own the list of providers and check an
+ * id against it.
+ */
+export const IntegrationProviderIdSchema = z.string().min(1).max(64);
 export type IntegrationProviderId = z.infer<typeof IntegrationProviderIdSchema>;
-export function isIntegrationProviderId(value: string): value is IntegrationProviderId {
-  return IntegrationProviderIdSchema.safeParse(value).success;
-}
+/** A provider and the credentials its adapter asks for; the adapter checks them. */
+export const IntegrationProviderConfigSchema = z
+  .object({ provider: IntegrationProviderIdSchema })
+  .catchall(z.string().trim().max(16384));
+export type IntegrationProviderConfig = z.infer<typeof IntegrationProviderConfigSchema>;
 export const IntegrationSetupStateSchema = z.object({
   canConfigure: z.boolean(),
   needsSetup: z.boolean(),

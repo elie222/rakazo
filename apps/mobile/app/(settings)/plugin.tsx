@@ -9,15 +9,8 @@ import {
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import type { NativeStackNavigationOptions } from "expo-router";
-import {
-  Redirect,
-  useFocusEffect,
-  useLocalSearchParams,
-  useNavigation,
-  useRouter,
-} from "expo-router";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -41,11 +34,11 @@ import {
 import { mobileTokens } from "../../lib/appearance";
 import { loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
 import { sourceHref } from "../../lib/plugin-marketplace";
 import type { SaveSend } from "../../lib/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useScreenQuery } from "../../lib/screen-query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -60,7 +53,6 @@ export default function PluginRoute() {
 
 function PluginScreen() {
   const params = useLocalSearchParams<PluginParams>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -291,46 +283,16 @@ function PluginScreen() {
             void setParts("header", toggle(headerPart, true), t`Could not install plugin`),
           destructive: false,
         };
-  const actionDisabled = busy || (managed ? !managedApp : !ready);
-
-  // The header reads the latest action through a ref, so it only re-renders when it looks different.
-  const actionRef = useRef(action);
-  actionRef.current = action;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: params.name,
-      headerRight: iosAtLeast(26)
-        ? undefined
-        : () => (
-            <NativeActionButton
-              disabled={actionDisabled}
-              fill={false}
-              label={action.label}
-              onPress={() => void actionRef.current.onPress()}
-              prominence={
-                action.destructive ? "destructive" : managedConnected ? "secondary" : "primary"
-              }
-            />
-          ),
-      ...(iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                label: action.label,
-                ...(action.destructive
-                  ? { tintColor: mobileTokens().destructive }
-                  : managedConnected
-                    ? {}
-                    : { variant: "prominent" as const, tintColor: mobileTokens().primary }),
-                disabled: actionDisabled,
-                onPress: () => void actionRef.current.onPress(),
-              },
-            ],
-          }
-        : {}),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, params.name, action.label, action.destructive, actionDisabled, managedConnected]);
+  useScreenHeader({
+    title: params.name,
+    action: {
+      label: action.label,
+      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
+      disabled: managed ? !managedApp : !ready,
+      busy,
+      onPress: action.onPress,
+    },
+  });
 
   const description = detail?.description || params.description;
   const skills = detail?.skills ?? [];
@@ -375,9 +337,7 @@ function PluginScreen() {
             kind="install"
             id={install.id}
             availability={install.availability}
-            onChanged={() =>
-              Promise.all(reads.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
-            }
+            stale={reads}
           />
         ) : null}
 

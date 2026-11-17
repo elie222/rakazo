@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { Routine } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -8,9 +9,6 @@ import { rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { saveBotRoutine, useBotRoutines } from "./routine-store";
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://api.example",
@@ -30,7 +28,7 @@ let container: HTMLDivElement;
 async function update(change: () => void) {
   await act(async () => {
     change();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 

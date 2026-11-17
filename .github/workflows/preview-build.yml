@@ -19,6 +19,13 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      # Nothing a preview runs or shows.
+      - "!**/*.test.*"
+      - "!**/*.spec.*"
+      - "!apps/web/e2e/**"
+      - "!packages/testkit/**"
+      - "!scripts/checks/**"
+      - "!scripts/release/**"
 
 permissions:
   contents: read

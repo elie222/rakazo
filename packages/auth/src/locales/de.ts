@@ -74,4 +74,17 @@ export const DE_MESSAGES: Record<string, string> = {
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du dein Abo nicht erneuerst.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du keinen Tarif wählst.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} hat dich zu {organization} auf Rakazo eingeladen",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} hat dich eingeladen, {organization} auf Rakazo beizutreten.",
+  "Join {organization}": "{organization} beitreten",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Diese Einladung läuft in 7 Tagen ab. Melde dich mit dieser E-Mail-Adresse an, um sie anzunehmen.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} hat dich zu {space} auf Rakazo eingeladen",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} hat dich eingeladen, {space} auf Rakazo beizutreten.",
+  "Join {space}": "{space} beitreten",
+  "This invitation expires in 7 days.": "Diese Einladung läuft in 7 Tagen ab.",
 };

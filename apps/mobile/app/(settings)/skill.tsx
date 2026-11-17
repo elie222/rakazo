@@ -1,9 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,8 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
+import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -38,7 +37,6 @@ export default function SkillScreen() {
 }
 
 function SkillEditor({ id }: { id?: string }) {
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -78,14 +76,7 @@ function SkillEditor({ id }: { id?: string }) {
   // An existing skill that failed to load must not be saved as a new one.
   const unloaded = Boolean(id) && !skill;
   const readOnly = Boolean(skill?.readOnly);
-  const canSave =
-    !readOnly && !unloaded && !busy && Boolean(draft.trim()) && draft !== (skill?.content ?? "");
-
-  const saveRef = useRef(() => {});
-  saveRef.current = () => {
-    remove.reset();
-    save.run(draft);
-  };
+  const canSave = !unloaded && Boolean(draft.trim()) && draft !== (skill?.content ?? "");
 
   function confirmDelete() {
     if (!skill) return;
@@ -102,37 +93,20 @@ function SkillEditor({ id }: { id?: string }) {
     ]);
   }
 
-  useLayoutEffect(() => {
-    const title = skill?.name ?? (id ? "" : t`New skill`);
-    navigation.setOptions({
-      title,
-      ...(readOnly
-        ? { headerRight: undefined, unstable_headerRightItems: undefined }
-        : iosAtLeast(26)
-          ? {
-              unstable_headerRightItems: () => [
-                {
-                  type: "button" as const,
-                  label: t`Save`,
-                  variant: "prominent" as const,
-                  tintColor: mobileTokens().primary,
-                  disabled: !canSave,
-                  onPress: () => saveRef.current(),
-                },
-              ],
-            }
-          : {
-              headerRight: () => (
-                <NativeActionButton
-                  disabled={!canSave}
-                  fill={false}
-                  label={t`Save`}
-                  onPress={() => saveRef.current()}
-                />
-              ),
-            }),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, skill?.name, id, readOnly, canSave, t]);
+  useScreenHeader({
+    title: skill?.name ?? (id ? "" : t`New skill`),
+    action: readOnly
+      ? null
+      : {
+          label: t`Save`,
+          disabled: !canSave,
+          busy,
+          onPress: () => {
+            remove.reset();
+            save.run(draft);
+          },
+        },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>

@@ -8,7 +8,10 @@ type SnapshotRecovery =
   | { phase: "replay"; projectionFloor: number; readonly suppressEffectsThrough: number }
   | { phase: "live" };
 
-/** No frame at all for this long means the stream is half-open; the server beats far faster. */
+/**
+ * No frame at all for this long means the stream is half-open; the API beats
+ * more than twice in that time.
+ */
 export const IDLE_TIMEOUT_MS = 45_000;
 
 /**

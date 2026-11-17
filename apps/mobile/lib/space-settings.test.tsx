@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -46,9 +48,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -140,7 +139,7 @@ let root: Root;
 let container: HTMLDivElement;
 async function render() {
   await act(async () => root.render(createElement(SpaceSettings)));
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function press(node: HTMLElement) {
   await act(async () => node.click());
@@ -348,7 +347,7 @@ it("offers a retry when the overrides fail to load, then enables the switches", 
   expect(control("Customize Voice")?.disabled).toBe(true);
 
   await act(async () => retry()!.click());
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   expect(control("Customize Voice")?.disabled).toBe(false);
   expect(control("Customize Voice")?.checked).toBe(true);
   expect(retry()).toBeUndefined();
@@ -357,13 +356,12 @@ it("offers a retry when the overrides fail to load, then enables the switches", 
 
 it("keeps a failed save's error when a read that was pending then succeeds", async () => {
   const base = state.rpc.getMockImplementation()!;
-  let finishRead!: () => void;
+  let finishRead!: Deferred;
   state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
     if (proc === "spaceSettings/setOverride") throw new Error("offline");
     if (proc === "spaceSettings/overrides") {
-      await new Promise<void>((resolve) => {
-        finishRead = resolve;
-      });
+      finishRead = deferred();
+      await finishRead.promise;
     }
     return base(proc, input);
   });
@@ -373,7 +371,7 @@ it("keeps a failed save's error when a read that was pending then succeeds", asy
   await press(control("Customize Models")!);
   expect(container.textContent).toContain("Could not save that preference");
 
-  await act(async () => finishRead());
+  await act(async () => finishRead.resolve());
   expect(container.textContent).toContain("Could not save that preference");
 });
 

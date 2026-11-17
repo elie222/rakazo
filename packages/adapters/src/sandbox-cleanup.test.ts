@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox-cleanup.js";
@@ -117,16 +119,14 @@ describe("deleting a machine nothing points at", () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     try {
-      let fail: (error: Error) => void = () => {};
-      const remove = vi.fn<Remove>(
-        () =>
-          new Promise((_resolve, reject) => {
-            fail = reject;
-          }),
-      );
+      let fail: Deferred | undefined;
+      const remove = vi.fn<Remove>(() => {
+        fail = deferred();
+        return fail.promise;
+      });
 
       await cleanup(remove);
-      fail(new Error("connection reset, long after"));
+      fail?.reject(new Error("connection reset, long after"));
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(unhandled).not.toHaveBeenCalled();

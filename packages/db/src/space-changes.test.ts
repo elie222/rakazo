@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { followSpaceChanges, publishSpaceChange } from "./space-changes.js";
 
@@ -20,8 +21,6 @@ function fakeFanout() {
   };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 async function opened(iterator: AsyncGenerator<string>) {
   const kinds = [];
   for (let i = 0; i < 3; i += 1) kinds.push((await iterator.next()).value);
@@ -40,7 +39,7 @@ describe("followSpaceChanges", () => {
       signalled = true;
     });
     await publishSpaceChange(fanout as never, "space-2", "runs");
-    await tick();
+    await flush();
     expect(signalled).toBe(false);
 
     await publishSpaceChange(fanout as never, "space-1", "routines");
@@ -67,7 +66,7 @@ describe("followSpaceChanges", () => {
     void next.then(() => {
       signalled = true;
     });
-    await tick();
+    await flush();
     expect(signalled).toBe(false);
     controller.abort();
     await next;
@@ -116,7 +115,7 @@ describe("publishSpaceChange", () => {
     };
     await publishSpaceChange(fanout as never, "space-1", "runs", { sleep: async () => {} });
     expect(calls).toBe(1);
-    await tick();
+    await flush();
     expect(calls).toBe(2);
   });
 
@@ -131,7 +130,7 @@ describe("publishSpaceChange", () => {
     await expect(
       publishSpaceChange(fanout as never, "space-1", "routines", { sleep: async () => {} }),
     ).resolves.toBeUndefined();
-    await tick();
+    await flush();
     expect(calls).toBe(1);
   });
 });

@@ -335,11 +335,8 @@ export class ConfiguredSandbox implements SandboxProvider {
 
   async provisionKind(homeKey?: string): Promise<ComputerRef["kind"]> {
     const target = await this.target(homeKey);
-    if (target !== this.primary) return target.describe().id as ComputerRef["kind"];
-    return (
-      (await this.primary.provisionKind?.(homeKey)) ??
-      (this.primary.describe().id as ComputerRef["kind"])
-    );
+    if (target !== this.primary) return target.describe().id;
+    return (await this.primary.provisionKind?.(homeKey)) ?? this.primary.describe().id;
   }
 
   async provision(
@@ -536,7 +533,7 @@ export class ConfiguredSandbox implements SandboxProvider {
 
   async deleteMachine(machine: UnreferencedMachine, signal: AbortSignal) {
     const provider = await this.route({
-      kind: machine.provider as ComputerRef["kind"],
+      kind: machine.provider,
       botId: machine.homeKey ?? "",
       providerRef: machine.machineId,
     });

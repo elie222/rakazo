@@ -1,9 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import {
+  assertMemoryProviderSettings,
   classifyMemoryProviderSettings,
+  keptMemoryProviderSettings,
   loadMemoryProviderCredentials,
   MemoryProviderPrivateEndpointRequiredError,
+  memoryProviderConnectionLabel,
   memoryProviderCredentialTarget,
   memoryProviderRequiresPrivateEndpoint,
   prepareMemoryProviderConnection,
@@ -104,6 +107,7 @@ export async function updateMemoryProviderConfig(
     {
       provider: existing.provider,
       settings: {
+        ...keptMemoryProviderSettings(existing.provider, toStringRecord(existing.settings)),
         ...input.settings,
         ...(!movesCredentials && typeof toStringRecord(existing.settings).baseUrl === "string"
           ? { baseUrl: toStringRecord(existing.settings).baseUrl }
@@ -147,15 +151,11 @@ async function saveMemoryProviderConnection(
 ) {
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
-    if (
-      memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
-      deps.env?.mcpAllowPrivateEndpoint !== true
-    ) {
-      throw new ORPCError("FORBIDDEN");
-    }
+    assertMemoryProviderSettings(input.provider, input.settings);
     const classify = deps.classifySettings ?? classifyMemoryProviderSettings;
     const prepare = deps.prepareConnection ?? prepareMemoryProviderConnection;
-    // Classify DNS/trust before any credentialed probe so LAN endpoints stay operator-authorized.
+    // Trust is decided by the addresses a host resolves to, so it is checked only once classified,
+    // and before any credentialed probe so private endpoints stay operator-authorized.
     const classifiedSettings = await classify(input.provider, input.settings);
     if (
       memoryProviderRequiresPrivateEndpoint(input.provider, classifiedSettings) &&
@@ -313,11 +313,14 @@ export function serializeSpaceMemoryConfig(config: {
   defaultMemoryScope: string;
   updatedAt: Date;
 }) {
+  const settings = toStringRecord(config.settings);
+  const connectionLabel = memoryProviderConnectionLabel(config.provider, settings);
   return {
     provider: config.provider,
-    settings: toStringRecord(config.settings),
+    settings,
     defaultMemoryScope: config.defaultMemoryScope as "isolated" | "shared",
     updatedAt: config.updatedAt.toISOString(),
+    ...(connectionLabel === undefined ? {} : { connectionLabel }),
   };
 }
 

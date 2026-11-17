@@ -10,7 +10,7 @@ import {
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
   providerOfThreadId,
 } from "./chat-sdk-surface.js";
-import { enrichSlackTeamRoom } from "./messaging-platforms.js";
+import { enrichSlackTeamRoom } from "./providers/messaging/slack/slack-messaging.js";
 import { toTeamChatInbound } from "./team-chat-messaging.js";
 
 const context: AdapterContext = {
@@ -966,6 +966,21 @@ describe("ChatSdkMessagingSurface shape", () => {
     expect(adapter.initialize).toHaveBeenCalledTimes(2);
 
     await surface.shutdown();
+    expect(stopPolling).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops polling when it stops receiving, and a later send does not start it again", async () => {
+    const stopPolling = vi.fn(async () => undefined);
+    const { surface, adapter } = createSurface({}, {
+      initialize: vi.fn(async () => undefined),
+      stopPolling,
+    } as Partial<Adapter>);
+
+    await surface.stopReceiving();
+    expect(adapter.initialize).not.toHaveBeenCalled();
+    // A draining turn's reply starts the surface; polling stops again before the send goes out.
+    await surface.initialize();
+    expect(adapter.initialize).toHaveBeenCalledTimes(1);
     expect(stopPolling).toHaveBeenCalledTimes(2);
   });
 });
