@@ -49,6 +49,7 @@ test("a bot can choose its own voice and preview it without changing the default
     voiceProvider: "scripted",
     voiceId: "alloy-test",
   });
+  await settings.getByRole("button", { name: "Hear a sample" }).scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "bot-voice-personality");
   const spoken = page.waitForResponse(
     (response) =>
