@@ -13,7 +13,7 @@ import { liveCatalogEntry, readOnce } from "../runtime/pi/models/pi-live-catalog
 import type { ModelCreditOffering } from "./offerings.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "./offerings.js";
 
-class ModelCreditConnectionUnavailableError extends ClientError {
+export class ModelCreditConnectionUnavailableError extends ClientError {
   constructor(message = "Approved model connection is unavailable") {
     super("BAD_REQUEST", message, "MODEL_CREDIT_CONNECTION_UNAVAILABLE");
   }
@@ -158,7 +158,8 @@ export async function approvedModelCreditMaterial(
 ) {
   if (!modelCreditOfferings()) return undefined;
   const offering = approvedModelCreditOffering(provider, modelId);
-  if (!offering) throw new Error("This model requires a personal connection");
+  if (!offering)
+    throw new ModelCreditConnectionUnavailableError("This model requires a personal connection");
   const { connection, secret } = await loadCreditConnection(prisma, secrets, offering, reads);
   const settings = connectionModelSettings(secret, provider, modelId, connection);
   return {

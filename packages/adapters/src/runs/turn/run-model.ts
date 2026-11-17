@@ -15,7 +15,10 @@ import {
   approvedModelCreditOffering,
   modelCreditOfferings,
 } from "../../model-credits/offerings.js";
-import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
+import {
+  approvedModelCreditMaterial,
+  ModelCreditConnectionUnavailableError,
+} from "../../model-credits/routing.js";
 import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
@@ -65,6 +68,7 @@ export function runtimeFallbackModel(runtime: AgentRuntime) {
 export function isTerminalModelSetupError(error: unknown): boolean {
   return (
     error instanceof UnavailableModelForAuthError ||
+    error instanceof ModelCreditConnectionUnavailableError ||
     error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
     (error instanceof Error &&

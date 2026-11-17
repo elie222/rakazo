@@ -5,6 +5,7 @@ import {
   approvedModelCreditCatalogEntry,
   approvedModelCreditMaterial,
   availableModelCreditOfferings,
+  ModelCreditConnectionUnavailableError,
   modelCreditUsageLookup,
 } from "./routing.js";
 
@@ -61,7 +62,7 @@ describe("approved credit connection routing", () => {
         offering.provider,
         "unapproved-model",
       ),
-    ).rejects.toThrow("personal connection");
+    ).rejects.toBeInstanceOf(ModelCreditConnectionUnavailableError);
     expect(deps.findUnique).not.toHaveBeenCalled();
   });
   it("never routes a key to another provider", async () => {
