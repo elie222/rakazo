@@ -246,6 +246,12 @@ export class PageBrowserSession {
     if (action.kind === "fill" || action.kind === "type") {
       const card = action.field === "card";
       if (action.origin || card) {
+        if (
+          ("disabled" in el && el.disabled === true) ||
+          ("readOnly" in el && el.readOnly === true)
+        ) {
+          throw new FillRefused("Element is read-only");
+        }
         const inputType = el instanceof win.HTMLInputElement ? el.type : "";
         if (card) {
           if (!CARD_INPUT_TYPES.has(inputType)) {

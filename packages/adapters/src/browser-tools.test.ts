@@ -437,6 +437,7 @@ describe("browser tools", () => {
               <input aria-label="Account" />
               <select aria-label="Branch"><option value="" disabled selected>Choose</option>
                 <option value="v1">A1</option><option>A2</option><option disabled>A3</option></select>
+              <select aria-label="Locked" disabled><option>A1</option><option>A2</option></select>
               <input aria-label="Phone" type="tel" />
             </body></html>`,
           },
@@ -496,7 +497,9 @@ describe("browser tools", () => {
         tree: string;
         elements: Array<{ name: string }>;
       }>) {
-        expect(seen.tree).not.toContain("(selected)");
+        expect(seen.tree.split("\n").find((line) => line.includes('"Branch"'))).not.toContain(
+          "(selected)",
+        );
         expect(seen.tree).not.toMatch(/"Branch" \[e\d+\] value=/);
         const element = seen.elements.find((el) => el.name.includes("Branch"));
         expect(element).not.toHaveProperty("value");
@@ -507,7 +510,7 @@ describe("browser tools", () => {
         actions: [{ kind: "fill", ref: await branch(), text: "nope" }],
       });
       expect(JSON.stringify(own)).toContain("This dropdown has no option");
-      expect(JSON.stringify(own)).not.toContain("(selected)");
+      expect((own as { error: string }).error).not.toContain("(selected)");
       for (const text of ["fake-999", "A3"]) {
         // The page itself lists every option; the refusal lists only those that can be chosen.
         expect(await fill(text), text).toMatchObject({
@@ -525,6 +528,21 @@ describe("browser tools", () => {
         /This login is saved for https:\/\/other.example.test/,
       );
       expect(chosen()).toBe("v1");
+      const locked = (await snapshot()).elements.find((el) => el.name.includes("Locked"))!.ref;
+      const onLocked = await browserActFromTool(
+        browser,
+        computer,
+        context,
+        { actions: [{ kind: "fill_secret", ref: locked, secret: "site_login", field: "Branch" }] },
+        {
+          resolveSecretFill: async () => ({
+            text: "A2",
+            origin: "https://login.example.test",
+            hidden: false,
+          }),
+        },
+      );
+      expect(onLocked).toMatchObject({ ok: false, completed: 0, error: "Element is read-only" });
       // A page of long labels cannot flood the refusal.
       await browserNavigateFromTool(browser, computer, context, { url: `${url}?long` });
       const flooded = (await fill("fake-999")) as { error: string };
