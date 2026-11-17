@@ -6,10 +6,10 @@ import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adap
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import type { DiagnosticsInput } from "../diagnostics.js";
-import { renderDiagnostics } from "../diagnostics.js";
 import type { AppEnv } from "../env.js";
 import { loadEnv } from "../env.js";
+import type { DiagnosticsInput } from "../telemetry/diagnostics.js";
+import { renderDiagnostics } from "../telemetry/diagnostics.js";
 
 const RECENT_RUNS = 10;
 const serverFields = {
