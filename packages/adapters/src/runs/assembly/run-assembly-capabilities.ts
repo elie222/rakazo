@@ -446,9 +446,12 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
-  // Only the owner sets up a chat app, and only where the connect card is offered.
+  // Only a person typing in the app can be asking to connect one, and only where the card is offered.
   const chatApps =
-    !messagingChannelRun && !nonOwnerChatRun && !bot.disabledBuiltinTools?.includes("connect_app")
+    conversationRun.trigger === "user" &&
+    !messagingChannelRun &&
+    !nonOwnerChatRun &&
+    !bot.disabledBuiltinTools?.includes("connect_app")
       ? [...new Set(deps.messaging?.chatApps?.() ?? [])]
       : [];
   const messagingContext =
