@@ -30,7 +30,8 @@ Use a cryptographically random webhook secret (for example, 32 random bytes enco
 The username is public: copy the username reported by `getMe`, without a URL; a leading `@`
 is accepted. It supplies the destination shown in the existing code instructions on web,
 Electron and mobile. It is optional for existing installations; without it users still need
-the operator to tell them where to send the code. A malformed configured username fails setup.
+the operator to tell them where to send the code. A malformed optional username is omitted
+with a warning; it does not disable messaging.
 Changing the bot username requires updating this setting and restarting.
 
 The standard Compose files forward these settings. Named bots additionally use
@@ -49,14 +50,15 @@ uses this header rather than a body HMAC signature. Keep the token and header ou
 logs, traces and tickets. API and worker must have the same credentials and access to the
 existing shared database/jobs infrastructure. Only API receives inbound updates.
 
-With `API_URL` configured the adapter is webhook-only, even if no webhook has been registered.
-A local API without `API_URL` may use automatic polling; workers never poll. Do not run a local
-poller or another webhook consumer with the hosted bot token.
+The receiving API preserves automatic transport selection: it uses a registered webhook and
+otherwise may poll. An API URL, including localhost, does not prove that a webhook was registered.
+Workers never poll. Register and verify the hosted webhook before starting multiple API instances;
+do not run another poller or webhook consumer with the hosted bot token.
 
 The following example registers the webhook without placing credentials in command arguments
 or printing raw API responses. Run only in an authorized operator shell with the above variables
-already supplied securely. It checks that the token belongs to the configured public username,
-keeps pending updates, and reports sanitized success/failure. It changes the bot's webhook.
+already supplied securely. When the optional public username is supplied, it checks that the
+token belongs to that bot. It keeps pending updates, and reports sanitized success/failure. It changes the bot's webhook.
 
 ```sh
 python3 - <<'PY'
@@ -68,7 +70,7 @@ import urllib.request
 try:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     secret = os.environ["TELEGRAM_WEBHOOK_SECRET_TOKEN"]
-    username = os.environ["TELEGRAM_BOT_USERNAME"].strip().removeprefix("@")
+    username = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().removeprefix("@")
     origin = os.environ["API_URL"].rstrip("/")
     if not origin.startswith("https://") or not secret:
         raise ValueError()
@@ -86,7 +88,8 @@ try:
             raise ValueError()
         return result["result"]
 
-    if call("getMe", {}).get("username", "").lower() != username.lower():
+    bot = call("getMe", {})
+    if username and bot.get("username", "").lower() != username.lower():
         raise ValueError()
     if call("setWebhook", {
         "url": webhook,
@@ -96,7 +99,7 @@ try:
     }) is not True:
         raise ValueError()
     info = call("getWebhookInfo", {})
-    if info.get("url") != webhook or info.get("last_error_message"):
+    if info.get("url") != webhook:
         raise ValueError()
     print("Webhook registered; complete delivery acceptance checks next.")
 except Exception:
@@ -108,8 +111,9 @@ PY
 For a named mount, substitute that mount's three environment names and webhook path in the
 example. Registration replaces any webhook previously registered for the same bot. Schedule
 that change deliberately. Do not use `drop_pending_updates=true` for routine setup or recovery.
-`getWebhookInfo` checks registration and recent delivery errors; it cannot prove linking or
-agent replies work. See the [Telegram Bot API](https://core.telegram.org/bots/api#setwebhook)
+`getWebhookInfo` checks registration; a stored `last_error_message` may predate this setup and
+is not proof of a failed registration. Review delivery-error timestamps privately and complete
+the live acceptance checks; registration alone cannot prove linking or agent replies work. See the [Telegram Bot API](https://core.telegram.org/bots/api#setwebhook)
 for registration parameters.
 
 ## Customer flow and hosted acceptance

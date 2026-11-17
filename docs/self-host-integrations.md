@@ -182,10 +182,10 @@ not establish eligibility. Proactive template reminders are not implemented.
 
 ### Telegram
 
-With `API_URL` configured, Telegram is webhook-only: Telegram sends the secret in
-`X-Telegram-Bot-Api-Secret-Token`, and the worker never long-polls. Without a public API URL,
-the receiving API can fall back to polling. Set optional `TELEGRAM_BOT_USERNAME` (or
-`TELEGRAM_BOT_USERNAME_<NAME>`) to show the public destination in linking instructions.
+Telegram sends its webhook secret in `X-Telegram-Bot-Api-Secret-Token`. The receiving API
+uses automatic transport selection and can poll when no webhook is registered; workers never
+poll. Register the hosted webhook before starting multiple API instances. Set optional
+`TELEGRAM_BOT_USERNAME` (or `TELEGRAM_BOT_USERNAME_<NAME>`) to show the public destination in linking instructions.
 See the [hosted Telegram runbook](./hosted-telegram.md) for operator registration and acceptance.
 An extra bot named `<NAME>` (letters and digits) uses the provider
 `telegram-<name>` and the webhook `/api/v1/messaging/webhook/telegram-<name>`; see

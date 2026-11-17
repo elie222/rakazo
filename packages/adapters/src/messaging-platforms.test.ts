@@ -81,28 +81,53 @@ describe("messagingPlatformsFromEnv", () => {
     ]);
   });
 
-  it("rejects malformed public bot usernames without echoing their value", () => {
-    expect(() =>
-      messagingPlatformsFromEnv({
-        telegramBotToken: "fake-token",
-        telegramWebhookSecret: "fake-secret",
-        telegramBotUsername: "https://example.test/private",
-      }),
-    ).toThrow("Invalid Telegram bot username");
+  it("ignores malformed display usernames without disabling messaging mounts", () => {
+    const platforms = messagingPlatformsFromEnv({
+      telegramBotToken: "fake-token",
+      telegramWebhookSecret: "fake-secret",
+      telegramBotUsername: "https://example.test/private",
+      telegramBots: [
+        {
+          name: "support",
+          botToken: "fake-support",
+          webhookSecret: "fake-secret",
+          username: "invalid" + "/name",
+        },
+      ],
+      whatsappAccessToken: "fake-whatsapp-token",
+      whatsappPhoneNumberId: "fake-phone",
+      whatsappAppSecret: "fake-app-secret",
+      whatsappVerifyToken: "fake-verify",
+    });
+    expect(
+      platforms
+        .filter(({ provider }) => provider.startsWith("telegram"))
+        .map(({ provider, address }) => ({ provider, address })),
+    ).toEqual([
+      { provider: "telegram", address: undefined },
+      { provider: "telegram-support", address: undefined },
+    ]);
+    expect(platforms.some(({ provider }) => provider === "whatsapp")).toBe(true);
   });
 
-  it("keeps public API deployments webhook-only even before registration", () => {
+  it.each([
+    undefined,
+    "http://localhost:3100",
+    "http://127.0.0.1:3100",
+    "https://api.example.test",
+  ])("preserves automatic receiving without inferring webhook registration from %s", (apiUrl) => {
     const credentials = {
       telegramBotToken: "fake-token",
       telegramWebhookSecret: "fake-secret",
       telegramBots: [{ name: "support", botToken: "fake-support", webhookSecret: "fake-secret" }],
+      apiUrl,
     };
-    const modes = (apiUrl?: string) =>
-      messagingPlatformsFromEnv({ ...credentials, apiUrl }, { pollInboundMessages: true }).map(
+    const modes = (pollInboundMessages: boolean) =>
+      messagingPlatformsFromEnv(credentials, { pollInboundMessages }).map(
         ({ adapter }) => (adapter as unknown as { mode: string }).mode,
       );
-    expect(modes("https://api.example.test")).toEqual(["webhook", "webhook"]);
-    expect(modes()).toEqual(["auto", "auto"]);
+    expect(modes(true)).toEqual(["auto", "auto"]);
+    expect(modes(false)).toEqual(["webhook", "webhook"]);
   });
 
   it("requires all four sendblue values", () => {

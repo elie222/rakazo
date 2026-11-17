@@ -93,13 +93,6 @@ export class LazyPhotonAdapter implements Adapter {
   }
   private load() {
     this.loaded ??= (async () => {
-      // Photon 2.0 uses a different API, credential and event contract. Never
-      // send its credentials to the legacy Spectrum client.
-      if (this.config.projectId.startsWith("pho_prj_")) {
-        throw new Error(
-          "Photon Beta projects require the Photon 2.0 adapter; this connection supports Stable Spectrum projects only",
-        );
-      }
       // The constructor, unlike createiMessageAdapter, never falls back to IMESSAGE_* env vars.
       const { iMessageAdapter } = await import("@photon-ai/chat-adapter-imessage");
       this.implementation = new iMessageAdapter({

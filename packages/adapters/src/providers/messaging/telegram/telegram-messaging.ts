@@ -115,9 +115,7 @@ function telegramPlatform(
     // Auto mode long-polls when no webhook is registered, for deployments
     // without a public HTTPS endpoint. Only the API process may poll: it
     // owns the inbound sink, and Telegram allows one getUpdates per bot.
-    // A public deployment must register its webhook before receiving, rather
-    // than silently starting competing pollers on multiple API instances.
-    mode: options.pollInboundMessages && !options.apiUrl ? "auto" : "webhook",
+    mode: options.pollInboundMessages ? "auto" : "webhook",
   });
   return {
     provider,
@@ -134,7 +132,8 @@ function telegramLinkAddress(username: string | undefined): string | undefined {
   if (!username?.trim()) return undefined;
   const name = username.trim().replace(/^@/, "");
   if (!/^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(name)) {
-    throw new Error("Invalid Telegram bot username");
+    getLogger().warn("ignoring invalid Telegram bot username");
+    return undefined;
   }
   return `@${name}`;
 }

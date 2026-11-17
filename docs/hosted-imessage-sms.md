@@ -21,8 +21,8 @@ obtain the newer product's advertised channel list.
 
 Rakazo pins `@photon-ai/chat-adapter-imessage@3.2.0`, backed by `@spectrum-ts/core` and
 `@spectrum-ts/imessage@10.0.0`. It dynamically loads Stable Spectrum using project ID/secret,
-legacy `imessage:<chatGuid>~<line>` threads and `X-Spectrum-*` signed events. The wrapper now
-rejects Beta `pho_prj_` project IDs before constructing the legacy client.
+legacy `imessage:<chatGuid>~<line>` threads and `X-Spectrum-*` signed events. Supply credentials
+for this Stable API; the newer API contract is not implemented by this adapter.
 
 The [legacy integration guide](https://photon.codes/docs/integrations/chat-sdk) marks this package
 retired. The [2.0 announcement](https://photon.codes/blog/introducing-photon-2.0) describes a new
