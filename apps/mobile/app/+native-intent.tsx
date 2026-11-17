@@ -1,6 +1,6 @@
 import { MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
-import { receiveIncomingShare } from "../lib/incoming-share";
-import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-sheet";
+import { receiveIncomingShare } from "../lib/composer/incoming-share";
+import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings/settings-sheet";
 
 /** A link to a screen outside settings closes the settings sheet first, so the screen opens on
  * the root stack instead of over the sheet. Settings links open inside the sheet. Something

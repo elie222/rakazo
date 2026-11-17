@@ -7,10 +7,10 @@ import { IntegrationSetup } from "./IntegrationSetup";
 
 const api = vi.hoisted(() => ({ capabilities: { catalogSearch: vi.fn() } }));
 
-vi.mock("../../lib/rpc", () => ({ rpc: api }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: api }));
 const connectMcpEndpoint = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/mcp-connect", () => ({ connectMcpEndpoint }));
+vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpEndpoint }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
   useLingui: () => ({

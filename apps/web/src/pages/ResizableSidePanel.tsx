@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../lib/use-event-listener";
-import { useBotsSidebarWidth } from "./shell/sidebar-layout";
+import { useBotsSidebarWidth } from "./shell/sidebar/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
 const MIN_WIDTH = 320;

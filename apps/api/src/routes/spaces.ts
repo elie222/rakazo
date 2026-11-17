@@ -27,14 +27,14 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
-import { otherSpaceOfBot, otherSpaceOfGroup } from "../bot-space.js";
-import { invitationRecipientKey, sendInvitationEmail } from "../invitation-email.js";
+import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
+import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
-import { listRoutinesDto } from "../routines.js";
-import { deleteSpaceWithContent } from "../space-deletion.js";
-import { afterSpaceDeparture } from "../space-departure.js";
-import { threadSnapshot } from "../thread-snapshot.js";
-import { resolveThreadTarget } from "../thread-target.js";
+import { listRoutinesDto } from "../routines/routines.js";
+import { deleteSpaceWithContent } from "../spaces/space-deletion.js";
+import { afterSpaceDeparture } from "../spaces/space-departure.js";
+import { threadSnapshot } from "../threads/thread-snapshot.js";
+import { resolveThreadTarget } from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
 

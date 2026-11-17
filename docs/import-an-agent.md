@@ -31,12 +31,27 @@ Grok Bot has no export button, so each Bot writes down its own setup:
 Exports written for Hermes Agent's or OpenMausBot's Grok Bot importers use the same format and
 import here too.
 
-Routines on a schedule come over paused. Turn each one off in Grok Bot before you turn it on here,
-so it doesn't run twice. Routines that start on an event (Slack, GitHub, email, a webhook), or
-whose schedule could not be read, are saved in the bot's memory as `grok-bot-routines.md`, with
-their trigger and full instruction, so you can set them up again. Connected apps with a remote
-MCP address become MCP servers you sign in to again; **Not imported** lists the other apps to
-connect again. Chats, files on the Bot's computer and sign-ins stay in Grok Bot.
+Routines come over paused, on the matching trigger:
+
+| Grok Bot trigger                   | Becomes                                                             |
+| ---------------------------------- | ------------------------------------------------------------------- |
+| Schedule                           | The same schedule                                                   |
+| Webhook, Linear, Sentry, PagerDuty | A webhook trigger                                                   |
+| GitHub                             | A Git event trigger                                                 |
+| Slack                              | A Slack message trigger, when this server has Slack                 |
+| Email                              | An email trigger for mail from you, when this server receives email |
+
+Turn each one off in Grok Bot before you turn it on here, so it doesn't run twice. Point a
+webhook or Git routine's source at the address its trigger shows here. Give the bot an email
+address before an email routine can run, and connect it to Slack before a Slack routine can. An
+event routine's prompt starts with its original trigger and details, such as the channel or
+repository, so the bot knows what it was for.
+
+Routines whose schedule could not be read, or whose event this server does not receive, are
+saved in the bot's memory as `grok-bot-routines.md`, with their trigger and full instruction, so
+you can set them up by hand. Connected apps with a remote MCP address become MCP servers you
+sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
+Bot's computer and sign-ins stay in Grok Bot.
 
 ## From another assistant
 
@@ -57,7 +72,7 @@ Before anything is created, you see every item the import found and tick what to
 | Skills                                       | Skills in the library all your bots share                                |
 | Model                                        | The bot's model, when you have that provider connected or import its key |
 | MCP servers                                  | MCP servers the bot asks before using                                    |
-| Scheduled jobs                               | Routines, paused until you turn them on                                  |
+| Scheduled jobs and Grok Bot routines         | Routines, paused until you turn them on                                  |
 | API keys                                     | Model connections, only when you tick **Include API keys**               |
 
 Anything that runs code or acts on its own (skills, MCP servers, routines) starts unticked, as do

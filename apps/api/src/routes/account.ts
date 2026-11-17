@@ -48,15 +48,14 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
-import { requireAdmin } from "../admins.js";
-import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
-import type { BillingService } from "../billing.js";
-import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
-import type { RouterDeps } from "../router.js";
+import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
+import { requireAdmin } from "../auth/admins.js";
+import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
+  effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   persistVoiceCredential,
@@ -69,7 +68,9 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
-} from "../voice.js";
+} from "../calls/voice.js";
+import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
@@ -548,8 +549,7 @@ export function accountRoutes(ctx: RouterContext) {
         accountVoiceCatalog(deps, context.actor),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
-        return toVoiceStatus(cred);
+        return effectiveVoiceStatus(deps, context.actor, input?.scope);
       }),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
@@ -668,7 +668,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
       deps.prisma,
       actor,
       "approval",
-      { env: process.env },
+      { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true },
       scope === "account" ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
@@ -683,7 +683,12 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),
     ...role.backups,
   ];
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({
+    env: process.env,
+    checker: deploymentChecker
+      ? { provider: deploymentChecker.provider, model: deploymentChecker.modelId }
+      : undefined,
+  });
   if (memberChoices.length === 0) {
     // The deployment's checker runs on its own configuration or on the member's key for it.
     const requiredUserProvider =

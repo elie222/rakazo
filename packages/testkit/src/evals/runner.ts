@@ -26,8 +26,6 @@ import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
-import type { ClarificationBlock } from "./clarification.js";
-import { expectedClarificationText } from "./clarification.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -38,10 +36,12 @@ import type { FailureCategory, TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
 import { browserScreen } from "./sandbox.js";
 import { EvalServices } from "./services.js";
-import type { RoutineEvidence } from "./silence.js";
-import { SilenceObserver } from "./silence-observer.js";
 import type { LedgerCall } from "./step-accounting.js";
 import { measureWorkflowSteps } from "./step-accounting.js";
+import type { ClarificationBlock } from "./suites/clarification.js";
+import { expectedClarificationText } from "./suites/clarification.js";
+import type { RoutineEvidence } from "./suites/silence.js";
+import { SilenceObserver } from "./suites/silence-observer.js";
 import type { ObservedToolCall, ObservedToolList } from "./tool-calls.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> | Response };
@@ -1120,7 +1120,7 @@ export async function runTrial(
     });
     const routines = await prisma.routine.findMany({
       where: { botId },
-      select: { name: true, prompt: true, crons: true, active: true },
+      select: { name: true, prompt: true, crons: true, active: true, inChat: true },
     });
     // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
     // append is best-effort, so a routine that still exists counts even without one.
@@ -1170,6 +1170,7 @@ export async function runTrial(
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      subjectBotId: botId,
       apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
@@ -1206,6 +1207,17 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        // What graders check for writes, so a failed write criterion can be read.
+        ...(evidence.calls.length
+          ? {
+              "service-calls": JSON.stringify(
+                evidence.calls.map(({ botId: caller, ...call }) => ({
+                  ...call,
+                  by: caller === botId ? "subject" : caller === peer?.id ? "peer" : "other",
+                })),
+              ),
+            }
+          : {}),
         ...(apps.length
           ? {
               "app-calls": JSON.stringify(

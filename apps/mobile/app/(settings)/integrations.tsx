@@ -38,39 +38,44 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import type {
   AddCustomOption,
   SourceAuth,
   SourceKind,
-} from "../../components/add-custom-integration";
-import { AddCustomForm, AddCustomMenu } from "../../components/add-custom-integration";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { ConnectorIcon } from "../../components/connector-icon";
-import { IntegrationCatalogSearch } from "../../components/integration-catalog-search";
-import type { ConnectionTool } from "../../components/integration-detail";
-import { IntegrationDetail } from "../../components/integration-detail";
-import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integration-plugins";
-import { createIntegrationsStyles, LOGO_SIZE } from "../../components/integrations-styles";
-import { MenuPicker } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { Chevron } from "../../components/row-accessories";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import type { IntegrationsCacheScope, IntegrationsSnapshot } from "../../lib/integrations-cache";
+} from "../../components/integrations/add-custom-integration";
+import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
+import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
+import type { ConnectionTool } from "../../components/integrations/integration-detail";
+import { IntegrationDetail } from "../../components/integrations/integration-detail";
+import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integrations/integration-plugins";
+import {
+  createIntegrationsStyles,
+  LOGO_SIZE,
+} from "../../components/integrations/integrations-styles";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { Chevron } from "../../components/ui/row-accessories";
+import { rpc } from "../../lib/api/api";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/home/last-bot";
+import type {
+  IntegrationsCacheScope,
+  IntegrationsSnapshot,
+} from "../../lib/integrations/integrations-cache";
 import {
   integrationsCacheScope,
   isIntegrationsScopeCurrent,
   persistedIntegrationsCacheScope,
   readIntegrationsCache,
   writeIntegrationsCache,
-} from "../../lib/integrations-cache";
-import { loadLastBotId } from "../../lib/last-bot";
-import { signInToMcpServer } from "../../lib/mcp-oauth";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
+} from "../../lib/integrations/integrations-cache";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   browsablePlugins,
   filterPlugins,
@@ -79,9 +84,10 @@ import {
   managedPluginParams,
   pluginCategories,
   pluginParams,
-} from "../../lib/plugin-marketplace";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -817,9 +823,9 @@ export default function Integrations() {
     setSourcePreset(preset);
     setSourceError(null);
     setName(preset?.name ?? "");
-    setUrl(preset?.url ?? "");
+    setUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setSourceAuth(preset ? "bearer" : "none");
+    setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 

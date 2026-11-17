@@ -26,17 +26,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAccountDeletion } from "../components/account-deletion";
-import { BotAvatar } from "../components/bot-avatar";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { NativeActionButton } from "../components/native-action-button";
-import { NativeSegmentedControl } from "../components/native-segmented-control";
-import { NativeSymbol } from "../components/native-symbol";
-import { useOrganizationMenuAction } from "../components/organization-menu";
-import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import { signOut } from "../lib/api-auth";
-import { replaceWithSignIn } from "../lib/auth-routing";
-import type { Plan } from "../lib/billing";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { useOrganizationMenuAction } from "../components/inbox/organization-menu";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { NativeSegmentedControl } from "../components/native/native-segmented-control";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { useAccountDeletion } from "../components/settings/account-deletion";
+import type { Plan } from "../lib/account/billing";
 import {
   currentPlan,
   openBillingPage,
@@ -45,21 +42,24 @@ import {
   purchaseCompleted,
   setPaywallShown,
   subscribedPlan,
-} from "../lib/billing";
-import { endCallBeforeSessionEnd } from "../lib/call-session";
-import { translucentColor } from "../lib/color";
-import { useContentBottomInset } from "../lib/content-bottom-inset";
-import { dateLocaleForUi } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+} from "../lib/account/billing";
+import { errorText } from "../lib/api/user-error";
+import { translucentColor } from "../lib/appearance/color";
+import { signOut } from "../lib/auth/api-auth";
+import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
+import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
+import { useMobileTokens } from "../lib/native/native";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 import {
   activeOrganization,
   organizationSwitchActions,
   useOrganizations,
-} from "../lib/organizations";
-import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { errorText } from "../lib/user-error";
+} from "../lib/spaces/organizations";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type SymbolName = ComponentProps<typeof NativeSymbol>["android"];

@@ -21,13 +21,6 @@ const EXISTING = new Set([
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
-  // Moved onto `withLease`; kept only while the previous release still claims them.
-  "BillingAccount.checkoutLeaseId",
-  "BillingAccount.checkoutLeaseExpiresAt",
-  "CloudAgent.leaseToken",
-  "CloudAgent.leaseExpiresAt",
-  "HomeDeletionNotice.claimId",
-  "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
   "Lease.fence",
   // Not long work in one process, so not for `withLease`: a person's page holds computer control
@@ -67,7 +60,7 @@ test("adds no hand-written lease, claim or attempt column", () => {
   assert.deepEqual(
     added,
     [],
-    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/leases.ts), " +
+    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/database/leases.ts), " +
       "and retries with the job queue's attempts and backoff, instead of new lease, claim or attempt columns.",
   );
 });

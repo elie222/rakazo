@@ -6,7 +6,7 @@ import {
   asRecord,
   defineMessagingPlatform,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 export const whatsappMessaging = defineMessagingPlatform({
   env: {
@@ -18,7 +18,7 @@ export const whatsappMessaging = defineMessagingPlatform({
   mount(env) {
     return {
       provider: "whatsapp",
-      capabilities: { direct: true, groups: false, receipt: null },
+      capabilities: { direct: true, groups: false, receipt: null, files: true },
       adapter: createWhatsAppAdapter({
         accessToken: env.whatsappAccessToken,
         phoneNumberId: env.whatsappPhoneNumberId,
@@ -27,13 +27,22 @@ export const whatsappMessaging = defineMessagingPlatform({
       }),
       peekStatuses: parseWhatsAppStatuses,
       isPermanentSendError: (error) =>
-        error instanceof WhatsAppApiError && error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED,
+        (error instanceof WhatsAppApiError && error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED) ||
+        isRejectedUpload(error),
     };
   },
 });
 
 /** Meta 131047: outside the 24-hour window only a template can reach the user. */
 const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
+
+/**
+ * The adapter refuses a file before uploading it when it is over WhatsApp's limit for its kind
+ * (5 MB images, 16 MB audio and video) or empty; sending it again cannot succeed.
+ */
+function isRejectedUpload(error: unknown): boolean {
+  return error instanceof Error && error.name === "ValidationError";
+}
 
 /** Exposes the adapter's Markdown rendering, which the package does not export. */
 class WhatsAppRenderer extends WhatsAppAdapter {
