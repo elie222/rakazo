@@ -1194,7 +1194,7 @@ export async function updateScheduleFromTool(
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),
     ...timing,
-    ...(eventsChanged ? eventsResult(events) : {}),
+    ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
     // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
     changes: routineChanges(
       {
