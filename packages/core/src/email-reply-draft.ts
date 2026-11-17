@@ -6,6 +6,9 @@
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BODY_TOGGLE_LINES = 8;
+const SUBJECT_MAX = 500;
+const REFERENCE_LIMIT = 20;
+const VERIFIED_REPLY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type EmailReplyStatus = "ready" | "sent" | "discarded";
 export type EmailReplyApproval = "needs_approval" | "send_once";
@@ -47,6 +50,8 @@ export type EmailReplyCardView = {
   body: string;
   approval: EmailReplyApproval;
   showToggle: boolean;
+  /** The reply row is only there when this draft answers a message. */
+  showInReplyTo: boolean;
 };
 
 export type SentEmail = {
@@ -113,6 +118,7 @@ export function emailReplyCard(draft: EmailReplyDraft): EmailReplyCardView {
     body: draft.body,
     approval: draft.approval,
     showToggle: draft.body.split(/\r?\n/).length > BODY_TOGGLE_LINES,
+    showInReplyTo: draft.inReplyTo.trim().length > 0,
   };
 }
 
@@ -169,6 +175,52 @@ export function applyEmailReplyEdit(draft: EmailReplyDraft, edit: EmailReplyEdit
   };
 }
 
+/** A subject safe to hand to a mail provider: one line, and no longer than the draft allows. */
+export function emailReplySubjectLine(subject: string): string {
+  return subject
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, SUBJECT_MAX);
+}
+
+/** A message this draft may be answering, already loaded for this bot. */
+export type EmailReplyParent = {
+  messageId?: string | null;
+  references: readonly string[];
+  fromAddress: string;
+  verified: boolean;
+  sent: boolean;
+  receivedAt: Date;
+};
+
+/**
+ * Threading headers and the sender a reply may be addressed to. A draft whose
+ * reply line is only a label has no parent, so it sends as a new message.
+ */
+export function emailReplyThreading(
+  parent: EmailReplyParent | null,
+  domain: string,
+  now = Date.now(),
+): { headers?: Record<string, string>; verifiedReplySender?: string } {
+  if (!parent) return {};
+  const messageId = parent.messageId || undefined;
+  const anchor = messageId ?? parent.references.at(-1);
+  const references = messageId
+    ? [...parent.references, messageId].slice(-REFERENCE_LIMIT)
+    : [...parent.references];
+  const headers = anchor ? { "In-Reply-To": anchor, References: references.join(" ") } : undefined;
+  const senderDomain = parent.fromAddress.split("@").at(-1)?.toLowerCase();
+  const recent = parent.receivedAt.getTime() >= now - VERIFIED_REPLY_WINDOW_MS;
+  const verifiedReplySender =
+    parent.verified && !parent.sent && recent && senderDomain !== domain.toLowerCase()
+      ? parent.fromAddress
+      : undefined;
+  return {
+    ...(headers ? { headers } : {}),
+    ...(verifiedReplySender ? { verifiedReplySender } : {}),
+  };
+}
+
 /** Fields a save stores. An unfinished address stays in the list so typing is not lost. */
 export function emailReplySaveFields(draft: EmailReplyDraft) {
   return {
@@ -180,6 +232,13 @@ export function emailReplySaveFields(draft: EmailReplyDraft) {
     approval: draft.approval,
   };
 }
+
+export type EmailReplyWrite = ReturnType<typeof emailReplySaveFields>;
+
+/** A save, a discard, or a send of the draft as the card currently shows it. */
+export type EmailReplyCommitAction =
+  | ({ type: "save" | "send" } & EmailReplyWrite)
+  | { type: "discard" };
 
 /** The message block a chat stores so the card can open this draft again. */
 export function emailReplyBlock(draft: EmailReplyDraft): EmailReplyBlockSnapshot {
@@ -242,54 +301,4 @@ export function emailReplyWithStatus(
   status: EmailReplyStatus,
 ): EmailReplyDraft {
   return { ...draft, status };
-}
-
-export class EmailReplyDraftStore {
-  private readonly drafts = new Map<string, EmailReplyDraft>();
-
-  save(draft: EmailReplyDraft): EmailReplyCardView {
-    this.drafts.set(draft.id, draft);
-    return emailReplyCard(draft);
-  }
-
-  open(id: string): EmailReplyCardView {
-    return emailReplyCard(this.require(id));
-  }
-
-  /** Writes the card edit onto the saved draft, including an unfinished address. */
-  edit(id: string, edit: EmailReplyEdit): EmailReplyCardView {
-    const next = applyEmailReplyEdit(this.require(id), edit);
-    this.drafts.set(id, next);
-    return emailReplyCard(next);
-  }
-
-  get(id: string): EmailReplyDraft {
-    return this.require(id);
-  }
-
-  /**
-   * Delivers the draft as it stands, then marks it sent. A delivery failure
-   * leaves the draft ready.
-   */
-  async send(id: string, deliver: (mail: SentEmail) => Promise<void>): Promise<SentEmail> {
-    const mail = emailReplyOutbound(this.require(id));
-    await deliver(mail);
-    const current = this.require(id);
-    this.drafts.set(id, emailReplyWithStatus(current, "sent"));
-    return mail;
-  }
-
-  discard(id: string): EmailReplyDraft {
-    const draft = this.require(id);
-    if (draft.status === "sent") throw new EmailReplyDraftError("This draft was already sent");
-    const discarded = emailReplyWithStatus(draft, "discarded");
-    this.drafts.set(id, discarded);
-    return discarded;
-  }
-
-  private require(id: string): EmailReplyDraft {
-    const draft = this.drafts.get(id);
-    if (!draft) throw new EmailReplyDraftError("No draft with that id");
-    return draft;
-  }
 }

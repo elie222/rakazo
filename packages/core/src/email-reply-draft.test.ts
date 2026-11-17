@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEmailReplyEdit,
   createEmailReplyDraft,
   EmailReplyDraftError,
-  EmailReplyDraftStore,
   emailReplyBlock,
+  emailReplyCard,
   emailReplyDraftFromBlock,
   emailReplyOutbound,
   emailReplyPreview,
+  emailReplySubjectLine,
+  emailReplyThreading,
+  emailReplyWithStatus,
 } from "./email-reply-draft.js";
 
 const original = {
@@ -21,97 +25,119 @@ const original = {
 
 describe("email reply drafts", () => {
   it("opens the saved draft as Mail", () => {
-    const store = new EmailReplyDraftStore();
-    const card = store.save(createEmailReplyDraft(original));
+    const card = emailReplyCard(createEmailReplyDraft(original));
     expect(card.title).toBe("Mail");
     expect(card.statusLabel).toBe("Ready to send");
     expect(card.from).toBe(original.from);
     expect(card.inReplyTo).toBe(original.inReplyTo);
+    expect(card.showInReplyTo).toBe(true);
     expect(card.to).toBe("clinic@example.com");
     expect(card.cc).toBe("name@example.com");
     expect(card.subject).toBe(original.subject);
     expect(card.editable).toBe(true);
-    expect(emailReplyPreview(store.get(card.draftId))).toBe("The reply draft is ready…");
+    expect(emailReplyPreview(card)).toBe("The reply draft is ready…");
+  });
+
+  it("hides the reply row when the draft is not a reply", () => {
+    const card = emailReplyCard(createEmailReplyDraft({ ...original, inReplyTo: "  " }));
+    expect(card.showInReplyTo).toBe(false);
   });
 
   it("keeps an unfinished address so the field can be typed", () => {
-    const store = new EmailReplyDraftStore();
-    store.save(createEmailReplyDraft(original));
-    const card = store.edit("draft-1", { to: "clinic@" });
-    expect(card.to).toBe("clinic@");
-    expect(store.get("draft-1").toText).toBe("clinic@");
-    expect(() => emailReplyOutbound(store.get("draft-1"))).toThrow(/addresses/);
-    expect(store.get("draft-1").status).toBe("ready");
+    const draft = applyEmailReplyEdit(createEmailReplyDraft(original), { to: "clinic@" });
+    expect(emailReplyCard(draft).to).toBe("clinic@");
+    expect(draft.toText).toBe("clinic@");
+    expect(() => emailReplyOutbound(draft)).toThrow(/addresses/);
+    expect(draft.status).toBe("ready");
   });
 
-  it("sends the text the card shows, and only after delivery", async () => {
-    const store = new EmailReplyDraftStore();
-    store.save(createEmailReplyDraft(original));
-    store.edit("draft-1", { subject: "Re: Training enquiry (revised)" });
-    store.edit("draft-1", {
-      body: "Hi,\n\nThe course is one day.\n",
-      to: "clinic@example.com, name@example.com",
-    });
-    const saved = store.get("draft-1");
-    expect(saved.subject).toBe("Re: Training enquiry (revised)");
-    expect(saved.toText).toBe("clinic@example.com, name@example.com");
-    expect(saved.status).toBe("ready");
-
-    let delivered: string | undefined;
-    await expect(
-      store.send("draft-1", async () => {
-        throw new Error("mailbox refused");
+  it("describes the message to send without marking the draft sent", () => {
+    const draft = applyEmailReplyEdit(
+      applyEmailReplyEdit(createEmailReplyDraft(original), {
+        subject: "Re: Training enquiry (revised)",
       }),
-    ).rejects.toThrow(/mailbox refused/);
-    expect(store.get("draft-1").status).toBe("ready");
+      { body: "Hi,\n\nThe course is one day.\n", to: "clinic@example.com, name@example.com" },
+    );
+    expect(draft.status).toBe("ready");
+    const mail = emailReplyOutbound(draft);
+    expect(mail.subject).toBe("Re: Training enquiry (revised)");
+    expect(mail.body).toBe("Hi,\n\nThe course is one day.\n");
+    expect(mail.to).toEqual(["clinic@example.com", "name@example.com"]);
+    expect(draft.status).toBe("ready");
 
-    const sent = await store.send("draft-1", async (mail) => {
-      delivered = mail.subject;
-    });
-    expect(delivered).toBe("Re: Training enquiry (revised)");
-    expect(sent.subject).toBe("Re: Training enquiry (revised)");
-    expect(sent.body).toBe("Hi,\n\nThe course is one day.\n");
-    expect(sent.to).toEqual(["clinic@example.com", "name@example.com"]);
-    expect(sent.subject).not.toBe(original.subject);
-    expect(store.open("draft-1").statusLabel).toBe("Sent");
-    expect(store.open("draft-1").editable).toBe(false);
-    expect(() => store.edit("draft-1", { subject: "again" })).toThrow(EmailReplyDraftError);
+    const sent = emailReplyWithStatus(draft, "sent");
+    expect(emailReplyCard(sent).statusLabel).toBe("Sent");
+    expect(emailReplyCard(sent).editable).toBe(false);
+    expect(() => applyEmailReplyEdit(sent, { subject: "again" })).toThrow(EmailReplyDraftError);
   });
 
   it("leaves a discarded draft unsent", () => {
-    const store = new EmailReplyDraftStore();
-    store.save(createEmailReplyDraft(original));
-    store.edit("draft-1", { subject: "Do not send" });
-    const discarded = store.discard("draft-1");
+    const edited = applyEmailReplyEdit(createEmailReplyDraft(original), { subject: "Do not send" });
+    const discarded = emailReplyWithStatus(edited, "discarded");
     expect(discarded.status).toBe("discarded");
     expect(discarded.subject).toBe("Do not send");
     expect(() => emailReplyOutbound(discarded)).toThrow(/discarded/);
   });
 
   it("refuses to send a draft with no recipient", () => {
-    const store = new EmailReplyDraftStore();
-    store.save(createEmailReplyDraft(original));
-    store.edit("draft-1", { to: "" });
-    expect(() => emailReplyOutbound(store.get("draft-1"))).toThrow(/recipient/);
-    expect(store.get("draft-1").status).toBe("ready");
+    const draft = applyEmailReplyEdit(createEmailReplyDraft(original), { to: "" });
+    expect(() => emailReplyOutbound(draft)).toThrow(/recipient/);
+    expect(draft.status).toBe("ready");
   });
 
   it("reopens a stored block, including one whose address would not send", () => {
-    const store = new EmailReplyDraftStore();
-    store.save(createEmailReplyDraft(original));
-    store.edit("draft-1", { cc: "matt@example.com" });
-    const block = emailReplyBlock(store.get("draft-1"));
+    const draft = applyEmailReplyEdit(createEmailReplyDraft(original), { cc: "matt@example.com" });
+    const block = emailReplyBlock(draft);
     const reopened = emailReplyDraftFromBlock(block);
     expect(reopened.ccText).toBe("matt@example.com");
     expect(emailReplyOutbound(reopened).cc).toEqual(["matt@example.com"]);
 
-    const odd = emailReplyDraftFromBlock({
-      ...block,
-      from: "not an address",
-      to: ["clinic@"],
-    });
+    const odd = emailReplyDraftFromBlock({ ...block, from: "not an address", to: ["clinic@"] });
     expect(odd.from).toBe("not an address");
     expect(odd.toText).toBe("clinic@");
     expect(() => emailReplyOutbound(odd)).toThrow(EmailReplyDraftError);
+  });
+
+  it("collapses line breaks in a subject before it can reach a mail provider", () => {
+    expect(emailReplySubjectLine("Hello\r\nBcc: boss@example.com")).toBe(
+      "Hello Bcc: boss@example.com",
+    );
+  });
+
+  it("sets reply headers only for a real message, and trusts a verified sender", () => {
+    const now = Date.parse("2026-06-01T00:00:00.000Z");
+    const parent = {
+      messageId: "<clinic@example.com>",
+      references: ["<older@example.com>"],
+      fromAddress: "clinic@example.com",
+      verified: true,
+      sent: false,
+      receivedAt: new Date(now - 60_000),
+    };
+    expect(emailReplyThreading(null, "mail.example.com", now)).toEqual({});
+    expect(emailReplyThreading(parent, "mail.example.com", now)).toEqual({
+      headers: {
+        "In-Reply-To": "<clinic@example.com>",
+        References: "<older@example.com> <clinic@example.com>",
+      },
+      verifiedReplySender: "clinic@example.com",
+    });
+    expect(
+      emailReplyThreading({ ...parent, sent: true }, "mail.example.com", now).verifiedReplySender,
+    ).toBeUndefined();
+    expect(
+      emailReplyThreading(
+        { ...parent, fromAddress: "ops@mail.example.com" },
+        "mail.example.com",
+        now,
+      ).verifiedReplySender,
+    ).toBeUndefined();
+    expect(
+      emailReplyThreading(
+        { ...parent, receivedAt: new Date(now - 31 * 24 * 60 * 60 * 1000) },
+        "mail.example.com",
+        now,
+      ).verifiedReplySender,
+    ).toBeUndefined();
   });
 });

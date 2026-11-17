@@ -6,8 +6,10 @@ import {
   isDeliveryMessage,
   plainTextFromMarkdown,
 } from "@rakazo/core";
+import { z } from "zod";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { JsonColumnMismatchError, readJsonColumn, reportJsonColumnOnce } from "./json-column.js";
 
 export const activeRunStatuses = [...ACTIVE_RUN_STATUSES];
 const userVisibleBotRunTriggers = ["bot_message", ...BACKGROUND_RUN_TRIGGERS];
@@ -92,6 +94,16 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
   });
 }
 
+const EmailReplyPreview = z.object({
+  kind: z.literal("email_reply"),
+  status: z.enum(["ready", "sent", "discarded"]),
+  subject: z.string(),
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
   // A delivery's text is the bot's prompt, hidden in chat.
@@ -107,15 +119,18 @@ export function previewFromBlocks(blocks: unknown): string {
     }
   }
   for (const block of rows) {
-    if (!block || typeof block !== "object" || !("kind" in block)) continue;
-    if ((block as { kind?: unknown }).kind !== "email_reply") continue;
-    const status = (block as { status?: unknown }).status;
-    const subject = (block as { subject?: unknown }).subject;
-    if (status === "ready" || status === "sent" || status === "discarded") {
-      return emailReplyPreview({
-        status,
-        subject: typeof subject === "string" ? subject : "",
-      });
+    if (!isRecord(block) || block.kind !== "email_reply") continue;
+    try {
+      const parsed = readJsonColumn(
+        EmailReplyPreview,
+        block,
+        { table: "messages", column: "blocks", id: "thread-preview" },
+        "reject",
+      );
+      return emailReplyPreview(parsed);
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      reportJsonColumnOnce("Email draft preview cannot be read; the row is left out", error.row);
     }
   }
   return "";

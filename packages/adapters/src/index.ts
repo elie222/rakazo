@@ -43,6 +43,7 @@ export {
   listBotSecretMetadata,
   listBotSecrets,
   listVaultItems,
+  loadLoginPasswordRedactions,
   loginCodeClaim,
   newVaultItemName,
   normalizeSecretDestination,

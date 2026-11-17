@@ -41,6 +41,10 @@ describe("previewFromBlocks", () => {
     ).toBe("The reply draft is ready…");
   });
 
+  it("skips an email draft whose stored fields are not the ones a preview can show", () => {
+    expect(previewFromBlocks([{ kind: "email_reply", status: "ready", subject: 12 }])).toBe("");
+  });
+
   it("returns empty when there is no text block", () => {
     expect(previewFromBlocks([{ kind: "steps", steps: [] }])).toBe("");
     expect(previewFromBlocks(undefined)).toBe("");
