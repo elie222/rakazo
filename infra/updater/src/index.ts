@@ -49,9 +49,10 @@ import {
   cacheRuntimeBaseline,
   PREVIOUS_COMPUTER_TAG_ENV,
   pruneComputerCache,
+  readManualComputer,
+  readRollbackComputer,
   readScheduledComputer,
   readScheduledRuntime,
-  rollbackComputerTags,
 } from "./runtime-state.js";
 import { applyStableUpdate, startUpdateSchedule } from "./schedule.js";
 
@@ -525,6 +526,7 @@ export function createUpdaterApp(
     let recoveryAllowed = true;
     let fromCommit = checkout.commit;
     let computerTags: ComputerTagChange | undefined;
+    let computerCurrent = true;
 
     if (decision.strategy === "build") {
       if (!checkout.present) {
@@ -582,21 +584,16 @@ export function createUpdaterApp(
         // Recovery pins must describe the observed runtime rather than a stale environment file.
         tags.currentTag = runtime.baseline.tag;
         fromCommit = runtime.baseline.commit;
-      } else if (config.updateServices.includes("computer")) {
-        computerTags = {
-          fromTag: readEnvAssignment(envContents, COMPUTER_TAG_ENV) || "latest",
-          previousTag: readEnvAssignment(envContents, PREVIOUS_COMPUTER_TAG_ENV),
-          toTag: target.imageTag,
-        };
+      } else {
+        const computer = await readManualComputer(config, envContents, target.imageTag, run);
+        computerTags = computer?.tags;
+        computerCurrent = computer?.current ?? true;
+        recoveryAllowed = computer?.uniform ?? true;
       }
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
-      if (
-        !scheduled &&
-        targetTag === tags.currentTag &&
-        (!computerTags || computerTags.fromTag === computerTags.toTag)
-      ) {
+      if (!scheduled && targetTag === tags.currentTag && computerCurrent) {
         return rememberRun(upToDateRecord(request, targetTag, "pull", targetCommit));
       }
     } else {
@@ -622,7 +619,7 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request,
-        recoveryAllowed: recoveryAllowed && targetTag !== tags.currentTag,
+        recoveryAllowed,
         computerTags,
         strategy: decision.strategy,
         fromTag: tags.currentTag,
@@ -649,7 +646,7 @@ export function createUpdaterApp(
   async function rollback(): Promise<ServerUpdateRun> {
     const env = await readEnvFile();
     const tags = readTagState(env);
-    const computerTags = rollbackComputerTags(config, env);
+    const computerTags = await readRollbackComputer(config, env, run);
     const decision = rollbackTarget(tags);
     if ("error" in decision) throw new UpdateRefused(decision.error);
     const checkout = await readCheckout();
@@ -660,6 +657,7 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request: { repoUrl: "", branch: "" },
+        recoveryAllowed: computerTags?.sourceAvailable !== false,
         computerTags,
         strategy: "pull",
         fromTag: tags.currentTag,
@@ -700,7 +698,8 @@ export function createUpdaterApp(
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
     const preserveComputerHistory =
-      input.computerTags?.fromTag === input.computerTags?.toTag && input.fromTag === input.toTag;
+      input.computerTags?.sourceAvailable === false ||
+      (input.computerTags?.fromTag === input.computerTags?.toTag && input.fromTag === input.toTag);
     let cachedComputerTag = input.computerTags?.fromTag ?? "";
     if (input.computerTags && !preserveComputerHistory) {
       cachedComputerTag = await cacheComputerImage(
@@ -787,7 +786,9 @@ export function createUpdaterApp(
           ...missingSecretAssignments(await readEnvFile()),
           [IMAGE_TAG_ENV]: toTag,
           [PREVIOUS_IMAGE_TAG_ENV]:
-            input.fromTag === toTag ? (input.originalPreviousTag ?? input.fromTag) : input.fromTag,
+            input.fromTag === toTag || input.computerTags?.sourceAvailable === false
+              ? (input.originalPreviousTag ?? input.fromTag)
+              : input.fromTag,
           ...(input.computerTags
             ? {
                 [COMPUTER_TAG_ENV]: input.computerTags.toTag,

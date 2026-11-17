@@ -35,25 +35,23 @@ export interface RuntimeState {
 export interface ComputerTagChange {
   fromTag: string;
   restoreTag?: string;
+  sourceAvailable?: boolean;
   previousTag: string | null;
   toTag: string;
 }
 
-export function rollbackComputerTags(
+export async function readRollbackComputer(
   config: UpdaterConfig,
   env: string,
-): ComputerTagChange | undefined {
+  run: UpdaterCommandRunner,
+): Promise<ComputerTagChange | undefined> {
   if (!config.updateServices.includes("computer")) return undefined;
   const previousTag = readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV);
   if (!previousTag || !isValidImageTag(previousTag))
     throw new UpdateRefused(
       "Rollback requires a valid previous computer image pin. Restore the matching cached computer pin or repair the application and computer images manually before retrying. Nothing was recreated.",
     );
-  return {
-    fromTag: readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest",
-    previousTag,
-    toTag: previousTag,
-  };
+  return (await readManualComputer(config, env, previousTag, run))?.tags;
 }
 
 /** Running application images establish the source baseline, independently of .env pins. */
@@ -274,66 +272,110 @@ async function pruneComputerReleases(
   }
 }
 
+interface ComputerState {
+  tags: ComputerTagChange;
+  envTag: string;
+  current: boolean;
+  uniform: boolean;
+}
+
 export async function readScheduledComputer(
   config: UpdaterConfig,
   state: RuntimeState,
   env: string,
   targetTag: string,
   run: UpdaterCommandRunner,
-): Promise<
-  { tags: ComputerTagChange; envTag: string; current: boolean; uniform: boolean } | undefined
-> {
+): Promise<ComputerState | undefined> {
   if (!config.updateServices.includes("computer")) return undefined;
-  if (!config.updateServices.includes("supervisor"))
-    throw new UpdateRefused(
-      "Managing computer updates also requires supervisor in RAKAZO_UPDATE_SERVICES.",
-    );
   const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
   if (image !== COMPUTER_IMAGE)
     throw new UpdateRefused(
       "Scheduled computer updates require the official computer image; manual controls remain available.",
     );
+  return readComputerSelection(
+    config,
+    env,
+    targetTag,
+    state.services
+      .filter((service) => service.service === "supervisor")
+      .map((service) => service.id),
+    run,
+  );
+}
+
+export async function readManualComputer(
+  config: UpdaterConfig,
+  env: string,
+  targetTag: string,
+  run: UpdaterCommandRunner,
+): Promise<ComputerState | undefined> {
+  if (!config.updateServices.includes("computer")) return undefined;
+  const selected = await run(
+    "docker",
+    [
+      "ps",
+      "--filter",
+      `label=com.docker.compose.project=${config.projectName}`,
+      "--filter",
+      "label=com.docker.compose.service=supervisor",
+      "--format",
+      "{{.ID}}",
+    ],
+    { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS },
+  );
+  const ids = selected.stdout.trim() ? selected.stdout.trim().split(/\s+/) : [];
+  if (!selected.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id)))
+    throw new UpdateRefused("Could not identify the running supervisor before updating.");
+  return readComputerSelection(config, env, targetTag, ids, run);
+}
+
+async function readComputerSelection(
+  config: UpdaterConfig,
+  env: string,
+  targetTag: string,
+  ids: string[],
+  run: UpdaterCommandRunner,
+): Promise<ComputerState> {
+  if (!config.updateServices.includes("supervisor"))
+    throw new UpdateRefused(
+      "Managing computer updates also requires supervisor in RAKAZO_UPDATE_SERVICES.",
+    );
+  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
   const envTag = readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest";
   if (!isValidImageTag(envTag))
     throw new UpdateRefused("The configured computer image tag is invalid.");
+  const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
   const tags: string[] = [];
-  for (const service of state.services.filter((service) => service.service === "supervisor")) {
+  for (const id of ids) {
     const ref = await run(
       "docker",
-      ["exec", service.id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
-      {
-        cwd: config.deployDir,
-        timeoutMs: READ_TIMEOUT_MS,
-      },
+      ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+      options,
     );
     const value = ref.stdout.trim();
     const tag = value.startsWith(`${image}:`) ? value.slice(image.length + 1) : "";
     if (!ref.ok || !isValidImageTag(tag))
-      throw new UpdateRefused(
-        "Could not verify the supervisor's computer image; scheduled updates were refused.",
-      );
+      throw new UpdateRefused("Could not verify the supervisor's computer image before updating.");
     tags.push(tag);
   }
-  const selectedTarget = tags.length > 0 && tags.every((tag) => tag === targetTag);
-  const local = selectedTarget
-    ? await run("docker", ["image", "inspect", imageRef(image, targetTag), "--format", "{{.Id}}"], {
-        cwd: config.deployDir,
-        timeoutMs: READ_TIMEOUT_MS,
-      })
-    : undefined;
-  const available = local?.ok && /^sha256:[0-9a-f]{64}$/.test(local.stdout.trim());
+  const fromTag = tags[0] ?? envTag;
+  const local = await run(
+    "docker",
+    ["image", "inspect", imageRef(image, fromTag), "--format", "{{.Id}}"],
+    options,
+  );
+  const available = local.ok && /^sha256:[0-9a-f]{64}$/.test(local.stdout.trim());
+  const uniform = tags.length > 0 && tags.every((tag) => tag === fromTag) && available;
   return {
     tags: {
-      fromTag: tags[0] ?? envTag,
+      fromTag,
       restoreTag: envTag,
+      sourceAvailable: uniform,
       previousTag: readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV),
       toTag: targetTag,
     },
     envTag,
-    current: selectedTarget && Boolean(available),
-    uniform:
-      tags.length > 0 &&
-      tags.every((tag) => tag === tags[0]) &&
-      (!selectedTarget || Boolean(available)),
+    current: uniform && tags.every((tag) => tag === targetTag),
+    uniform,
   };
 }

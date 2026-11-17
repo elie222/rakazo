@@ -128,7 +128,11 @@ async function fixture(env: string, commit: string, computers = false) {
       return ok();
     }
     if (args.includes("up")) {
-      if (state.failTarget && options.env?.RAKAZO_IMAGE_TAG === `sha-${newer}`)
+      if (
+        state.failTarget &&
+        options.env?.RAKAZO_IMAGE_TAG === `sha-${newer}` &&
+        (!computers || options.env?.RAKAZO_COMPUTER_IMAGE_TAG === `sha-${newer}`)
+      )
         return failed("target unhealthy");
       const next = options.env?.RAKAZO_IMAGE_TAG?.slice(4);
       if (!next) throw new Error("Missing application pin");
@@ -284,26 +288,29 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(deployments);
   });
 
-  it("repulls a missing pinned computer image instead of reporting an up-to-date deployment", async () => {
-    const subject = await fixture(
-      `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
-      newer,
-      true,
-    );
-    subject.state.computer = `${computerImage}:sha-${newer}`;
-    subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
-    delete subject.state.images[`sha-${newer}`];
-    subject.state.unavailableComputer = true;
-    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
-    expect(subject.calls.some(({ args }) => args.includes("up"))).toBe(false);
-    subject.state.unavailableComputer = false;
-    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
-    expect(subject.state.images[`sha-${newer}`]).toBeDefined();
-    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
-    const pulls = subject.calls.filter(({ args }) => args.includes("pull")).length;
-    await subject.app.applyScheduledUpdate();
-    expect(subject.calls.filter(({ args }) => args.includes("pull"))).toHaveLength(pulls);
-  });
+  it.each([older, newer])(
+    "repulls a missing pinned computer while the app is on %s",
+    async (commit) => {
+      const subject = await fixture(
+        `RAKAZO_IMAGE_TAG=sha-${commit}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
+        commit,
+        true,
+      );
+      subject.state.computer = `${computerImage}:sha-${newer}`;
+      subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
+      delete subject.state.images[`sha-${newer}`];
+      subject.state.unavailableComputer = true;
+      expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+      expect(subject.calls.some(({ args }) => args.includes("up"))).toBe(false);
+      subject.state.unavailableComputer = false;
+      expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+      expect(subject.state.images[`sha-${newer}`]).toBeDefined();
+      expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
+      const pulls = subject.calls.filter(({ args }) => args.includes("pull")).length;
+      await subject.app.applyScheduledUpdate();
+      expect(subject.calls.filter(({ args }) => args.includes("pull"))).toHaveLength(pulls);
+    },
+  );
 
   it.each([older, newer])(
     "does not recover different image bytes sharing commit %s",
@@ -454,18 +461,91 @@ describe("scheduled release state and recovery", () => {
     ).toContain(`${computerImage}:${obsolete}`);
   });
 
-  it("refuses an update before changing pins when the previous computer cannot be cached", async () => {
-    const env = `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`;
-    const subject = await fixture(env, older, true);
+  it("repairs a missing previous computer without inventing rollback history", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
+    );
     subject.state.computer = `${computerImage}:latest`;
     delete subject.state.images.latest;
-    await expect(subject.app.applyScheduledUpdate()).rejects.toThrow(
-      "Could not cache the previous computer image",
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.computer).toBe(`${computerImage}:sha-${newer}`);
+    expect(await subject.env()).toContain("RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=\n");
+    const rollback = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(rollback.status).toBe(400);
+  });
+
+  it("recovers a failed manual computer-only repair from the actual cached computer", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      newer,
+      true,
     );
-    expect(await subject.env()).toBe(env);
-    expect(subject.calls.some(({ args }) => args.includes("pull") || args.includes("up"))).toBe(
-      false,
+    subject.state.failTarget = true;
+    const result = await subject.app.request("/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/elie222/rakazo", branch: "main" }),
+    });
+    await expect(result.json()).resolves.toMatchObject({ ok: false, restart: "not-required" });
+    expect(
+      subject.calls
+        .filter(({ args }) => args.includes("up"))
+        .map(({ env }) => env.RAKAZO_COMPUTER_IMAGE_TAG),
+    ).toEqual([`sha-${newer}`, cachedOlder]);
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
+  });
+
+  it("manual updates snapshot the recovered supervisor image after the original tag moves", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
     );
+    subject.state.computer = `${computerImage}:latest`;
+    subject.state.failTarget = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
+    subject.state.images.latest = `sha256:${"2".repeat(64)}`;
+    subject.state.failTarget = false;
+    const applied = await subject.app.request("/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/elie222/rakazo", branch: "main" }),
+    });
+    await expect(applied.json()).resolves.toMatchObject({ ok: true });
+    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
+    const rollback = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await expect(rollback.json()).resolves.toMatchObject({ ok: true });
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
+  });
+
+  it("manual rollback captures the recovered image even if its configured tag moved", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedNewer}\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:${cachedOlder}`;
+    subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
+    subject.state.images[cachedNewer] = `sha256:${"2".repeat(64)}`;
+    subject.state.images.latest = `sha256:${"2".repeat(64)}`;
+    for (const expected of [newer, older]) {
+      const rollback = await subject.app.request("/rollback", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      await expect(rollback.json()).resolves.toMatchObject({ ok: true });
+      expect(subject.state.versions.worker).toBe(expected);
+    }
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
   });
 
   it("retains the previous computer bytes when latest moves before rollback", async () => {
