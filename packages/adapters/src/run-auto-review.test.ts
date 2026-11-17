@@ -74,51 +74,54 @@ it("keeps project routing from the saved checker connection through the runtime 
   });
 });
 
-it("uses operator auth for an available included checker even when a personal connection exists", async () => {
-  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
-  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "");
-  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "");
-  const selection = await import("./model-selection.js");
-  const runModel = await import("./run-model.js");
-  vi.mocked(selection.findConnectedModelCredential).mockClear();
-  const deps = {
-    billingEnabled: true,
-    prisma: {
-      space: { findUnique: async () => ({ organizationId: "organization-fixture" }) },
-      member: { findUnique: async () => ({ role: "owner" }) },
-      billingAccount: { findUnique: async () => ({ status: "active", paidAt: new Date(0) }) },
-    },
-    secretStore: {},
-  } as unknown as ExecutorDeps;
-  // A matching member backup must not change the primary's funding source.
-  const options = {
-    memberChecker: false,
-    registerSecrets: vi.fn(),
-    backups: [{ provider: "openrouter", modelId: "typesafe/jev-1.14" }],
-  };
-  await autoReviewCheckerProvider(
-    deps,
-    {
-      runId: "run-fixture",
-      spaceId: "space-fixture",
-      userId: "user-fixture",
-      botId: "bot-fixture",
-      threadId: "thread-fixture",
-    },
-    options,
-    { provider: "openrouter", model: "typesafe/jev-1.14" },
-  );
-  expect(selection.findConnectedModelCredential).not.toHaveBeenCalled();
-  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
-    expect.objectContaining({ billingEnabled: false }),
-    "user-fixture",
-    "space-fixture",
-    null,
-    "openrouter",
-    "typesafe/jev-1.14",
-    expect.any(Function),
-  );
-});
+it.each([false, true])(
+  "keeps an included decision checker operator-funded with a personal connection (pinned=%s)",
+  async (pinned) => {
+    vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+    vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", pinned ? "openrouter" : "");
+    vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", pinned ? "typesafe/jev-1.14" : "");
+    const selection = await import("./model-selection.js");
+    const runModel = await import("./run-model.js");
+    vi.mocked(selection.findConnectedModelCredential).mockClear();
+    const deps = {
+      billingEnabled: true,
+      prisma: {
+        space: { findUnique: async () => ({ organizationId: "organization-fixture" }) },
+        member: { findUnique: async () => ({ role: "owner" }) },
+        billingAccount: { findUnique: async () => ({ status: "active", paidAt: new Date(0) }) },
+      },
+      secretStore: {},
+    } as unknown as ExecutorDeps;
+    // A matching member backup must not change the primary's funding source.
+    const options = {
+      memberChecker: false,
+      registerSecrets: vi.fn(),
+      backups: [{ provider: "openrouter", modelId: "typesafe/jev-1.14" }],
+    };
+    await autoReviewCheckerProvider(
+      deps,
+      {
+        runId: "run-fixture",
+        spaceId: "space-fixture",
+        userId: "user-fixture",
+        botId: "bot-fixture",
+        threadId: "thread-fixture",
+      },
+      options,
+      { provider: "openrouter", model: "typesafe/jev-1.14" },
+    );
+    expect(selection.findConnectedModelCredential).not.toHaveBeenCalled();
+    expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+      expect.objectContaining({ billingEnabled: false }),
+      "user-fixture",
+      "space-fixture",
+      null,
+      "openrouter",
+      "typesafe/jev-1.14",
+      expect.any(Function),
+    );
+  },
+);
 
 it("preserves personal authentication for a legacy hosted deployment checker", async () => {
   const selection = await import("./model-selection.js");

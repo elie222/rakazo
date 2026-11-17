@@ -43,9 +43,7 @@ export async function autoReviewCheckerProvider(
   const included =
     hosted &&
     Boolean(decisionModel(checker.provider, checker.model)) &&
-    isAutoReviewCheckerConfigured({ checker }) &&
-    !process.env.RAKAZO_AUTO_REVIEW_PROVIDER?.trim() &&
-    !process.env.RAKAZO_AUTO_REVIEW_MODEL?.trim();
+    isAutoReviewCheckerConfigured({ checker });
   const reviewCredential =
     included || kind === "jev" || kind === "scripted"
       ? null
