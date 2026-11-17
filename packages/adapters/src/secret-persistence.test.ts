@@ -11,7 +11,7 @@ import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { retireToReconnectMarker } from "./model-credential-refresh.js";
 import { createRunSecretWriter } from "./run-secret.js";
-import { retrySecretCleanup } from "./secret-cleanup.js";
+import { retrySecretCleanup, secretCleanupJobKey, withSecretWriteAhead } from "./secret-cleanup.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
@@ -98,8 +98,9 @@ function database() {
         rows.filter((row) => visible(row) && matches(row, args.where)).map((row) => ({ ...row })),
       count: async (args: Args) => rows.filter((row) => matches(row, args.where)).length,
       create: async (args: Args) => {
-        rows.push({ ...args.data! });
-        return args.data;
+        const row = { ...args.data!, id: args.data!.id ?? `${table}-${rows.length + 1}` };
+        rows.push(row);
+        return { ...row };
       },
       update: async (args: Args) => {
         const row = rows.find((row) => matches(row, args.where));
@@ -160,7 +161,6 @@ function database() {
       return [{ locked: 1 }];
     }
     if (!query.sql) return [];
-    const table = query.sql.match(/FROM "([^"]+)"/)?.[1];
     const names: Record<string, string> = {
       secrets: "secret",
       bot_secrets: "botSecret",
@@ -174,6 +174,17 @@ function database() {
       payment_wallets: "paymentWallet",
       purchases: "purchase",
     };
+    // The secret backup's check whether any holder column has the reference.
+    if (query.sql.endsWith(" AS held")) {
+      const holders = [...query.sql.matchAll(/FROM "(\w+)" WHERE "(\w+)"/g)];
+      const held = holders.some(([, table, column]) =>
+        tables
+          .get(names[table!] ?? "")
+          ?.some((row) => row[column as keyof Row] === query.values[0]),
+      );
+      return [{ held }];
+    }
+    const table = query.sql.match(/FROM "([^"]+)"/)?.[1];
     return (
       tables
         .get(names[table ?? ""] ?? "")
@@ -758,6 +769,183 @@ describe("secret persistence cleanup with a queue", () => {
     expect(queue.jobs.enqueue).not.toHaveBeenCalled();
     expect(queue.jobs.enqueueManyIn).not.toHaveBeenCalled();
     expect(queue.jobs.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("secret store write-ahead", () => {
+  async function setup() {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    const db = database();
+    const queue = fakeCleanupJobs();
+    const ahead = withSecretWriteAhead(store, () => queue.jobs);
+    const prisma = withSecretPersistence(db.prisma, ahead, () => queue.jobs);
+    // The backup reads every column a reference can be saved in; only the secret tables are faked.
+    const none = { count: async () => 0 };
+    const holders = {
+      ...(db.prisma as unknown as Record<string, unknown>),
+      messagingInstallation: none,
+      deploymentSettings: none,
+      purchase: none,
+      paymentWallet: none,
+    } as unknown as PrismaClient;
+    const worker = { prisma: holders, secrets: store };
+    return { fake, store, ahead, db, queue, prisma, worker };
+  }
+  const secretFields = { id: "row", userId: "user", kind: "agent-environment" };
+
+  it("deletes an entry whose writer died before saving the row that holds it", async () => {
+    const { fake, store, ahead, queue, worker } = await setup();
+    try {
+      const written = await ahead.put("orphan", context, { recordId: "row" });
+      expect(fake.values.size).toBe(1);
+      expect(queue.cleanups()).toEqual([
+        { kind: "store_write", recordId: "row", ref: written.ref, due: false },
+      ]);
+      // Nothing saves the row or reaches the queue again, as when the process dies here.
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records the backup before the entry exists, and refuses the write without one", async () => {
+    const { fake, store, ahead, queue } = await setup();
+    try {
+      queue.jobs.enqueue.mockImplementationOnce(async () => {
+        expect(fake.values.size).toBe(0);
+        throw new Error("database unavailable");
+      });
+      await expect(ahead.put("unrecorded", context, { recordId: "row" })).rejects.toThrow(
+        "database unavailable",
+      );
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("removes the backup in the transaction that saves the row, keeping the entry", async () => {
+    const { store, ahead, db, queue, prisma, worker } = await setup();
+    try {
+      const written = await ahead.put("saved", context, { recordId: "row" });
+      await prisma.$transaction(async (tx) => {
+        const count = vi.spyOn(tx.secret, "count");
+        await tx.secret.create({ data: { ...secretFields, ciphertext: written.ref } });
+        expect(queue.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(written.ref));
+        expect(count).not.toHaveBeenCalled();
+      });
+      expect(queue.queued.size).toBe(0);
+      expect(db.tables.get("secret")).toHaveLength(1);
+      await queue.runQueued(worker);
+      await expect(store.load(written.ref, "row")).resolves.toBe("saved");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("finds a created row by the id it was given, to remove the backup", async () => {
+    const { store, ahead, db, queue, prisma } = await setup();
+    try {
+      const written = await ahead.put("saved", context, { recordId: "row" });
+      const { id: _id, ...fields } = secretFields;
+      await prisma.$transaction(async (tx) => {
+        const findFirst = vi.spyOn(tx.secret, "findFirst");
+        await tx.secret.create({ data: { ...fields, ciphertext: written.ref } });
+        expect(findFirst).toHaveBeenCalledWith({
+          where: { id: "secret-1", ciphertext: written.ref },
+          select: { id: true },
+        });
+        expect(queue.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(written.ref));
+      });
+      expect(queue.queued.size).toBe(0);
+      expect(db.tables.get("secret")).toEqual([
+        { ...fields, id: "secret-1", ciphertext: written.ref },
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("keeps the backup of an upsert's unused branch, removing it with the entry", async () => {
+    const { fake, store, ahead, db, queue, prisma } = await setup();
+    try {
+      const kept = await ahead.put("kept", context, { recordId: "row" });
+      db.tables.get("secret")!.push({ ...secretFields, ciphertext: kept.ref });
+      const [created, updated] = [
+        await ahead.put("created", context, { recordId: "row" }),
+        await ahead.put("updated", context, { recordId: "row" }),
+      ];
+      await prisma.secret.upsert({
+        where: { id: "row" },
+        create: { ...secretFields, ciphertext: created.ref },
+        update: { ciphertext: updated.ref },
+      });
+      expect(queue.jobs.cancelIn).toHaveBeenCalledWith(
+        expect.anything(),
+        secretCleanupJobKey(updated.ref),
+      );
+      // Had the process died at the commit, this backup would still delete the unused entry.
+      expect(queue.jobs.cancelIn).not.toHaveBeenCalledWith(
+        expect.anything(),
+        secretCleanupJobKey(created.ref),
+      );
+      await expect(store.load(updated.ref, "row")).resolves.toBe("updated");
+      await expect(store.load(created.ref, "row")).rejects.toThrow();
+      expect(fake.values.size).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records a write's backup in the transaction it runs inside, and again on rollback", async () => {
+    const { store, ahead, queue, prisma } = await setup();
+    try {
+      let written = "";
+      await expect(
+        prisma.$transaction(async (tx) => {
+          written = (await ahead.put("refreshed", context, { recordId: "row" })).ref;
+          expect(queue.jobs.enqueueIn).toHaveBeenCalledWith(tx, expect.anything());
+          expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+          throw new Error("refresh failed");
+        }),
+      ).rejects.toThrow("refresh failed");
+      expect(queue.jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ replaceKey: secretCleanupJobKey(written) }),
+      );
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("keeps the entry when the backup runs after the row was saved", async () => {
+    const { fake, store, ahead, db, queue, worker } = await setup();
+    try {
+      const written = await ahead.put("held", context, { recordId: "row" });
+      // Saved, but the process died before it removed the backup.
+      db.tables.get("secret")!.push({ id: "row", ciphertext: written.ref });
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(1);
+      await expect(store.load(written.ref, "row")).resolves.toBe("held");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("writes as before while no queue exists yet", async () => {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    try {
+      const written = await withSecretWriteAhead(store, () => undefined).put("early", context, {
+        recordId: "row",
+      });
+      await expect(store.load(written.ref, "row")).resolves.toBe("early");
+    } finally {
+      await store.close();
+    }
   });
 });
 

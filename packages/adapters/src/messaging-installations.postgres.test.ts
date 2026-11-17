@@ -342,6 +342,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       // The direct attempt cannot hand over, as when the process stops right after the commit.
       enqueue: async () => undefined,
       cancel: (jobKey) => queue.cancel(jobKey),
+      cancelIn: (tx, jobKey) => queue.cancelIn(tx, jobKey),
     });
     try {
       const installation = await asSystem(prisma).messagingInstallation.create({

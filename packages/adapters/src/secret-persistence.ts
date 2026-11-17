@@ -15,10 +15,13 @@ import {
   recordSecretCleanups,
   runSecretCleanupsNow,
   secretCleanupJob,
+  secretCleanupJobKey,
   secretIsHeld,
+  secretWriteTransaction,
 } from "./secret-cleanup.js";
 
 type Candidate = { id: string; ciphertext: string };
+type Written = Candidate & { rowId?: string };
 /**
  * `recorded` holds the cleanups whose backup job this transaction wrote, by reference, and
  * `queued` the references whose job is brought forward once it commits, instead of a direct
@@ -220,8 +223,9 @@ export function withSecretPersistence(
       Prisma.sql`SELECT ${Prisma.raw(columns)} FROM ${Prisma.raw(`"${table}"`)} WHERE id = ANY(${rows.map((row) => row.id)}) ORDER BY id FOR UPDATE`,
     );
   }
-  function trackWrites(state: Cleanup, model: string, input: Mutation): void {
-    if (!(model in secretTables)) return;
+  function trackWrites(state: Cleanup, model: string, input: Mutation): Written[] {
+    if (!(model in secretTables)) return [];
+    const written: Written[] = [];
     // Track new writes before DB access so even a pre-read failure can clean them.
     const data = [
       ...(Array.isArray(input.data) ? input.data : [input.data]),
@@ -230,21 +234,26 @@ export function withSecretPersistence(
     ];
     for (const value of data)
       if (typeof value?.ciphertext === "string") {
-        const id = String(value.id ?? input.where?.id ?? "secret");
-        state.written.push({
+        const key = value.id ?? input.where?.id;
+        const rowId = typeof key === "string" ? key : undefined;
+        const id = String(rowId ?? "secret");
+        written.push({
           id: model === "IntegrationProviderConfig" ? `integration-provider:${id}` : id,
           ciphertext: value.ciphertext,
+          rowId,
         });
       }
+    state.written.push(...written);
+    return written;
   }
   async function prepare(
     state: Cleanup,
     model: string,
     operation: string,
     input: Mutation,
-  ): Promise<void> {
+  ): Promise<Written[]> {
     if (model in secretTables) {
-      trackWrites(state, model, input);
+      const written = trackWrites(state, model, input);
       // A change that leaves the reference in place has nothing to clean up after it.
       if (dropsReference(operation, input)) {
         const old = await lockedRows(state, model, input.where);
@@ -259,10 +268,10 @@ export function withSecretPersistence(
           ),
         );
       }
-      return;
+      return written;
     }
     const parents = await lockedRows(state, model, input.where);
-    if (!parents.length) return;
+    if (!parents.length) return [];
     // The cascade removes every member's rows under the parent, not only the ones the caller
     // may read, so their references are read across tenants. Only the references leave here.
     const cascaded = await runAsSystemInTransaction(
@@ -271,6 +280,7 @@ export function withSecretPersistence(
       () => cascadedCleanups(state, model, parents),
     );
     await dropping(state, cascaded);
+    return [];
   }
   async function cascadedCleanups(
     state: Cleanup,
@@ -330,6 +340,43 @@ export function withSecretPersistence(
     }
     return cleanups.flat();
   }
+  /**
+   * After the mutation: an entry its row now holds commits with that row, so its write-ahead job
+   * goes with the same commit. An upsert's unused branch keeps its job, as does a write that
+   * matched no row or whose row the mutation did not name. Looked up by the row's key, so no
+   * table is scanned while the transaction holds its locks.
+   */
+  async function saved(state: Cleanup, model: string, written: Written[]): Promise<void> {
+    const queue = jobs?.();
+    if (!queue) return;
+    const client = state.client!;
+    const delegate = Reflect.get(client, model[0]!.toLowerCase() + model.slice(1));
+    const cancelled = new Set<string>();
+    for (const { ciphertext: ref, rowId } of written) {
+      if (!rowId || cancelled.has(ref) || !store.isRemote(ref)) continue;
+      const held = await Reflect.apply(delegate.findFirst, delegate, [
+        { where: { id: rowId, ciphertext: ref }, select: { id: true } },
+      ]);
+      if (!held) continue;
+      cancelled.add(ref);
+      await queue.cancelIn(client, secretCleanupJobKey(ref));
+    }
+  }
+  async function mutate(
+    state: Cleanup,
+    model: string,
+    operation: string,
+    input: Mutation,
+    run: () => Promise<unknown>,
+  ): Promise<unknown> {
+    const written = await prepare(state, model, operation, input);
+    const result = await run();
+    // A create names its row only in what it returns.
+    const id = (result as { id?: unknown } | null)?.id;
+    if (typeof id === "string") for (const write of written) write.rowId ??= id;
+    await saved(state, model, written);
+    return result;
+  }
   const extended = prisma.$extends({
     query: {
       $allModels: {
@@ -354,10 +401,8 @@ export function withSecretPersistence(
             // Fail before changing refs rather than break batch atomicity.
             throw new Error("Use an interactive transaction for secret persistence");
           }
-          if (active?.client) {
-            await prepare(active, model, operation, args as Mutation);
-            return query(args);
-          }
+          if (active?.client)
+            return mutate(active, model, operation, args as Mutation, () => query(args));
           const state: Cleanup = { old: [], written: [], recorded: new Map(), queued: new Set() };
           try {
             // Standalone mutations also need a transaction, so capture and replacement
@@ -365,9 +410,10 @@ export function withSecretPersistence(
             const result = await prisma.$transaction((tx) =>
               transaction.run(state, async () => {
                 state.client = tx;
-                await prepare(state, model, operation, args as Mutation);
                 const delegate = Reflect.get(tx, model[0]!.toLowerCase() + model.slice(1));
-                return Reflect.apply(delegate[operation], delegate, [args]);
+                return mutate(state, model, operation, args as Mutation, () =>
+                  Reflect.apply(delegate[operation], delegate, [args]),
+                );
               }),
             );
             await cleanup([...state.old, ...state.written.map(cleanupOf)], state);
@@ -389,18 +435,27 @@ export function withSecretPersistence(
             ? (args[0] as (tx: Prisma.TransactionClient) => Promise<unknown>)
             : undefined;
         const state: Cleanup = { old: [], written: [], recorded: new Map(), queued: new Set() };
+        const writes = {
+          client: undefined as Prisma.TransactionClient | undefined,
+          rolledBack: [] as Array<() => Promise<void>>,
+        };
         if (callback)
           args[0] = (tx: Prisma.TransactionClient) => {
             state.client = tx;
+            writes.client = tx;
             return callback(tx);
           };
         try {
           const result = await transaction.run(state, () =>
-            Reflect.apply(target.$transaction, target, args),
+            secretWriteTransaction.run(writes, () =>
+              Reflect.apply(target.$transaction, target, args),
+            ),
           );
           await cleanup([...state.old, ...state.written.map(cleanupOf)], state);
           return result;
         } catch (error) {
+          for (const record of writes.rolledBack)
+            await bestEffort("record a rolled-back secret write's backup", record());
           await cleanup(state.written.map(cleanupOf));
           throw error;
         }

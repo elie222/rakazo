@@ -1,5 +1,6 @@
 import type { BackgroundJob } from "@rakazo/adapter-kit";
 import { SecretNotFoundError } from "@rakazo/adapter-kit";
+import type { Prisma } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
@@ -9,9 +10,11 @@ import {
   finishSecretCleanup,
   recordSecretCleanup,
   retrySecretCleanup,
+  savedSecretIn,
   secretCleanupJob,
   secretCleanupJobKey,
 } from "./secret-cleanup.js";
+import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 
 const REF = "remote:entry-1";
 const cleanup: SecretCleanup = { kind: "secret_row", recordId: "secret-a", ref: REF };
@@ -27,8 +30,8 @@ const anyRow: SecretCleanup = { kind: "secret_tables", recordId: "secret-a", ref
 /** Each kind of record holds `held`; `remote` is whether the store keeps values elsewhere. */
 function fixture(held: string | null = null, remote = true) {
   const row = (column: string) => vi.fn(async () => (held === null ? null : { [column]: held }));
-  /** How many of a secret table's rows hold the reference asked about. */
-  const count = () => vi.fn(async (_args: { where: { ciphertext: string } }) => 0);
+  /** How many of a table's rows hold the reference asked about. */
+  const count = () => vi.fn(async (_args: { where: Record<string, unknown> }) => 0);
   /** A purchase holds `held` in whichever of its sealed columns is read. */
   const purchase = vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
     held === null ? null : Object.fromEntries(Object.keys(select).map((column) => [column, held])),
@@ -42,6 +45,8 @@ function fixture(held: string | null = null, remote = true) {
     deploymentSettings: { findUnique: row("computerProviderCipher") },
     purchase: { findUnique: purchase },
     paymentWallet: { findUnique: row("ciphertext") },
+    /** Whether any holder column has the reference, as a written entry's backup asks. */
+    $queryRaw: vi.fn(async (_query: Prisma.Sql) => [{ held: false }]),
   };
   const queued = new Map<string, BackgroundJob>();
   const queue = async (job: BackgroundJob) => {
@@ -58,6 +63,9 @@ function fixture(held: string | null = null, remote = true) {
       for (const job of jobs) await queue(job);
     }),
     cancel: vi.fn(async (key: string) => {
+      queued.delete(key);
+    }),
+    cancelIn: vi.fn(async (_tx: unknown, key: string) => {
       queued.delete(key);
     }),
   };
@@ -274,5 +282,40 @@ describe("secret cleanup", () => {
     f.prisma.secret.findUnique.mockRejectedValueOnce(new Error("database unavailable"));
     await expect(retrySecretCleanup(f.deps, cleanup)).rejects.toThrow("database unavailable");
     expect(f.secrets.delete).toHaveBeenCalledTimes(1);
+  });
+
+  const written: SecretCleanup = { kind: "store_write", recordId: "store-record", ref: REF };
+
+  it("keeps a written entry a holder column has when its backup runs", async () => {
+    const f = fixture();
+    f.prisma.$queryRaw.mockResolvedValue([{ held: true }]);
+    await retrySecretCleanup(f.deps, written);
+    expect(f.secrets.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes a written entry only after one lookup of every checked column", async () => {
+    const f = fixture();
+    await retrySecretCleanup(f.deps, written);
+    expect(f.prisma.$queryRaw).toHaveBeenCalledOnce();
+    const query = f.prisma.$queryRaw.mock.calls[0]![0];
+    const looked = [...query.sql.matchAll(/FROM "(\w+)" WHERE "(\w+)" = \?/g)].map(
+      ([, table, column]) => `${table}.${column}`,
+    );
+    expect(looked).toEqual(holderColumns.checked);
+    expect(query.values).toEqual(holderColumns.checked.map(() => REF));
+    expect(f.secrets.delete).toHaveBeenCalledWith(
+      REF,
+      expect.objectContaining({ recordId: "store-record" }),
+    );
+  });
+
+  it("removes a saved entry's write-ahead job in the save's transaction, and none for an inline reference", async () => {
+    const f = fixture();
+    await savedSecretIn(f.deps, tx, REF);
+    expect(f.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(REF));
+    expect(f.jobs.cancel).not.toHaveBeenCalled();
+    const inline = fixture(null, false);
+    await savedSecretIn(inline.deps, tx, REF);
+    expect(inline.jobs.cancelIn).not.toHaveBeenCalled();
   });
 });
