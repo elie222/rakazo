@@ -568,8 +568,7 @@ export function createUpdaterApp(
           (computer ? computer.uniform && computer.tags.fromTag !== computer.tags.toTag : true);
         computerTags = computer?.tags;
         const current =
-          runtime.missing.length === 0 &&
-          runtime.services.every((service) => service.commit === target.commit);
+          runtime.uniform && runtime.services.every((service) => service.commit === target.commit);
         if (current && (computer?.current ?? true)) {
           const pins: Record<string, string> = {};
           if (tags.currentTag !== target.imageTag) pins[IMAGE_TAG_ENV] = target.imageTag;
@@ -699,7 +698,7 @@ export function createUpdaterApp(
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
     const computerUnchanged = input.computerTags?.fromTag === input.computerTags?.toTag;
-    if (input.computerTags) {
+    if (input.computerTags && !computerUnchanged) {
       input.computerTags.fromTag = await cacheComputerImage(
         config,
         await readEnvFile(),
@@ -729,8 +728,7 @@ export function createUpdaterApp(
       ...(input.computerTags
         ? {
             [COMPUTER_TAG_ENV]: input.computerTags.fromTag,
-            [PREVIOUS_COMPUTER_TAG_ENV]:
-              input.computerTags.previousTag ?? input.computerTags.fromTag,
+            [PREVIOUS_COMPUTER_TAG_ENV]: input.computerTags.previousTag ?? "",
           }
         : {}),
     };
@@ -790,7 +788,7 @@ export function createUpdaterApp(
             ? {
                 [COMPUTER_TAG_ENV]: input.computerTags.toTag,
                 [PREVIOUS_COMPUTER_TAG_ENV]: computerUnchanged
-                  ? (input.computerTags.previousTag ?? input.computerTags.fromTag)
+                  ? (input.computerTags.previousTag ?? "")
                   : input.computerTags.fromTag,
               }
             : {}),

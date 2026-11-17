@@ -39,6 +39,7 @@ async function fixture(env: string, commit: string, computers = false) {
       web: commit,
       ...(computers ? { supervisor: commit } : {}),
     } as Record<string, string>,
+    imageOverrides: {} as Record<string, string>,
     computer: `${computerImage}:sha-${older}`,
     images: {
       [`sha-${older}`]: `sha256:${"1".repeat(64)}`,
@@ -71,7 +72,10 @@ async function fixture(env: string, commit: string, computers = false) {
     if (args[0] === "exec" || args[0] === "inspect") {
       const service = Object.keys(ids).find((name) => ids[name as keyof typeof ids] === args[1]);
       if (!service) throw new Error("Unexpected container");
-      if (args[0] === "inspect") return ok(`sha256:${state.versions[service]?.[0]?.repeat(64)}`);
+      if (args[0] === "inspect")
+        return ok(
+          state.imageOverrides[service] ?? `sha256:${state.versions[service]?.[0]?.repeat(64)}`,
+        );
       return ok(args.at(-1) === "process.env.GIT_SHA" ? state.versions[service] : state.computer);
     }
     if (args[0] === "image" && args[1] === "ls") return ok(Object.keys(state.images).join("\n"));
@@ -91,6 +95,7 @@ async function fixture(env: string, commit: string, computers = false) {
     if (args.includes("pull")) {
       if (computers && state.unavailableComputer)
         return failed("computer commit image is not published yet");
+      if (computers) state.images[`sha-${newer}`] = `sha256:${"2".repeat(64)}`;
       return ok();
     }
     if (args.includes("up")) {
@@ -225,6 +230,45 @@ describe("scheduled release state and recovery", () => {
     await subject.app.applyScheduledUpdate();
     expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(deployments);
   });
+
+  it("repulls a missing pinned computer image instead of reporting an up-to-date deployment", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
+      newer,
+      true,
+    );
+    subject.state.computer = `${computerImage}:sha-${newer}`;
+    subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
+    delete subject.state.images[`sha-${newer}`];
+    subject.state.unavailableComputer = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.calls.some(({ args }) => args.includes("up"))).toBe(false);
+    subject.state.unavailableComputer = false;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.images[`sha-${newer}`]).toBeDefined();
+    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
+    const pulls = subject.calls.filter(({ args }) => args.includes("pull")).length;
+    await subject.app.applyScheduledUpdate();
+    expect(subject.calls.filter(({ args }) => args.includes("pull"))).toHaveLength(pulls);
+  });
+
+  it.each([older, newer])(
+    "does not recover different image bytes sharing commit %s",
+    async (commit) => {
+      const subject = await fixture(
+        `RAKAZO_IMAGE_TAG=sha-${commit}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\n`,
+        commit,
+      );
+      subject.state.imageOverrides.worker = `sha256:${"f".repeat(64)}`;
+      subject.state.failTarget = true;
+      const result = await subject.app.applyScheduledUpdate();
+      expect(result.ok).toBe(false);
+      expect(result.restart).toBe("manual");
+      expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(1);
+      expect(result.steps.some((step) => step.id === "recover")).toBe(false);
+      expect(subject.state.versions.worker).toBe(commit);
+    },
+  );
 
   it("refuses application rollback when managed computer history is missing", async () => {
     const env = `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\n`;

@@ -24,11 +24,12 @@ interface RuntimeService {
   service: string;
   id: string;
   commit: string;
+  imageId: string;
 }
 export interface RuntimeState {
   services: RuntimeService[];
   missing: string[];
-  baseline: { commit: string; tag: string; id: string };
+  baseline: { commit: string; tag: string; imageId: string };
   uniform: boolean;
 }
 export interface ComputerTagChange {
@@ -107,7 +108,11 @@ export async function readScheduledRuntime(
           `The running ${service} could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.`,
         );
       }
-      services.push({ service, id, commit });
+      const inspected = await run("docker", ["inspect", id, "--format", "{{.Image}}"], options);
+      const imageId = inspected.stdout.trim();
+      if (!inspected.ok || !/^sha256:[0-9a-f]{64}$/.test(imageId))
+        throw new UpdateRefused(`Could not verify the running ${service} image ID.`);
+      services.push({ service, id, commit, imageId });
     }
   }
   const baseline = selectLatestRelease(
@@ -119,9 +124,16 @@ export async function readScheduledRuntime(
   return {
     services,
     missing,
-    baseline: { commit: baseline.commit, tag: commitImageTag(baseline.commit), id: source.id },
+    baseline: {
+      commit: baseline.commit,
+      tag: commitImageTag(baseline.commit),
+      imageId: source.imageId,
+    },
     uniform:
-      missing.length === 0 && services.every((service) => service.commit === baseline.commit),
+      missing.length === 0 &&
+      services.every(
+        (service) => service.commit === baseline.commit && service.imageId === source.imageId,
+      ),
   };
 }
 
@@ -132,14 +144,7 @@ export async function cacheRuntimeBaseline(
   run: UpdaterCommandRunner,
 ) {
   const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
-  const inspected = await run(
-    "docker",
-    ["inspect", state.baseline.id, "--format", "{{.Image}}"],
-    options,
-  );
-  const id = inspected.stdout.trim();
-  if (!inspected.ok || !/^sha256:[0-9a-f]{64}$/.test(id))
-    throw new UpdateRefused("Could not cache the verified running image.");
+  const id = state.baseline.imageId;
   const tagged = await run(
     "docker",
     ["image", "tag", id, imageRef(config.image, state.baseline.tag)],
@@ -242,6 +247,14 @@ export async function readScheduledComputer(
       );
     tags.push(tag);
   }
+  const selectedTarget = tags.length > 0 && tags.every((tag) => tag === targetTag);
+  const local = selectedTarget
+    ? await run("docker", ["image", "inspect", imageRef(image, targetTag), "--format", "{{.Id}}"], {
+        cwd: config.deployDir,
+        timeoutMs: READ_TIMEOUT_MS,
+      })
+    : undefined;
+  const available = local?.ok && /^sha256:[0-9a-f]{64}$/.test(local.stdout.trim());
   return {
     tags: {
       fromTag: tags[0] ?? envTag,
@@ -249,7 +262,10 @@ export async function readScheduledComputer(
       toTag: targetTag,
     },
     envTag,
-    current: tags.length > 0 && tags.every((tag) => tag === targetTag),
-    uniform: tags.length > 0 && tags.every((tag) => tag === tags[0]),
+    current: selectedTarget && Boolean(available),
+    uniform:
+      tags.length > 0 &&
+      tags.every((tag) => tag === tags[0]) &&
+      (!selectedTarget || Boolean(available)),
   };
 }
