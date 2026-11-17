@@ -1,4 +1,5 @@
 import { implement, ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
@@ -11,7 +12,9 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasReadyModelCredential,
   hiddenCatalogModel,
+  isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
@@ -42,6 +45,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { createAgentImportServices } from "../agent-import-services.js";
 import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
@@ -206,6 +210,7 @@ export function createRouterContext(deps: RouterDeps) {
 
   // Shown where a member chose no model, so the list names what actually runs.
   const withDeploymentDefault = async (
+    actor: Actor,
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
@@ -219,7 +224,26 @@ export function createRouterContext(deps: RouterDeps) {
               : null,
           }
         : { env: process.env };
-    return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
+    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+      try {
+        const ready = await hasReadyModelCredential(
+          deps.prisma,
+          deps.secrets,
+          actor,
+          deploymentPrimary.provider,
+          deploymentPrimary.modelId,
+          { codexCatalog, allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint },
+        );
+        if (!ready) deploymentPrimary = null;
+      } catch (error) {
+        if (!(error instanceof SecretStoreUnavailableError)) throw error;
+        await bestEffort("read approval model default", Promise.reject(error));
+        // This view is advisory; a temporary outage must not fail an already committed save.
+        deploymentPrimary = null;
+      }
+    }
+    return { ...settings, deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
