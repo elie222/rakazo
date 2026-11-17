@@ -8,7 +8,7 @@ import {
   wakeRun,
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
-import { inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
+import { inboundRoutineBlock } from "@rakazo/core";
 import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
 import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Context } from "hono";
@@ -247,7 +247,7 @@ export async function deliverWebhookEvent(
   target: InboundTarget,
   input: {
     prompt: string;
-    artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+    attachmentBlocks?: Extract<MessageBlock, { kind: "file" | "image" }>[];
     routines: Array<{
       name: string;
       prompt: string;
@@ -292,7 +292,7 @@ export async function deliverWebhookEvent(
     blocks: [
       { kind: "delivery" },
       { kind: "text", text: promptText },
-      ...(input.artifacts ?? []).map(messageBlockForArtifact),
+      ...(input.attachmentBlocks ?? []),
     ],
     prompt: promptText,
     trigger: "webhook",

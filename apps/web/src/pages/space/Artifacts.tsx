@@ -50,6 +50,7 @@ import { IconTooltip } from "../../components/IconTooltip";
 import { VideoPreview } from "../../components/messages/ArtifactFileCard";
 import { PdfViewer } from "../../components/messages/PdfViewer";
 import { SandboxedHtmlViewer } from "../../components/messages/SandboxedHtmlViewer";
+import { WindowChrome } from "../../components/WindowChrome";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../../lib/pages/artifact-open";
@@ -59,7 +60,6 @@ import { createStoredPreference } from "../../lib/preferences/stored-preference"
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 import { useRedrawAtMidnight } from "../shell/chat/use-redraw-at-midnight";
-import { WindowChrome } from "../WindowChrome";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";

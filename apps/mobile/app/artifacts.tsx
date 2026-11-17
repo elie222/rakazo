@@ -29,7 +29,7 @@ import {
   matchesArtifactQuery,
   removeArtifact,
 } from "../lib/artifacts/artifacts";
-import { formatActivityRelativeTime } from "../lib/home/activity";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";

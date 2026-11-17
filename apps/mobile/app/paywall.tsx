@@ -33,7 +33,11 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { NativeSegmentedControl } from "../components/native/native-segmented-control";
 import { NativeSymbol } from "../components/native/native-symbol";
 import { useAccountDeletion } from "../components/settings/account-deletion";
-import type { Plan } from "../lib/account/billing";
+import { errorText } from "../lib/api/user-error";
+import { translucentColor } from "../lib/appearance/color";
+import { signOut } from "../lib/auth/api-auth";
+import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import type { Plan } from "../lib/billing/billing";
 import {
   currentPlan,
   openBillingPage,
@@ -42,11 +46,7 @@ import {
   purchaseCompleted,
   setPaywallShown,
   subscribedPlan,
-} from "../lib/account/billing";
-import { errorText } from "../lib/api/user-error";
-import { translucentColor } from "../lib/appearance/color";
-import { signOut } from "../lib/auth/api-auth";
-import { replaceWithSignIn } from "../lib/auth/auth-routing";
+} from "../lib/billing/billing";
 import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
 import { dateLocaleForUi } from "../lib/i18n/i18n";
 import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";

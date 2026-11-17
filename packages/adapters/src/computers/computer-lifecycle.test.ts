@@ -24,7 +24,7 @@ import { clearThread, planComputerSize } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
-import { SandboxUnsafeStopError } from "../sandboxes/sandbox-errors.js";
+import { SandboxUnsafeStopError, sandboxNotFoundError } from "../sandboxes/sandbox-errors.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import {
   acquireComputerExecutionLease,
@@ -4152,78 +4152,118 @@ describe("computer replacement", () => {
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
   });
 
-  it("continues recover when checkpoint fails with an ordinary provider error", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
-    const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
-    const home = new LocalAgentHomeStore(homeRoot);
-    const sandbox = new FakeSandboxProvider();
-    const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
-    const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
-      throw new Error("ECONNRESET");
-    });
-
-    const computerRecord = {
-      id: "computer-1",
-      homeKey: "bot-1",
-      providerRef: first.providerRef,
-      kind: "fake",
-      scope: "dedicated",
-      state: "running",
-      controlLeaseId: null,
-      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-      homeRevision: null,
-    };
-    const findUniqueOrThrow = vi
-      .fn()
-      .mockResolvedValueOnce(computerRecord)
-      .mockResolvedValue({
-        ...computerRecord,
-        state: "stopped",
-        providerRef: null,
+  it.each([
+    {
+      action: "recover",
+      failure: new Error("ECONNRESET"),
+      reason: "checkpoint_failed",
+      phase: "export",
+    },
+    {
+      action: "update",
+      failure: sandboxNotFoundError("missing sandbox"),
+      reason: "sandbox_gone",
+      phase: "export",
+    },
+    {
+      action: "recover",
+      failure: new Error("ENOSPC"),
+      reason: "checkpoint_failed",
+      phase: "staging",
+    },
+  ] as const)(
+    "records the action when $action skips a checkpoint ($reason, $phase)",
+    async ({ action, failure, reason, phase }) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
+      const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
+      const home = new LocalAgentHomeStore(homeRoot);
+      const sandbox = new FakeSandboxProvider();
+      const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+      if (phase === "staging") vi.spyOn(home, "createStaging").mockRejectedValueOnce(failure);
+      const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
+        throw failure;
       });
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const update = vi.fn().mockResolvedValue({});
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow,
-        updateMany,
-        update,
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
-      },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
-    const destroy = vi.spyOn(sandbox, "destroy");
 
-    try {
-      const ref = await replaceComputer(
-        {
-          prisma,
-          sandbox,
-          home,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-          dataDir,
+      const computerRecord = {
+        id: "computer-1",
+        homeKey: "bot-1",
+        providerRef: first.providerRef,
+        kind: "fake",
+        scope: "dedicated",
+        state: "running",
+        controlLeaseId: null,
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        homeRevision: null,
+        homeRevisionAt: new Date("2024-01-01T00:00:00.000Z"),
+      };
+      const findUniqueOrThrow = vi
+        .fn()
+        .mockResolvedValueOnce(computerRecord)
+        .mockResolvedValue({
+          ...computerRecord,
+          state: "stopped",
+          providerRef: null,
+        });
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const update = vi.fn().mockResolvedValue({});
+      const prisma = {
+        $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn(async () => null) },
+        computer: {
+          findUniqueOrThrow,
+          updateMany,
+          update,
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         },
-        "computer-1",
-        "recover",
-        context,
-      );
-      expect(exportWorkspace).toHaveBeenCalledOnce();
-      expect(destroy).toHaveBeenCalledOnce();
-      expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
-        destroy.mock.invocationCallOrder[0]!,
-      );
-      expect(ref.fresh).toBe(true);
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-      await rm(homeRoot, { recursive: true, force: true });
-    }
-  });
+        run: { findFirst: vi.fn().mockResolvedValue(null) },
+      } as unknown as PrismaClient;
+      const destroy = vi.spyOn(sandbox, "destroy");
+
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        const ref = await replaceComputer(
+          {
+            prisma,
+            sandbox,
+            home,
+            jobs: jobQueue(),
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          action,
+          context,
+        );
+        expect(destroy).toHaveBeenCalledOnce();
+        if (phase === "export") {
+          expect(exportWorkspace).toHaveBeenCalledOnce();
+          expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+            destroy.mock.invocationCallOrder[0]!,
+          );
+        } else expect(exportWorkspace).not.toHaveBeenCalled();
+        expect(ref.fresh).toBe(true);
+        expect(sink.events).toContainEqual(
+          expect.objectContaining({
+            message: "computer.checkpoint_skipped",
+            action,
+            "computer.id": "computer-1",
+            "bot.id": "bot-1",
+            "error.type": failure.name,
+            reason,
+            homeRevisionAt: computerRecord.homeRevisionAt,
+          }),
+        );
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+        await rm(dataDir, { recursive: true, force: true });
+        await rm(homeRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("aborts update when checkpoint fails with an ordinary provider error", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-update-checkpoint-"));

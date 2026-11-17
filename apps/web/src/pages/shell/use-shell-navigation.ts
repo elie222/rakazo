@@ -3,14 +3,14 @@ import { chatSnoozed } from "@rakazo/core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { NavigateFunction, NavigateOptions, To } from "react-router-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { guardShellNavigate } from "../../lib/space-switch";
-import type { ShellOverlay } from "../shell-overlay";
+import type { ShellOverlay } from "./shell-overlay-url";
 import {
   readShellOverlay,
   searchString,
   shellOverlaySearch,
   withShellOverlay,
-} from "../shell-overlay";
+} from "./shell-overlay-url";
+import { guardShellNavigate } from "./space-switch";
 
 /** Router access for the shell: navigation stops once it unmounts, and overlays live in the URL. */
 export function useShellNavigation() {

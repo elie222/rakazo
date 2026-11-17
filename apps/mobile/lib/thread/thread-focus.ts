@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
 import { selectedSpaceId } from "../api/api";
-import { saveLastBotId } from "../home/last-bot";
+import { saveLastBotId } from "../inbox/last-bot";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../notifications/focus-prompt";
 import {
   dismissThreadNotifications,

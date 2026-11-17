@@ -49,11 +49,11 @@ import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-s
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
-import { hasOpenDialog } from "../lib/has-open-dialog";
 import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import type { ArtifactTarget } from "../lib/pages/artifact-open";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
+import { hasOpenDialog } from "../lib/platform/has-open-dialog";
 import { markAfterPaint, markOnce } from "../lib/platform/performance";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { useDesktopBadge } from "../lib/platform/use-desktop-badge";
@@ -73,10 +73,7 @@ import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
 import { errorText } from "../lib/query/user-error";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routines/routine-draft";
-import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
-import { HostComputerPrompt } from "./HostComputerPrompt";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
 import { useTeaching } from "./shell/bots/use-teaching";
@@ -96,11 +93,14 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
-import { ComputerOverlay } from "./shell/computer/computer-overlay";
-import { ComputerPanel } from "./shell/computer/computer-panel";
-import { useComputerControls, useComputerState } from "./shell/computer/use-computer";
+import { ComputerOverlay } from "./shell/computers/computer-overlay";
+import { ComputerPanel } from "./shell/computers/computer-panel";
+import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
+import { HostComputerPrompt } from "./shell/host-computer-prompt";
 import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
+import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
@@ -116,6 +116,8 @@ import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
 import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import { markShellReady, useSpaceEpoch } from "./shell/space-switch";
+import { TimezonePrompt } from "./shell/timezone-prompt";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { usePaletteActions } from "./shell/use-palette-actions";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
@@ -124,8 +126,6 @@ import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
 import { useSpaceActions } from "./shell/use-space-actions";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
-import type { SettingsSection } from "./shell-overlay";
-import { TimezonePrompt } from "./TimezonePrompt";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -487,7 +487,6 @@ function SpaceShell() {
     else if (active) read.markBotReadIfVisible(active.id);
   }, [openChatWoke]);
   const {
-    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,
@@ -607,7 +606,6 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
     beginSpaceSwitch: roster.beginSpaceSwitch,
-    startChatRead,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;

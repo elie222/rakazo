@@ -125,7 +125,7 @@ struct StartVoiceChatIntent: AppIntent {
   }
 }
 
-/// The single record written by lib/home/last-bot.ts; legacy ids have no verified owner.
+/// The single record written by lib/inbox/last-bot.ts; legacy ids have no verified owner.
 private struct SavedLastBot: Decodable {
   let botId: String
   let spaceId: String?
