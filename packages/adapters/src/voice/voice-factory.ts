@@ -22,6 +22,14 @@ export function isVoiceProviderId(value: string): value is VoiceProviderId {
   return !!provider && (provider.available?.() ?? true);
 }
 
+/** Whether a connection to this provider may reach a private address on this instance. */
+export function voiceProviderMayUsePrivateEndpoint(
+  id: string,
+  instanceAllows: boolean | undefined,
+): boolean {
+  return instanceAllows === true && knownVoiceProvider(id)?.privateEndpoint === true;
+}
+
 export function createVoiceProvider(
   kind: string,
   options: VoiceProviderOptions = {},

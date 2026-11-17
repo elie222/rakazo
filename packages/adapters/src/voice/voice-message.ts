@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import type { AdapterContext, SpeechClip } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { attachmentExtensionForMimeType } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential } from "@rakazo/db";
 import { isVoiceProviderId } from "./voice-factory.js";
@@ -48,6 +51,10 @@ export async function hasVoiceForMessages(
 /**
  * Speaks `text` with the person's default voice connection here, in the bot's voice when it has
  * one. Otherwise says what is missing: the connection (or its key), or a chosen voice.
+ *
+ * A bot's voice is saved without the provider it came from, so after the person switches provider
+ * it can name a voice the new one lacks. When the provider refuses it for anything but the
+ * account, the connection's own voice is tried once.
  */
 export async function speakVoiceMessage(
   deps: DefaultVoiceDeps,
@@ -59,17 +66,40 @@ export async function speakVoiceMessage(
   if (!voice) return { missing: "connection" };
   const voiceId = chosenVoice(input.botVoiceId, voice.credential.voiceId);
   if (!voiceId) return { missing: "voice" };
-  const clip = await withVoiceConnection(voice.credential.provider, voice.linked, () =>
+  const speak = (inVoice: string) =>
     voice.provider.synthesize(
       {
         text: input.text,
-        voiceId,
+        voiceId: inVoice,
         apiKey: voice.apiKey,
         model: voice.credential.speechModel || undefined,
         signal: context.signal,
       },
       context,
-    ),
-  );
+    );
+  const fallback = voice.credential.voiceId;
+  const clip = await withVoiceConnection(voice.credential.provider, voice.linked, async () => {
+    try {
+      return await speak(voiceId);
+    } catch (error) {
+      if (
+        !fallback ||
+        fallback === voiceId ||
+        error instanceof VoiceAccountError ||
+        context.signal.aborted
+      )
+        throw error;
+      return speak(fallback);
+    }
+  });
   return { clip, provider: voice.credential.provider };
+}
+
+/**
+ * A recording's file name: its own per call, so two recordings are two files rather than versions
+ * of one, and the same for a retried attempt of that call.
+ */
+export function voiceMessageFileName(callId: string, mimeType: string): string {
+  const id = createHash("sha256").update(callId).digest("hex").slice(0, 8);
+  return `voice-message-${id}${attachmentExtensionForMimeType(mimeType) || ".mp3"}`;
 }

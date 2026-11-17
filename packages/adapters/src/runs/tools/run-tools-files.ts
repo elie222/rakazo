@@ -2,7 +2,6 @@ import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import {
-  attachmentExtensionForMimeType,
   inferAttachmentMimeType,
   isBackgroundRunTrigger,
   messageBlockForArtifact,
@@ -25,7 +24,11 @@ import {
   renderPlotFromTool,
 } from "../../tools/workspace-file-tools.js";
 import { MAX_SPEAK_CHARS } from "../../voice/voice-http.js";
-import { speakVoiceMessage, voiceMessageRequestedByOwner } from "../../voice/voice-message.js";
+import {
+  speakVoiceMessage,
+  voiceMessageFileName,
+  voiceMessageRequestedByOwner,
+} from "../../voice/voice-message.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { persistMessageInTransaction, runLeaseFor } from "../assembly/run-messages.js";
 import { textContentArg } from "../turn/tool-text.js";
@@ -214,7 +217,10 @@ export const fileTools: ToolHandlers = {
       return call.finish({
         error: "That recording is too large to attach. Speak a shorter text, or split it in parts.",
       });
-    const fileName = `voice-message${attachmentExtensionForMimeType(clip.mimeType) || ".mp3"}`;
+    const fileName = voiceMessageFileName(
+      call.applied?.effect.id ?? call.executionId,
+      clip.mimeType,
+    );
     try {
       const saved = await postAttachment(ctx, call, fileName, clip.bytes);
       return call.finish({ ok: true, artifactId: saved.artifactId });

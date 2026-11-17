@@ -7,10 +7,13 @@ import {
   resolveStoredModelAuth,
   withModelCredentialLock,
 } from "../models/model-credential-refresh.js";
-import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "../providers/voice/openai-compatible/openai-compatible-voice.js";
 import { isRetiredModelCredentialError } from "../runtime/pi/models/pi-oauth.js";
 import type { SecretCleanupDeps } from "../secrets/secret-cleanup.js";
-import { createVoiceProvider, voiceCatalogEntry } from "./voice-factory.js";
+import {
+  createVoiceProvider,
+  voiceCatalogEntry,
+  voiceProviderMayUsePrivateEndpoint,
+} from "./voice-factory.js";
 
 /**
  * A voice connection's secret when it authenticates with the account's model connection to the
@@ -135,11 +138,11 @@ export async function loadDefaultVoice(
       where: { id: credential.secretId, userId: scope.userId, spaceId: null },
     }));
   if (!credential || !secret) return null;
-  // A self-hosted speech server on a private address is limited like model endpoints.
   const provider = createVoiceProvider(credential.provider, {
-    allowPrivateEndpoint:
-      credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
-      deps.mcpAllowPrivateEndpoint === true,
+    allowPrivateEndpoint: voiceProviderMayUsePrivateEndpoint(
+      credential.provider,
+      deps.mcpAllowPrivateEndpoint,
+    ),
   });
   const plaintext = await deps.secretStore.load(secret.ciphertext, secret.id);
   const linked =

@@ -628,6 +628,7 @@ export const openAiCompatibleVoice: VoiceProviderDefinition = {
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
     transcribe: true,
   },
+  privateEndpoint: true,
   listed: ({ allowPrivateEndpoint }) =>
     allowPrivateEndpoint === true || openAiCompatAllowPublicHosts(),
   create: ({ allowPrivateEndpoint }) => new OpenAiCompatibleVoiceProvider({ allowPrivateEndpoint }),

@@ -16,6 +16,7 @@ import {
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
+  voiceProviderMayUsePrivateEndpoint,
   withVoiceConnection,
 } from "@rakazo/adapters";
 import type {
@@ -64,9 +65,7 @@ export interface VoiceDeps {
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
 async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, provider: string) {
-  return (
-    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && deps.env?.mcpAllowPrivateEndpoint === true
-  );
+  return voiceProviderMayUsePrivateEndpoint(provider, deps.env?.mcpAllowPrivateEndpoint);
 }
 
 /** The voice adapter for a credential, with the caller's private-endpoint decision. */
