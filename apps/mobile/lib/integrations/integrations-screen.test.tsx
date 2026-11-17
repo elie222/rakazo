@@ -1377,6 +1377,51 @@ it("looks a search up in the public catalog only when asked, and signs in from t
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length).toBe(2);
 });
 
+it("offers Connect on a catalog server whose sign-in failed", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  let added = false;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve(catalogResult({ type: "oauth" }));
+    if (proc === "mcp/servers/connect") {
+      added = true;
+      return Promise.resolve({
+        server: { id: "tracker-server", name: "Tracker", enabled: true },
+        signIn: {
+          status: "authorization_required",
+          sessionId: "mobile-session",
+          authorizationUrl: "https://identity.example.test/authorize",
+        },
+      });
+    }
+    if (proc === "mcp/servers/list")
+      return Promise.resolve(
+        added
+          ? [
+              {
+                id: "tracker-server",
+                name: "Tracker",
+                enabled: true,
+                oauthStatus: "none",
+                health: { status: "unknown" },
+              },
+            ]
+          : [],
+      );
+    return fallback?.(proc, args);
+  });
+  state.authSession.mockRejectedValue(new Error("The browser could not open"));
+  await render();
+  await act(async () => catalog.resolve([]));
+  await searchFor("tracker");
+  await press("Search more apps");
+  await press("Connect");
+
+  expect(container.querySelector('[data-testid="registered-mcp-server"]')?.textContent).toBe(
+    "TTrackerNot connectedConnect",
+  );
+});
+
 it("does not offer a catalog server that needs a key", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>

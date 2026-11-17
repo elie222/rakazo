@@ -3,7 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { SignInMcpServer } from "@rakazo/core";
 import { signInMcpServers } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import { finishMcpSignIn } from "../../lib/integrations/mcp-oauth";
@@ -38,18 +38,20 @@ export function IntegrationCatalogSearch({
     },
     queryClient,
   );
+  // The server is added before its sign-in, so a failed sign-in can still be retried on it.
+  const addedIds = useRef(new Map<string, string>());
   const connect = useSave({
     save: async (server: SignInMcpServer, send) => {
       const { server: added, signIn } = await send("mcp/servers/connect", {
         ...server,
         client: "mobile",
       });
+      addedIds.current.set(server.endpoint, added.id);
       await finishMcpSignIn(send, signIn);
       return added.id;
     },
     onSaved: (serverId) => onChanged(serverId),
-    // The server may have been added before the sign-in failed.
-    onFailed: () => onChanged(),
+    onFailed: (_error, server) => onChanged(addedIds.current.get(server.endpoint)),
   });
   if (!trimmed) return null;
   const servers = searching && search.data ? signInMcpServers(search.data.results) : null;
