@@ -9,8 +9,8 @@ import {
   BOT_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
 import JSON5 from "json5";
-import { buildSkillMd, parseSkillMd } from "../agent-skill.js";
-import { nextCronDateAcrossStrict } from "../cron.js";
+import { nextCronDateAcrossStrict } from "../primitives/cron.js";
+import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
 import type { AgentImportParse } from "./shared.js";
 import { freeName, memoryItem, renameSkillMd, skillItem } from "./shared.js";

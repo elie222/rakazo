@@ -64,7 +64,9 @@ async function wireBody(
   reply: () => Response,
   overrides: Partial<AgentRunRequest>,
 ) {
-  let body: { messages: WireMessage[]; system?: unknown } | undefined;
+  let body:
+    | { messages: WireMessage[]; system?: unknown; tools?: Array<{ function: { name: string } }> }
+    | undefined;
   const runtime = new PiAgentRuntime({
     modelFetch: async (_input, init) => {
       body = JSON.parse(String(init?.body));
@@ -336,5 +338,54 @@ describe("history on the wire", () => {
     // The next turn only appends, so the provider's cached prefix stays warm.
     expect(strip(second.messages).slice(0, first.messages.length)).toEqual(strip(first.messages));
     expect(second.messages.length).toBe(first.messages.length + 2);
+  });
+
+  it("replays a call to a tool reached through use_tool as that use_tool call, without the unavailable note", async () => {
+    const step = (tool: string, args: Record<string, unknown>) => ({
+      label: tool,
+      tool,
+      count: 1,
+      calls: [{ arguments: JSON.stringify(args), result: JSON.stringify({ ok: true }) }],
+      outcomes: { succeeded: 1 },
+    });
+    const body = await wireBody(compatible, completionsReply, {
+      history: [
+        { id: "m1", role: "user", content: "Read the fleet, then publish the report." },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "Done.",
+          segments: [
+            {
+              steps: [step("list_fleet", { bot_id: "b1" }), step("save_page", { title: "Report" })],
+            },
+            { text: "Done." },
+          ],
+        },
+      ],
+      // list_fleet is a deferred built-in, reached through find_tool and use_tool;
+      // save_page is not offered to this run at all.
+      tools: [{ name: "list_fleet", description: "List bots.", inputSchema: { type: "object" } }],
+    });
+    const listed = body.tools?.map((tool) => tool.function.name);
+    expect(listed).toContain("use_tool");
+    expect(listed).not.toContain("list_fleet");
+    type WireCall = { function: { name: string; arguments: string } };
+    const calls = (body.messages as Array<{ tool_calls?: WireCall[] }>)
+      .flatMap((message) => message.tool_calls ?? [])
+      .map(({ function: call }) => ({ name: call.name, arguments: JSON.parse(call.arguments) }));
+    expect(calls).toEqual([
+      {
+        name: "use_tool",
+        arguments: { name: "list_fleet", arguments: { bot_id: "b1" } },
+      },
+      { name: "save_page", arguments: { title: "Report" } },
+    ]);
+    const results = body.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => JSON.stringify(message.content));
+    expect(results).toHaveLength(2);
+    expect(results[0]).not.toContain("is not available to you now");
+    expect(results[1]).toContain("[save_page is not available to you now.]");
   });
 });
