@@ -86,6 +86,11 @@ export function ComposerModelPicker({
       onChange={(key) => {
         if (key !== selectedModelKey) saveModel.run(key);
       }}
+      // A model with thinking levels keeps the panel open, so its level can be set next.
+      staysOpen={(key) =>
+        botModelState({ credentials, catalog, me, modelKey: key, spaceDefaultLabel: "" })
+          .thinkingLevels.length > 0
+      }
       aside={
         thinkingLevels.length
           ? (close) => (

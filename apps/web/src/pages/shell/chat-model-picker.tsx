@@ -33,6 +33,7 @@ export function ChatModelPicker({
   mark,
   detail,
   aside,
+  staysOpen,
   disabled,
 }: {
   id?: string;
@@ -46,11 +47,10 @@ export function ChatModelPicker({
   mark?: ModelMark;
   /** Shown after the model on the compact button, such as its thinking level. */
   detail?: string;
-  /**
-   * More of the model's settings beside the list (`compact` only). While it shows, picking a model
-   * keeps the panel open so they can be changed next; `close` shuts it.
-   */
+  /** More of the model's settings beside the list (`compact` only); `close` shuts the panel. */
   aside?: (close: () => void) => ReactNode;
+  /** Whether picking this model leaves the panel open, so its other settings can be changed next. */
+  staysOpen?: (key: string) => boolean;
   disabled?: boolean;
 }) {
   const { t } = useLingui();
@@ -158,7 +158,7 @@ export function ChatModelPicker({
                       aria-describedby={choice.images === false ? imagesHintId : undefined}
                       onSelect={() => {
                         onChange(choice.key);
-                        if (!sidePanel) openChange(false);
+                        if (!staysOpen?.(choice.key)) openChange(false);
                       }}
                     >
                       <span className="min-w-0 flex-1 truncate">
