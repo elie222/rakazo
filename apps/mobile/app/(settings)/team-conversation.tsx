@@ -19,16 +19,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useContext, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
-import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import { errorText } from "../../lib/api/user-error";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { native, useMobileTokens, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {

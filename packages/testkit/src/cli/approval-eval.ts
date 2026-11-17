@@ -4,16 +4,16 @@ import path from "node:path";
 import type { AutoReviewProvider, ModelCallObserver } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { ApprovalCaseResult } from "../evals/approval.js";
+import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
+import { SpendBudget, validatePricing } from "../evals/measurement.js";
+import { redact } from "../evals/report.js";
+import type { ApprovalCaseResult } from "../evals/suites/approval.js";
 import {
   APPROVAL_CASES,
   APPROVAL_FIXTURE_VERSION,
   runApprovalCases,
   summarizeApproval,
-} from "../evals/approval.js";
-import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
-import { SpendBudget, validatePricing } from "../evals/measurement.js";
-import { redact } from "../evals/report.js";
+} from "../evals/suites/approval.js";
 
 type ApprovalValues = {
   live?: boolean;
