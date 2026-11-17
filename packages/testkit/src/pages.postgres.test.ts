@@ -890,6 +890,12 @@ describePages("pages", () => {
       code: pageViewerCode(page("Plan")),
     });
 
+    // A page shared by link was given to chosen people, not to the Space.
+    await rpc(app, ownerCookie, "pages/setVisibility", { pageId, visibility: "link" });
+    expect(await sharedList()).toEqual(none);
+    expect((await openAsMember()).status).toBe(404);
+    await rpc(app, ownerCookie, "pages/setVisibility", { pageId, visibility: "space" });
+
     // Only the owner changes it.
     for (const [proc, body] of [
       ["pages/rename", { pageId, title: "Taken" }],

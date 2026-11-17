@@ -20,7 +20,7 @@ export const PageSourceSchema = z
     `Page source must fit within ${PAGE_SOURCE_MAX_BYTES} UTF-8 bytes`,
   );
 
-/** `private` is the owner alone, `space` every member of the page's Space, `link` also anyone with the URL. */
+/** `private` is the owner alone, `space` every member of the page's Space, `link` anyone with the URL. */
 export const PageVisibilitySchema = z.enum(["private", "space", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 

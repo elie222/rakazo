@@ -2023,7 +2023,7 @@ model Page {
   groupId        String?
   group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   title          String
-  /// `private` (owner only), `space` (every member of the Space) or `link` (also anyone with the URL).
+  /// `private` (owner only), `space` (every member of the Space) or `link` (anyone with the URL).
   visibility     String        @default("private")
   /// sha256 of the link token; the public read looks pages up by it.
   shareTokenHash String?       @unique

@@ -280,7 +280,7 @@ describe("pages shared with the Space", () => {
       spaceId: "space-1",
       OR: [
         { userId: "user-2" },
-        { visibility: { in: ["space", "link"] }, user: { members: expect.anything() } },
+        { visibility: { in: ["space"] }, user: { members: expect.anything() } },
       ],
     });
   });
@@ -314,7 +314,7 @@ describe("pages shared with the Space", () => {
     const query = findMany.mock.calls[0]?.[0];
     expect(query.where).toMatchObject({
       spaceId: "space-1",
-      visibility: { in: ["space", "link"] },
+      visibility: { in: ["space"] },
     });
     expect(query.where).not.toHaveProperty("userId");
     expect(query.orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);

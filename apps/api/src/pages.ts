@@ -38,8 +38,11 @@ function pageVisibility(value: string): PageVisibility {
   return value === "link" || value === "space" ? value : "private";
 }
 
-/** Pages a member other than the owner may read: shared with the Space or by link. */
-const SHARED_WITH_SPACE = ["space", "link"];
+/**
+ * Pages a member other than the owner may read. A page shared by link stays out: its owner gave
+ * the link to chosen people, not to the Space.
+ */
+const SHARED_WITH_SPACE = ["space"];
 
 /** Another member's page stays visible only while its owner still belongs to the Space. */
 function ownerInSpace(spaceId: string): Prisma.PageWhereInput {

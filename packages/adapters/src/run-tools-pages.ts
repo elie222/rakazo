@@ -179,7 +179,7 @@ export async function holdSharedPageSave(
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
-        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+        "This page is shared, and this change is too long to show the user for approval. Save it as several smaller edits.",
     };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
   request.args = { ...args, approvedVersion: page.currentVersion };
@@ -187,6 +187,13 @@ export async function holdSharedPageSave(
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
   return undefined;
+}
+
+/** Tells the bot who sees each save of a shared page. */
+function sharedMarks(visibility: string | undefined) {
+  if (visibility === "link") return { sharedByLink: true };
+  if (visibility === "space") return { sharedWithSpace: true };
+  return {};
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -227,7 +234,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
-      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      ...sharedMarks(page.visibility),
       source: current,
     };
   }
@@ -310,7 +317,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     throw error;
   }
   // Members the page is shared with see the new version, so their open page and list read again.
-  if (page && page.visibility !== "private") {
+  // Not gated on the visibility read before the save: sharing can change while the save commits.
+  if (page) {
     await deps.events?.publishSpaceChange?.(run.spaceId, "pages");
   }
   const block: MessageBlock = { kind: "page", ...saved };
@@ -330,7 +338,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...sharedMarks(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;

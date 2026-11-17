@@ -496,7 +496,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
 
   // Turning the link off breaks it at once.
   await view.getByRole("button", { name: "Share" }).click();
-  await expect(share.getByText("The shared link stops working")).toBeVisible();
+  await expect(share.getByText("The shared link stops working")).toHaveCount(2);
   await share.getByRole("radio", { name: /Only you/ }).click();
   await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
   await outside.reload();

@@ -356,12 +356,9 @@ describe("saving a page shared with the Space", () => {
     expect(held.heldForApproval).toBe(false);
   });
 
-  it("tells the Space when a shared page has a new version, and no one for a private page", async () => {
-    for (const [visibility, told] of [
-      ["space", true],
-      ["link", true],
-      ["private", false],
-    ] as const) {
+  it("tells the Space after every save of a page, whatever it was read as before the save", async () => {
+    // Sharing can change while a save commits, so the signal never depends on the earlier read.
+    for (const visibility of ["space", "link", "private"] as const) {
       const publishSpaceChange = vi.fn();
       const tx = {
         page: {
@@ -375,7 +372,34 @@ describe("saving a page shared with the Space", () => {
         call({ pageId: "page-1", edits: [edit] }),
       );
       expect(result).toMatchObject({ pageId: "page-1", version: 2 });
-      expect(publishSpaceChange.mock.calls).toEqual(told ? [["space-1", "pages"]] : []);
+      expect(publishSpaceChange.mock.calls).toEqual([["space-1", "pages"]]);
     }
+  });
+
+  it("tells the bot who sees a shared page's saves, and does not call a Space page a link", async () => {
+    for (const [visibility, mark] of [
+      ["space", { sharedWithSpace: true }],
+      ["link", { sharedByLink: true }],
+    ] as const) {
+      const read = (await pageTools.save_page!(
+        context({}, { currentVersion: 1, visibility }),
+        call({ pageId: "page-1" }),
+      )) as Record<string, unknown>;
+      expect(read).toMatchObject(mark);
+    }
+    const privateRead = (await pageTools.save_page!(
+      context({}, { currentVersion: 1, visibility: "private" }),
+      call({ pageId: "page-1" }),
+    )) as Record<string, unknown>;
+    expect(privateRead).not.toHaveProperty("sharedByLink");
+    expect(privateRead).not.toHaveProperty("sharedWithSpace");
+
+    const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
+    const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });
+    const refused = await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "space" }),
+      held as never,
+    );
+    expect(refused?.error).not.toMatch(/by link/);
   });
 });

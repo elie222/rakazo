@@ -22,7 +22,9 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "skills.testRun": ["runs"],
   // Activity leaves out archived bots.
   "bots.restore": ["runs", "routines"],
-  "bots.remove": ["runs", "routines"],
+  "bots.remove": ["runs", "routines", "pages"],
+  // A removed bot or chat takes its pages, shared ones included.
+  "groups.remove": ["pages"],
 };
 
 export function spaceChangesFor(path: readonly string[]): readonly SpaceChangeKind[] {
