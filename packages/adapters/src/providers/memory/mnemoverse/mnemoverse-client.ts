@@ -78,7 +78,10 @@ async function request(
       throw new ResponseTooLargeError("Mnemoverse response is too large.");
     }
     const bytes = await readBodyCapped(response, MAX_MNEMOVERSE_RESPONSE_BYTES, signal);
-    return { ok: true, data: JSON.parse(new TextDecoder().decode(bytes)) };
+    // A success with no body carries nothing to read. A read or write then fails below, because
+    // its required field is missing; a delete only needs the status.
+    const text = new TextDecoder().decode(bytes);
+    return { ok: true, data: text.trim() ? JSON.parse(text) : null };
   } catch (error) {
     return { ok: false, error: failure(action, error) };
   }
@@ -90,9 +93,10 @@ function boundedLimit(limit: number): number {
     : DEFAULT_RECALL_LIMIT;
 }
 
-function parseItems(data: unknown): MnemoverseItem[] {
+/** Null when the reply has no `items` list: that is not an answer, so it must not read as no matches. */
+function parseItems(data: unknown): MnemoverseItem[] | null {
   const items = (data as { items?: unknown } | null)?.items;
-  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(items)) return null;
   const parsed: MnemoverseItem[] = [];
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
@@ -139,7 +143,11 @@ export async function readMnemoverse(
     body: { query: query.slice(0, MAX_QUERY_CHARS), domain, top_k: boundedLimit(limit) },
     signal,
   });
-  return reply.ok ? { ok: true, value: parseItems(reply.data) } : { ok: false, error: reply.error };
+  if (!reply.ok) return { ok: false, error: reply.error };
+  const items = parseItems(reply.data);
+  return items
+    ? { ok: true, value: items }
+    : { ok: false, error: "Mnemoverse recall failed: unexpected response." };
 }
 
 /**
@@ -174,6 +182,10 @@ export async function writeMnemoverse(
       duplicate: true,
       error: `Mnemoverse did not store this memory because it is too close to one already saved${reason}. Forget the older memory first if this one replaces it.`,
     };
+  }
+  // Only an explicit confirmation counts as saved.
+  if (written?.stored !== true) {
+    return { ok: false, error: "Mnemoverse save failed: unexpected response." };
   }
   return { ok: true, value: undefined };
 }

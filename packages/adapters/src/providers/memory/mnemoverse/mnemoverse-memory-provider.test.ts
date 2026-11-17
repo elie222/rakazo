@@ -202,6 +202,31 @@ describe("Mnemoverse recall", () => {
     mnemoverse([], { "POST /memory/read": () => new Response("<html>", { status: 200 }) });
     expect((await recallOf("isolated")).ok).toBe(false);
   });
+
+  it("fails on an answer without an items list, but not on an empty one", async () => {
+    for (const body of [{}, null, { items: "none" }, { items: null }]) {
+      mnemoverse([], { "POST /memory/read": () => Response.json(body) });
+      expect((await recallOf("isolated")).ok).toBe(false);
+    }
+    mnemoverse([], { "POST /memory/read": () => new Response(null, { status: 204 }) });
+    expect((await recallOf("isolated")).ok).toBe(false);
+    mnemoverse([], { "POST /memory/read": () => Response.json({ items: [] }) });
+    expect(await recallOf("isolated")).toEqual({ ok: true, value: [] });
+  });
+
+  it("drops an item the service returns from a domain that was not asked for", async () => {
+    mnemoverse([], {
+      "POST /memory/read": () =>
+        Response.json({
+          items: [
+            { atom_id: "own", content: "Likes tea", relevance: 0.5, domain: BOT },
+            { atom_id: "other", content: "Not yours", relevance: 0.9, domain: "rakazo:bot:bot-2" },
+          ],
+        }),
+    });
+    const result = await recallOf("isolated");
+    expect(result.ok && result.value.map((item) => item.id)).toEqual(["own"]);
+  });
 });
 
 describe("Mnemoverse save", () => {
@@ -366,6 +391,27 @@ describe("Mnemoverse save", () => {
     expect(!result.ok && result.error).toContain("too similar to an existing memory");
   });
 
+  it("does not count a successful answer that never says the fact was stored", async () => {
+    const request = {
+      content: "Likes tea",
+      scope: "isolated" as const,
+      botId: "bot-1",
+      source: { kind: "durable" as const },
+    };
+    for (const answer of [
+      () => Response.json({}),
+      () => Response.json(null),
+      () => Response.json({ stored: "yes" }),
+      () => new Response(null, { status: 204 }),
+    ]) {
+      mnemoverse([], { "POST /memory/write": answer });
+      expect((await provider().save(request, context)).ok).toBe(false);
+    }
+    mnemoverse([], { "POST /memory/write": () => Response.json({}) });
+    const shared = await provider().save({ ...request, scope: "shared" }, context);
+    expect(shared.ok).toBe(false);
+  });
+
   it("reports a rejected write and a thrown one the same way", async () => {
     const request = {
       content: "Likes tea",
@@ -501,6 +547,13 @@ describe("Mnemoverse forget", () => {
     mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }], {
       [`DELETE /memory/atoms/${ATOM_A}`]: () =>
         Response.json({ code: "NOT_FOUND" }, { status: 404 }),
+    });
+    expect((await forget(ATOM_A)).ok).toBe(true);
+  });
+
+  it("counts a delete as done when the success reply has no body", async () => {
+    mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }], {
+      [`DELETE /memory/atoms/${ATOM_A}`]: () => new Response(null, { status: 204 }),
     });
     expect((await forget(ATOM_A)).ok).toBe(true);
   });

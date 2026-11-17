@@ -125,6 +125,8 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
         continue;
       }
       for (const item of response.value) {
+        // Only what the requested domain holds belongs to this bot, whatever the service sends back.
+        if (item.domain !== domains[index]) continue;
         byAtom.set(item.atomId, {
           memory: item.content,
           score: item.relevance,
