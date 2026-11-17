@@ -628,7 +628,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect(sent.slice(before)).toHaveLength(1);
     const message = sent.at(-1)!;
     expect(message.to).toBe(outsider.email);
-    expect(message.subject).toBe("owner invited you to Clients on Rakazo");
+    expect(message.subject).toBe("owner invited you to Clients on BotONE");
     expect(message.text).toContain(url);
     // Anyone holding the link may join, so the email asks for no particular address.
     expect(message.text).not.toContain("Sign in with this email address");
