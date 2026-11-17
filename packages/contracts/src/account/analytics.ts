@@ -133,6 +133,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("model_connect_code_issued"), ...modelSignIn }).strict(),
   z.object({ name: z.literal("model_connect_page_opened"), ...modelSignIn }).strict(),
   z.object({ name: z.literal("model_connect_code_copied"), ...modelSignIn }).strict(),
+  // Every sign-in that issued a link or code and did not connect. One whose person was
+  // still watching and saw an error also sends model_connect_failed, as it always has.
   z
     .object({
       name: z.literal("model_connect_ended"),
