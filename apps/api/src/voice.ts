@@ -14,6 +14,7 @@ import {
   NoVoiceConfigured,
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   openAiCompatibleVoiceServer,
+  parseModelConnectionVoiceSecret,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
@@ -156,11 +157,13 @@ export function toVoiceCredential(row: {
   server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
   /** False when the connection uses the account's model connection instead of a key. */
   hasKey?: boolean;
+  modelCredentialId?: string;
 }): VoiceCredential {
   return {
     id: row.id,
     provider: row.provider,
     hasKey: row.hasKey ?? true,
+    ...(row.modelCredentialId ? { modelCredentialId: row.modelCredentialId } : {}),
     isDefault: row.isDefault,
     voiceId: row.voiceId,
     speechModel: row.speechModel ?? "",
@@ -195,24 +198,30 @@ export async function voiceCredentialServer(
 }
 
 /**
- * Whether a connection stores its own key. Only a provider that can use the account's model
- * connection opens its secret to tell; one that cannot be read counts as a key.
+ * Whether a connection stores its own key, or else which model connection it uses. Only a
+ * provider that can use the account's model connection opens its secret to tell; one that
+ * cannot be read counts as a key.
  */
-export async function voiceCredentialHasKey(
+export async function voiceCredentialLink(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId">,
   row: { provider: string; secretId: string },
-) {
-  if (!voiceCatalogEntry(row.provider)?.modelConnection) return true;
+): Promise<{ hasKey: boolean; modelCredentialId?: string }> {
+  if (!voiceCatalogEntry(row.provider)?.modelConnection) return { hasKey: true };
   try {
     const secret = await deps.prisma.secret.findFirst({
       where: { id: row.secretId, userId: actor.userId, spaceId: null },
     });
-    if (!secret) return true;
-    return !isModelConnectionVoiceSecret(await deps.secrets.load(secret.ciphertext, secret.id));
+    if (!secret) return { hasKey: true };
+    return voiceLinkOf(await deps.secrets.load(secret.ciphertext, secret.id));
   } catch {
-    return true;
+    return { hasKey: true };
   }
+}
+
+function voiceLinkOf(plaintext: string): { hasKey: boolean; modelCredentialId?: string } {
+  const link = parseModelConnectionVoiceSecret(plaintext);
+  return link ? { hasKey: false, modelCredentialId: link.credentialId } : { hasKey: true };
 }
 
 /**
@@ -565,7 +574,7 @@ export async function persistVoiceCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return toVoiceCredential({ ...cred, hasKey: !isModelConnectionVoiceSecret(plaintext) });
+  return toVoiceCredential({ ...cred, ...voiceLinkOf(plaintext) });
 }
 
 export async function disconnectVoiceCredential(

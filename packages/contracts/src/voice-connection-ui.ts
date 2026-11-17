@@ -5,11 +5,12 @@ import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
  * What the voice settings form offers for a provider. Before it is connected, a provider whose
  * model connection can stand in for a key offers the account's connections to it
  * (`modelConnections`), or the Models sign-in when there are none (`modelSignIn`); the key form
- * then folds away. Once linked there is no key to show or replace (`linked`).
+ * then folds away. Once linked there is no key to show or replace (`linked`), unless the model
+ * connection it uses is gone: then the choices come back so it can be linked again.
  */
 export function voiceConnectionForm(input: {
   entry: Pick<VoiceCatalogEntry, "id" | "keyless" | "modelConnections" | "modelSignIn"> | undefined;
-  credential: Pick<VoiceCredential, "hasKey"> | undefined;
+  credential: Pick<VoiceCredential, "hasKey" | "modelCredentialId"> | undefined;
   apiKey: string;
   baseUrl: string;
 }): {
@@ -25,11 +26,18 @@ export function voiceConnectionForm(input: {
     (input.entry?.id === OPENAI_COMPATIBLE_PROVIDER_ID
       ? Boolean(input.baseUrl.trim())
       : typedKey.length >= 8);
-  const modelConnections = input.credential ? [] : (input.entry?.modelConnections ?? []);
+  const choices = input.entry?.modelConnections ?? [];
+  const bound = input.credential?.modelCredentialId;
+  // A link that names no connection uses whichever the provider has, so only having none breaks it.
+  const unlinked =
+    input.credential?.hasKey === false &&
+    (bound ? !choices.some((choice) => choice.id === bound) : choices.length === 0);
+  const offers = !input.credential || unlinked;
+  const modelConnections = offers ? choices : [];
   return {
-    linked: input.credential?.hasKey === false,
+    linked: input.credential?.hasKey === false && !unlinked,
     canConnect,
     modelConnections,
-    modelSignIn: input.credential || modelConnections.length ? undefined : input.entry?.modelSignIn,
+    modelSignIn: offers && !choices.length ? input.entry?.modelSignIn : undefined,
   };
 }

@@ -225,7 +225,13 @@ describe("a provider the account's model connection can authenticate", () => {
       // The same panel Models shows waits for the sign-in.
       expect(container.textContent).toContain("ABCD-1234");
       expect(voice.connect).not.toHaveBeenCalled();
-      voice.credentials.mockResolvedValue([linkedCredential]);
+      // After the sign-in, Models lists the new connection and voice is linked to it.
+      const signedIn = { ...linkedCredential, modelCredentialId: "cred-model-new" };
+      voice.connect.mockResolvedValue(signedIn);
+      voice.credentials.mockResolvedValue([signedIn]);
+      voice.catalog.mockResolvedValue([
+        { ...xai, modelConnections: [{ id: "cred-model-new", label: "xAI" }] },
+      ]);
       await act(async () => completion.resolve({ status: "ready" }));
       await vi.waitFor(() =>
         expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
@@ -329,6 +335,22 @@ describe("a provider the account's model connection can authenticate", () => {
       expect(labelledInput(container, "API key").placeholder).toBe("Paste your API key");
       expect(button(container, "Connect")?.disabled).toBe(true);
       expect(container.textContent).not.toContain("Or paste an API key");
+    } finally {
+      await close();
+    }
+  });
+
+  it("links voice again once the model connection it used is gone", async () => {
+    const { container, close } = await open(
+      { ...xai, modelConnections: [{ id: "cred-model-2", label: "SuperGrok" }] },
+      [{ ...linkedCredential, modelCredentialId: "cred-gone" }],
+    );
+    try {
+      await click(button(container, "Use SuperGrok"));
+      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ provider: "xai", apiKey: "", modelCredentialId: "cred-model-2" }),
+      );
+      expect(button(container, "Disconnect")).toBeTruthy();
     } finally {
       await close();
     }

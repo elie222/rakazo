@@ -11,7 +11,7 @@ import {
   mountVoiceHttpRoutes,
   persistVoiceCredential,
   synthesizeVoice,
-  voiceCredentialHasKey,
+  voiceCredentialLink,
   withVoiceConnection,
 } from "./voice.js";
 
@@ -157,40 +157,48 @@ describe("synthesizeVoice through a model connection", () => {
   });
 });
 
-describe("voiceCredentialHasKey", () => {
+describe("voiceCredentialLink", () => {
   const linked = { provider: "xai", secretId: "voice-secret" };
   const depsWith = (plaintexts: Record<string, string>) => {
     const deps = modelConnectionDeps(plaintexts);
     return { deps: deps as unknown as VoiceDeps, load: deps.secrets.load, raw: deps };
   };
 
-  it("is false only for a connection linked to the model connection", async () => {
-    const link = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
-    expect(await voiceCredentialHasKey(link.deps, actor, linked)).toBe(false);
+  it("tells a key from a link, and names the model connection a link uses", async () => {
+    const named = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret("model-1") });
+    expect(await voiceCredentialLink(named.deps, actor, linked)).toEqual({
+      hasKey: false,
+      modelCredentialId: "model-1",
+    });
+    const unnamed = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
+    expect(await voiceCredentialLink(unnamed.deps, actor, linked)).toEqual({
+      hasKey: false,
+      modelCredentialId: undefined,
+    });
     const keyed = depsWith({ "voice-secret": "xai-test-key" });
-    expect(await voiceCredentialHasKey(keyed.deps, actor, linked)).toBe(true);
+    expect(await voiceCredentialLink(keyed.deps, actor, linked)).toEqual({ hasKey: true });
   });
 
   it("does not decrypt other providers' keys and counts an unreadable secret as a key", async () => {
     const hosted = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     expect(
-      await voiceCredentialHasKey(hosted.deps, actor, {
+      await voiceCredentialLink(hosted.deps, actor, {
         provider: "openai",
         secretId: "voice-secret",
       }),
-    ).toBe(true);
+    ).toEqual({ hasKey: true });
     expect(hosted.load).not.toHaveBeenCalled();
 
     const broken = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     broken.load.mockImplementation(() => {
       throw new Error("bad ciphertext");
     });
-    expect(await voiceCredentialHasKey(broken.deps, actor, linked)).toBe(true);
+    expect(await voiceCredentialLink(broken.deps, actor, linked)).toEqual({ hasKey: true });
     const missing = depsWith({});
-    expect(await voiceCredentialHasKey(missing.deps, actor, linked)).toBe(true);
+    expect(await voiceCredentialLink(missing.deps, actor, linked)).toEqual({ hasKey: true });
     const dbDown = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     dbDown.raw.prisma.secret.findFirst.mockRejectedValue(new Error("db down"));
-    expect(await voiceCredentialHasKey(dbDown.deps, actor, linked)).toBe(true);
+    expect(await voiceCredentialLink(dbDown.deps, actor, linked)).toEqual({ hasKey: true });
   });
 });
 
@@ -305,7 +313,7 @@ describe("persistVoiceCredential through a model connection", () => {
       adapters.modelConnectionVoiceSecret("model-cred-2"),
       expect.anything(),
     );
-    expect(saved.hasKey).toBe(false);
+    expect(saved).toMatchObject({ hasKey: false, modelCredentialId: "model-cred-2" });
   });
 
   it("refuses a model connection that is not the account's connection to that provider", async () => {

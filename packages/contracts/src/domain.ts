@@ -1451,6 +1451,8 @@ export const VoiceCredentialSchema = z.object({
   provider: z.string(),
   /** False when the connection authenticates with the account's model connection instead. */
   hasKey: z.boolean(),
+  /** The model connection a connection without a key uses, when it names one. */
+  modelCredentialId: z.string().optional(),
   isDefault: z.boolean(),
   voiceId: z.string(),
   /** Fish speech-model override. Empty uses the deployment default. */

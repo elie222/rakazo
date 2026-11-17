@@ -65,7 +65,7 @@ import {
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
-  voiceCredentialHasKey,
+  voiceCredentialLink,
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
@@ -569,7 +569,7 @@ export function accountRoutes(ctx: RouterContext) {
               voiceId: preference?.voiceId ?? "",
               speechModel: preference?.speechModel ?? "",
               server: await voiceCredentialServer(deps, context.actor, row),
-              hasKey: await voiceCredentialHasKey(deps, context.actor, row),
+              ...(await voiceCredentialLink(deps, context.actor, row)),
             });
           }),
         );

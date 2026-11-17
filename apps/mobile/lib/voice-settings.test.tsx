@@ -763,6 +763,7 @@ function withLinkedProvider(
           provider: "linked",
           voiceId: "",
           hasKey: !args?.modelCredentialId,
+          ...(args?.modelCredentialId ? { modelCredentialId: args.modelCredentialId } : {}),
         };
         return saved;
       }
@@ -825,7 +826,10 @@ it("still connects a typed key from behind the model connection choices", async 
 
 it("signs in through the Models connection screen, then connects voice through the saved connection", async () => {
   state.load.mockResolvedValue(false);
-  withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
+  const entry: { modelConnections?: { id: string; label: string }[]; modelSignIn?: string } = {
+    modelSignIn: "Sign in with a plan",
+  };
+  withLinkedProvider(null, entry);
   await render();
   await click("Linked");
   expect(keyField()).toBeNull();
@@ -845,6 +849,8 @@ it("signs in through the Models connection screen, then connects voice through t
   });
   expect(state.rpc).not.toHaveBeenCalledWith("voice/connect", expect.anything());
 
+  // The sign-in saved a Models connection, which the catalog now lists.
+  entry.modelConnections = [{ id: "signed-in-connection", label: "Signed in" }];
   await act(async () => request.onSignedIn!("signed-in-connection"));
   expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
     provider: "linked",
@@ -896,6 +902,21 @@ it("offers the new connection, not another sign-in, when voice cannot connect th
       (item) => item.textContent === "Sign in with a plan",
     ),
   ).toBe(false);
+});
+
+it("links voice again once the model connection it used is gone", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: false, modelCredentialId: "gone" } as { hasKey: boolean });
+  await render();
+  await click("Linked");
+  await click("Use Personal plan");
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+    modelCredentialId: personalPlan.id,
+  });
+  expectOnlyDisconnect();
 });
 
 it("still needs a whole key to replace a key saved for a model-connection provider", async () => {
