@@ -1360,6 +1360,15 @@ describe("deliverRun for a routine", () => {
     expect(requests(t)).toEqual([]);
   });
 
+  it("does not answer a team-chat conversation: recordDelegatedReply is for delegated runs only", async () => {
+    const t = setup();
+    routineRun(t, { threadId: "thread-slack" });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t).filter((request) => request.threadId.startsWith("slack:"))).toEqual([]);
+  });
+
   it.each(["queued", "running", "waiting"])("sends nothing while the run is %s", async (status) => {
     const t = setup();
     routineRun(t, { status });
