@@ -14,6 +14,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import { mobileTokens } from "../lib/appearance";
+import { downloadArtifactToDevice } from "../lib/artifact-download";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactPreview, imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
 import { imageDismissBackdropOpacity, shouldDismissImage } from "../lib/image-dismiss";
@@ -239,6 +240,7 @@ export function ImageArtifactViewer({
     ),
   }));
   const closed = useRef(false);
+  const downloading = useRef(false);
   const close = () => {
     if (closed.current) return;
     closed.current = true;
@@ -281,6 +283,19 @@ export function ImageArtifactViewer({
       .then((uri) => shareLocalFile(uri, target.mimeType, target.name))
       .catch((error) => Alert.alert(t`Could not share image`, errorText(error, t`Try again.`)));
 
+  const download = async () => {
+    if (downloading.current) return;
+    downloading.current = true;
+    try {
+      const uri = await imageArtifactUri(requestTarget(), target.artifactId, target.mimeType);
+      await downloadArtifactToDevice(uri, target.mimeType, target.name);
+    } catch (error) {
+      Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
+    } finally {
+      downloading.current = false;
+    }
+  };
+
   return (
     // Insets come from the SafeAreaProvider mounted by app/image.tsx, seeded with the window
     // metrics so they are right on the first frame.
@@ -310,13 +325,22 @@ export function ImageArtifactViewer({
           iconSize={18}
           onPress={close}
         />
-        <GlassIconButton
-          accessibilityLabel={t`Share ${ph({ name: target.name })}`}
-          ios="square.and.arrow.up"
-          android="share-social-outline"
-          iconSize={18}
-          onPress={share}
-        />
+        <View style={styles.headerActions}>
+          <GlassIconButton
+            accessibilityLabel={t`Download ${ph({ name: target.name })}`}
+            ios="arrow.down.circle"
+            android="download-outline"
+            iconSize={18}
+            onPress={() => void download()}
+          />
+          <GlassIconButton
+            accessibilityLabel={t`Share ${ph({ name: target.name })}`}
+            ios="square.and.arrow.up"
+            android="share-social-outline"
+            iconSize={18}
+            onPress={share}
+          />
+        </View>
       </View>
       <View
         style={styles.stage}
@@ -359,6 +383,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 12,
   },
+  headerActions: { flexDirection: "row", gap: 8 },
   stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   message: { fontSize: 15, textAlign: "center", padding: 24 },
 });

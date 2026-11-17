@@ -22,6 +22,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import { isMediaArtifact, mediaArtifactGallery } from "../lib/artifact-gallery";
 import type { MobileArtifactSummary } from "../lib/artifacts";
 import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
 import { useContentBottomInset } from "../lib/content-bottom-inset";
@@ -222,6 +223,8 @@ export default function ArtifactsScreen() {
     if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
+  const mediaGallery = useMemo(() => mediaArtifactGallery(filtered ?? []), [filtered]);
+  const mediaGalleryParam = mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {
@@ -382,7 +385,17 @@ export default function ArtifactsScreen() {
           <ArtifactRow
             item={item}
             bot={activeBotId === null && item.botId ? botsById.get(item.botId) : undefined}
-            onPress={() => router.push({ pathname: "/artifact", params: { artifactId: item.id } })}
+            onPress={() =>
+              router.push({
+                pathname: "/artifact",
+                params: {
+                  artifactId: item.id,
+                  ...(mediaGalleryParam && isMediaArtifact(item)
+                    ? { gallery: mediaGalleryParam }
+                    : {}),
+                },
+              })
+            }
             onLongPress={() => confirmDelete(item)}
           />
         )}

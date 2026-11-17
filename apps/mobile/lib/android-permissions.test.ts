@@ -27,4 +27,17 @@ describe("Android permission config", () => {
     expect(typeof imagePicker?.[1].microphonePermission).toBe("string");
     expect(imagePicker?.[1].microphonePermission).not.toBe("");
   });
+
+  it("asks for add-only photo library access with explicit copy", () => {
+    const plugins = readMobileAppConfig().expo.plugins;
+    const mediaLibrary = plugins.find(
+      (plugin): plugin is [string, Record<string, unknown>] =>
+        Array.isArray(plugin) && plugin[0] === "expo-media-library",
+    );
+
+    expect(mediaLibrary).toBeDefined();
+    expect(typeof mediaLibrary?.[1].savePhotosPermission).toBe("string");
+    expect(mediaLibrary?.[1].savePhotosPermission).not.toBe("");
+    expect(mediaLibrary?.[1].granularPermissions).toEqual([]);
+  });
 });

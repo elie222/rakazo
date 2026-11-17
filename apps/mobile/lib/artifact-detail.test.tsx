@@ -16,8 +16,11 @@ const state = vi.hoisted(() => ({
   back: vi.fn(),
   alert: vi.fn(),
   remove: vi.fn(),
-  options: {} as { headerRight?: () => ReactNode },
+  download: vi.fn(),
+  mimeType: "text/plain",
+  options: {} as { headerRight?: () => ReactNode; title?: string },
 }));
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
 vi.mock("expo-secure-store", () => ({
   getItem: () => null,
   getItemAsync: async () => null,
@@ -53,6 +56,7 @@ vi.mock("react-native", () => {
     ScrollView: component,
     Pressable: component,
     Image: component,
+    FlatList: component,
     ActivityIndicator: () => null,
     Platform: { OS: "android" },
     StyleSheet: { create: (value: unknown) => value },
@@ -64,12 +68,13 @@ vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/pdf-preview", () => ({ PdfPreview: () => null }));
 vi.mock("../components/sandboxed-html-preview", () => ({ SandboxedHtmlPreview: () => null }));
 vi.mock("../components/video-preview", () => ({ VideoPreview: () => null }));
+vi.mock("../components/artifact-media-pager", () => ({ ArtifactMediaPager: () => null }));
 vi.mock("./artifacts", () => ({
   listArtifactVersions: async (id: string) => [{ id }],
   getArtifactById: async (id: string) => ({
     id,
     name: id,
-    mimeType: "text/plain",
+    mimeType: state.mimeType,
     contentBase64: "",
   }),
   artifactThreadTarget: () => null,
@@ -79,6 +84,7 @@ vi.mock("./artifact-open", () => ({
   writeArtifactCacheFile: () => ({ text: async () => "text", uri: "file:///test" }),
   shareLocalFile: vi.fn(),
 }));
+vi.mock("./artifact-download", () => ({ downloadArtifactToDevice: state.download }));
 vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
@@ -100,6 +106,8 @@ beforeEach(() => {
   state.back.mockReset();
   state.alert.mockReset();
   state.remove.mockReset();
+  state.download.mockReset();
+  state.mimeType = "text/plain";
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -169,4 +177,28 @@ it("ignores a failure after leaving the artifact", async () => {
   await render();
   await act(async () => pending.reject(new Error("offline")));
   expect(state.alert).not.toHaveBeenCalled();
+});
+it("offers Download for an image and saves its cached file", async () => {
+  state.mimeType = "image/png";
+  state.download.mockResolvedValue(undefined);
+  await render();
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  act(() => node.querySelector<HTMLElement>('[aria-label="Download"]')!.click());
+  expect(state.download).toHaveBeenCalledWith("file:///test", "image/png", "a");
+  act(() => {
+    buttons.unmount();
+  });
+});
+it("does not offer Download for a text artifact", async () => {
+  await render();
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  expect(node.querySelector('[aria-label="Download"]')).toBeNull();
+  expect(node.querySelector('[aria-label="Share"]')).not.toBeNull();
+  act(() => {
+    buttons.unmount();
+  });
 });
