@@ -77,6 +77,9 @@ export function AppOverlays({
           onClose={() => setOverlay(null)}
           onOpenMcp={() => setOverlay({ kind: "mcp" })}
           onOpenTemplates={openTemplates}
+          onOpenMessaging={() =>
+            setOverlay({ kind: "settings", section: "messaging", spaceId: null })
+          }
         />
       ) : null}
       {overlay?.kind === "skills" ? (

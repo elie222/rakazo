@@ -31,6 +31,14 @@ export function messagingProviderNamed(name: string, providers: readonly string[
   );
 }
 
+/** Whether a catalog app shares its name with one of the chat apps people can connect here. */
+export function isAvailableChatApp(
+  app: { name: string; slug: string },
+  chatApps: readonly string[],
+): boolean {
+  return [app.name, app.slug].some((name) => messagingProviderNamed(name, chatApps) !== null);
+}
+
 /** Per-message provider label, narrowed to a recognized transport when available. */
 export function messagingProviderLabel(provider: string, transport?: string): string {
   if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
@@ -51,4 +59,12 @@ export function messagingConnectOptions(
     method:
       provider === "slack" && slackInstallAvailable ? ("install" as const) : ("link" as const),
   }));
+}
+
+/** The chat apps a person can connect on this deployment, by provider id. */
+export function availableChatApps(
+  providers: readonly string[],
+  installAvailable: boolean,
+): string[] {
+  return messagingConnectOptions(providers, installAvailable).map(({ provider }) => provider);
 }

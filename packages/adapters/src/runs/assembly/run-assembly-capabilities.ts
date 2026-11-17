@@ -3,6 +3,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
+  chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
@@ -445,9 +446,15 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
+  // Only the owner sets up a chat app, and only where the connect card is offered.
+  const chatApps =
+    !messagingChannelRun && !nonOwnerChatRun && !bot.disabledBuiltinTools?.includes("connect_app")
+      ? [...new Set(deps.messaging?.chatApps?.() ?? [])]
+      : [];
   const messagingContext =
     [
       hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+      chatApps.length > 0 ? chatAppConnectNote(chatApps) : null,
       messagingChannelRun
         ? messagingChannelPrivacyBlock()
         : nonOwnerChatRun
