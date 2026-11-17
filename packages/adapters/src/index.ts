@@ -24,7 +24,6 @@ export {
   truncateReviewText,
 } from "./auto-review.prompt.js";
 export * from "./auto-review-factory.js";
-export * from "./aws-kms-key-provider.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
 export * from "./background-job-handlers.js";
 export * from "./billing-emulator.js";
@@ -209,6 +208,7 @@ export * from "./providers/integration/composio/composio-catalog-cache.js";
 export * from "./providers/integration/composio/composio-connector.js";
 export * from "./providers/integration/composio/composio-fake.js";
 export * from "./providers/integration/pipedream/pipedream-connector.js";
+export * from "./providers/key/aws-kms/aws-kms-key-provider.js";
 export { HindsightMemoryProvider } from "./providers/memory/hindsight/hindsight-memory-provider.js";
 export { HonchoMemoryProvider } from "./providers/memory/honcho/honcho-memory-provider.js";
 export { SerenityMemoryProvider } from "./providers/memory/serenity/serenity-memory-provider.js";

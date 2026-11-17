@@ -40,13 +40,8 @@ import {
   saveLatestStepScreenshot,
 } from "./tool-step-calls.js";
 
-/** Show the tool step, stop a repeating loop, and run the tool for scripted runtimes. */
-export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promise<boolean> {
-  const { deps, run, runId, bot, thread } = ctx;
+function showToolStep(ctx: RunContext, event: RuntimeEvent<"tool">) {
   const { reply } = ctx.state;
-  // Preserve event ordering when the throttle still holds recent narration: the
-  // client must see that text before the tool call it describes.
-  await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
   const callSteps = stepNames.length > 0 ? stepNames : [event.name];
@@ -68,6 +63,18 @@ export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">)
       ...(ownStep ? { tool: event.name } : {}),
     })),
   );
+}
+
+/** Show the tool step, stop a repeating loop, and run the tool for scripted runtimes. */
+export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promise<boolean> {
+  const { deps, run, runId, bot, thread } = ctx;
+  const { reply } = ctx.state;
+  // Preserve event ordering when the throttle still holds recent narration: the
+  // client must see that text before the tool call it describes.
+  await flushProgress(ctx);
+  // The call a paused turn resumes on already shows as a step in the reply it saved.
+  if (!reply.toolCalls.some((call) => call.executionId === event.executionId))
+    showToolStep(ctx, event);
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
   const heldNote =
     event.name === "message_user" || event.name === "ask_user"

@@ -44,7 +44,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { ReplySnapshot } from "./reply-snapshot.js";
-import { restoreReply } from "./reply-snapshot.js";
+import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
@@ -488,8 +488,8 @@ export function nextMutatingEffectOccurrence(
 }
 
 /**
- * Save the runtime's turn with the effect occurrences it assigned, for the next attempt. A turn
- * handed back between steps also saves its reply, since the next attempt reruns none of them.
+ * Save the runtime's turn with the effect occurrences it assigned, for the next attempt, and the
+ * reply built so far, since the next attempt reruns none of the steps behind it.
  */
 export async function saveTurnCheckpoint(
   ctx: RunContext,
@@ -511,7 +511,7 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   const effects = ctx.state.effects;
   const capture = executionId ? effects.pendingTurnCheckpoints.get(executionId) : undefined;
   if (capture) {
-    await saveTurnCheckpoint(ctx, capture());
+    await saveTurnCheckpoint(ctx, capture(), snapshotReply(ctx.state.reply));
   } else if (effects.storedTurnCheckpoint) {
     // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
     await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
