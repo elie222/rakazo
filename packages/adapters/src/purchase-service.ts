@@ -16,6 +16,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { PurchaseCardField } from "@rakazo/contracts";
 import { PurchaseIdInput, PurchaseRequestInput } from "@rakazo/contracts";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { Purchase } from "@rakazo/db";
 import { recordPayment, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -24,6 +25,7 @@ import type { PaymentWalletDeps } from "./payment-wallets.js";
 import { withPaymentWalletCredential } from "./payment-wallets.js";
 import {
   cleanUpUnsavedSecret,
+  PROVIDER_BEFORE_SAVE_MS,
   purchaseCardRecordId,
   purchaseTokenRecordId,
   savedSecret,
@@ -242,8 +244,7 @@ export async function createPurchase(
     merchantName: string;
     merchantUrl: string;
     paymentChallenge?: string;
-    /** Seals a copy for the row, written only once the wallet answers, right before the row saves. */
-    sealRequest?: () => Promise<string>;
+    requestCiphertext?: string;
   },
 ) {
   const existing = await deps.prisma.purchase.findUnique({
@@ -265,18 +266,23 @@ export async function createPurchase(
   if (refusal) return { error: spendingRefusalError(refusal) };
   let snapshot: PurchaseSnapshot;
   try {
-    // The idempotency key makes a replay after a crash reuse the same remote purchase.
+    // The idempotency key makes a replay after a crash or timeout reuse the same remote purchase.
+    // The deadline keeps a sealed request copy's cleanup from running before the row saves.
+    const signal = deadlineSignal(PROVIDER_BEFORE_SAVE_MS, context.signal);
     snapshot = await withPurchaseWallet(deps, provider, context, (credential) =>
-      provider.createPurchase(
-        credential,
-        {
-          credential: request.credential,
-          amount: request.amount,
-          currency: request.currency,
-          reason: request.reason,
-          idempotencyKey: context.operationId,
-        },
-        context,
+      withAbort(
+        provider.createPurchase(
+          credential,
+          {
+            credential: request.credential,
+            amount: request.amount,
+            currency: request.currency,
+            reason: request.reason,
+            idempotencyKey: context.operationId,
+          },
+          { ...context, signal },
+        ),
+        signal,
       ),
     );
   } catch (error) {
@@ -292,7 +298,6 @@ export async function createPurchase(
     where: { id: run.threadId },
     select: { historyCompactionGeneration: true },
   });
-  const requestCiphertext = request.sealRequest ? await request.sealRequest() : null;
   const purchase = ownedReplay(
     await deps.prisma.purchase.upsert({
       where: { operationKey: context.operationId },
@@ -312,7 +317,7 @@ export async function createPurchase(
         merchantAccountId:
           request.credential.kind === "pay_token" ? request.credential.merchantAccountId : null,
         paymentChallenge: request.paymentChallenge ?? null,
-        requestCiphertext,
+        requestCiphertext: request.requestCiphertext ?? null,
         amount: request.amount,
         currency: request.currency,
         status: snapshot.status,

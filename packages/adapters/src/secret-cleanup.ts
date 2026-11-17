@@ -44,6 +44,11 @@ const STORE_WRITE_MS = 30_000;
  * first, and a backup that ran before the save would delete an entry about to be held.
  */
 const SAVE_MARGIN_MS = 5 * 60_000;
+/**
+ * How long a provider call between a remote write and its row's save may take, leaving the rest
+ * of the margin for the store write and a 60-second transaction before the save.
+ */
+export const PROVIDER_BEFORE_SAVE_MS = SAVE_MARGIN_MS / 2;
 const PURCHASE_REQUEST_RECORD = "purchase-request:";
 const PURCHASE_CARD_RECORD = "purchase-card:";
 const PURCHASE_TOKEN_RECORD = "purchase-token:";
@@ -78,7 +83,10 @@ async function secretTablesHold(prisma: Holders, ref: string): Promise<boolean> 
   );
 }
 
-/** Whether any column a reference can be saved in holds it. */
+/**
+ * Whether any column a reference can be saved in holds it: the `checked` ones in
+ * secret-holder-columns.json.
+ */
 async function anyRecordHolds(prisma: Holders, ref: string): Promise<boolean> {
   return Boolean(
     (await secretTablesHold(prisma, ref)) ||

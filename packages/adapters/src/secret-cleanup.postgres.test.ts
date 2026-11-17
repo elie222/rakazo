@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { SecretCleanup } from "./secret-cleanup.js";
 import { finishSecretCleanup, recordSecretCleanup, secretCleanupJobKey } from "./secret-cleanup.js";
+import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 import { GraphileJobPublisher } from "./wakeup.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
@@ -145,32 +146,11 @@ describePostgres("secret cleanup (PostgreSQL)", () => {
       expect.objectContaining({ recordId: orphanRef }),
     );
 
-    // A new column that can hold a remote entry must join the ones the backup checks.
-    const checked = [
-      "bot_secrets.ciphertext",
-      "deployment_settings.computerProviderCipher",
-      "integration_provider_configs.ciphertext",
-      "messaging_installations.ciphertext",
-      "payment_wallets.ciphertext",
-      "purchases.cardCiphertext",
-      "purchases.requestCiphertext",
-      "purchases.tokenCiphertext",
-      "secrets.ciphertext",
-      "vault_credentials.ciphertext",
-    ];
-    // Sealed locally or written as ephemeral, so never an entry in a remote store; or unused.
-    const neverRemote = [
-      "call_push_devices.ciphertext",
-      "deployment_settings.deploymentModelCredentialCipher",
-      "mcp_oauth_sessions.oauthCiphertext",
-      "model_oauth_sessions.ciphertext",
-      "push_registrations.ciphertext",
-      "work_activity_start_tokens.ciphertext",
-      "work_activity_tokens.ciphertext",
-    ];
     const columns = await owner.prisma.$queryRaw<Array<{ name: string }>>`
       SELECT table_name || '.' || column_name AS name FROM information_schema.columns
       WHERE table_schema = current_schema() AND column_name ILIKE '%cipher%'`;
-    expect(columns.map(({ name }) => name).sort()).toEqual([...checked, ...neverRemote].sort());
+    expect(columns.map(({ name }) => name).sort()).toEqual(
+      [...holderColumns.checked, ...holderColumns.neverRemote].sort(),
+    );
   });
 });
