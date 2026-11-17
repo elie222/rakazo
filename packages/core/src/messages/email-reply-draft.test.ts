@@ -5,6 +5,7 @@ import {
   EmailReplyDraftError,
   emailReplyBlock,
   emailReplyCard,
+  emailReplyDeliveryError,
   emailReplyDraftFromBlock,
   emailReplyOutbound,
   emailReplyPreview,
@@ -139,5 +140,13 @@ describe("email reply drafts", () => {
         now,
       ).verifiedReplySender,
     ).toBeUndefined();
+  });
+
+  it("keeps a mail failure a person can read and drops a technical one", () => {
+    expect(emailReplyDeliveryError(new Error("Mailbox full"))).toBe("Mailbox full");
+    expect(
+      emailReplyDeliveryError(Object.assign(new Error("offline"), { code: "ECONNREFUSED" })),
+    ).toBe("Could not reach the mail server.");
+    expect(emailReplyDeliveryError(new Error("connect ECONNREFUSED 127.0.0.1:25"))).toBeUndefined();
   });
 });

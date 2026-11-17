@@ -1,3 +1,5 @@
+import { isServerUnreachable, isTechnicalErrorMessage } from "../primitives/user-error.js";
+
 /**
  * A saved email draft is the copy of record. The reply card opens that draft,
  * and every edit is written back to it. Send delivers the draft as it stands
@@ -194,8 +196,9 @@ export type EmailReplyParent = {
 };
 
 /**
- * Threading headers and the sender a reply may be addressed to. A draft whose
- * reply line is only a label has no parent, so it sends as a new message.
+ * Threading headers and the sender a reply may be addressed to. No parent means
+ * this mail is not a reply. A reply that names a message has to load that message
+ * before it sends; it does not go out as a new email.
  */
 export function emailReplyThreading(
   parent: EmailReplyParent | null,
@@ -294,6 +297,21 @@ export function emailReplyOutbound(draft: EmailReplyDraft): SentEmail {
     subject: draft.subject.trim(),
     body: draft.body,
   };
+}
+
+const MAIL_OFFLINE = "Could not reach the mail server.";
+
+/**
+ * A delivery failure written for a person. A technical failure is left undefined so the
+ * caller logs it as a server error instead of replacing it with one fixed sentence.
+ */
+export function emailReplyDeliveryError(error: unknown): string | undefined {
+  if (isServerUnreachable(error)) return MAIL_OFFLINE;
+  const message = (
+    error instanceof Error ? error.message : typeof error === "string" ? error : ""
+  ).trim();
+  if (!message || isTechnicalErrorMessage(message)) return undefined;
+  return message;
 }
 
 export function emailReplyWithStatus(

@@ -1,3 +1,4 @@
+import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import { useEmailReplyDraft } from "@rakazo/chat-ui/hooks";
 import type { MessageBlock } from "@rakazo/contracts";
@@ -142,24 +143,31 @@ export function EmailReplyCard({
         >
           <Text style={{ color: tokens.foreground }}>{t`Discard`}</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t`Approval`}
-          disabled={locked}
-          onPress={() =>
-            draft.change({
-              approval: draft.draft.approval === "needs_approval" ? "send_once" : "needs_approval",
-            })
-          }
-          style={[
-            styles.button,
-            { borderColor: tokens.border, borderWidth: StyleSheet.hairlineWidth },
+        <MenuView
+          actions={[
+            { id: "needs_approval", title: t`Needs approval` },
+            { id: "send_once", title: t`Send once` },
           ]}
+          onPressAction={({ nativeEvent }) => {
+            if (locked) return;
+            const approval = nativeEvent.event === "send_once" ? "send_once" : "needs_approval";
+            draft.change({ approval });
+          }}
         >
-          <Text style={{ color: tokens.foreground }}>
-            {draft.draft.approval === "needs_approval" ? t`Needs approval` : t`Send once`}
-          </Text>
-        </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t`Approval`}
+            disabled={locked}
+            style={[
+              styles.button,
+              { borderColor: tokens.border, borderWidth: StyleSheet.hairlineWidth },
+            ]}
+          >
+            <Text style={{ color: tokens.foreground }}>
+              {draft.draft.approval === "needs_approval" ? t`Needs approval` : t`Send once`}
+            </Text>
+          </Pressable>
+        </MenuView>
       </View>
       {error ? <Text style={{ color: tokens.destructive, padding: 12 }}>{error}</Text> : null}
     </View>

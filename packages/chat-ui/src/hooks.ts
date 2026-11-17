@@ -91,11 +91,9 @@ export function useEmailReplyDraft(options: {
     },
     send() {
       const current = emailReplySaveFields(draftRef.current);
-      saved.current = current;
       run.current({ type: "send", ...current });
     },
     discard() {
-      saved.current = emailReplySaveFields(draftRef.current);
       run.current({ type: "discard" });
     },
     replace(block: EmailReplyBlock) {
