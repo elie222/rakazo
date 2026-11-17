@@ -10,7 +10,7 @@ import {
   parseCardExpiry,
   VaultPutInput,
 } from "../bots/bot-secrets.js";
-import { expectLinearTime } from "../timing.test-support.js";
+import { expectLinearTime } from "../testing/timing.test-support.js";
 import {
   otherSiteOrigin,
   otherSitesText,
