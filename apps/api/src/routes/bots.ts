@@ -492,9 +492,10 @@ export function botsRoutes(ctx: RouterContext) {
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
             input.dailyCheckIns !== undefined ||
-            input.voiceProvider !== undefined ||
-            input.voiceId !== undefined ||
-            input.autoSpeak !== undefined ||
+            (voiceSelection.voiceProvider !== undefined &&
+              voiceSelection.voiceProvider !== existing.voiceProvider) ||
+            (voiceSelection.voiceId !== undefined && voiceSelection.voiceId !== existing.voiceId) ||
+            (input.autoSpeak !== undefined && input.autoSpeak !== existing.autoSpeak) ||
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings,
