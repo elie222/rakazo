@@ -8,7 +8,7 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { restartBotScreen } from "./computer-control.js";
+import { restartBotScreen, takeComputerControl } from "./computer-control.js";
 import type { RouterDeps } from "./router.js";
 
 const lifecycle = vi.hoisted(() => ({
@@ -302,6 +302,39 @@ describe("restartBotScreen", () => {
     expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
   });
 
+  it("hands back control this person took after the first read, before tearing the screen down", async () => {
+    const own = {
+      controlHolder: "user",
+      controlLeaseId: "lease-1",
+      controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+      controlBotId: "bot-1",
+      controlUserId: actor.userId,
+    };
+    // Reads: before the lease (no control), under the lease (taken since), after the hand back.
+    const { deps, prisma, releaseScreen } = setup();
+    const bot = (row: ComputerRow) => ({
+      id: "bot-1",
+      name: "Bot",
+      thread: { id: "thread-1" },
+      computer: row,
+    });
+    (prisma.bot.findFirst as unknown as ReturnType<typeof vi.fn>)
+      .mockReset()
+      .mockResolvedValueOnce(bot(computerRow))
+      .mockResolvedValueOnce(bot({ ...computerRow, ...own }))
+      .mockResolvedValue(bot(computerRow));
+    const releaseUserControl = vi.fn().mockResolvedValue(true);
+    (deps as { events: unknown }).events = { releaseUserControl };
+    (deps as { sandbox: unknown }).sandbox = { releaseScreen, setScreenControl: vi.fn() };
+    (deps as { jobs: unknown }).jobs = {
+      cancel: vi.fn().mockResolvedValue(undefined),
+      enqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    await restartBotScreen(deps, { actor }, "bot-1");
+    expect(releaseUserControl).toHaveBeenCalledOnce();
+    expect(releaseScreen).toHaveBeenCalledOnce();
+  });
+
   it("refuses a computer that is going to sleep instead of answering as if it restarted", async () => {
     const { deps, releaseScreen } = setup({ computer: { state: "suspending" } });
     await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
@@ -355,5 +388,52 @@ describe("restartBotScreen", () => {
     expect(releaseScreen).not.toHaveBeenCalled();
     expect(capture).not.toHaveBeenCalled();
     expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+});
+
+describe("takeComputerControl during a screen restart", () => {
+  const own = {
+    controlHolder: "user",
+    controlLeaseId: "lease-1",
+    controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    controlBotId: "bot-1",
+    controlUserId: actor.userId,
+  };
+
+  // The database refuses any update that carries the restart-lease condition while one is live.
+  function holderTakingOver() {
+    const { deps, prisma } = setup({ computer: own });
+    const updateMany = vi.fn(async ({ where }: { where: { executionLeases?: unknown } }) => ({
+      count: where.executionLeases ? 0 : 1,
+    }));
+    (prisma.computer as unknown as { updateMany: unknown }).updateMany = updateMany;
+    (prisma.computer as unknown as { findUniqueOrThrow: unknown }).findUniqueOrThrow = vi
+      .fn()
+      .mockResolvedValue({ ...computerRow, ...own, id: "computer-1" });
+    (deps as { events: unknown }).events = { releaseUserControl: vi.fn().mockResolvedValue(true) };
+    (deps as { sandbox: unknown }).sandbox = { setScreenControl: vi.fn() };
+    (deps as { jobs: unknown }).jobs = {
+      cancel: vi.fn().mockResolvedValue(undefined),
+      enqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    return { deps, updateMany };
+  }
+
+  it("does not renew the holder's lease while a restart holds this bot's screen", async () => {
+    const { deps, updateMany } = holderTakingOver();
+    await expect(takeComputerControl(deps, actor, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const renewals = updateMany.mock.calls.filter(([{ where }]) =>
+      Object.hasOwn(where, "controlLeaseExpiresAt"),
+    );
+    expect(renewals.length).toBeGreaterThan(0);
+    for (const [{ where }] of renewals) {
+      expect(where).toMatchObject({
+        executionLeases: {
+          none: { botId: "bot-1", runId: { startsWith: "screen:" } },
+        },
+      });
+    }
   });
 });

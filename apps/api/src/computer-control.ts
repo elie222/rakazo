@@ -25,7 +25,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
@@ -178,12 +178,16 @@ export async function answerComputerRequest(
   return waiting.id;
 }
 
-/** Keep this lease while its page checks in. Resolves whether it was still live to keep. */
+/**
+ * Keep this lease while its page checks in. Resolves whether it was still live to keep. `also` adds
+ * conditions the same update must meet, so a caller can refuse a renewal that raced something.
+ */
 export async function renewComputerControl(
   deps: ControlDeps,
   computerId: string,
   leaseId: string,
   expiresAt: Date,
+  also: Prisma.ComputerWhereInput = {},
 ): Promise<boolean> {
   const renewed = await deps.prisma.computer.updateMany({
     where: {
@@ -192,6 +196,7 @@ export async function renewComputerControl(
       controlLeaseId: leaseId,
       // A lapsed lease is being revoked; only a live one is renewed.
       controlLeaseExpiresAt: { gt: new Date() },
+      ...also,
     },
     data: { controlLeaseExpiresAt: expiresAt },
   });
@@ -258,8 +263,11 @@ export async function runComputerReplace(
 /** Prefix of the execution lease a screen restart holds, so takeover and Stop can tell it apart. */
 export const SCREEN_RESTART_RUN_PREFIX = "screen:";
 
-/** Matches a live restart lease on this bot, which nothing may take the screen or stop the computer under. */
-export function holdingScreenRestart(botId: string, now: Date) {
+/**
+ * Matches a computer with no live restart lease on this bot. A takeover grant and Stop's claim
+ * require it, since nothing may take the screen or stop the computer under a restart.
+ */
+export function noScreenRestartLease(botId: string, now: Date) {
   return {
     executionLeases: {
       none: { botId, runId: { startsWith: SCREEN_RESTART_RUN_PREFIX }, expiresAt: { gt: now } },
@@ -325,19 +333,24 @@ export async function restartBotScreen(
     // Checked again under the lease: a run that began or paused for input after the first check
     // is counted now. Runs that need the computer from here on wait behind our lease.
     await refuseWhileWorking();
+    // Read the computer now that the lease is held: a Stop, a sleep or someone else taking the
+    // screen since the first read must not be torn down under. From here on, a takeover grant and
+    // Stop's claim both refuse while this lease is live (noScreenRestartLease), so the screen
+    // cannot be taken or the computer stopped meanwhile.
+    const readComputer = async () => {
+      const read = (await repos.getBot(context.actor, botId)).computer;
+      if (!read || read.id !== computer.id) {
+        throw new ClientError("CONFLICT", "The computer changed. Try again");
+      }
+      assertNotAnotherPersonsControl(read, context.actor);
+      return read;
+    };
+    let current = await readComputer();
     // Control of this bot's screen ends first: a person's session must not outlive its browser.
-    if (holdsComputerControl(computer, bot.id, context.actor)) {
-      await releaseComputerControl(deps, context.actor, computer, bot.id);
+    if (holdsComputerControl(current, bot.id, context.actor)) {
+      await releaseComputerControl(deps, context.actor, current, bot.id);
+      current = await readComputer();
     }
-    // Read again now that the lease is held and our own control is gone: a Stop, a sleep or
-    // someone else taking the screen since the first read must not be torn down under. From here
-    // on, a takeover grant and Stop's claim both refuse while this lease is live
-    // (holdingScreenRestart), so the screen cannot be taken or the computer stopped meanwhile.
-    const current = (await repos.getBot(context.actor, botId)).computer;
-    if (!current || current.id !== computer.id) {
-      throw new ClientError("CONFLICT", "The computer changed. Try again");
-    }
-    assertNotAnotherPersonsControl(current, context.actor);
     // A hand back that failed leaves this person's session on the screen about to close.
     if (holdsComputerControl(current, bot.id, context.actor)) {
       throw new ClientError("CONFLICT", "Could not end your control of the screen. Try again");
@@ -490,7 +503,9 @@ export async function takeComputerControl(
   if (holdsComputerControl(bot.computer, bot.id, actor)) {
     const expiresAt = controlLeaseExpiresAt();
     const leaseId = bot.computer.controlLeaseId!;
-    if (await renewComputerControl(deps, bot.computer.id, leaseId, expiresAt)) {
+    // A restart of this bot's screen may be ending this lease, so it is not renewed under it.
+    const renewal = noScreenRestartLease(bot.id, new Date());
+    if (await renewComputerControl(deps, bot.computer.id, leaseId, expiresAt, renewal)) {
       return { leaseId, expiresAt: expiresAt.toISOString() };
     }
     // The lease lapsed or was handed back meanwhile: take control afresh.
@@ -520,7 +535,7 @@ export async function takeComputerControl(
       controlHolder: { not: "user" },
       controlLeaseId: null,
       // A screen restart in progress is tearing this bot's screen down.
-      ...holdingScreenRestart(bot.id, new Date()),
+      ...noScreenRestartLease(bot.id, new Date()),
     },
     data: {
       controlHolder: "user",
@@ -536,7 +551,8 @@ export async function takeComputerControl(
     // A second Take control from the holder, such as a double tap, keeps their lease.
     if (holdsComputerControl(current, bot.id, actor)) {
       const renewed = controlLeaseExpiresAt();
-      if (await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed)) {
+      const renewal = noScreenRestartLease(bot.id, new Date());
+      if (await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed, renewal)) {
         return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
       }
     }
