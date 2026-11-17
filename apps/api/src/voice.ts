@@ -26,7 +26,11 @@ import type {
   VoiceCredential,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
+import {
+  ConnectionSetupError,
+  connectionDisplayName,
+  SettingsScopeSchema,
+} from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -90,15 +94,22 @@ export async function accountVoiceCatalog(
   return Promise.all(
     catalog.map(async ({ modelConnection, ...entry }) => {
       if (!modelConnection) return entry;
-      const modelConnections = await deps.prisma.userModelCredential.findMany({
+      const rows = await deps.prisma.userModelCredential.findMany({
         where: { userId: actor.userId, provider: modelCredentialProviderFilter(entry.id) },
         orderBy: newestModelCredentialOrder,
-        select: { id: true, label: true },
+        select: { id: true, provider: true, label: true },
       });
-      if (modelConnections.length) return { ...entry, modelConnection, modelConnections };
-      const modelSignIn = listPiCatalog().find(
-        (model) => model.provider === entry.id && model.signIn,
-      )?.oauthLabel;
+      const models = listPiCatalog().filter((model) => model.provider === entry.id);
+      if (rows.length) {
+        // Named as Models names them, so a connection reads the same in both places.
+        const providerName = models[0]?.providerName ?? entry.name;
+        const modelConnections = rows.map((row) => ({
+          id: row.id,
+          label: connectionDisplayName(row, providerName),
+        }));
+        return { ...entry, modelConnection, modelConnections };
+      }
+      const modelSignIn = models.find((model) => model.signIn)?.oauthLabel;
       return modelSignIn ? { ...entry, modelSignIn } : entry;
     }),
   );

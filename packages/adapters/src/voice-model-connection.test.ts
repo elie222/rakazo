@@ -137,6 +137,9 @@ describe("parseModelConnectionVoiceSecret", () => {
       '{"kind":"model_connection",',
       ' {"kind":"model_connection"}',
       '{"kind":"api_key"}',
+      '{"kind":"model_connection","note":"a pasted key"}',
+      '{"kind":"model_connection","credentialId":"model-1","note":"a pasted key"}',
+      '{"credentialId":"model-1","kind":"model_connection"}',
     ]) {
       expect(parseModelConnectionVoiceSecret(key)).toBeUndefined();
     }

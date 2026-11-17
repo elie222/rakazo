@@ -214,6 +214,19 @@ describe("accountVoiceCatalog", () => {
     expect(catalog.filter((entry) => entry.modelConnections)).toHaveLength(1);
   });
 
+  it("names each connection as Models does", async () => {
+    const catalog = await catalogFor([
+      { ...xaiModelCredential, id: "unnamed", label: "xai" },
+      { ...xaiModelCredential, id: "blank", label: " " },
+      { ...xaiModelCredential, id: "email", label: "me@example.test" },
+    ]);
+    expect(catalog.find((entry) => entry.id === "xai")?.modelConnections).toEqual([
+      { id: "unnamed", label: "xAI" },
+      { id: "blank", label: "xAI" },
+      { id: "email", label: "xAI (me@example.test)" },
+    ]);
+  });
+
   it("offers the Models sign-in when the account has no connection voice can use", async () => {
     for (const credentials of [[], [{ ...xaiModelCredential, provider: "openai" }]]) {
       const xai = (await catalogFor(credentials)).find((entry) => entry.id === "xai");

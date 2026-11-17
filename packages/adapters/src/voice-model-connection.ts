@@ -34,8 +34,12 @@ export function parseModelConnectionVoiceSecret(
   if (!parsed || typeof parsed !== "object" || !("kind" in parsed)) return undefined;
   if (parsed.kind !== "model_connection") return undefined;
   const credentialId = "credentialId" in parsed ? parsed.credentialId : undefined;
-  if (credentialId === undefined) return {};
-  return typeof credentialId === "string" && credentialId ? { credentialId } : undefined;
+  if (credentialId !== undefined && (typeof credentialId !== "string" || !credentialId)) {
+    return undefined;
+  }
+  // Anything but exactly what modelConnectionVoiceSecret writes, such as an extra field, is a key.
+  if (plaintext !== modelConnectionVoiceSecret(credentialId)) return undefined;
+  return credentialId ? { credentialId } : {};
 }
 
 export function isModelConnectionVoiceSecret(plaintext: string): boolean {
