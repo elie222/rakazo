@@ -25,7 +25,7 @@ import type * as PurchaseServiceModule from "./purchase-service.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
 import { PERSON_HANDED_BACK } from "./screen-turn.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
+import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.prompt.js";
 import { totpCode } from "./totp.js";
 import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
 

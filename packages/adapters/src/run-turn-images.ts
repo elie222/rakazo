@@ -8,21 +8,12 @@ import {
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { loadReplyContext } from "./reply-context.js";
-import { currentTurnFilesInstruction, listCurrentTurnFiles } from "./thread-artifacts.js";
-
-const TURN_ATTACHMENT_UNAVAILABLE =
-  "An attachment in this message could not be loaded. Tell the user the attachment was unavailable and do not guess its contents.";
-
-const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
-
-export function missingTurnImagesInstruction(
-  blocks: MessageBlock[] | undefined,
-  images: { length: number } | undefined,
-): string {
-  const expected = blocks?.filter((block) => block.kind === "image").length ?? 0;
-  const loaded = images?.length ?? 0;
-  return expected > 0 && loaded < expected ? TURN_ATTACHMENT_UNAVAILABLE : "";
-}
+import {
+  STEERING_ATTACHMENT_UNAVAILABLE,
+  unavailableImageMarker,
+} from "./run-turn-images.prompt.js";
+import { listCurrentTurnFiles } from "./thread-artifacts.js";
+import { currentTurnFilesInstruction } from "./thread-artifacts.prompt.js";
 
 export async function settleSteeringAttachmentLoads<TImage, TFile>(
   images: Promise<TImage[] | undefined>,
@@ -210,10 +201,6 @@ async function loadTurnImagesWithinBudget(
       unavailable: unavailable.has(index),
     })),
   };
-}
-
-function unavailableImageMarker(name: string): string {
-  return `[image: ${name} (unavailable)]`;
 }
 
 /** Replace image markers in attachment order, starting at `cursor`. */

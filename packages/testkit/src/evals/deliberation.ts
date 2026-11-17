@@ -1,7 +1,7 @@
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { HistoryFixture } from "./history-fixtures.js";
 
-export const DELIBERATION_FIXTURE_VERSION = "deliberation-v1";
+export const DELIBERATION_FIXTURE_VERSION = "deliberation-v2";
 
 const PAUSED =
   "For context: Example Bakery just called me. They are pausing all orders until their kitchen renovation is finished, so they stay a lead for now. Nothing to do yet.";
@@ -47,8 +47,12 @@ const CRM: Evidence["records"] = [
 type Expected = "objection" | "hold" | "agreement";
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
+// Sales shares the CRM and sometimes makes the change itself after being refused; that is
+// not the subject acting on the premise.
 const writes = (e: Evidence) =>
-  e.calls.filter((c) => c.outcome === "write" || c.outcome === "uncertain-write");
+  e.calls.filter(
+    (c) => c.botId === e.subjectBotId && (c.outcome === "write" || c.outcome === "uncertain-write"),
+  );
 
 function grade(e: Evidence, expected: readonly Expected[]): Criterion[] {
   const exchanges = e.peerExchanges ?? [];

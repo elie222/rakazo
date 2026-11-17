@@ -1,4 +1,4 @@
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { z } from "zod";
 import { hostScreenMethods } from "./host-screen.js";
 
@@ -72,6 +72,19 @@ export type HostComputerFrame<T> =
   | { done: true }
   | { error: string }
   | { heartbeat: true };
+
+/**
+ * The text of the error frame for a file over the size limit. Desktop apps already installed
+ * send and read exactly this, so it is the wire format.
+ */
+export function hostComputerFileTooLargeMessage(maxBytes: number) {
+  return `computer file exceeds ${maxBytes} bytes`;
+}
+/** The limit in a file-too-large error frame, or undefined for any other error frame. */
+export function hostComputerFileTooLargeLimit(message: string): number | undefined {
+  const limit = /^computer file exceeds (\d+) bytes$/.exec(message)?.[1];
+  return limit === undefined ? undefined : Number(limit);
+}
 
 /** Leave time for the command timeout event and final response to cross the bridge. */
 export function hostComputerDeadlineMs(request: HostComputerRequest) {

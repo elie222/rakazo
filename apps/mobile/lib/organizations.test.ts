@@ -1,6 +1,7 @@
 import type { OrganizationList } from "@rakazo/contracts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adoptDeletedSpaceFallback } from "./api-server";
+import { markNavigatorMounted } from "./navigator-mounted";
 import type { Organization } from "./organizations";
 import {
   activeOrganization,
@@ -30,8 +31,6 @@ vi.mock("./api-server", () => ({
   }),
   selectSpace: state.selectSpace,
 }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
   currentApiBase: () => "https://app.example.test",
@@ -46,6 +45,8 @@ const work: Organization = {
   defaultSpaceId: "space-a1",
   spaceIds: ["space-a1", "space-a2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const home: Organization = {
   id: "org-home",
@@ -53,6 +54,8 @@ const home: Organization = {
   defaultSpaceId: "space-b1",
   spaceIds: ["space-b1", "space-b2"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 
 function seed(spaceId: string) {
@@ -79,7 +82,10 @@ function listKey(spaceId: string) {
   ];
 }
 
+let unmountNavigator: () => void = () => {};
+
 beforeEach(() => {
+  unmountNavigator = markNavigatorMounted();
   queryClient.clear();
   state.selected = "space-a1";
   state.remembered = {};
@@ -92,6 +98,8 @@ beforeEach(() => {
   state.router.replace.mockReset();
   state.router.dismissAll.mockReset();
 });
+
+afterEach(() => unmountNavigator());
 
 describe("switchOrganization", () => {
   it("remembers where it left, lands on the saved Space and forgets the old organization", async () => {
@@ -116,6 +124,8 @@ describe("switchOrganization", () => {
       defaultSpaceId: "space-c1",
       spaceIds: ["space-c1"],
       canManage: true,
+      role: "owner" as const,
+      memberCount: 1,
     };
     let finishFirst: (() => void) | undefined;
     state.selectSpace.mockImplementationOnce(
@@ -149,6 +159,21 @@ describe("switchOrganization", () => {
     seed("space-a1");
     await expect(switchOrganization(home, [work, home])).resolves.toBe(false);
     expect(cachedSpaces()).toEqual(["space:space-a1"]);
+    expect(state.router.replace).not.toHaveBeenCalled();
+  });
+
+  it("switches without navigating while the navigator is unmounted", async () => {
+    unmountNavigator();
+    unmountNavigator = () => {};
+    state.router.replace.mockImplementation(() => {
+      throw new Error("router unavailable");
+    });
+    const epoch = organizationSwitchEpoch();
+
+    await expect(switchOrganization(home, [work, home])).resolves.toBe(true);
+
+    expect(state.selectSpace).toHaveBeenCalledWith("space-b1");
+    expect(organizationSwitchEpoch()).toBe(epoch + 1);
     expect(state.router.replace).not.toHaveBeenCalled();
   });
 

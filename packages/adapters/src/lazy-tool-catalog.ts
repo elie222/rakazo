@@ -6,20 +6,34 @@ import type {
 } from "@rakazo/adapter-kit";
 import { z } from "zod";
 import { catalogIdForRoute } from "./approval-effect.js";
+import type { CatalogNameGroup } from "./lazy-tool-catalog.tool-definition.js";
+import {
+  CATALOG_EXECUTE,
+  CATALOG_LOAD,
+  CATALOG_SEARCH,
+  fitsNameIndexBudget,
+  lazyCatalogToolDefinitions,
+  MAX_GROUP_LENGTH,
+  MAX_QUERY_LENGTH,
+  MAX_TOOL_ID_LENGTH,
+  TOOL_SEARCH_LIMIT,
+} from "./lazy-tool-catalog.tool-definition.js";
+
+export {
+  CATALOG_EXECUTE,
+  CATALOG_LOAD,
+  CATALOG_SEARCH,
+  fitsNameIndexBudget,
+  formatNameIndexText,
+  NAME_INDEX_MAX_BYTES,
+  NAME_INDEX_MAX_NAMES,
+  TOOL_SEARCH_LIMIT,
+} from "./lazy-tool-catalog.tool-definition.js";
 
 export const DIRECT_TOOL_LIMIT = 20;
-export const TOOL_SEARCH_LIMIT = 10;
 export const SELECTED_SCHEMA_MAX_BYTES = 100_000;
-export const NAME_INDEX_MAX_NAMES = 200;
-export const NAME_INDEX_MAX_BYTES = 2_048;
-const MAX_QUERY_LENGTH = 200;
-const MAX_GROUP_LENGTH = 200;
 const MAX_TOOL_NAME_LENGTH = 200;
-const MAX_TOOL_ID_LENGTH = 500;
 export const MAX_DESCRIPTION_LENGTH = 500;
-export const CATALOG_SEARCH = "__catalog_search";
-export const CATALOG_LOAD = "__catalog_load";
-export const CATALOG_EXECUTE = "__catalog_execute";
 
 export type CatalogEntry = { id: string; tool: ConnectorTool; group: string };
 
@@ -42,81 +56,13 @@ export type CatalogSearchResult =
   | { group: string; names: string[]; error?: string }
   | { group: string; count: number; hint: string };
 
-/**
- * Build the three catalog wrapper tools (`<prefix>_search_tools`, `<prefix>_load_tool`,
- * `<prefix>_execute_tool`). Callers must not pass a prefix that yields names starting with
- * `mcp_`: Anthropic's Claude Code OAuth endpoint rejects such requests on every model with a
- * misleading "out of extra usage" error. `mcp__server__tool` (double underscore) is fine.
- */
 export function lazyCatalogTools(
   prefix: string,
   connectorId: string,
   label: string,
   entries: CatalogEntry[] = [],
 ): ConnectorTool[] {
-  const grouped = groupedNames(entries);
-  const searchDescription =
-    grouped.length > 0 && fitsNameIndexBudget(grouped)
-      ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${formatNameIndexText(grouped)}`
-      : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.${sourceSummaryText(grouped)}`;
-  return [
-    {
-      name: `${prefix}_search_tools`,
-      description: searchDescription,
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            maxLength: MAX_QUERY_LENGTH,
-            description: "Words describing the tool to find. Omit to list names by source.",
-          },
-          group: {
-            type: "string",
-            maxLength: MAX_GROUP_LENGTH,
-            description: "Source name to list or search within",
-          },
-          limit: { type: "integer", minimum: 1, maximum: TOOL_SEARCH_LIMIT },
-        },
-      },
-      readOnly: true,
-      route: { connectorId, toolName: CATALOG_SEARCH },
-    },
-    {
-      name: `${prefix}_load_tool`,
-      description: `Load one ${label} tool's parameters by id.`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: {
-            type: "string",
-            maxLength: MAX_TOOL_ID_LENGTH,
-            description: "Exact tool ID returned by search",
-          },
-        },
-        required: ["id"],
-      },
-      readOnly: true,
-      route: { connectorId, toolName: CATALOG_LOAD },
-    },
-    {
-      name: `${prefix}_execute_tool`,
-      description: `Run an ${label} tool by id.`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: {
-            type: "string",
-            maxLength: MAX_TOOL_ID_LENGTH,
-            description: "Exact tool ID returned by search",
-          },
-          arguments: { type: "object", description: "Arguments matching the loaded schema" },
-        },
-        required: ["id", "arguments"],
-      },
-      route: { connectorId, toolName: CATALOG_EXECUTE },
-    },
-  ];
+  return lazyCatalogToolDefinitions(prefix, connectorId, label, groupedNames(entries));
 }
 
 export function isLazyCatalogControlRoute(route: ConnectorRoute | undefined): boolean {
@@ -293,9 +239,14 @@ export function loadCatalogEntry(
         .join(", ")}`,
     );
   }
-  throw new Error(
-    "Tool is unknown or not authorized for this bot. Use the exact id returned by search.",
-  );
+  throw new UnknownCatalogToolError();
+}
+
+/** No catalog entry matches the requested tool. */
+export class UnknownCatalogToolError extends Error {
+  constructor() {
+    super("Tool is unknown or not authorized for this bot. Use the exact id returned by search.");
+  }
 }
 
 export const GROUP_SEPARATORS = [":", "/", "__", "."];
@@ -495,16 +446,6 @@ export function disambiguateInstalledToolNames(tools: ConnectorTool[]): Connecto
   });
 }
 
-export function formatNameIndexText(groups: Array<{ group: string; names: string[] }>): string {
-  return groups.map(({ group, names }) => `${group}:\n  ${names.join(", ")}`).join("\n");
-}
-
-export function fitsNameIndexBudget(groups: Array<{ group: string; names: string[] }>): boolean {
-  const nameCount = groups.reduce((total, group) => total + group.names.length, 0);
-  if (nameCount > NAME_INDEX_MAX_NAMES) return false;
-  return Buffer.byteLength(formatNameIndexText(groups), "utf8") <= NAME_INDEX_MAX_BYTES;
-}
-
 function catalogEntryId(tool: ConnectorTool): string {
   const route = tool.route;
   if (!route?.resourceId) return tool.name;
@@ -523,7 +464,7 @@ function catalogShortName(entry: CatalogEntry): string {
   return entry.tool.name;
 }
 
-export function groupedNames(entries: CatalogEntry[]): Array<{ group: string; names: string[] }> {
+export function groupedNames(entries: CatalogEntry[]): CatalogNameGroup[] {
   const byGroup = new Map<string, string[]>();
   for (const entry of entries) {
     const names = byGroup.get(entry.group) ?? [];
@@ -542,19 +483,6 @@ function listNames(entries: CatalogEntry[]): string[] {
   return [...new Set(entries.map(catalogShortName))].sort((left, right) =>
     left.localeCompare(right),
   );
-}
-
-/** Overflowing sources still appear by name and count, with names for those that fit. */
-function sourceSummaryText(groups: Array<{ group: string; names: string[] }>): string {
-  if (groups.length === 0) return "";
-  const sources = groups.map(({ group, names }) => `${group} (${names.length})`).join(", ");
-  const listed: Array<{ group: string; names: string[] }> = [];
-  for (const group of groups) {
-    if (fitsNameIndexBudget([...listed, group])) listed.push(group);
-  }
-  return listed.length > 0
-    ? `\nSources: ${sources}\n${formatNameIndexText(listed)}`
-    : `\nSources: ${sources}`;
 }
 
 function searchWords(text: string): string[] {

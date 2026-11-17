@@ -16,6 +16,7 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
@@ -48,6 +49,8 @@ interface Scenario {
   startedAt?: Date;
   resumeAfterScheduleEdit?: boolean;
   lateLookupFails?: boolean;
+  routineGone?: boolean;
+  noRoutine?: boolean;
   setupFailsOnce?: boolean;
 }
 
@@ -66,7 +69,7 @@ async function failRun(scenario: Scenario) {
     userId: "user-1",
     status: "queued",
     trigger,
-    routineId: trigger === "routine" ? "routine-1" : null,
+    routineId: trigger === "routine" && !scenario.noRoutine ? "routine-1" : null,
     retryOfRunId: scenario.retryOfRunId ?? null,
     clientNonce: scenario.clientNonce ?? null,
     lateSince: scenario.lateSince ?? null,
@@ -116,9 +119,11 @@ async function failRun(scenario: Scenario) {
       }),
     },
     routine: {
-      findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean } }) => {
+      findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean; name?: boolean } }) => {
         if (scenario.lateLookupFails && select?.crons) throw new Error("lookup unavailable");
+        if (scenario.routineGone && select?.name) return null;
         return {
+          name: "Inbox sweep",
           crons:
             scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
               ? ["0 * * * *"]
@@ -361,12 +366,43 @@ describe("routine failure notifications", () => {
   });
 });
 
+const prompt = (runtimeRun: Awaited<ReturnType<typeof failRun>>["runtimeRun"]) =>
+  (runtimeRun.mock.calls[0]?.[0] as { prompt?: string } | undefined)?.prompt ?? "";
+
+describe("a routine run's prompt", () => {
+  it("tells the bot it is one scheduled run, before the routine's own words", async () => {
+    const { runtimeRun } = await failRun({ error: new Error("Invalid API key") });
+    expect(prompt(runtimeRun)).toMatch(
+      /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+    );
+  });
+
+  it("keeps the line, without a name, when the routine cannot be read", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      routineGone: true,
+    });
+    expect(prompt(runtimeRun)).toMatch(
+      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+    );
+  });
+
+  it("leaves other runs and daily check-ins without it", async () => {
+    const user = await failRun({ error: new Error("Invalid API key"), trigger: "user" });
+    expect(prompt(user.runtimeRun)).not.toContain("scheduled run of your routine");
+    const checkIn = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+      noRoutine: true,
+    });
+    expect(prompt(checkIn.runtimeRun)).not.toContain("scheduled run of your routine");
+  });
+});
+
 describe("a scheduled run that starts late", () => {
   const timer = (scheduledFor: string) => `routine-timer:routine-1:${scheduledFor}`;
   const lateWrites = (prisma: Awaited<ReturnType<typeof failRun>>["prisma"]) =>
     prisma.run.updateMany.mock.calls.filter(([args]) => args.data.lateSince !== undefined);
-  const prompt = (runtimeRun: Awaited<ReturnType<typeof failRun>>["runtimeRun"]) =>
-    (runtimeRun.mock.calls[0]?.[0] as { prompt?: string } | undefined)?.prompt ?? "";
 
   it("records the occurrence it was due at once, and tells the agent", async () => {
     // Created for Saturday's 08:00 while the host was down; starts Monday at 09:00.

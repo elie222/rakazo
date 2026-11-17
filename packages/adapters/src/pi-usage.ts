@@ -15,7 +15,6 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { Dispatcher } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -26,7 +25,7 @@ import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-ca
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 import type { RejectedProviderRequest } from "./provider-request-shape.js";
 import { withRejectedRequestCapture } from "./provider-request-shape.js";
-import { fetchPairedWithDispatcher } from "./undici-fetch.js";
+import { fetchForRequest } from "./undici-fetch.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
 export type ReportedUsageFields = Set<keyof AgentUsage>;
@@ -224,13 +223,7 @@ export function usageReportingFetch(
   onRequestId?: (id: string) => void | Promise<void>,
 ): typeof fetch {
   return async (input, init) => {
-    // The wrapper hides the default fetch identity from the SSRF guard. Pair
-    // its transport when the guard attaches a package dispatcher (a plain or proxy-aware
-    // agent); keep injected fetches.
-    const transport =
-      init && "dispatcher" in init && init.dispatcher instanceof Dispatcher
-        ? fetchPairedWithDispatcher(fetcher)
-        : fetcher;
+    const transport = fetchForRequest(fetcher, init);
     rejectedRequests.delete(reported);
     sseObserved.delete(reported);
     dispatchedRequests.add(reported);
@@ -258,6 +251,7 @@ export function usageReportingFetch(
     sseObserved.add(reported);
     let buffer = "";
     let dropping = false;
+    let previousCarriageReturn = false;
     const decoder = new TextDecoder();
     const observe = async (frame: string) => {
       const data = frame
@@ -277,7 +271,14 @@ export function usageReportingFetch(
     const body = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         async transform(chunk, controller) {
-          buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(/\r\n/g, "\n");
+          let text = decoder.decode(chunk, { stream: true });
+          if (text) {
+            // SSE accepts CR, LF and CRLF, including a CRLF split across chunks.
+            const endsWithCarriageReturn = text.endsWith("\r");
+            if (previousCarriageReturn && text.startsWith("\n")) text = text.slice(1);
+            previousCarriageReturn = endsWithCarriageReturn;
+            buffer += text.replace(/\r\n?/g, "\n");
+          }
           let boundary = buffer.indexOf("\n\n");
           while (boundary >= 0) {
             const frame = buffer.slice(0, boundary);
@@ -459,8 +460,14 @@ export function observedPiStream(
             ...(observer ? { maxRetries: 0 } : {}),
           }),
         );
+        // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
         const streamOptions = hooks?.onRejectedRequest
-          ? withRejectedRequestCapture(historyOptions, hooks.onRejectedRequest)
+          ? withRejectedRequestCapture(
+              collectRawUsage
+                ? { ...historyOptions, fetch: historyOptions?.fetch ?? globalThis.fetch }
+                : historyOptions,
+              hooks.onRejectedRequest,
+            )
           : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
         try {

@@ -185,6 +185,25 @@ describe("dispatchTool audit outcomes", () => {
     expect(ctx.state.tainted).toBe(true);
   });
 
+  it("marks a first-call catalog resolution failure before returning remote schema text", async () => {
+    const base = dispatchContext(false);
+    const resolveCall = vi.fn().mockRejectedValue(new Error("malicious remote enum"));
+    const ctx = { ...base, deps: { ...base.deps, connector: { resolveCall } } };
+    ctx.tools.connector.set("read_inbox", {
+      name: "read_inbox",
+      route: { connectorId: "remote", toolName: CATALOG_EXECUTE },
+    });
+    await applyTool(ctx as never, "read_inbox", {}, "call-1");
+    expect(ctx.state.tainted).toBe(true);
+    const result = await applyTool(
+      ctx as never,
+      "update_bot",
+      { model: "another-model" },
+      "call-2",
+    );
+    expect(result).toEqual({ error: expect.stringContaining("outside content") });
+  });
+
   type Refusal = (tools: { disabled: Set<string> }) => unknown;
   it.each<[string, Refusal]>([
     ["was refused before running", (tools) => tools.disabled.add("read_inbox")],
@@ -222,6 +241,53 @@ describe("dispatchTool audit outcomes", () => {
         tool: "update_preferences",
         outcome: "success",
         metadata: { effectId: "effect-update_preferences", autoApproved: false },
+      },
+    ]);
+  });
+
+  it("records the connected account a connector call used", async () => {
+    const execute = vi.fn(async function* () {
+      yield { type: "result", data: { ok: true } };
+    });
+    const base = dispatchContext(false);
+    const ctx = { ...base, deps: { ...base.deps, connector: { execute } } };
+    const route = {
+      connectorId: "remote",
+      resourceId: "server-1",
+      toolName: "create_event",
+      connectionId: "connection-1",
+    };
+    ctx.tools.connector.set("create_event", { name: "create_event", route });
+    vi.mocked(gateToolCall).mockResolvedValueOnce({
+      call: {
+        name: "create_event",
+        args: {},
+        executionId: "call-1",
+        observer: undefined,
+        connectorCall: { tool: "create_event", args: {}, executionId: "call-1", route },
+        effectKey: "effect-create_event",
+        applied: { effect: { id: "effect-create_event" } },
+        nextApprovedTool: undefined,
+        bypassApproval: false,
+        claimedEffect: false,
+        persistEffectResult: async () => true,
+        finish: async (result: unknown) => result,
+        claimOrReturn: async () => undefined,
+      },
+    } as never);
+
+    await applyTool(ctx as never, "create_event", {}, "call-1");
+
+    expect(audited).toEqual([
+      {
+        tool: "create_event",
+        outcome: "success",
+        metadata: {
+          effectId: "effect-create_event",
+          autoApproved: false,
+          connectorId: "remote",
+          connectionId: "connection-1",
+        },
       },
     ]);
   });

@@ -1,85 +1,94 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ComputerStatus } from "@rakazo/contracts";
-import { useFocusEffect } from "expo-router";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { rpc } from "../lib/api";
+import { selectedSpaceId } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
+import { rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { errorText } from "../lib/user-error";
 import { SettingsRow } from "./settings-group";
 
-/** Update and Reset rows for a bot's Computer settings group. */
+/** The one repair a bot's computer offers, and only while that computer is broken. */
 export function useComputerMaintenanceRows(botId: string | undefined): ReactElement[] {
   const { t } = useLingui();
-  const [computer, setComputer] = useState<ComputerStatus | null>(null);
-  const [pending, setPending] = useState<"reset" | "update" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The bot's own Space, the one selected when its settings opened, whatever is selected later.
+  const [spaceId] = useState(() => selectedSpaceId() ?? undefined);
+  const statusRead = rpcQuery("computer/status", { botId: botId ?? "" }, spaceId);
+  const status = useScreenQuery(statusRead, { enabled: Boolean(botId), onForeground: false });
+  const { refetch } = status;
+  // A stale status could offer an action the computer can no longer take.
+  const computer = status.error ? null : status.data;
 
-  const latestRead = useRef(0);
-  const refresh = useCallback(async () => {
-    const read = ++latestRead.current;
-    if (!botId) return;
-    // A stale status could offer an action the computer can no longer take.
-    const next = await rpc("computer/status", { botId }).catch(() => null);
-    if (read === latestRead.current) setComputer(next);
-  }, [botId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      void refresh();
-    }, [refresh]),
-  );
   // A queued update or recovery reports progress here; its status changes with it.
-  useEffect(() => computerUpdates.subscribe(() => void refresh()), [refresh]);
+  useEffect(
+    () =>
+      computerUpdates.subscribe(() => {
+        if (botId) void refetch();
+      }),
+    [botId, refetch],
+  );
+  const repair = useSave({
+    target: spaceId ? { scope: "space", spaceId } : undefined,
+    save: async ({ botId, action }: { botId: string; action: "reset" | "recover" }, send) => {
+      if (action === "reset") await send("computer/reset", { botId });
+      // Progress is shown for the selected Space only; another Space's repair is sent on its own.
+      else if (spaceId !== (selectedSpaceId() ?? undefined))
+        await send("computer/recover", { botId });
+      else
+        await computerUpdates.start(botId, action, (id, step) =>
+          send(`computer/${step}`, { botId: id }),
+        );
+    },
+    stale: [statusRead.queryKey],
+  });
+  const error = repair.error ? errorText(repair.error, t`Could not update computer`) : null;
 
-  if (!botId || !computer || computer.botId !== botId) return [];
-  const busy = Boolean(computer.busyBotName) || computer.state === "booting" || pending !== null;
+  // A status from an earlier visit is never repaired from: the computer may have recovered since.
+  if (!status.isFetchedAfterMount) return [];
+  if (!botId || !computer || computer.botId !== botId || computer.state !== "error") return [];
+  // While the status is read again, it may no longer be broken.
+  const busy = Boolean(computer.busyBotName) || repair.pending || status.isFetching;
+  const pending = repair.pending;
 
-  async function run(action: "reset" | "update") {
-    if (!botId || busy) return;
-    setPending(action);
-    setError(null);
-    try {
-      if (action === "reset") await rpc("computer/reset", { botId });
-      else await computerUpdates.start(botId);
-      await refresh();
-    } catch (err) {
-      setError(errorText(err, t`Could not update computer`));
-    } finally {
-      setPending(null);
-    }
+  // Recover rebuilds the system where the computer can update in place; otherwise Reset
+  // restores the last saved workspace.
+  const action = computer.canUpdate ? "recover" : "reset";
+
+  function run() {
+    if (botId && !busy) repair.run({ botId, action });
   }
 
   return [
-    ...(computer.canUpdate
-      ? [
-          <SettingsRow
-            key="update"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
-            disabled={busy}
-            dimmed={busy}
-            title={pending === "update" ? t`Updating…` : t`Update computer`}
-            onPress={() => void run("update")}
-          />,
-        ]
-      : []),
     <SettingsRow
-      key="reset"
+      key="repair"
       accessibilityRole="button"
       accessibilityState={{ disabled: busy }}
       disabled={busy}
       dimmed={busy}
       destructive
-      title={pending === "reset" ? t`Resetting…` : t`Reset computer`}
+      title={
+        action === "recover"
+          ? pending
+            ? t`Recovering…`
+            : t`Recover computer`
+          : pending
+            ? t`Resetting…`
+            : t`Reset computer`
+      }
       onPress={() =>
         Alert.alert(
-          t`Reset computer?`,
-          t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
+          action === "recover" ? t`Recover computer?` : t`Reset computer?`,
+          action === "recover"
+            ? t`Recovery restores the last saved workspace. Unsaved work may be lost.`
+            : t`Restore the last saved workspace. Unsaved work on the computer is lost.`,
           [
             { text: t`Cancel`, style: "cancel" },
-            { text: t`Reset`, style: "destructive", onPress: () => void run("reset") },
+            {
+              text: action === "recover" ? t`Recover computer` : t`Reset`,
+              style: "destructive",
+              onPress: run,
+            },
           ],
         )
       }

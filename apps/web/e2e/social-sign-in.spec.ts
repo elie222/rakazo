@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { socialPresentation } from "../../../packages/auth/src/social-presentation";
+import { LAST_SIGN_IN_COOKIE } from "../../../packages/contracts/src/auth";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 const passwordOnly = {
@@ -78,13 +79,109 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await page.emulateMedia({ colorScheme: "light" });
 
   await page.goto("/sign-up");
-  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Apple" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "sign-up-chooser");
+});
+
+for (const path of ["/sign-in", "/sign-up"]) {
+  test(`${path} email form follows browser history and survives reload`, async ({ page }) => {
+    await mockSignedOut(page, both);
+    const query = "?next=%2Finvite%2Fexample-token";
+    await page.goto("/forgot-password");
+    await page.goto(`${path}${query}`);
+    await page.getByRole("button", { name: "Continue with email" }).click();
+    await expect(page).toHaveURL(`${path}/email${query}`);
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+    await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
+    await page.goForward();
+    await expect(page).toHaveURL(`${path}/email${query}`);
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await page.goBack();
+    await expect(page).toHaveURL("/forgot-password");
+
+    // A direct link has no chooser entry in its history.
+    await page.goto(`${path}/email${query}`);
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page).toHaveURL(`${path}${query}`);
+    await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+  });
+
+  test(`${path} ignores an email-code response after browser Back`, async ({ page }) => {
+    await mockSignedOut(page, both);
+    await page.route("**/api/auth/capabilities", (route) =>
+      route.fulfill({ json: { ...passwordOnly, providers: both, emailCode: true } }),
+    );
+    let finishRequest!: () => void;
+    const responseGate = new Promise<void>((resolve) => {
+      finishRequest = resolve;
+    });
+    await page.route("**/api/auth/email-otp/send-verification-otp", async (route) => {
+      await responseGate;
+      await route.fulfill({ json: { success: true } });
+    });
+    await page.goto(path);
+    await page.getByRole("button", { name: "Continue with email" }).click();
+    await page.getByLabel("Email", { exact: true }).fill("person@example.test");
+    const request = page.waitForRequest("**/api/auth/email-otp/send-verification-otp");
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await request;
+    await page.goBack();
+    await expect(page).toHaveURL(path);
+    const response = page.waitForResponse("**/api/auth/email-otp/send-verification-otp");
+    finishRequest();
+    await response;
+    await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+  });
+}
+
+test("returning people see the sign-in method they used last", async ({ page }, testInfo) => {
+  await mockSignedOut(page, both);
+  await page
+    .context()
+    .addCookies([
+      { name: LAST_SIGN_IN_COOKIE, value: "google", url: testInfo.project.use.baseURL! },
+    ]);
+  await page.goto("/sign-in");
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  await expect(google.getByText("Last used")).toBeVisible();
+  await expect(page.getByText("Last used")).toHaveCount(1);
+  await captureScreenshot(page, testInfo, "sign-in-last-used");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await captureScreenshot(page, testInfo, "sign-in-last-used-dark");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(google.getByText("Last used")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-last-used-mobile");
+});
+
+test("a successful email sign-up is remembered for the next sign-in", async ({ page }) => {
+  await signup(page, `last-used-${Date.now()}@rakazo.test`, "password12", "Last Used QA");
+  const cookie = (await page.context().cookies()).find(({ name }) => name === LAST_SIGN_IN_COOKIE);
+  expect(cookie?.value).toBe("email");
+  expect(cookie?.httpOnly).toBe(false);
+  await mockSignedOut(page, both);
+  await page.goto("/sign-in");
+  const emailChoice = page.getByRole("button", { name: "Continue with email" });
+  await expect(emailChoice.getByText("Last used")).toBeVisible();
 });
 
 test("one provider spans the chooser row", async ({ page }, testInfo) => {

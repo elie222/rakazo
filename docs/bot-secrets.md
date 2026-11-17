@@ -158,6 +158,9 @@ there you can edit an item, add a note on when the bot should use it, which `lis
 the bot, or remove it after confirming. Remove deletes the saved value immediately. Asking the bot
 to `forget_secret` a name only removes it; it does not list or replace one.
 
+A Space that keeps its own vault is managed from that Space's settings under **Vault**, not
+account **Settings → Vault**, which says so. Items its bots save with `request_secret` appear only there.
+
 Each item's **Bots** setting says which bots may use it. Every bot may by default. Block keeps every
 bot from it (a contact can't be blocked), and choosing bots limits it to those bots; none chosen
 means no bot uses it. In a shared Space you can choose any of its bots, and your choice covers only

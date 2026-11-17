@@ -9,7 +9,7 @@ import { newVaultImportRows, vaultImportCounts, vaultImportProblems } from "@rak
 import { vaultImportProblemLines, vaultImportText } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
-import { VaultPageHeader } from "./VaultPageHeader";
+import { SettingsPageHeader } from "../SettingsPageHeader";
 
 /** The review of a CSV export read on this device, then what the import saved. */
 export function VaultImportPage({
@@ -56,7 +56,7 @@ export function VaultImportPage({
 
   return (
     <div data-testid="vault-import-page" className="space-y-4">
-      <VaultPageHeader title={t`Import CSV`} onBack={() => !busy && onBack()} />
+      <SettingsPageHeader title={t`Import CSV`} onBack={() => !busy && onBack()} />
       {"error" in csv ? (
         <p className="text-body-sm text-destructive">{fileProblems[csv.error]}</p>
       ) : plan ? (

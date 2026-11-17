@@ -2,11 +2,13 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import type * as Passkeys from "../lib/passkeys";
+import { usePasskeysSupported } from "../lib/passkeys";
 import { clearSpaceSelection } from "../lib/rpc";
 import { AuthPage } from "./Auth";
 
@@ -65,11 +67,21 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: vi.fn() }));
 vi.mock("../lib/auth", () => ({
   authClient: {
-    signIn: { social: vi.fn(async () => ({})), email: vi.fn(), emailOtp: vi.fn() },
+    signIn: {
+      social: vi.fn(async () => ({})),
+      email: vi.fn(),
+      emailOtp: vi.fn(),
+      passkey: vi.fn(async () => ({ data: {}, error: null })),
+    },
     emailOtp: { sendVerificationOtp: vi.fn() },
   },
 }));
 vi.mock("../lib/rpc", () => ({ clearSpaceSelection: vi.fn() }));
+vi.mock("../lib/passkeys", async (importActual) => ({
+  ...(await importActual<typeof Passkeys>()),
+  usePasskeysSupported: vi.fn(() => false),
+  conditionalPasskeyAvailable: vi.fn(async () => false),
+}));
 const capabilities: AuthCapabilities = {
   passwordAuth: false,
   sso: { name: "Example", availability: "unavailable" },
@@ -98,6 +110,9 @@ async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
       </MemoryRouter>,
     ),
   );
+}
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
 }
 async function enter(input: Element | null, value: string) {
   await act(async () => {
@@ -211,6 +226,27 @@ it("shows a configured provider beside the password form and hides the rest", as
   await render("up");
   expect(host.textContent).not.toContain("Continue with");
   expect(host.querySelector('input[name="email"]')).not.toBeNull();
+});
+
+it("offers a supported passkey in the sign-in chooser only", async () => {
+  vi.mocked(usePasskeysSupported).mockReturnValue(true);
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
+  await render();
+  const passkey = button("Continue with passkey");
+  expect(
+    button("Continue with email").compareDocumentPosition(passkey) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await act(async () => passkey.click());
+  expect(authClient.signIn.passkey).toHaveBeenCalledWith({ autoFill: false });
+  expect(clearSpaceSelection).toHaveBeenCalled();
+
+  await render();
+  await act(async () => button("Continue with email").click());
+  expect(button("Sign in with passkey")).toBeUndefined();
+
+  await render("up");
+  expect(button("Continue with passkey")).toBeUndefined();
 });
 
 it("hides SSO in password recovery", async () => {
@@ -394,4 +430,32 @@ it("leaves the password form unchanged without email codes", async () => {
   expect(host.querySelector('input[type="password"]')).not.toBeNull();
   expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.required).toBe(true);
   expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
+});
+
+it.each(["in", "up"] as const)(
+  "signs in to a demo server's shared account in one click on %s",
+  async (mode) => {
+    const demoAccount = { email: "demo@example.com", password: "demo-password" };
+    vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, demoAccount });
+    vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={["/sign-up"]}>
+          <AuthPage mode={mode} />
+          <LocationProbe />
+        </MemoryRouter>,
+      ),
+    );
+    await act(async () => button("Sign in with demo account").click());
+    expect(authClient.signIn.email).toHaveBeenCalledWith(demoAccount);
+    expect(host.querySelector("[data-testid=location]")!.textContent).toBe(
+      mode === "up" ? "/sign-in" : "/sign-up",
+    );
+  },
+);
+
+it("offers no demo sign-in on other servers", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  await render();
+  expect(button("Sign in with demo account")).toBeUndefined();
 });

@@ -20,13 +20,12 @@ import {
   Textarea,
   toast,
 } from "@rakazo/ui-web";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { PluginLogo } from "../components/integrations/plugin-marketplace";
-import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
 
 function ExternalLink({ href }: { href: string }) {
@@ -46,38 +45,29 @@ function ExternalLink({ href }: { href: string }) {
 export function PluginSubmissionsPanel() {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
   const [status, setStatus] = useState<PluginSubmissionStatus>("pending");
-  const [pending, setPending] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<PluginSubmission | null>(null);
   const [reason, setReason] = useState("");
   const submissions = useQuery(queries.marketplace.submissions.queryOptions({ input: { status } }));
+  const review = useSave({
+    save: (input: PluginSubmissionReview, rpc) => rpc.marketplace.review(input),
+    stale: [queries.marketplace.submissions.key(), queries.marketplace.catalog.key()],
+    onSaved: (_reviewed, input) => {
+      if (input.decision === "reject") setRejecting(null);
+    },
+    onFailed: (error, input) =>
+      toast.error(
+        errorText(
+          error,
+          input.decision === "reject" ? t`Could not reject plugin` : t`Could not approve plugin`,
+        ),
+      ),
+  });
 
-  async function review(input: PluginSubmissionReview, failure: string) {
-    setPending(input.id);
-    try {
-      await rpc.marketplace.review(input);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queries.marketplace.submissions.key() }),
-        queryClient.invalidateQueries({ queryKey: queries.marketplace.catalog.key() }),
-      ]);
-      return true;
-    } catch (err) {
-      toast.error(errorText(err, failure));
-      return false;
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function reject(event: FormEvent) {
+  function reject(event: FormEvent) {
     event.preventDefault();
     if (!rejecting || !reason.trim()) return;
-    const done = await review(
-      { id: rejecting.id, decision: "reject", reason: reason.trim() },
-      t`Could not reject plugin`,
-    );
-    if (done) setRejecting(null);
+    review.run({ id: rejecting.id, decision: "reject", reason: reason.trim() });
   }
 
   const list = submissions.data ?? [];
@@ -153,7 +143,7 @@ export function PluginSubmissionsPanel() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      disabled={pending !== null}
+                      disabled={review.pending}
                       onClick={() => {
                         setReason("");
                         setRejecting(submission);
@@ -163,15 +153,10 @@ export function PluginSubmissionsPanel() {
                     </Button>
                     <Button
                       size="sm"
-                      disabled={pending !== null}
-                      onClick={() =>
-                        void review(
-                          { id: submission.id, decision: "approve" },
-                          t`Could not approve plugin`,
-                        )
-                      }
+                      disabled={review.pending}
+                      onClick={() => review.run({ id: submission.id, decision: "approve" })}
                     >
-                      {pending === submission.id ? (
+                      {review.pending && review.input?.id === submission.id ? (
                         <Trans>Approving…</Trans>
                       ) : (
                         <Trans>Approve</Trans>
@@ -211,11 +196,11 @@ export function PluginSubmissionsPanel() {
       <Dialog
         open={rejecting !== null}
         onOpenChange={(open) => {
-          if (!open && pending === null) setRejecting(null);
+          if (!open && !review.pending) setRejecting(null);
         }}
       >
         <DialogContent>
-          <form onSubmit={(event) => void reject(event)} className="space-y-4">
+          <form onSubmit={reject} className="space-y-4">
             <DialogHeader>
               <DialogTitle>
                 <Trans>Reject {rejecting?.name}</Trans>
@@ -234,7 +219,7 @@ export function PluginSubmissionsPanel() {
               <Button
                 type="button"
                 variant="ghost"
-                disabled={pending !== null}
+                disabled={review.pending}
                 onClick={() => setRejecting(null)}
               >
                 <Trans>Cancel</Trans>
@@ -242,9 +227,9 @@ export function PluginSubmissionsPanel() {
               <Button
                 type="submit"
                 variant="destructive"
-                disabled={pending !== null || !reason.trim()}
+                disabled={review.pending || !reason.trim()}
               >
-                {pending ? <Trans>Rejecting…</Trans> : <Trans>Reject</Trans>}
+                {review.pending ? <Trans>Rejecting…</Trans> : <Trans>Reject</Trans>}
               </Button>
             </DialogFooter>
           </form>

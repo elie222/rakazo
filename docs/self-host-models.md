@@ -143,8 +143,8 @@ What it needs:
   OS user. The official Docker images and the desktop app's local stack do not include Claude
   Code, and adding it to them is not supported.
 - Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
-  with `claude auth login`. Rakazo has no Claude sign-in screen and accepts no Claude tokens, so
-  `claude setup-token` is not needed.
+  with `claude auth login`. This route uses no Claude sign-in inside Rakazo and no Claude token,
+  so `claude setup-token` is not needed.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.

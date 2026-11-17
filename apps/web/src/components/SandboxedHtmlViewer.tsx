@@ -1,5 +1,6 @@
 import { HTML_VIEWER_PATH } from "@rakazo/contracts/content-security-policy";
 import { useEffect, useRef, useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 
 export const PREVIEW_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; media-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'";
@@ -49,20 +50,15 @@ export function SandboxedHtmlViewer({
     // The sandboxed shell has an opaque origin, so there is no narrower target origin to name.
     if (loads > 0) frame.current?.contentWindow?.postMessage(previewDocument(html), "*");
   }, [loads, html]);
-  useEffect(() => {
-    if (!onFrameMessage) return;
-    function receive(event: MessageEvent) {
-      // Only this viewer's own frame speaks for its document.
-      if (event.source !== frame.current?.contentWindow) return;
-      onFrameMessage?.(
-        event.data,
-        (message) => frame.current?.contentWindow?.postMessage(message, "*"),
-        document.activeElement === frame.current,
-      );
-    }
-    window.addEventListener("message", receive);
-    return () => window.removeEventListener("message", receive);
-  }, [onFrameMessage]);
+  useEventListener(onFrameMessage ? window : null, "message", (event) => {
+    // Only this viewer's own frame speaks for its document.
+    if (event.source !== frame.current?.contentWindow) return;
+    onFrameMessage?.(
+      event.data,
+      (message) => frame.current?.contentWindow?.postMessage(message, "*"),
+      document.activeElement === frame.current,
+    );
+  });
   return (
     <iframe
       ref={frame}

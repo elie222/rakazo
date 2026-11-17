@@ -2,6 +2,7 @@
 
 import type { Bot } from "@rakazo/contracts";
 import { foldPeerReplies } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { act, lazy, StrictMode, Suspense, useEffect, useRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -40,23 +41,20 @@ afterEach(() => {
 
 /** Thread reads held until the test releases them, so the chat can change first. */
 function heldRpc() {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const held = deferred();
   const rpc = {
     threads: {
       get: vi.fn(async () => {
-        await held;
+        await held.promise;
         return { threadId: "thread-a", messages: [], olderCursor: null };
       }),
       messages: vi.fn(async () => {
-        await held;
+        await held.promise;
         return { threadId: "thread-a", messages: [], olderCursor: null };
       }),
     },
   } as unknown as ReturnType<typeof createSpaceRpc>;
-  return { rpc, release };
+  return { rpc, release: held.resolve };
 }
 
 function Harness({
@@ -140,7 +138,7 @@ it.each([
   act(() => navigateRef.current?.("/app/bot/bot-b?settings=models"));
   await act(async () => {
     release();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   expect(locations.at(-1)).toBe("/app/bot/bot-b?settings=models");
@@ -166,7 +164,7 @@ it("strips the jump from the address once it lands in the same chat", async () =
   );
   await act(async () => {
     release();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(locations.at(-1)).toBe("/app/bot/bot-a");
 });
@@ -207,7 +205,7 @@ it.each([
   act(() => navigateRef.current?.("/app/artifacts?view=grid"));
   await act(async () => {
     release();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   expect(locations.at(-1)).toBe("/app/artifacts?view=grid");
@@ -255,7 +253,7 @@ it.each([
   act(() => navigateRef.current?.("/app/artifacts?view=grid"));
   await act(async () => {
     release();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   expect(locations.at(-1)).toBe("/app/artifacts?view=grid");

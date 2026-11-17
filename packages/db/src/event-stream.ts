@@ -2,6 +2,7 @@ import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { ProductEvent } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
+import { JsonObject, readJsonColumn } from "./json-column.js";
 import { readRunTimingFields } from "./run-timing.js";
 
 const EVENT_BATCH_SIZE = 200;
@@ -127,7 +128,12 @@ export function mapProductEvent(event: {
     type: event.type as ProductEvent["type"],
     runId: event.runId ?? undefined,
     createdAt: event.createdAt.toISOString(),
-    payload: event.payload as Record<string, unknown>,
+    payload: readJsonColumn(
+      JsonObject,
+      event.payload,
+      { table: "events", column: "payload", id: event.id },
+      { fallback: {} },
+    ),
   };
 }
 

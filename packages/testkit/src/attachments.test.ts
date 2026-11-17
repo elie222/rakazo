@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ThreadSnapshot } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -134,6 +134,34 @@ describeAttachments("chat attachments", () => {
       artifactId: zip.id,
     });
     expect(Buffer.from(fetchedZip.contentBase64, "base64")).toEqual(zipBytes);
+
+    for (const [name, reportedTypes, expectedType] of [
+      [
+        "bundle.RAR",
+        ["application/vnd.rar", "application/x-rar-compressed", "application/octet-stream"],
+        "application/vnd.rar",
+      ],
+      [
+        "bundle.7Z",
+        ["application/x-7z-compressed", "application/x-7z", "application/octet-stream"],
+        "application/x-7z-compressed",
+      ],
+    ] as const) {
+      for (const mimeType of reportedTypes) {
+        const archive = await rpc<{ id: string; mimeType: string }>(
+          app,
+          cookie,
+          "artifacts/create",
+          {
+            botId: bot.id,
+            name,
+            mimeType,
+            contentBase64: Buffer.from("archive").toString("base64"),
+          },
+        );
+        expect(archive.mimeType).toBe(expectedType);
+      }
+    }
 
     const badMime = await raw(app, cookie, "artifacts/create", {
       botId: bot.id,
@@ -310,12 +338,12 @@ async function waitFor(
   botId: string,
   pred: (snap: ThreadSnapshot) => boolean,
 ) {
-  const start = Date.now();
-  let last: ThreadSnapshot | null = null;
-  while (Date.now() - start < 20_000) {
-    last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
-    if (pred(last)) return last;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+  return vi.waitFor(
+    async () => {
+      const last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
+      if (pred(last)) return last;
+      throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+    },
+    { timeout: 20_000, interval: 100 },
+  );
 }

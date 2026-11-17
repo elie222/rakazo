@@ -1,15 +1,20 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { isTicketCompletedStatus, TicketStatusSchema } from "@rakazo/contracts";
+import type { LabFeature } from "@rakazo/contracts";
+import {
+  hasLab,
+  isTicketCompletedStatus,
+  resolveLabs,
+  TicketStatusSchema,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { wakeRun } from "./wake-run.js";
+import { ticketWakePrompt } from "./wakes.prompt.js";
 
 /** Assignment wakes only its current owner, without posting a chat message. */
 export async function wakeTicketAssignee(
-  deps: { prisma: PrismaClient; jobs: JobPublisher; ticketBoardEnabled?: boolean },
+  deps: { prisma: PrismaClient; jobs: JobPublisher; deploymentLabs?: readonly LabFeature[] },
   input: { spaceId: string; ticketId: string; botId: string },
 ): Promise<void> {
-  if (!deps.ticketBoardEnabled) return;
   const run = await deps.prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: input.ticketId, spaceId: input.spaceId, assigneeBotId: input.botId },
@@ -23,13 +28,15 @@ export async function wakeTicketAssignee(
       select: { id: true, userId: true, thread: { select: { id: true } } },
     });
     if (!bot?.thread) return null;
+    const owner = await tx.user.findUnique({ where: { id: bot.userId }, select: { labs: true } });
+    if (!hasLab(resolveLabs(owner?.labs, deps.deploymentLabs), "board")) return null;
     const task = await tx.task.create({
       data: {
         spaceId: input.spaceId,
         botId: bot.id,
         threadId: bot.thread.id,
         userId: bot.userId,
-        prompt: `Work on ticket ${ticket.board.ticketPrefix}-${ticket.number}. Read it with ticket_get. Keep progress in ticket comments and update its status with ticket_update. Use ask or approval cards when user input is needed.`,
+        prompt: ticketWakePrompt(`${ticket.board.ticketPrefix}-${ticket.number}`),
         status: "queued",
       },
     });
@@ -46,7 +53,5 @@ export async function wakeTicketAssignee(
     });
   });
   if (!run) return;
-  await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-    getLogger().warn("ticket wake deferred to reconciliation", error);
-  });
+  await wakeRun(deps.jobs, run.id);
 }

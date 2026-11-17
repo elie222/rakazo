@@ -35,16 +35,12 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     "Rakazo 是开源的。{star}能帮助更多人发现它。",
   "A star on GitHub": "在 GitHub 上加星",
   "Questions? Just reply. I read every one.": "有问题？直接回复即可。每封我都会看。",
-  "Have any questions? Reply to this email.": "有任何问题？请回复此邮件。",
   Unsubscribe: "退订",
   "Invite a friend": "邀请好友",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "邀请朋友加入 Rakazo：对方可免费使用 {weeks} 周；当对方用新卡开始符合条件的订阅时，你将获得一个月免费。",
   "Open Rakazo": "打开 Rakazo",
   "and choose Invite friends for your link.": "并选择“邀请好友”获取你的链接。",
-  "Have any questions? Just reply to this email.": "有任何问题？直接回复此邮件即可。",
-  "If you're enjoying Rakazo,": "如果你喜欢 Rakazo，",
-  "give us a star on GitHub": "欢迎在 GitHub 上给我们点个星标",
   "We received your Rakazo plugin": "我们已收到你的 Rakazo 插件",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "感谢你向 Rakazo 插件市场提交插件。",
   "We review every submission and will email you when it's done.":
@@ -69,4 +65,15 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     "除非你重新订阅，否则你保存的电脑文件将于 {date} 被删除。",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "除非你选择一个套餐，否则你保存的电脑文件将于 {date} 被删除。",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} 邀请你加入 Rakazo 上的 {organization}",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} 邀请你加入 Rakazo 上的 {organization}。",
+  "Join {organization}": "加入 {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "此邀请将在 7 天后过期。请使用此邮箱地址登录以接受邀请。",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} 邀请你加入 Rakazo 上的 {space}",
+  "{inviter} invited you to join {space} on Rakazo.": "{inviter} 邀请你加入 Rakazo 上的 {space}。",
+  "Join {space}": "加入 {space}",
+  "This invitation expires in 7 days.": "此邀请将在 7 天后过期。",
 };

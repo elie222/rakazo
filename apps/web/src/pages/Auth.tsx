@@ -18,8 +18,8 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { PasskeySignIn } from "../components/PasskeySignIn";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { PasskeySignIn, usePasskeySignIn } from "../components/PasskeySignIn";
 import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
@@ -41,6 +41,10 @@ export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const chooserPath = mode === "up" ? "/sign-up" : "/sign-in";
+  const emailStep = location.pathname === `${chooserPath}/email`;
   const next = signInNext(searchParams.get("next"));
   // Switching between sign-in and sign-up keeps where the person was going.
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
@@ -57,6 +61,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
+  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
@@ -65,7 +70,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
-  const [emailStep, setEmailStep] = useState(false);
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
@@ -87,14 +91,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : mode === "in" ? (
       <Trans>Sign in to Rakazo</Trans>
     ) : mode === "up" ? (
-      <Trans>Create your Rakazo</Trans>
+      <Trans>Create your account</Trans>
     ) : (
       <Trans>Reset your password</Trans>
     );
-
-  useEffect(() => {
-    setEmailStep(false);
-  }, [mode]);
 
   useEffect(() => {
     setReset(null);
@@ -227,6 +227,25 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setPending(true);
   }
 
+  async function signInAsDemo(account: { email: string; password: string }) {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await authClient.signIn.email(account);
+      if (result.error) {
+        setError(authErrorText(result.error, t`Could not continue`));
+        return;
+      }
+      // Sign-up sends a signed-in user to new-account onboarding; the demo account already exists.
+      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
+      enterApp();
+    } catch {
+      setError(t`Could not reach the server`);
+    } finally {
+      if (!entering.current) setPending(false);
+    }
+  }
+
   function leaveCodeStep() {
     setCodeSent(false);
     setCode("");
@@ -271,7 +290,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             className="text-muted-foreground hover:text-foreground"
             onClick={() => {
               setError(null);
-              setEmailStep(false);
+              if (location.state?.authChooser) navigate(-1);
+              else navigate(`${chooserPath}${nextQuery}`, { replace: true });
             }}
           >
             <ChevronLeft />
@@ -321,12 +341,13 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             <>
               <SocialSignInButtons
                 providers={providers}
-                disabled={pending}
+                disabled={pending || passkey.pending}
                 onPress={(providerId) => void signInWithProvider(providerId)}
                 onEmail={() => {
                   setError(null);
-                  setEmailStep(true);
+                  navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
                 }}
+                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
               />
               {error ? (
                 <p
@@ -486,11 +507,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
               {mode === "in" && !codeStep ? (
                 <PasskeySignIn
+                  autoFillOnly={presented}
                   disabled={pending}
                   className={submitClass}
                   onSignedIn={enterApp}
                   onError={setError}
                 />
+              ) : null}
+              {reset?.demoAccount && mode !== "forgot" && !codeStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  disabled={pending}
+                  className={submitClass}
+                  onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
+                >
+                  <Trans>Sign in with demo account</Trans>
+                </Button>
               ) : null}
               {codeStep ? (
                 <Button

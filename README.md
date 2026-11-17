@@ -116,7 +116,8 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
+New installs default to `latest` (stable releases, `linux/amd64` + `linux/arm64`). A stable
+release must exist; setup does not fall back to main builds. Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
@@ -169,7 +170,9 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
 Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
-enabling either managed catalog. Connector credentials are encrypted on the server and are never
+enabling either managed catalog. Local (stdio) MCP servers are off until you set
+`MCP_STDIO_ENABLED=true` and list their commands in `MCP_STDIO_ALLOWED_COMMANDS`; see
+[Tools and integrations](./docs/self-host-integrations.md). Connector credentials are encrypted on the server and are never
 returned by the API.
 
 Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.
@@ -274,7 +277,8 @@ builds pin the image tag to their own version; unpackaged builds pull `edge`. De
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
 instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
-**Stop Local Stack** in the application menu stops the managed stack without quitting.
+**Quit and Stop Bots** in the application menu stops the managed stack and quits; switching to
+another server also stops it.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
@@ -345,6 +349,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [Tools and integrations](./docs/self-host-integrations.md)
 - [Computer providers](./docs/self-host-sandbox-providers.md)
 - [Docker computers](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s installation](./docs/self-host-kubernetes.md) ([한국어](./docs/ko-KR/self-host-kubernetes.md))
 - [Storage and encryption](./docs/self-host-storage.md)
 - [Production deployment](./docs/self-host-production.md)
 - [Backup and restore](./docs/self-host-backups.md)

@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -29,8 +31,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -68,9 +68,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   ),
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
-  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
-    <div data-testid={testId} />
-  ),
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
@@ -139,7 +137,7 @@ import {
 import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
-import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
+import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
 afterEach(() => {
   localStorage.clear();
@@ -170,9 +168,9 @@ it.each([undefined, null, "device", "different"])(
           />,
         ),
       );
-      expect(
-        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
-      ).toBe(timezone ?? deviceTimezone);
+      expect(container.querySelector('[data-testid="timezone-select"]')?.textContent).toBe(
+        (timezone ?? deviceTimezone).replaceAll("_", " "),
+      );
       expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
         saved === "different",
       );
@@ -338,64 +336,6 @@ it("updates the Enter preference from Settings and reflects external changes", a
   }
 });
 
-it("shows usage totals and a per-model breakdown", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(
-        <UsageSettingsPanel
-          usage={{
-            runs: 2,
-            inputTokens: 1200,
-            outputTokens: 34,
-            totalTokens: 1234,
-            costUsd: 0.5,
-            modelCalls: 3,
-            models: [
-              {
-                provider: "openai",
-                model: "model-a",
-                modelCalls: 2,
-                inputTokens: 1000,
-                outputTokens: 30,
-                totalTokens: 1030,
-                costUsd: 0.5,
-              },
-              {
-                provider: "local",
-                model: "model-b",
-                modelCalls: 1,
-                inputTokens: 200,
-                outputTokens: 4,
-                totalTokens: 204,
-                costUsd: null,
-              },
-            ],
-          }}
-        />,
-      ),
-    );
-    expect([...container.querySelectorAll("dd")].map((node) => node.textContent)).toEqual([
-      "2",
-      "1,234",
-      "$0.50",
-    ]);
-    expect(
-      [...container.querySelectorAll("tbody tr")].map((row) =>
-        [...row.querySelectorAll("td")].map((cell) => cell.textContent),
-      ),
-    ).toEqual([
-      ["model-aopenai", "2", "1,000", "30", "$0.50"],
-      ["model-blocal", "1", "200", "4", "—"],
-    ]);
-  } finally {
-    await act(async () => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
 it("does not expose server integration configuration", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -453,6 +393,7 @@ async function renderNameEditor(name = "Alex Rivera") {
           .querySelector("form")!
           .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       }),
+    unmount: () => act(async () => root.unmount()),
     cleanup: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -472,6 +413,24 @@ it("saves a trimmed name and refreshes the account data", async () => {
     expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it("refreshes the account data when the name saves after settings closed", async () => {
+  let updated!: Deferred<{ data: { status: boolean }; error: null }>;
+  vi.mocked(authClient.updateUser).mockImplementation(() => {
+    updated = deferred();
+    return updated.promise as never;
+  });
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("Sam Rivera");
+    await editor.submit();
+    await editor.unmount();
+    await act(async () => updated.resolve({ data: { status: true }, error: null }));
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
   } finally {
     await editor.cleanup();
   }
@@ -610,13 +569,11 @@ it.each(["response", "network"])(
 it("closes the name editor before refresh finishes and ignores a refresh failure", async () => {
   vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
   const editor = await renderNameEditor();
-  let rejectRefresh!: (error: Error) => void;
-  editor.onNameSaved.mockImplementation(
-    () =>
-      new Promise<void>((_resolve, reject) => {
-        rejectRefresh = reject;
-      }),
-  );
+  let rejectRefresh!: Deferred;
+  editor.onNameSaved.mockImplementation(() => {
+    rejectRefresh = deferred();
+    return rejectRefresh.promise;
+  });
   try {
     await editor.change("Sam Rivera");
     await editor.submit();
@@ -624,7 +581,7 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.button("Edit").disabled).toBe(false);
-    await act(async () => rejectRefresh(new Error("offline")));
+    await act(async () => rejectRefresh.reject(new Error("offline")));
     expect(editor.card.querySelector("input")).toBeNull();
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {

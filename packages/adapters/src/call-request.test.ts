@@ -15,8 +15,11 @@ function prismaWith(options: {
   status?: string;
   updated?: number;
   expiresAt?: string;
+  beside?: unknown[];
+  before?: unknown[];
 }) {
-  const blocks = [
+  const blocks: unknown[] = [
+    ...(options.before ?? []),
     {
       kind: "call_request",
       callId: "call-1",
@@ -25,6 +28,7 @@ function prismaWith(options: {
       status: options.status ?? "ringing",
       expiresAt: options.expiresAt ?? new Date(Date.now() + 45_000).toISOString(),
     },
+    ...(options.beside ?? []),
   ];
   const tx = {
     $executeRaw: vi.fn(async () => 0),
@@ -162,6 +166,43 @@ describe("settleCallRequest", () => {
       }),
     );
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+  });
+
+  it("settles a call stored beside an entry that is not a block, and writes that entry back", async () => {
+    const stray = { text: "no kind" };
+    const prisma = prismaWith({ beside: [stray, null] });
+    const settled = await settleCallRequest(
+      { prisma, events: { notify: vi.fn(async () => undefined) } },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "answered" },
+    );
+
+    expect(settled).toMatchObject({ status: "answered" });
+    const answered = expect.objectContaining({ kind: "call_request", status: "answered" });
+    expect(prisma.message.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { blocks: [answered, stray, null] } }),
+    );
+    expect(prisma.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ payload: expect.objectContaining({ blocks: [answered] }) }),
+      }),
+    );
+  });
+
+  it("settles a call stored after an entry that is not a block, matching the card where it is stored", async () => {
+    const stray = { text: "no kind" };
+    const prisma = prismaWith({ before: [stray] });
+    const settled = await settleCallRequest(
+      { prisma, events: { notify: vi.fn(async () => undefined) } },
+      { threadId: "thread-1", callId: "call-1", from: ["ringing"], status: "answered" },
+    );
+
+    expect(settled).toMatchObject({ status: "answered" });
+    expect(prisma.message.updateMany).toHaveBeenCalledWith({
+      where: { id: "message-1", blocks: { path: ["1", "status"], equals: "ringing" } },
+      data: {
+        blocks: [stray, expect.objectContaining({ kind: "call_request", status: "answered" })],
+      },
+    });
   });
 
   it("keeps a committed answer recoverable when notification fails", async () => {
@@ -309,6 +350,7 @@ describe("requestUserCall security", () => {
       jobs: {
         enqueue: vi.fn(async () => undefined),
         enqueueIn: vi.fn(),
+        enqueueManyIn: vi.fn(),
         cancelIn: vi.fn(),
         cancel: vi.fn(),
         close: vi.fn(),
@@ -455,6 +497,7 @@ describe("requestUserCall security", () => {
       message: {
         findMany: vi.fn(async () => [
           {
+            id: "message-1",
             threadId: "thread-1",
             blocks: [
               {
@@ -463,6 +506,19 @@ describe("requestUserCall security", () => {
                 status: "ringing",
                 expiresAt: "2026-10-14T18:30:45Z",
               },
+            ],
+          },
+          {
+            id: "message-2",
+            threadId: "thread-2",
+            blocks: [
+              {
+                kind: "call_request",
+                callId: "call-2",
+                status: "ringing",
+                expiresAt: "2026-10-14T18:30:45Z",
+              },
+              { text: "an entry that is not a block" },
             ],
           },
         ]),
@@ -474,6 +530,9 @@ describe("requestUserCall security", () => {
         name: "call.expire",
         payload: { threadId: "thread-1", callId: "call-1" },
       }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { threadId: "thread-2", callId: "call-2" } }),
     );
   });
 });

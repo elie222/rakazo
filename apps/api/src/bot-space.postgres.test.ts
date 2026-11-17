@@ -3,12 +3,12 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, bootstrapUserSpace, createDb, createOrganizationForUser } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { otherSpaceOfBot } from "./bot-space.js";
+import { otherSpaceOfBot, otherSpaceOfGroup } from "./bot-space.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
-describePostgres("the Space of a linked bot (PostgreSQL)", () => {
+describePostgres("the Space of a linked chat (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}-${randomBytes(3).toString("hex")}`;
   const users: string[] = [];
   let db: ReturnType<typeof createDb>;
@@ -21,16 +21,28 @@ describePostgres("the Space of a linked bot (PostgreSQL)", () => {
     users.push(userId);
     const email = `${userId}@rakazo.test`;
     await system.user.create({ data: { id: userId, name: userId, email, emailVerified: false } });
-    const { spaceId } = await bootstrapUserSpace(
-      system,
-      { id: userId },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const { spaceId } = await bootstrapUserSpace(system, { id: userId });
     return { userId, spaceId, email, isDeploymentOwner: false };
   }
 
   const bot = (spaceId: string, userId: string) =>
     system.bot.create({ data: { spaceId, userId, name: "Scout", color: "blue" } });
+
+  async function group(spaceId: string, userId: string, activeBots = 2) {
+    const members = await Promise.all([bot(spaceId, userId), bot(spaceId, userId)]);
+    await system.bot.updateMany({
+      where: { id: { in: members.slice(activeBots).map((member) => member.id) } },
+      data: { archivedAt: new Date() },
+    });
+    return system.chatGroup.create({
+      data: {
+        spaceId,
+        userId,
+        name: "Standup",
+        members: { create: members.map((member) => ({ botId: member.id })) },
+      },
+    });
+  }
 
   beforeAll(() => {
     db = createDb(databaseUrl!);
@@ -68,5 +80,37 @@ describePostgres("the Space of a linked bot (PostgreSQL)", () => {
       data: { deletingAt: new Date() },
     });
     await expect(otherSpaceOfBot(prisma, ada, adaWorkBot.id)).resolves.toBeUndefined();
+  });
+
+  it("finds a group in another organization of the caller's, and answers alike for one they cannot open and one that does not exist", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    const work = await createOrganizationForUser(system, { userId: ada.userId, name: "Work" });
+    const adaWorkGroup = await group(work.defaultSpaceId, ada.userId);
+    const adaHomeGroup = await group(ada.spaceId, ada.userId);
+    const graceGroup = await group(grace.spaceId, grace.userId);
+    const unopenable = await group(work.defaultSpaceId, ada.userId, 1);
+
+    await expect(otherSpaceOfGroup(prisma, ada, adaWorkGroup.id)).resolves.toBe(
+      work.defaultSpaceId,
+    );
+    await expect(otherSpaceOfGroup(prisma, ada, adaHomeGroup.id)).resolves.toBeUndefined();
+    await expect(otherSpaceOfGroup(prisma, ada, unopenable.id)).resolves.toBeUndefined();
+    const missing = await otherSpaceOfGroup(prisma, ada, `missing-${suffix}`);
+    expect(missing).toBeUndefined();
+    await expect(otherSpaceOfGroup(prisma, ada, graceGroup.id)).resolves.toBe(missing);
+    await expect(otherSpaceOfGroup(prisma, grace, adaWorkGroup.id)).resolves.toBe(missing);
+
+    await system.chatGroup.update({
+      where: { id: adaWorkGroup.id },
+      data: { archivedAt: new Date() },
+    });
+    await expect(otherSpaceOfGroup(prisma, ada, adaWorkGroup.id)).resolves.toBeUndefined();
+    await system.chatGroup.update({ where: { id: adaWorkGroup.id }, data: { archivedAt: null } });
+    await system.space.update({
+      where: { id: work.defaultSpaceId },
+      data: { deletingAt: new Date() },
+    });
+    await expect(otherSpaceOfGroup(prisma, ada, adaWorkGroup.id)).resolves.toBeUndefined();
   });
 });

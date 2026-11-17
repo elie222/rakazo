@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { normalizeRunError } from "@rakazo/core";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUiLocale } from "../lib/i18n";
@@ -34,14 +35,12 @@ export function useRunError(details: string | null, includeReset = true) {
         Date.now(),
       )
     : null;
-  useEffect(() => {
-    if (!error?.resetAt) return;
-    const timer = setTimeout(
-      refreshClock,
-      Math.min(2_147_483_647, Math.max(0, error.resetAt - Date.now())),
-    );
-    return () => clearTimeout(timer);
-  }, [error?.resetAt, clockVersion]);
+  const resetAt = error?.resetAt;
+  const untilReset = useMemo(
+    () => (resetAt ? Math.min(2_147_483_647, Math.max(0, resetAt - Date.now())) : null),
+    [resetAt, clockVersion],
+  );
+  useTimeout(refreshClock, untilReset, clockVersion);
   return error;
 }
 

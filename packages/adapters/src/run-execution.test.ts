@@ -1,5 +1,7 @@
 import type * as NodeFs from "node:fs";
 import { readFileSync } from "node:fs";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunExecutionHost } from "./run-execution.js";
 
@@ -20,22 +22,19 @@ function cgroupFiles(inactiveFile: number) {
 }
 
 describe("RunExecutionHost memory admission", () => {
-  let release: () => void;
-  let released: Promise<void>;
+  let released: Deferred;
   const execute = async ({ onRunStarted }: { onRunStarted: () => void }) => {
     onRunStarted();
-    await released;
+    await released.promise;
   };
 
   beforeEach(() => {
-    released = new Promise((resolve) => {
-      release = resolve;
-    });
+    released = deferred();
     vi.spyOn(process, "constrainedMemory").mockReturnValue(2 * GiB);
     vi.spyOn(process, "availableMemory").mockReturnValue(1024 ** 2);
   });
   afterEach(() => {
-    release();
+    released.resolve();
     vi.restoreAllMocks();
   });
 
@@ -44,7 +43,7 @@ describe("RunExecutionHost memory admission", () => {
     const host = new RunExecutionHost();
     await host.execute(execute);
     await expect(host.execute(execute, { waitForCapacity: false })).resolves.toBe(true);
-    release();
+    released.resolve();
     await host.stop();
   });
 
@@ -53,7 +52,7 @@ describe("RunExecutionHost memory admission", () => {
     const host = new RunExecutionHost();
     await host.execute(execute);
     await expect(host.execute(execute, { waitForCapacity: false })).resolves.toBe(false);
-    release();
+    released.resolve();
     await host.stop();
   });
 });

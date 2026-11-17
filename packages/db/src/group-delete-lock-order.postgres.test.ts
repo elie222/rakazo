@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -60,11 +61,7 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     provisioned = true;
     actor = {
@@ -107,14 +104,8 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
 
   it("deleting a group and a bot writing in its thread both commit", async () => {
     const probe = await pool.connect();
-    let locked!: (xactId: string) => void;
-    const threadLocked = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let proceed!: () => void;
-    const resumed = new Promise<void>((resolve) => {
-      proceed = resolve;
-    });
+    const threadLocked = deferred<string>();
+    const resumed = deferred();
     let threadWriter: Promise<unknown> = Promise.resolve();
     let removal: Promise<unknown> = Promise.resolve();
     try {
@@ -128,8 +119,8 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
           });
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await resumed;
+          threadLocked.resolve(rows[0]?.xactId ?? "");
+          await resumed.promise;
           await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId,
@@ -142,7 +133,7 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
       );
       threadWriter.catch(() => undefined);
       const xactId = await Promise.race([
-        threadLocked,
+        threadLocked.promise,
         threadWriter.then(() => {
           throw new Error("the thread writer finished before it held the thread lock");
         }),
@@ -162,14 +153,14 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
         if (Date.now() >= deadline) throw new Error("deleting never queued on the thread writer");
         await sleep(WAIT_INTERVAL_MS);
       }
-      proceed();
+      resumed.resolve();
 
       // A deadlock aborts one of the two, so both committing is the whole check.
       const settled = await Promise.allSettled([threadWriter, removal]);
       expect(settled.map(outcome)).toEqual(["committed", "committed"]);
       expect(await system.chatGroup.findUnique({ where: { id: groupId } })).toBeNull();
     } finally {
-      proceed();
+      resumed.resolve();
       await Promise.allSettled([threadWriter, removal]);
       probe.release();
     }
@@ -182,14 +173,8 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
     const groupThreadId = group.threadId!;
     const storageKey = `artifacts/${group.id}/uploaded-during-delete`;
     const probe = await pool.connect();
-    let locked!: (xactId: string) => void;
-    const threadLocked = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let proceed!: () => void;
-    const resumed = new Promise<void>((resolve) => {
-      proceed = resolve;
-    });
+    const threadLocked = deferred<string>();
+    const resumed = deferred();
     let threadHolder: Promise<unknown> = Promise.resolve();
     let removal: Promise<{ artifactStorageKeys: string[] }> = Promise.resolve({
       artifactStorageKeys: [],
@@ -202,14 +187,14 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${groupThreadId} FOR UPDATE`;
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await resumed;
+          threadLocked.resolve(rows[0]?.xactId ?? "");
+          await resumed.promise;
         },
         { timeout: TRANSACTION_TIMEOUT_MS },
       );
       threadHolder.catch(() => undefined);
       const xactId = await Promise.race([
-        threadLocked,
+        threadLocked.promise,
         threadHolder.then(() => {
           throw new Error("the thread holder finished before it held the thread lock");
         }),
@@ -244,7 +229,7 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
       upload.catch(() => undefined);
       // The upload either commits now or waits for the delete and then fails; both are fine.
       await Promise.race([upload.catch(() => undefined), sleep(UPLOAD_SETTLE_MS)]);
-      proceed();
+      resumed.resolve();
 
       const [uploaded, removed] = await Promise.allSettled([upload, removal]);
       expect(outcome(removed)).toBe("committed");
@@ -254,7 +239,7 @@ describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }
         expect(removed.value.artifactStorageKeys).toContain(storageKey);
       }
     } finally {
-      proceed();
+      resumed.resolve();
       await Promise.allSettled([threadHolder, removal, upload]);
       probe.release();
     }

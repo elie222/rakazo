@@ -1,4 +1,5 @@
 import { implement, ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
@@ -11,7 +12,9 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasReadyModelCredential,
   hiddenCatalogModel,
+  isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
@@ -24,6 +27,7 @@ import {
   scriptedCatalogEntry,
   spaceCanRunCatalogModel,
   validateConnectedModelChoice,
+  withLiveModelSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -36,10 +40,12 @@ import type {
 import {
   appContract,
   canonicalPiProviderId,
+  hasLab,
   modelSupportsRole,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { createAgentImportServices } from "../agent-import-services.js";
 import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
@@ -49,6 +55,7 @@ import { rosterChangeFor } from "../roster-procedures.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
 import { procedureSecurityEvent } from "../security-audit.js";
+import { spaceChangesFor } from "../space-change-procedures.js";
 import { createTaughtSkillsService } from "../taught-skills.js";
 import { meDto } from "./shared.js";
 
@@ -168,7 +175,10 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = applyProviderLiveCatalog(codexMerged, auth, providerLive, selected);
+    const merged = withLiveModelSettings(
+      auth,
+      applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
+    );
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -200,6 +210,7 @@ export function createRouterContext(deps: RouterDeps) {
 
   // Shown where a member chose no model, so the list names what actually runs.
   const withDeploymentDefault = async (
+    actor: Actor,
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
@@ -213,7 +224,26 @@ export function createRouterContext(deps: RouterDeps) {
               : null,
           }
         : { env: process.env };
-    return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
+    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+      try {
+        const ready = await hasReadyModelCredential(
+          deps.prisma,
+          deps.secrets,
+          actor,
+          deploymentPrimary.provider,
+          deploymentPrimary.modelId,
+          { codexCatalog, allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint },
+        );
+        if (!ready) deploymentPrimary = null;
+      } catch (error) {
+        if (!(error instanceof SecretStoreUnavailableError)) throw error;
+        await bestEffort("read approval model default", Promise.reject(error));
+        // This view is advisory; a temporary outage must not fail an already committed save.
+        deploymentPrimary = null;
+      }
+    }
+    return { ...settings, deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
@@ -428,6 +458,8 @@ export function createRouterContext(deps: RouterDeps) {
     if (event) await recordSecurityEvent(event);
     const rosterChange = rosterChangeFor(path, context.actor, input, result.output);
     if (rosterChange) void deps.events?.publishRosterChange?.(rosterChange);
+    for (const kind of spaceChangesFor(path))
+      void deps.events?.publishSpaceChange?.(context.actor.spaceId, kind);
     return result;
   });
 
@@ -436,16 +468,17 @@ export function createRouterContext(deps: RouterDeps) {
     return next();
   });
 
-  // The flag is checked first so a disabled board is not found even when signed out.
-  const boardEnabled = os
-    .use(async ({ next }) => {
-      if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
-      return next();
-    })
-    .use(signedIn);
+  const boardEnabled = authed.use(async ({ context, next }) => {
+    if (deps.env?.deploymentLabs?.includes("board")) return next();
+    const user = await deps.prisma.user.findUnique({
+      where: { id: context.actor.userId },
+      select: { labs: true },
+    });
+    if (!hasLab(user?.labs, "board")) throw new ORPCError("NOT_FOUND");
+    return next();
+  });
   const ticketDeps = {
     prisma: deps.prisma,
-    ticketBoardEnabled: deps.env?.ticketBoardEnabled,
     onTicketChange: deps.ticketChanges,
   };
 
@@ -471,6 +504,7 @@ export function createRouterContext(deps: RouterDeps) {
     removeBot,
     agentImportServices,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,

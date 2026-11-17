@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import { alertGroupNotDeleted, confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
@@ -14,16 +17,27 @@ import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
-const session = vi.hoisted(() => ({ space: "space-a", generation: 1, alert: vi.fn() }));
+const session = vi.hoisted(() => ({
+  space: "space-a",
+  generation: 1,
+  focused: true,
+  alert: vi.fn(),
+  route: {} as { name?: string; params?: { groupId?: string; botId?: string } },
+  dismissAll: vi.fn(),
+  replace: vi.fn(),
+}));
 
+vi.mock("expo-router", () => ({
+  useNavigationContainerRef: () => ({ getCurrentRoute: () => session.route }),
+  useRouter: () => ({ dismissAll: session.dismissAll, replace: session.replace }),
+  useFocusEffect: (effect: () => () => void) =>
+    useEffect(() => (session.focused ? effect() : undefined), [effect]),
+}));
 vi.mock("react-native", () => ({ Alert: { alert: session.alert } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
-  captureApiRequestContext: vi.fn(async () => ({
+  captureApiRequestContext: vi.fn(async (spaceId = session.space) => ({
     apiBase: "",
-    headers: { authorization: "Bearer token", "x-rakazo-space-id": session.space },
+    headers: { authorization: "Bearer token", "x-rakazo-space-id": spaceId },
     sessionGeneration: session.generation,
   })),
   currentApiBase: () => "",
@@ -31,7 +45,13 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => session.space,
 }));
 vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
-vi.mock("./bot-lifecycle", () => ({ confirmDeleteBot: vi.fn(), confirmDeleteGroup: vi.fn() }));
+vi.mock("./bot-lifecycle", () => ({
+  confirmDeleteBot: vi.fn(),
+  confirmDeleteGroup: vi.fn(),
+  deleteGroup: (groupId: string, send: (proc: string, input: unknown) => Promise<unknown>) =>
+    send("groups/remove", { groupId }),
+  alertGroupNotDeleted: vi.fn(),
+}));
 vi.mock("./confirm-delete-section", () => ({ confirmDeleteSection: vi.fn() }));
 vi.mock("./live-notifications", () => ({
   afterChatNotifyChange: vi.fn(async () => {}),
@@ -52,6 +72,8 @@ let root: Root | undefined;
 const sent = (call: unknown[]) => call.slice(0, 2);
 
 beforeEach(() => {
+  session.route = {};
+  session.focused = true;
   session.space = "space-a";
   session.generation = 1;
   vi.clearAllMocks();
@@ -64,6 +86,7 @@ afterEach(() => {
 
 async function handlers(
   respond: (procedure: string, input: unknown, options?: unknown) => Promise<unknown>,
+  confirmationActive?: boolean,
 ) {
   vi.mocked(rpc).mockImplementation(respond as typeof rpc);
   const lists = {
@@ -83,6 +106,7 @@ async function handlers(
   let actions: Actions | undefined;
   function Harness() {
     actions = useInboxChatActions({
+      confirmationActive,
       loadBots,
       setBots: update("bots"),
       setGroups: update("groups"),
@@ -109,6 +133,8 @@ async function handlers(
       current().runRowAction(kind, chat as MobileBot, action),
     editSectionFromMenu: (...args: Parameters<Actions["editSectionFromMenu"]>) =>
       current().editSectionFromMenu(...args),
+    promptRenameSection: (...args: Parameters<Actions["promptRenameSection"]>) =>
+      current().promptRenameSection(...args),
     updateChat: (
       kind: "bot" | "group",
       chat: Chat,
@@ -222,15 +248,18 @@ it("drops queued changes quietly once the session changes", async () => {
 });
 
 it("marks unread optimistically, keeps it through the request, then refreshes", async () => {
-  let finish!: () => void;
-  const h = await handlers(() => new Promise<void>((resolve) => (finish = resolve)));
+  let finish!: Deferred;
+  const h = await handlers(() => {
+    finish = deferred();
+    return finish.promise;
+  });
   const pending = h.runRowAction("bot", { id: "b1" }, "unread");
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
   expect(sent(vi.mocked(rpc).mock.calls[0]!)).toEqual(["threads/markUnread", { botId: "b1" }]);
   await vi.waitFor(() => expect(h.state.overrides.get("bot:b1")).toBe(true));
   // A poll landing now still shows the stale server value underneath the override.
   expect(applyUnreadOverrides("bot", h.state.bots, h.state.overrides)[0]!.unread).toBe(true);
-  finish();
+  finish.resolve();
   await pending;
   expect(h.state.bots[0]!.unread).toBe(true);
   expect(h.loadBots).toHaveBeenCalledTimes(1);
@@ -261,33 +290,78 @@ it.each([
   expect(h.loadBots).toHaveBeenCalledTimes(1);
 });
 
-it.each([
-  ["bot", confirmDeleteBot],
-  ["group", confirmDeleteGroup],
-] as const)(
-  "%s delete asks with the chat's own confirmation and refreshes once deleted",
-  async (kind, confirm) => {
-    const h = await handlers(async () => ({ ok: true }));
-    await h.runRowAction(kind, { id: "x", name: "Ada" }, "delete");
-    // Nothing is removed until the alert is confirmed.
-    expect(rpc).not.toHaveBeenCalled();
-    expect(h.loadBots).not.toHaveBeenCalled();
-    expect(vi.mocked(confirm).mock.calls[0]![0]).toEqual({ id: "x", name: "Ada" });
-    // A chat in the selected space is deleted with the session's own space.
-    expect(vi.mocked(confirm).mock.calls[0]!.at(-1)).toBeUndefined();
-    vi.mocked(confirm).mock.calls[0]![1]!();
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-  },
-);
-
-it.each([
-  ["bot", confirmDeleteBot],
-  ["group", confirmDeleteGroup],
-] as const)("%s delete from another space targets that space", async (kind, confirm) => {
+it("bot delete asks with the chat's own confirmation and refreshes once deleted", async () => {
   const h = await handlers(async () => ({ ok: true }));
-  await h.runRowAction(kind, { id: "x", name: "Ada", spaceId: "space-b" }, "delete");
-  expect(vi.mocked(confirm).mock.calls[0]!.at(-1)).toMatchObject({
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  // Nothing is removed until the alert is confirmed.
+  expect(rpc).not.toHaveBeenCalled();
+  expect(h.loadBots).not.toHaveBeenCalled();
+  expect(vi.mocked(confirmDeleteBot).mock.calls[0]![0]).toEqual({ id: "x", name: "Ada" });
+  // A chat in the selected space is deleted with the session's own space.
+  expect(vi.mocked(confirmDeleteBot).mock.calls[0]![3]).toMatchObject({
+    headers: { "x-rakazo-space-id": "space-a" },
+  });
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([]);
+  expect(h.loadBots).toHaveBeenCalledTimes(1);
+});
+
+it("group delete asks with the chat's own confirmation and refreshes once deleted", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
+  // Nothing is removed until the alert is confirmed.
+  expect(rpc).not.toHaveBeenCalled();
+  expect(h.loadBots).not.toHaveBeenCalled();
+  expect(vi.mocked(confirmDeleteGroup).mock.calls[0]![0]).toMatchObject({ name: "Ada" });
+  vi.mocked(confirmDeleteGroup).mock.calls[0]![1]!();
+  // A chat in the selected space is deleted with the session's own space.
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(rpc).mock.calls).toEqual([
+    [
+      "groups/remove",
+      { groupId: "x" },
+      {
+        requestContext: expect.objectContaining({
+          headers: expect.objectContaining({ "x-rakazo-space-id": "space-a" }),
+        }),
+      },
+    ],
+  ]);
+  expect(notifyArchivedChatsChanged).toHaveBeenCalledOnce();
+});
+
+it("sends each confirmed group delete and reports a failure", async () => {
+  const removal = deferred<unknown>();
+  const h = await handlers(() => removal.promise);
+  await h.runRowAction("group", { id: "x", name: "Ada" }, "delete");
+  await h.runRowAction("group", { id: "y", name: "Bo" }, "delete");
+  const [first, second] = vi.mocked(confirmDeleteGroup).mock.calls;
+  first![1]!();
+  second![1]!();
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(rpc).mock.calls.map(([, body]) => body)).toEqual([
+    { groupId: "x" },
+    { groupId: "y" },
+  ]);
+  removal.reject(new Error("offline"));
+  await vi.waitFor(() => expect(alertGroupNotDeleted).toHaveBeenCalledTimes(2));
+  expect(h.loadBots).not.toHaveBeenCalled();
+});
+
+it("bot delete from another space targets that space", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  await h.runRowAction("bot", { id: "x", name: "Ada", spaceId: "space-b" }, "delete");
+  expect(vi.mocked(confirmDeleteBot).mock.calls[0]![3]).toMatchObject({
     headers: { "x-rakazo-space-id": "space-b" },
+  });
+});
+
+it("group delete from another space targets that space", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  await h.runRowAction("group", { id: "x", name: "Ada", spaceId: "space-b" }, "delete");
+  vi.mocked(confirmDeleteGroup).mock.calls[0]![1]!();
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(rpc).mock.calls[0]![2]).toMatchObject({
+    requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
   });
 });
 
@@ -334,13 +408,40 @@ it("creates and renames a section from the row menu in the chat's own space", as
   ]);
 });
 
+it("renames a section from its heading with the name prompt and reloads the inbox", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  const options = vi.mocked(promptSectionName).mock.calls.at(-1)![0];
+  expect(options).toMatchObject({ title: "Rename section", defaultValue: "Work" });
+  options.onSubmit("Home");
+  await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(rpc).mock.calls.at(-1)!.slice(0, 2)).toEqual([
+    "botSections/update",
+    { sectionId: "s1", name: "Home" },
+  ]);
+});
+
+it("tells the user when a heading rename is refused", async () => {
+  const h = await handlers(async () => {
+    throw new Error("refused");
+  });
+  h.promptRenameSection({ id: "s1", name: "Work" });
+  vi.mocked(promptSectionName).mock.calls.at(-1)![0].onSubmit("Home");
+  await vi.waitFor(() =>
+    expect(session.alert).toHaveBeenCalledWith("Could not rename section", "Try again."),
+  );
+  expect(h.loadBots).not.toHaveBeenCalled();
+});
+
 it("hides an archived chat at the tap and keeps it hidden from a reload until it settles", async () => {
-  let finish!: (value: unknown) => void;
-  const h = await handlers(() => new Promise((resolve) => (finish = resolve)));
-  let finishReload!: () => void;
-  const reload = new Promise<void>((resolve) => (finishReload = resolve));
+  let finish!: Deferred<unknown>;
+  const h = await handlers(() => {
+    finish = deferred<unknown>();
+    return finish.promise;
+  });
+  const reload = deferred();
   h.loadBots.mockImplementation(async () => {
-    await reload;
+    await reload.promise;
     h.state.bots = h.state.bots.filter((bot) => bot.id !== "b1");
   });
   h.state.bots = [
@@ -357,7 +458,7 @@ it("hides an archived chat at the tap and keeps it hidden from a reload until it
     "b2",
   ]);
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
-  finish({ ok: true });
+  finish.resolve({ ok: true });
   await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
   expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
   // A poll replaces the stored list while the post-archive reload is still pending.
@@ -367,7 +468,7 @@ it("hides an archived chat at the tap and keeps it hidden from a reload until it
     "b0",
     "b2",
   ]);
-  finishReload();
+  reload.resolve();
   await pending;
   expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
   expect(h.state.spaces[0]!.bots).toEqual([]);
@@ -469,3 +570,84 @@ it.each(["bot", "group"] as const)(
     expect(notifyArchivedChatsChanged).toHaveBeenCalledOnce();
   },
 );
+
+it("guards inbox deletion until dismissed and invalidates it on unmount", async () => {
+  const h = await handlers(async () => []);
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledTimes(1);
+  const first = vi.mocked(confirmDeleteBot).mock.calls[0]!;
+  expect(first[2]!()).toBe(true);
+  first[4]!();
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledTimes(2);
+  const second = vi.mocked(confirmDeleteBot).mock.calls[1]!;
+  root!.unmount();
+  root = undefined;
+  expect(second[2]!()).toBe(false);
+});
+
+it("allows delete in a visible embedded inbox without route focus", async () => {
+  session.focused = false;
+  const h = await handlers(async () => [], true);
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledOnce();
+  expect(vi.mocked(confirmDeleteBot).mock.calls[0]![2]!()).toBe(true);
+});
+
+it("leaves a dissolved group open beside the inbox after bot deletion", async () => {
+  const h = await handlers(async () => []);
+  session.route = { name: "group-thread", params: { groupId: "group-removed" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!(["group-removed"]);
+  expect(session.dismissAll).toHaveBeenCalledOnce();
+  expect(session.replace).toHaveBeenCalledWith("/");
+});
+
+it.each([true, false])(
+  "checks the live group after a concurrent deletion (exists=%s)",
+  async (exists) => {
+    const h = await handlers(async () => (exists ? [{ id: "group-current" }] : []));
+    session.route = { name: "group-thread", params: { groupId: "group-current" } };
+    await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+    vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+      apiBase: "",
+      headers: { "x-rakazo-space-id": "space-a" },
+      sessionGeneration: 1,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.replace).toHaveBeenCalledTimes(exists ? 0 : 1);
+  },
+);
+
+it("preserves another Space's open group after concurrent deletion", async () => {
+  const h = await handlers(async () => []);
+  session.route = { name: "group-thread", params: { groupId: "other-group" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  session.space = "space-b";
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+    apiBase: "",
+    headers: { "x-rakazo-space-id": "space-a" },
+    sessionGeneration: 1,
+  });
+  await Promise.resolve();
+  expect(session.replace).not.toHaveBeenCalled();
+});
+
+it("preserves an archived group after concurrent deletion", async () => {
+  const h = await handlers(async (procedure) =>
+    procedure === "groups/listArchived" ? [{ id: "archived-group" }] : [],
+  );
+  session.route = { name: "group-thread", params: { groupId: "archived-group" } };
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  vi.mocked(confirmDeleteBot).mock.calls[0]![1]!([], {
+    apiBase: "",
+    headers: { "x-rakazo-space-id": "space-a" },
+    sessionGeneration: 1,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(session.replace).not.toHaveBeenCalled();
+});

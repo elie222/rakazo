@@ -1,8 +1,8 @@
 import type { LogEvent } from "@rakazo/logging";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isDatabaseUnavailable } from "./client.js";
-import { DatabaseOutage } from "./database-outage.js";
+import { DatabaseOutage, retryWhileDatabaseUnavailable } from "./database-outage.js";
 
 /** Prisma's error for a write during a failover, as its pg driver adapter reports it. */
 function readOnlyPrismaError() {
@@ -38,6 +38,7 @@ describe("isDatabaseUnavailable", () => {
     ],
     ["a pool checkout timeout", new Error("timeout exceeded when trying to connect")],
     ["too many clients", new Error("sorry, too many clients already")],
+    ["a query on a connection that died", new Error("Query read timeout")],
     ["a dropped connection", new Error("Connection terminated unexpectedly")],
     [
       "an administrator shutdown",
@@ -162,5 +163,96 @@ describe("DatabaseOutage", () => {
     }
     expect(attempts).toEqual([0, 30, 60, 120, 240, 360, 480, 600, 720, 840, 960, 1080, 1200]);
     expect(outage.ready(30_000, 120_000)).toBe(true);
+  });
+});
+
+describe("retryWhileDatabaseUnavailable", () => {
+  let events: LogEvent[];
+  let previous: ReturnType<typeof getLogger>;
+  const waits: number[] = [];
+  const sleep = async (ms: number) => {
+    waits.push(ms);
+  };
+
+  beforeEach(() => {
+    const sink = createTestSink();
+    events = sink.events;
+    previous = getLogger();
+    installLogger(createLogger({ service: "test", level: "debug", sinks: [sink] }));
+    waits.length = 0;
+  });
+
+  afterEach(() => {
+    installLogger(previous);
+  });
+
+  /** Work that finds the database unavailable `failures` times, then goes through. */
+  function failingTimes(failures: number) {
+    let calls = 0;
+    const work = async () => {
+      calls += 1;
+      if (calls <= failures) throw readOnlyPrismaError();
+      return "done";
+    };
+    return { work, calls: () => calls };
+  }
+
+  it("runs work again with backoff until the database is back, logging the outage once", async () => {
+    const outage = new DatabaseOutage();
+    const { work, calls } = failingTimes(4);
+    await expect(
+      retryWhileDatabaseUnavailable(work, { source: "test", outage, sleep }),
+    ).resolves.toBe("done");
+    expect(calls()).toBe(5);
+    expect(waits).toEqual([200, 400, 800, 1_600]);
+    expect(events.map((event) => `${event.level}:${event.message}`)).toEqual([
+      "error:database unavailable; backing off",
+      "info:database available again",
+    ]);
+  });
+
+  it("throws any other error at once", async () => {
+    const work = async () => {
+      throw new Error("bad input");
+    };
+    await expect(
+      retryWhileDatabaseUnavailable(work, { source: "test", outage: new DatabaseOutage(), sleep }),
+    ).rejects.toThrow("bad input");
+    expect({ waits, events }).toEqual({ waits: [], events: [] });
+  });
+
+  it("gives up once the wait is spent or the process is stopping", async () => {
+    const outage = new DatabaseOutage();
+    await expect(
+      retryWhileDatabaseUnavailable(failingTimes(1).work, {
+        source: "test",
+        outage,
+        sleep,
+        waitMs: 0,
+      }),
+    ).rejects.toThrow("25006");
+    const stopping = AbortSignal.abort();
+    await expect(
+      retryWhileDatabaseUnavailable(failingTimes(1).work, {
+        source: "test",
+        outage,
+        sleep,
+        signal: stopping,
+      }),
+    ).rejects.toThrow("25006");
+    expect(waits).toEqual([]);
+    const stop = new AbortController();
+    const work = vi.fn(async () => {
+      throw readOnlyPrismaError();
+    });
+    await expect(
+      retryWhileDatabaseUnavailable(work, {
+        source: "test",
+        outage,
+        signal: stop.signal,
+        sleep: async () => stop.abort(),
+      }),
+    ).rejects.toThrow("25006");
+    expect(work).toHaveBeenCalledTimes(1);
   });
 });

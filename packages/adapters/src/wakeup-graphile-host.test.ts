@@ -1,16 +1,16 @@
 import { getHeapStatistics } from "node:v8";
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   messagingReplyJob,
   teamChatAmbientJob,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { DatabaseOutage, databaseCapacityBackoffMs } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import type * as GraphileWorker from "graphile-worker";
-import type { JobHelpers, Runner } from "graphile-worker";
+import type { Runner } from "graphile-worker";
 import { makeWorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,68 +38,13 @@ import {
   GraphileJobPublisher,
   GraphileJobWorkerHost,
 } from "./wakeup.js";
-
-function handlers(): BackgroundJobHandlers {
-  return {
-    "run.continue": vi.fn(async () => undefined),
-    "routine.wakeup": vi.fn(async () => undefined),
-    "routine.retry": vi.fn(async () => undefined),
-    "computer.update": vi.fn(async () => undefined),
-    "computer.sleep": vi.fn(async () => undefined),
-    "computer.control-expire": vi.fn(async () => undefined),
-    "skill.teaching-expire": vi.fn(async () => undefined),
-    "call.expire": vi.fn(async () => undefined),
-    "history.compact": vi.fn(async () => undefined),
-    "memory.retain-turn": vi.fn(async () => undefined),
-    "memory.purge-history": vi.fn(async () => undefined),
-    "messaging.send": vi.fn(async () => undefined),
-    "messaging.reply": vi.fn(async () => undefined),
-    "messaging.deliver": vi.fn(async () => undefined),
-    "messaging.progress": vi.fn(async () => undefined),
-    "messaging.credential-cleanup": vi.fn(async () => undefined),
-    "team_chat.engage": vi.fn(async () => undefined),
-    "team_chat.ambient": vi.fn(async () => undefined),
-    "cloud_agent.poll": vi.fn(async () => undefined),
-    "purchase.poll": vi.fn(async () => undefined),
-    "media.poll": vi.fn(async () => undefined),
-    "push.receipt": vi.fn(async () => undefined),
-  };
-}
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
-function mockRunner() {
-  const life = deferred();
-  // Keep a rejection handler so Node does not treat the mock lifecycle as an
-  // unexpected unhandledRejection before the host attaches supervise().
-  life.promise.catch(() => undefined);
-  const runner = {
-    promise: life.promise,
-    stop: vi.fn(async () => {
-      life.resolve();
-    }),
-    kill: vi.fn(async () => undefined),
-    addJob: vi.fn(),
-    events: { on: vi.fn(), off: vi.fn(), once: vi.fn(), emit: vi.fn() },
-  } as unknown as Runner;
-  return {
-    runner,
-    rejectLife: (error: unknown) => life.reject(error),
-  };
-}
-
-/** What Graphile hands a task besides its payload: here, a first try of the default 25. */
-const helpers = { job: { id: "1", attempts: 1, max_attempts: 25 } } as unknown as JobHelpers;
-
-const tooMany = Object.assign(new Error("sorry, too many clients already"), { code: "53300" });
+import {
+  handlers,
+  helpers,
+  mockRunner,
+  settles,
+  tooMany,
+} from "./wakeup-graphile-host.test-support.js";
 
 describe("databaseCapacityBackoffMs", () => {
   it("matches the worker startup backoff curve", () => {
@@ -378,17 +323,13 @@ describe("reserved Graphile workloads", () => {
 
   it("does not start another workload after shutdown interrupts startup", async () => {
     const first = mockRunner();
-    let release!: (runner: Runner) => void;
-    run.mockReturnValueOnce(
-      new Promise<Runner>((resolve) => {
-        release = resolve;
-      }),
-    );
+    const release = deferred<Runner>();
+    run.mockReturnValueOnce(release.promise);
     const host = createReservedGraphileJobWorkerHost({} as Pool);
     const starting = host.start(handlers());
     await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
     await host.stop();
-    release(first.runner);
+    release.resolve(first.runner);
     await starting;
     expect(run).toHaveBeenCalledOnce();
     expect(first.runner.stop).toHaveBeenCalledOnce();
@@ -436,6 +377,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
   });
 
   it("stops waiting for a handed-off run that outlives the drain deadline", async () => {
+    vi.useFakeTimers();
     run.mockResolvedValueOnce(mockRunner().runner);
     const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1, drainTimeoutMs: 20 });
     const hung = deferred();
@@ -447,7 +389,11 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     try {
       await host.start(target);
       await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "hung-run" }, helpers);
-      await host.stop();
+      const stopped = settles(host.stop());
+      await vi.advanceTimersByTimeAsync(19);
+      expect(stopped.settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(stopped.settled).toBe(true);
     } finally {
       hung.resolve();
     }
@@ -882,6 +828,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
               payload: unknown;
               attempts: number;
               max_attempts: number;
+              created_at: Date;
             };
             error: unknown;
           }) => void)
@@ -893,6 +840,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
           payload: wrapJobPayload({ threadId: "thread-9" }),
           attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
           max_attempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+          created_at: new Date(),
         },
         error: new Error("The operation was aborted due to timeout"),
       });
@@ -902,6 +850,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
           payload: wrapJobPayload({ runId: "run-1" }),
           attempts: 25,
           max_attempts: 25,
+          created_at: new Date(),
         },
         error: new Error("handler failed"),
       });
@@ -913,6 +862,12 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     expect(sink.events).toEqual([
       expect.objectContaining({
         level: "error",
+        message: "job.gave_up",
+        "job.type": "history.compact",
+        "job.attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
+      }),
+      expect.objectContaining({
+        level: "error",
         message: "history.compact failed permanently",
         "thread.id": "thread-9",
         "history.compact.reason": "attempts_exhausted",
@@ -921,7 +876,15 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
         "job.max_attempts": HISTORY_COMPACT_MAX_ATTEMPTS,
         error: expect.objectContaining({ message: "The operation was aborted due to timeout" }),
       }),
+      expect.objectContaining({
+        level: "error",
+        message: "job.gave_up",
+        "job.type": "run.continue",
+        "job.attempts": 25,
+        error: expect.objectContaining({ message: "handler failed" }),
+      }),
     ]);
+    expect(JSON.stringify(sink.events.at(-1))).not.toContain("run-1");
   });
 
   it("wakes a pending restart delay when stop is called", async () => {

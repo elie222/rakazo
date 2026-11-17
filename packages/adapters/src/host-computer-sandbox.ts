@@ -8,8 +8,8 @@ import type {
   SandboxProvider,
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { describeDesktopSandbox } from "./desktop-sandbox.js";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type {
   HostComputerEnvironment,
   HostComputerFrame,
@@ -19,7 +19,9 @@ import {
   HOST_COMPUTER_MAX_BYTES,
   HOST_COMPUTER_MAX_FILE_BYTES,
   hostComputerDeadlineMs,
+  hostComputerFileTooLargeLimit,
 } from "./host-computer-protocol.js";
+import { describeDesktopSandbox } from "./providers/computer/desktop/desktop-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 /** Authenticated native host transport. Commands are never retried after a lost response. */
@@ -77,7 +79,12 @@ export class HostComputerSandbox implements SandboxProvider {
             throw new Error("Local computer response is too large");
           const frame = JSON.parse(pending.slice(0, newline)) as HostComputerFrame<T>;
           pending = pending.slice(newline + 1);
-          if ("error" in frame) throw new Error(frame.error);
+          if ("error" in frame) {
+            const maxBytes = hostComputerFileTooLargeLimit(frame.error);
+            throw maxBytes === undefined
+              ? new Error(frame.error)
+              : new SandboxFileTooLargeError(maxBytes);
+          }
           if ("heartbeat" in frame) {
             newline = pending.indexOf("\n");
             continue;

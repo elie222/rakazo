@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { TASK_CATALOG_GUIDANCE, taskCatalogFromTool } from "./task-catalog.js";
+import { taskCatalogFromTool } from "./task-catalog.js";
+import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 
 describe("task catalog", () => {
   it("returns the bot's real work records and exposed tool roster", async () => {

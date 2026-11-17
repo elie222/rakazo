@@ -4,7 +4,12 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { benchmarkEnvironment, safeName, stopProcess } from "./cli/performance-stack.js";
+import {
+  benchmarkEnvironment,
+  safeName,
+  stopProcess,
+  waitForUrl,
+} from "./cli/performance-stack.js";
 
 describe("benchmarkEnvironment", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -204,5 +209,84 @@ describe("long performance report labels", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("waitForUrl", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts a request that never returns headers at the startup deadline", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, options) => {
+        signal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+        });
+      }),
+    );
+    const result = waitForUrl("http://localhost/ready").catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ message: expect.stringContaining("Timed out waiting") });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("uses the remaining budget after a refused request", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("refused"))
+      .mockImplementation((_url, options) => {
+        signal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+        });
+      });
+    vi.stubGlobal("fetch", fetcher);
+    const result = waitForUrl("http://localhost/ready").catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ message: expect.stringContaining("refused") });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels unused response bodies and clears timers on success", async () => {
+    vi.useFakeTimers();
+    const failedBody = { cancel: vi.fn().mockResolvedValue(undefined) };
+    const readyBody = { cancel: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503, body: failedBody })
+        .mockResolvedValueOnce({ ok: true, body: readyBody }),
+    );
+    const ready = waitForUrl("http://localhost/ready");
+    await vi.advanceTimersByTimeAsync(200);
+    await ready;
+    expect(failedBody.cancel).toHaveBeenCalledOnce();
+    expect(readyBody.cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("readiness body cleanup", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("accepts successful headers when body cancellation rejects", async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error("body failed"));
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, body: { cancel } });
+    vi.stubGlobal("fetch", fetcher);
+    await expect(waitForUrl("http://localhost/ready")).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

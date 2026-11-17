@@ -70,9 +70,5 @@ async function bootstrap() {
     process.stdout.write("Account verified\n");
   }
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-  await bootstrapUserSpace(prisma, user, { signupsEnabled: "false", signupAllowlist: "" });
-  await prisma.deploymentSettings.update({
-    where: { id: "default" },
-    data: { signupsEnabled: false, signupPolicyInitialized: true },
-  });
+  await bootstrapUserSpace(prisma, user);
 }

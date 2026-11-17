@@ -1,6 +1,6 @@
 import { toolRequiresApproval } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { CLOUD_AGENT_TOOL_NAMES, selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 

@@ -94,3 +94,14 @@ for (const connected of [false, true]) {
     ]);
   });
 }
+
+it("distinguishes code-point initials that share a UTF-16 high surrogate", () => {
+  const names = ["😀 One", "😁 Two", "𠮷野", "Alpha"];
+  const items = names.map((name, i) => ({
+    ...catalog[0]!,
+    name,
+    slug: `app-${i}`,
+    connected: true,
+  }));
+  expect(connectedAppMarks(items, []).map((app) => app.name)).toEqual(names.slice(0, 3));
+});

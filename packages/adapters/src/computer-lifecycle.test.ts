@@ -7,14 +7,17 @@ import type {
   CommandRequest,
   ComputerRef,
   JobPublisher,
+  JobTransaction,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
+  machineCleanupJobKey,
   SandboxAllowanceUsedError,
   SandboxDamagedError,
   SandboxSizeUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread, planComputerSize } from "@rakazo/db";
@@ -24,18 +27,17 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   replaceComputer,
   screenLeaseIdForRun,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { SandboxUnsafeStopError } from "./sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
@@ -43,6 +45,26 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   planComputerSize: vi.fn(async () => "standard"),
 }));
+
+/**
+ * The hand-built clients here model single statements. A transaction on one runs its statements
+ * against that same client, so a test reads what the transaction wrote where it always did.
+ */
+function transactional<T extends object>(client: T): PrismaClient {
+  return Object.assign(client, {
+    $transaction: (work: (tx: T) => unknown) => work(client),
+  }) as unknown as PrismaClient;
+}
+
+/** A queue that only notes the keyed jobs a transaction removed. */
+function jobQueue() {
+  const cancelIn = vi.fn(async (_tx: JobTransaction, _key: string) => undefined);
+  return {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    cancelIn,
+  } as unknown as JobPublisher & { cancelIn: typeof cancelIn };
+}
 
 const context = {
   operationId: "test",
@@ -62,7 +84,7 @@ describe("computer provisioning", () => {
       kind: "wuying",
       providerRef: "ecd-fake",
     };
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           ...ref,
@@ -77,7 +99,7 @@ describe("computer provisioning", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as unknown as PrismaClient;
+    });
     const provision = vi.fn().mockResolvedValue(ref);
     const sandbox = {
       describe: () => ({ id: "wuying" }),
@@ -92,7 +114,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -118,7 +140,7 @@ describe("computer provisioning", () => {
       providerRef: "box-1",
     };
     const provisioned = async (findUnique: () => Promise<unknown>) => {
-      const prisma = {
+      const prisma = transactional({
         computer: {
           findUniqueOrThrow: vi.fn().mockResolvedValue({
             ...ref,
@@ -135,7 +157,7 @@ describe("computer provisioning", () => {
           createMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         user: { findUnique: vi.fn(findUnique) },
-      } as unknown as PrismaClient;
+      });
       const provision = vi.fn().mockResolvedValue(ref);
       const sandbox = {
         describe: () => ({ id: "docker" }),
@@ -147,7 +169,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -200,7 +222,7 @@ describe("computer provisioning", () => {
       controlLeaseId: null,
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
     };
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...computerRow })),
         updateMany: vi.fn(async (args) => {
@@ -215,7 +237,7 @@ describe("computer provisioning", () => {
           return result;
         }),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue({
         id: "provider-1",
@@ -235,7 +257,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -304,7 +326,7 @@ describe("computer provisioning", () => {
       controlLeaseId: null,
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
     };
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
@@ -312,12 +334,12 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     const deps = {
       prisma,
       sandbox: {} as SandboxProvider,
       home: {} as AgentHomeStore,
-      jobs: {} as JobPublisher,
+      jobs: jobQueue(),
       events: {} as ThreadEvents,
     };
 
@@ -416,7 +438,7 @@ describe("computer provisioning", () => {
         return { count: 1 };
       },
     );
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
@@ -424,7 +446,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
     const setTimeoutReal = globalThis.setTimeout;
     vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
@@ -436,7 +458,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home: new LocalAgentHomeStore(dataDir),
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -459,7 +481,7 @@ describe("computer provisioning", () => {
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
     const ttlMs = 5 * 60_000;
     const updateMany = vi.fn();
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({
           id: "computer-1",
@@ -476,7 +498,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     // First Date.now() is the first-observation stale check (still live). Later calls sit
     // past the TTL so a post-wait re-check would wrongly reclaim an in-flight suspend.
     const now = vi
@@ -494,7 +516,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox: {} as SandboxProvider,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
           },
           "computer-1",
@@ -511,7 +533,7 @@ describe("computer provisioning", () => {
   it("does not reclaim a fresh suspending claim after waiting", async () => {
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
     const updateMany = vi.fn();
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({
           id: "computer-1",
@@ -528,7 +550,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
     const setTimeoutReal = globalThis.setTimeout;
     vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
@@ -541,7 +563,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox: {} as SandboxProvider,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
           },
           "computer-1",
@@ -573,7 +595,7 @@ describe("computer provisioning", () => {
       updatedAt: new Date("2024-01-01T00:00:01.000Z"),
     };
     let reads = 0;
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => {
           reads += 1;
@@ -582,12 +604,12 @@ describe("computer provisioning", () => {
         }),
         updateMany,
       },
-    } as unknown as PrismaClient;
+    });
     const deps = {
       prisma,
       sandbox: {} as SandboxProvider,
       home: {} as AgentHomeStore,
-      jobs: {} as JobPublisher,
+      jobs: jobQueue(),
       events: {} as ThreadEvents,
     };
     const setTimeoutReal = globalThis.setTimeout;
@@ -632,9 +654,9 @@ describe("computer provisioning", () => {
       },
     );
     const findUniqueOrThrow = vi.fn(async () => ({ ...row }));
-    const prisma = {
+    const prisma = transactional({
       computer: { findUniqueOrThrow, updateMany },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
 
     try {
@@ -643,7 +665,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home: new LocalAgentHomeStore(dataDir),
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -690,7 +712,7 @@ describe("computer provisioning", () => {
         return { count: 1 };
       },
     );
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
@@ -701,7 +723,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
     // First Date.now() is the stale-claim check (must see the stamp older than an
     // execution-lease TTL); later calls freeze at the observed ms so the claim stamp
@@ -720,7 +742,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home: new LocalAgentHomeStore(dataDir),
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -759,7 +781,7 @@ describe("computer provisioning", () => {
     };
     const updateMany = vi.fn();
     const findUniqueOrThrow = vi.fn(async () => ({ ...row }));
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow,
         updateMany,
@@ -770,7 +792,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => null),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
 
@@ -781,7 +803,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -813,7 +835,7 @@ describe("computer provisioning", () => {
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
     };
     const updateMany = vi.fn();
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
@@ -824,7 +846,7 @@ describe("computer provisioning", () => {
       run: {
         findFirst: vi.fn(async () => ({ id: "other-run" })),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
     const setTimeoutReal = globalThis.setTimeout;
     vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
@@ -837,7 +859,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -889,12 +911,12 @@ describe("computer provisioning", () => {
         return { count: 1 };
       },
     );
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = new FakeSandboxProvider();
     const destroy = vi.spyOn(sandbox, "destroy");
 
@@ -904,7 +926,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home: new LocalAgentHomeStore(dataDir),
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -983,13 +1005,13 @@ describe("computer provisioning", () => {
           return { count: 1 };
         },
       );
-      const prisma = {
+      const prisma = transactional({
         computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },
         computerRun: {
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
           createMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
-      } as unknown as PrismaClient;
+      });
       const provision = vi.spyOn(sandbox, "provision");
       const prepare = vi.spyOn(sandbox, "prepare");
       const isRunning = vi.spyOn(sandbox, "isRunning");
@@ -1022,7 +1044,7 @@ describe("computer provisioning", () => {
         prisma,
         sandbox,
         home: new LocalAgentHomeStore(dataDir),
-        jobs: {} as JobPublisher,
+        jobs: jobQueue(),
         events: {} as ThreadEvents,
         dataDir,
       };
@@ -1098,7 +1120,7 @@ describe("computer provisioning", () => {
         updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       };
       const ref = { id: providerRef, botId: "bot-1", kind, providerRef, fresh: true };
-      const prisma = {
+      const prisma = transactional({
         computer: {
           findUniqueOrThrow: vi.fn().mockResolvedValue(original),
           updateMany:
@@ -1113,7 +1135,7 @@ describe("computer provisioning", () => {
                   return { count: 1 };
                 }),
         },
-      } as unknown as PrismaClient;
+      });
       const sandbox = {
         provision: vi.fn().mockResolvedValue(ref),
         prepare: stage === "prepare" ? vi.fn().mockRejectedValue(failure) : vi.fn(),
@@ -1129,7 +1151,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1201,13 +1223,13 @@ describe("computer provisioning", () => {
       providerRef: "provider-2",
       fresh: false,
     };
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue(original),
         update: vi.fn(),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue(ref),
       prepare: vi.fn().mockRejectedValue(failure),
@@ -1224,7 +1246,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1251,7 +1273,7 @@ describe("computer provisioning", () => {
     };
     const replacement = { ...resumed, fresh: true };
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1267,7 +1289,7 @@ describe("computer provisioning", () => {
         }),
         updateMany,
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValueOnce(resumed).mockResolvedValueOnce(replacement),
       prepare: vi
@@ -1285,7 +1307,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1319,7 +1341,7 @@ describe("computer provisioning", () => {
     };
     vi.spyOn(sandbox, "provision").mockResolvedValue(ref);
     const importWorkspace = vi.spyOn(sandbox, "importWorkspace");
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1337,7 +1359,7 @@ describe("computer provisioning", () => {
           .mockResolvedValueOnce({ count: 0 })
           .mockResolvedValue({ count: 1 }),
       },
-    } as unknown as PrismaClient;
+    });
     try {
       await expect(
         provisionComputer(
@@ -1345,7 +1367,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: new LocalAgentHomeStore(dataDir),
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1381,7 +1403,7 @@ describe("computer provisioning", () => {
       const destroy = vi.spyOn(sandbox, "destroy");
       const stop = vi.spyOn(sandbox, "stop");
       const saved = new TextEncoder().encode("saved work");
-      const prisma = {
+      const prisma = transactional({
         computer: {
           findUniqueOrThrow: vi.fn().mockResolvedValue({
             id: "computer-1",
@@ -1404,7 +1426,7 @@ describe("computer provisioning", () => {
             }),
         },
         run: { findFirst: vi.fn().mockResolvedValue(null) },
-      } as unknown as PrismaClient;
+      });
 
       try {
         await home.writeFile("bot-1", "notes/keep.txt", "saved work", context);
@@ -1415,7 +1437,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1518,7 +1540,7 @@ describe("computer provisioning", () => {
     const provision = vi
       .spyOn(sandbox, "provision")
       .mockResolvedValue({ ...ref, kind: "boat", providerRef: "provider-1", fresh: false });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1534,7 +1556,7 @@ describe("computer provisioning", () => {
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as unknown as PrismaClient;
+    });
 
     try {
       await provisionComputer(
@@ -1542,7 +1564,7 @@ describe("computer provisioning", () => {
           prisma,
           sandbox,
           home,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -1573,7 +1595,7 @@ describe("computer provisioning", () => {
     const destroy = vi.fn().mockResolvedValue(undefined);
     const releaseScreen = vi.fn().mockResolvedValue(undefined);
     const prepare = vi.fn().mockRejectedValue(new Error("provider preparation failed"));
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1587,7 +1609,7 @@ describe("computer provisioning", () => {
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue(ref),
       prepare,
@@ -1603,7 +1625,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1636,7 +1658,7 @@ describe("computer provisioning", () => {
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 })
       .mockResolvedValueOnce({ count: 0 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1650,7 +1672,7 @@ describe("computer provisioning", () => {
         }),
         updateMany,
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue(ref),
       prepare: vi.fn().mockResolvedValue(undefined),
@@ -1668,7 +1690,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1704,7 +1726,7 @@ describe("computer provisioning", () => {
         fresh: true,
       };
       const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-      const prisma = {
+      const prisma = transactional({
         computer: {
           findUniqueOrThrow: vi.fn().mockResolvedValue({
             id: "computer-1",
@@ -1718,12 +1740,14 @@ describe("computer provisioning", () => {
           }),
           updateMany,
         },
-      } as unknown as PrismaClient;
+      });
       const sandbox = {
         provision: vi.fn().mockResolvedValue(ref),
         prepare: vi.fn().mockRejectedValue(prepareError),
         destroy: vi.fn().mockRejectedValue(rollbackError),
       } as unknown as SandboxProvider;
+
+      const jobs = jobQueue();
 
       try {
         const result = provisionComputer(
@@ -1731,7 +1755,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs,
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1741,6 +1765,11 @@ describe("computer provisioning", () => {
         await expect(result).rejects.toMatchObject({
           errors: [prepareError, rollbackError],
         });
+        // The computer stores the machine it could not delete, so nothing deletes it later.
+        expect(jobs.cancelIn).toHaveBeenCalledExactlyOnceWith(
+          prisma,
+          machineCleanupJobKey("e2b", "new-provider-1"),
+        );
         expect(updateMany).toHaveBeenLastCalledWith({
           where: {
             maintenanceId: null,
@@ -1767,7 +1796,7 @@ describe("computer provisioning", () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-rollback-outage-"));
     const prepareError = new SandboxUnresponsiveError("provider unreachable");
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1781,7 +1810,7 @@ describe("computer provisioning", () => {
         }),
         updateMany,
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue({
         id: "new-provider-1",
@@ -1801,7 +1830,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1837,7 +1866,7 @@ describe("computer provisioning", () => {
       const prepare = prepareFails
         ? vi.fn().mockRejectedValue(new Error("provider preparation failed"))
         : vi.fn().mockResolvedValue(undefined);
-      const prisma = {
+      const prisma = transactional({
         computer: {
           findUniqueOrThrow: vi.fn().mockResolvedValue({
             id: "computer-1",
@@ -1852,7 +1881,7 @@ describe("computer provisioning", () => {
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           update: vi.fn(),
         },
-      } as unknown as PrismaClient;
+      });
       const sandbox = {
         provision: vi.fn().mockResolvedValue(ref),
         prepare,
@@ -1867,7 +1896,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1903,7 +1932,7 @@ describe("computer provisioning", () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const importWorkspace = vi.fn().mockResolvedValue(undefined);
     const exportHome = vi.fn().mockReturnValue((async function* () {})());
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -1918,7 +1947,7 @@ describe("computer provisioning", () => {
         updateMany,
         update: vi.fn(),
       },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue(ref),
       prepare: vi.fn().mockResolvedValue(undefined),
@@ -1934,7 +1963,7 @@ describe("computer provisioning", () => {
             prisma,
             sandbox,
             home: { exportHome } as unknown as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -1956,6 +1985,123 @@ describe("computer provisioning", () => {
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the record of a machine a start created", () => {
+  const ref: ComputerRef = {
+    id: "machine-1",
+    botId: "bot-1",
+    kind: "e2b",
+    providerRef: "machine-1",
+    fresh: true,
+  };
+  const key = machineCleanupJobKey("e2b", "machine-1");
+
+  /** One stopped computer, and the order of the writes a start makes to it and to the queue. */
+  function start(options: { activates?: boolean; prepare?: () => Promise<void> } = {}) {
+    const row = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "e2b",
+      scope: "dedicated",
+      state: "stopped",
+      controlLeaseId: null,
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+    };
+    const writes: string[] = [];
+    let open = false;
+    const client = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+        updateMany: vi.fn(async (args: { data: { state?: string; providerRef?: string } }) => {
+          const leaves = args.data.state !== undefined && args.data.state !== "booting";
+          if (leaves && options.activates === false && args.data.state === "running")
+            return { count: 0 };
+          if (leaves) writes.push(`${open ? "in" : "outside"} transaction: ${args.data.state}`);
+          Object.assign(row, args.data);
+          return { count: 1 };
+        }),
+      },
+      computerRun: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
+        open = true;
+        try {
+          return await work(client);
+        } finally {
+          open = false;
+        }
+      },
+    };
+    const jobs = jobQueue();
+    jobs.cancelIn.mockImplementation(async (tx, cancelled) => {
+      const inside = open && (tx as unknown) === client;
+      writes.push(`${inside ? "in" : "outside"} transaction: cancel ${cancelled}`);
+    });
+    const sandbox = {
+      describe: () => ({ id: "e2b" }),
+      provision: vi.fn().mockResolvedValue(ref),
+      prepare: vi.fn(options.prepare ?? (async () => undefined)),
+      // A new machine is restored from the saved home, which holds nothing here.
+      importWorkspace: vi.fn(async (_ref: ComputerRef, files: AsyncIterable<unknown>) => {
+        for await (const _file of files);
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SandboxProvider;
+    const run = async () => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-machine-record-"));
+      try {
+        return await provisionComputer(
+          {
+            prisma: client as unknown as PrismaClient,
+            sandbox,
+            home: new LocalAgentHomeStore(dataDir),
+            jobs,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        );
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    };
+    return { row, writes, jobs, sandbox, run };
+  }
+
+  it("is dropped in the transaction that stores the machine and leaves booting", async () => {
+    const { row, writes, run } = start();
+
+    await expect(run()).resolves.toEqual(ref);
+
+    expect(row).toMatchObject({ state: "running", providerRef: "machine-1" });
+    expect(writes).toEqual(["in transaction: running", `in transaction: cancel ${key}`]);
+  });
+
+  it("stays when the start fails and deletes the machine itself", async () => {
+    const { row, jobs, sandbox, run } = start({
+      prepare: () => Promise.reject(new Error("setup failed")),
+    });
+
+    await expect(run()).rejects.toThrow("setup failed");
+
+    expect(sandbox.destroy).toHaveBeenCalledExactlyOnceWith(ref, context);
+    expect(row).toMatchObject({ state: "error", providerRef: null });
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
+  });
+
+  it("stays when the start lost its claim, so the machine it could not store is still deleted", async () => {
+    const { row, jobs, run } = start({ activates: false });
+
+    await expect(run()).rejects.toBeInstanceOf(ComputerBusyError);
+
+    expect(row.providerRef).toBeNull();
+    expect(jobs.cancelIn).not.toHaveBeenCalled();
   });
 });
 
@@ -1983,7 +2129,7 @@ describe("Team Computer wake", () => {
       if (isFolderListing(request)) yield { type: "stdout" as const, data: "bots/deleted-bot\n" };
       yield { type: "exit" as const, code: 0 };
     });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -2006,7 +2152,7 @@ describe("Team Computer wake", () => {
       },
       $executeRaw: vi.fn().mockResolvedValue(0),
       botDeletion: { findMany },
-    } as unknown as PrismaClient;
+    });
     const sandbox = {
       provision: vi.fn().mockResolvedValue(ref),
       prepare: vi.fn().mockResolvedValue(undefined),
@@ -2026,7 +2172,7 @@ describe("Team Computer wake", () => {
           home: {
             exportHome: vi.fn().mockReturnValue((async function* () {})()),
           } as unknown as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -2256,21 +2402,18 @@ describe("Team Computer wake", () => {
   it("does not hold the boot past the folder cleanup's time budget", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      let markStarted: () => void = () => undefined;
-      const cleanupStarted = new Promise<void>((resolve) => {
-        markStarted = resolve;
-      });
+      const cleanupStarted = deferred();
       const harness = wakeHarness("stopped");
       harness.execute.mockImplementation(async function* (_computer, request) {
         if (isFolderListing(request)) {
-          markStarted();
+          cleanupStarted.resolve();
           await new Promise(() => undefined);
         }
         yield { type: "exit" as const, code: 0 };
       });
 
       const booting = boot(harness);
-      await cleanupStarted;
+      await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
       await expect(booting).resolves.toEqual(harness.ref);
@@ -2439,6 +2582,7 @@ describe("computer execution leases", () => {
     });
     const client = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "run-1" }]),
+      run: { update: vi.fn().mockResolvedValue({}) },
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({ scope: "team", state: "running" }),
       },
@@ -2564,6 +2708,7 @@ describe("computer execution leases", () => {
       },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn(async () => []),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
@@ -2571,6 +2716,7 @@ describe("computer execution leases", () => {
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
       run: {
+        update: vi.fn().mockResolvedValue({}),
         findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
@@ -2749,7 +2895,11 @@ describe("computer execution leases", () => {
         updateManyAndReturn,
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+      run: {
+        update: vi.fn().mockResolvedValue({}),
+        aggregate: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
@@ -2790,7 +2940,10 @@ describe("computer execution leases", () => {
             .fn()
             .mockRejectedValue(Object.assign(new Error("lease exists"), { code: "P2002" })),
         },
-        run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }) },
+        run: {
+          update: vi.fn().mockResolvedValue({}),
+          aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }),
+        },
       };
       const prisma = {
         $transaction: async (work: (client: typeof tx) => unknown) => work(tx),
@@ -2831,7 +2984,7 @@ describe("computer execution leases", () => {
         updateManyAndReturn: vi.fn().mockResolvedValue([{ fence: 3 }]),
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn() },
+      run: { aggregate: vi.fn(), update: vi.fn(async () => ({})) },
     };
     const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
     const $transaction = vi
@@ -2945,6 +3098,7 @@ function leasePrisma(options: {
   const queryRaw = vi.fn().mockResolvedValue([{ id: "run-1" }]);
   const client = {
     $queryRaw: queryRaw,
+    run: { update: vi.fn().mockResolvedValue({}) },
     computer: { findUniqueOrThrow },
     computerExecutionLease: { updateManyAndReturn, create, updateMany, deleteMany },
   };
@@ -2963,13 +3117,6 @@ function leasePrisma(options: {
 }
 
 describe("computer replacement", () => {
-  it("exposes update availability by sandbox kind", () => {
-    expect(computerSupportsUpdate("e2b")).toBe(true);
-    expect(computerSupportsUpdate("desktop")).toBe(false);
-    expect(computerSupportsUpdate("wuying")).toBe(false);
-    expect(computerSupportsUpdate("none")).toBe(false);
-  });
-
   it("replaces a wedged computer and restores the durable home", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-replace-"));
     const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-replace-home-"));
@@ -3033,7 +3180,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox,
           home,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -3087,7 +3234,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3099,7 +3246,7 @@ describe("computer replacement", () => {
 
   it("refuses Recover and Update on a stale suspending computer", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3115,7 +3262,7 @@ describe("computer replacement", () => {
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
+    });
 
     for (const mode of ["recover", "update"] as const) {
       await expect(
@@ -3124,7 +3271,7 @@ describe("computer replacement", () => {
             prisma,
             sandbox: new FakeSandboxProvider(),
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
           },
           "computer-1",
@@ -3168,7 +3315,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3186,7 +3333,7 @@ describe("computer replacement", () => {
   it("refuses Reset on a fresh suspending claim", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3202,7 +3349,7 @@ describe("computer replacement", () => {
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
+    });
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
 
     try {
@@ -3212,7 +3359,7 @@ describe("computer replacement", () => {
             prisma,
             sandbox: new FakeSandboxProvider(),
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
           },
           "computer-1",
@@ -3228,7 +3375,7 @@ describe("computer replacement", () => {
 
   it("refuses Reset on a stale suspending row while a run is still active", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3244,7 +3391,7 @@ describe("computer replacement", () => {
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
-    } as unknown as PrismaClient;
+    });
 
     await expect(
       replaceComputer(
@@ -3252,7 +3399,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3294,7 +3441,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3309,7 +3456,7 @@ describe("computer replacement", () => {
 
   it("refuses a booting computer another bot is still holding", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3327,7 +3474,7 @@ describe("computer replacement", () => {
         findFirst: vi.fn().mockResolvedValue({ id: "lease-other-bot" }),
       },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
+    });
 
     await expect(
       replaceComputer(
@@ -3335,7 +3482,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3351,7 +3498,7 @@ describe("computer replacement", () => {
     // cannot see an in-flight boot. A fresh claim stamp must keep Reset from destroying it.
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3367,7 +3514,7 @@ describe("computer replacement", () => {
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
+    });
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
 
     try {
@@ -3377,7 +3524,7 @@ describe("computer replacement", () => {
             prisma,
             sandbox: new FakeSandboxProvider(),
             home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
           },
           "computer-1",
@@ -3395,7 +3542,7 @@ describe("computer replacement", () => {
     // Stamp is old enough to look abandoned, but a live run still owns the provision.
     // Refuse before claiming suspending so we do not bump @updatedAt under the provisioner.
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3411,7 +3558,7 @@ describe("computer replacement", () => {
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
-    } as unknown as PrismaClient;
+    });
 
     await expect(
       replaceComputer(
@@ -3419,7 +3566,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3458,7 +3605,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3469,7 +3616,7 @@ describe("computer replacement", () => {
   });
 
   it("rejects replacement while any bot holds user control", async () => {
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3484,14 +3631,14 @@ describe("computer replacement", () => {
           controlBotId: "other-bot",
         }),
       },
-    } as unknown as PrismaClient;
+    });
     await expect(
       replaceComputer(
         {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3502,7 +3649,7 @@ describe("computer replacement", () => {
   });
 
   it("rejects replacement while the same bot holds user control", async () => {
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           id: "computer-1",
@@ -3517,14 +3664,14 @@ describe("computer replacement", () => {
           controlBotId: "bot-1",
         }),
       },
-    } as unknown as PrismaClient;
+    });
     await expect(
       replaceComputer(
         {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3584,7 +3731,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3703,14 +3850,14 @@ describe("computer replacement", () => {
     };
     const findUniqueOrThrow = vi.fn().mockResolvedValue(computer);
     const findUnique = vi.fn().mockResolvedValue(computer);
-    const prisma = {
+    const prisma = transactional({
       computer: {
         findUniqueOrThrow,
         findUnique,
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       run: { findFirst: vi.fn() },
-    } as unknown as PrismaClient;
+    });
     const sandbox = Object.assign(new FakeSandboxProvider(), {
       setScreenControl: async () => {
         throw new Error("provider unavailable");
@@ -3723,7 +3870,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox,
           home: {} as AgentHomeStore,
-          jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as unknown as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3768,7 +3915,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3823,7 +3970,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3879,7 +4026,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -3948,7 +4095,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox,
           home: new LocalAgentHomeStore(dataDir),
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -3994,7 +4141,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox: new FakeSandboxProvider(),
           home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
         },
         "computer-1",
@@ -4058,7 +4205,7 @@ describe("computer replacement", () => {
           prisma,
           sandbox,
           home,
-          jobs: {} as JobPublisher,
+          jobs: jobQueue(),
           events: {} as ThreadEvents,
           dataDir,
         },
@@ -4123,7 +4270,7 @@ describe("computer replacement", () => {
             prisma,
             sandbox,
             home,
-            jobs: {} as JobPublisher,
+            jobs: jobQueue(),
             events: {} as ThreadEvents,
             dataDir,
           },
@@ -4172,7 +4319,7 @@ function replaceDeps(
     prisma,
     sandbox: sandbox as unknown as SandboxProvider,
     home: {} as AgentHomeStore,
-    jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+    jobs: jobQueue(),
     events: {
       append: vi.fn(),
       draftRecordingsOfLease: vi.fn().mockResolvedValue([]),
@@ -4180,15 +4327,23 @@ function replaceDeps(
   };
 }
 
-describe("computer terminal capability", () => {
-  it("allows Novita terminals through the product capability gate", () => {
-    expect(computerSupportsTerminal("novita")).toBe(true);
-    expect(computerSupportsTerminal("unknown")).toBe(false);
-    expect(computerSupportsTerminal("none")).toBe(false);
-  });
-});
-
 /** The values of each raw run-closing statement, in order. */
 function closedRuns(harness: { prisma: PrismaClient }) {
   return vi.mocked(harness.prisma.$executeRaw).mock.calls.map(([, ...values]) => values);
 }
+
+it("fails a changed computer once instead of retrying it as a transient error", async () => {
+  const findUnique = vi.fn(async () => ({
+    computerId: "replacement",
+    archivedAt: null,
+    computerSwitching: false,
+  }));
+  await expect(
+    waitForRunComputerLease(
+      { bot: { findUnique } } as unknown as PrismaClient,
+      { computerId: "original", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("computer changed");
+  expect(findUnique).toHaveBeenCalledOnce();
+});

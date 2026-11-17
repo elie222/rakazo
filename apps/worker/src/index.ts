@@ -33,17 +33,20 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createTicketChangeNotifier,
+  drainRuns,
   ExpoPushProvider,
   GraphileJobPublisher,
   homeStorageSweeper,
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  machineCleanupRecords,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
+  RUN_DRAIN_MS,
   RunJobPublisher,
   RunStarter,
   RunWorkerHost,
@@ -60,8 +63,10 @@ import {
   withHostComputerScreen,
   withRunWorker,
   withSecretPersistence,
+  withSecretWriteAhead,
 } from "@rakazo/adapters";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { abortableDelay } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -76,9 +81,10 @@ import {
   pushSessionExpiresAt,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
-import { SERVICE_NAMES } from "@rakazo/logging";
+import { bestEffort, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { watchEventLoopStalls } from "@rakazo/logging/event-loop";
 import { MarkdownMemoryStore } from "@rakazo/memory";
@@ -106,6 +112,8 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   // Set once push delivery is configured below; thread changes before then have no cards.
   let workActivities: WorkActivities | undefined;
   // Every thread change this process commits also updates its users' live status cards.
@@ -116,10 +124,16 @@ async function main() {
     }),
     (threadId) => workActivities?.threadChanged(threadId),
   );
-  const secrets = await createWorkerSecretStore(process.env, realtime);
+  // The queue is built from this client below; a secret written or dropped before then gets no
+  // backup.
+  let secretCleanupJobs: JobPublisher | undefined;
+  const secrets = withSecretWriteAhead(
+    await createWorkerSecretStore(process.env, realtime),
+    () => secretCleanupJobs,
+  );
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  prisma = withSecretPersistence(prisma, secrets);
+  prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -140,15 +154,6 @@ async function main() {
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
-  const sandbox = await createRunSandbox(sandboxProvider, {
-    ...sandboxOptions,
-    supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
-    supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
-    dataDir: env.dataDir,
-    prisma,
-    secrets,
-  });
-  const connectors = createConnectorRuntime(env, { prisma, secrets, events });
   // Never poll inbound here: Telegram allows a single getUpdates consumer,
   // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
@@ -166,9 +171,27 @@ async function main() {
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const shutdown = new AbortController();
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
+  // A stop lets the runs this worker is executing end their turn before they are handed back.
+  // Only where the deployment says a stopping worker is left alone that long: one killed
+  // within seconds would leave a run mid-turn waiting for its lease to expire.
+  const runDrain = drainRuns(
+    shutdown.signal,
+    process.env.RUN_DRAIN_ENABLED === "true" ? RUN_DRAIN_MS : 0,
+  );
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
+  secretCleanupJobs = jobs;
+  const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs });
+  const sandbox = await createRunSandbox(sandboxProvider, {
+    ...sandboxOptions,
+    supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
+    supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
+    dataDir: env.dataDir,
+    prisma,
+    secrets,
+    unreferencedMachines: machineCleanupRecords(jobs),
+  });
   const { messaging, installations: messagingInstallations } = installedMessaging(
     prisma,
     secrets,
@@ -185,7 +208,7 @@ async function main() {
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled: env.ticketBoardEnabled,
+    deploymentLabs: env.deploymentLabs,
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
@@ -245,7 +268,8 @@ async function main() {
       },
     ),
     paymentWallet,
-    shutdownSignal: shutdown.signal,
+    stoppingSignal: shutdown.signal,
+    shutdownSignal: runDrain.signal,
   });
 
   const jobHost: JobWorkerHost =
@@ -300,14 +324,22 @@ async function main() {
         await realtime.close();
         await connectors.mcp.close();
         await connectors.installed.close();
-        await prisma.$disconnect().catch(() => undefined);
-        await pool.end().catch(() => undefined);
+        await bestEffort("disconnect database client", prisma.$disconnect());
+        // Once the job hosts have stopped, only work they gave up on can still hold a
+        // connection, such as Graphile's listener whose UNLISTEN never answered, so the
+        // wait is bounded; the process exits right after.
+        await Promise.race([bestEffort("close database pool", pool.end()), abortableDelay(10_000)]);
       } finally {
         await analytics?.flush();
         await shutdownPiTelemetry();
         await logger.flush({ timeoutMs: 2_000 });
       }
     })());
+  // A failure hands the running turns back at once, as a process that may not be sound should.
+  const stopNow = () => {
+    runDrain.end();
+    return stop();
+  };
   // Exit rather than wait on a hung job that was handed back, which another worker now retries.
   // process.exitCode keeps a crash that arrives while draining from exiting as a clean stop.
   stopOnShutdownSignals(() =>
@@ -330,13 +362,13 @@ async function main() {
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
     process.exitCode = 1;
-    void stop().finally(() => process.exit(1));
+    void stopNow().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
     if (databaseOutage.failed(reason, "job queue")) return;
     logger.error("unhandledRejection", reason);
     process.exitCode = 1;
-    void stop().finally(() => process.exit(1));
+    void stopNow().finally(() => process.exit(1));
   });
 
   // Direct runs may already be active while the scheduler waits for the database: out of
@@ -350,7 +382,7 @@ async function main() {
     } catch (error) {
       if (stopping) return;
       if (!databaseOutage.failed(error, "worker start", { fromDatabaseConnection: true })) {
-        await stop();
+        await stopNow();
         throw error;
       }
       await sleep(databaseCapacityBackoffMs(attempt), undefined, { signal: shutdown.signal }).catch(

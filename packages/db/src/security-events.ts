@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { SecurityEvent, SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
-import { SECURITY_EVENT_TYPES, SecurityEventTypeSchema } from "@rakazo/contracts";
+import type { SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
 import { recordAuditEvent } from "./audit-events.js";
 import type { PrismaClient } from "./client.js";
@@ -191,53 +190,4 @@ export function createRetentionPruner(
     const removed = await prune(at);
     if (removed > 0) getLogger().info(`${event}.pruned`, { [`${event}.removed`]: removed });
   };
-}
-
-export async function listSecurityEvents(
-  db: SecurityEventDb,
-  input: { type?: SecurityEventType; ip?: string; userId?: string; cursor?: string; limit: number },
-): Promise<SecurityEvent[]> {
-  const after = input.cursor
-    ? await db.securityEvent.findUnique({
-        where: { id: input.cursor },
-        select: { id: true, createdAt: true },
-      })
-    : null;
-  if (input.cursor && !after) return [];
-  const rows = await db.securityEvent.findMany({
-    where: {
-      // Only types this release knows, filtered before `take` so a page is never emptied by
-      // events a newer release wrote before a rollback.
-      type: input.type ?? { in: [...SECURITY_EVENT_TYPES] },
-      ...(input.ip ? { ip: input.ip } : {}),
-      ...(input.userId ? { userId: input.userId } : {}),
-      // Same order as the sort, so events sharing a timestamp are neither skipped nor repeated.
-      ...(after
-        ? {
-            OR: [
-              { createdAt: { lt: after.createdAt } },
-              { createdAt: after.createdAt, id: { lt: after.id } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: input.limit,
-  });
-  return rows.flatMap((row) => {
-    const type = SecurityEventTypeSchema.safeParse(row.type);
-    if (!type.success) return [];
-    return [
-      {
-        id: row.id,
-        type: type.data,
-        userId: row.userId,
-        spaceId: row.spaceId,
-        ip: row.ip,
-        userAgent: row.userAgent,
-        metadata: (row.metadata ?? {}) as SecurityEventMetadata,
-        createdAt: row.createdAt.toISOString(),
-      },
-    ];
-  });
 }

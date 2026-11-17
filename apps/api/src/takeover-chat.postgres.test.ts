@@ -221,6 +221,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const jobs: JobPublisher = {
       enqueue,
       enqueueIn: vi.fn(async () => undefined),
+      enqueueManyIn: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       close: async () => undefined,
@@ -1247,9 +1248,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       });
       const releaseScreen = vi.spyOn(fixture.sandbox, "releaseScreen");
 
-      // The run fails after the save read it as active and before the save cancels it.
+      // Finish after the group metadata read, before the save locks the conversation.
+      // Once it owns that lock, finalization must wait behind cancellation.
       await fixture.saveFromSettings(
-        afterFirstRead(prisma, "run", () =>
+        afterFirstRead(prisma, "chatGroup", () =>
           runAsSystem("test worker", () =>
             createThreadEvents(prisma).finalizeRun({
               spaceId: run.spaceId,
@@ -1304,7 +1306,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
 /** Runs `after` once, right after the first transaction reads `model`. */
 function afterFirstRead(
   prisma: PrismaClient,
-  model: "computerExecutionLease" | "run",
+  model: "computerExecutionLease" | "chatGroup",
   after: () => Promise<unknown>,
 ): PrismaClient {
   let pending = true;
@@ -1312,7 +1314,8 @@ function afterFirstRead(
     const reads = new Proxy(tx[model], {
       get(delegate, key) {
         const value = Reflect.get(delegate, key, delegate);
-        if (key !== "findMany") return typeof value === "function" ? value.bind(delegate) : value;
+        if (key !== (model === "chatGroup" ? "findFirst" : "findMany"))
+          return typeof value === "function" ? value.bind(delegate) : value;
         return async (args: unknown) => {
           const rows = await value.call(delegate, args);
           if (pending) {

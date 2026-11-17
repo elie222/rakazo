@@ -32,6 +32,7 @@ export const SECURITY_EVENT_TYPES = [
   "space.member.joined",
   "space.member.removed",
   "space.member.left",
+  "organization.invitation.sent",
   "egress.refused",
   "rate_limit.hit",
 ] as const;

@@ -13,7 +13,6 @@ import {
   messagingSendJob,
   messagingSendJobKey,
   RetryJobLaterError,
-  runContinueJob,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
@@ -35,15 +34,39 @@ import {
   databaseCapacityBackoffMs,
   databaseOutage,
   isDatabaseUnavailable,
+  JsonColumnMismatchError,
+  readJsonColumn,
+  readMessageBlocks,
+  reportJsonColumnOnce,
   runAsSystem,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
+import { loadBotMessageContext } from "./bot-messages.js";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
+import { loadRunOrigin } from "./run-origin.js";
 import { resolveMessagingThreadId } from "./team-chat-messaging.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
+import { wakeRun } from "./wake-run.js";
+
+const SteeringDeliveryProof = z.object({ externalSafe: z.boolean().optional() });
+
+function steeringAllowsExternalDelivery(event: { id: string; payload: unknown }): boolean {
+  const row = { table: "events", column: "payload", id: event.id };
+  try {
+    return (
+      readJsonColumn(SteeringDeliveryProof, event.payload, row, "reject").externalSafe === true
+    );
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce("delegated reply has unreadable steering provenance", row);
+    return false;
+  }
+}
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -103,6 +126,9 @@ const SEND_ORDER: Prisma.MessagingOutboundOrderByWithRelationInput[] = [
 export type OutboundLane = { identityId: string } | { identityId: null; threadId: string };
 
 export type OutboundRow = Omit<Prisma.MessagingOutboundCreateManyInput, "createdAt">;
+
+/** One reply's rows: its text, split into message-sized parts, and its files. */
+type ReplyRows = { parts: OutboundRow[]; files: OutboundRow[] };
 
 type LaneRow = {
   id: string;
@@ -287,7 +313,63 @@ export class MessagingDelivery {
       if (!run) return;
       const terminal = TERMINAL_RUN.includes(run.status);
       const lanes: OutboundLane[] = [];
-      if (run.externalMessage) {
+      if (run.trigger === "helper_result") {
+        const origin = await loadRunOrigin(this.deps.prisma, run);
+        // Consumed steering rows may already be deleted after the reply. Older claim events
+        // carry no privacy provenance, so a result influenced by them stays in the app.
+        const steering = origin
+          ? await this.deps.prisma.event.findMany({
+              where: { runId: run.id, type: "run.steering.claimed" },
+              select: { id: true, payload: true },
+            })
+          : [];
+        if (origin && !options.progress && steering.every(steeringAllowsExternalDelivery)) {
+          if (origin.thread.externalConversationId) {
+            if (terminal) {
+              const external = await this.deps.prisma.externalMessage.findUnique({
+                where: { runId: origin.id },
+                select: {
+                  replyThreadId: true,
+                  externalConversation: { select: { conversationId: true } },
+                },
+              });
+              if (external) {
+                const lane = await this.recordDelegatedReply(run, external);
+                if (lane) lanes.push(lane);
+              }
+            }
+          } else if (origin.trigger === "messaging") {
+            const source = origin.sourceMessage
+              ? readMessageBlocks(origin.sourceMessage)
+              : undefined;
+            const channel = source?.blocks.find(
+              (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
+                block.kind === "channel_message",
+            );
+            if (source?.intact !== false) {
+              const privateMessages = channel
+                ? await this.deps.prisma.message.findMany({
+                    where: { runId: { in: [origin.id, run.delegatedFromRunId!] } },
+                    select: { id: true, blocks: true },
+                  })
+                : [];
+              const privateAnswer = privateMessages.some((message) => {
+                const { blocks, intact } = readMessageBlocks(message);
+                return (
+                  !intact ||
+                  blocks.some((block) => block.kind === "ask" && block.status === "answered")
+                );
+              });
+              if (!privateAnswer) {
+                const lane = channel
+                  ? await this.recordChannelRun(run, channel)
+                  : await this.recordDirectRun(run, false);
+                if (lane) lanes.push(lane);
+              }
+            }
+          }
+        }
+      } else if (run.externalMessage) {
         // Team chat answers once, when the run ends; nothing of it goes to a linked 1:1 chat.
         if (!options.progress && terminal) {
           const lane = await this.recordTeamChatReply({
@@ -297,7 +379,8 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
-        const channelBlock = ((run.sourceMessage?.blocks ?? []) as MessageBlock[]).find(
+        const source = run.sourceMessage ? readMessageBlocks(run.sourceMessage) : undefined;
+        const channelBlock = source?.blocks.find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
         );
@@ -306,7 +389,9 @@ export class MessagingDelivery {
             const lane = await this.recordChannelRun(run, channelBlock);
             if (lane) lanes.push(lane);
           }
-        } else {
+        } else if (source?.intact !== false) {
+          // A source that lost entries may have lost its channel marker, so a group reply could
+          // land in the owner's direct chat: that one stays in the app.
           const lane = await this.recordDirectRun(run, options.progress ?? false);
           if (lane) lanes.push(lane);
         }
@@ -315,7 +400,14 @@ export class MessagingDelivery {
         // the delegation started in. Only a run in that conversation's own thread, by its bot,
         // runs with the shared chat's privacy: a continuation in the bot's private thread may
         // have read its owner's memory and stays in the app.
-        const direct = await this.recordDirectRun(run, false);
+        // The chat app has no quiet message, so it gets what the app marks unread: a failure or
+        // an answer to this bot's own request. Other bot-to-bot talk sends only a question the
+        // run waits on the owner for.
+        const news =
+          run.status === "failed" ||
+          (await loadBotMessageContext(this.deps.prisma, run.sourceMessageId))?.repliesToRequest ===
+            true;
+        const direct = await this.recordDirectRun(run, false, !news);
         if (direct) lanes.push(direct);
         if (
           (run.status === "completed" || run.status === "failed") &&
@@ -326,14 +418,19 @@ export class MessagingDelivery {
         }
       }
       if (!options.progress) {
-        if (run.trigger === "messaging") {
+        if (run.trigger === "messaging" || run.trigger === "helper_result") {
           await this.deps.prisma.run.updateMany({
             where: { id: runId },
             data: { messagingMirroredAt: new Date() },
           });
         }
         // Recorded: the rows carry their own backups now. Only chat runs get a reply job.
-        if (terminal && (run.trigger === "messaging" || run.trigger === "bot_message"))
+        if (
+          terminal &&
+          (run.trigger === "messaging" ||
+            run.trigger === "bot_message" ||
+            run.trigger === "helper_result")
+        )
           await this.deps.jobs.cancel(messagingReplyJobKey(runId));
       }
       await this.send(lanes);
@@ -341,8 +438,9 @@ export class MessagingDelivery {
   }
 
   /**
-   * The previous release's whole-outbox drain: sends every conversation that has unsent rows,
-   * so its queued jobs finish under this release.
+   * The previous release's whole-outbox drain. Sends every conversation that has unsent rows,
+   * so its queued jobs finish under this release. Those jobs can stay queued across releases,
+   * so this goes only once none are left.
    */
   async drainAll(): Promise<void> {
     const rows = await runAsSystem("find conversations with unsent chat messages", () =>
@@ -845,6 +943,7 @@ export class MessagingDelivery {
   private async recordDirectRun(
     run: { id: string; botId: string; userId: string; status: string },
     progress: boolean,
+    onlyAsks = false,
   ): Promise<OutboundLane | undefined> {
     const identity = await this.deps.prisma.messagingIdentity.findUnique({
       where: { botId: run.botId },
@@ -864,36 +963,67 @@ export class MessagingDelivery {
     // pending with nothing to resume, so the chat app is not asked it.
     const asks = !TERMINAL_RUN.includes(run.status);
     const rowsByMessage = messages.map((message) => {
-      const body = extractText(message.blocks, linkedPages, { asks });
+      const body = extractText(onlyAsks ? askBlocks(message) : message.blocks, linkedPages, {
+        asks,
+      });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
-      return [
-        ...parts.map((part, index) => ({
+      return {
+        parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "dm",
           identityId: identity.id,
           body: part,
           sourceMessageId: message.id,
         })),
-        ...(sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
-          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: "",
-          sourceMessageId: message.id,
-        })),
-      ];
+        files: (sendsFiles && !onlyAsks ? extractArtifactIds(message.blocks) : []).map(
+          (artifactId) => ({
+            idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+            kind: "dm",
+            identityId: identity.id,
+            body: "",
+            sourceMessageId: message.id,
+          }),
+        ),
+      };
     });
+    const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
     const held = progress
       ? rowsByMessage.findIndex(
-          (rows, index) =>
-            rows.length > 0 && !isUserProgressClientNonce(messages[index]!.clientNonce),
+          (reply, index) =>
+            sends(reply) && !isUserProgressClientNonce(messages[index]!.clientNonce),
         )
       : -1;
-    const rows = (held === -1 ? rowsByMessage : rowsByMessage.slice(0, held)).flat();
-    if (rows.length === 0) return undefined;
+    const replies = held === -1 ? rowsByMessage : rowsByMessage.slice(0, held);
+    if (!replies.some(sends)) return undefined;
     const lane = { identityId: identity.id };
-    await this.deps.prisma.$transaction((tx) => this.recordIn(tx, lane, rows));
+    await this.recordReplies(lane, replies);
     return lane;
+  }
+
+  /**
+   * Records each reply's parts, then its files. A reply's parts are recorded together, so a reply
+   * whose first part is recorded has them all and gets no more: a release that splits replies at
+   * other points would otherwise queue parts that repeat text already sent.
+   */
+  private async recordReplies(lane: OutboundLane, replies: ReplyRows[]): Promise<void> {
+    await this.deps.prisma.$transaction(async (tx) => {
+      await lockLane(tx, lane);
+      const recorded = await tx.messagingOutbound.findMany({
+        where: {
+          idempotencyKey: { in: replies.flatMap(({ parts }) => parts[0]?.idempotencyKey ?? []) },
+        },
+        select: { idempotencyKey: true },
+      });
+      const split = new Set(recorded.map((row) => row.idempotencyKey));
+      await this.recordIn(
+        tx,
+        lane,
+        replies.flatMap(({ parts, files }) => [
+          ...(parts[0] && split.has(parts[0].idempotencyKey) ? [] : parts),
+          ...files,
+        ]),
+      );
+    });
   }
 
   /**
@@ -926,12 +1056,14 @@ export class MessagingDelivery {
     });
     // Ask answers are entered privately in the app. Check the same snapshot as the replies so a
     // resumed run cannot publish an answer-influenced response.
+    // A reply that lost entries may have lost its answered ask, so it is not published either.
     if (
-      replies.some((message) =>
-        (message.blocks as MessageBlock[]).some(
-          (block) => block.kind === "ask" && block.status === "answered",
-        ),
-      )
+      replies.some((message) => {
+        const { blocks, intact } = readMessageBlocks(message);
+        return (
+          !intact || blocks.some((block) => block.kind === "ask" && block.status === "answered")
+        );
+      })
     )
       return undefined;
     const linkedPages = linkedPageIds(replies);
@@ -942,20 +1074,18 @@ export class MessagingDelivery {
     // One row per platform-sized part, like the DM path: the adapter truncates an oversized body
     // instead of failing, which would drop the reply's tail.
     const lane = { identityId: null, threadId: channel.threadId };
-    await prisma.$transaction((tx) =>
-      this.recordIn(
-        tx,
-        lane,
-        messages.flatMap(({ message, text }) =>
-          splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
-            idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
-            kind: "group",
-            threadId: channel.threadId,
-            body: part,
-            sourceMessageId: message.id,
-          })),
-        ),
-      ),
+    await this.recordReplies(
+      lane,
+      messages.map(({ message, text }) => ({
+        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+          idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+          kind: "group",
+          threadId: channel.threadId,
+          body: part,
+          sourceMessageId: message.id,
+        })),
+        files: [],
+      })),
     );
     const hop = nextBotMessageHop(channelBlock.hop);
     const peers = await prisma.messagingChannelMember.findMany({
@@ -1038,9 +1168,7 @@ export class MessagingDelivery {
               throw error;
             });
           if (sent?.runId) {
-            await jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              getLogger().error("messaging peer wake enqueue error", error);
-            });
+            await wakeRun(jobs, sent.runId);
           }
           continue;
         }
@@ -1112,11 +1240,7 @@ export class MessagingDelivery {
     const ambient = message.kind === "ambient";
     const body =
       run.status === "completed"
-        ? teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            ambient,
-          )
+        ? teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, ambient)
         : ambient
           ? ""
           : `${run.bot.name} could not complete that request. Open Rakazo for details.`;
@@ -1147,13 +1271,19 @@ export class MessagingDelivery {
    * A bot another bot delegated to answers in the team-chat thread the chain started in, found by
    * walking the delegation back to a run a team-chat message started.
    */
-  private async recordDelegatedReply(run: {
-    id: string;
-    status: string;
-    sourceMessageId: string | null;
-    bot: { name: string };
-  }): Promise<OutboundLane | undefined> {
-    const origin = await this.findExternalOrigin(run.sourceMessageId);
+  private async recordDelegatedReply(
+    run: {
+      id: string;
+      status: string;
+      sourceMessageId: string | null;
+      bot: { name: string };
+    },
+    externalOrigin?: {
+      replyThreadId: string | null;
+      externalConversation: { conversationId: string };
+    },
+  ): Promise<OutboundLane | undefined> {
+    const origin = externalOrigin ?? (await this.findExternalOrigin(run.sourceMessageId));
     if (!origin) return undefined;
     const reply =
       run.status === "completed"
@@ -1166,11 +1296,7 @@ export class MessagingDelivery {
     const body =
       run.status === "failed"
         ? `${run.bot.name} could not complete the delegated request. Open Rakazo for details.`
-        : teamChatResponseText(
-            Array.isArray(reply?.blocks) ? (reply.blocks as MessageBlock[]) : [],
-            run.bot.name,
-            true,
-          );
+        : teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, true);
     if (!body) return undefined;
     const lane = {
       identityId: null,
@@ -1354,6 +1480,13 @@ function textBlocks(blocks: unknown): string[] {
 }
 
 /** Pages the run's replies already link by name, so their cards add nothing more. */
+/** The blocks that wait on the owner: a question, or a screen to take over. */
+function askBlocks(message: { id: string; blocks: unknown }): MessageBlock[] {
+  return storedMessageBlocks(message).filter(
+    (block) => block.kind === "ask" || block.kind === "computer",
+  );
+}
+
 function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages)

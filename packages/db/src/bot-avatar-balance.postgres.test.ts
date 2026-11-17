@@ -46,11 +46,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
       await db.pool.end();
     };
     owner = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider, address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider, address }),
     );
   });
 
@@ -183,11 +179,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     ).rejects.toThrow();
     const otherAddress = `${address}1`;
     const other = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider, address: otherAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider, address: otherAddress }),
     );
     try {
       await expect(

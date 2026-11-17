@@ -60,7 +60,7 @@ export async function attachWorkspaceFileToThread(
     onAttached?: (tx: Prisma.TransactionClient, artifact: Artifact) => Promise<void>;
   },
 ): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
-  const fileName = path.basename(input.filePath) || input.filePath;
+  const fileName = path.posix.basename(input.filePath.replace(/\\/g, "/")) || input.filePath;
   const mimeType = inferAttachmentMimeType(fileName);
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
@@ -362,7 +362,7 @@ export async function listRecentThreadFiles(
     .slice(0, ATTACHMENT_MAX_COUNT);
 }
 
-/** The newest attachments across the last `maxTurns` user turns that carry any. */
+/** The newest attachments across the last `maxTurns` user turns, with or without attachments. */
 function recentAttachmentBlocks(
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
@@ -374,34 +374,13 @@ function recentAttachmentBlocks(
   for (let index = history.length - 1; index >= 0 && turns < input.maxTurns; index -= 1) {
     const entry = history[index];
     if (!entry?.id || entry.role !== "user" || entry.id === input.skipMessageId) continue;
-    const attached = attachmentBlocks(blocksByMessageId.get(entry.id));
-    if (!attached.length) continue;
     turns += 1;
+    const attached = attachmentBlocks(blocksByMessageId.get(entry.id));
     for (const block of attached.reverse()) {
       if (!selected.has(block.artifactId)) selected.set(block.artifactId, block);
     }
   }
   return [...selected.values()];
-}
-
-function fileLine(file: MaterializedThreadFile): string {
-  return `- ${JSON.stringify(file.name)} (${file.mimeType}, ${file.size} bytes): ${JSON.stringify(file.path)}`;
-}
-
-export function currentTurnFilesInstruction(files: readonly MaterializedThreadFile[]): string {
-  if (!files.length) return "";
-  return [
-    "Attachments will be copied to these paths when a tool needs the computer. If an image is visible directly in your input, answer from that image without starting the computer. Inspect files not visible in your input with file tools before answering questions about their contents:",
-    ...files.map(fileLine),
-  ].join("\n");
-}
-
-export function recentThreadFilesInstruction(files: readonly MaterializedThreadFile[]): string {
-  if (!files.length) return "";
-  return [
-    "Files attached earlier in this conversation are also on your computer:",
-    ...files.map(fileLine),
-  ].join("\n");
 }
 
 type HiddenArtifactOwner = {

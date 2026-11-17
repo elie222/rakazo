@@ -8,8 +8,13 @@ import type {
   RealtimeFanout,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { endTakeoverWaits, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import type { DatabaseOutage, Prisma, PrismaClient } from "@rakazo/db";
+import {
+  databaseOutage,
+  endTakeoverWaits,
+  isTooManyDatabaseConnections,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import type { Pool } from "pg";
 import { RunExecutionHost } from "./run-execution.js";
@@ -18,6 +23,38 @@ import { findRunRecoveryBlockers } from "./run-recovery.js";
 const RUN_READY_TOPIC = "runs:ready";
 const INTERACTIVE_QUEUE_WARNING_MS = 30_000;
 const RESUMABLE = ["queued", "waiting_input", "waiting_takeover"];
+
+/**
+ * How long a stopping process lets the runs it is executing end their turn before it hands them
+ * back. A turn cut mid-way repeats its model call and tool call on the next process, and most
+ * turns end within a few minutes. Far inside the worker's stop_grace_period in Compose, and the
+ * longest a deploy waits for a replaced worker's runs.
+ */
+export const RUN_DRAIN_MS = 5 * 60_000;
+
+/**
+ * The signal a draining process's runs stop on. It aborts `limitMs` after `stopping` does, so a
+ * turn in flight can end by itself first, and at once on `end` or with no limit. The process
+ * claims no run from the moment `stopping` aborts; its leases keep being renewed until each run
+ * lets go.
+ */
+export function drainRuns(
+  stopping: AbortSignal,
+  limitMs = RUN_DRAIN_MS,
+): { signal: AbortSignal; end: () => void } {
+  const interrupt = new AbortController();
+  const end = () => interrupt.abort(stopping.reason);
+  const begin = () => {
+    if (interrupt.signal.aborted) return;
+    if (limitMs <= 0) return end();
+    const deadline = setTimeout(end, limitMs);
+    deadline.unref?.();
+    interrupt.signal.addEventListener("abort", () => clearTimeout(deadline), { once: true });
+  };
+  if (stopping.aborted) begin();
+  else stopping.addEventListener("abort", begin, { once: true });
+  return { signal: interrupt.signal, end };
+}
 
 /**
  * Starts runs in this process the moment they become due, each as its own task, so no
@@ -159,6 +196,10 @@ export class RunJobPublisher implements JobPublisher {
     await this.background.enqueueIn(tx, job);
   }
 
+  async enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    await this.background.enqueueManyIn(tx, jobs);
+  }
+
   async cancelIn(tx: JobTransaction, key: string): Promise<void> {
     await this.background.cancelIn(tx, key);
   }
@@ -199,8 +240,17 @@ export class RunWorkerHost implements JobWorkerHost {
     private readonly prisma: PrismaClient,
     private readonly realtime: RealtimeFanout,
     private readonly starter: RunStarter,
-    private readonly options: { intervalMs?: number; batchSize?: number; pool?: Pool } = {},
+    private readonly options: {
+      intervalMs?: number;
+      batchSize?: number;
+      pool?: Pool;
+      outage?: DatabaseOutage;
+    } = {},
   ) {}
+
+  private get outage(): DatabaseOutage {
+    return this.options.outage ?? databaseOutage;
+  }
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {
     if (!this.stopping) return;
@@ -250,9 +300,11 @@ export class RunWorkerHost implements JobWorkerHost {
           this.scanAgain = false;
           await this.scan();
         }
+        this.outage.succeeded();
       } catch (error) {
         this.scanAgain = false;
-        if (!this.stopping) getLogger().error("run dispatch scan", error);
+        if (!this.stopping && !this.outage.failed(error, "run recovery scan"))
+          getLogger().error("run dispatch scan", error);
       }
     }).finally(() => {
       this.scanning = undefined;
@@ -311,7 +363,8 @@ export class RunWorkerHost implements JobWorkerHost {
       }
     })
       .catch((error) => {
-        if (!this.stopping) getLogger().error("run queue health", error);
+        if (!this.stopping && !this.outage.failed(error, "run queue health"))
+          getLogger().error("run queue health", error);
       })
       .finally(() => {
         this.queueCheck = undefined;

@@ -1,0 +1,9 @@
+{
+  "apps/api/src/routes/mcp.ts": 1,
+  "packages/adapters/src/approval-effect.ts": 1,
+  "packages/adapters/src/pi-oauth.ts": 2,
+  "packages/adapters/src/providers/computer/incus/incus-sandbox.ts": 2,
+  "packages/adapters/src/proxy-dispatcher.ts": 1,
+  "packages/db/src/events.ts": 1,
+  "packages/db/src/teaching-recordings.ts": 1
+}

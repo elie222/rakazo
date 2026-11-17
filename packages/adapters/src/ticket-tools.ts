@@ -20,7 +20,6 @@ import { sliceWellFormed } from "./utf8.js";
 
 type TicketToolDeps = {
   prisma: PrismaClient;
-  ticketBoardEnabled?: boolean;
   onTicketChange?: TicketChangeNotifier;
 };
 
@@ -100,7 +99,6 @@ export async function listBoardTickets(
     cursor?: string;
   },
 ) {
-  if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   let status: TicketStatus | undefined;
   if (input.status !== undefined) {
     status = coerceInputStatus(input.status);
@@ -146,7 +144,6 @@ export async function listBoardTickets(
 }
 
 export async function getTicket(deps: TicketToolDeps, input: { spaceId: string; ref: string }) {
-  if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const ref = input.ref.trim();
   if (!ref) return { error: "ref is required." };
   const board = await ensureBoard(deps.prisma, input.spaceId);
@@ -173,7 +170,6 @@ export async function createTicket(
     ownerBotId?: string;
   },
 ) {
-  if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = CreateTicketInput.safeParse({
     ...input,
     assigneeBotId: input.ownerBotId ?? input.botId,
@@ -222,7 +218,6 @@ export async function updateTicket(
     ownerBotId?: string;
   },
 ) {
-  if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
   if (!parsed.success) return { error: ticketInputError(parsed.error) };
   const data = parsed.data;
@@ -278,7 +273,6 @@ export async function commentTicket(
     body: string;
   },
 ) {
-  if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = CommentTicketInput.safeParse({ ticketId: input.id, body: input.body });
   if (!parsed.success) return { error: ticketInputError(parsed.error) };
   const board = await ensureBoard(deps.prisma, input.spaceId);

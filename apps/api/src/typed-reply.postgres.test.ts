@@ -53,11 +53,10 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address: `typed-reply-${randomUUID()}` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, {
+        provider: "test",
+        address: `typed-reply-${randomUUID()}`,
+      }),
     );
     ({ botId, threadId } = identity);
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;

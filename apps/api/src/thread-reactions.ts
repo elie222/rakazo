@@ -8,6 +8,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   loadMessageAuthor,
+  readMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -136,15 +137,14 @@ async function reactionReplyBotId(
     where: { threadId: target.threadId, seq: { gt: parent.seq } },
     orderBy: { seq: "asc" },
     take: 51,
-    select: { role: true, blocks: true, replyToMessageId: true },
+    select: { id: true, role: true, blocks: true, replyToMessageId: true },
   });
   if (newer.length > 50) return undefined;
-  const onlyReactions = newer.every((message) =>
-    messageReaction({
-      ...message,
-      blocks: Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [],
-    }),
-  );
+  // A row that lost entries held more than the one emoji a reaction is.
+  const onlyReactions = newer.every((message) => {
+    const { blocks, intact } = readMessageBlocks(message);
+    return intact && messageReaction({ ...message, blocks });
+  });
   return onlyReactions ? parent.botId : undefined;
 }
 

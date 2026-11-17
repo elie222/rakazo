@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
@@ -547,20 +548,14 @@ describe("ObjectAgentHomeStore", () => {
     await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
     await store.hydrate("bot-1");
     const load = records.load.bind(records);
-    let resume = () => {};
-    let reading = () => {};
-    const started = new Promise<void>((resolve) => {
-      reading = resolve;
-    });
-    const delayed = new Promise<void>((resolve) => {
-      resume = resolve;
-    });
+    const started = deferred();
+    const delayed = deferred();
     let paused = false;
     records.load = async (key) => {
       if (!paused) {
         paused = true;
-        reading();
-        await delayed;
+        started.resolve();
+        await delayed.promise;
       }
       return load(key);
     };
@@ -575,12 +570,12 @@ describe("ObjectAgentHomeStore", () => {
     }
     const otherProcess = new ReadingStore(root, storage, records);
     const hydrating = otherProcess.hydrate("bot-1");
-    await started;
+    await started.promise;
     await store.revise("bot-1");
     marker = await readFile(markerFile, "utf8");
     const recent = path.join(store.pathFor("bot-1"), "recent.txt");
     await writeFile(recent, "after the checkpoint");
-    resume();
+    delayed.resolve();
     await hydrating;
     expect(await readFile(recent, "utf8")).toBe("after the checkpoint");
   });
@@ -592,27 +587,21 @@ describe("ObjectAgentHomeStore", () => {
       await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
       await store.hydrate("bot-1");
       const advance = records.advance.bind(records);
-      let reply = () => {};
-      let updated = () => {};
-      const waiting = new Promise<void>((resolve) => {
-        updated = resolve;
-      });
-      const delayed = new Promise<void>((resolve) => {
-        reply = resolve;
-      });
+      const waiting = deferred();
+      const delayed = deferred();
       records.advance = async (...args) => {
         const result = advanced ? await advance(...args) : undefined;
-        updated();
-        await delayed;
+        waiting.resolve();
+        await delayed.promise;
         return result ?? advance(...args);
       };
       const saving = store.revise("bot-1");
-      await waiting;
+      await waiting.promise;
       records.advance = advance;
       const otherProcess = new ObjectAgentHomeStore(root, storage, records);
       await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "newer checkpoint");
       await otherProcess.revise("bot-1");
-      reply();
+      delayed.resolve();
       if (advanced) await saving;
       else await expect(saving).rejects.toThrow(HomeSaveConflictError);
       const recent = path.join(store.pathFor("bot-1"), "recent.txt");

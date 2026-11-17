@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -18,22 +19,17 @@ import {
   executeCloudAgentTool,
   reconcileCloudAgents,
 } from "./cloud-agent-service.js";
-import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
+import { CursorCloudAgentProvider } from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
+import { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";
+import {
+  T3_TOKEN,
+  T3McpEmulator,
+} from "./providers/cloud-agent/t3code/t3code-mcp-emulator.test-support.js";
 import { withSecretPersistence } from "./secret-persistence.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { T3CodeConnections } from "./t3code-connections.js";
-import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -110,6 +106,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     const jobs: JobPublisher = {
       enqueue,
       enqueueIn: async () => undefined,
+      enqueueManyIn: async () => undefined,
       cancelIn: async () => undefined,
       cancel: async () => undefined,
       close: async () => undefined,
@@ -195,25 +192,19 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     const { thread, launch, state } = await setup();
     // A thread snapshot read holds the row FOR SHARE past Prisma's default five seconds.
     const holdMs = 6_000;
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const reader = asSystem(prisma).$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR SHARE`;
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-        locked(rows[0]?.xactId ?? "");
-        await opened;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
       },
       { timeout: 30_000 },
     );
-    const xactId = await lockTaken;
+    const xactId = await lockTaken.promise;
     const probe = await runAsSystem("lock probe", () => db.pool.connect());
     let launched: Promise<string> = Promise.resolve("");
     try {
@@ -240,13 +231,58 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
         new Promise((resolve) => setTimeout(() => resolve("waiting"), 75)),
       ]);
       expect(settled).toBe("waiting");
-      open();
+      opened.resolve();
       const agentId = await launched;
       expect(await state(agentId)).toMatchObject({ threadId: thread.id });
     } finally {
-      open();
+      opened.resolve();
       await reader.catch(() => undefined);
       await launched.catch(() => undefined);
+      probe.release();
+    }
+  }, 30_000);
+
+  it("records a poll's result that waited behind a long thread read", async () => {
+    const { thread, launch, poll, state } = await setup();
+    const id = await launch();
+    const lockTaken = deferred<string>();
+    const opened = deferred();
+    const reader = asSystem(prisma).$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR SHARE`;
+        const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
+            SELECT pg_current_xact_id()::text AS "xactId"`;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
+      },
+      { timeout: 30_000 },
+    );
+    const xactId = await lockTaken.promise;
+    const probe = await runAsSystem("lock probe", () => db.pool.connect());
+    let polled: Promise<void> = Promise.resolve();
+    try {
+      polled = poll(id);
+      polled.catch(() => undefined);
+      // Count from the moment the poll's own write is blocked on the reader.
+      await vi.waitFor(
+        async () => {
+          const result = await probe.query(
+            "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+            [xactId],
+          );
+          expect(result.rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 10_000, interval: 20 },
+      );
+      // Past Prisma's default five-second budget for the poll's own write.
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      opened.resolve();
+      await polled;
+      expect(await state(id)).toMatchObject({ errorCount: 0, remoteId: expect.any(String) });
+    } finally {
+      opened.resolve();
+      await reader.catch(() => undefined);
+      await polled.catch(() => undefined);
       probe.release();
     }
   }, 30_000);
@@ -711,6 +747,60 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(await h.state(id)).toMatchObject({ status: "cancelled", cancelRequested: false });
   });
 
+  /** The previous release's claim on the agent, which knows nothing of the lease. */
+  const previousReleaseClaim = async (prisma: PrismaClient, agentId: string) => {
+    const stored = await prisma.cloudAgent.findUniqueOrThrow({ where: { id: agentId } });
+    const claimed = await prisma.cloudAgent.updateMany({
+      where: {
+        id: agentId,
+        version: stored.version,
+        OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
+      },
+      data: { leaseToken: "previous", leaseExpiresAt: new Date(Date.now() + 90_000) },
+    });
+    return claimed.count;
+  };
+
+  it("leaves an agent the previous release is polling to it", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    expect(await previousReleaseClaim(prisma, id)).toBe(1);
+    await h.poll(id);
+    expect(h.wire.agents.size).toBe(0);
+    expect(await h.state(id)).toMatchObject({ leaseToken: "previous", launchDispatched: false });
+
+    await prisma.cloudAgent.update({
+      where: { id },
+      data: { leaseToken: null, leaseExpiresAt: null },
+    });
+    await h.poll(id);
+    expect(h.wire.agents.size).toBe(1);
+  });
+
+  it("keeps the previous release out while it polls", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    const entered = deferred();
+    const release = deferred();
+    const original = h.connection.provider.launch.bind(h.connection.provider);
+    vi.spyOn(h.connection.provider, "launch").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return original(...args);
+    });
+    const polling = h.poll(id);
+    await entered.promise;
+    expect(await previousReleaseClaim(prisma, id)).toBe(0);
+    release.resolve();
+    await polling;
+    expect(h.wire.agents.size).toBe(1);
+    expect(await h.state(id)).toMatchObject({
+      remoteId: expect.any(String),
+      leaseToken: null,
+      leaseExpiresAt: null,
+    });
+  });
+
   it("rejects overlapping follow-ups and preserves remote failure as a terminal result", async () => {
     const h = await setup();
     const id = await h.launch();
@@ -780,6 +870,34 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect((await h.state(id)).nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
     await h.finish(id);
     expect(await h.state(id)).toMatchObject({ status: "finished", errorCount: 0 });
+  });
+
+  it("leaves a rate-limited agent's scheduled poll alone when its status is read", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    const before = await h.state(id);
+    expect(before.nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
+    h.enqueue.mockClear();
+    expect(await h.tool("status", { id })).toMatchObject({ id, status: "running" });
+    expect(h.enqueue).not.toHaveBeenCalled();
+    expect((await h.state(id)).nextPollAt).toEqual(before.nextPollAt);
+  });
+
+  it("keeps a cancel's immediate poll when the status is read afterwards", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    h.enqueue.mockClear();
+    await h.tool("cancel", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+    expect(h.enqueue.mock.calls[0]![0].availableAt).toBeUndefined();
+    await h.tool("status", { id });
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("reports a follow-up to an expired agent as expired", async () => {
@@ -1093,6 +1211,28 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       expect(await h.state(id)).toMatchObject({ status: "running", followup: null });
       expect(t3.calls.filter((call) => call.tool === "t3_thread_send")).toHaveLength(2);
       expect(t3.threads.get(remoteId)!.runs).toHaveLength(3);
+      expect(await h.wakes()).toHaveLength(1);
+    });
+
+    it("settles a cancel of an agent whose launch T3 Code refused", async () => {
+      const { h, actor, tool, launch, poll } = await connected();
+      await connectServer(actor, { allBots: true });
+      // T3 Code has no project for this repository, so nothing remote is ever created.
+      const id = await launch({ repository: "https://github.com/example/missing" });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        remoteId: null,
+        nextPollAt: null,
+      });
+      expect(await tool("cancel", { id })).toMatchObject({ cancellationPending: true });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        cancelRequested: false,
+        nextPollAt: null,
+        errorCount: 0,
+      });
       expect(await h.wakes()).toHaveLength(1);
     });
 

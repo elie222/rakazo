@@ -23,7 +23,5 @@ export const BOT_SETTINGS_SECTIONS = {
   ],
 } as const;
 
-export const BOT_SETTINGS_ADVANCED_ORDER = BOT_SETTINGS_SECTIONS.advanced;
-
 /** Labels stay literal in each platform's translation calls. */
 export const BOT_COMPUTER_MODES = ["team", "dedicated"] as const;

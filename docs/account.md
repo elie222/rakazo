@@ -26,15 +26,16 @@ instead of a password. Some actions, such as exporting data, ask you to confirm 
 
 ## Credentials
 
-**Settings → Vault** lists the API keys and website logins your bots can use. Values are never shown.
+**Settings → Vault** lists the API keys and website logins your bots can use. Protected values
+show only after you confirm it's you.
 You can add one, replace its value, or remove it. See [Reusable credentials](./bot-secrets.md).
 
 ## Organizations
 
-Keep work and personal use apart, each with its own bots and billing. Choose
-**Create organization** in **Settings → Organization**. Once you have two, switch between them from
-the account menu. Rename or delete an organization in the same place; deleting one cancels its
-plan and removes its bots and data.
+Keep work and personal use apart, each with its own bots and billing. The account menu names the
+organization you're in; open it to switch to another or choose **New organization** (on mobile, the
+**Organization** row under **Account**). Rename or delete the current one in
+**Settings → Organization**; deleting one cancels its plan and removes its bots and data.
 
 ## Usage
 

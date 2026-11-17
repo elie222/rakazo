@@ -1,6 +1,7 @@
 import type { DragEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { isFileDrag } from "../../lib/pending-attachments";
+import { useEventListener } from "../../lib/use-event-listener";
 
 /**
  * Files dragged over the composer: `draggingFiles` while they are over it, `fileDragActive` while
@@ -16,35 +17,25 @@ export function useComposerFileDrop({
   const dragDepth = useRef(0);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [fileDragActive, setFileDragActive] = useState(false);
-  useEffect(() => {
-    // The transparent padding passes ordinary clicks through, but remains a file drop target.
-    let depth = 0;
-    const enter = (event: globalThis.DragEvent) => {
-      if (!isFileDrag(event.dataTransfer)) return;
-      depth += 1;
-      setFileDragActive(true);
-    };
-    const finish = () => {
-      depth = 0;
-      dragDepth.current = 0;
-      setFileDragActive(false);
-      setDraggingFiles(false);
-    };
-    const leave = () => {
-      depth = Math.max(0, depth - 1);
-      if (depth === 0) finish();
-    };
-    window.addEventListener("dragenter", enter);
-    window.addEventListener("dragleave", leave);
-    window.addEventListener("drop", finish);
-    window.addEventListener("dragend", finish);
-    return () => {
-      window.removeEventListener("dragenter", enter);
-      window.removeEventListener("dragleave", leave);
-      window.removeEventListener("drop", finish);
-      window.removeEventListener("dragend", finish);
-    };
-  }, []);
+  // The transparent padding passes ordinary clicks through, but remains a file drop target.
+  const windowDragDepth = useRef(0);
+  const finishWindowDrag = () => {
+    windowDragDepth.current = 0;
+    dragDepth.current = 0;
+    setFileDragActive(false);
+    setDraggingFiles(false);
+  };
+  useEventListener(window, "dragenter", (event) => {
+    if (!isFileDrag(event.dataTransfer)) return;
+    windowDragDepth.current += 1;
+    setFileDragActive(true);
+  });
+  useEventListener(window, "dragleave", () => {
+    windowDragDepth.current = Math.max(0, windowDragDepth.current - 1);
+    if (windowDragDepth.current === 0) finishWindowDrag();
+  });
+  useEventListener(window, "drop", finishWindowDrag);
+  useEventListener(window, "dragend", finishWindowDrag);
 
   function onDragEnter(event: DragEvent<HTMLFieldSetElement>) {
     const dataTransfer = event.dataTransfer;

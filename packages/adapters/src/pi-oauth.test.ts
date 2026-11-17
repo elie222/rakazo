@@ -2,6 +2,8 @@ import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
 import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import { containsSecret, redactSecrets } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -68,23 +70,20 @@ const keep = async (login: PiOAuthConnected) => login.credential.access;
 /** A save that holds until released, recording the signal each save ran under. */
 function gatedPersist() {
   let release!: (error?: unknown) => void;
-  let markStarted!: () => void;
   const gate = new Promise<void>((resolve, reject) => {
     release = (error) => (error ? reject(error) : resolve());
   });
-  const started = new Promise<void>((resolve) => {
-    markStarted = resolve;
-  });
+  const started = deferred();
   const signals: AbortSignal[] = [];
   const saved: string[] = [];
   const persist = async (login: PiOAuthConnected) => {
     signals.push(login.signal);
-    markStarted();
+    started.resolve();
     await gate;
     saved.push(login.credential.access);
     return login.credential.access;
   };
-  return { persist, started, release, signals, saved };
+  return { persist, started: started.promise, release, signals, saved };
 }
 
 function createControlledOAuthLogins() {
@@ -1075,6 +1074,7 @@ describe("refreshExpiredModelCredential", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return {
@@ -1285,10 +1285,9 @@ describe("refreshExpiredModelCredential", () => {
         credential: oauthCred({ access: "old", expires: 1 }),
       }),
     );
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
+    const gate = deferred();
     const oauth = stubOAuth(async () => {
-      await gate;
+      await gate.promise;
       return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
     });
 
@@ -1309,7 +1308,7 @@ describe("refreshExpiredModelCredential", () => {
       { oauth },
     );
     await vi.waitFor(() => expect(oauth.refresh).toHaveBeenCalledTimes(1));
-    release();
+    gate.resolve();
     await Promise.all([first, second]);
 
     // The second call waited on the lock, then saw the already-fresh token.
@@ -1345,12 +1344,13 @@ describe("refreshExpiredModelCredential", () => {
     let locked = Promise.resolve();
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-        let release = () => {};
+        let release: Deferred | undefined;
         const tx = {
           $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
             if (!sql.join("").includes("pg_advisory_xact_lock")) return 0;
             const previous = locked;
-            locked = new Promise<void>((resolve) => (release = resolve));
+            release = deferred();
+            locked = release.promise;
             await previous;
             return 0;
           }),
@@ -1359,7 +1359,7 @@ describe("refreshExpiredModelCredential", () => {
         try {
           return await fn(tx);
         } finally {
-          release();
+          release?.resolve();
         }
       }),
       secret,
@@ -1368,6 +1368,7 @@ describe("refreshExpiredModelCredential", () => {
       load: vi.fn(async (ciphertext: string) => ciphertext),
       put: vi.fn(async (next: string) => ({ id: "secret-1", ref: next, ciphertext: next })),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
     };
     // The provider rotates refresh tokens and rejects a spent one.
     const sent: string[] = [];
@@ -1445,16 +1446,16 @@ describe("kickModelCredentialRefresh", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return { id: "secret-1", ref: "next", ciphertext: "next" };
       }),
     };
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
+    const gate = deferred();
     const oauth = {
       refresh: vi.fn(async () => {
-        await gate;
+        await gate.promise;
         return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
       }),
       toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
@@ -1478,12 +1479,12 @@ describe("kickModelCredentialRefresh", () => {
       opts,
     );
     await vi.waitFor(() => expect(oauth.refresh).toHaveBeenCalledTimes(1));
-    release();
+    gate.resolve();
     await vi.waitFor(() => expect(secretStore.put).toHaveBeenCalledTimes(1));
     expect(oauth.refresh).toHaveBeenCalledTimes(1);
 
     // Let the kick's finally settle so the in-flight slot frees before re-kicking.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
 
     // Once the kick settles a later expired read may kick again — this one
     // finds the fresh token and refreshes nothing.
@@ -1746,7 +1747,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("saves the credential when the provider sign-in finishes", async () => {
-    let finish!: (credential: OAuthCredential) => void;
+    const signIn = deferred<Credential>();
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
@@ -1759,9 +1760,7 @@ describe("PiOAuthLogins", () => {
         verificationUri: "https://auth.openai.com/codex/device",
         expiresInSeconds: 60,
       });
-      return new Promise<Credential>((resolve) => {
-        finish = (credential) => resolve(credential);
-      });
+      return signIn.promise;
     });
     const saved: PiOAuthConnected[] = [];
     const actor = { userId: "u", spaceId: "w" };
@@ -1775,7 +1774,7 @@ describe("PiOAuthLogins", () => {
       },
     });
     expect(await logins.finish(started.loginId, actor)).toEqual({ status: "pending" });
-    finish(oauthCred({ access: "live-access" }));
+    signIn.resolve(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
     expect(saved).toEqual([
       expect.objectContaining({
@@ -1857,16 +1856,15 @@ describe("PiOAuthLogins", () => {
   });
 
   it("does not save after cancellation wins", async () => {
-    let finishLogin!: (credential: OAuthCredential) => void;
+    let finishLogin!: Deferred<Credential>;
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "device_code",
         userCode: "CANCEL-FIRST",
         verificationUri: "https://auth.openai.com/codex/device",
       });
-      return new Promise<Credential>((resolve) => {
-        finishLogin = resolve;
-      });
+      finishLogin = deferred<Credential>();
+      return finishLogin.promise;
     });
     const actor = { userId: "owner", spaceId: "workspace" };
     let persisted = false;
@@ -1880,7 +1878,7 @@ describe("PiOAuthLogins", () => {
     });
 
     await logins.cancel(started.loginId, actor);
-    finishLogin(oauthCred());
+    finishLogin.resolve(oauthCred());
     await flushMicrotasks();
     expect(persisted).toBe(false);
     await expect(logins.finish(started.loginId, actor)).resolves.toMatchObject({
@@ -2378,10 +2376,7 @@ describe("PiOAuthLogins across API processes", () => {
 
   /** One API process with a device-code provider the test answers. */
   function deviceCodeProcess(store: HandoffStore) {
-    let answerWith!: (credential: Credential) => void;
-    const answered = new Promise<Credential>((resolve) => {
-      answerWith = resolve;
-    });
+    const answered = deferred<Credential>();
     let signal: AbortSignal | undefined;
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       signal = interaction.signal;
@@ -2391,7 +2386,7 @@ describe("PiOAuthLogins across API processes", () => {
         verificationUri: "https://auth.openai.com/codex/device",
       });
       return new Promise<Credential>((resolve, reject) => {
-        void answered.then(resolve);
+        void answered.promise.then(resolve);
         interaction.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
           once: true,
         });
@@ -2399,7 +2394,7 @@ describe("PiOAuthLogins across API processes", () => {
     }, store);
     return {
       logins,
-      answer: (credential: Credential = oauthCred()) => answerWith(credential),
+      answer: (credential: Credential = oauthCred()) => answered.resolve(credential),
       get stopped() {
         return signal?.aborted === true;
       },

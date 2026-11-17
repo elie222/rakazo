@@ -37,9 +37,11 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
-import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { recordVaultItemUse } from "./vault-activity.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
@@ -524,7 +526,8 @@ async function readComputer(
   if (watch.kind === "command") {
     // The guard reads bash, so it protects the Linux desktop and never a native shell.
     const guarded =
-      !usesNativeShell(bot.computer.kind) && deps.sandbox.describe().capabilities.graphical;
+      !sandboxKindCapabilities(bot.computer.kind).nativeShell &&
+      deps.sandbox.describe().capabilities.graphical;
     const refusal = guarded ? deps.commandRefusal?.(watch.command ?? "") : undefined;
     if (refusal) {
       throw new RoutineWatchError(
@@ -580,7 +583,7 @@ async function readComputer(
   if (watch.kind === "command") {
     // Runs this shell command on the bot's computer every interval, in its folder,
     // without a model or per-run approval: equivalent to the bot running it itself.
-    const shellEnvironment = usesNativeShell(bot.computer.kind)
+    const shellEnvironment = sandboxKindCapabilities(bot.computer.kind).nativeShell
       ? await deps.sandbox.environment?.(computer, ctx)
       : undefined;
     const argv = shellEnvironment
@@ -827,9 +830,6 @@ export type RoutineWatchTick =
   | { run: false }
   | { run: true; state: RoutineWatchState; nextRunAt: Date; note: string };
 
-/** Starts the note a change trigger appends to a routine's prompt; what follows is not the owner's. */
-const ROUTINE_WATCH_NOTE_START = "\n\nThis run was started because something you watch changed (";
-
 /**
  * The owner's part of a routine run's task prompt, as saved when it fired: the routine's
  * instructions without the change note, whose detail comes from what the watch read.
@@ -931,7 +931,7 @@ export async function tickRoutineWatch(
       run: true,
       state: outcome.state,
       nextRunAt,
-      note: `${ROUTINE_WATCH_NOTE_START}${describeRoutineWatch(watch)}).\nWhat changed since the last check:\n${outcome.state.detail ?? "(no detail)"}`,
+      note: routineWatchNote(describeRoutineWatch(watch), outcome.state.detail),
     };
   }
   const claimed = await deps.prisma.routine.updateMany({

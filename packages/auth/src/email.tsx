@@ -7,6 +7,7 @@ import { Fragment } from "react";
 import {
   Body,
   Container,
+  Button as EmailButton,
   Head,
   Hr,
   Html,
@@ -115,6 +116,8 @@ export async function message(
           .email-body, .email-body > table > tbody > tr > td { background-color: ${webDarkTokens.background} !important; }
           .email-card { background-color: ${webDarkTokens.dialog} !important; color: ${webDarkTokens.foreground} !important; border-color: ${webDarkTokens.border} !important; }
           .email-card p, .email-card a { color: ${webDarkTokens.foreground} !important; }
+          .email-card p.email-muted, .email-card p.email-muted a { color: ${webDarkTokens.mutedForeground} !important; }
+          .email-card a.email-button { background-color: ${webDarkTokens.primary} !important; color: ${webDarkTokens.primaryForeground} !important; }
         }`}</style>
       </Head>
       <Body
@@ -148,6 +151,7 @@ export async function message(
           ) : null}
           <Section style={{ padding: "24px 32px" }}>
             {image ? null : (
+              // Text, not a hosted logo: self-hosted servers send these too, and must not call out.
               <Text
                 style={{
                   margin: "0 0 24px",
@@ -163,11 +167,11 @@ export async function message(
             {unsubscribeUrl ? (
               <>
                 <Hr style={{ borderColor: lightTokens.border, marginTop: "28px" }} />
-                <Text style={{ fontSize: "12px", marginBottom: 0 }}>
+                <FinePrint>
                   <Link href={unsubscribeUrl} style={{ color: lightTokens.mutedForeground }}>
                     {emailText(locale)("Unsubscribe")}
                   </Link>
-                </Text>
+                </FinePrint>
               </>
             ) : null}
           </Section>
@@ -193,6 +197,57 @@ export async function message(
 
 export const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
 
+/** The one action an email asks for. */
+export function Button({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Section style={{ margin: "24px 0" }}>
+      <EmailButton
+        href={href}
+        className="email-button"
+        style={{
+          backgroundColor: lightTokens.primary,
+          color: lightTokens.primaryForeground,
+          borderRadius: "8px",
+          padding: "11px 20px",
+          fontSize: "15px",
+          fontWeight: 600,
+          textDecoration: "none",
+        }}
+      >
+        {children}
+      </EmailButton>
+    </Section>
+  );
+}
+
+export function Code({ children }: { children: string }) {
+  return (
+    <Text
+      style={{
+        margin: "24px 0",
+        fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+        fontSize: "28px",
+        fontWeight: 600,
+        letterSpacing: "6px",
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** Expiry notes and "ignore this email" lines. */
+export function FinePrint({ children }: { children: ReactNode }) {
+  return (
+    <Text
+      className="email-muted"
+      style={{ color: lightTokens.mutedForeground, fontSize: "13px", marginBottom: 0 }}
+    >
+      {children}
+    </Text>
+  );
+}
+
 /** Places each `{key}` of a translated sentence as its node, so links sit where the language puts them. */
 export function withNodes(
   sentence: string,
@@ -215,15 +270,11 @@ export function verificationEmail(
     locale,
     say("Verify your Rakazo email"),
     <>
-      <Text>
-        <Link href={url} style={linkStyle}>
-          {say("Verify email")}
-        </Link>
-      </Text>
+      <Button href={url}>{say("Verify email")}</Button>
       <Text>{say("Then return to Rakazo to sign in.")}</Text>
-      <Text>
+      <FinePrint>
         {say("This link expires in one hour. If you did not register, ignore this email.")}
-      </Text>
+      </FinePrint>
     </>,
   );
 }
@@ -240,12 +291,10 @@ export function signInCodeEmail(
     say("Your Rakazo sign-in code"),
     <>
       <Text>{say("Enter this code to sign in to Rakazo:")}</Text>
-      <Text>
-        <strong>{code}</strong>
-      </Text>
-      <Text>
+      <Code>{code}</Code>
+      <FinePrint>
         {say("This code expires in ten minutes. If you did not request it, ignore this email.")}
-      </Text>
+      </FinePrint>
     </>,
   );
 }
@@ -263,16 +312,12 @@ export function passwordResetEmail(
     <>
       <Text>{greeting(say, user.name)}</Text>
       <Text>{say("Reset your Rakazo password:")}</Text>
-      <Text>
-        <Link href={resetUrl} style={linkStyle}>
-          {say("Reset password")}
-        </Link>
-      </Text>
-      <Text>
+      <Button href={resetUrl}>{say("Reset password")}</Button>
+      <FinePrint>
         {say(
           "This link expires in one hour. If you did not request this, you can ignore this email.",
         )}
-      </Text>
+      </FinePrint>
     </>,
   );
 }
@@ -289,12 +334,12 @@ export function accountDeletionEmail(
     say("Confirm Rakazo account deletion"),
     <>
       <Text>{say("Enter this code in Rakazo to delete your account:")}</Text>
-      <Text>{code}</Text>
-      <Text>
+      <Code>{code}</Code>
+      <FinePrint>
         {say(
           "This code expires in ten minutes. If you did not request deletion, ignore this email.",
         )}
-      </Text>
+      </FinePrint>
     </>,
   );
 }
@@ -311,12 +356,10 @@ export function identityCodeEmail(
     say("Your Rakazo confirmation code"),
     <>
       <Text>{say("Enter this code in Rakazo to confirm it's you:")}</Text>
-      <Text>
-        <strong>{code}</strong>
-      </Text>
-      <Text>
+      <Code>{code}</Code>
+      <FinePrint>
         {say("This code expires in ten minutes. If you did not request it, ignore this email.")}
-      </Text>
+      </FinePrint>
     </>,
   );
 }

@@ -1,4 +1,5 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
@@ -208,5 +209,45 @@ describe("readFileFromTool ranges", () => {
     })) as ReadFileResult;
     expect(result.error).toContain("past the end");
     expect(result.totalLines).toBe(3);
+  });
+});
+
+describe("readFileFromTool size limit", () => {
+  function failingWorkspace(error: Error) {
+    const { workspace } = fileWorkspace("");
+    const sandbox = {
+      readFile: async () => {
+        throw error;
+      },
+    } as unknown as SandboxProvider;
+    return { sandbox, workspace };
+  }
+
+  it("points the model at the shell for a file over the limit, even with a line range", async () => {
+    const { sandbox, workspace } = failingWorkspace(new SandboxFileTooLargeError(1024));
+    expect(
+      await readFileFromTool(sandbox, workspace, { path: "logs/huge.log", offset: 1, limit: 50 }),
+    ).toEqual({
+      error: "file is over 250 KB; read parts of logs/huge.log with shell (grep, sed -n, tail)",
+      path: "logs/huge.log",
+    });
+  });
+
+  it("names a Team Computer's shared file as the shell reaches it from the bot's home", async () => {
+    const { sandbox, workspace } = failingWorkspace(new SandboxFileTooLargeError(1024));
+    const result = (await readFileFromTool(
+      sandbox,
+      { ...workspace, computerMode: "team" },
+      { path: "shared/huge.log" },
+    )) as { error: string };
+    expect(result.error).toContain("read parts of ../../shared/huge.log with shell");
+  });
+
+  it("lets a computer failure that only mentions a size fail the tool call", async () => {
+    const failure = new Error("command output exceeds 1024 bytes");
+    const { sandbox, workspace } = failingWorkspace(failure);
+    await expect(readFileFromTool(sandbox, workspace, { path: "logs/huge.log" })).rejects.toBe(
+      failure,
+    );
   });
 });

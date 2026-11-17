@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
 import { ORPCError } from "@orpc/client";
 import type { AccountSecurity } from "@rakazo/contracts";
 import { IDENTITY_CONFIRMATION_REQUIRED } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -188,10 +190,8 @@ it("gives the caller the server's error when the dialog is dismissed", async () 
 
 it("ignores a confirmation that finishes after its dialog was dismissed", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security({}));
-  let finish: () => void = () => undefined;
-  vi.mocked(confirmIdentity).mockImplementationOnce(
-    () => new Promise<void>((resolve) => (finish = resolve)),
-  );
+  const finish = deferred();
+  vi.mocked(confirmIdentity).mockImplementationOnce(() => finish.promise);
   const first = needsConfirmationOnce();
   const second = needsConfirmationOnce();
   await act(async () => root.render(<Reveal action={first} />));
@@ -201,7 +201,7 @@ it("ignores a confirmation that finishes after its dialog was dismissed", async 
   await act(async () => button("Close").click());
   await act(async () => root.render(<Reveal action={second} />));
   await act(async () => button("Reveal").click());
-  await act(async () => finish());
+  await act(async () => finish.resolve());
   expect(host.querySelector('[role="dialog"]')).not.toBeNull();
   expect(second).toHaveBeenCalledTimes(1);
   expect(first).toHaveBeenCalledTimes(1);

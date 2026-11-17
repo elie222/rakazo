@@ -1,10 +1,8 @@
 import {
-  computerScreenSize,
-  computerSupportsTerminal,
-  computerSupportsUpdate,
   DISK_WARNING_PERCENT,
   diskUsedPercent,
   holdsUserControl,
+  sandboxKindCapabilities,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
@@ -12,7 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 
 /** What this bot is doing with its computer: which run holds it, and whether one waits for a person. */
 export async function resolveComputerWork(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "computerExecutionLease" | "run">,
   input: {
     computerId: string | null | undefined;
     botId: string;
@@ -37,7 +35,11 @@ export async function resolveComputerWork(
   const runActive = Boolean(
     run?.status && (ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status),
   );
-  const working = run?.status !== "waiting_takeover" && (leaseActive || runActive);
+  // A run lets go of its computer a moment after it ends, and nothing signals that release, so
+  // the lease an ended run still holds is not work. A lease with no run is a boot, a reset, an
+  // update or a teaching session.
+  const heldWithoutRun = leaseActive && !run;
+  const working = run?.status !== "waiting_takeover" && (runActive || heldWithoutRun);
   return { busyBotName: working ? input.botName : null, takeoverRequested: Boolean(waiting) };
 }
 
@@ -79,7 +81,7 @@ export function toComputerStatus(
     holdsUserControl(computer, viewerId)
       ? computer.controlLeaseId
       : undefined;
-  const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
+  const kind = computer?.kind ?? "fake";
   const state =
     kind === "none"
       ? "stopped"
@@ -96,7 +98,7 @@ export function toComputerStatus(
                 computer?.state === "error"
               ? computer.state
               : "stopped";
-  const screen = computerScreenSize(computer?.kind);
+  const capabilities = sandboxKindCapabilities(kind);
   const diskPercent = computer ? diskUsedPercent(computer) : null;
   const diskFull =
     diskPercent !== null &&
@@ -114,12 +116,13 @@ export function toComputerStatus(
     controlBotId: computer?.controlBotId ?? null,
     takeoverRequested: work.takeoverRequested,
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
-    screenWidth: screen.width,
-    screenHeight: screen.height,
+    screenWidth: capabilities.screen.width,
+    screenHeight: capabilities.screen.height,
     homeRevision: computer?.homeRevision ?? null,
     busyBotName: work.busyBotName,
-    canUpdate: computerSupportsUpdate(kind),
-    terminalAvailable: computerSupportsTerminal(kind),
+    canUpdate: capabilities.inPlaceUpdate,
+    terminalAvailable: capabilities.terminal,
+    ...(capabilities.runsOnUserMachine ? { runsOnUserMachine: true } : {}),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

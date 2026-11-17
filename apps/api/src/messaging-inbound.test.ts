@@ -15,8 +15,6 @@ import {
 } from "./messaging-inbound.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 
-const signupPolicy = { signupsEnabled: undefined, signupAllowlist: undefined };
-
 function createDeps(
   overrides: {
     identity?: Record<string, unknown> | null;
@@ -341,7 +339,6 @@ function createDeps(
     delivery: { recordIn, send },
     provision,
     openSignup: true,
-    signupPolicy,
     acknowledge,
     storeAttachment: overrides.storeAttachment,
     transcribe: overrides.transcribe,
@@ -995,15 +992,12 @@ describe("createMessagingInboundHandler DM routing", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
 
-    expect(deps.provision).toHaveBeenCalledWith(
-      {
-        provider: "sendblue",
-        address: "+15551111111",
-        dmThreadId: "sendblue:dm-1",
-        displayName: null,
-      },
-      signupPolicy,
-    );
+    expect(deps.provision).toHaveBeenCalledWith({
+      provider: "sendblue",
+      address: "+15551111111",
+      dmThreadId: "sendblue:dm-1",
+      displayName: null,
+    });
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         spaceId: "ws-new",

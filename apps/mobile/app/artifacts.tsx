@@ -16,7 +16,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
@@ -25,6 +24,7 @@ import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts";
 import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -38,7 +38,7 @@ export default function ArtifactsScreen() {
   const router = useRouter();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
   const { botId } = useLocalSearchParams<{ botId?: string }>();
@@ -259,7 +259,7 @@ export default function ArtifactsScreen() {
   }, [activeBotId, madeByBots, load]);
 
   return (
-    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.screen, { paddingBottom: contentBottomInset }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <View>

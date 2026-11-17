@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import type { AssistantMessage, Context, Message, ToolCall } from "@earendil-works/pi-ai";
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import { TOOL_STEP_CALLS_KEPT, toolStepOutcomeText } from "@rakazo/core";
+import { USE_TOOL } from "./builtin.tool-definition.js";
+import {
+  CONVERSATION_START,
+  imageNotKeptNote,
+  REPLAYED_SCREENSHOT_LEAD,
+  toolNotAvailableNote,
+} from "./history-replay.prompt.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
 import { normalizeAgentToolName } from "./pi-runtime-tools.js";
 import { bounded, IMAGE_NOT_KEPT, TOOL_CALL_TEXT_MAX_CHARS } from "./tool-step-calls.js";
@@ -18,7 +25,7 @@ export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
  * Bump when the shape of replayed history changes (roles, labels, tool steps, images), so runs
  * record which replay format they used. Part of the prompt version.
  */
-export const HISTORY_FORMAT_VERSION = 2;
+export const HISTORY_FORMAT_VERSION = 3;
 
 /**
  * Provider, api and model stamped on replayed own replies. None matches a real model, so Pi
@@ -33,8 +40,6 @@ const NO_USAGE = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
-/** Stands in for the opening turn when the window starts on a bot message (Bedrock needs a user first). */
-const CONVERSATION_START = "[Conversation start]";
 
 type HistoryMessage = Message & {
   rakazoHistory: true;
@@ -128,10 +133,7 @@ function replayedResult(
     wordsAfter.length > WORDS_AFTER_IMAGE_MAX_CHARS
       ? `${wordsAfter.slice(0, WORDS_AFTER_IMAGE_MAX_CHARS)}…`
       : wordsAfter;
-  const seen = quote
-    ? `[${ended} You looked at this image then; it is not kept. What you wrote next: "${quote}"]`
-    : `[${ended} You looked at this image then; it is not kept.]`;
-  return { text: call.result.replace(IMAGE_NOT_KEPT, seen), isError };
+  return { text: call.result.replace(IMAGE_NOT_KEPT, imageNotKeptNote(ended, quote)), isError };
 }
 
 /** The bot's next words after a step: the following step's note, or the text after the steps. */
@@ -169,6 +171,7 @@ function replayedToolReply(
   segments: NonNullable<HistoryEntry["segments"]>,
   common: HistoryCommon,
   offered: ReadonlySet<string>,
+  deferred: ReadonlySet<string>,
 ): HistoryMessage[] {
   const idPrefix = `h${createHash("sha256")
     .update(m.id ?? `${m.createdAt ?? ""}:${m.content}`)
@@ -213,13 +216,18 @@ function replayedToolReply(
         .join("\n\n");
       text = "";
       const name = replayedToolName(step.tool!);
+      // A tool reached through use_tool replays as the use_tool call the model makes for it.
+      const viaUseTool = deferred.has(name);
       const kept = (step.calls ?? []).slice(0, TOOL_STEP_CALLS_KEPT - calls);
-      const toolCalls: ToolCall[] = kept.map((call) => ({
-        type: "toolCall",
-        id: `${idPrefix}_${calls++}`,
-        name,
-        arguments: replayedArguments(call.arguments),
-      }));
+      const toolCalls: ToolCall[] = kept.map((call) => {
+        const args = replayedArguments(call.arguments);
+        return {
+          type: "toolCall",
+          id: `${idPrefix}_${calls++}`,
+          name: viaUseTool ? USE_TOOL : name,
+          arguments: viaUseTool ? { name, arguments: args } : args,
+        };
+      });
       assistant(
         [...(said ? [{ type: "text" as const, text: said }] : []), ...toolCalls],
         "toolUse",
@@ -231,16 +239,15 @@ function replayedToolReply(
         messages.push({
           role: "toolResult",
           toolCallId: call.id,
-          toolName: name,
+          toolName: call.name,
           content: [
             {
               type: "text",
-              // Without this a model reads a call to a tool it no longer has as one it never made.
               text: `${
                 seen
-                  ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, "[the screenshot you took:]")
+                  ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, REPLAYED_SCREENSHOT_LEAD)
                   : result.text
-              }${offered.has(name) ? "" : `\n[${name} is not available to you now.]`}`,
+              }${offered.has(name) || viaUseTool ? "" : toolNotAvailableNote(name)}`,
             },
             ...(seen ? [screenshot] : []),
           ],
@@ -276,6 +283,8 @@ export function toHistory(
    * tool calls only when there are some: some providers reject calls in a request without tools.
    */
   offered: ReadonlySet<string> = new Set(),
+  /** The tools this run reaches through use_tool instead of listing them. */
+  deferred: ReadonlySet<string> = new Set(),
 ): HistoryMessage[] {
   let duplicatePromptIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
@@ -302,7 +311,7 @@ export function toHistory(
     };
     if (m.role === "assistant" && !m.speaker) {
       if (offered.size > 0 && m.segments && replaysAsToolCalls(m.segments))
-        return replayedToolReply(m, m.segments, common, offered);
+        return replayedToolReply(m, m.segments, common, offered, deferred);
       // A reply whose blocks render to nothing has no text to replay.
       if (!m.content.trim()) return [];
       return [

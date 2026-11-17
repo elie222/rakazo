@@ -9,18 +9,17 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import {
-  AUTO_REVIEW_ASK,
-  AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
-  MAX_OWNER_WORDS_CHARS,
-  MEMORY_WRITE_ASK,
-  MEMORY_WRITE_PASS,
   reviewArgsTooLong,
   sanitizeAutoReviewReason,
   TOO_LONG_TO_REVIEW,
-  truncateReviewText,
 } from "./auto-review.js";
+import {
+  autoReviewDecisionQuestion,
+  MAX_OWNER_WORDS_CHARS,
+  truncateReviewText,
+} from "./auto-review.prompt.js";
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
@@ -70,23 +69,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             ...(request.newSite ? { newSite: true } : {}),
             ...(request.memoryWrite ? { memoryWrite: true } : {}),
           },
-          questions: {
-            decision: {
-              type: "choice",
-              instructions: "Should this bot action run without asking its owner first?",
-              criteria: request.newSite
-                ? {
-                    pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
-                    ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
-                  }
-                : request.memoryWrite
-                  ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
-                  : {
-                      pass: AUTO_REVIEW_PASS,
-                      ask: AUTO_REVIEW_ASK,
-                    },
-            },
-          },
+          questions: { decision: autoReviewDecisionQuestion(request) },
         },
         {
           ...context,

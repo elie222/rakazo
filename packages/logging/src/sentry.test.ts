@@ -8,7 +8,7 @@ import { createSentrySink, createSentrySinkFromEnv, sentryConfigFromEnv } from "
 const DSN = "https://publickey@errors.example.com/7";
 
 function recordingTransport() {
-  const events: Array<Record<string, any>> = [];
+  const events: Sentry.Event[] = [];
   const transport = (options: Parameters<typeof Sentry.createTransport>[0]) =>
     Sentry.createTransport(options, async (request) => {
       const body =
@@ -33,6 +33,9 @@ describe("sentry sink", () => {
     expect(sentryConfigFromEnv({ SENTRY_DSN: "https://errors.example.com/7" }).warning).toContain(
       "not a valid DSN",
     );
+    expect(
+      sentryConfigFromEnv({ SENTRY_DSN: "http://publickey@errors.example.com/7" }).warning,
+    ).toContain("not a valid DSN");
     expect(sentryConfigFromEnv({ SENTRY_DSN: "not a dsn" }).warning).toBeDefined();
     expect(
       sentryConfigFromEnv({
@@ -130,11 +133,11 @@ describe("sentry sink", () => {
       extra: { "log.message": "job crashed" },
     });
     expect(event.extra).toEqual({ "log.message": "job crashed" });
-    expect(event.tags["user.id"]).toBeUndefined();
+    expect(event.tags?.["user.id"]).toBeUndefined();
     expect(JSON.stringify(event)).not.toMatch(/apiKey|private message|sk-secret/);
-    const values = event.exception.values;
-    expect(values.map((value: { type: string }) => value.type)).toEqual(["TypeError", "Error"]);
-    expect(values[1].stacktrace.frames.at(-1).filename).toContain("sentry.test.ts");
+    const values = event.exception?.values;
+    expect(values?.map((value) => value.type)).toEqual(["TypeError", "Error"]);
+    expect(values?.[1]?.stacktrace?.frames?.at(-1)?.filename).toContain("sentry.test.ts");
   });
 
   it("titles database errors by code and model operation", async () => {
@@ -156,7 +159,7 @@ describe("sentry sink", () => {
     );
     await logger.flush();
 
-    expect(events.map((event) => event.exception.values.at(-1).value)).toEqual([
+    expect(events.map((event) => event.exception?.values?.at(-1)?.value)).toEqual([
       "P2028 connection.findMany: Transaction API error: expired transaction.",
       "read ECONNRESET",
     ]);
@@ -183,11 +186,11 @@ describe("sentry sink", () => {
     await sink.flush?.();
 
     const event = events[0]!;
-    expect(event.extra["log.message"]).toBe("login failed for [Redacted]");
+    expect(event.extra?.["log.message"]).toBe("login failed for [Redacted]");
     expect(event.extra).toEqual({ "log.message": "login failed for [Redacted]" });
-    expect(event.tags.runId).toBeUndefined();
-    expect(event.tags.jobId).toBeUndefined();
-    expect(event.tags["request.id"]).toBe("Bearer [Redacted]");
+    expect(event.tags?.runId).toBeUndefined();
+    expect(event.tags?.jobId).toBeUndefined();
+    expect(event.tags?.["request.id"]).toBe("Bearer [Redacted]");
     expect(JSON.stringify(event)).not.toMatch(/hunter2|sk-live|ada@example/);
   });
 
@@ -312,9 +315,9 @@ describe("sentry sink", () => {
     });
     await logger.flush();
 
-    expect(events[0]?.extra["log.message"]).toBe("run.failed");
-    expect(events[0]?.extra["error.details"]).toContain('"status":400');
-    expect(events[0]?.extra["error.details"]).not.toContain("sk-live");
+    expect(events[0]?.extra?.["log.message"]).toBe("run.failed");
+    expect(events[0]?.extra?.["error.details"]).toContain('"status":400');
+    expect(events[0]?.extra?.["error.details"]).not.toContain("sk-live");
   });
 
   it("titles a failed request report by its method, route and status", async () => {

@@ -37,17 +37,12 @@ export const PL_MESSAGES: Record<string, string> = {
   "A star on GitHub": "Gwiazdka na GitHubie",
   "Questions? Just reply. I read every one.":
     "Masz pytania? Po prostu odpowiedz. Czytam każdą wiadomość.",
-  "Have any questions? Reply to this email.": "Masz pytania? Odpowiedz na tę wiadomość.",
   Unsubscribe: "Zrezygnuj z otrzymywania wiadomości",
   "Invite a friend": "Zaproś znajomego",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "Zaproś znajomego do Rakazo: otrzyma {weeks} tyg. za darmo, a Ty zyskasz bezpłatny miesiąc, gdy rozpocznie subskrypcję spełniającą warunki z użyciem nowej karty.",
   "Open Rakazo": "Otwórz Rakazo",
   "and choose Invite friends for your link.": "i wybierz Zaproś znajomych, aby otrzymać swój link.",
-  "Have any questions? Just reply to this email.":
-    "Masz pytania? Po prostu odpowiedz na tę wiadomość.",
-  "If you're enjoying Rakazo,": "Jeśli lubisz korzystać z Rakazo,",
-  "give us a star on GitHub": "daj nam gwiazdkę na GitHub",
   "We received your Rakazo plugin": "Otrzymaliśmy Twoją wtyczkę do Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Dziękujemy za zgłoszenie wtyczki do katalogu Rakazo.",
@@ -77,4 +72,16 @@ export const PL_MESSAGES: Record<string, string> = {
     "Zapisane pliki komputera zostaną usunięte {date}, jeśli nie wznowisz subskrypcji.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Zapisane pliki komputera zostaną usunięte {date}, jeśli nie wybierzesz planu.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} zaprasza Cię do {organization} w Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} zaprasza Cię do dołączenia do {organization} w Rakazo.",
+  "Join {organization}": "Dołącz do {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "To zaproszenie wygaśnie za 7 dni. Aby je przyjąć, zaloguj się tym adresem e-mail.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} zaprasza Cię do {space} w Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} zaprasza Cię do dołączenia do {space} w Rakazo.",
+  "Join {space}": "Dołącz do {space}",
+  "This invitation expires in 7 days.": "To zaproszenie wygaśnie za 7 dni.",
 };

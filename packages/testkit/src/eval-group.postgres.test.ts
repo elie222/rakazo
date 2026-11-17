@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { EvalCase } from "./evals/cases.js";
 import type { EvalJudge } from "./evals/judge.js";
@@ -23,6 +24,7 @@ const subjectTools = 2;
  */
 async function runGroupBudgetTrial(fixture: {
   memberTools: number;
+  handoff?: true;
   memberCallMs: number;
   memberGate?: Promise<void>;
   judge?: EvalJudge;
@@ -30,10 +32,11 @@ async function runGroupBudgetTrial(fixture: {
   scenarioJudge?: EvalCase["judge"];
 }) {
   const { memberTools } = fixture;
-  const totalCalls = subjectTools + memberTools + 2; // Each member ends with one text turn.
+  const totalCalls = subjectTools + memberTools + 2 + (fixture.handoff ? 1 : 0); // Each member ends with one text turn.
   // Members decide at about the same time, so the fixture cannot pin run order: every
   // step serves either member, and Mika's first call waits for the subject's finished
   // run, so the trial's per-step watch has ended before Mika's work counts up.
+  let handoffTarget = "";
   let subjectCalls = 0;
   let memberCalls = 0;
   const isMember = (request: ModelEmulatorRequest) =>
@@ -48,7 +51,7 @@ async function runGroupBudgetTrial(fixture: {
       await system.run.findFirst({
         where: {
           bot: { name: "Assistant" },
-          trigger: "user",
+          trigger: fixture.handoff ? "follow_up" : "user",
           status: "completed",
           createdAt: { gte: started },
         },
@@ -57,7 +60,16 @@ async function runGroupBudgetTrial(fixture: {
     );
   const steps: ModelEmulatorStep[] = Array.from({ length: totalCalls }, () => ({
     async expect(request) {
-      if (!isMember(request)) return;
+      if (!isMember(request)) {
+        if (fixture.handoff)
+          handoffTarget = (
+            await system.bot.findFirstOrThrow({
+              where: { name: "Mika", createdAt: { gte: started } },
+              select: { id: true },
+            })
+          ).id;
+        return;
+      }
       if (memberCalls === 0) {
         const gateDeadline = Date.now() + 20_000;
         while (!(await subjectRunDone()) && Date.now() < gateDeadline)
@@ -70,6 +82,13 @@ async function runGroupBudgetTrial(fixture: {
     response: (request: ModelEmulatorRequest) => {
       if (!isMember(request)) {
         subjectCalls += 1;
+        if (fixture.handoff && subjectCalls === subjectTools)
+          return {
+            type: "tool" as const,
+            id: "load-handoff",
+            name: "find_tool",
+            arguments: { names: ["handoff_to_bot"] },
+          };
         if (subjectCalls <= subjectTools)
           return {
             type: "tool" as const,
@@ -77,7 +96,20 @@ async function runGroupBudgetTrial(fixture: {
             name: "search_history",
             arguments: { query: `release-${subjectCalls}` },
           };
-        return { type: "text" as const, text: "Nothing blocking from my side." };
+        if (fixture.handoff && subjectCalls === subjectTools + 1)
+          return {
+            type: "tool" as const,
+            id: "handoff-stage",
+            name: "use_tool",
+            arguments: {
+              name: "handoff_to_bot",
+              arguments: { bot_id: handoffTarget, message: "Check the archive for blockers." },
+            },
+          };
+        return {
+          type: "text" as const,
+          text: fixture.handoff ? "NO_RESPONSE" : "Nothing blocking from my side.",
+        };
       }
       memberCalls += 1;
       if (memberCalls <= memberTools)
@@ -95,9 +127,12 @@ async function runGroupBudgetTrial(fixture: {
     id: "group-tool-budget",
     purpose:
       "The trial tool budget stops a member still working after the first member's run ended.",
-    steps: [{ ask: "Quick check: does anything block tonight's release?", unaddressed: true }],
+    steps: fixture.handoff
+      ? [{ fromMember: "Email", text: "Check whether anything blocks tonight's release." }]
+      : [{ ask: "Quick check: does anything block tonight's release?", unaddressed: true }],
+    alwaysAllowTools: fixture.handoff ? ["handoff_to_bot"] : [],
     group: {
-      members: ["Mika"],
+      members: fixture.handoff ? ["Email", "Mika"] : ["Mika"],
       roles: {
         Assistant: "Chief of staff: tracks the release and answers for it.",
         Mika: "Archives: searches the records for anything blocking.",
@@ -151,7 +186,11 @@ async function runGroupBudgetTrial(fixture: {
       },
     });
     const mikaRun = await system.run.findFirst({
-      where: { bot: { name: "Mika" }, trigger: "user", createdAt: { gte: started } },
+      where: {
+        bot: { name: "Mika" },
+        trigger: fixture.handoff ? "follow_up" : "user",
+        createdAt: { gte: started },
+      },
       select: { status: true },
     });
     return { result, memberCalls, totalCalls, requests: model.requests.length, mikaRun };
@@ -166,6 +205,23 @@ async function runGroupBudgetTrial(fixture: {
 }
 
 describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
+  it("observes a downstream reply before grading a member-initiated handoff", async () => {
+    const { result, memberCalls, mikaRun } = await runGroupBudgetTrial({
+      handoff: true,
+      memberTools: 1,
+      memberCallMs: 100,
+      grade: (e) => [
+        {
+          id: "downstream-reply-observed",
+          pass: e.memberReplies?.Mika === "I checked every record; nothing blocks.",
+        },
+      ],
+    });
+    expect(result.status, result.reason ?? undefined).toBe("passed");
+    expect(memberCalls).toBe(2);
+    expect(mikaRun?.status).toBe("completed");
+  }, 90_000);
+
   it("stops a group trial while a member is still working past the tool budget", async () => {
     // Stretch each member call past the wait loop's poll interval, as real paid calls are,
     // so the breach is observable while Mika is still working. The budget (the subject's
@@ -190,10 +246,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
     // drain is waiting, so the test does not depend on how fast Mika is: then only a check
     // after the drain can see the breach before grading.
     const realSetTimeout = globalThis.setTimeout;
-    let drainWaiting!: () => void;
-    const memberGate = new Promise<void>((resolve) => {
-      drainWaiting = resolve;
-    });
+    const memberGate = deferred();
     const drainChecks = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
       callback: (...args: unknown[]) => void,
       delay?: number,
@@ -201,7 +254,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
     ) => {
       if (delay !== 200 || String(callback) !== "() => resolve(false)")
         return realSetTimeout(callback, delay, ...args);
-      drainWaiting();
+      memberGate.resolve();
       return realSetTimeout(() => undefined, 0);
     }) as typeof setTimeout);
     let graded = false;
@@ -210,7 +263,7 @@ describe.skipIf(!databaseAvailable)("group eval tool budget", () => {
       const { result } = await runGroupBudgetTrial({
         memberTools: 4,
         memberCallMs: 0,
-        memberGate,
+        memberGate: memberGate.promise,
         grade: () => {
           graded = true;
           return [{ id: "answered", pass: true }];

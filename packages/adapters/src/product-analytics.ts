@@ -9,6 +9,8 @@ export function createProductAnalytics(
   fetchImpl: typeof fetch = fetch,
 ): ProductAnalytics | undefined {
   if (!env.ANALYTICS_PROVIDER || env.ANALYTICS_PROVIDER === "none") return undefined;
+  if (env.ANALYTICS_PROVIDER === "emulator")
+    return env.NODE_ENV === "production" ? undefined : logAnalytics();
   const key = env.ANALYTICS_KEY?.trim();
   const pseudonymSecret = env.ANALYTICS_PSEUDONYM_SECRET?.trim();
   let host: URL;
@@ -62,7 +64,7 @@ export function createProductAnalytics(
     sending = undefined;
   };
   return {
-    capture(userId, input, identity) {
+    capture(userId, input, identity, experiments) {
       const parsed = AnalyticsEvent.safeParse(input);
       if (!parsed.success || typeof userId !== "string" || !userId || pending.length >= 256) return;
       if (identity && (!(identity.at instanceof Date) || !Number.isFinite(identity.at.getTime())))
@@ -80,6 +82,10 @@ export function createProductAnalytics(
         timestamp: (identity?.at ?? new Date()).toISOString(),
         properties: {
           ...properties,
+          // PostHog reads an experiment's variant from `$feature/<key>`.
+          ...Object.fromEntries(
+            Object.entries(experiments ?? {}).map(([key, variant]) => [`$feature/${key}`, variant]),
+          ),
           source: "product",
           $geoip_disable: true,
           $process_person_profile: false,
@@ -89,5 +95,17 @@ export function createProductAnalytics(
       timer.unref();
     },
     flush,
+  };
+}
+
+/** Local development only: write each allowed event to the log instead of sending it anywhere. */
+function logAnalytics(): ProductAnalytics {
+  return {
+    capture(_userId, input, _identity, experiments) {
+      const parsed = AnalyticsEvent.safeParse(input);
+      if (parsed.success)
+        getLogger().info("analytics event", { "analytics.event": parsed.data, experiments });
+    },
+    flush: async () => {},
   };
 }

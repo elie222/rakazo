@@ -90,4 +90,23 @@ test("adds a passkey after signup and signs in with it", async ({ page }, testIn
   await signedIn;
   await page.waitForURL(/\/app/);
   await expect(account).toBeVisible();
+
+  // With a provider configured, sign-in opens on the chooser, which offers the passkey itself.
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const capabilities = await (await route.fetch()).json();
+    await route.fulfill({
+      json: { ...capabilities, providers: [{ id: "google", name: "Google" }] },
+    });
+  });
+  await account.click();
+  await page.getByRole("button", { name: "Log out" }).click();
+  const choice = page.getByRole("button", { name: /^Continue with passkey/ });
+  await expect(choice).toBeVisible();
+  await expect(choice).toContainText("Last used");
+  await captureScreenshot(page, testInfo, "passkey-sign-in-chooser");
+  signedIn = verified();
+  await choice.click();
+  await signedIn;
+  await page.waitForURL(/\/app/);
+  await expect(account).toBeVisible();
 });

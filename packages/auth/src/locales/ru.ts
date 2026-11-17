@@ -38,7 +38,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "A star on GitHub": "Звезда на GitHub",
   "Questions? Just reply. I read every one.":
     "Есть вопросы? Просто ответьте. Я читаю каждое письмо.",
-  "Have any questions? Reply to this email.": "Есть вопросы? Ответьте на это письмо.",
   Unsubscribe: "Отписаться",
   "Invite a friend": "Пригласите друга",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
@@ -46,9 +45,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Open Rakazo": "Откройте Rakazo",
   "and choose Invite friends for your link.":
     "и выберите «Пригласить друзей», чтобы получить ссылку.",
-  "Have any questions? Just reply to this email.": "Есть вопросы? Просто ответьте на это письмо.",
-  "If you're enjoying Rakazo,": "Если вам нравится Rakazo,",
-  "give us a star on GitHub": "поставьте нам звезду на GitHub",
   "We received your Rakazo plugin": "Мы получили ваш плагин для Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Спасибо, что отправили плагин в маркетплейс Rakazo.",
@@ -77,4 +73,16 @@ export const RU_MESSAGES: Record<string, string> = {
     "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не продлите подписку.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не выберете тариф.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} приглашает вас в {organization} в Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} приглашает вас присоединиться к {organization} в Rakazo.",
+  "Join {organization}": "Присоединиться к {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Приглашение действует 7 дней. Чтобы принять его, войдите с этим адресом электронной почты.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} приглашает вас в {space} в Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} приглашает вас присоединиться к {space} в Rakazo.",
+  "Join {space}": "Присоединиться к {space}",
+  "This invitation expires in 7 days.": "Приглашение действует 7 дней.",
 };

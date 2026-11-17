@@ -61,12 +61,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
       - name: Resolve pull request
         id: pull_request
         env:
@@ -202,7 +197,11 @@ jobs:
   screenshot-source:
     name: Mark E2E publication finished
     needs: [result, publish]
-    if: always() && needs.result.result == 'success' && github.event.workflow_run.event == 'pull_request'
+    # E2E skips only pull requests with no web UI change, which pr-screenshots.yml would skip anyway.
+    if: >-
+      always() && needs.result.result == 'success' &&
+      needs.result.outputs.result != 'skipped' &&
+      github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

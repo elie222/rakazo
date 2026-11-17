@@ -1,14 +1,12 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { isRetryableError } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchSpaceActivity } from "./activity";
-import { useForegroundPoll } from "./foreground-poll";
-import { ACTIVITY_POLL_INTERVAL_MS } from "./poll-cadence";
+import { useSpaceChanges } from "./roster-signals";
 
 export type SpaceActivityStatus = "loading" | "loaded" | "failed";
 
-/** The Space's running and recent work, polled while the activity view is on and in sight. */
+/** The Space's running and recent work, read while the activity view is on and in sight. */
 export function useSpaceActivity({
   hasSession,
   activityMode,
@@ -45,16 +43,18 @@ export function useSpaceActivity({
       if (requestId !== activityRequestId.current) return;
       setActivity(next);
       setActivityStatus("loaded");
-    } catch (error) {
+    } catch {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
       setActivityStatus("failed");
-      // False when the server refused rather than failed: asking again only polls it.
-      return isRetryableError(error);
     }
   }, [activityMode, clearActivity, hasSession]);
 
-  useForegroundPoll(loadActivity, ACTIVITY_POLL_INTERVAL_MS, hasSession && activityMode && inSight);
+  const shown = hasSession && activityMode && inSight;
+  useEffect(() => {
+    if (shown) void loadActivity();
+  }, [shown, loadActivity]);
+  useSpaceChanges("runs", loadActivity, shown);
 
   useEffect(
     () => () => {

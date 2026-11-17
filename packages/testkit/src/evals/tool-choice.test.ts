@@ -4,7 +4,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
-import { gradeToolChoice, loadToolChoiceCases } from "./tool-choice.js";
+import {
+  gradeToolChoice,
+  loadToolChoiceCases,
+  TOOL_CHOICE_JUDGE_CALIBRATION,
+  TOOL_CHOICE_JUDGE_VERSION,
+  ToolChoiceCaseSchema,
+  toolChoiceEvalCase,
+} from "./tool-choice.js";
 import { TOOL_CHOICE_CASES, TOOL_CHOICE_DEFINITIONS } from "./tool-choice-cases.js";
 
 function evidence(overrides: Partial<Evidence> = {}): Evidence {
@@ -190,5 +197,105 @@ describe("tool-choice grading", () => {
       ]),
     );
     expect(() => loadToolChoiceCases(file)).toThrow(/guard needs/);
+  });
+
+  it("sends prose settings to the judge instead of matching their wording", () => {
+    const scenario = TOOL_CHOICE_CASES.find((c) => c.id === "settings-instructions-add")!;
+    const input = scenario.judge!(
+      evidence({ settings: { ...EMPTY_SETTINGS, bot: { instructions: "Use short lists." } } }),
+    );
+    expect(input.rubric.startsWith(`${TOOL_CHOICE_JUDGE_VERSION}:`)).toBe(true);
+    expect(input.evidence).toMatchObject({
+      request: "Update your instructions so you always answer in bullet points.",
+      settings: { instructions: { saved: "Use short lists." } },
+    });
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    expect(
+      ToolChoiceCaseSchema.safeParse({ ...base, expect: { bot: { instructions: "~bullet" } } })
+        .success,
+    ).toBe(false);
+    expect(
+      ToolChoiceCaseSchema.safeParse({
+        ...base,
+        expect: { calls: [{ tool: "update_bot", args: { description: "~metrics" } }] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("grades a prose wildcard by meaning, and lets exact values through", () => {
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    const parses = (expect: object) => ToolChoiceCaseSchema.safeParse({ ...base, expect }).success;
+    expect(parses({ bot: { instructions: "*" } })).toBe(false);
+    expect(parses({ calls: [{ tool: "update_bot", args: { description: "*" } }] })).toBe(false);
+    // A null or blank bot_id still updates the calling bot, as the tool reads it.
+    for (const bot_id of [null, "", " "])
+      expect(parses({ calls: [{ tool: "update_bot", args: { bot_id, instructions: "*" } }] })).toBe(
+        false,
+      );
+    expect(parses({ bot: { instructions: ["*", null] } })).toBe(false);
+    const keepsName = { calls: [{ tool: "update_bot", args: { name: "Scout" } }] };
+    expect(
+      parses({ ...keepsName, callsMustNot: [{ tool: "update_bot", args: { instructions: "*" } }] }),
+    ).toBe(true);
+    const meaningOnly = toolChoiceEvalCase({
+      ...base,
+      expect: { botMeans: { instructions: "Review pull requests." } },
+    });
+    expect(meaningOnly.judge).toBeDefined();
+    expect(parses({ bot: { instructions: null } })).toBe(true);
+    expect(parses({ bot: { description: "" } })).toBe(true);
+    expect(parses({ bot: { instructions: "Help with travel planning." } })).toBe(true);
+    expect(parses({ bot: { instructions: ["~travel", null] } })).toBe(false);
+    expect(
+      parses({
+        ...keepsName,
+        callsMustNot: [{ tool: "update_bot", args: { instructions: [null, ""] } }],
+      }),
+    ).toBe(true);
+  });
+
+  it("judges only the bot's own settings; other tools' prose arguments need only be present", () => {
+    const base = { id: "x", area: "settings", kind: "guard", prompt: "p", purpose: "p" } as const;
+    for (const others of [
+      { calls: [{ tool: "spawn_bot", args: { instructions: "*" } }] },
+      { anyOf: [{ tool: "skill_create", args: { description: "*" } }] },
+      { calls: [{ tool: "update_bot", args: { bot_id: "*", instructions: "*" } }] },
+    ]) {
+      const scenario = toolChoiceEvalCase({ ...base, expect: others });
+      expect(scenario.judge).toBeUndefined();
+    }
+    expect(
+      ToolChoiceCaseSchema.safeParse({
+        ...base,
+        expect: { calls: [{ tool: "spawn_bot", args: { instructions: "~bullet" } }] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("sends the final reply to the judge with what it must convey", () => {
+    const base = {
+      id: "x",
+      area: "help",
+      kind: "guard",
+      prompt: "Who reads your memory?",
+    } as const;
+    const scenario = toolChoiceEvalCase({
+      ...base,
+      purpose: "p",
+      expect: { replyMeans: "Says its own memory is private." },
+    });
+    const input = scenario.judge!(evidence({ text: "Only I read my notes." }));
+    expect(input.evidence).toEqual({
+      request: "Who reads your memory?",
+      reply: { text: "Only I read my notes.", expected: "Says its own memory is private." },
+    });
+  });
+
+  it("calibrates the judge against passing and failing references", () => {
+    expect(new Set(TOOL_CHOICE_JUDGE_CALIBRATION.map((c) => c.pass))).toEqual(
+      new Set([true, false]),
+    );
+    for (const { input } of TOOL_CHOICE_JUDGE_CALIBRATION)
+      expect(input.rubric.startsWith(`${TOOL_CHOICE_JUDGE_VERSION}:`)).toBe(true);
   });
 });

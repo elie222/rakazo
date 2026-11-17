@@ -1,23 +1,23 @@
-import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { validateFileSize, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { SendblueAdapter } from "chat-adapter-sendblue";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { Domain } from "./lark/thread-id.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
-  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatuses,
-  parseWhatsAppStatuses,
-  photonProjectsFromEnv,
   splitOutboundBody,
-  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
+import { Domain } from "./providers/messaging/lark/thread-id.js";
+import { photonProjectsFromEnv } from "./providers/messaging/photon/photon-messaging.js";
+import { parseSendblueStatuses } from "./providers/messaging/sendblue/sendblue-messaging.js";
+import { enrichSlackTeamRoom } from "./providers/messaging/slack/slack-messaging.js";
+import { telegramBotsFromEnv } from "./providers/messaging/telegram/telegram-messaging.js";
+import { parseWhatsAppStatuses } from "./providers/messaging/whatsapp/whatsapp-messaging.js";
 
 // Fake credentials: adapters are constructed offline, never called.
 const fullEnv: MessagingEnvironmentValues = {
@@ -377,7 +377,12 @@ describe("messagingPlatformsFromEnv", () => {
     );
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
     expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
-    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.whatsapp).toEqual({
+      direct: true,
+      groups: false,
+      receipt: null,
+      files: true,
+    });
     expect(capabilities.telegram).toEqual({
       direct: true,
       groups: true,
@@ -562,12 +567,10 @@ describe("splitOutboundBody", () => {
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
   });
 
-  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
+  it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
-    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
-    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });
@@ -590,6 +593,14 @@ describe("permanent send errors", () => {
       400,
       JSON.stringify({ error: { code, message: "failed", type: "OAuthException" } }),
     );
+  const oversizeImage = (() => {
+    try {
+      validateFileSize("image", 6 * 1024 * 1024);
+    } catch (error) {
+      return error;
+    }
+    throw new Error("expected the adapter to refuse a 6 MB image");
+  })();
 
   it.each([
     ["slack", slackError("channel_not_found"), true],
@@ -601,6 +612,8 @@ describe("permanent send errors", () => {
     ["telegram", new Error("Network error calling Telegram sendMessage"), false],
     ["whatsapp", whatsappError(131047), true],
     ["whatsapp", whatsappError(130429), false],
+    ["whatsapp", oversizeImage, true],
+    ["whatsapp", new Error("fetch failed"), false],
   ] as const)("%s: %s is permanent=%s", (provider, error, permanent) => {
     expect(platforms[provider]!.isPermanentSendError!(error)).toBe(permanent);
   });
