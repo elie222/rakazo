@@ -223,7 +223,7 @@ export async function prepareOwnBotSettings(
     if (!voice.ok) return { error: voice.error };
     data.voiceId = voice.voiceId;
     // A custom voice belongs to the connection whose catalog supplied it, even if Settings changes.
-    if (selection) data.voiceProvider = selection.provider;
+    data.voiceProvider = selection?.provider ?? null;
   }
   const model = typeof args.model === "string" ? args.model.trim() : "";
   const level = typeof args.thinkingLevel === "string" ? args.thinkingLevel.trim() : "";

@@ -11,7 +11,7 @@ import {
   AgentImportPreviewInput,
 } from "./agent-import.js";
 import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
-import { AiConsentQuerySchema, AiConsentStatusSchema, AiDataUseSchema } from "./ai-consent.js";
+import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
@@ -328,17 +328,10 @@ export const appContract = {
     status: oc.input(AiConsentQuerySchema).output(AiConsentStatusSchema),
     allow: oc
       .input(
-        z.object({
+        AiConsentQuerySchema.removeDefault().extend({
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
-          /** The settings copy the reviewed recipients came from, as in `status`. */
-          settingsScope: SettingsScopeSchema.optional(),
-          botId: z.string().optional(),
-          groupId: z.string().optional(),
-          routineId: z.string().optional(),
-          voiceProvider: z.string().trim().min(1).max(80).optional(),
-          uses: z.array(AiDataUseSchema).optional(),
         }),
       )
       .output(AiConsentStatusSchema),

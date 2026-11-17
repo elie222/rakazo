@@ -2231,6 +2231,8 @@ describe("own settings through update_bot", () => {
       ...(await read()),
       ...state,
     }));
+    const current = f.prisma.bot.findUnique.getMockImplementation()!;
+    f.prisma.bot.findUnique.mockImplementation(async () => ({ ...(await current()), ...state }));
     const update = f.prisma.bot.update.getMockImplementation()!;
     f.prisma.bot.update.mockImplementation(async (query) => {
       const { where } = query as typeof query & { where: Record<string, unknown> };
@@ -2298,6 +2300,23 @@ describe("own settings through update_bot", () => {
       }),
     );
   });
+
+  it.each(["voice-rachel", null])(
+    "returns a pinned provider to Settings when resetting voice %s",
+    async (voiceId) => {
+      const f = voiceFixture("provider-a", voiceId);
+      f.voiceState.defaultProvider = "provider-b";
+      f.setCalls([{ args: { voice: "default" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results).toEqual([{ ok: true, voice: "default" }]);
+      expect(f.voiceState).toMatchObject({
+        voiceProvider: null,
+        voiceId: null,
+        defaultProvider: "provider-b",
+      });
+      expect(f.listVoices).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([null, "provider-a"])(
     "refuses a voice from the old catalog when the bot provider changes from %s",

@@ -35,6 +35,15 @@ describe("dropUnchangedOwnBotArgs", () => {
     ).toEqual({});
   });
 
+  it("keeps a default voice reset when only the provider is overridden", () => {
+    expect(
+      dropUnchangedOwnBotArgs({ voice: "default" }, { ...current, voiceProvider: "provider-a" }),
+    ).toEqual({ voice: "default" });
+    expect(
+      dropUnchangedOwnBotArgs({ voice: "default" }, { ...current, voiceProvider: null }),
+    ).toEqual({});
+  });
+
   it("treats every name of the current model and the run's thinking as no change", () => {
     const names = ["gpt-fixture", "openai-compatible/gpt-fixture", "gpt-fixture (Compatible)"];
     for (const model of [...names, "GPT-fixture (compatible)"])

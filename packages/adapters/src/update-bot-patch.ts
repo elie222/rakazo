@@ -66,6 +66,7 @@ export type OwnBotCurrentValues = {
   dailyCheckIns: boolean;
   thinkingLevel: string | null;
   autoSpeak: boolean;
+  voiceProvider?: string | null;
   voiceId: string | null;
 };
 
@@ -95,7 +96,7 @@ export function dropUnchangedOwnBotArgs(
       ? [current.thinkingLevel]
       : ["default", ...(runningThinkingLevel ? [runningThinkingLevel] : [])],
     readAloud: [current.autoSpeak],
-    voice: [current.voiceId ?? "default"],
+    voice: current.voiceId ? [current.voiceId] : current.voiceProvider ? [] : ["default"],
     use_attached_image: [false],
     // Reading from the start is the default, not a request to page.
     instructions_offset: [0],

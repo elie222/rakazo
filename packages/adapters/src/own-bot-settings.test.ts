@@ -305,7 +305,7 @@ describe("prepareOwnBotSettings voice", () => {
   it("resets to the default voice without a voice provider", async () => {
     expect(
       await prepareOwnBotSettings(deps(), scope, bot, { voice: "default" }, async () => null),
-    ).toEqual({ data: { voiceId: null } });
+    ).toEqual({ data: { voiceProvider: null, voiceId: null } });
   });
 
   it("lists voices only when a voice is asked for and stores the match", async () => {

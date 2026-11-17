@@ -667,6 +667,7 @@ async function prepareOwnBotUpdate(
       modelId: true,
       thinkingLevel: true,
       autoSpeak: true,
+      voiceProvider: true,
       voiceId: true,
     },
   });
