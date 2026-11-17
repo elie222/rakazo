@@ -40,7 +40,7 @@ export function isAvailableChatApp(
   const appNames = new Set(
     chatApps.flatMap((provider) => {
       const name = messagingProviderName(provider).toLowerCase();
-      return [provider.toLowerCase(), name, name.replace(/ \([^)]*\)$/, "")];
+      return [provider.toLowerCase(), name, name.split(" (")[0]!];
     }),
   );
   return [app.name, app.slug].some((name) => appNames.has(name.trim().toLowerCase()));
