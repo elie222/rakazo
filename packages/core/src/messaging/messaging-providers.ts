@@ -36,11 +36,14 @@ export function isAvailableChatApp(
   app: { name: string; slug: string },
   chatApps: readonly string[],
 ): boolean {
-  // A named extra line ("Telegram (work)") is still that app.
   const appNames = new Set(
     chatApps.flatMap((provider) => {
-      const name = messagingProviderName(provider).toLowerCase();
-      return [provider.toLowerCase(), name, name.split(" (")[0]!];
+      // A named extra line mounts as "<id>-<name>" and is still that app.
+      const base = Object.keys(PROVIDER_NAMES).find((id) => provider.startsWith(`${id}-`));
+      return [provider, base ?? provider].flatMap((id) => [
+        id.toLowerCase(),
+        messagingProviderName(id).toLowerCase(),
+      ]);
     }),
   );
   return [app.name, app.slug].some((name) => appNames.has(name.trim().toLowerCase()));
