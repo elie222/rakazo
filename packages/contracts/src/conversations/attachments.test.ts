@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_ARCHIVE_MIME_TYPES,
   ATTACHMENT_AUDIO_MIME_TYPES,
+  ATTACHMENT_IMAGE_MIME_TYPES,
   appContract,
   artifactPreviewKind,
   attachmentMaxCount,
@@ -35,6 +37,16 @@ describe("attachment contracts", () => {
       }).success,
     ).toBe(false);
   });
+
+  it.each(["video/quicktime", "video/3gpp", "image/heic", "image/heif"])(
+    "allows %s as a file, never as a vision image or inline preview",
+    (mimeType) => {
+      expect(ATTACHMENT_ALLOWED_MIME_TYPES).toContain(mimeType);
+      expect(isAllowedAttachmentMimeType(mimeType)).toBe(true);
+      expect(ATTACHMENT_IMAGE_MIME_TYPES).not.toContain(mimeType);
+      expect(artifactPreviewKind(mimeType)).toBe("none");
+    },
+  );
 
   it.each(ATTACHMENT_AUDIO_MIME_TYPES)("allows %s as an audio file block", (mimeType) => {
     expect(isAllowedAttachmentMimeType(mimeType)).toBe(true);
