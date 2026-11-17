@@ -366,6 +366,11 @@ test("an app that is also a chat app here leads to messaging settings", async ({
     }),
   );
   await page.route("**/rpc/connections/list", (route) => route.fulfill({ json: { json: [] } }));
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill({
+      json: { json: { enabled: true, providers: ["chatty"], openSignup: false, identities: [] } },
+    }),
+  );
   await signup(page, `chat-app-hint-${Date.now()}@rakazo.test`, "password12", "Chat App Hint");
   await completeOnboarding(page);
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();

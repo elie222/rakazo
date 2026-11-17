@@ -57,6 +57,7 @@ export function AppOverlays({
   setOverlay,
   activeBotId,
   stdioEnabled,
+  messagingEnabled,
   onConnectedAppsChange,
   onOpenBot,
 }: {
@@ -64,6 +65,8 @@ export function AppOverlays({
   setOverlay: (next: ShellOverlay) => void;
   activeBotId: string | undefined;
   stdioEnabled: boolean;
+  /** Messaging settings can be opened; a link there is shown only then. */
+  messagingEnabled: boolean;
   onConnectedAppsChange: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onOpenBot: (bot: Bot) => void;
 }) {
@@ -77,8 +80,10 @@ export function AppOverlays({
           onClose={() => setOverlay(null)}
           onOpenMcp={() => setOverlay({ kind: "mcp" })}
           onOpenTemplates={openTemplates}
-          onOpenMessaging={() =>
-            setOverlay({ kind: "settings", section: "messaging", spaceId: null })
+          onOpenMessaging={
+            messagingEnabled
+              ? () => setOverlay({ kind: "settings", section: "messaging", spaceId: null })
+              : undefined
           }
         />
       ) : null}
