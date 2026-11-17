@@ -1,4 +1,4 @@
-import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
+import { CursorCloudAgentProvider } from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
 
 const EMULATOR_KEY = "fake-key";
 const ACTIVE_RUN = new Set(["CREATING", "RUNNING"]);

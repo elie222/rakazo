@@ -19,14 +19,17 @@ import {
   executeCloudAgentTool,
   reconcileCloudAgents,
 } from "./cloud-agent-service.js";
-import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
+import { CursorCloudAgentProvider } from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
+import { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";
+import {
+  T3_TOKEN,
+  T3McpEmulator,
+} from "./providers/cloud-agent/t3code/t3code-mcp-emulator.test-support.js";
 import { withSecretPersistence } from "./secret-persistence.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { T3CodeConnections } from "./t3code-connections.js";
-import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;

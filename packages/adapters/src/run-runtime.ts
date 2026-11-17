@@ -41,10 +41,10 @@ import {
   PipedreamConnector,
   pipedreamConfigFromEnv,
 } from "./pipedream-connector.js";
+import { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";
 import { reconcilePurchases } from "./purchase-poll.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
-import { T3CodeConnections } from "./t3code-connections.js";
 import { TeamChat } from "./team-chat.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import { createWebProvider } from "./web-provider-factory.js";
