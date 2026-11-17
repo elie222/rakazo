@@ -9,6 +9,7 @@ import {
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 export interface UsageAttribution {
+  fundingSource?: "customer" | "operator";
   spaceId: string;
   userId: string;
   botId?: string;
@@ -43,6 +44,7 @@ export async function recordUsage(
     usageSource: event.usageSource ?? null,
   };
   const data = {
+    fundingSource: attribution.fundingSource ?? "customer",
     provider: event.provider,
     model: event.model,
     spaceId: attribution.spaceId,
@@ -59,6 +61,19 @@ export async function recordUsage(
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await tx.usageRecord.createMany({ data: [data], skipDuplicates: true });
+      if (attribution.fundingSource === "operator") {
+        if (reconcile && event.callId)
+          await tx.usageRecord.updateMany({
+            where: {
+              callId: event.callId,
+              fundingSource: "operator",
+              userId: attribution.userId,
+              spaceId: attribution.spaceId,
+            },
+            data: observation,
+          });
+        return;
+      }
       const entry = event.callId
         ? await tx.modelCreditEntry.findUnique({ where: { callId: event.callId } })
         : null;

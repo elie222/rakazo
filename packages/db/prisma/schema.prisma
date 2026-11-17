@@ -2050,6 +2050,8 @@ model PageVersion {
 }
 
 model UsageRecord {
+  /// Operator expenses never settle purchased model credits.
+  fundingSource      String   @default("customer")
   id                 String   @id @default(cuid())
   spaceId            String
   /// Which bot spent this. Deliberately not a relation: usage is spend that really happened,
