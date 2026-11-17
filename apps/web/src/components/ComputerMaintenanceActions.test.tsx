@@ -123,6 +123,16 @@ it("holds Restart screen while this bot is working", async () => {
   expect(button?.disabled).toBe(true);
 });
 
+it("holds Restart screen while this bot waits for a person to take over", async () => {
+  await render(
+    status("bot-settings", { mode: "team", takeoverRequested: true, canRestartScreen: true }),
+  );
+  const button = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Restart screen",
+  );
+  expect(button?.disabled).toBe(true);
+});
+
 it("restarts only this bot's screen, without recovering or resetting the computer", async () => {
   computer.restartScreen.mockResolvedValueOnce({});
   const onChanged = vi.fn(async () => {});

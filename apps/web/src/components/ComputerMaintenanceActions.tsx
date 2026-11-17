@@ -48,6 +48,8 @@ export function ComputerMaintenanceActions({
     return null;
 
   const busy = Boolean(computer.busyBotName);
+  // A run waiting for a person to take over is not "busy", yet the restart refuses it too.
+  const waitingForTakeover = computer.takeoverRequested === true;
   const action: Action = computer.canUpdate ? "recover" : "reset";
   // The restart is refused while another person holds control, so it is not offered then.
   const canRestartScreen =
@@ -74,7 +76,7 @@ export function ComputerMaintenanceActions({
         <Button
           variant="outline"
           size="sm"
-          disabled={busy || pending}
+          disabled={busy || waitingForTakeover || pending}
           onClick={() => {
             repair.reset();
             setConfirming("restartScreen");
