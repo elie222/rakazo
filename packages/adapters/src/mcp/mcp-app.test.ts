@@ -1,6 +1,6 @@
 import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { InstalledConnectorProvider } from "../connectors/installed-connectors.js";
+import { InstalledConnectorProvider } from "../integrations/installed-connectors.js";
 import {
   mcpAppFromResource,
   mcpAppViewArguments,

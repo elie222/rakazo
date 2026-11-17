@@ -1,7 +1,7 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
-import { OpenRouterUsageLookup } from "./credits/openrouter-usage.js";
+import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;

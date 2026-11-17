@@ -4,7 +4,7 @@ import type { ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "../../approvals/approval-effect.js";
-import { sanitizeConnectorError } from "../../connectors/connector-safety.js";
+import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import { refusalCode } from "./tool-refusal.js";
 import { isFailedToolResult, toolResultError } from "./tool-result-error.js";

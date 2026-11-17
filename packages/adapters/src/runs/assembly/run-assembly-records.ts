@@ -16,12 +16,13 @@ import {
   isLostPinnedModel,
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
 } from "../../computers/computer-model-settings.js";
+import { formatAgentEnvironmentInstruction } from "../../computers/sandbox/agent-environment.prompt.js";
 import {
   connectedContext,
   loadLivePluginSlugs,
   persistLivePluginConnections,
   selectRunConnections,
-} from "../../connectors/connection-context.js";
+} from "../../integrations/connection-context.js";
 import { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { resolveMemberMainModel } from "../../models/model-roles.js";
 import { findConnectedModelCredential, runModelChoice } from "../../models/model-selection.js";
@@ -32,7 +33,6 @@ import {
 } from "../../providers/integration/composio/composio-connector.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
-import { formatAgentEnvironmentInstruction } from "../../sandboxes/agent-environment.prompt.js";
 import {
   loadCommandVariables,
   loadLoginPasswordRedactions,

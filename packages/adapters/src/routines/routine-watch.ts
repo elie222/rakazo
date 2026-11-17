@@ -31,20 +31,20 @@ import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "../computers/computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "../computers/computer-lifecycle.js";
 import { nativeShellCommandArgv } from "../computers/host/native-shell.js";
+import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import {
   resolveBotWorkspaceCwd,
   teamBotWorkspaceDirectory,
 } from "../computers/screens/computer-support.js";
-import { connectedContext, selectRunConnections } from "../connectors/connection-context.js";
+import { connectedContext, selectRunConnections } from "../integrations/connection-context.js";
+import { isEgressRefused } from "../network/network-address.js";
 import { loadPurchaseRedactions } from "../payments/purchase-service.js";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import {
   loadLoginPasswordRedactions,
   shellCommandEnvironment,
   VaultKeyUnavailableError,
 } from "../secrets/bot-secrets.js";
 import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
-import { isEgressRefused } from "../web/network-address.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";

@@ -48,6 +48,7 @@ export * from "./integrations/connector-errors.js";
 export * from "./integrations/integration-settings.js";
 export * from "./integrations/mcp.js";
 export * from "./integrations/mcp-app.js";
+export * from "./integrations/mcp-oauth-return.js";
 export * from "./integrations/messaging.js";
 export * from "./integrations/plugins.js";
 export * from "./integrations/vault-import.js";

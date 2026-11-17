@@ -19,7 +19,7 @@ import { asSystem, createDb, createPool, currentDbContext, runAsTenant } from "@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dropLeftoverAuthorization } from "../../connectors/connection-cleanup.js";
+import { dropLeftoverAuthorization } from "../../integrations/connection-cleanup.js";
 import {
   ABANDONED_LAST_ATTEMPT_ERROR,
   createDeadJobPruner,
