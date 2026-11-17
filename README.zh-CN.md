@@ -153,7 +153,7 @@ cp .env.example .env
 ```
 
 将 `POSTGRES_PASSWORD` 和 `POSTGRES_APP_PASSWORD` 分别设置为由 `openssl rand -hex 16` 生成的两个值，再把它们填入 `DATABASE_MIGRATION_URL` 和 `DATABASE_URL`。
-应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/self-host-configuration.md#database-roles)）。
+应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/zh-CN/self-host-configuration.md#数据库角色)）。
 为 `BETTER_AUTH_SECRET`、`ENCRYPTION_KEY` 和 `SCREEN_PROXY_SECRET` 分别设置独立的长随机值。
 Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 你也可以设置 `OPENROUTER_API_KEY`，或在首次设置时连接支持的模型提供商。
@@ -314,11 +314,11 @@ pnpm test:e2e
 [受限网络](./docs/zh-CN/self-host-restricted-network.md)、[登录门与屏幕](./docs/zh-CN/self-host-login-gate.md)。
 
 - [自托管](./docs/zh-CN/self-host.md)
-- [自托管配置](./docs/self-host-configuration.md)
-- [密钥管理](./docs/self-host-secrets.md)
-- [登录与账号](./docs/self-host-accounts.md)
+- [自托管配置](./docs/zh-CN/self-host-configuration.md)
+- [密钥管理](./docs/zh-CN/self-host-secrets.md)
+- [登录与账号](./docs/zh-CN/self-host-accounts.md)
 - [模型](./docs/self-host-models.md)
-- [工具与集成](./docs/self-host-integrations.md)
+- [工具与集成](./docs/zh-CN/self-host-integrations.md)
 - [计算机提供商](./docs/self-host-sandbox-providers.md)
 - [Docker 计算机](./docs/self-host-docker-computers.md)
 - [Kubernetes / k3s 安装](./docs/self-host-kubernetes.md)（[한국어](./docs/ko-KR/self-host-kubernetes.md)）
