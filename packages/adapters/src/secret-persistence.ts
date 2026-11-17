@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
 import {
@@ -236,6 +236,21 @@ export function withSecretPersistence(
       return;
     }
     const parents = await lockedRows(state, model, input.where);
+    if (!parents.length) return;
+    // The cascade removes every member's rows under the parent, not only the ones the caller
+    // may read, so their references are read across tenants. Only the references leave here.
+    const cascaded = await runAsSystemInTransaction(
+      state.client!,
+      "clean up the secrets of rows a deleted parent cascades to",
+      () => cascadedCleanups(state, model, parents),
+    );
+    await dropping(state, cascaded);
+  }
+  async function cascadedCleanups(
+    state: Cleanup,
+    model: string,
+    parents: Array<{ id: string }>,
+  ): Promise<SecretCleanup[]> {
     let filter: Record<string, unknown> = {
       [model === "User" ? "userId" : model === "Space" ? "spaceId" : "botId"]: {
         in: parents.map((row) => row.id),
@@ -249,15 +264,15 @@ export function withSecretPersistence(
     }
     const secretRows = async (table: string) =>
       (await lockedRows(state, table, filter)).map(cleanupOf);
+    const cleanups: SecretCleanup[] = [];
     if (model !== "Bot") {
-      await dropping(state, await secretRows("Secret"));
-      await dropping(state, await secretRows("VaultCredential"));
+      cleanups.push(...(await secretRows("Secret")), ...(await secretRows("VaultCredential")));
     }
-    await dropping(state, await secretRows("BotSecret"));
-    await dropping(
-      state,
-      (await lockedRows(state, "MessagingInstallation", filter, "id, ciphertext")).map((row) => ({
-        kind: "messaging_installation",
+    cleanups.push(...(await secretRows("BotSecret")));
+    const installs = await lockedRows(state, "MessagingInstallation", filter, "id, ciphertext");
+    cleanups.push(
+      ...installs.map((row) => ({
+        kind: "messaging_installation" as const,
         recordId: row.id,
         ref: row.ciphertext,
       })),
@@ -269,10 +284,9 @@ export function withSecretPersistence(
         filter,
         'id, "userId", ciphertext',
       );
-      await dropping(
-        state,
-        wallets.map((row) => ({
-          kind: "payment_wallet",
+      cleanups.push(
+        ...wallets.map((row) => ({
+          kind: "payment_wallet" as const,
           recordId: paymentWalletRecordId(row.userId),
           ref: row.ciphertext,
         })),
@@ -286,8 +300,9 @@ export function withSecretPersistence(
         filter,
         'id, "operationKey", "cardCiphertext", "requestCiphertext", "tokenCiphertext"',
       );
-      await dropping(state, purchases.flatMap(purchaseCleanups));
+      cleanups.push(...purchases.flatMap(purchaseCleanups));
     }
+    return cleanups;
   }
   const extended = prisma.$extends({
     query: {

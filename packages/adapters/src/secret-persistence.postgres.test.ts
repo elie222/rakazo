@@ -270,4 +270,38 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     );
     expect(await queued(wallet)).toEqual([]);
   });
+  it("removes another member's install entry when a member deletes the bot that holds it", async () => {
+    const space = `secret-persistence-members-${suffix}`;
+    const fixture = asSystem(owner.prisma);
+    await fixture.organization.create({
+      data: { id: space, name: "Members", slug: space, createdAt: new Date() },
+    });
+    await fixture.space.create({ data: { id: space, organizationId: space, name: "Members" } });
+    const bot = await fixture.bot.create({
+      data: { spaceId: space, userId, name: "Shared", color: "blue" },
+    });
+    const theirs = entry("their-install");
+    await fixture.messagingInstallation.create({
+      data: {
+        provider: "fake",
+        workspaceId: `workspace-${suffix}`,
+        workspaceName: "Theirs",
+        spaceId: space,
+        userId: otherUserId,
+        botId: bot.id,
+        ciphertext: theirs,
+      },
+    });
+
+    reachable = false;
+    await runAsTenant({ spaceId: space, userId }, () =>
+      prisma.bot.deleteMany({ where: { id: bot.id } }),
+    );
+    expect(await fixture.messagingInstallation.count({ where: { botId: bot.id } })).toBe(0);
+    expect(await queued(theirs)).toMatchObject([{ due: true }]);
+    reachable = true;
+    await runQueued(theirs);
+    expect(entries.has(theirs)).toBe(false);
+    await fixture.organization.deleteMany({ where: { id: space } });
+  });
 });

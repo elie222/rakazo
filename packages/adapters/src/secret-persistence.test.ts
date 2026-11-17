@@ -2,7 +2,7 @@ import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { BOT_SECRET_VALUE_MAX_LENGTH, encodeLoginSecret } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { withTransactionRetry } from "@rakazo/db";
+import { currentDbContext, runAsTenant, withTransactionRetry } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { findRunLogin } from "./bot-secrets.js";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
@@ -74,6 +74,11 @@ function database() {
         return (value.in as unknown[]).includes(actual);
       return actual === value;
     });
+  // As the row policies read: a tenant sees only its own user's rows.
+  const visible = (row: Row): boolean => {
+    const context = currentDbContext();
+    return context?.kind !== "tenant" || !row.userId || row.userId === context.userId;
+  };
   const client: Record<string, unknown> = {};
   for (const [table, rows] of tables) {
     client[table] = {
@@ -86,7 +91,7 @@ function database() {
         return row ? { ...row } : null;
       },
       findMany: async (args: Args) =>
-        rows.filter((row) => matches(row, args.where)).map((row) => ({ ...row })),
+        rows.filter((row) => visible(row) && matches(row, args.where)).map((row) => ({ ...row })),
       count: async (args: Args) => rows.filter((row) => matches(row, args.where)).length,
       create: async (args: Args) => {
         rows.push({ ...args.data! });
@@ -168,7 +173,7 @@ function database() {
     return (
       tables
         .get(names[table ?? ""] ?? "")
-        ?.filter((row) => query.values.includes(row.id))
+        ?.filter((row) => visible(row) && query.values.includes(row.id))
         .map((row) => ({ ...row })) ?? []
     );
   };
@@ -579,6 +584,32 @@ describe("secret persistence cleanup with a queue", () => {
         request,
         expect.objectContaining({ recordId: "purchase-request:operation" }),
       );
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records the backup of another member's install that goes with a deleted bot", async () => {
+    const { store, db, queue, prisma } = await setup();
+    const theirs = await store
+      .put("theirs", context, { recordId: "their-install" })
+      .then((record) => record.ref);
+    db.tables.get("bot")!.push({ id: "bot", spaceId: "space" });
+    db.tables.get("messagingInstallation")!.push({
+      id: "their-install",
+      userId: "other",
+      spaceId: "space",
+      botId: "bot",
+      ciphertext: theirs,
+    });
+    vi.spyOn(store, "delete").mockRejectedValueOnce(new Error("store unavailable"));
+    try {
+      await runAsTenant({ spaceId: "space", userId: "user" }, () =>
+        prisma.bot.deleteMany({ where: { id: "bot" } }),
+      );
+      expect(queue.cleanups()).toEqual([
+        expect.objectContaining({ kind: "messaging_installation", ref: theirs, due: true }),
+      ]);
     } finally {
       await store.close();
     }
