@@ -144,7 +144,9 @@ export class ConnectorRegistry implements ConnectorProvider {
     const rules: VerbatimConnectorPrefixRule[] = [];
     for (const [connectorId, provider] of this.providers) {
       if (!provider.verbatimToolRules) continue;
-      const verbatim = verbatimConnections.filter((connection) => connection.connectorId === connectorId);
+      const verbatim = verbatimConnections.filter(
+        (connection) => connection.connectorId === connectorId,
+      );
       if (verbatim.length === 0) continue;
       const all = allConnections.filter((connection) => connection.connectorId === connectorId);
       rules.push(...provider.verbatimToolRules(verbatim, all));

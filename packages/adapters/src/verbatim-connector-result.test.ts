@@ -48,7 +48,10 @@ describe("verbatim connector results", () => {
   });
 
   it("matches prefix rules, excludes longer sibling prefixes, and scopes batch accounts", () => {
-    expect(isVerbatimConnectorResult("GMAIL_GET_MESSAGE", {}, targets)).toBe(true);
+    expect(isVerbatimConnectorResult("GMAIL_GET_MESSAGE", {}, targets)).toBe(false);
+    expect(isVerbatimConnectorResult("GMAIL_GET_MESSAGE", { account: "ca-work" }, targets)).toBe(
+      true,
+    );
     expect(isVerbatimConnectorResult("GITHUB_GET_REPO", {}, targets)).toBe(true);
     expect(isVerbatimConnectorResult("GITHUB_MCP_SEARCH", {}, targets)).toBe(false);
 
@@ -75,6 +78,15 @@ describe("verbatim connector results", () => {
         "BATCH_EXEC",
         {
           tools: [{ tool_slug: "GITHUB_MCP_SEARCH" }],
+        },
+        targets,
+      ),
+    ).toBe(false);
+    expect(
+      isVerbatimConnectorResult(
+        "BATCH_EXEC",
+        {
+          tools: [{ tool_slug: "GMAIL_GET_MESSAGE" }],
         },
         targets,
       ),

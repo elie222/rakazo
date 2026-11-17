@@ -484,11 +484,12 @@ describe("runtime context policy", () => {
     const { request, context } = fixture(2);
     const gmailBody = "important-letter ".repeat(400);
     const shellOutput = "synthetic shell output ".repeat(3000);
-    const call = (id: string, name: string) => ({
-      role: "assistant" as const,
-      content: [{ type: "toolCall" as const, id, name, arguments: {} }],
-      timestamp: 100,
-    }) as unknown as Message;
+    const call = (id: string, name: string) =>
+      ({
+        role: "assistant" as const,
+        content: [{ type: "toolCall" as const, id, name, arguments: {} }],
+        timestamp: 100,
+      }) as unknown as Message;
     const result = (id: string, toolName: string, text: string) => ({
       role: "toolResult" as const,
       toolCallId: id,

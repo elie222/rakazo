@@ -54,7 +54,7 @@ export function IntegrationDetail({
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
   const updatingVerbatim = pending === `verbatim:${key}`;
-  const verbatimResults = accounts.some((row) => row.verbatimResults);
+  const verbatimResults = accounts.length > 0 && accounts.every((row) => row.verbatimResults);
   const toolCount = tools.length;
 
   return (

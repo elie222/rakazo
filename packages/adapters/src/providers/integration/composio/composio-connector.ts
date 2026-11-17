@@ -431,7 +431,7 @@ export class ComposioConnector implements ComposioProvider {
       if (!prefix) continue;
       prefixes.add(prefix);
       const account = connection.providerRef?.trim();
-      if (account) {
+      if (account && composioSlugKey(account) !== composioSlugKey(connection.externalId)) {
         let accounts = verbatimAccountsByPrefix.get(prefix);
         if (!accounts) {
           accounts = new Set();

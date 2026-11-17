@@ -44,6 +44,36 @@ function matchesCatalogId(
   });
 }
 
+function accountFromArgs(
+  argObject: Record<string, unknown> | undefined,
+  rule: NonNullable<VerbatimConnections["prefixRules"]>[number],
+): string | undefined {
+  if (!argObject) return undefined;
+  const keys = [
+    rule.batchItemAccountKey,
+    "account",
+    "connected_account_id",
+    "connectedAccountId",
+  ].filter(Boolean) as string[];
+  for (const key of keys) {
+    const value = argObject[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function prefixAllowed(
+  matchedPrefix: string,
+  rule: NonNullable<VerbatimConnections["prefixRules"]>[number],
+  argObject: Record<string, unknown> | undefined,
+): boolean {
+  const allowedAccounts = rule.allowedAccountsByPrefix?.[matchedPrefix];
+  if (!allowedAccounts) return true;
+  if (allowedAccounts.length === 0) return false;
+  const account = accountFromArgs(argObject, rule);
+  return Boolean(account && allowedAccounts.includes(account));
+}
+
 export function isVerbatimConnectorResult(
   name: string | undefined,
   args: unknown,
@@ -77,7 +107,10 @@ export function isVerbatimConnectorResult(
     const argObject =
       args && typeof args === "object" ? (args as Record<string, unknown>) : undefined;
     for (const rule of targets.prefixRules) {
-      if (rule.prefixes.some((prefix) => matchesPrefix(name, prefix, rule.excludedPrefixes))) {
+      const matchedPrefix = rule.prefixes.find((prefix) =>
+        matchesPrefix(name, prefix, rule.excludedPrefixes),
+      );
+      if (matchedPrefix && prefixAllowed(matchedPrefix, rule, argObject)) {
         return true;
       }
       if (
@@ -98,13 +131,14 @@ export function isVerbatimConnectorResult(
             );
             if (!matchedPrefix) return false;
             const allowedAccounts = rule.allowedAccountsByPrefix?.[matchedPrefix];
-            if (
-              allowedAccounts &&
-              rule.batchItemAccountKey &&
-              typeof record[rule.batchItemAccountKey] === "string"
-            ) {
-              const account = record[rule.batchItemAccountKey] as string;
-              return allowedAccounts.includes(account.trim());
+            if (allowedAccounts) {
+              if (
+                !rule.batchItemAccountKey ||
+                typeof record[rule.batchItemAccountKey] !== "string"
+              ) {
+                return false;
+              }
+              return allowedAccounts.includes((record[rule.batchItemAccountKey] as string).trim());
             }
             return true;
           });

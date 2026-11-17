@@ -306,7 +306,7 @@ export function usePluginConnections({
     setPending(`verbatim:${catalogItemKey(item)}`);
     setCatalogError(null);
     try {
-      const updated = await Promise.all(
+      const results = await Promise.allSettled(
         matches.map((row) =>
           rpc.connections.setVerbatimResults({
             connectionId: row.id,
@@ -314,11 +314,22 @@ export function usePluginConnections({
           }),
         ),
       );
-      const byId = new Map(updated.map((row) => [row.id, row]));
-      await updateIntegrations((current) => ({
-        ...current,
-        connections: current.connections.map((entry) => byId.get(entry.id) ?? entry),
-      }));
+      const updated = results
+        .filter(
+          (result): result is PromiseFulfilledResult<Connection> => result.status === "fulfilled",
+        )
+        .map((result) => result.value);
+      if (updated.length > 0) {
+        const byId = new Map(updated.map((row) => [row.id, row]));
+        await updateIntegrations((current) => ({
+          ...current,
+          connections: current.connections.map((entry) => byId.get(entry.id) ?? entry),
+        }));
+      }
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") {
+        throw failed.reason;
+      }
     } catch (err) {
       setCatalogError(errorText(err, t`Could not update connection`));
     } finally {

@@ -1718,6 +1718,38 @@ describe("composio tool mapping", () => {
     ]);
     expect(connector.verbatimToolRules([], [gmailPersonal])).toEqual([]);
   });
+
+  it("ignores toolkit slug provider refs when building allowed account lists", () => {
+    const connector = new ComposioConnector();
+    const gmailWork = {
+      id: "conn-gmail-work",
+      connectorId: "composio",
+      externalId: "gmail",
+      displayName: "Work Gmail",
+      providerRef: "ca-work",
+      verbatimResults: true,
+    };
+    const gmailPersonal = {
+      id: "conn-gmail-personal",
+      connectorId: "composio",
+      externalId: "gmail",
+      displayName: "Personal Gmail",
+      providerRef: "gmail",
+    };
+
+    expect(connector.verbatimToolRules([gmailWork], [gmailWork, gmailPersonal])).toEqual([
+      {
+        prefixes: ["gmail_"],
+        batchToolNames: ["COMPOSIO_MULTI_EXECUTE_TOOL"],
+        batchItemsKey: "tools",
+        batchItemToolKey: "tool_slug",
+        batchItemAccountKey: "account",
+        allowedAccountsByPrefix: {
+          gmail_: ["ca-work"],
+        },
+      },
+    ]);
+  });
 });
 
 describe("Composio during pnpm test", () => {
