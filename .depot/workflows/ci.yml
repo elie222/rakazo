@@ -1,6 +1,6 @@
 name: ci
 # Pull request test suites on Depot's runners. The jobs live in .github/workflows/test-suites.yml
-# (linked here), which GitHub runs for pushes to main; Web E2E, native computer, publishing and
+# , which GitHub runs for pushes to main; Web E2E, native computer, publishing and
 # deploys stay in .github/workflows/ci.yml. Nothing here reads a secret, so fork pull requests run
 # the same way.
 on:
@@ -16,6 +16,6 @@ concurrency:
 jobs:
   tests:
     name: Tests
-    uses: ./.depot/workflows/test-suites.yml
+    uses: ./.github/workflows/test-suites.yml
     with:
       runner: depot-ubuntu-latest

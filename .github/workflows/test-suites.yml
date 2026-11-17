@@ -1,6 +1,6 @@
 name: Test suites
 # The test jobs, defined once for both runner fleets: ci.yml calls this on pushes to main with
-# GitHub's runners, and .depot/workflows/ci.yml calls it (through a symlink) on pull requests with
+# GitHub's runners, and .depot/workflows/ci.yml calls it on pull requests with
 # Depot's. Check names read "Tests / <job>" on GitHub and "ci / Tests / <job>" on Depot.
 on:
   workflow_call:
