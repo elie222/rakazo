@@ -963,7 +963,7 @@ export class MessagingDelivery {
     // pending with nothing to resume, so the chat app is not asked it.
     const asks = !TERMINAL_RUN.includes(run.status);
     const rowsByMessage = messages.map((message) => {
-      const body = extractText(onlyAsks ? askBlocks(message.blocks) : message.blocks, linkedPages, {
+      const body = extractText(onlyAsks ? askBlocks(message) : message.blocks, linkedPages, {
         asks,
       });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
@@ -1481,10 +1481,9 @@ function textBlocks(blocks: unknown): string[] {
 
 /** Pages the run's replies already link by name, so their cards add nothing more. */
 /** The blocks that wait on the owner: a question, or a screen to take over. */
-function askBlocks(blocks: unknown): unknown[] {
-  if (!Array.isArray(blocks)) return [];
-  return blocks.filter(
-    (block: { kind?: unknown } | null) => block?.kind === "ask" || block?.kind === "computer",
+function askBlocks(message: { id: string; blocks: unknown }): MessageBlock[] {
+  return storedMessageBlocks(message).filter(
+    (block) => block.kind === "ask" || block.kind === "computer",
   );
 }
 
