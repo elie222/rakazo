@@ -71,7 +71,13 @@ export async function holdRoutineRunForConversation(
   run: RoutineRun,
 ): Promise<void> {
   if (run.trigger !== "routine" || run.status !== "queued" || run.startedAt) return;
-  if (run.routine && !run.routine.inChat) return;
+  // Read again: the claim saw the routine as it is now, which an edit may have changed since the
+  // run was loaded.
+  const current = await deps.prisma.run.findUnique({
+    where: { id: run.id },
+    select: { routine: { select: { inChat: true } } },
+  });
+  if (current?.routine && !current.routine.inChat) return;
   const now = new Date();
   // Not due yet: its wake comes back here.
   if (run.wakeAt && run.wakeAt > now) return;

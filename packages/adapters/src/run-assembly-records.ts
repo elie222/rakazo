@@ -211,8 +211,11 @@ export async function loadRunRecords(
           : unknownChannelSourceId
             ? { sourceMessageId: unknownChannelSourceId }
             : undefined,
-      historyReach === "recent" && run.routineId
-        ? { routineId: run.routineId, limit: ROUTINE_EARLIER_RESULTS }
+      run.trigger === "routine" && run.routineId
+        ? {
+            routineId: run.routineId,
+            earlierResults: historyReach === "recent" ? ROUTINE_EARLIER_RESULTS : 0,
+          }
         : undefined,
     ),
     run.trigger === "bot_message"

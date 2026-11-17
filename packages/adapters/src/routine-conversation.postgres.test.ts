@@ -185,6 +185,8 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     let busyOnce = true;
     const raced = {
       run: {
+        findUnique: (args: Parameters<PrismaClient["run"]["findUnique"]>[0]) =>
+          system.run.findUnique(args),
         findFirst: async (args: Parameters<PrismaClient["run"]["findFirst"]>[0]) => {
           if (!busyOnce) return system.run.findFirst(args);
           busyOnce = false;

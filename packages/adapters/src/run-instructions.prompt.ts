@@ -531,7 +531,9 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
       includeSemanticRecall: false,
     };
   }
-  return messagingChannelRun || reach === "recent"
+  // A routine reads only its owner's and the bot's messages; a summary of the whole chat would
+  // bring everyone else's back in.
+  return messagingChannelRun || trigger === "routine"
     ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
     : { ...context, includeSemanticRecall: true };
 }

@@ -40,12 +40,25 @@ export async function loadRunHistoryMessages(
   run: { id: string; threadId: string; botId: string; userId: string },
   limit: number,
   groupTurn?: GroupTurnHistory,
-  /** Also the latest replies of this routine's earlier runs, however far back they are. */
-  earlierResults?: { routineId: string; limit: number },
+  /**
+   * A routine run acts with its owner's accounts and nobody is there to vouch for anyone else's
+   * words, so it reads only what its owner wrote and this bot replied, plus the latest replies of
+   * the routine's earlier runs, however far back they are.
+   */
+  routine?: { routineId: string; earlierResults: number },
 ) {
   const recent = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
+      ...(routine
+        ? {
+            OR: [
+              { role: "user", authorUserId: run.userId },
+              { role: "bot", botId: run.botId },
+            ],
+            NOT: { blocks: { array_contains: [{ kind: "channel_message" }] } },
+          }
+        : {}),
       ...(groupTurn
         ? {
             OR: [
@@ -66,7 +79,12 @@ export async function loadRunHistoryMessages(
     take: limit,
     select: HISTORY_MESSAGE_SELECT(run.botId),
   });
-  const earlier = earlierResults ? await earlierRoutineResults(prisma, run, earlierResults) : [];
+  const earlier = routine?.earlierResults
+    ? await earlierRoutineResults(prisma, run, {
+        routineId: routine.routineId,
+        limit: routine.earlierResults,
+      })
+    : [];
   const recentIds = new Set(recent.map((message) => message.id));
   const messages = [...recent, ...earlier.filter((message) => !recentIds.has(message.id))].sort(
     (left, right) => right.seq - left.seq,

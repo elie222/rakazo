@@ -152,6 +152,7 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
         role,
         blocks: [{ kind: "text", text }],
         botId,
+        ...(role === "user" ? { authorUserId: userId } : {}),
       });
       posted.push(id);
       if (role === "bot") await system.message.update({ where: { id }, data: { runId } });
@@ -166,10 +167,22 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
       const read = await runAsTenant({ spaceId, userId }, () =>
         loadRunHistoryMessages(prisma, current, 1, undefined, {
           routineId: routine.id,
-          limit: 2,
+          earlierResults: 2,
         }),
       );
       expect(read.map((message) => message.id)).toEqual([latest, newerResult, olderResult]);
+      // Everything else in the chat: messages whose author is not the owner, channel messages,
+      // and the bot's replies to them.
+      const whole = await runAsTenant({ spaceId, userId }, () =>
+        loadRunHistoryMessages(prisma, current, 100, undefined, {
+          routineId: routine.id,
+          earlierResults: 0,
+        }),
+      );
+      const wholeIds = whole.map((message) => message.id);
+      expect(wholeIds).toEqual(expect.arrayContaining([latest, olderResult, ids.privateReply]));
+      expect(wholeIds).not.toContain(ids.channel);
+      expect(wholeIds).not.toContain(ids.privateAsk);
     } finally {
       await system.message.deleteMany({ where: { id: { in: posted } } });
       await system.run.deleteMany({ where: { routineId: routine.id } });
