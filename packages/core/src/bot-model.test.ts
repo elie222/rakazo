@@ -36,4 +36,18 @@ describe("botModelState", () => {
     expect(state.selectedModelKey).toBe("acme::plain");
     expect(state.thinkingLevels).toEqual([]);
   });
+
+  it("names the model without its catalog vendor prefix", () => {
+    const state = botModelState({
+      credentials,
+      catalog: [
+        { provider: "acme", id: "fast", label: "Vendor: Fast" },
+        { provider: "acme", id: "plain", label: "Plain" },
+      ] as unknown as ModelCatalogEntry[],
+      me,
+      modelKey: "",
+      spaceDefaultLabel: "Space default",
+    });
+    expect(state.selectedName).toBe("Fast");
+  });
 });

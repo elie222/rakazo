@@ -51,7 +51,8 @@ export function botModelState({
   );
 
   // The model's own name, without its connection; the Space default's when the bot follows it.
-  const named = (choice: ChatModelChoice | undefined) => choice?.modelLabel ?? choice?.label;
+  const named = (choice: ChatModelChoice | undefined) =>
+    shortModelName(choice?.modelLabel ?? choice?.label);
   const selectedName = selectedModelKey
     ? named(choices.find((choice) => choice.key === selectedModelKey))
     : (named(
@@ -62,7 +63,7 @@ export function botModelState({
             choice.modelId === me?.defaultModel,
         ),
       ) ??
-      defaultEntry?.label ??
+      shortModelName(defaultEntry?.label) ??
       me?.defaultModel ??
       undefined);
 
@@ -100,4 +101,9 @@ function catalogEntry(
 ) {
   if (!provider) return undefined;
   return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
+}
+
+/** A catalog label without its "Vendor: " prefix, as the model lists title their rows. */
+function shortModelName(label: string | undefined) {
+  return label?.match(/^[^:]+: (.+)$/)?.[1] ?? label;
 }

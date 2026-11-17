@@ -612,6 +612,8 @@ export function ThreadComposer({
           <View
             style={{
               flex: stacked ? undefined : 1,
+              // Room for the text comes first; the model chip shrinks instead.
+              minWidth: stacked ? undefined : 96,
               flexDirection: "row",
               flexWrap: "wrap",
               alignItems: "center",
@@ -810,7 +812,13 @@ export function ThreadComposer({
           </View>
           <TrailingControls stacked={stacked}>
             {model ? (
-              <ModelChip model={model} style={{ marginBottom: stacked ? 0 : pillInset }} />
+              <ModelChip
+                model={model}
+                // Its name on an empty line, a mark while text shares the line, and the name with
+                // its thinking once the controls sit under the text.
+                show={stacked ? "full" : draft ? "mark" : "name"}
+                style={{ marginBottom: stacked ? 0 : pillInset }}
+              />
             ) : null}
             {onCall ? null : (
               <Pressable
@@ -913,7 +921,15 @@ function TrailingControls({ stacked, children }: { stacked: boolean; children: R
   );
 }
 
-function ModelChip({ model, style }: { model: ComposerModel; style?: ViewStyle }) {
+function ModelChip({
+  model,
+  show,
+  style,
+}: {
+  model: ComposerModel;
+  show: "mark" | "name" | "full";
+  style?: ViewStyle;
+}) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const name = model.label;
@@ -930,16 +946,24 @@ function ModelChip({ model, style }: { model: ComposerModel; style?: ViewStyle }
           alignItems: "center",
           gap: 4,
           height: 28,
-          maxWidth: 180,
           flexShrink: 1,
         },
         style,
       ]}
     >
-      <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 15, flexShrink: 1 }}>
-        {name}
-      </Text>
-      {model.thinking ? (
+      {show === "mark" ? (
+        <NativeSymbol
+          ios="cpu"
+          android="hardware-chip-outline"
+          size={16}
+          color={tokens.mutedForeground}
+        />
+      ) : (
+        <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 15, flexShrink: 1 }}>
+          {name}
+        </Text>
+      )}
+      {show === "full" && model.thinking ? (
         <Text numberOfLines={1} style={{ color: tokens.mutedForeground, fontSize: 15 }}>
           {model.thinking}
         </Text>
