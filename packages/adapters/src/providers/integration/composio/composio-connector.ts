@@ -150,10 +150,10 @@ function activeSlugs(toolkits: ToolkitConnection[]): string[] {
 }
 
 /** Names the directory gets wrong: this toolkit only signs in to a business account. */
-const TOOLKIT_NAMES: Record<string, string> = { whatsapp: "WhatsApp Business" };
+const TOOLKIT_NAMES = new Map([["whatsapp", "WhatsApp Business"]]);
 
 export function toolkitDisplayName(toolkit: { slug: string; name: string }): string {
-  return TOOLKIT_NAMES[composioSlugKey(toolkit.slug)] ?? toolkit.name;
+  return TOOLKIT_NAMES.get(composioSlugKey(toolkit.slug)) ?? toolkit.name;
 }
 
 function composioSlugKey(slug: string): string {
