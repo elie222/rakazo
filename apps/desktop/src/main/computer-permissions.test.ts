@@ -1,6 +1,10 @@
+import { EventEmitter } from "node:events";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { createComputerPermissionSetup } from "./computer-permissions.js";
+import {
+  createComputerPermissionSetup,
+  waitForComputerSetupReturn,
+} from "./computer-permissions.js";
 
 function setup(
   overrides: Partial<Omit<Parameters<typeof createComputerPermissionSetup>[0], "permissions">> = {},
@@ -115,6 +119,24 @@ describe("computer permission setup", () => {
     },
   );
 
+  it("starts a fresh guide for a later approval when the original one is cancelled", async () => {
+    const answer = deferred<"restart">();
+    const showSetup = vi
+      .fn()
+      .mockImplementationOnce(() => answer.promise)
+      .mockResolvedValue("later");
+    const { deps, prepare } = setup({ showSetup });
+    let firstValid = true;
+    const first = prepare(() => firstValid);
+    await vi.waitFor(() => expect(showSetup).toHaveBeenCalledOnce());
+    firstValid = false;
+    const second = prepare(() => true);
+    answer.resolve("restart");
+    await Promise.all([first, second]);
+    expect(showSetup).toHaveBeenCalledTimes(2);
+    expect(deps.restart).not.toHaveBeenCalled();
+  });
+
   it("shares one setup flow across concurrent requests", async () => {
     const answer = deferred<"later">();
     const showSetup = vi.fn(() => answer.promise);
@@ -126,4 +148,20 @@ describe("computer permission setup", () => {
     answer.resolve("later");
     await Promise.all([first, second]);
   });
+});
+
+describe("returning to permission setup", () => {
+  it.each(["activate", "browser-window-focus"] as const)(
+    "continues on %s and removes both listeners",
+    async (event) => {
+      const events = new EventEmitter();
+      const returned = waitForComputerSetupReturn(events);
+      expect(events.listenerCount("activate")).toBe(1);
+      expect(events.listenerCount("browser-window-focus")).toBe(1);
+      events.emit(event);
+      await returned;
+      expect(events.listenerCount("activate")).toBe(0);
+      expect(events.listenerCount("browser-window-focus")).toBe(0);
+    },
+  );
 });

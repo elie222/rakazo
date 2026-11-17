@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { once } from "node:events";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,7 +44,10 @@ import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { createClipboardHandler } from "./clipboard.js";
-import { createComputerPermissionSetup } from "./computer-permissions.js";
+import {
+  createComputerPermissionSetup,
+  waitForComputerSetupReturn,
+} from "./computer-permissions.js";
 import { appWindowTargets, desktop, permissionTarget } from "./desktop-state.js";
 import { launchDockerApp, resolveDockerBinary, runDocker } from "./docker-cli.js";
 import type { StackChoice } from "./docker-move.js";
@@ -610,7 +612,7 @@ app.whenReady().then(async () => {
     },
     openSettings: async () => {
       await shell.openExternal("x-apple.systempreferences:com.apple.preference.security");
-      await once(app, "browser-window-focus");
+      await waitForComputerSetupReturn(app);
     },
     restart: () => {
       desktop.quitting = true;
@@ -876,7 +878,7 @@ app.whenReady().then(async () => {
         return false;
       if (desktop.hostComputer.isEnabled()) {
         await persistHostChoice("this-mac");
-        await bestEffort(
+        void bestEffort(
           "prepare local computer app control",
           prepareComputerAccess(
             () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,
@@ -899,7 +901,7 @@ app.whenReady().then(async () => {
         throw error;
       }
       installApplicationMenu();
-      await bestEffort(
+      void bestEffort(
         "prepare local computer app control",
         prepareComputerAccess(
           () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,

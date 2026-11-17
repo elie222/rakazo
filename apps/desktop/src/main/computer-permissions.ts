@@ -1,7 +1,22 @@
+import type { EventEmitter } from "node:events";
+import { once } from "node:events";
 import { bestEffort } from "@rakazo/logging";
 import type { ScreenPermissionApi } from "./host-screen.js";
 
 type SetupAction = "settings" | "restart" | "later";
+
+/** Dock activation also returns to a Mac app that has no open browser window. */
+export async function waitForComputerSetupReturn(events: EventEmitter) {
+  const listeners = new AbortController();
+  try {
+    await Promise.race([
+      once(events, "activate", { signal: listeners.signal }),
+      once(events, "browser-window-focus", { signal: listeners.signal }),
+    ]);
+  } finally {
+    listeners.abort();
+  }
+}
 
 /** Consent is saved before this runs, so reopening the app keeps the person's choice. */
 export function createComputerPermissionSetup(deps: {
@@ -11,7 +26,7 @@ export function createComputerPermissionSetup(deps: {
   openSettings: () => Promise<unknown>;
   restart: () => void;
 }) {
-  let pending: Promise<void> | undefined;
+  let pending: { valid: () => boolean; promise: Promise<void> } | undefined;
 
   async function prepare(valid: () => boolean) {
     if (deps.platform !== "darwin" || !valid()) return;
@@ -41,10 +56,20 @@ export function createComputerPermissionSetup(deps: {
     }
   }
 
-  return (valid: () => boolean = () => true) => {
-    pending ??= prepare(valid).finally(() => {
-      pending = undefined;
-    });
-    return pending;
+  return async (valid: () => boolean = () => true) => {
+    if (!valid()) return;
+    while (pending) {
+      const active = pending;
+      await active.promise;
+      // An active approval already received the shared guide. A cancelled one did not.
+      if (active.valid() || !valid()) return;
+    }
+    const active = { valid, promise: prepare(valid) };
+    pending = active;
+    try {
+      await active.promise;
+    } finally {
+      if (pending === active) pending = undefined;
+    }
   };
 }
