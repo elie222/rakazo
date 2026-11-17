@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const price = z
   .object({
-    model: z.string().min(1),
+    model: z.string().trim().min(1),
     unit: z.enum(["characters", "seconds", "tokens"]),
     microsPerUnit: z.number().nonnegative().finite(),
     // A bounded reservation, retained when a provider does not return usage.
@@ -22,8 +22,8 @@ const deploymentVoiceSchema = z
         baseUrl: z.string().optional(),
         sttBaseUrl: z.string().optional(),
         sttApiKey: z.string().optional(),
-        ttsModel: z.string().optional(),
-        sttModel: z.string().optional(),
+        ttsModel: z.string().trim().min(1).optional(),
+        sttModel: z.string().trim().min(1).optional(),
       })
       .strict(),
     voiceId: z.string().min(1),
@@ -47,7 +47,14 @@ export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoi
     ) {
       throw new Error("Invalid deployment speech configuration");
     }
-    return config;
+    return {
+      ...config,
+      connection: {
+        ...config.connection,
+        ttsModel: config.pricing.synthesize.model,
+        sttModel: config.pricing.transcribe.model,
+      },
+    };
   } catch {
     throw new Error("Invalid DEPLOYMENT_VOICE connection or pricing policy");
   }

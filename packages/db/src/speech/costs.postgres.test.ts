@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
-import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
-import { admitSpeech, confirmSpeechCost, settleSpeech } from "./speech-costs.js";
+import type { PrismaClient } from "../client.js";
+import { createDb } from "../client.js";
+import { asSystem, runAsSystem, runAsTenant } from "../row-security.js";
+import { admitSpeech, confirmSpeechCost, settleSpeech } from "./costs.js";
 
 const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 suite("operator speech costs (PostgreSQL)", () => {

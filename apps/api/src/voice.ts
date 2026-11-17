@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { AdapterContext, SecretStore, VoiceUsage } from "@rakazo/adapter-kit";
+import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError, VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
@@ -28,7 +28,6 @@ import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
-  admitSpeech,
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -43,17 +42,17 @@ import {
   runAsTenant,
   saveVoicePreference,
   selectVoicePreference,
-  settleSpeech,
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { clientErrorStatus } from "./client-error-status.js";
-import type { DeploymentVoice } from "./deployment-voice.js";
 import { readBoundedBody } from "./http-body.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
+import type { DeploymentVoice } from "./voice/deployment-config.js";
+import { withSpeechCost } from "./voice/operator-cost.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
@@ -268,15 +267,14 @@ async function includedVoice(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
   const allowance = await deps.prisma.speechAllowance.findFirst({
     where: { userId: actor.userId, expiresAt: { gt: new Date() } },
   });
-  const required = BigInt(
-    Math.max(
-      deployment.pricing.synthesize.maxRequestMicros,
-      deployment.pricing.transcribe.maxRequestMicros,
-    ),
-  );
-  return allowance && allowance.limitMicros - allowance.usedMicros >= required
-    ? deployment
-    : undefined;
+  const remaining = allowance ? allowance.limitMicros - allowance.usedMicros : 0n;
+  return {
+    deployment,
+    synthesize: remaining >= BigInt(deployment.pricing.synthesize.maxRequestMicros),
+    transcribe:
+      Boolean(catalogEntry(deployment.provider)?.transcribe) &&
+      remaining >= BigInt(deployment.pricing.transcribe.maxRequestMicros),
+  };
 }
 
 /** Status must not decrypt a user's saved connection just to advertise capabilities. */
@@ -284,10 +282,17 @@ export async function effectiveVoiceStatus(deps: VoiceDeps, actor: Actor, scope?
   const cred = await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (cred) return toVoiceStatus(cred);
   const target = await voicePreferenceTarget(deps.prisma, actor, scope);
-  const deployment = target.scope === "account" ? await includedVoice(deps, actor) : undefined;
-  return toVoiceStatus(
-    deployment ? { provider: deployment.provider, voiceId: deployment.voiceId } : null,
-  );
+  const included = target.scope === "account" ? await includedVoice(deps, actor) : undefined;
+  if (!included || (!included.synthesize && !included.transcribe)) return toVoiceStatus(null);
+  const status = toVoiceStatus({
+    provider: included.deployment.provider,
+    voiceId: included.deployment.voiceId,
+  });
+  return {
+    ...status,
+    ready: status.ready && included.synthesize,
+    transcribe: status.transcribe && included.transcribe,
+  };
 }
 
 export async function loadDefaultVoiceCredential(
@@ -295,8 +300,9 @@ export async function loadDefaultVoiceCredential(
   actor: Pick<Actor, "userId" | "spaceId">,
   scope?: SettingsScope,
   signal?: AbortSignal,
+  operation: "synthesize" | "transcribe" = "synthesize",
 ) {
-  return loadVoiceCredential(deps, actor, undefined, scope, signal);
+  return loadVoiceCredential(deps, actor, undefined, scope, signal, operation);
 }
 
 /** Keep refresh failures and linked-connection refusals safe for display. */
@@ -337,12 +343,14 @@ export async function loadVoiceCredential(
   provider?: string,
   scope?: SettingsScope,
   signal?: AbortSignal,
+  operation: "synthesize" | "transcribe" = "synthesize",
 ) {
   const cred = provider
     ? await findVoiceCredential(deps.prisma, actor, provider, scope)
     : await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (!cred) {
-    const deployment = await includedVoice(deps, actor);
+    const included = await includedVoice(deps, actor);
+    const deployment = included?.[operation] ? included.deployment : undefined;
     const target = await voicePreferenceTarget(deps.prisma, actor, scope);
     // An explicit Space copy can intentionally have no voice. Named connections never fall back.
     if (provider || !deployment || target.scope === "space") return null;
@@ -751,7 +759,13 @@ export async function transcribeVoice(
   },
 ) {
   input.signal?.throwIfAborted();
-  const loaded = await loadDefaultVoiceCredential(deps, actor, undefined, input.signal);
+  const loaded = await loadDefaultVoiceCredential(
+    deps,
+    actor,
+    undefined,
+    input.signal,
+    "transcribe",
+  );
   if (!loaded) throw new NoVoiceConfigured("key");
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) {
@@ -793,7 +807,13 @@ export async function transcribeInboundVoice(
   input: { audio: Uint8Array; mimeType: string; signal?: AbortSignal },
 ): Promise<string | null> {
   if (input.audio.byteLength > MAX_TRANSCRIBE_BYTES) return null;
-  const loaded = await loadDefaultVoiceCredential(deps, owner, undefined, input.signal);
+  const loaded = await loadDefaultVoiceCredential(
+    deps,
+    owner,
+    undefined,
+    input.signal,
+    "transcribe",
+  );
   if (!loaded) return null;
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
@@ -814,33 +834,6 @@ export async function transcribeInboundVoice(
     ),
   );
   return text;
-}
-
-async function withSpeechCost<T extends { usage?: VoiceUsage; providerRequestId?: string }>(
-  deps: VoiceDeps,
-  actor: Pick<Actor, "userId" | "spaceId"> & { callId?: string },
-  target: { deployment: boolean; cred: { provider: string } },
-  operation: "synthesize" | "transcribe",
-  work: () => Promise<T>,
-): Promise<T> {
-  const policy = target.deployment ? deps.env?.deploymentVoice : undefined;
-  if (!policy) return work();
-  const id = await admitSpeech(
-    deps.prisma,
-    actor,
-    target.cred.provider,
-    operation,
-    policy.pricing[operation],
-  );
-  // If the request fails or is interrupted, pending evidence and its reservation survive.
-  // Retrying audio automatically could charge twice, so recovery requires provider evidence.
-  const result = await work();
-  // Intent is already durable. Losing the result would invite another paid request.
-  await bestEffort(
-    "Settle completed operator speech",
-    settleSpeech(deps.prisma, id, result.usage, result.providerRequestId),
-  );
-  return result;
 }
 
 export function mountVoiceHttpRoutes(

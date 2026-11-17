@@ -2,14 +2,15 @@ import type { Actor } from "@rakazo/contracts";
 import type * as Database from "@rakazo/db";
 import { settleSpeech } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { deploymentVoiceFromEnv } from "./deployment-voice.js";
-import type { VoiceDeps } from "./voice.js";
+import type { VoiceDeps } from "../voice.js";
 import {
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   synthesizeVoice,
-} from "./voice.js";
+  transcribeVoice,
+} from "../voice.js";
+import { deploymentVoiceFromEnv } from "./deployment-config.js";
 
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Database>()),
@@ -78,6 +79,61 @@ describe("deployment speech default", () => {
       });
       expect(await loadDefaultVoiceCredential(d, actor)).toBeNull();
     }
+  });
+  it.each(["synthesize", "transcribe"] as const)(
+    "keeps an affordable %s available independently of the other reservation",
+    async (operation) => {
+      const d = deps();
+      d.env!.deploymentVoice!.pricing[operation].maxRequestMicros = 10;
+      vi.mocked(d.prisma.speechAllowance.findFirst).mockResolvedValue({
+        limitMicros: 100n,
+        usedMicros: 50n,
+      } as never);
+      const status = await effectiveVoiceStatus(d, actor);
+      expect(status.ready).toBe(operation === "synthesize");
+      expect(status.transcribe).toBe(operation === "transcribe");
+      if (operation === "synthesize") {
+        expect(await synthesizeVoice(d, actor, { text: "Synthetic speech" })).toMatchObject({
+          mimeType: "audio/mpeg",
+        });
+        await expect(
+          transcribeVoice(d, actor, { audio: new Uint8Array([1]), mimeType: "audio/wav" }),
+        ).rejects.toBeDefined();
+      } else {
+        expect(
+          await transcribeVoice(d, actor, { audio: new Uint8Array([1]), mimeType: "audio/wav" }),
+        ).toMatchObject({ text: expect.any(String) });
+        await expect(synthesizeVoice(d, actor, { text: "Synthetic speech" })).rejects.toBeDefined();
+      }
+    },
+  );
+  it("uses pricing models when compatible connection model fields are omitted", async () => {
+    const configured = deploymentVoiceFromEnv(
+      JSON.stringify({
+        ...config,
+        provider: "openai-compatible",
+        connection: { plaintext: "fake-server-key", baseUrl: "https://speech.example.test/v1" },
+        pricing: {
+          synthesize: { ...price, model: "priced-speech" },
+          transcribe: { ...price, model: "priced-transcription", unit: "seconds" },
+        },
+      }),
+    )!;
+    const d = deps();
+    d.env!.deploymentVoice = configured;
+    const loaded = await loadDefaultVoiceCredential(d, actor);
+    expect(JSON.parse(loaded!.apiKey)).toMatchObject({
+      ttsModel: "priced-speech",
+      sttModel: "priced-transcription",
+    });
+    expect(() =>
+      deploymentVoiceFromEnv(
+        JSON.stringify({
+          ...configured,
+          connection: { ...configured.connection, ttsModel: "different-speech" },
+        }),
+      ),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
   });
   it("makes speech ready without storing user credentials", async () => {
     const d = deps();

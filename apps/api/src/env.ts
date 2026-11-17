@@ -29,8 +29,8 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
-import type { DeploymentVoice } from "./deployment-voice.js";
-import { deploymentVoiceFromEnv } from "./deployment-voice.js";
+import type { DeploymentVoice } from "./voice/deployment-config.js";
+import { deploymentVoiceFromEnv } from "./voice/deployment-config.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 

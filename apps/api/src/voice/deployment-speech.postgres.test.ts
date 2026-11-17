@@ -1,9 +1,9 @@
 import type { Actor } from "@rakazo/contracts";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { deploymentVoiceFromEnv } from "./deployment-voice.js";
-import type { VoiceDeps } from "./voice.js";
-import { effectiveVoiceStatus, synthesizeVoice, transcribeVoice } from "./voice.js";
+import type { VoiceDeps } from "../voice.js";
+import { effectiveVoiceStatus, synthesizeVoice, transcribeVoice } from "../voice.js";
+import { deploymentVoiceFromEnv } from "./deployment-config.js";
 
 const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
@@ -39,6 +39,48 @@ suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
     await db.prisma.$disconnect();
     await db.pool.end();
   });
+  it.each(["synthesize", "transcribe"] as const)(
+    "admits an affordable %s even when the other operation exceeds the remaining grant",
+    async (operation) => {
+      const tenant = {
+        userId: `fake-speech-${operation}`,
+        spaceId: `fake-space-${operation}`,
+      } as Actor;
+      const system = asSystem(db.prisma);
+      await system.$executeRaw`INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt")
+      VALUES (${tenant.userId}, 50, now() + interval '1 day')`;
+      const deployment = deps.env!.deploymentVoice!;
+      const scoped = {
+        ...deps,
+        env: {
+          ...deps.env,
+          deploymentVoice: {
+            ...deployment,
+            pricing: {
+              ...deployment.pricing,
+              [operation]: { ...deployment.pricing[operation], maxRequestMicros: 10 },
+            },
+          },
+        },
+      };
+      await runAsTenant(tenant, async () => {
+        expect(await effectiveVoiceStatus(scoped, tenant)).toMatchObject({
+          ready: operation === "synthesize",
+          transcribe: operation === "transcribe",
+        });
+        if (operation === "synthesize")
+          await synthesizeVoice(scoped, tenant, { text: "Synthetic sample" });
+        else
+          await transcribeVoice(scoped, tenant, {
+            audio: new Uint8Array([1]),
+            mimeType: "audio/wav",
+          });
+      });
+      expect(await system.speechCost.findMany({ where: { userId: tenant.userId } })).toMatchObject([
+        { operation, reservedMicros: 10n },
+      ]);
+    },
+  );
   it("uses the default without member keys, admits before dispatch, and retains unknown costs", async () => {
     const system = asSystem(db.prisma);
     await system.$executeRaw`INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt")
