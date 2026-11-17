@@ -29,11 +29,12 @@ test("counts code files directly in each folder and skips generated and vendored
     "a/one.ts",
     "a/two.test.ts",
     "a/notes.md",
+    "a/capture.c",
     "a/b/three.ts",
     "db/generated/client.ts",
     "packages/ui-web/src/components/ui/button.tsx",
   ]);
-  assert.deepEqual(Object.fromEntries(counts), { a: 2, "a/b": 1 });
+  assert.deepEqual(Object.fromEntries(counts), { a: 3, "a/b": 1 });
   assert.deepEqual(oversized(new Map([["a", LIMIT + 2]]), { a: LIMIT + 5 }), []);
   assert.deepEqual(oversized(new Map([["a", LIMIT + 2]]), {}), [
     { folder: "a", count: LIMIT + 2, allowed: LIMIT },
