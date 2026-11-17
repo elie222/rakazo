@@ -28,19 +28,19 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { z } from "zod";
-import type { FleetCardSummary } from "../approval-ask.js";
-import type { ExecutorDeps } from "../executor-deps.js";
-import { cardName } from "../fleet-tools.js";
-import { insertMcpServerRow } from "../mcp-server-rows.js";
-import { buildMcpCredentialBlob } from "../mcp-server-tool.js";
-import { isHostNotFound } from "../network-address.js";
-import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "../remote-mcp.js";
+import type { FleetCardSummary } from "../approvals/approval-ask.js";
+import { insertMcpServerRow } from "../mcp/mcp-server-rows.js";
+import { buildMcpCredentialBlob } from "../mcp/mcp-server-tool.js";
+import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "../mcp/remote-mcp.js";
 import {
   announceRoutineRow,
   assertRoutineSchedule,
   routineNextRunAt,
   routineRowData,
-} from "../routine-rows.js";
+} from "../routines/routine-rows.js";
+import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
+import { cardName } from "../tools/fleet-tools.js";
+import { isHostNotFound } from "../web/network-address.js";
 import {
   AGENT_EXPORT_CHANGED,
   AGENT_EXPORT_NOT_FOUND,

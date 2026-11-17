@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import type { ExecutorDeps } from "../executor-deps.js";
+import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { importAgentsFromChat, prepareAgentImportRequest, readRunAgentExport } from "./chat.js";
 import type { AgentImportServices } from "./write.js";
 import { fakeImportServices, importedBot } from "./write.test-support.js";

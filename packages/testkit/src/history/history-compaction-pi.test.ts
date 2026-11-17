@@ -2,7 +2,7 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { compactHistory } from "../../../adapters/src/history-compaction.js";
+import { compactHistory } from "../../../adapters/src/runtime/context/history-compaction.js";
 import { startModelEmulator } from "../model-emulator.js";
 
 const cleanups: Array<() => Promise<void>> = [];

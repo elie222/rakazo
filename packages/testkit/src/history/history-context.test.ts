@@ -1,7 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
-import { estimateTextTokens } from "../../../adapters/src/context-selection.js";
+import { estimateTextTokens } from "../../../adapters/src/runtime/context/context-selection.js";
 import { startModelEmulator } from "../model-emulator.js";
 
 describe("structured results through real Pi context selection", () => {

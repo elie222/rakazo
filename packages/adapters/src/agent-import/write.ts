@@ -46,8 +46,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
-import { BUILTIN_AGENT_SKILLS } from "../builtin-skills.prompt.js";
-import { isCatalogModelChoice } from "../model-selection.js";
+import { isCatalogModelChoice } from "../models/model-selection.js";
+import { BUILTIN_AGENT_SKILLS } from "../tools/builtin-skills.prompt.js";
 import type { AgentImportSettings, ImportedMcpServer } from "./settings.js";
 import { readAgentImportSettings, readGrokBotImportSettings } from "./settings.js";
 
