@@ -12,10 +12,10 @@ import { installedPluginParts, pluginSite } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { connectMcpOauth } from "../../lib/mcp-connect";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
 
