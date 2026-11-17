@@ -158,10 +158,22 @@ describe("account export archive", () => {
 
   it("preserves the bot provider and accepts archives written before provider overrides", () => {
     expect(
-      AccountExportRecordSchema.parse({ ...botRecord("bot-1"), voiceProvider: "provider-a" }),
+      AccountExportRecordSchema.parse({ ...botRecord("bot-1"), voiceProvider: " provider-a " }),
     ).toMatchObject({ voiceProvider: "provider-a" });
     expect(AccountExportRecordSchema.safeParse(botRecord("bot-1")).success).toBe(true);
   });
+
+  it.each(["", "   ", "x".repeat(81)])(
+    "rejects an invalid archived voice provider %j",
+    (voiceProvider) => {
+      const result = AccountExportRecordSchema.safeParse({ ...botRecord("bot-1"), voiceProvider });
+      expect(result.success).toBe(false);
+      if (!result.success)
+        expect(result.error.issues).toEqual(
+          expect.arrayContaining([expect.objectContaining({ path: ["voiceProvider"] })]),
+        );
+    },
+  );
 
   it("streams manifest, then each space's records, artifacts and homes", async () => {
     const fakes = stores();
