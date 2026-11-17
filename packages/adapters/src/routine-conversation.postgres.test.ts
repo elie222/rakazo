@@ -211,13 +211,42 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     expect(followUp.task.prompt).toContain("Send the digest");
   });
 
-  it("never hands one person's task to another person's run", async () => {
-    await createRun({
-      trigger: "user",
-      status: "running",
+  it.each([
+    ["another person's run", { userId: "other" }],
+    ["a run paused for a takeover", { status: "waiting_takeover" }],
+    ["a group chat's run", { groupChat: true }],
+  ] as const)("never hands its task to %s", async (_, working) => {
+    const groupMessage =
+      "groupChat" in working
+        ? await system.message.create({
+            data: {
+              threadId: identity.threadId,
+              seq: 1_000_000 + Math.floor(Math.random() * 1_000_000),
+              role: "user",
+              blocks: [
+                {
+                  kind: "channel_message",
+                  provider: "chat",
+                  channelId: "channel-1",
+                  fromAddress: "member",
+                  fromLabel: "Member",
+                  text: "hi",
+                },
+              ],
+            },
+          })
+        : null;
+    const busy = await createRun({
+      trigger: groupMessage ? "messaging" : "user",
+      status: "status" in working ? working.status : "running",
       startedAt: new Date(),
-      userId: `${identity.userId}-other`,
+      userId: "userId" in working ? `${identity.userId}-other` : undefined,
     });
+    if (groupMessage)
+      await system.run.update({
+        where: { id: busy.id },
+        data: { sourceMessageId: groupMessage.id },
+      });
     const scheduled = await createRun({
       trigger: "routine",
       status: "queued",

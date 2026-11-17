@@ -8,6 +8,7 @@ import {
   messagingChannelId,
   QUEUE_HOLDING_RUN_STATUSES,
   STEERING_CONTINUATION_PROMPT,
+  WORKING_RUN_STATUSES,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
@@ -432,8 +433,13 @@ export async function handQueuedRunToWorkingRun(
           botId: queued.botId,
           userId: queued.userId,
           startedAt: { not: null },
-          status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+          // A run paused for a takeover reads nothing until the person resumes it.
+          status: { in: [...WORKING_RUN_STATUSES] },
           trigger: { notIn: NO_HANDOVER_TRIGGERS },
+          // A group chat's run reads only that channel's messages.
+          NOT: {
+            sourceMessage: { is: { blocks: { array_contains: [{ kind: "channel_message" }] } } },
+          },
         },
         orderBy: [{ startedAt: "desc" }, { id: "desc" }],
         select: { id: true },
