@@ -3,6 +3,7 @@ import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
   effectiveMemoryScope,
+  expireRunToolQuestions,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   readMessageBlocks,
@@ -402,6 +403,14 @@ export async function connectRun(
       ...(run.routine ? { routineName: run.routine.name } : {}),
     },
   });
+
+  // A question a tool asked in an earlier attempt lost its call with that attempt's process.
+  await bestEffort(
+    "tool questions",
+    expireRunToolQuestions(deps.prisma, { id: runId, spaceId: run.spaceId }, (threadId, seq) =>
+      deps.events.notify(threadId, seq),
+    ),
+  );
 
   const discoveredPromise = deps.connector
     ? deps.connector.discoverTools(context)

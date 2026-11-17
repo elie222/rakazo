@@ -19,6 +19,7 @@ export function messageHasInlineControls(blocks: readonly MessageBlock[]): boole
       block.kind === "ask" ||
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
+      block.kind === "tool_question" ||
       block.kind === "import_setup",
   );
 }

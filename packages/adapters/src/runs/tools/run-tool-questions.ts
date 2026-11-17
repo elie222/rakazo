@@ -1,0 +1,69 @@
+import type { ToolAsk } from "@rakazo/adapter-kit";
+import type { ToolQuestion, ToolQuestionAnswer } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
+import { takeToolQuestionAnswer } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
+import type { RunContext } from "../assembly/run-context.js";
+import { publishMessage } from "../assembly/run-messages.js";
+
+/**
+ * How long a tool's question waits for the person. The server holds its response to the call open
+ * meanwhile, and the HTTP client drops a response that sends nothing for five minutes, so the
+ * wait ends first and an answer always has a call to return to.
+ */
+export const TOOL_QUESTION_WAIT_MS = 4 * 60_000;
+
+/**
+ * Who a tool's server may ask mid-call: the person whose own message in the app started this
+ * run. Routines, webhooks and email, other bots (a spawned bot's first run included: the person
+ * is not in that chat waiting on it) and chat-app channels, which cannot show the card, have
+ * nobody to ask, so their questions are declined.
+ */
+export function toolAskFor(ctx: RunContext): ToolAsk | undefined {
+  if (!ctx.source?.ownerStartedRun || ctx.source.messagingChannelRun) return undefined;
+  return (question, signal) => askInRun(ctx, question, signal);
+}
+
+async function askInRun(
+  ctx: RunContext,
+  question: ToolQuestion,
+  signal: AbortSignal,
+): Promise<ToolQuestionAnswer> {
+  const { deps, run } = ctx;
+  // Events from here on: an answer that lands before the wait starts is still heard.
+  const cursor =
+    (
+      await deps.prisma.event.findFirst({
+        where: { threadId: run.threadId },
+        orderBy: { seq: "desc" },
+        select: { seq: true },
+      })
+    )?.seq ?? 0;
+  const expiresAt = new Date(Date.now() + TOOL_QUESTION_WAIT_MS).toISOString();
+  const message = await publishMessage(deps, run, "bot", [
+    { kind: "tool_question", question, status: "pending", expiresAt },
+  ]);
+  if (!message) return { action: "decline" };
+  const ref = { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id };
+  const take = async (expire: boolean) => {
+    const { answer, seq } = await takeToolQuestionAnswer(deps.prisma, ref, { expire });
+    if (seq !== undefined) await bestEffort("tool question", deps.events.notify(ref.threadId, seq));
+    return answer;
+  };
+  const wait = deadlineSignal(TOOL_QUESTION_WAIT_MS, AbortSignal.any([signal, ctx.context.signal]));
+  try {
+    // The answer commits with a card update on this thread; its signal reaches whichever
+    // process holds this call, which then reads the answer from the row.
+    for await (const event of deps.events.follow(ref.threadId, cursor, wait)) {
+      if (event.type !== "thread.message.updated" || event.payload.messageId !== message.id)
+        continue;
+      const answer = await take(false);
+      if (answer) return answer;
+    }
+  } catch (error) {
+    if (!wait.aborted) throw error;
+  }
+  // The wait ended, the server withdrew the question or the run stopped: the card closes as
+  // expired unless an answer got in first.
+  return (await take(true)) ?? { action: "cancel" };
+}

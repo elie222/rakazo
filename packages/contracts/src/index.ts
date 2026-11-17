@@ -44,6 +44,7 @@ export * from "./integrations/connector-errors.js";
 export * from "./integrations/integration-settings.js";
 export * from "./integrations/mcp.js";
 export * from "./integrations/mcp-app.js";
+export * from "./integrations/tool-question.js";
 export * from "./integrations/vault-import.js";
 export * from "./integrations/vault-items.js";
 export * from "./labs.js";

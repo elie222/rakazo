@@ -208,6 +208,7 @@ import {
   McpServerSchema,
   McpSourcePresetSchema,
 } from "./integrations/mcp.js";
+import { TOOL_QUESTION_FIELDS_MAX, ToolQuestionValueSchema } from "./integrations/tool-question.js";
 import { VaultImportInput, VaultImportResult } from "./integrations/vault-import.js";
 import { LabFeatureSchema } from "./labs.js";
 import {
@@ -879,6 +880,19 @@ export const appContract = {
                   : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    /** Answers a tool's question card while its call waits; only the run's own user may. */
+    answerToolQuestion: oc
+      .input(
+        threadTarget.safeExtend({
+          messageId: Id,
+          action: z.enum(["accept", "decline"]),
+          values: z
+            .record(z.string().max(64), ToolQuestionValueSchema)
+            .refine((values) => Object.keys(values).length <= TOOL_QUESTION_FIELDS_MAX)
+            .optional(),
+        }),
       )
       .output(z.object({ ok: z.literal(true) })),
     /** `unreadAfterSeq`: the seq read up to before this call, null when nothing was unread. */

@@ -9,6 +9,7 @@ import { Id, ThinkingLevelSchema } from "./ids.js";
 import { AgentImportSetupItemSchema } from "./integrations/agent-import-setup.js";
 import { McpTransportSchema } from "./integrations/mcp.js";
 import { McpAppCspSchema } from "./integrations/mcp-app.js";
+import { ToolQuestionSchema, ToolQuestionValueSchema } from "./integrations/tool-question.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -365,6 +366,19 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     toolResult: z.record(z.string(), z.any()),
     csp: McpAppCspSchema.optional(),
     prefersBorder: z.boolean().optional(),
+  }),
+  z.object({
+    /**
+     * A tool's server asking the person something while its call waits (MCP elicitation). Only
+     * the run's own user answers it, and only while the call is open; the call ends it as
+     * expired otherwise.
+     */
+    kind: z.literal("tool_question"),
+    question: ToolQuestionSchema,
+    status: z.enum(["pending", "accepted", "declined", "expired"]),
+    expiresAt: z.string(),
+    /** What the person sent, held only until the waiting call takes it. */
+    values: z.record(z.string(), ToolQuestionValueSchema).optional(),
   }),
   z.object({
     /** A page the bot saved. Title and version are as sent; read the page for its latest. */

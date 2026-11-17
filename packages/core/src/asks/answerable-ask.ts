@@ -16,14 +16,23 @@ export function answerableAskMessageIds(
 ): Set<string> {
   const answerable = new Set<string>();
   if (!snapshot) return answerable;
-  const waitingRunIds = new Set(
-    (snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : []))
-      .filter((run) => run.status === "waiting_input" && (!userId || run.userId === userId))
-      .map((run) => run.id),
+  const ownRuns = (snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : [])).filter(
+    (run) => !userId || run.userId === userId,
   );
+  const runIds = (status: string) =>
+    new Set(ownRuns.filter((run) => run.status === status).map((run) => run.id));
+  const waitingRunIds = runIds("waiting_input");
+  // A tool's question is answered while its run is still running: the call waits on it.
+  const runningRunIds = runIds("running");
   for (const message of snapshot.messages) {
-    if (!message.runId || !waitingRunIds.has(message.runId)) continue;
-    if (message.blocks.some((block) => block.kind === "ask" && block.status !== "answered")) {
+    if (!message.runId) continue;
+    const pending = (kind: string, open: (status?: string) => boolean) =>
+      message.blocks.some((block) => block.kind === kind && open(block.status));
+    if (
+      (waitingRunIds.has(message.runId) && pending("ask", (status) => status !== "answered")) ||
+      (runningRunIds.has(message.runId) &&
+        pending("tool_question", (status) => status === "pending"))
+    ) {
       answerable.add(message.id);
     }
   }

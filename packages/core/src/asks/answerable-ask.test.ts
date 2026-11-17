@@ -7,6 +7,28 @@ import {
 } from "./answerable-ask.js";
 
 describe("answerableAskMessageIds", () => {
+  it("offers a tool's open question only to the user of its running run", () => {
+    const snapshot = {
+      activeRuns: [
+        { id: "mine", status: "running", userId: "me" },
+        { id: "theirs", status: "running", userId: "them" },
+      ],
+      messages: [
+        { id: "open", runId: "mine", blocks: [{ kind: "tool_question", status: "pending" }] },
+        { id: "closed", runId: "mine", blocks: [{ kind: "tool_question", status: "expired" }] },
+        { id: "other", runId: "theirs", blocks: [{ kind: "tool_question", status: "pending" }] },
+      ],
+    };
+    expect(answerableAskMessageIds(snapshot, "me")).toEqual(new Set(["open"]));
+    // A paused run's call is gone, so its question is not answerable.
+    expect(
+      answerableAskMessageIds(
+        { ...snapshot, activeRuns: [{ id: "mine", status: "waiting_input", userId: "me" }] },
+        "me",
+      ),
+    ).toEqual(new Set());
+  });
+
   it("finds a waiting prompt even when a newer group run is active", () => {
     expect(
       answerableAskMessageIds({
