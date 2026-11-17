@@ -1170,6 +1170,7 @@ export async function runTrial(
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      subjectBotId: botId,
       apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
@@ -1206,6 +1207,17 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        // What graders check for writes, so a failed write criterion can be read.
+        ...(evidence.calls.length
+          ? {
+              "service-calls": JSON.stringify(
+                evidence.calls.map(({ botId: caller, ...call }) => ({
+                  ...call,
+                  by: caller === botId ? "subject" : caller === peer?.id ? "peer" : "other",
+                })),
+              ),
+            }
+          : {}),
         ...(apps.length
           ? {
               "app-calls": JSON.stringify(
