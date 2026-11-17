@@ -110,7 +110,6 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
   const provider = "sendblue";
   const stamp = `${Date.now()}`;
   const ownerAddress = `+1558${stamp.slice(-7)}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let owner: PrismaClient;
   let close: () => Promise<void>;
@@ -138,7 +137,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       await ownerDb.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }),
     );
     userId = provisioned.userId;
     spaceA = provisioned.spaceId;

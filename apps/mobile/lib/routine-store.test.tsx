@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { Routine } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -8,9 +9,6 @@ import { rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { saveBotRoutine, useBotRoutines } from "./routine-store";
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://api.example",
@@ -18,7 +16,8 @@ vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({}),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("expo-router", () => ({ useFocusEffect: () => {} }));
+vi.mock("expo-router", () => ({ useFocusEffect: () => {}, useIsFocused: () => true }));
+vi.mock("./roster-signals", () => ({ useSpaceChanges: () => {} }));
 
 const routine = { id: "routine-1", createdAt: "2026-10-01T00:00:00Z", scheduleDelayed: true };
 const key = rpcQuery("routines/list", { botId: "bot-1" }).queryKey;
@@ -29,7 +28,7 @@ let container: HTMLDivElement;
 async function update(change: () => void) {
   await act(async () => {
     change();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 

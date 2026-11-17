@@ -5,8 +5,11 @@ import { KMSClient } from "@aws-sdk/client-kms";
 import type { KeyProvider } from "@rakazo/adapter-kit";
 import { LocalKeyProvider, withLocalMasterKeys } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AwsKmsKeyProvider, awsKmsConfigFromEnv } from "./aws-kms-key-provider.js";
 import { contentKeyProviderFromEnv } from "./key-provider-factory.js";
+import {
+  AwsKmsKeyProvider,
+  awsKmsConfigFromEnv,
+} from "./providers/key/aws-kms/aws-kms-key-provider.js";
 import { unwrapEnv, wrapEnvValue } from "./wrapped-env.js";
 
 const KEY_ARN = "arn:aws:kms:eu-central-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
@@ -125,6 +128,13 @@ function conformance(name: string, create: () => KeyProvider) {
       const wrapped = await provider.wrap(randomBytes(32), context);
       await expect(provider.unwrap(wrapped, { ...context, spaceId: "space-b" })).rejects.toThrow();
       await expect(provider.unwrap(wrapped, { ...context, version: 2 })).rejects.toThrow();
+      // A member's account vault key is scoped to the member, beside the space keys.
+      const member = { spaceId: "user:user-a", version: 1 };
+      const dataKey = randomBytes(32);
+      const vault = await provider.wrap(dataKey, member);
+      expect(Buffer.from(await provider.unwrap(vault, member))).toEqual(dataKey);
+      await expect(provider.unwrap(vault, { ...member, spaceId: "user:user-b" })).rejects.toThrow();
+      await expect(provider.unwrap(vault, context)).rejects.toThrow();
     });
 
     it("rejects tampered wraps and unknown master keys", async () => {

@@ -3,17 +3,25 @@ import type {
   PaymentWalletConnectResult,
   PaymentWalletCredential,
   PaymentWalletProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
-import { asSystem, createDb, runAsTenant } from "@rakazo/db";
+import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { PaymentWalletDeps } from "./payment-wallets.js";
 import {
   connectPaymentWallet,
+  disconnectPaymentWallet,
   paymentWalletConnected,
   paymentWalletStatus,
   withPaymentWalletCredential,
 } from "./payment-wallets.js";
+import type { SecretCleanup } from "./secret-cleanup.js";
+import { secretCleanupJobKey } from "./secret-cleanup.js";
+import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import { GraphileJobPublisher } from "./wakeup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -98,7 +106,12 @@ describePostgres("payment wallets (PostgreSQL contract)", () => {
     const actor = await seedUser();
     const other = await seedUser();
     const provider = testWallet();
-    const deps: PaymentWalletDeps = { prisma: db!.prisma, secretStore, paymentWallet: provider };
+    const deps: PaymentWalletDeps = {
+      prisma: db!.prisma,
+      secretStore,
+      jobs: fakeCleanupJobs().jobs,
+      paymentWallet: provider,
+    };
 
     await runAsTenant(actor, () => connectPaymentWallet(deps, actor));
     await new Promise((resolve) => setTimeout(resolve, 1_100));
@@ -121,5 +134,78 @@ describePostgres("payment wallets (PostgreSQL contract)", () => {
     });
     expect(row.ciphertext).not.toContain("credential");
     expect(row.refreshAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("commits a forgotten credential's cleanup with the disconnect and deletes it from the job", async () => {
+    const actor = await seedUser();
+    const pool = new Pool({ connectionString: databaseUrl, max: 2 });
+    const queue = new GraphileJobPublisher(pool);
+    const remove = vi.fn(async (_ref: string, _context: unknown) => undefined);
+    // A store that keeps credentials elsewhere, so each one must be deleted there.
+    const remote = {
+      put: secretStore.put.bind(secretStore),
+      load: secretStore.load.bind(secretStore),
+      delete: remove,
+      isRemote: () => true,
+    } as unknown as SecretStore;
+    const deps: PaymentWalletDeps = {
+      prisma: db!.prisma,
+      secretStore: remote,
+      // The direct attempt cannot hand over, as when the process stops right after the commit.
+      jobs: {
+        enqueueIn: (tx, job) => queue.enqueueIn(tx, job),
+        enqueue: async () => undefined,
+        cancel: (key) => queue.cancel(key),
+        cancelIn: (tx, key) => queue.cancelIn(tx, key),
+      },
+      paymentWallet: testWallet(),
+    };
+    let key: string | undefined;
+    try {
+      await runAsTenant(actor, () => connectPaymentWallet(deps, actor));
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      await runAsTenant(actor, () => paymentWalletStatus(deps, actor));
+      const { ciphertext } = await asSystem(db!.prisma).paymentWallet.findUniqueOrThrow({
+        where: { userId: actor.userId },
+      });
+      const cleanup: SecretCleanup = {
+        kind: "payment_wallet",
+        recordId: `payment-wallet:${actor.userId}`,
+        ref: ciphertext,
+      };
+      key = secretCleanupJobKey(ciphertext);
+      const queued = async () =>
+        (
+          await pool.query<{ due: boolean }>(
+            "select run_at <= now() as due from graphile_worker._private_jobs where key = $1",
+            [key],
+          )
+        ).rows;
+      const handlers = createBackgroundJobHandlers({
+        prisma: db!.prisma,
+        secretStore: remote,
+      } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+      const runJob = () =>
+        runAsSystem("background job secret.cleanup", () => handlers["secret.cleanup"](cleanup));
+
+      // While the wallet holds the credential, neither a job nor a late retry touches it.
+      expect(await queued()).toEqual([]);
+      remove.mockClear();
+      await runJob();
+      expect(remove).not.toHaveBeenCalled();
+
+      remove.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await runAsTenant(actor, () => disconnectPaymentWallet(deps, actor));
+      expect(await queued()).toEqual([{ due: false }]);
+      await runJob();
+      expect(remove).toHaveBeenLastCalledWith(
+        ciphertext,
+        expect.objectContaining({ recordId: cleanup.recordId }),
+      );
+    } finally {
+      if (key) await queue.cancel(key);
+      await queue.close();
+      await pool.end();
+    }
   });
 });

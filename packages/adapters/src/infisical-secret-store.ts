@@ -7,7 +7,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { SecretNotFoundError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { readBoundedJsonResponse } from "@rakazo/core";
+import { parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 import { SecretChanges } from "./secret-changes.js";
@@ -172,6 +172,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     const recordId = options.recordId ?? randomUUID();
     const key = `rakazo_${credentialDigest(recordId).slice(0, 24)}_${randomUUID()}`;
     const ref = INFISICAL_REF_PREFIX + key;
+    await options.beforeWrite?.({ recordId, ref });
     try {
       await this.request(
         `${SECRETS_PATH}/${key}`,
@@ -264,23 +265,11 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
       this.invalidate(ref);
     }
   }
+  isRemote(ref: string): boolean {
+    return ref.startsWith(INFISICAL_REF_PREFIX);
+  }
   redact(_value: string): string {
     return "[redacted]";
-  }
-  private async pause(ms: number, signal: AbortSignal): Promise<void> {
-    if (this.options.sleep) return this.options.sleep(ms, signal);
-    await new Promise<void>((resolve, reject) => {
-      signal.throwIfAborted();
-      const timer = setTimeout(() => {
-        signal.removeEventListener("abort", abort);
-        resolve();
-      }, ms);
-      const abort = () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      };
-      signal.addEventListener("abort", abort, { once: true });
-    });
   }
   private async authenticate(): Promise<string> {
     if (this.token && this.token.expires > this.now() + 30_000) return this.token.value;
@@ -354,68 +343,68 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
       ...(callerSignal ? [callerSignal] : []),
       AbortSignal.timeout(this.options.timeoutMs ?? 15_000),
     ]);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const response = await this.fetcher(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
-          method,
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-          signal,
-        });
-        if (response.status === 404 && token !== undefined) {
-          // A missing project, environment or folder is also a 404, and that is misconfiguration.
-          const { message } = await readBoundedJsonResponse<{ message?: unknown }>(
+    const { sleep } = this.options;
+    // The wait the last 429 or 5xx named, if it named one.
+    let transient: { retryAfterMs: number | undefined } | undefined;
+    try {
+      return await retry(
+        async () => {
+          transient = undefined;
+          const response = await this.fetcher(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+            signal,
+          });
+          if (response.status === 404 && token !== undefined) {
+            // A missing project, environment or folder is also a 404, and that is misconfiguration.
+            const { message } = await readBoundedJsonResponse<{ message?: unknown }>(
+              response,
+              MAX_RESPONSE_BYTES,
+              signal,
+            ).catch(() => ({}) as { message?: unknown });
+            if (typeof message !== "string" || !/^Secret\b.*\bnot found$/.test(message))
+              throw new SecretStoreUnavailableError(404);
+            this.degraded = false;
+            throw new SecretNotFoundError();
+          }
+          if (!response.ok) {
+            await response.body?.cancel();
+            if (response.status === 429 || response.status >= 500)
+              transient = {
+                retryAfterMs: parseRetryAfter(response.headers.get("retry-after"), this.now()),
+              };
+            throw new SecretStoreUnavailableError(response.status);
+          }
+          if (method === "DELETE") {
+            await response.body?.cancel();
+            this.degraded = false;
+            return {};
+          }
+          const result = await readBoundedJsonResponse<RestResult>(
             response,
             MAX_RESPONSE_BYTES,
             signal,
-          ).catch(() => ({}) as { message?: unknown });
-          if (typeof message !== "string" || !/^Secret\b.*\bnot found$/.test(message))
-            throw new SecretStoreUnavailableError(404);
+          );
           this.degraded = false;
-          throw new SecretNotFoundError();
-        }
-        if ((response.status === 429 || response.status >= 500) && attempt < 2) {
-          await response.body?.cancel();
-          const wait =
-            retryAfterMs(response.headers.get("retry-after"), this.now()) ?? 100 * 2 ** attempt;
-          if (wait > MAX_RETRY_AFTER_MS) throw new SecretStoreUnavailableError(response.status);
-          await this.pause(wait, signal);
-          continue;
-        }
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new SecretStoreUnavailableError(response.status);
-        }
-        if (method === "DELETE") {
-          await response.body?.cancel();
-          this.degraded = false;
-          return {};
-        }
-        const result = await readBoundedJsonResponse<RestResult>(
-          response,
-          MAX_RESPONSE_BYTES,
+          return result;
+        },
+        {
+          attempts: 3,
+          retryable: () => !!transient && (transient.retryAfterMs ?? 0) <= MAX_RETRY_AFTER_MS,
+          delayMs: (attempt) => transient?.retryAfterMs ?? 100 * 2 ** attempt,
+          delay: sleep && ((ms) => sleep(ms, signal)),
           signal,
-        );
-        this.degraded = false;
-        return result;
-      } catch (error) {
-        if (callerSignal?.aborted) throw callerSignal.reason;
-        if (error instanceof SecretNotFoundError || error instanceof SecretStoreUnavailableError)
-          throw error;
-        throw new SecretStoreUnavailableError();
-      }
+        },
+      );
+    } catch (error) {
+      if (callerSignal?.aborted) throw callerSignal.reason;
+      if (error instanceof SecretNotFoundError || error instanceof SecretStoreUnavailableError)
+        throw error;
+      throw new SecretStoreUnavailableError();
     }
-    throw new SecretStoreUnavailableError();
   }
-}
-
-function retryAfterMs(header: string | null, now: number): number | undefined {
-  if (!header) return undefined;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  const date = Date.parse(header);
-  return Number.isNaN(date) ? undefined : Math.max(0, date - now);
 }

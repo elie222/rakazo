@@ -4,7 +4,7 @@ import type { ComposerMention, SLASH_ACTIONS, SlashActionId } from "@rakazo/core
 import { mentionChipKey, truncateSlashDescription } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Settings, Square, X } from "lucide-react";
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { useHoldToTalk } from "../../components/composer/HoldToTalk";
 import { HoldToTalkControls } from "../../components/composer/HoldToTalk";
 import type { PendingAttachment } from "./chat-shared";
@@ -113,13 +113,19 @@ export function MentionPicker({
   );
 }
 
-/** The leading-`/` list: skills to attach, then actions to run. */
+/** The `/` list: skills to attach, then actions to run. */
 export function SlashPicker({
+  listboxId,
+  activeIndex,
+  onHighlight,
   skills,
   actions,
   onSkill,
   onAction,
 }: {
+  listboxId: string;
+  activeIndex: number;
+  onHighlight: (key: string) => void;
   skills: AgentSkillCatalogEntry[];
   actions: ReadonlyArray<(typeof SLASH_ACTIONS)[number]>;
   onSkill: (skill: AgentSkillCatalogEntry) => void;
@@ -128,16 +134,26 @@ export function SlashPicker({
   const { t } = useLingui();
   return (
     <div
+      id={listboxId}
+      role="listbox"
+      aria-label={t`Command menu`}
       data-testid="slash-picker"
       className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
     >
-      {skills.map((skill) => (
+      {skills.map((skill, index) => (
         <button
+          id={`${listboxId}-option-${index}`}
           key={skill.id}
           type="button"
+          role="option"
+          aria-selected={index === activeIndex}
           aria-label={t`Skill ${skill.name}`}
+          onMouseDown={(event) => event.preventDefault()}
           onClick={() => onSkill(skill)}
-          className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
+          onMouseMove={() => onHighlight(`skill:${skill.id}`)}
+          className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+            index === activeIndex ? "bg-accent" : ""
+          }`}
         >
           <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0">
@@ -150,15 +166,23 @@ export function SlashPicker({
           </span>
         </button>
       ))}
-      {actions.map((action) => {
+      {actions.map((action, actionIndex) => {
         const label = slashActionLabel(action.id);
+        const index = skills.length + actionIndex;
         return (
           <button
+            id={`${listboxId}-option-${index}`}
             key={action.id}
             type="button"
+            role="option"
+            aria-selected={index === activeIndex}
             aria-label={label}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => onAction(action.id)}
-            className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
+            onMouseMove={() => onHighlight(`action:${action.id}`)}
+            className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+              index === activeIndex ? "bg-accent" : ""
+            }`}
           >
             <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
             <span className="text-body text-foreground">{label}</span>
@@ -180,6 +204,7 @@ export function ComposerActions({
   sendDisabled,
   stopDisabled,
   sendColors,
+  modelPicker,
   onSend,
   onStop,
 }: {
@@ -194,6 +219,7 @@ export function ComposerActions({
   stopDisabled: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
   sendColors?: { background: string; foreground: string };
+  modelPicker?: ReactNode;
   onSend: () => void;
   onStop: () => void;
 }) {
@@ -214,6 +240,7 @@ export function ComposerActions({
         expanded ? "row-start-2" : ""
       }`}
     >
+      {talk.recording?.locked ? null : modelPicker}
       {talk.recording?.locked ? (
         <HoldToTalkControls talk={talk} />
       ) : running ? (

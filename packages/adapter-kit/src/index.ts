@@ -11,6 +11,7 @@ export * from "./media-generation.js";
 export * from "./messaging-installations.js";
 export * from "./model-errors.js";
 export * from "./paid-services.js";
+export * from "./partner-program.js";
 export * from "./payments.js";
 export * from "./registry.js";
 export * from "./sandbox-errors.js";

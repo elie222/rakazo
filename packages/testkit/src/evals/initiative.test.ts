@@ -176,6 +176,11 @@ describe("initiative closed loop grading", () => {
     expect(passes("initiative-closed-loop", closed({ files: { "results/lease.txt": null } }))).toBe(
       false,
     ));
+  it("leaves what the filed lease says to the judge", () => {
+    const input = byId("initiative-closed-loop").judge!(closed());
+    expect(input.rubric.startsWith(`${INITIATIVE_JUDGE_VERSION}:`)).toBe(true);
+    expect(input.evidence).toEqual([{ file: "Tenant: Ana Ruiz, unit 4B" }]);
+  });
 });
 
 describe("initiative without an open loop", () => {

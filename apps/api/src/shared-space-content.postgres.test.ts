@@ -208,6 +208,7 @@ describePostgres("shared space content (PostgreSQL)", () => {
       data: {
         spaceId,
         userId: owner.userId,
+        connectorId: "composio",
         provider: "gmail",
         displayName: "Owner mail",
         status: "connected",

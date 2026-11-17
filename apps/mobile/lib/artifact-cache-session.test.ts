@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -39,17 +40,13 @@ it("rotates metadata on sign-out even when the same token is restored", async ()
 
 it("does not restore a late metadata read after invalidation", async () => {
   const cache = await load();
-  let finish!: (value: string) => void;
-  vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  const read = deferred<string>();
+  const getItem = vi.fn(() => read.promise);
+  vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(getItem);
   const pending = cache.artifactCacheSession("fake-a");
-  await vi.waitFor(() => expect(finish).toBeDefined());
+  await vi.waitFor(() => expect(getItem).toHaveBeenCalled());
   const clearing = cache.invalidateArtifactCacheSession();
-  finish(JSON.stringify({ token: "fake-a", namespace: "old-namespace" }));
+  read.resolve(JSON.stringify({ token: "fake-a", namespace: "old-namespace" }));
   await expect(pending).rejects.toThrow("Artifact session changed");
   await clearing;
   expect(await cache.artifactCacheSession("fake-a")).not.toBe("old-namespace");
@@ -89,17 +86,13 @@ it("allows a cold cache when metadata cannot be read or written", async () => {
 
 it("rejects a failed metadata write that completes after invalidation", async () => {
   const cache = await load();
-  let fail!: (error: Error) => void;
-  vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
-    () =>
-      new Promise((_resolve, reject) => {
-        fail = reject;
-      }),
-  );
+  const write = deferred();
+  const setItem = vi.fn(() => write.promise);
+  vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(setItem);
   const pending = cache.artifactCacheSession("fake-a");
-  await vi.waitFor(() => expect(fail).toBeDefined());
+  await vi.waitFor(() => expect(setItem).toHaveBeenCalled());
   const clearing = cache.invalidateArtifactCacheSession();
-  fail(new Error("locked"));
+  write.reject(new Error("locked"));
   await expect(pending).rejects.toThrow("Artifact session changed");
   await clearing;
 });

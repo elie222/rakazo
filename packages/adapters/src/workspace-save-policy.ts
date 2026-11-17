@@ -3,6 +3,7 @@ import { lstat, open } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
+import { bestEffort } from "@rakazo/logging";
 
 /** The most one save copies; a larger home keeps running unsaved. */
 export const WORKSPACE_SAVE_LIMITS: WorkspaceExportLimits = {
@@ -116,7 +117,7 @@ export async function isTaggedCacheDirectory(directory: string): Promise<boolean
   } catch {
     return false;
   } finally {
-    await handle.close().catch(() => undefined);
+    await bestEffort("close cache directory tag file", handle.close());
   }
 }
 

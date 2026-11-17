@@ -54,7 +54,13 @@ function fixture({
   stalledDelivery?: boolean;
 } & Pick<
   AuthEnv,
-  "singleAccount" | "afterDeleteSession" | "afterReplaceSession" | "beforeDeleteUser"
+  | "singleAccount"
+  | "afterDeleteSession"
+  | "afterReplaceSession"
+  | "beforeDeleteUser"
+  | "afterDeleteUser"
+  | "analytics"
+  | "partnerProgram"
 > = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
@@ -275,6 +281,86 @@ function fixture({
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+it("stores validated signup attribution once, hides it from auth responses, and captures it", async () => {
+  const analytics = { capture: vi.fn(), flush: vi.fn(async () => undefined) };
+  const f = fixture({ analytics });
+  const attribution = { surface: "web", utmSource: "community", utmCampaign: "launch" };
+  const response = await f.auth.handler(
+    new Request("http://auth.example.test/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://web.example.test",
+        cookie: `rakazo_signup_attribution=${encodeURIComponent(JSON.stringify(attribution))}`,
+        "x-rakazo-signup-surface": "android",
+      },
+      body: JSON.stringify({
+        email: "new@example.test",
+        password: "offline-password12",
+        name: "New User",
+      }),
+    }),
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+  const body = await response.json();
+  expect(body).toHaveProperty("user.id");
+  expect(body).not.toHaveProperty("user.signupSurface");
+  expect(body).not.toHaveProperty("user.signupUtmSource");
+  expect(analytics.capture).toHaveBeenCalledWith(
+    expect.any(String),
+    {
+      name: "account_created",
+      ...attribution,
+      surface: "android",
+    },
+    { id: expect.any(String), at: expect.any(Date) },
+  );
+  await f.signin("new@example.test");
+  expect(f.data.user![0]).toMatchObject({
+    signupSurface: "android",
+    signupUtmSource: "community",
+    signupUtmCampaign: "launch",
+  });
+});
+
+it("keeps the partner link click a signup came from and reports the signup to the program", async () => {
+  const partnerProgram = {
+    trackSignup: vi.fn(async () => undefined),
+    trackSale: vi.fn(async () => undefined),
+    refundSale: vi.fn(async () => "withdrawn" as const),
+  };
+  const f = fixture({ partnerProgram });
+  const response = await f.auth.handler(
+    new Request("http://auth.example.test/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://web.example.test",
+        cookie: "rakazo_partner_click=click_1",
+      },
+      body: JSON.stringify({
+        email: "partner@example.test",
+        password: "offline-password12",
+        name: "Referred User",
+      }),
+    }),
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+  expect(f.data.user![0]).toMatchObject({ signupPartnerClickId: "click_1" });
+  expect(await response.json()).not.toHaveProperty("user.signupPartnerClickId");
+  expect(partnerProgram.trackSignup).toHaveBeenCalledWith({
+    clickId: "click_1",
+    customerId: f.data.user![0]!.id,
+    name: "Referred User",
+    email: "partner@example.test",
+  });
+});
 
 describe("client address and security events", () => {
   const signInWith = (f: ReturnType<typeof fixture>, headers: Record<string, string>) =>
@@ -617,16 +703,34 @@ describe("session credentials", () => {
   });
 
   it("answers a deletion already under way with a conflict and keeps the account", async () => {
+    const afterDeleteUser = vi.fn(async (_userId: string) => undefined);
     const f = fixture({
       delivery: false,
       beforeDeleteUser: async () => {
         throw new SpaceDeletionInProgressError();
       },
+      afterDeleteUser,
     });
     const { token } = (await (await f.signup()).json()) as { token: string };
     const response = await f.request("/delete-user", { password: "offline-password12" }, token);
     expect(response.status).toBe(409);
     expect(f.data.user).toHaveLength(1);
+    expect(afterDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it("runs the after-deletion hook once the account is gone", async () => {
+    const remaining: number[] = [];
+    const f = fixture({
+      delivery: false,
+      afterDeleteUser: async () => {
+        remaining.push(f.data.user!.length);
+      },
+    });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect(
+      (await f.request("/delete-user", { password: "offline-password12" }, token)).status,
+    ).toBe(200);
+    expect(remaining).toEqual([0]);
   });
 });
 

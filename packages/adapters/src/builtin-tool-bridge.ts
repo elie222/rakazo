@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { bridgeToolDefinitions } from "./builtin.tool-definition.js";
 import type { CatalogEntry } from "./lazy-tool-catalog.js";
 import {
   catalogEntries,
@@ -9,8 +10,6 @@ import {
 } from "./lazy-tool-catalog.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
-export const FIND_TOOL = "find_tool";
-export const USE_TOOL = "use_tool";
 const FIND_TOOL_LIMIT = 3;
 
 /**
@@ -40,12 +39,14 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "request_secret",
   "connect_app",
   "run_subagent",
+  "message_bot",
   "skill_read",
   "update_bot",
   "update_preferences",
   "remember",
   "save_memory",
   "recall_memory",
+  "reflect_memory",
   "schedule_create",
   "schedule_list",
   "search_history",
@@ -109,32 +110,7 @@ function searchEntries(deferred: readonly ConnectorTool[]): CatalogEntry[] {
 }
 
 function bridgeTools(deferred: readonly ConnectorTool[]): ConnectorTool[] {
-  return [
-    {
-      name: FIND_TOOL,
-      description: `Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\n${formatNameIndexText(groupedNames(searchEntries(deferred)))}`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          names: { type: "array", items: { type: "string" }, maxItems: 5 },
-          query: { type: "string", maxLength: 200, description: "Words describing the task" },
-        },
-      },
-      readOnly: true,
-    },
-    {
-      name: USE_TOOL,
-      description: "Run a built-in tool whose parameters find_tool returned in this turn.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          arguments: { type: "object", description: "Arguments matching its parameters" },
-        },
-        required: ["name", "arguments"],
-      },
-    },
-  ];
+  return bridgeToolDefinitions(formatNameIndexText(groupedNames(searchEntries(deferred))));
 }
 
 /** Full definitions of the deferred tools named, or the best matches for a query. */

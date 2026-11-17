@@ -22,6 +22,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "better-auth": "1.7.18",
     "react": "19.3.1",

@@ -16,8 +16,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sleepComputerIfIdle } from "./computer-idle.js";
 import { provisionComputer } from "./computer-lifecycle.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -68,6 +68,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
       jobs: {
         enqueue: vi.fn().mockResolvedValue(undefined),
         cancel: vi.fn().mockResolvedValue(undefined),
+        cancelIn: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
       } as unknown as JobPublisher,
       events: { append: vi.fn().mockResolvedValue({}) } as unknown as ThreadEvents,

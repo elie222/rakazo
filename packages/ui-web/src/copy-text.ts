@@ -1,3 +1,4 @@
+import type { RakazoDesktop } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -25,19 +26,26 @@ function copyBySelection(text: string): boolean {
   return copied;
 }
 
-/**
- * Puts text on the clipboard; true once there. Browsers expose the Clipboard API only to secure
- * pages, so its absence is the insecure case. `isCurrent` lets a caller stop a superseded write
- * from falling back to selection over newer text.
- */
-export function writeClipboard(text: string, isCurrent = () => true): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).then(
-      () => true,
-      () => isCurrent() && copyBySelection(text),
-    );
+/** Keep browser copying first; only the desktop app can recover through its native bridge. */
+export async function writeClipboard(text: string, isCurrent = () => true): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // A desktop document can lose focus even during a Copy click.
   }
-  return Promise.resolve(copyBySelection(text));
+  if (!isCurrent()) return false;
+  const desktop = (globalThis as { rakazoDesktop?: RakazoDesktop }).rakazoDesktop;
+  if (desktop?.clipboard) {
+    try {
+      if (await desktop.clipboard.writeText(text)) return true;
+    } catch {
+      // Older or disconnected bridges can still use the selection fallback.
+    }
+  }
+  return isCurrent() && copyBySelection(text);
 }
 
 /**

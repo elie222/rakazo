@@ -148,9 +148,9 @@ export function Section({
       type="button"
       className="rk-section-toggle"
       aria-expanded={open}
-      onClick={() => {
-        // Selecting text in the heading should not fold the section.
-        if (!window.getSelection()?.toString()) setOpen(!open);
+      onClick={(event) => {
+        // Preserve pointer text selection without blocking keyboard activation.
+        if (event.detail === 0 || !window.getSelection()?.toString()) setOpen(!open);
       }}
     >
       <svg width="16" height="16" viewBox="-2 -2 16 16" aria-hidden="true">

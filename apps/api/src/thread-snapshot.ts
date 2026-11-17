@@ -1,13 +1,14 @@
 import type { ThreadSnapshot } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   projectMessages,
   runFailureError,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { spaceIsShared } from "@rakazo/db";
-import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
+import { botRunStatuses, spaceIsShared } from "@rakazo/db";
+import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
 import { THREAD_MESSAGE_PAGE_SIZE } from "./routes/shared.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 import type { ThreadTarget } from "./thread-target.js";
@@ -17,21 +18,18 @@ export async function threadSnapshot(
   target: ThreadTarget,
   viewerId?: string,
 ): Promise<ThreadSnapshot> {
-  // Lock the thread row so messages, the event cursor, active runs, and live
-  // progress are read from one consistent commit. A torn Promise.all can
-  // otherwise advance the client cursor past thread.message.created while the
-  // ask message page still omits it — leaving waiting_input with no AskCard.
+  // Lock the thread row so the event cursor and every field a thread event can change are read
+  // from one consistent commit: clients ignore events at or below the cursor, so a field read
+  // before the lock could stay stale. A torn Promise.all can otherwise advance the client cursor
+  // past thread.message.created while the ask message page still omits it — leaving
+  // waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, core] = await Promise.all([
-      resolveBusyBotName(deps.prisma, {
-        computerId: target.bot.computer?.id,
-        botId: target.botId,
-        botName: target.bot.name,
-      }),
-      deps.prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-          const [messagePage, last, activeRuns, busyOrFailed, shared] = await Promise.all([
+    const computerId = target.bot.computer?.id;
+    const core = await deps.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
+        const [messagePage, last, activeRuns, busyOrFailed, shared, computer, work] =
+          await Promise.all([
             loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
             tx.event.findFirst({
               where: { threadId: target.threadId },
@@ -41,11 +39,22 @@ export async function threadSnapshot(
             tx.run.findMany({
               where: {
                 botId: target.botId,
-                threadId: target.threadId,
                 status: { in: [...ACTIVE_RUN_STATUSES] },
                 OR: [
                   { trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] } },
                   { status: { in: ["waiting_input", "waiting_takeover"] } },
+                ],
+                AND: [
+                  {
+                    OR: [
+                      { threadId: target.threadId },
+                      {
+                        trigger: BACKGROUND_HELPER_TRIGGER,
+                        status: "waiting_input",
+                        sourceMessage: { threadId: target.threadId },
+                      },
+                    ],
+                  },
                 ],
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -64,52 +73,66 @@ export async function threadSnapshot(
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             }),
             spaceIsShared(tx, target.bot.spaceId),
+            computerId ? tx.computer.findUnique({ where: { id: computerId } }) : null,
+            resolveComputerWork(tx, {
+              computerId,
+              botId: target.botId,
+              botName: target.bot.name,
+            }),
           ]);
-          const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
-          // A failure only surfaces while it is still the newest terminal run, or a stale
-          // failure would reappear on every load. Compare by ordering, not timestamps:
-          // equal createdAt values reverse under gt/gte.
-          const newestTerminal =
-            run?.status === "failed"
-              ? await tx.run.findFirst({
-                  where: {
-                    botId: target.botId,
-                    threadId: target.threadId,
-                    // Background failures must not bury a user-visible failure.
-                    trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
-                    status: { in: ["failed", "completed", "cancelled"] },
+        const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
+        // A failure only surfaces while it is still the newest terminal run, or a stale
+        // failure would reappear on every load. Compare by ordering, not timestamps:
+        // equal createdAt values reverse under gt/gte.
+        const newestTerminal =
+          run?.status === "failed"
+            ? await tx.run.findFirst({
+                where: {
+                  botId: target.botId,
+                  threadId: target.threadId,
+                  // Background failures must not bury a user-visible failure.
+                  trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
+                  status: { in: ["failed", "completed", "cancelled"] },
+                },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                select: { id: true },
+              })
+            : null;
+        const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
+        const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
+        const liveEvents =
+          liveRuns.length > 0
+            ? await tx.event.findMany({
+                where: {
+                  threadId: target.threadId,
+                  runId: { in: liveRuns.map((run) => run.id) },
+                  type: {
+                    in: [
+                      "thread.progress",
+                      "thread.subagent",
+                      "run.waiting_input",
+                      "computer.takeover.requested",
+                      "agent.tool.called",
+                      "agent.tool.completed",
+                    ],
                   },
-                  orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-                  select: { id: true },
-                })
-              : null;
-          const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
-          const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
-          const liveEvents =
-            liveRuns.length > 0
-              ? await tx.event.findMany({
-                  where: {
-                    threadId: target.threadId,
-                    runId: { in: liveRuns.map((run) => run.id) },
-                    type: {
-                      in: [
-                        "thread.progress",
-                        "thread.subagent",
-                        "run.waiting_input",
-                        "computer.takeover.requested",
-                        "agent.tool.called",
-                        "agent.tool.completed",
-                      ],
-                    },
-                  },
-                  orderBy: { seq: "asc" },
-                })
-              : [];
-          return { messagePage, last, run: currentRun, activeRuns, liveEvents, shared };
-        },
-        { timeout: 15_000, maxWait: 5_000 },
-      ),
-    ]);
+                },
+                orderBy: { seq: "asc" },
+              })
+            : [];
+        return {
+          messagePage,
+          last,
+          run: currentRun,
+          activeRuns,
+          liveEvents,
+          shared,
+          computer,
+          work,
+        };
+      },
+      { timeout: 15_000, maxWait: 5_000 },
+    );
     return {
       botId: target.botId,
       threadId: target.threadId,
@@ -118,20 +141,14 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
-      computer: toComputerStatus(
-        target.botId,
-        target.bot.computer,
-        busyBotName,
-        core.shared,
-        viewerId,
-      ),
+      computer: toComputerStatus(target.botId, core.computer, core.work, core.shared, viewerId),
     };
   }
 
   const core = await deps.prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-      const [messagePage, last, activeRuns, recentTerminals] = await Promise.all([
+      const [messagePage, last, activeRuns, recentTerminals, memberStatuses] = await Promise.all([
         loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
         tx.event.findFirst({
           where: { threadId: target.threadId },
@@ -140,7 +157,18 @@ export async function threadSnapshot(
         }),
         tx.run.findMany({
           where: {
-            threadId: target.threadId,
+            AND: [
+              {
+                OR: [
+                  { threadId: target.threadId },
+                  {
+                    trigger: BACKGROUND_HELPER_TRIGGER,
+                    status: "waiting_input",
+                    sourceMessage: { threadId: target.threadId },
+                  },
+                ],
+              },
+            ],
             status: { in: [...ACTIVE_RUN_STATUSES] },
             // Waiting peer and ticket asks stay answerable. Busy ticket runs stay off
             // the transcript; only their waiting_input / waiting_takeover states surface.
@@ -163,6 +191,7 @@ export async function threadSnapshot(
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
           take: 50,
         }),
+        botRunStatuses(tx, target.memberBotIds),
       ]);
       const liveEvents =
         activeRuns.length > 0
@@ -190,6 +219,7 @@ export async function threadSnapshot(
         activeRuns,
         terminalRun: pickLatestTerminalRun(recentTerminals),
         liveEvents,
+        memberStatuses,
       };
     },
     { timeout: 15_000, maxWait: 5_000 },
@@ -198,7 +228,10 @@ export async function threadSnapshot(
   return {
     groupId: target.groupId,
     groupName: target.groupName,
-    members: target.members,
+    members: target.members.map((member) => ({
+      ...member,
+      status: core.memberStatuses.get(member.botId) ?? "idle",
+    })),
     threadId: target.threadId,
     cursor: core.last?.seq ?? -1,
     messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),

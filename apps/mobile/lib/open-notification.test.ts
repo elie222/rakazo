@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-notifications", () => ({
@@ -49,17 +51,15 @@ describe("opening a notification tap", () => {
   });
 
   it("opens a signed-in tap once when the cold start and the listener both see it", async () => {
-    let release: (token: string) => void = () => undefined;
-    vi.mocked(loadSessionToken).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+    let release!: Deferred<string>;
+    vi.mocked(loadSessionToken).mockImplementation(() => {
+      release = deferred<string>();
+      return release.promise;
+    });
     const response = tap("tap-signed-in");
     const first = openNotificationResponse(response);
     const second = openNotificationResponse(response);
-    release("token");
+    release.resolve("token");
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(false);
     expect(router.push).toHaveBeenCalledTimes(1);
@@ -106,19 +106,17 @@ describe("opening a notification tap", () => {
   });
 
   it("leaves a newer last response in place when an older signed-out tap is rejected", async () => {
-    let release: (token: string) => void = () => undefined;
-    vi.mocked(loadSessionToken).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+    let release!: Deferred<string>;
+    vi.mocked(loadSessionToken).mockImplementation(() => {
+      release = deferred<string>();
+      return release.promise;
+    });
     const older = tap("tap-older");
     const newer = tap("tap-newer", { botId: "bot-2", threadId: "thread-2" });
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(older);
     const pending = openNotificationResponse(older);
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(newer);
-    release("");
+    release.resolve("");
     await expect(pending).resolves.toBe(false);
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();

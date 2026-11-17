@@ -143,7 +143,12 @@ class FakeAgentBrowser:
         if command[:2] == ["is", "enabled"]:
             return {"enabled": command[2].lstrip("@") not in self.disabled}
         if name == "get" and command[1] == "box":
-            return self.boxes.get(command[2].lstrip("@"), {})
+            box = self.boxes.get(command[2].lstrip("@"), {})
+            # A list is the box as scrolling moves it: each read takes the next, and the last one stays.
+            if isinstance(box, list):
+                self.boxes[command[2].lstrip("@")] = box[1:] or box
+                return box[0]
+            return box
         if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
             return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
@@ -493,8 +498,12 @@ class FakePurchases:
         return {"url": "https://shop.example.test/pay", "title": "Pay"}
 
     def click(self, box, scrolled):
-        if box.get("ref") in FakePurchases.offscreen and not scrolled:
-            raise helper.Offscreen()
+        # A box below a 713-pixel viewport is out of view, and once scrolled to, what the page shows decides.
+        if box.get("ref") in FakePurchases.offscreen or box.get("y", 0) >= 713:
+            if not scrolled:
+                raise helper.Offscreen()
+            if box.get("y", 0) >= 713:
+                return FakePurchases.shows
         return box.get("pay")
 
     def signals(self, enter, deadline=float("inf"), frames=True):
@@ -584,6 +593,15 @@ class PurchaseTest(unittest.TestCase):
         # An API that sends no total is not held to one.
         self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
 
+    def test_ambiguous_prices_never_authorize_a_purchase(self):
+        for key in ("amount", "total"):
+            buying = {**PAY, key: "?"}
+            step = {"approved": True, "site": "shop.example.test", **buying}
+            result = helper.purchase_refusal(step, "shop.example.test", buying, 0)
+            self.assertFalse(result["ok"])
+            self.assertNotIn("purchase", result)
+            self.assertIn("manually", result["error"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
@@ -613,6 +631,24 @@ class PurchaseTest(unittest.TestCase):
         FakePurchases.offscreen = {"e8"}
         self.assertEqual(self.act([{"kind": "click", "ref": "e8"}], browser)["error"], helper.PURCHASE_REFUSED)
         self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_a_smooth_scroll_is_checked_where_it_stops_not_where_it_starts(self):
+        browser = FakeAgentBrowser()
+        note = {"ref": "e8", "x": 10, "width": 40, "height": 20}
+        browser.boxes["e8"] = [{**note, "y": y} for y in (1500, 1500, 900, 400, 100, 100)]
+        FakePurchases.shows = {**PAY, "reason": "payment_page", "label": "Pay using Gift Card"}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertIsNone(result["purchase"])
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_a_control_still_out_of_view_after_scrolling_asks_what_the_page_shows(self):
+        browser = FakeAgentBrowser()
+        browser.boxes["e8"] = {"ref": "e8", "x": 10, "y": 1500, "width": 40, "height": 20}
+        FakePurchases.shows = PAY
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertEqual(result["purchase"]["label"], PAY["label"])
 
     def test_purchase_check_names_the_clicks_that_would_buy_and_presses_nothing(self):
         browser = pays(FakeAgentBrowser(), "e7")

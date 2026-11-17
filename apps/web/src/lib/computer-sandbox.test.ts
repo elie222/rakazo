@@ -2,9 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   canChooseOwnComputer,
   computersAreUnavailable,
+  runsOnUserMachine,
   sandboxCheckFailureMessage,
-  sandboxProviderLabel,
 } from "./computer-sandbox.js";
+
+describe("runsOnUserMachine", () => {
+  it("takes the server's word, and reads the kind only when an older server gives none", () => {
+    expect(runsOnUserMachine({ kind: "any-kind", runsOnUserMachine: true })).toBe(true);
+    expect(runsOnUserMachine({ kind: "desktop", runsOnUserMachine: false })).toBe(false);
+    expect(runsOnUserMachine({ kind: "desktop" })).toBe(true);
+    expect(runsOnUserMachine({ kind: "any-kind" })).toBe(false);
+    expect(runsOnUserMachine(null)).toBe(false);
+  });
+});
 
 describe("computersAreUnavailable", () => {
   it("treats none and empty as unavailable", () => {
@@ -27,12 +37,6 @@ describe("canChooseOwnComputer", () => {
     expect(canChooseOwnComputer("desktop")).toBe(false);
     expect(canChooseOwnComputer("fake")).toBe(false);
     expect(canChooseOwnComputer(null)).toBe(false);
-  });
-});
-
-describe("sandboxProviderLabel", () => {
-  it("names a provider", () => {
-    expect(sandboxProviderLabel("novita")).toBe("Novita");
   });
 });
 

@@ -38,6 +38,36 @@ const reply = (id: string, runId: string, text = "Answer") =>
   message(id, [{ kind: "text", text }], runId);
 
 describe("peer exchanges", () => {
+  it.each([
+    { kind: "chart", name: "Summary", spec: {}, data: [] },
+    { kind: "page", pageId: "page", title: "Summary", version: 1 },
+  ] satisfies ThreadMessage["blocks"])(
+    "preserves $kind replies and their mixed text despite an echo",
+    (block) => {
+      const wake = received("m1");
+      const rich = message("m2", [block], wake.runId);
+      const mixed = message("m3", [{ kind: "text", text: "Answer" }, block], wake.runId);
+      const echo = message(
+        "m4",
+        [{ kind: "bot_message_sent", toBotId: "peer", toBotName: "Peer", text: "Answer" }],
+        wake.runId,
+      );
+      const messages = [wake, rich, mixed, echo];
+      expect(peerMessagesFrom(messages).map((item) => item.messageId)).toEqual([
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+      ]);
+      expect(peerMessagesFrom(messages)[1]?.blocks).toEqual([block]);
+      expect(peerMessagesFrom(messages)[2]?.blocks).toEqual(mixed.blocks);
+      expect(
+        peerExchangeLines(foldPeerReplies(messages, { includePeerReceipts: true })).lines.get("m1")
+          ?.count,
+      ).toBe(4);
+    },
+  );
+
   it.each([undefined, "request", "question"] as const)(
     "folds replies to %s wakes and counts unreturned text",
     (intent) => {

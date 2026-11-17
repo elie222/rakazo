@@ -4,8 +4,10 @@ import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
-  openBotPanelTab,
+  openBotPanel,
+  openEmailSignIn,
   realSandboxTimeout,
   rpc,
   signup,
@@ -64,15 +66,15 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Reopen the computer tab so Open sees a refreshed computer status.
+  // Reopen the bot panel so Open sees a refreshed computer status.
   const sidePanel = page.getByTestId("side-panel");
   const pill = page.getByTestId("bot-settings-trigger");
   if ((await pill.getAttribute("aria-expanded")) === "true") {
     await pill.click();
     await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await openBotPanelTab(page, "Computer");
-  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
+  await openBotPanel(page);
+  await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([
     page.locator("main").boundingBox(),
@@ -98,8 +100,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
-  await openBotPanelTab(page, "Routines");
-  await page.getByRole("button", { name: "Create Routine" }).click();
+  await openBotPanel(page);
+  await page.getByTestId("routine-create-button").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
     .locator("label:has-text('Instruction') textarea")
@@ -113,7 +115,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Save" }).click();
   await savedRoutine;
   await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
@@ -269,7 +271,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const form = page.getByTestId("integrations-source-form");
   await expect(form.getByLabel("Name", { exact: true })).toHaveValue("GitHub");
   await expect(form.getByLabel("URL", { exact: true })).toHaveValue("https://mcp.example.test/mcp");
-  await expect(form.getByLabel("Authentication", { exact: true })).toHaveValue("bearer");
+  await expect(form.getByLabel("Authentication", { exact: true })).toHaveText("Bearer token");
   await form.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
   await page
@@ -292,7 +294,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await addSource("OpenAPI");
   await form.getByLabel("Name", { exact: true }).fill("Browser API");
   await form.getByLabel("URL", { exact: true }).fill("https://api.example.test/openapi.json");
-  await form.getByLabel("Authentication", { exact: true }).selectOption("bearer");
+  await chooseOption(form.getByLabel("Authentication", { exact: true }), "Bearer token");
   await form.getByLabel("Credential", { exact: true }).fill("fake-openapi-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/OpenAPI\s*https:\/\/api\.example\.test\/v1/)).toBeVisible();
@@ -317,9 +319,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  await openBotPanelTab(page, "Advanced");
+  await openBotPanel(page);
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Export" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
   await page.getByRole("button", { name: "Close panel" }).click();
@@ -344,6 +347,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
+    // Leaving a page closes the live streams it held open.
+    if (
+      request.url().includes("/rpc/notifications/subscribe") &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
+    )
+      return;
     failedRequests.push(
       `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
     );
@@ -431,6 +440,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
 
   await page.context().clearCookies();
   await page.goto("/sign-in");
+  await openEmailSignIn(page);
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill("password12");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

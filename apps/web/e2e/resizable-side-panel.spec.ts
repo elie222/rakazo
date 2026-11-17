@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "./helpers";
 
 test("computer rail resizes its preview and remembers width", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
@@ -10,7 +10,7 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
     "Computer Preferences",
   );
   await completeOnboarding(page);
-  await openBotPanelTab(page, "Computer");
+  await openBotPanel(page);
   const panel = page.getByTestId("side-panel");
   const separator = page.getByRole("separator", { name: "Resize panel" });
   await expect(separator).toBeVisible();
@@ -28,7 +28,7 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
   await page.reload();
   await page.getByTestId("bot-settings-trigger").waitFor({ state: "visible" });
   if ((await page.getByTestId("side-panel").getAttribute("data-panel")) === "closed") {
-    await openBotPanelTab(page, "Computer");
+    await openBotPanel(page);
   }
   await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(600);
   const preferredWidth = await page.evaluate(() =>
@@ -66,16 +66,19 @@ test("phone composer menu and settings panel stay tappable", async ({ page }, te
   // Tap at the start edge, where the sidebar swipe strip runs beside the chat.
   await page
     .getByTestId("slash-picker")
-    .getByRole("button", { name: "Chat Settings" })
+    .getByRole("option", { name: "Chat Settings" })
     .click({ position: { x: 4, y: 8 }, timeout: 5_000 });
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  await settings.getByRole("tab", { name: "Advanced", exact: true }).click();
   // Trial clicks fail when another element, like the composer, would receive the tap.
-  for (const name of ["Export", "Clear conversation"]) {
+  for (const name of ["More actions", "Close panel", "Settings"]) {
     await settings
       .getByRole("button", { name, exact: true })
       .click({ trial: true, timeout: 5_000 });
   }
   await captureScreenshot(page, testInfo, "bot-settings-mobile");
+  await settings.getByRole("button", { name: "More actions", exact: true }).click();
+  for (const name of ["Export", "Clear conversation"]) {
+    await page.getByRole("menuitem", { name, exact: true }).click({ trial: true, timeout: 5_000 });
+  }
 });

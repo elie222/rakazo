@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -96,7 +97,7 @@ it("reports a failed log out from the plan choice as a log-out failure", async (
         client={{} as never}
       />,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(

@@ -24,12 +24,13 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   PluginSubmissionInputSchema,
 } from "@rakazo/contracts";
-import { pluginCategory } from "@rakazo/core";
+import { ClientError, pluginCategory } from "@rakazo/core";
 import type { PluginSubmission as PluginSubmissionRow, PrismaClient } from "@rakazo/db";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
+import { rethrowUnlessPluginSourceFailed } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
 import { throttleKey, windowCounter } from "./window-counter.js";
 
@@ -268,10 +269,12 @@ export async function reviewPluginSubmission(
       source: row.source,
       signal,
       fetcher: deps.pluginRepoFetcher,
-    }).catch(() => {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Could not preview a supported plugin from this repository",
-      });
+    }).catch((error) => {
+      rethrowUnlessPluginSourceFailed(error, signal);
+      throw new ClientError(
+        "BAD_REQUEST",
+        "Could not preview a supported plugin from this repository",
+      );
     });
     for (const server of preview.mcpServers) await assertMcpRemoteEndpoint(server.endpoint, deps);
     if (preview.skipped.some((part) => part.kind !== "unsupported_field")) {

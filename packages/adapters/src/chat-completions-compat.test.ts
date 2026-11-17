@@ -2,7 +2,7 @@ import type { Api, Context, Model, SimpleStreamOptions } from "@earendil-works/p
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import {
   normalizeChatCompletionsPayload,
   withChatCompletionsCompatibility,

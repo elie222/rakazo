@@ -60,6 +60,19 @@ describe("operator-declared vision modalities", () => {
     );
   });
 
+  it("lets a declared model's own setting turn image input off", () => {
+    expect(
+      declared.modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision", false),
+    ).toBe(false);
+    vi.stubEnv(OPENAI_COMPATIBLE_VISION_MODELS_ENV, "gpt4o-vision");
+    const models = registerOpenAiCompatibleRuntime(builtinModels(), {
+      modelId: "gpt4o-vision",
+      baseUrl: "http://127.0.0.1:4000/v1",
+      acceptsImages: false,
+    });
+    expect(models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision")?.input).toEqual(["text"]);
+  });
+
   it("keeps screenshot-returning computer tools only for a declared model", () => {
     const tools = [{ name: "computer_observe" }, { name: "computer_act" }, { name: "bash" }];
     const names = (gate: typeof ModelVision) =>

@@ -159,7 +159,7 @@ describe("installed messaging isolation", () => {
     const f = fixture();
     await expect(
       f.messaging.sendToThread({ threadId: "slack~b:C1", body: "secret" }, context),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toMatchObject({ message: "Messaging workspace unavailable", permanent: true });
     await expect(
       f.messaging.sendToThread({ threadId: "slack:C1", body: "secret" }, context),
     ).rejects.toThrow("scoped");
@@ -173,9 +173,10 @@ describe("installed messaging isolation", () => {
     await f.messaging.sendToThread({ threadId: "slack~a:C1", body: "second" }, context);
     expect(f.sends).toHaveBeenLastCalledWith("replacement", expect.anything());
     f.installations.delete("a");
+    // A removed workspace never takes the send, so its delivery fails at once instead of retrying.
     await expect(
       f.messaging.sendToThread({ threadId: "slack~a:C1", body: "third" }, context),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toMatchObject({ message: "Messaging workspace unavailable", permanent: true });
     expect(f.sends).toHaveBeenCalledTimes(2);
   });
 

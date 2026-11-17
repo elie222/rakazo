@@ -1,12 +1,18 @@
+import path from "node:path";
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
-import { isSandboxProviderOutage } from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
-import { displayBotWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
+import { READ_FILE_MAX_BYTES, READ_FILE_MAX_KB } from "./builtin-computer.tool-definition.js";
+import {
+  displayBotWorkspacePath,
+  resolveBotWorkspacePath,
+  teamBotWorkspaceDirectory,
+} from "./computer-support.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import type { PlotSpec } from "./plot-tool.js";
@@ -28,7 +34,14 @@ export type RunWorkspace = {
   runSecrets: string[];
 };
 
-const MAX_MODEL_FILE_BYTES = 250_000;
+/** Names the file as the shell sees it: on a Team Computer the shell starts in the bot's home, not the Team root. */
+function fileTooLarge(computerMode: ComputerMode, botId: string, storedPath: string) {
+  const shellPath =
+    computerMode === "team"
+      ? path.posix.relative(teamBotWorkspaceDirectory(botId), storedPath)
+      : storedPath;
+  return `file is over ${READ_FILE_MAX_KB} KB; read parts of ${shellPath} with shell (grep, sed -n, tail)`;
+}
 
 /** An optional argument the model must send as a positive integer; anything else is ignored. */
 export function positiveIntegerArg(value: unknown): number | undefined {
@@ -189,20 +202,17 @@ export async function readFileFromTool(
   let bytes: Uint8Array;
   try {
     bytes = await sandbox.readFile(await computer(), storedPath, context, {
-      maxBytes: MAX_MODEL_FILE_BYTES,
+      maxBytes: READ_FILE_MAX_BYTES,
     });
   } catch (error) {
-    if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
-      return {
-        error: "file is too large for model context",
-        path: filePath,
-      };
+    if (error instanceof SandboxFileTooLargeError) {
+      return { error: fileTooLarge(computerMode, botId, storedPath), path: filePath };
     }
     throw error;
   }
-  if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
+  if (bytes.byteLength > READ_FILE_MAX_BYTES) {
     return {
-      error: "file is too large for model context",
+      error: fileTooLarge(computerMode, botId, storedPath),
       path: filePath,
       size: bytes.byteLength,
     };

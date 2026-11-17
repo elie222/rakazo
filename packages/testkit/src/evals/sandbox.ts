@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type {
   AdapterContext,
   CommandRequest,
@@ -5,7 +6,6 @@ import type {
   ProcessEvent,
 } from "@rakazo/adapter-kit";
 import { computerObservation, FakeSandboxProvider } from "@rakazo/adapters";
-import { PNG } from "pngjs";
 import type { ComputerScript } from "./scripted-shell.js";
 import { scriptedShell } from "./scripted-shell.js";
 
@@ -55,24 +55,14 @@ export class EvalSandboxProvider extends FakeSandboxProvider {
   }
 }
 
-const SCREEN = { width: 640, height: 400 };
+const SCREEN = { width: 1280, height: 800 };
 
-/** A browser window: a toolbar, then a page of text lines, light or dark. */
-function browserScreen(dark: boolean): Uint8Array {
-  const png = new PNG(SCREEN);
-  const page = dark ? [24, 24, 27] : [255, 255, 255];
-  const text = dark ? [200, 200, 205] : [40, 40, 45];
-  const toolbar = [222, 225, 230];
-  for (let y = 0; y < SCREEN.height; y++) {
-    for (let x = 0; x < SCREEN.width; x++) {
-      const line = y >= 80 && (y - 80) % 24 < 8 && x >= 40 && x < 40 + 520 - ((y * 7) % 160);
-      const [r, g, b] = y < 48 ? toolbar : line ? text : page;
-      const i = (y * SCREEN.width + x) * 4;
-      png.data[i] = r!;
-      png.data[i + 1] = g!;
-      png.data[i + 2] = b!;
-      png.data[i + 3] = 255;
-    }
-  }
-  return new Uint8Array(PNG.sync.write(png));
+/**
+ * The browser window a screenshot shows: Chromium on example.com, the page darkened as a
+ * dark-mode extension renders it, or as the site ships it. Real text, so a bot can read it.
+ */
+export function browserScreen(dark: boolean): Uint8Array {
+  return new Uint8Array(
+    readFileSync(new URL(`./fixtures/example-${dark ? "dark" : "light"}.png`, import.meta.url)),
+  );
 }

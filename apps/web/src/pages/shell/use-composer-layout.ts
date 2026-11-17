@@ -1,3 +1,4 @@
+import type { UIEvent } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
 /** Above one line (~28px); two lines clear this. */
@@ -101,8 +102,6 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
       if (heightBeside <= COMPOSER_SINGLE_LINE_MAX_PX) setComposerExpanded(false);
     }
 
-    const scrolled = () => syncMirror(el, mirrorRef.current);
-    el.addEventListener("scroll", scrolled);
     syncHeight();
     let lastWidth = el.getBoundingClientRect().width;
     const observer = new ResizeObserver(() => {
@@ -114,10 +113,7 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
       syncHeight();
     });
     observer.observe(el);
-    return () => {
-      observer.disconnect();
-      el.removeEventListener("scroll", scrolled);
-    };
+    return () => observer.disconnect();
   }, [draft]);
 
   useLayoutEffect(() => {
@@ -175,6 +171,8 @@ export function useComposerLayout(draft: string, hasChips: boolean) {
   }, [expanded]);
   return {
     textareaRef,
+    onTextareaScroll: (event: UIEvent<HTMLTextAreaElement>) =>
+      syncMirror(event.currentTarget, mirrorRef.current),
     mirrorRef,
     attachButtonRef,
     composerActionsRef,

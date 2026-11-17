@@ -153,3 +153,12 @@ describe("dismissableAskMessageIds", () => {
     expect(answerableAskMessageIds(snapshot).has("secret")).toBe(true);
   });
 });
+
+it("keeps another member's waiting approval disabled", () => {
+  const snapshot = {
+    activeRuns: [{ id: "helper", status: "waiting_input", userId: "owner" }],
+    messages: [{ id: "approval", runId: "helper", blocks: [{ kind: "ask", status: "pending" }] }],
+  };
+  expect(answerableAskMessageIds(snapshot, "owner")).toEqual(new Set(["approval"]));
+  expect(answerableAskMessageIds(snapshot, "other")).toEqual(new Set());
+});

@@ -1,7 +1,31 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
+import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
-import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
+import {
+  plainTextFromMarkdown,
+  textBoundary,
+  truncatedPlainText,
+  truncatePlainText,
+} from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
+  it.each(["\n", "\r\n", "\r"])("handles Markdown line endings %j", (eol) => {
+    const cases: Array<[string, string]> = [
+      ["# Heading\n## Subheading", "Heading Subheading"],
+      ["- first\n- second\n1. third", "first second third"],
+      ["```ts\nconst x = 1;\n```\nAfter", "const x = 1; After"],
+      ["| A | B |\n| --- | --- |\n| 1 | 2 |", "A, B 1, 2"],
+    ];
+    for (const [source, expected] of cases) {
+      expect(plainTextFromMarkdown(source.replaceAll("\n", eol))).toBe(expected);
+    }
+  });
+
+  it("normalizes mixed line endings before applying the preview bound", () => {
+    expect(plainTextFromMarkdown("# A\r\n- B\r> C\n## D")).toBe("A B C D");
+    expect(plainTextFromMarkdown("# A\r\n# B", { maxSource: 7 })).toBe("A B");
+  });
+
   it("reads only a bounded preview of the source unless the caller raises the limit", () => {
     const long = `${"word ".repeat(2_000)}the end`;
     expect(plainTextFromMarkdown(long)).not.toContain("the end");
@@ -184,10 +208,11 @@ describe("plainTextFromMarkdown", () => {
   });
 
   it("bounds work on a long run of unclosed fences", () => {
-    const source = `${"```x\n".repeat(20_000)}TAIL_MARKER`;
-    const started = Date.now();
+    const source = `${"```x\n".repeat(100_000)}TAIL_MARKER`;
+    expectLinearTime(() =>
+      expect(plainTextFromMarkdown(source, { maxSource: source.length })).toContain("TAIL_MARKER"),
+    );
     const preview = plainTextFromMarkdown(source);
-    expect(Date.now() - started).toBeLessThan(1_000);
     expect(preview).not.toContain("TAIL_MARKER");
     expect(preview.length).toBeLessThan(4_096);
     expect(preview.startsWith("```x")).toBe(true);
@@ -368,5 +393,89 @@ describe("plainTextFromMarkdown comparison signs", () => {
 
   it("still strips comments", () => {
     expect(plainTextFromMarkdown("a <!-- note --> b")).toBe("a b");
+  });
+});
+
+describe("plainTextFromMarkdown HTML comments", () => {
+  it.each([
+    "a <!-- x > hidden --> b",
+    "a <!-- x > hidden\nmore --> b",
+    "a <!-- an unmatched ' quote > hidden --> b",
+    "a <!-- <b>hidden</b> --> b",
+    "a <!-- x > hidden --> <!-- more > hidden --> b",
+  ])("removes the complete comment in %s", (source) => {
+    expect(plainTextFromMarkdown(source)).toBe("a b");
+  });
+
+  it.each(["a <!-- hidden", "a <!-- x > hidden"])("hides an unfinished comment in %s", (source) => {
+    expect(plainTextFromMarkdown(source)).toBe("a");
+  });
+
+  it("keeps comments written as literal code or escaped text", () => {
+    expect(plainTextFromMarkdown("`<!-- x > hidden -->`")).toBe("<!-- x > hidden -->");
+    expect(plainTextFromMarkdown("\\<!-- x > hidden -->")).toBe("<!-- x > hidden -->");
+  });
+});
+
+describe("plain text truncation properties", () => {
+  const characters = [
+    "a",
+    " ",
+    "\n",
+    "e\u0301",
+    "😀",
+    "𠮷",
+    "👨\u200d👩\u200d👧",
+    "🇮🇱",
+    "क्\u200dष",
+    "葛\u{e0100}",
+  ];
+  const text = fc.array(fc.constantFrom(...characters), { maxLength: 40 }).map((c) => c.join(""));
+  const markdown = fc
+    .array(
+      fc.constantFrom(...characters, "**", "_", "`", "~~", "[", "](", ")", "<b>", "|", "\\", "# "),
+      { maxLength: 40 },
+    )
+    .map((pieces) => pieces.join(""));
+  const LONE_SURROGATE = /[\ud800-\udfff]/u;
+
+  it("cuts text to a prefix within the limit, giving up at most one unit to keep a surrogate pair whole", () => {
+    fc.assert(
+      fc.property(text, fc.nat(100), (text, limit) => {
+        const cut = truncatePlainText(text, limit);
+        expect(text.startsWith(cut)).toBe(true);
+        expect(cut.length).toBeLessThanOrEqual(limit);
+        expect(cut).not.toMatch(LONE_SURROGATE);
+        if (text.length <= limit) expect(cut).toBe(text);
+        else expect(cut.length).toBeGreaterThanOrEqual(limit - 1);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("places a boundary at the offset or one unit earlier, leaving whole characters on both sides", () => {
+    fc.assert(
+      fc.property(text, fc.nat(100), (text, at) => {
+        const offset = Math.min(at, text.length);
+        const boundary = textBoundary(text, offset);
+        expect([0, 1]).toContain(offset - boundary);
+        expect(text.slice(0, boundary)).not.toMatch(LONE_SURROGATE);
+        expect(text.slice(boundary)).not.toMatch(LONE_SURROGATE);
+        expect(textBoundary(text, boundary)).toBe(boundary);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("previews any Markdown within the limit without half a character", () => {
+    fc.assert(
+      fc.property(markdown, fc.nat(100), (markdown, limit) => {
+        const preview = truncatedPlainText(markdown, limit);
+        expect(preview.length).toBeLessThanOrEqual(limit);
+        expect(preview).not.toMatch(LONE_SURROGATE);
+        expect(plainTextFromMarkdown(markdown).startsWith(preview)).toBe(true);
+      }),
+      { seed: 42, numRuns: 200 },
+    );
   });
 });

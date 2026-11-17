@@ -6,7 +6,7 @@ import { retainUnchangedBotRoster } from "./bot-roster";
 import type { MobileBot, MobileGroup } from "./mobile-types";
 import { loadSavedInbox } from "./saved-chats";
 
-/** The bots and groups a chat can mention, refreshed on demand; also keeps the bot's title current. */
+/** The bots and groups a chat can mention, refreshed on demand; also keeps the chat's title current. */
 export function useThreadBots({
   botId,
   groupId,
@@ -22,6 +22,17 @@ export function useThreadBots({
   const router = useRouter();
   const routeName = useRef(name);
   routeName.current = name;
+  const activeTarget = useRef({ botId, groupId });
+  activeTarget.current = { botId, groupId };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const mentionGroupsRefreshGeneration = useRef(0);
+  const mentionGroupsAppliedGeneration = useRef(0);
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
@@ -34,12 +45,16 @@ export function useThreadBots({
     if (!botId && !groupId) return;
     const generation = ++mentionBotsRefreshGeneration.current;
     const targetBotId = botId;
+    const isCurrent = () =>
+      mounted.current &&
+      activeTarget.current.botId === botId &&
+      activeTarget.current.groupId === groupId;
     try {
       const bots = await rpc("bots/list");
       // Apply any successful response that is still the newest applied so far.
       // A later failed refresh must not discard an earlier success.
       if (generation < mentionBotsAppliedGeneration.current) return;
-      if (targetBotId !== activeBotId.current) return;
+      if (!isCurrent() || targetBotId !== activeBotId.current) return;
       mentionBotsAppliedGeneration.current = generation;
       setMentionBots((current) => retainUnchangedBotRoster(current, bots));
       if (targetBotId) {
@@ -56,16 +71,38 @@ export function useThreadBots({
       if (mentionBotsAppliedGeneration.current !== 0) return;
       const saved = await loadSavedInbox();
       if (!saved || mentionBotsAppliedGeneration.current !== 0) return;
-      if (targetBotId !== activeBotId.current) return;
+      if (!isCurrent() || targetBotId !== activeBotId.current) return;
       setMentionBots((current) => (current.length ? current : saved.bots));
     }
   }, [botId, groupId, router]);
 
-  useEffect(() => {
-    void rpc("groups/list")
-      .then(setMentionGroups)
-      .catch(() => setMentionGroups([]));
-  }, [refreshMentionBots]);
+  const refreshMentionGroups = useCallback(async () => {
+    if (!botId && !groupId) return;
+    const generation = ++mentionGroupsRefreshGeneration.current;
+    try {
+      const groups = await rpc("groups/list");
+      if (
+        !mounted.current ||
+        activeTarget.current.botId !== botId ||
+        activeTarget.current.groupId !== groupId ||
+        generation < mentionGroupsAppliedGeneration.current
+      )
+        return;
+      mentionGroupsAppliedGeneration.current = generation;
+      setMentionGroups(groups);
+      const next = groups.find((group) => group.id === groupId);
+      if (next?.name && next.name !== routeName.current) {
+        router.setParams({ name: next.name });
+      }
+    } catch {
+      // Retain the last known groups when a refresh fails.
+    }
+  }, [botId, groupId, router]);
 
-  return { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots };
+  // Focus refreshes both rosters; live bot events only need refreshMentionBots.
+  const refreshMentionRoster = useCallback(async () => {
+    await Promise.all([refreshMentionBots(), refreshMentionGroups()]);
+  }, [refreshMentionBots, refreshMentionGroups]);
+
+  return { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster };
 }

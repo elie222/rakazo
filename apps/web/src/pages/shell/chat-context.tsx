@@ -109,6 +109,7 @@ export function ComposerReplyPreview({
   onDismiss: () => void;
 }) {
   const { t } = useLingui();
+  // Subscribed again whenever onDismiss changes, so it stays after Escape handlers mounted since.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (

@@ -7,7 +7,7 @@ import {
   normalizeOneTimeCode,
   SecretAskPurpose,
 } from "@rakazo/contracts";
-import { isSecretAskBlock } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
 import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
@@ -123,7 +123,13 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
           where: {
             id: input.runId,
             spaceId: input.spaceId,
-            threadId: input.threadId,
+            OR: [
+              { threadId: input.threadId },
+              {
+                trigger: BACKGROUND_HELPER_TRIGGER,
+                sourceMessage: { threadId: input.threadId, thread: { spaceId: input.spaceId } },
+              },
+            ],
             status: "waiting_input",
           },
           select: { botId: true, userId: true },

@@ -1,14 +1,8 @@
 import type { ModelRoleSettings } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "./async.test-support.js";
 import { createModelRoleSettings, modelRoleListPatch } from "./model-role-settings.js";
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 const empty: ModelRoleSettings = { primary: null, backups: [] };
 const saved: ModelRoleSettings = {
   primary: { provider: "openrouter", modelId: "typesafe/jev-1.14" },

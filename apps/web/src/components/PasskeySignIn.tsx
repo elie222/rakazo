@@ -9,21 +9,14 @@ import {
   usePasskeysSupported,
 } from "../lib/passkeys";
 
-/**
- * Passkey sign-in for the sign-in form: a button, plus browser autofill on the
- * email field (`autocomplete="username webauthn"`) where conditional UI exists.
- */
-export function PasskeySignIn({
-  className,
-  disabled,
-  onSignedIn,
-  onError,
-}: {
-  className?: string;
-  disabled?: boolean;
+type PasskeySignInOptions = {
   onSignedIn: () => void;
   onError: (message: string | null) => void;
-}) {
+  /** Offers saved passkeys in browser autofill on the email field (`autocomplete="username webauthn"`). */
+  autoFill?: boolean;
+};
+
+export function usePasskeySignIn({ onSignedIn, onError, autoFill = false }: PasskeySignInOptions) {
   const { t } = useLingui();
   const supported = usePasskeysSupported();
   const [pending, setPending] = useState(false);
@@ -31,11 +24,10 @@ export function PasskeySignIn({
   callbacks.current = { onSignedIn, onError, t };
   const mounted = useRef(true);
 
-  async function signIn(autoFill: boolean) {
-    const result = await authClient.signIn.passkey({ autoFill }).catch((error: unknown) => ({
-      data: null,
-      error,
-    }));
+  async function signIn(conditional: boolean) {
+    const result = await authClient.signIn
+      .passkey({ autoFill: conditional })
+      .catch((error: unknown) => ({ data: null, error }));
     if (!mounted.current) return;
     const { onSignedIn, onError, t } = callbacks.current;
     if (result.error) {
@@ -56,28 +48,50 @@ export function PasskeySignIn({
   }, []);
 
   useEffect(() => {
-    if (!supported) return;
+    if (!supported || !autoFill) return;
     // Starting another ceremony aborts this one; an unmounted page ignores its result.
     void conditionalPasskeyAvailable().then((available) => {
       if (available && mounted.current) void signIn(true);
     });
-  }, [supported]);
+  }, [supported, autoFill]);
 
-  if (!supported) return null;
+  return {
+    supported,
+    pending,
+    start() {
+      setPending(true);
+      callbacks.current.onError(null);
+      void signIn(false).finally(() => {
+        if (mounted.current) setPending(false);
+      });
+    },
+  };
+}
+
+/** Passkey sign-in for the email form: browser autofill, plus a button unless `autoFillOnly`. */
+export function PasskeySignIn({
+  className,
+  disabled,
+  autoFillOnly,
+  onSignedIn,
+  onError,
+}: {
+  className?: string;
+  disabled?: boolean;
+  autoFillOnly?: boolean;
+  onSignedIn: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const passkey = usePasskeySignIn({ onSignedIn, onError, autoFill: true });
+  if (!passkey.supported || autoFillOnly) return null;
   return (
     <Button
       type="button"
       variant="outline"
       size="lg"
-      disabled={disabled || pending}
+      disabled={disabled || passkey.pending}
       className={className}
-      onClick={() => {
-        setPending(true);
-        onError(null);
-        void signIn(false).finally(() => {
-          if (mounted.current) setPending(false);
-        });
-      }}
+      onClick={passkey.start}
     >
       <Trans>Sign in with passkey</Trans>
     </Button>

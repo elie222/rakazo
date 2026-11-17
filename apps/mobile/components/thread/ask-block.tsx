@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
 import { isQuestionAskBlock, isSecretAskBlock } from "@rakazo/core";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
@@ -102,7 +103,11 @@ export function AskBlock({
       await onAnswer(submitValue);
       if (secretInput) setSaved(true);
     } catch (cause) {
-      setError(secretInput ? t`Could not send answer` : errorText(cause, t`Could not send answer`));
+      setError(
+        secretInput
+          ? secretAnswerErrorText(cause, t`Could not send answer`)
+          : errorText(cause, t`Could not send answer`),
+      );
     } finally {
       setSubmitting(false);
     }

@@ -16,7 +16,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
@@ -25,6 +24,7 @@ import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts";
 import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -38,7 +38,7 @@ export default function ArtifactsScreen() {
   const router = useRouter();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
   const { botId } = useLocalSearchParams<{ botId?: string }>();
@@ -79,6 +79,8 @@ export default function ArtifactsScreen() {
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
+  const loadingPageRef = useRef(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
@@ -111,6 +113,8 @@ export default function ArtifactsScreen() {
   const load = useCallback(
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
       const generation = ++generationRef.current;
+      loadingPageRef.current = true;
+      setLoadingPage(true);
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
@@ -131,8 +135,11 @@ export default function ArtifactsScreen() {
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        if (mode === "replace") {
-          setLoadError(errorText(error, t`Could not load artifacts.`));
+        setLoadError(errorText(error, t`Could not load artifacts.`));
+      } finally {
+        if (generation === generationRef.current) {
+          loadingPageRef.current = false;
+          setLoadingPage(false);
         }
       }
     },
@@ -150,7 +157,7 @@ export default function ArtifactsScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
@@ -197,9 +204,10 @@ export default function ArtifactsScreen() {
           style: "destructive",
           onPress: () =>
             void removeArtifact(item.id)
-              .then(() =>
-                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current),
-              )
+              .then(() => {
+                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current);
+                void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
+              })
               .catch((error: unknown) =>
                 Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
               ),
@@ -222,19 +230,36 @@ export default function ArtifactsScreen() {
   }, [query, activeBotId, madeByBots]);
 
   useEffect(() => {
-    if (searchPageFailed || !queryActive || !nextCursor || loadingMore || items === null) return;
+    if (
+      loadingPage ||
+      searchPageFailed ||
+      !queryActive ||
+      !nextCursor ||
+      loadingMore ||
+      items === null
+    )
+      return;
     if (filtered && filtered.length > 0) return;
     if (autoFetchedCursorRef.current === nextCursor) return;
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
-  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive, searchPageFailed]);
+  }, [
+    filtered,
+    items,
+    loadMore,
+    loadingMore,
+    loadingPage,
+    nextCursor,
+    queryActive,
+    searchPageFailed,
+  ]);
 
   useEffect(() => {
     void load(activeBotId, madeByBots, "replace");
   }, [activeBotId, madeByBots, load]);
 
   return (
-    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.screen, { paddingBottom: contentBottomInset }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <View>
