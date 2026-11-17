@@ -5,6 +5,7 @@ import {
   appendEventInTransaction,
   availableInSpace,
   changeMessageBlocks,
+  HOLDS_CHAT,
   IsolationError,
   storedMessageBlocks,
   withTransactionRetry,

@@ -1,7 +1,12 @@
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { callRemoteMcpTool, RemoteMcpSessionCache } from "./remote-mcp.js";
+import {
+  callRemoteMcpTool,
+  MCP_TOOL_MAX_TOTAL_MS,
+  MCP_TOOL_TIMEOUT_MS,
+  RemoteMcpSessionCache,
+} from "./remote-mcp.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 const ENDPOINT = "https://mcp.example.test/mcp";
@@ -98,6 +103,7 @@ function scopedCall(
       sessionPool: pool,
       signal,
       sessionRunId: runId,
+      longToolCalls: true,
     },
     tool,
     {},
@@ -121,7 +127,7 @@ describe("run-scoped remote MCP sessions", () => {
       const call = server.fetch.mock.calls.find(
         ([, init]) => typeof init?.body === "string" && init.body.includes('"tools/call"'),
       );
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(MCP_TOOL_TIMEOUT_MS);
       await expect(hanging).rejects.toThrow();
       // The timed-out HTTP request is aborted and the server told to drop the session.
       await vi.waitFor(() => expect(call?.[1]?.signal?.aborted).toBe(true));
@@ -131,6 +137,55 @@ describe("run-scoped remote MCP sessions", () => {
         content: [{ text: "done" }],
       });
       expect(server.initializations()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+      await pool.close();
+    }
+  });
+
+  it("keeps the short wait for callers that did not ask for long tool calls", async () => {
+    const server = mcpServer(({ message }) =>
+      message.method === "tools/call"
+        ? (new Promise<Response>(() => undefined) as unknown as Response)
+        : undefined,
+    );
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const call = callRemoteMcpTool(
+        {
+          endpoint: ENDPOINT,
+          fetch: server.fetch as unknown as typeof globalThis.fetch,
+          resolveHostname: publicResolver,
+        },
+        "do_work",
+        {},
+      );
+      const settled = expect(call).rejects.toThrow();
+      await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a tool call run for minutes, as gateways running a program do", async () => {
+    const answer = deferred<void>();
+    const server = mcpServer(({ message, respond }) => {
+      if (message.method !== "tools/call") return undefined;
+      return answer.promise.then(() =>
+        respond({ result: { content: [{ type: "text", text: "done" }] } }),
+      ) as unknown as Response;
+    });
+    const pool = new RemoteMcpSessionCache();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const call = scopedCall(pool, "run-1 srv", server);
+      await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(MCP_TOOL_TIMEOUT_MS - 1_000);
+      answer.resolve();
+      await expect(call).resolves.toMatchObject({ content: [{ text: "done" }] });
+      expect(server.deletes).toEqual([]);
     } finally {
       vi.useRealTimers();
       await pool.close();
@@ -157,7 +212,7 @@ describe("run-scoped remote MCP sessions", () => {
         const hanging = scopedCall(pool, "run-1 srv", server, caller.signal);
         await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
         // Both fire before the call's rejection is handled; the first one decides.
-        const expire = () => vi.advanceTimersByTime(30_000);
+        const expire = () => vi.advanceTimersByTime(MCP_TOOL_TIMEOUT_MS);
         if (deadlineFirst) {
           expire();
           caller.abort();
@@ -187,7 +242,7 @@ describe("run-scoped remote MCP sessions", () => {
       await scopedCall(pool, "run-1 srv", server);
       await scopedCall(pool, "run-1 srv", server, caller.signal);
       const requests = server.fetch.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(MCP_TOOL_MAX_TOTAL_MS);
       caller.abort();
       // Flush any cancellation POST through the injected fetch.
       await vi.advanceTimersByTimeAsync(0);

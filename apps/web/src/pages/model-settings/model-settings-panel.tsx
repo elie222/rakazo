@@ -14,9 +14,9 @@ import { writeSaved } from "@rakazo/core/query";
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../lib/query/user-error";
 
 /** One model's own settings on the connection that runs it. */
 export function ModelSettingsPanel({

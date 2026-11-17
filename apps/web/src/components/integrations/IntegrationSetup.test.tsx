@@ -7,8 +7,8 @@ import { IntegrationSetup } from "./IntegrationSetup";
 
 const api = vi.hoisted(() => ({ capabilities: { catalogSearch: vi.fn() } }));
 
-vi.mock("../../lib/rpc", () => ({ rpc: api }));
-vi.mock("../../lib/mcp-connect", () => ({ connectMcpOauth: vi.fn() }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: api }));
+vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpOauth: vi.fn() }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
   useLingui: () => ({

@@ -66,8 +66,8 @@ locale in these places:
 
 - `AppLocaleSchema` in `packages/contracts/src/domain.ts` and `APP_LOCALE_LABELS` in
   `packages/core/src/locale/ui-locale.ts`. The web language list comes from the shared schema;
-  `apps/web/src/lib/ui-locale.ts` is not a separate registry.
-- `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
+  `apps/web/src/lib/locale/ui-locale.ts` is not a separate registry.
+- `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/locale/i18n.ts`.
 - Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/i18n/ui-locale.ts` and catalog imports/map in
   `apps/mobile/lib/i18n/i18n.ts`. Check the new language's rules in `apps/mobile/lib/i18n/plural-rules.ts`,
   which supplies the fallback when Hermes has no `Intl.PluralRules`.

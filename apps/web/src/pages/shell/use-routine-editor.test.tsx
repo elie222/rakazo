@@ -7,7 +7,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 import { useRoutineEditor } from "./use-routine-editor";
 
 vi.mock("@lingui/react/macro", () => ({
