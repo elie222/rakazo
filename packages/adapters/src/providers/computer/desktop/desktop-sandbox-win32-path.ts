@@ -9,7 +9,7 @@ import {
 import { promisify } from "node:util";
 import type { LibraryHandle } from "koffi";
 import koffi from "koffi";
-import { WorkspacePathError } from "../../../computer-support.js";
+import { WorkspacePathError } from "../../../computers/screens/computer-support.js";
 
 type KoffiFunction = ReturnType<LibraryHandle["func"]>;
 

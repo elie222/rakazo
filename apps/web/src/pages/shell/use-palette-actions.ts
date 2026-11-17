@@ -11,9 +11,9 @@ import {
   Sun,
   Users,
 } from "lucide-react";
-import type { AppearancePreference } from "../../lib/ui-appearance";
-import { getUiAppearancePreference, setUiAppearance } from "../../lib/ui-appearance";
-import { useSettingsNavItems } from "../settings-nav";
+import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
+import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
+import { useSettingsNavItems } from "../settings/settings-nav";
 import type { SettingsSection, ShellOverlay } from "../shell-overlay";
 import type { CommandPaletteAction } from "./command-palette";
 

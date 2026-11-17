@@ -1,7 +1,7 @@
 import { Trans } from "@lingui/react/macro";
 import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
-import { rpc } from "../../lib/rpc";
+import { rpc } from "../../lib/query/rpc";
 
 const FIRST_BOT_NAME = "Chief";
 const FIRST_BOT_COLOR = BOT_COLOR_LIST.find((color) => color.id === "orange")!.hex;

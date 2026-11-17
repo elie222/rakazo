@@ -5,14 +5,14 @@ import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import { createMcpAppHost, mcpAppCsp, mcpAppDocument, mcpAppShellDocument } from "@rakazo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { currentApiBase } from "../../lib/api";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { textMobileArtifact } from "../../lib/artifact-open";
-import { offerComposerText } from "../../lib/composer-offer";
-import { useUiLocale } from "../../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
-import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages";
-import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
+import { currentApiBase } from "../../lib/api/api";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { textMobileArtifact } from "../../lib/artifacts/artifact-open";
+import { offerComposerText } from "../../lib/composer/composer-offer";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages/pages";
+import { SandboxedHtmlPreview } from "../media/sandboxed-html-preview";
 
 type AppBlock = Extract<MessageBlock, { kind: "app" }>;
 

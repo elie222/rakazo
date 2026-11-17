@@ -1,5 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
-import { DARWIN_WINDOW_CONTROLS_WIDTH_PX, desktopBridge, windowChromeKind } from "../lib/desktop";
+import {
+  DARWIN_WINDOW_CONTROLS_WIDTH_PX,
+  desktopBridge,
+  windowChromeKind,
+} from "../lib/platform/desktop";
 
 function chromeClass(base: string, className?: string) {
   return className ? `${base} ${className}` : base;
