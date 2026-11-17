@@ -8,7 +8,7 @@ export type VoiceCallPlan =
   | { kind: "dictation" };
 
 export type VoiceCallPlanDeps = {
-  loadDeviceVoiceEnabled: () => Promise<boolean>;
+  loadDeviceVoiceEnabled: (loadVoiceStatus: () => Promise<VoiceCallStatus>) => Promise<boolean>;
   dictationAvailable: () => Promise<boolean>;
   loadVoiceStatus: () => Promise<VoiceCallStatus>;
 };
@@ -19,9 +19,11 @@ export type VoiceCallPlanDeps = {
  * not turn a local-only reply into hosted voice traffic.
  */
 export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<VoiceCallPlan> {
+  let voiceStatus: Promise<VoiceCallStatus> | undefined;
+  const loadVoiceStatus = () => (voiceStatus ??= deps.loadVoiceStatus());
   let deviceVoiceEnabled = false;
   try {
-    deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled();
+    deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled(loadVoiceStatus);
   } catch {
     deviceVoiceEnabled = true;
   }
@@ -31,7 +33,7 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
     return { kind: "device", transcribe: false };
   }
 
-  const status = await deps.loadVoiceStatus();
+  const status = await loadVoiceStatus();
   if (!status.ready) {
     return deviceVoiceEnabled ? { kind: "dictation" } : { kind: "settings" };
   }

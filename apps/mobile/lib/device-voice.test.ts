@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "./api";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "./device-voice";
+import { resolveVoiceCallPlan } from "./voice-call-entry";
 
 const store = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
@@ -23,7 +24,7 @@ vi.mock("./api", () => ({
   rpc: vi.fn(async () => {
     await status.gate;
     if (status.fail) throw new Error("offline");
-    return { ready: status.ready };
+    return { ready: status.ready, transcribe: true };
   }),
 }));
 
@@ -47,6 +48,24 @@ describe("device voice preference", () => {
     status.ready = true;
     expect(await loadDeviceVoiceEnabled()).toBe(false);
     expect(store.size).toBe(0);
+  });
+
+  it("uses one live readiness answer for each inherited call plan", async () => {
+    vi.mocked(rpc).mockClear();
+    const plan = () =>
+      resolveVoiceCallPlan({
+        loadDeviceVoiceEnabled: (loadVoiceStatus) =>
+          loadDeviceVoiceEnabled("bot-voice", undefined, loadVoiceStatus),
+        dictationAvailable: async () => true,
+        loadVoiceStatus: () => rpc("voice/status", { botId: "bot-voice" }),
+      });
+    status.ready = true;
+    await expect(plan()).resolves.toEqual({ kind: "provider", transcribe: true });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    status.ready = false;
+    await expect(plan()).resolves.toEqual({ kind: "device", transcribe: false });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
   it("falls back to the device when the hosted default stops being ready", async () => {

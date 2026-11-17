@@ -1,4 +1,4 @@
-import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
+import { AiConsentBlocked, MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
@@ -186,6 +186,7 @@ describe("mobile speech", () => {
       { requestContext },
     );
     expect(captureApiRequestContext).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(rpc).mock.calls.filter(([proc]) => proc === "voice/status")).toHaveLength(0);
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [url, init] of fetchMock.mock.calls) {
@@ -1324,6 +1325,40 @@ describe("on-device speech", () => {
     // The superseded call speech settles as not spoken, not as a voice setup failure.
     utterances[0]!.stopped();
     await expect(call).resolves.toBe(false);
+  });
+
+  it.each(["not configured", "offline"])(
+    "infers local speech from preparation when hosted speech is %s",
+    async (condition) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+      vi.mocked(rpc).mockImplementation(async (procedure) => {
+        if (procedure === "voice/prepare") {
+          if (condition === "offline") throw new TypeError("Failed to fetch");
+          return { ready: false, utterances: [] } as never;
+        }
+        return { version: "2026-09-14", recipients: [] } as never;
+      });
+      vi.mocked(Speech.stop).mockResolvedValue(undefined);
+      vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+      await expect(speakText("Hello", { botId: "bot-1" })).resolves.toBe(true);
+      expect(Speech.speak).toHaveBeenCalledWith("Hello", expect.anything());
+      expect(
+        vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/prepare"),
+      ).toHaveLength(1);
+      expect(
+        vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/status"),
+      ).toHaveLength(0);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not turn denied hosted preparation into device speech", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+    const denied = new AiConsentBlocked();
+    vi.mocked(rpc).mockRejectedValue(denied);
+    await expect(speakText("Hello", { botId: "bot-1" })).rejects.toBe(denied);
+    expect(Speech.speak).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("speaks locally and never touches the network when the device voice is on", async () => {

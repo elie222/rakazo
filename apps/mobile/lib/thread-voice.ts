@@ -23,6 +23,7 @@ import { currentSessionGeneration } from "./session";
 import { speakerColorFor } from "./thread-message-text";
 import { errorText } from "./user-error";
 import { speakQueue, speakText } from "./voice";
+import type { VoiceCallStatus } from "./voice-call-entry";
 import {
   loadCallCallerName,
   probeProviderTranscribe,
@@ -213,11 +214,13 @@ export function useThreadVoiceCall({
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
     voiceCallStarting.current = true;
-    const loadVoiceStatus = () => rpc("voice/status", { botId: targetBotId });
+    let statusRead: Promise<VoiceCallStatus> | undefined;
+    const loadVoiceStatus = () => (statusRead ??= rpc("voice/status", { botId: targetBotId }));
     try {
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
-          loadDeviceVoiceEnabled: () => loadDeviceVoiceEnabled(targetBotId),
+          loadDeviceVoiceEnabled: (readStatus) =>
+            loadDeviceVoiceEnabled(targetBotId, undefined, readStatus),
           dictationAvailable,
           loadVoiceStatus,
         }),

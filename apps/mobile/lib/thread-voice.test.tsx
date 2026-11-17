@@ -4,9 +4,11 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { rpc } from "./api";
 import type { CallState } from "./call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "./call-session";
 import { loadCallGreetingEnabled } from "./call-sounds";
+import { loadDeviceVoiceEnabled } from "./device-voice";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 import { blockText } from "./mobile-types";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "./session";
@@ -50,7 +52,7 @@ vi.mock("./call-session", () => ({
   startCall: vi.fn(() => "call-1"),
 }));
 vi.mock("./call-sounds", () => ({ loadCallGreetingEnabled: vi.fn(async () => true) }));
-vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
+vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: vi.fn(async () => true) }));
 vi.mock("./dictation", () => ({ available: async () => true }));
 vi.mock("./voice", () => ({
   speakQueue: vi.fn(async () => true),
@@ -98,6 +100,8 @@ describe("useThreadVoiceCall hand-over", () => {
     vi.mocked(startCall).mockClear();
     vi.mocked(takeShortcutVoiceChat).mockReset().mockReturnValue(false);
     vi.mocked(loadCallGreetingEnabled).mockReset().mockResolvedValue(true);
+    vi.mocked(loadDeviceVoiceEnabled).mockResolvedValue(true);
+    vi.mocked(rpc).mockReset().mockRejectedValue(new Error("Unauthorized"));
     await saveSessionToken("fake-token-a");
     root = createRoot(document.createElement("div"));
   });
@@ -142,6 +146,26 @@ describe("useThreadVoiceCall hand-over", () => {
         }),
       }),
     );
+  });
+
+  it("shares inferred readiness with the post-start transcription probe", async () => {
+    vi.mocked(rpc)
+      .mockClear()
+      .mockImplementation(async (procedure) => {
+        if (procedure === "voice/status") return { ready: false, transcribe: false } as never;
+        throw new Error("Unauthorized");
+      });
+    vi.mocked(loadDeviceVoiceEnabled).mockImplementation(
+      async (_botId, _context, readStatus) => !(await readStatus!()).ready,
+    );
+    render("riley");
+    await act(async () => {
+      await startVoiceCall?.();
+    });
+    expect(startCall).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/status"),
+    ).toHaveLength(1);
   });
 
   it("starts fresh and put-through calls straight to listening with the greeting off", async () => {

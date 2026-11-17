@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
-import type { SettingsScope } from "@rakazo/contracts";
+import type { RpcOutput, SettingsScope } from "@rakazo/contracts";
 import {
   ensureAiDataConsent,
+  isServerUnreachable,
   readVoiceAudio,
   readVoiceError,
   requestDeadline,
@@ -18,7 +19,7 @@ import type { ApiRequestContext } from "./api";
 import { aiConsentCoalesceKey, allowPromptedAiConsent, captureApiRequestContext, rpc } from "./api";
 import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
-import { loadDeviceVoiceEnabled } from "./device-voice";
+import { loadDeviceVoicePreference } from "./device-voice";
 import { fetchServer } from "./server-headers";
 import { subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
@@ -311,39 +312,41 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
     prepareControl,
   );
   try {
-    let useDeviceVoice = false;
+    let devicePreference: boolean | undefined;
     try {
       // An explicit provider is a requested hosted sample, not automatic reply playback.
-      useDeviceVoice = opts.provider
-        ? false
-        : await loadDeviceVoiceEnabled(opts.botId, opts.requestContext);
+      devicePreference = opts.provider ? false : await loadDeviceVoicePreference();
     } catch {
       // A read failure must not be treated as "off": that would send reply text
       // through hosted voice after the user opted for on-device only.
-      useDeviceVoice = true;
+      devicePreference = true;
     }
     if (!isCurrentSpeech(epoch)) return false;
-    if (useDeviceVoice) {
-      const spoken = await speakOnDevice(text, opts.botId, opts.messageId, epoch);
-      if (!isCurrentSpeech(epoch)) return false;
-      if (!spoken && playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
-      return spoken;
-    }
+    if (devicePreference === true) return await speakCurrentOnDevice(text, opts, epoch);
     const requestContext = opts.requestContext ?? (await captureApiRequestContext());
     if (!isCurrentSpeech(epoch)) return false;
-    const prepared = await rpc(
-      "voice/prepare",
-      {
-        text,
-        voiceId: opts.voiceId,
-        provider: opts.provider,
-        botId: opts.botId,
-        scope: opts.scope,
-      },
-      { requestContext },
-    );
+    let prepared: RpcOutput<"voice/prepare">;
+    try {
+      prepared = await rpc(
+        "voice/prepare",
+        {
+          text,
+          voiceId: opts.voiceId,
+          provider: opts.provider,
+          botId: opts.botId,
+          scope: opts.scope,
+        },
+        { requestContext },
+      );
+    } catch (error) {
+      if (devicePreference === undefined && isServerUnreachable(error)) {
+        return await speakCurrentOnDevice(text, opts, epoch);
+      }
+      throw error;
+    }
     if (!isCurrentSpeech(epoch)) return false;
     if (!prepared.ready) {
+      if (devicePreference === undefined) return await speakCurrentOnDevice(text, opts, epoch);
       if (playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
       return false;
     }
@@ -411,6 +414,15 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
       setPlayback(IDLE_PLAYBACK, null);
     }
   }
+}
+
+async function speakCurrentOnDevice(
+  text: string,
+  opts: SpeechOptions,
+  epoch: number,
+): Promise<boolean> {
+  const spoken = await speakOnDevice(text, opts.botId, opts.messageId, epoch);
+  return isCurrentSpeech(epoch) && spoken;
 }
 
 let deviceSpeechSession = 0;

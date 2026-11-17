@@ -709,7 +709,7 @@ export function BotSettings({
                   onChange={setAutoSpeak}
                 />
               ) : null}
-              <BotVoiceSettings key={bot.id} bot={bot} />
+              {settingsOpen ? <BotVoiceSettings key={bot.id} bot={bot} /> : null}
               {changed.dailyCheckIns ? (
                 <SwitchRow
                   id={`${ids}-daily-check-ins`}
