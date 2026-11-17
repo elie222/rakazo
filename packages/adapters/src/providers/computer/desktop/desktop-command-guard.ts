@@ -655,7 +655,8 @@ const SYNTAX_REFUSALS = new Set([
 
 /** Whether the raw text names anything the guard protects, wherever it sits. */
 function namesProtectedTarget(command: string): boolean {
-  const folded = command.toLowerCase();
+  // Quotes and backslashes join a word the shell would see whole, as in k\ill or "k"ill.
+  const folded = command.toLowerCase().replaceAll(/[\\'"]/g, "");
   if (BROWSER_PROFILE_PATH.test(folded) || X11_PATH.test(folded)) return true;
   return folded.split(/[^\w./-]+/).some((word) => {
     const base = word.split("/").at(-1) ?? "";

@@ -126,6 +126,9 @@ describe("computer lifecycle command guard", () => {
     }
     for (const command of [
       "kill $(pgrep chromium)",
+      "k\\ill $(pgrep chromium)",
+      '"pk"ill $(echo chromium)',
+      "/usr/bin/k'il'l $PID",
       "for p in $PIDS; do /bin/kill $p; done",
       'systemctl "$action" display',
       'rm -rf "$HOME/.browser-profiles"',
