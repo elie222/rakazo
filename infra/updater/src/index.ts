@@ -51,6 +51,7 @@ import {
   pruneComputerCache,
   readScheduledComputer,
   readScheduledRuntime,
+  rollbackComputerTags,
 } from "./runtime-state.js";
 import { applyStableUpdate, startUpdateSchedule } from "./schedule.js";
 
@@ -647,8 +648,7 @@ export function createUpdaterApp(
   async function rollback(): Promise<ServerUpdateRun> {
     const env = await readEnvFile();
     const tags = readTagState(env);
-    const previousComputerTag = readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV);
-    const currentComputerTag = readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest";
+    const computerTags = rollbackComputerTags(config, env);
     const decision = rollbackTarget(tags);
     if ("error" in decision) throw new UpdateRefused(decision.error);
     const checkout = await readCheckout();
@@ -659,14 +659,7 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request: { repoUrl: "", branch: "" },
-        computerTags:
-          config.updateServices.includes("computer") && previousComputerTag
-            ? {
-                fromTag: currentComputerTag,
-                previousTag: previousComputerTag,
-                toTag: previousComputerTag,
-              }
-            : undefined,
+        computerTags,
         strategy: "pull",
         fromTag: tags.currentTag,
         originalPreviousTag: tags.previousTag,
@@ -705,6 +698,7 @@ export function createUpdaterApp(
     steps: ComposeUpdateStep[];
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
+    const computerUnchanged = input.computerTags?.fromTag === input.computerTags?.toTag;
     if (input.computerTags) {
       input.computerTags.fromTag = await cacheComputerImage(
         config,
@@ -795,10 +789,9 @@ export function createUpdaterApp(
           ...(input.computerTags
             ? {
                 [COMPUTER_TAG_ENV]: input.computerTags.toTag,
-                [PREVIOUS_COMPUTER_TAG_ENV]:
-                  input.fromTag === toTag
-                    ? (input.computerTags.previousTag ?? input.computerTags.fromTag)
-                    : input.computerTags.fromTag,
+                [PREVIOUS_COMPUTER_TAG_ENV]: computerUnchanged
+                  ? (input.computerTags.previousTag ?? input.computerTags.fromTag)
+                  : input.computerTags.fromTag,
               }
             : {}),
         });

@@ -37,6 +37,23 @@ export interface ComputerTagChange {
   toTag: string;
 }
 
+export function rollbackComputerTags(
+  config: UpdaterConfig,
+  env: string,
+): ComputerTagChange | undefined {
+  if (!config.updateServices.includes("computer")) return undefined;
+  const previousTag = readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV);
+  if (!previousTag || !isValidImageTag(previousTag))
+    throw new UpdateRefused(
+      "Rollback requires a valid previous computer image pin. Restore the matching cached computer pin or repair the application and computer images manually before retrying. Nothing was recreated.",
+    );
+  return {
+    fromTag: readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest",
+    previousTag,
+    toTag: previousTag,
+  };
+}
+
 /** Running application images establish the source baseline, independently of .env pins. */
 export async function readScheduledRuntime(
   config: UpdaterConfig,

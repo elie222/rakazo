@@ -226,6 +226,55 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(deployments);
   });
 
+  it("refuses application rollback when managed computer history is missing", async () => {
+    const env = `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\n`;
+    const subject = await fixture(env, newer, true);
+    const response = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("previous computer image pin");
+    expect(await subject.env()).toBe(env);
+    expect(subject.calls).toHaveLength(0);
+  });
+
+  it("preserves computer history when only the application image changes", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:sha-${newer}`;
+    subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
+    expect(subject.state.images[cachedOlder]).toBeDefined();
+  });
+
+  it("saves the replaced computer during a computer-only repair", async () => {
+    const obsolete = `${cachePrefix}${"3".repeat(64)}`;
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${obsolete}\n`,
+      newer,
+      true,
+    );
+    subject.state.computer = `${computerImage}:latest`;
+    subject.state.images[obsolete] = `sha256:${"3".repeat(64)}`;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(await subject.env()).toContain(`RAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\n`);
+    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
+    expect(subject.state.images[cachedOlder]).toBeDefined();
+    expect(subject.state.images[obsolete]).toBeUndefined();
+    const rollback = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await expect(rollback.json()).resolves.toMatchObject({ ok: true });
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
+    expect(subject.state.versions.worker).toBe(older);
+  });
+
   it("continues cleanup when Docker protects an image used by a container", async () => {
     const busy = `${cachePrefix}${"3".repeat(64)}`;
     const obsolete = `${cachePrefix}${"4".repeat(64)}`;
