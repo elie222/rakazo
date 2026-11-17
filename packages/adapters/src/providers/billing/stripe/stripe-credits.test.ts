@@ -22,7 +22,7 @@ function fixture(routes: Record<string, unknown> = {}) {
         route ??
           routes[url.pathname] ??
           (url.pathname === "/v1/checkout/sessions" && init?.method === "POST"
-            ? { url: "https://checkout.example.test/session" }
+            ? { id: "cs_test", url: "https://checkout.example.test/session" }
             : url.pathname === "/v1/prices" && init?.method === "POST"
               ? { id: "price_credits" }
               : { data: [], has_more: false }),
