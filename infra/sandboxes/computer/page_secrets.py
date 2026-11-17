@@ -686,9 +686,9 @@ def pay_token_frames(client: CdpClient, frames: list[tuple[str, str, int]]) -> l
             if origin == PAY_TOKEN_FRAME_ORIGIN]
 
 
-def all_frames(client: CdpClient, session_id: str) -> list[tuple[str, str, str | None]]:
-    """Every frame of the tab: (session, frame, parent frame). Frames in another process are found
-    through their own sessions."""
+def all_frames(client: CdpClient, session_id: str, complete: bool = False) -> list[tuple[str, str, str | None]]:
+    """The tab's frames, up to MAX_FRAME_SESSIONS processes: (session, frame, parent frame). Frames in
+    another process are found through their own sessions. With complete, raises unless every frame is in."""
     frames: list[tuple[str, str, str | None]] = []
     sessions, seen = [session_id], set()
     while sessions and len(seen) < MAX_FRAME_SESSIONS:
@@ -700,14 +700,20 @@ def all_frames(client: CdpClient, session_id: str) -> list[tuple[str, str, str |
             if session != session_id:
                 client.call("Page.enable", session_id=session)
             sessions += auto_attach(client, session)
+            if complete and len(client.frame_sessions(session)) > MAX_FRAME_SESSIONS:
+                raise RuntimeError("too many frames")
             stack = [client.call("Page.getFrameTree", session_id=session)["frameTree"]]
         except Exception:  # noqa: BLE001
+            if complete:
+                raise
             continue
         while stack:
             node = stack.pop()
             frame = node["frame"]
             frames.append((session, frame["id"], frame.get("parentId")))
             stack += node.get("childFrames") or []
+    if complete and set(sessions) - seen:
+        raise RuntimeError("too many frames")
     return frames
 
 
@@ -956,12 +962,12 @@ def frame_hints(client: CdpClient, session_id: str) -> tuple[bool, str | None]:
 
 def filled_choices(port: int, target_id: str) -> set[str]:
     """The values and labels of the options saved logins chose in dropdowns, in every frame of the
-    tab: a snapshot never marks them as chosen."""
+    tab: a snapshot never marks them as chosen. Raises when a frame cannot be read."""
     client = connect(port)
     try:
         session_id = attach(client, target_id)
         found: set[str] = set()
-        for session, frame_id, _ in all_frames(client, session_id):
+        for session, frame_id, _ in all_frames(client, session_id, complete=True):
             world = world_in(client, session, frame_id)
             found.update(str(text) for text in eval_json(client, session, "window.__rakazoPageBrowser.filledChoices()",
                                                          context_id=world) or [] if text)

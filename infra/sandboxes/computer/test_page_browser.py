@@ -237,8 +237,10 @@ class SnapshotTest(unittest.TestCase):
     def test_never_shows_which_option_a_saved_login_chose(self):
         # The page reports the chosen option's value and label for a dropdown a saved login filled.
         tree = PAGE.replace('- checkbox "Agree"', '- textbox "Region" [ref=e20]: France\n- checkbox "Agree"')
-        with patch.object(secrets, "filled_choices", return_value={"fr", "France"}):
-            result, _ = self.snapshot(FakeAgentBrowser(tree=tree))
+        with patch.object(secrets, "filled_choices") as frames:
+            result, _ = self.snapshot(FakeAgentBrowser(tree=tree, state={"choices": ["fr", "France"]}))
+        # No dropdown in a frame shows a choice, so the frames are not read.
+        frames.assert_not_called()
         self.assertIn('- combobox "Country" [expanded=false, ref=e4] options: "Choose", "France"\n', result["tree"])
         self.assertNotIn("(selected)", result["tree"])
         country = next(el for el in result["elements"] if el["ref"] == "e4")
@@ -250,16 +252,24 @@ class SnapshotTest(unittest.TestCase):
         # Past the options a snapshot lists, the chosen one is not added back.
         options = "".join(f'  - option "Year {n}" [{"selected, " if n == 432 else ""}ref=e{n + 10}]\n'
                           for n in range(1, 1501))
-        with patch.object(secrets, "filled_choices", return_value={"Year 432"}):
-            result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}'))
+        result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}',
+                                                   state={"choices": ["Year 432"]}))
         self.assertNotIn("Year 432", json.dumps(result))
         self.assertEqual(len(result["elements"][0]["options"]), 100)
 
-    def test_hides_every_dropdown_choice_when_the_saved_choices_cannot_be_read(self):
-        with patch.object(secrets, "filled_choices", side_effect=OSError("no CDP")):
-            result, _ = self.snapshot()
-        self.assertNotIn("(selected)", result["tree"])
-        self.assertNotIn("value", next(el for el in result["elements"] if el["ref"] == "e4"))
+    def test_reads_frame_dropdowns_through_page_secrets_and_hides_them_when_it_cannot(self):
+        tree = PAGE.replace('  - button "Frame button" [ref=e10]\n', '  - button "Frame button" [ref=e10]\n'
+                            '  - combobox "Code" [ref=e30]: UK (+44)\n'
+                            '    - option "US (+1)" [ref=e31]\n    - option "UK (+44)" [selected, ref=e32]\n')
+        for found, hidden in (({"+44", "UK (+44)"}, True), (set(), False), (OSError("no CDP"), True)):
+            with self.subTest(found=found), patch.object(secrets, "filled_choices", **(
+                    {"side_effect": found} if isinstance(found, Exception) else {"return_value": found})):
+                result, _ = self.snapshot(FakeAgentBrowser(tree=tree))
+            code = next(el for el in result["elements"] if el["ref"] == "e30")
+            self.assertEqual("value" not in code, hidden)
+            self.assertEqual(any(option.get("selected") for option in code["options"]), not hidden)
+            # The page's own dropdown is read from the page, whatever happens in its frames.
+            self.assertIn("France (selected)", result["tree"].replace('"', ""))
 
     def test_reads_saved_choices_in_every_frame(self):
         frames = [("top", "F1", None), ("top", "F2", "F1"), ("oopif", "F3", "F2")]
@@ -273,6 +283,22 @@ class SnapshotTest(unittest.TestCase):
             self.assertEqual(RealFilledChoices(9222, "tab-1"), {"fr", "France", "+44", "UK (+44)"})
         self.assertEqual([call.args[1:] for call in world_in.call_args_list],
                          [("top", "F1"), ("top", "F2"), ("oopif", "F3")])
+
+    def test_a_frame_walk_past_its_cap_is_not_taken_as_every_frame(self):
+        children = {"top": [f"s{n}" for n in range(40)]}
+
+        class Client:
+            def call(self, method, params=None, session_id=None):
+                return {"frameTree": {"frame": {"id": f"F-{session_id}"}}}
+
+            def frame_sessions(self, session):
+                return children.get(session, [])
+        with patch.object(secrets, "auto_attach", side_effect=lambda client, session: children.get(session, [])[:32]):
+            self.assertEqual(len(secrets.all_frames(Client(), "top")), 32)
+            with self.assertRaisesRegex(RuntimeError, "too many frames"):
+                secrets.all_frames(Client(), "top", complete=True)
+            children["top"] = children["top"][:5]
+            self.assertEqual(len(secrets.all_frames(Client(), "top", complete=True)), 6)
 
     def test_leaves_payment_frames_out_and_points_to_fill_card(self):
         result, _ = self.snapshot()
