@@ -7,17 +7,20 @@ import {
   isGitCommit,
   isValidImageTag,
   PREVIOUS_IMAGE_TAG_ENV,
-  PUBLISHED_IMAGE_REPO,
   selectLatestRelease,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { UpdaterCommandRunner } from "./index.js";
 import type { UpdaterConfig } from "./updater-logic.js";
-import { readEnvAssignment, UpdateRefused } from "./updater-logic.js";
+import {
+  COMPUTER_IMAGE_ENV,
+  OFFICIAL_COMPUTER_IMAGE,
+  readEnvAssignment,
+  UpdateRefused,
+} from "./updater-logic.js";
 
 export const COMPUTER_TAG_ENV = "RAKAZO_COMPUTER_IMAGE_TAG";
 export const PREVIOUS_COMPUTER_TAG_ENV = "RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS";
-const COMPUTER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/computer`;
 const READ_TIMEOUT_MS = 120_000;
 function computerCachePrefix(config: UpdaterConfig): string {
   return `cached-${createHash("sha256").update(config.projectName).digest("hex").slice(0, 16)}-`;
@@ -167,7 +170,7 @@ export async function cacheComputerImage(
   tag: string,
   run: UpdaterCommandRunner,
 ): Promise<string> {
-  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
+  const image = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
   const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
   const inspected = await run(
     "docker",
@@ -220,7 +223,7 @@ export async function pruneComputerCache(
   env: string,
   run: UpdaterCommandRunner,
 ): Promise<void> {
-  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
+  const image = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
   const retained = new Set([
     readEnvAssignment(env, COMPUTER_TAG_ENV),
     readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV),
@@ -264,7 +267,7 @@ async function retainSupervisorImages(
   for (const id of ids) {
     const selected = await run(
       "docker",
-      ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+      ["exec", id, "node", "-p", `process.env.${COMPUTER_IMAGE_ENV}`],
       options,
     );
     if (!selected.ok)
@@ -334,8 +337,8 @@ export async function readScheduledComputer(
   run: UpdaterCommandRunner,
 ): Promise<ComputerState | undefined> {
   if (!config.updateServices.includes("computer")) return undefined;
-  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
-  if (image !== COMPUTER_IMAGE)
+  const image = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
+  if (image !== OFFICIAL_COMPUTER_IMAGE)
     throw new UpdateRefused(
       "Scheduled computer updates require the official computer image; manual controls remain available.",
     );
@@ -387,7 +390,7 @@ async function readComputerSelection(
     throw new UpdateRefused(
       "Managing computer updates also requires supervisor in RAKAZO_UPDATE_SERVICES.",
     );
-  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
+  const image = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
   const envTag = readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest";
   if (!isValidImageTag(envTag))
     throw new UpdateRefused("The configured computer image tag is invalid.");
@@ -396,7 +399,7 @@ async function readComputerSelection(
   for (const id of ids) {
     const ref = await run(
       "docker",
-      ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+      ["exec", id, "node", "-p", `process.env.${COMPUTER_IMAGE_ENV}`],
       options,
     );
     const value = ref.stdout.trim();

@@ -63,8 +63,10 @@ import {
   missingSecretAssignments,
   readTagState,
   resolveUpdaterConfig,
+  scheduledImageEnvironment,
   truncateOutput,
   UpdateRefused,
+  upToDateRecord,
 } from "./updater-logic.js";
 
 const STEP_TIMEOUT_MS: Record<string, number> = {
@@ -520,6 +522,7 @@ export function createUpdaterApp(
   ) {
     const decision = chooseUpdateStrategy(request);
     const envContents = await readEnvFile();
+    const imageEnvironment = scheduled ? scheduledImageEnvironment(config, envContents) : undefined;
     const tags = readTagState(envContents);
     const checkout = await readCheckout();
     let recoveryAllowed = true;
@@ -619,6 +622,7 @@ export function createUpdaterApp(
       await execute({
         request,
         recoveryAllowed,
+        imageEnvironment,
         computerTags,
         strategy: decision.strategy,
         fromTag: tags.currentTag,
@@ -685,6 +689,7 @@ export function createUpdaterApp(
     request: { repoUrl: string; branch: string };
     strategy: "pull" | "build";
     recoveryAllowed?: boolean;
+    imageEnvironment?: Record<string, string>;
     computerTags?: ComputerTagChange;
     fromTag: string;
     originalPreviousTag: string | null;
@@ -703,7 +708,7 @@ export function createUpdaterApp(
     if (input.computerTags && !preserveComputerHistory) {
       cachedComputerTag = await cacheComputerImage(
         config,
-        await readEnvFile(),
+        upsertEnvAssignments(await readEnvFile(), input.imageEnvironment ?? {}),
         input.computerTags.fromTag,
         run,
       );
@@ -803,6 +808,7 @@ export function createUpdaterApp(
         return record;
       }
       const composeEnv: Record<string, string> = {
+        ...input.imageEnvironment,
         [IMAGE_TAG_ENV]: toTag,
         ...(input.computerTags ? { [COMPUTER_TAG_ENV]: input.computerTags.toTag } : {}),
       };
@@ -834,6 +840,7 @@ export function createUpdaterApp(
                   args: previous.args,
                 },
                 {
+                  ...input.imageEnvironment,
                   [IMAGE_TAG_ENV]: input.fromTag,
                   ...(input.computerTags ? { [COMPUTER_TAG_ENV]: cachedComputerTag } : {}),
                 },
@@ -854,7 +861,9 @@ export function createUpdaterApp(
       record.restart = "recreated";
       await bestEffort(
         "prune obsolete update images",
-        readEnvFile().then((env) => pruneUpdateImages(config, env, run)),
+        readEnvFile().then((env) =>
+          pruneUpdateImages(config, upsertEnvAssignments(env, input.imageEnvironment ?? {}), run),
+        ),
       );
       return record;
     } finally {
@@ -901,31 +910,6 @@ export function createUpdaterApp(
     });
     if (!result.ok && setError) record.error = `${step.label} failed.`;
     return result.ok;
-  }
-
-  function upToDateRecord(
-    request: { repoUrl: string; branch: string },
-    tag: string,
-    strategy: "pull" | "build",
-    commit: string | null,
-  ): ServerUpdateRun {
-    const now = new Date().toISOString();
-    return {
-      startedAt: now,
-      finishedAt: now,
-      ok: true,
-      fromCommit: commit,
-      toCommit: commit,
-      fromTag: tag,
-      toTag: tag,
-      strategy,
-      repoUrl: request.repoUrl,
-      branch: request.branch,
-      restart: "not-required",
-      restartAdvice: `Already running ${tag}; nothing was changed.`,
-      error: null,
-      steps: [],
-    };
   }
 }
 

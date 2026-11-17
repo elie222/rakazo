@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it } from "vitest";
 import type { UpdaterCommandRunner } from "./index.js";
 import { createUpdaterApp } from "./index.js";
@@ -55,6 +56,9 @@ async function fixture(env: string, commit: string, computers = false) {
     } as Record<string, string>,
     unavailableComputer: false,
     failTarget: false,
+    pausePull: false,
+    pullStarted: deferred<void>(),
+    continuePull: deferred<void>(),
   };
   const ids = {
     api: "a".repeat(12),
@@ -149,6 +153,10 @@ async function fixture(env: string, commit: string, computers = false) {
       return ok();
     }
     if (args.includes("pull")) {
+      if (state.pausePull) {
+        state.pullStarted.resolve();
+        await state.continuePull.promise;
+      }
       if (computers && state.unavailableComputer)
         return failed("computer commit image is not published yet");
       if (computers) state.images[`sha-${newer}`] = `sha256:${"2".repeat(64)}`;
@@ -175,10 +183,59 @@ async function fixture(env: string, commit: string, computers = false) {
     state,
     calls,
     env: () => readFile(envFile, "utf8"),
+    setEnv: (contents: string) => writeFile(envFile, contents),
   };
 }
 
 describe("scheduled release state and recovery", () => {
+  it.each(["RAKAZO_IMAGE", "RAKAZO_COMPUTER_IMAGE"])(
+    "refuses a live %s mirror edit before any command",
+    async (key) => {
+      const subject = await fixture(`RAKAZO_IMAGE_TAG=sha-${older}\n`, older, true);
+      await subject.setEnv(`${await subject.env()}${key}=registry.example.com/mirror/image\n`);
+      await expect(subject.app.applyScheduledUpdate()).rejects.toThrow(
+        "official stable image repositories",
+      );
+      expect(subject.calls).toHaveLength(0);
+    },
+  );
+
+  it.each([false, true])(
+    "freezes official repositories across a mid-update env edit (failure=%s)",
+    async (failure) => {
+      const subject = await fixture(
+        `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${older}\n`,
+        older,
+        true,
+      );
+      subject.state.pausePull = true;
+      subject.state.failTarget = failure;
+      const pending = subject.app.applyScheduledUpdate();
+      await subject.state.pullStarted.promise;
+      await subject.setEnv(
+        `${await subject.env()}RAKAZO_IMAGE=registry.example.com/mirror/app\nRAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/computer\n`,
+      );
+      subject.state.continuePull.resolve();
+      expect((await pending).ok).toBe(!failure);
+      const commands = subject.calls.filter(
+        ({ args }) => args.includes("pull") || args.includes("up"),
+      );
+      expect(commands.length).toBe(failure ? 3 : 2);
+      for (const { env } of commands) {
+        expect(env.RAKAZO_IMAGE).toBe(appImage);
+        expect(env.RAKAZO_COMPUTER_IMAGE).toBe(computerImage);
+      }
+      expect(
+        subject.calls.some(({ args }) =>
+          args.some((arg) => arg.includes("registry.example.com/mirror")),
+        ),
+      ).toBe(false);
+      await expect(subject.app.applyScheduledUpdate()).rejects.toThrow(
+        "official stable image repositories",
+      );
+    },
+  );
+
   it("aligns stale pins with the verified running image without a deployment", async () => {
     const subject = await fixture(
       `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_IMAGE_TAG_PREVIOUS=v0.9.0\n`,

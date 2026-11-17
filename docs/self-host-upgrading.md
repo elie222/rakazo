@@ -284,6 +284,8 @@ newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, a
 apply/health-check/recovery path. Prereleases and main builds are never scheduled. Scheduling is
 disabled for custom image repositories, with a startup warning and an `autoUpdateDisabledReason`
 in `/state`; manual controls remain available. When already current, nothing is recreated.
+Each check revalidates the deployment's image repositories. A running update keeps that
+validated repository selection for its pulls, recreation, recovery and cleanup.
 Scheduled updates follow stable source commits, not registry digest changes. Rebuilding or
 republishing an image for the same source commit does not trigger a deployment; publish a new
 stable release from a new commit to roll out those image changes automatically.

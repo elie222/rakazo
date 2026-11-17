@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import type { ServerUpdateRun } from "@rakazo/contracts";
 import {
   DEFAULT_IMAGE_TAG,
   IMAGE_TAG_ENV,
@@ -13,6 +14,9 @@ import {
 } from "@rakazo/core";
 import { resolveUpdaterToken } from "@rakazo/core/node/secrets-guard";
 
+export const APPLICATION_IMAGE_ENV = "RAKAZO_IMAGE";
+export const COMPUTER_IMAGE_ENV = "RAKAZO_COMPUTER_IMAGE";
+export const OFFICIAL_COMPUTER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/computer`;
 export const DEFAULT_UPDATER_PORT = 7092;
 export const DEFAULT_COMPOSE_FILE = "infra/compose/docker-compose.prod.yml";
 /** Compose's own convention for a multi-file list, matching COMPOSE_FILE. */
@@ -52,7 +56,7 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   if (deployDir === "" || !path.posix.isAbsolute(deployDir)) {
     throw new Error("Set RAKAZO_DEPLOY_DIR to the absolute path of the deployment directory.");
   }
-  const image = env.RAKAZO_IMAGE?.trim() || OFFICIAL_SERVER_IMAGE;
+  const image = env[APPLICATION_IMAGE_ENV]?.trim() || OFFICIAL_SERVER_IMAGE;
   if (!isValidImageName(image))
     throw new Error(`RAKAZO_IMAGE is not a usable image name: ${image}`);
   // Compose itself takes a list here (COMPOSE_FILE with COMPOSE_PATH_SEPARATOR), and a deployment
@@ -103,10 +107,9 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
     throw new Error("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS must be 0 (disabled) or 1–168.");
   }
-  const officialComputerImage = `ghcr.io/${PUBLISHED_IMAGE_REPO}/computer`;
   const mirroredComputer =
     updateServices.includes("computer") &&
-    (env.RAKAZO_COMPUTER_IMAGE?.trim() || officialComputerImage) !== officialComputerImage;
+    (env[COMPUTER_IMAGE_ENV]?.trim() || OFFICIAL_COMPUTER_IMAGE) !== OFFICIAL_COMPUTER_IMAGE;
   const autoUpdateDisabledReason =
     hours > 0 && (image !== OFFICIAL_SERVER_IMAGE || mirroredComputer)
       ? "Scheduled updates require the official stable release images for the app and managed computer. Scheduling is disabled; manual controls remain available."
@@ -187,3 +190,49 @@ export function truncateOutput(value: string): string {
  * request instead of an opaque 500.
  */
 export class UpdateRefused extends Error {}
+
+export function scheduledImageEnvironment(
+  config: UpdaterConfig,
+  env: string,
+): Record<string, string> {
+  const image = readEnvAssignment(env, APPLICATION_IMAGE_ENV) || OFFICIAL_SERVER_IMAGE;
+  const computer = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
+  const managedComputer = config.updateServices.includes("computer");
+  if (
+    config.image !== OFFICIAL_SERVER_IMAGE ||
+    image !== OFFICIAL_SERVER_IMAGE ||
+    (managedComputer && computer !== OFFICIAL_COMPUTER_IMAGE)
+  )
+    throw new UpdateRefused(
+      "Scheduled updates require official stable image repositories in the deployment environment. Review image configuration and restart the updater after changes.",
+    );
+  return {
+    [APPLICATION_IMAGE_ENV]: image,
+    ...(managedComputer ? { [COMPUTER_IMAGE_ENV]: computer } : {}),
+  };
+}
+
+export function upToDateRecord(
+  request: { repoUrl: string; branch: string },
+  tag: string,
+  strategy: "pull" | "build",
+  commit: string | null,
+): ServerUpdateRun {
+  const now = new Date().toISOString();
+  return {
+    startedAt: now,
+    finishedAt: now,
+    ok: true,
+    fromCommit: commit,
+    toCommit: commit,
+    fromTag: tag,
+    toTag: tag,
+    strategy,
+    repoUrl: request.repoUrl,
+    branch: request.branch,
+    restart: "not-required",
+    restartAdvice: `Already running ${tag}; nothing was changed.`,
+    error: null,
+    steps: [],
+  };
+}
