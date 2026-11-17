@@ -7,7 +7,7 @@
   "apps/api/src/thread-target.test.ts": 1,
   "apps/api/src/thread-target.ts": 1,
   "apps/desktop/src/main/main.ts": 1,
-  "apps/desktop/src/main/native-stack.ts": 1,
+  "apps/desktop/src/main/this-computer/native-stack.ts": 1,
   "apps/mobile/app/(settings)/integrations.tsx": 1,
   "apps/mobile/lib/api-auth.test.ts": 1,
   "apps/mobile/lib/api-server.test.ts": 1,
@@ -90,11 +90,11 @@
   "packages/core/src/node/desktop-runtime.test.ts": 1,
   "packages/core/src/node/desktop-runtime.ts": 1,
   "packages/core/src/threads/thread-snapshot-events.test.ts": 1,
-  "packages/db/src/events.test.ts": 1,
-  "packages/db/src/events.ts": 1,
-  "packages/testkit/src/authorization.test.ts": 1,
-  "packages/testkit/src/evals/recall.ts": 1,
+  "packages/db/src/threads/events.test.ts": 1,
+  "packages/db/src/threads/events.ts": 1,
   "packages/testkit/src/evals/runner.ts": 1,
-  "packages/testkit/src/executor-lifecycle.test.ts": 1,
-  "packages/testkit/src/journeys.test.ts": 1
+  "packages/testkit/src/evals/suites/recall.ts": 1,
+  "packages/testkit/src/product/authorization.test.ts": 1,
+  "packages/testkit/src/product/executor-lifecycle.test.ts": 1,
+  "packages/testkit/src/product/journeys.test.ts": 1
 }

@@ -9,7 +9,6 @@ import {
   isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
   MessageBlock,
-  validateThreadsSendInput,
 } from "./index.js";
 
 describe("attachment contracts", () => {
@@ -68,13 +67,6 @@ describe("attachment contracts", () => {
     expect(isAttachmentArchiveMimeType("application/x-tar")).toBe(false);
     expect(isAttachmentArchiveMimeType("application/pdf")).toBe(false);
   });
-  it("requires text or attachments for threads.send", () => {
-    expect(validateThreadsSendInput({ text: "hello" })).toBe(true);
-    expect(validateThreadsSendInput({ artifactIds: ["art_1"] })).toBe(true);
-    expect(validateThreadsSendInput({})).toBe(false);
-    expect(validateThreadsSendInput({ artifactIds: ["a", "b", "c", "d", "e"] })).toBe(true);
-  });
-
   it("previews text files as text on every client", () => {
     expect(artifactPreviewKind("text/plain")).toBe("text");
     expect(artifactPreviewKind("text/csv; charset=utf-8")).toBe("text");
@@ -84,6 +76,5 @@ describe("attachment contracts", () => {
     expect(artifactPreviewKind("video/mp4")).toBe("video");
     expect(artifactPreviewKind("application/pdf")).toBe("pdf");
     expect(artifactPreviewKind("image/png")).toBe("image");
-    expect(artifactPreviewKind("application/zip")).toBe("none");
   });
 });

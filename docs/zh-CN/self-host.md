@@ -22,7 +22,7 @@ bash install-images.sh
 ```
 
 安装器下载 `docker-compose.images.yml` 和 `.env.images.example`，生成包含随机密钥的 `.env`，然后拉取并启动镜像。
-再次运行会保留已有的 `.env`。密钥要求与恢复方法见[密钥清单（英文）](../self-host-secrets.md)。
+再次运行会保留已有的 `.env`。密钥要求与恢复方法见[密钥清单](./self-host-secrets.md)。
 
 如需先配置公开地址、镜像标签或可选提供商：
 
@@ -137,7 +137,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml \
 - [升级](./self-host-upgrading.md)
 - [受限网络与镜像下载](./self-host-restricted-network.md)
 - [无影云电脑](../wuying-computers.zh-CN.md)
-- [配置](../self-host-configuration.md)、[账号与登录](../self-host-accounts.md)、[工具集成](../self-host-integrations.md)（英文）
+- [配置](./self-host-configuration.md)、[密钥清单](./self-host-secrets.md)、[账号与登录](./self-host-accounts.md)、[工具集成](./self-host-integrations.md)
 - [存储与加密](../self-host-storage.md)、[日志与监控](../self-host-observability.md)、[客户端](../self-host-clients.md)（英文）
 
 ## 报告问题
