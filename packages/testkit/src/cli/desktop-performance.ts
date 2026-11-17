@@ -13,13 +13,13 @@ import { abortableDelay } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
-import type { PerformanceReport } from "../performance-report.js";
+import type { PerformanceReport } from "../performance/performance-report.js";
 import {
   PERFORMANCE_REPORT_SCHEMA_VERSION,
   parseTcpPort,
   roundedSummary,
   roundMetric,
-} from "../performance-report.js";
+} from "../performance/performance-report.js";
 import {
   argument,
   benchmarkEnvironment,

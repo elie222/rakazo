@@ -228,4 +228,12 @@ export const JA_MESSAGES: Record<string, string> = {
     "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
   "Rakazo stopped unexpectedly.": "Rakazo が突然停止しました。",
   Reload: "再読み込み",
+  "Mac app control": "Macアプリの操作",
+  "Set up Mac app control": "Macアプリの操作を設定",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "コマンドはすでに使用できます。アプリを操作するには、システム設定でRakazoのアクセシビリティと画面収録を許可してから、Rakazoを再起動してください。",
+  "Open System Settings": "システム設定を開く",
+  "Restart Rakazo": "Rakazoを再起動",
+  "Not Now": "今はしない",
+  "Restart Rakazo to finish setup": "Rakazoを再起動して設定を完了",
 };

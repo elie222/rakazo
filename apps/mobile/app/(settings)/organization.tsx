@@ -5,22 +5,26 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { native, useThemedStyles } from "../../lib/native";
-import type { Organization } from "../../lib/organizations";
+import {
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { useLiveStream } from "../../lib/api/roster-signals";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import type { Organization } from "../../lib/spaces/organizations";
 import {
   activeOrganization,
   leaveDeletedOrganization,
   refreshOrganizations,
   useOrganizations,
-} from "../../lib/organizations";
-import { useSave } from "../../lib/query";
-import { useLiveStream } from "../../lib/roster-signals";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/spaces/organizations";
 
 export default function OrganizationSettings() {
   const { t } = useLingui();
