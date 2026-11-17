@@ -519,7 +519,74 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
-    expect(commands).toHaveLength(13);
+    // The timed-out check was probed twice.
+    expect(commands).toHaveLength(14);
+  });
+
+  describe("a timed-out purchase check", () => {
+    const timedOut = {
+      ok: false,
+      error:
+        "Page browser timed out; the page may be busy or blocked by a dialog. Retry once before using other tools.",
+      fallback: "computer_act" as const,
+    };
+    const clean = { ok: true, url: "https://example.test/", title: "Home", purchase: null };
+    const actions = [{ kind: "click", ref: "e1" }];
+    const probe = { command: "purchase_check", actions };
+
+    it("probes once more and lets the click through when the page then answers", async () => {
+      const liveDriver = vi.fn().mockResolvedValueOnce(timedOut).mockResolvedValueOnce(clean);
+      const provider = new ComputerBrowserProvider({ liveDriver });
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: null,
+      });
+      expect(liveDriver.mock.calls.map((call) => call[1])).toEqual([probe, probe]);
+    });
+
+    it("still asks when the second probe times out too", async () => {
+      const liveDriver = vi.fn().mockResolvedValue(timedOut);
+      const provider = new ComputerBrowserProvider({ liveDriver });
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+      });
+      expect(liveDriver).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not probe again once the run is stopped", async () => {
+      const controller = new AbortController();
+      const liveDriver = vi.fn(async () => {
+        controller.abort();
+        return timedOut;
+      });
+      const provider = new ComputerBrowserProvider({ liveDriver });
+      await expect(
+        provider.purchaseCheck(
+          computer,
+          { actions },
+          { ...baseContext, signal: controller.signal },
+        ),
+      ).rejects.toThrow();
+      expect(liveDriver).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries no other failure, and a computer that cannot check still answers none", async () => {
+      for (const [error, purchase] of [
+        [
+          "Page browser unavailable or interrupted",
+          { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+        ],
+        ["unknown command: purchase_check", null],
+      ] as const) {
+        const liveDriver = vi
+          .fn()
+          .mockResolvedValue({ ok: false, error, fallback: "computer_act" });
+        const provider = new ComputerBrowserProvider({ liveDriver });
+        expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+          purchase,
+        });
+        expect(liveDriver).toHaveBeenCalledTimes(1);
+      }
+    });
   });
 
   it("keeps the page snapshot a settled refusal sends", async () => {
