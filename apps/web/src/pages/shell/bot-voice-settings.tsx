@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
+import { botVoiceChoices, botVoiceProviderChoices } from "@rakazo/core";
 import { Button, Field, FieldGroup, FieldLabel, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
@@ -24,9 +25,12 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const catalog = useQuery(queries.voice.catalog.queryOptions());
   const current = botQuery.data ?? bot;
   const selectedProvider = current.voiceProvider ?? "";
-  const connection = selectedProvider
-    ? credentials.data?.find((entry) => entry.provider === selectedProvider)
-    : credentials.data?.find((entry) => entry.isDefault);
+  const providers = botVoiceProviderChoices({
+    provider: current.voiceProvider,
+    credentials: credentials.data,
+    catalog: catalog.data,
+  });
+  const connection = providers.connection;
   const voices = useQuery({
     ...queries.voice.voices.queryOptions({
       input: connection ? { provider: connection.provider } : {},
@@ -56,29 +60,17 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   );
   const call = useCallSession();
   const playing = playback.messageId === previewId && playback.status !== "idle";
-  const providerName = (id: string) => catalog.data?.find((entry) => entry.id === id)?.name ?? id;
-  const defaultConnection = credentials.data?.find((entry) => entry.isDefault);
-  const defaultProviderLabel = defaultConnection
-    ? t`Default (${providerName(defaultConnection.provider)})`
+  const defaultProviderLabel = providers.defaultLabel
+    ? t`Default (${providers.defaultLabel})`
     : t`Default`;
-  const defaultVoice = voices.data?.find((entry) => entry.id === connection?.voiceId);
-  const defaultVoiceLabel = defaultVoice
-    ? t`Default (${defaultVoice.label})`
-    : connection?.voiceId
-      ? t`Default (${connection.voiceId})`
-      : t`Default`;
-  const voiceOptions = voices.data?.map((voice) => ({ value: voice.id, label: voice.label })) ?? [];
-  if (current.voiceId && !voiceOptions.some((entry) => entry.value === current.voiceId)) {
-    voiceOptions.push({ value: current.voiceId, label: current.voiceId });
-  }
-  const providerOptions =
-    credentials.data?.map((entry) => ({
-      value: entry.provider,
-      label: providerName(entry.provider),
-    })) ?? [];
-  if (selectedProvider && !providerOptions.some((entry) => entry.value === selectedProvider)) {
-    providerOptions.push({ value: selectedProvider, label: providerName(selectedProvider) });
-  }
+  const voiceChoices = botVoiceChoices({
+    voices: voices.data,
+    voiceId: current.voiceId,
+    defaultVoiceId: connection?.voiceId,
+  });
+  const defaultVoiceLabel = voiceChoices.defaultLabel
+    ? t`Default (${voiceChoices.defaultLabel})`
+    : t`Default`;
   const failure =
     save.error ?? credentials.error ?? catalog.error ?? voices.error ?? botQuery.error;
   const canPreview = Boolean(connection && (current.voiceId || connection.voiceId));
@@ -100,7 +92,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
           className="w-fit max-w-2/3"
           value={selectedProvider}
           disabled={save.pending || credentials.isPending}
-          options={[{ value: "", label: defaultProviderLabel }, ...providerOptions]}
+          options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
           onValueChange={(provider) => {
             stopPreview();
             save.run({ voiceProvider: provider || null, voiceId: null });
@@ -117,10 +109,13 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
             className="min-w-0 flex-1"
             value={current.voiceId ?? ""}
             disabled={save.pending || !connection || voices.isPending}
-            options={[{ value: "", label: defaultVoiceLabel }, ...voiceOptions]}
+            options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
             onValueChange={(voiceId) => {
               stopPreview();
-              save.run({ voiceProvider: selectedProvider || null, voiceId: voiceId || null });
+              save.run({
+                voiceProvider: selectedProvider || (voiceId ? connection?.provider : null) || null,
+                voiceId: voiceId || null,
+              });
             }}
           />
           <Button

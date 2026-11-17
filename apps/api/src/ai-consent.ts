@@ -13,11 +13,8 @@ import {
 import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
 import {
-  findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
-  findVoiceCredential,
-  IsolationError,
   listModelRoleChoices,
   listVoicePreferences,
   modelRoleTarget,
@@ -25,7 +22,7 @@ import {
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
-import { voiceCredentialServer } from "./voice.js";
+import { selectVoiceTarget, voiceCredentialServer } from "./voice.js";
 
 export async function aiConsentStatus(
   deps: RouterDeps,
@@ -89,9 +86,11 @@ export async function aiConsentStatus(
         : [],
       uses.includes("voice")
         ? query.uses
-          ? selectedVoiceCredential(deps, actor, query).then((credential) =>
-              credential ? [{ credential }] : [],
-            )
+          ? selectVoiceTarget(deps, actor, {
+              botId: query.botId,
+              provider: query.voiceProvider,
+              scope: query.settingsScope,
+            }).then(({ cred }) => (cred ? [{ credential: cred }] : []))
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
             )
@@ -278,22 +277,6 @@ export async function aiConsentStatus(
     privacyUrl: deps.env.privacyPolicyUrl ?? AI_PRIVACY_URL,
     recipients: [...recipients.values()],
   };
-}
-
-/** Match synthesis selection without opening a key or renewing a connection. */
-async function selectedVoiceCredential(deps: RouterDeps, actor: Actor, query: AiConsentQuery) {
-  let provider = query.voiceProvider;
-  if (query.botId) {
-    const bot = await deps.prisma.bot.findFirst({
-      where: { id: query.botId, spaceId: actor.spaceId },
-      select: { voiceProvider: true },
-    });
-    if (!bot) throw new IsolationError();
-    provider ??= bot.voiceProvider ?? undefined;
-  }
-  return provider
-    ? findVoiceCredential(deps.prisma, actor, provider, query.settingsScope)
-    : findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope);
 }
 
 export async function allowAiConsent(

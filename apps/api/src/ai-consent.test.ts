@@ -9,6 +9,7 @@ vi.mock("./thread-target.js", () => ({
 
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
 import type { RouterDeps } from "./router.js";
+import { synthesizeVoice, voiceStatus } from "./voice.js";
 
 function setup() {
   const upsert = vi.fn(async () => ({}));
@@ -374,14 +375,17 @@ describe("bot and preview voice consent", () => {
 
   function voiceSetup() {
     const { deps, actor, upsert } = setup();
-    const bot: { voiceProvider: string | null } = { voiceProvider: "provider-b" };
+    const bot: { voiceProvider: string | null; voiceId: string | null } = {
+      voiceProvider: "provider-b",
+      voiceId: "bot-voice",
+    };
     const disconnected = new Set<string>();
     const preference = (scope: string) =>
       vi.fn(async ({ where }: { where: { credential?: { provider: string } } }) => {
         const provider = where.credential?.provider ?? "provider-a";
         if (disconnected.has(provider)) return null;
         return {
-          voiceId: `${scope}-voice`,
+          voiceId: `${scope}-${provider}`,
           isDefault: provider === "provider-a",
           speechModel: null,
           credential: {
@@ -460,6 +464,81 @@ describe("bot and preview voice consent", () => {
       }),
     );
     expect(spacePreference).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      provider: null,
+      preview: undefined,
+      scope: "account",
+      selected: "provider-a",
+      voice: "bot-voice",
+    },
+    {
+      provider: "provider-b",
+      preview: undefined,
+      scope: "space",
+      selected: "provider-b",
+      voice: "bot-voice",
+    },
+    {
+      provider: "provider-b",
+      preview: "provider-c",
+      scope: "account",
+      selected: "provider-c",
+      voice: "account-provider-c",
+    },
+    {
+      provider: "provider-b",
+      preview: "provider-b",
+      scope: "account",
+      selected: "provider-b",
+      voice: "account-provider-b",
+    },
+  ] as const)("discloses the playback recipient for $selected in $scope", async (testCase) => {
+    const { deps, actor, bot } = voiceSetup();
+    bot.voiceProvider = testCase.provider;
+    const load = vi.fn(async () => "synthetic-voice-key");
+    deps.secrets = { load } as unknown as RouterDeps["secrets"];
+    deps.prisma.secret.findFirst = vi.fn(async ({ where }: { where: { id: string } }) => ({
+      id: where.id,
+      ciphertext: "synthetic-ciphertext",
+    })) as never;
+    const synthesize = vi.fn(async () => ({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" }));
+    const createProvider = vi
+      .spyOn(adapters, "createVoiceProvider")
+      .mockReturnValue({ synthesize } as never);
+    const status = await aiConsentStatus(deps, actor, {
+      botId: "bot",
+      uses: ["voice"],
+      voiceProvider: testCase.preview,
+      settingsScope: testCase.scope,
+    });
+    expect(status.recipients.map((recipient) => recipient.key)).toEqual([
+      `voice:${testCase.selected}`,
+    ]);
+    if (!testCase.preview) {
+      await expect(
+        voiceStatus(deps, actor, { botId: "bot", scope: testCase.scope }),
+      ).resolves.toMatchObject({
+        ready: true,
+        provider: testCase.selected,
+        voiceId: testCase.voice,
+      });
+    }
+    expect(load).not.toHaveBeenCalled();
+    expect(createProvider).not.toHaveBeenCalled();
+    await synthesizeVoice(deps, actor, {
+      botId: "bot",
+      text: "Hello",
+      provider: testCase.preview,
+      scope: testCase.scope,
+    });
+    expect(createProvider).toHaveBeenCalledWith(testCase.selected, expect.anything());
+    expect(synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceId: testCase.voice }),
+      expect.anything(),
+    );
   });
 
   it("does not grant the old recipient after the bot provider changes or disconnects", async () => {

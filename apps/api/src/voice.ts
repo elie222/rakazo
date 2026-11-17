@@ -26,7 +26,7 @@ import type {
 } from "@rakazo/contracts";
 import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, UserVoiceCredential } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
@@ -119,7 +119,11 @@ export function toVoiceStatus(cred: { provider: string; voiceId: string } | null
   };
 }
 
-async function botVoiceSettings(deps: VoiceDeps, actor: Actor, botId?: string) {
+async function botVoiceSettings(
+  deps: Pick<VoiceDeps, "prisma">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  botId?: string,
+) {
   if (!botId) return null;
   const bot = await deps.prisma.bot.findFirst({
     where: { id: botId, spaceId: actor.spaceId },
@@ -129,22 +133,43 @@ async function botVoiceSettings(deps: VoiceDeps, actor: Actor, botId?: string) {
   return bot;
 }
 
+type SelectedVoiceCredential = UserVoiceCredential & {
+  isDefault: boolean;
+  voiceId: string;
+  speechModel: string;
+};
+
+/** Shared speech selection for disclosure, status and playback; never opens secrets. */
+export async function selectVoiceTarget(
+  deps: Pick<VoiceDeps, "prisma">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  input: { botId?: string; provider?: string; voiceId?: string; scope?: SettingsScope } = {},
+) {
+  const bot = await botVoiceSettings(deps, actor, input.botId);
+  const provider = input.provider ?? bot?.voiceProvider ?? undefined;
+  const cred = provider
+    ? await findVoiceCredential(deps.prisma, actor, provider, input.scope)
+    : await findDefaultVoiceCredential(deps.prisma, actor, input.scope);
+  // An explicit provider previews an unsaved choice, not the saved bot voice.
+  const voiceId =
+    input.voiceId || (input.provider === undefined && bot?.voiceId) || cred?.voiceId || "";
+  return { cred, voiceId, usesDefault: !provider };
+}
+
 /** Speech follows the bot; dictation still uses the Settings default. Never opens secrets. */
 export async function voiceStatus(
   deps: VoiceDeps,
   actor: Actor,
   input?: { botId?: string; scope?: SettingsScope },
 ): Promise<VoiceStatus> {
-  const bot = await botVoiceSettings(deps, actor, input?.botId);
-  const defaultCredential = await findDefaultVoiceCredential(deps.prisma, actor, input?.scope);
-  const credential = bot?.voiceProvider
-    ? await findVoiceCredential(deps.prisma, actor, bot.voiceProvider, input?.scope)
-    : defaultCredential;
-  const status = toVoiceStatus(credential);
+  const target = await selectVoiceTarget(deps, actor, input);
+  const defaultCredential = target.usesDefault
+    ? target.cred
+    : await findDefaultVoiceCredential(deps.prisma, actor, input?.scope);
   return {
-    ...status,
-    ready: Boolean(credential && (bot?.voiceId || credential.voiceId)),
-    voiceId: bot?.voiceId || credential?.voiceId || "",
+    ...toVoiceStatus(target.cred),
+    ready: Boolean(target.cred && target.voiceId),
+    voiceId: target.voiceId,
     transcribe: toVoiceStatus(defaultCredential).transcribe,
   };
 }
@@ -336,9 +361,17 @@ export async function loadVoiceCredential(
   scope?: SettingsScope,
   signal?: AbortSignal,
 ) {
-  const cred = provider
-    ? await findVoiceCredential(deps.prisma, actor, provider, scope)
-    : await findDefaultVoiceCredential(deps.prisma, actor, scope);
+  const { cred } = await selectVoiceTarget(deps, actor, { provider, scope });
+  return loadSelectedVoiceCredential(deps, actor, cred, signal);
+}
+
+/** Resolve authentication only after metadata has selected the exact credential. */
+async function loadSelectedVoiceCredential(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  cred: SelectedVoiceCredential | null,
+  signal?: AbortSignal,
+) {
   if (!cred) return null;
   const secret = await deps.prisma.secret.findFirst({
     where: { id: cred.secretId, userId: actor.userId, spaceId: null },
@@ -371,15 +404,11 @@ export async function resolveVoiceTarget(
     signal?: AbortSignal;
   },
 ) {
-  const bot = await botVoiceSettings(deps, actor, input.botId);
-  const provider = input.provider ?? bot?.voiceProvider ?? undefined;
-  const loaded = await loadVoiceCredential(deps, actor, provider, input.scope, input.signal);
+  const target = await selectVoiceTarget(deps, actor, input);
+  const loaded = await loadSelectedVoiceCredential(deps, actor, target.cred, input.signal);
   if (!loaded) throw new NoVoiceConfigured("key");
-  // An explicit provider previews an unsaved choice; an omitted voice previews its default.
-  const voiceId =
-    input.voiceId || (input.provider === undefined && bot?.voiceId) || loaded.cred.voiceId;
-  if (!voiceId) throw new NoVoiceConfigured("voice");
-  return { ...loaded, voiceId };
+  if (!target.voiceId) throw new NoVoiceConfigured("voice");
+  return { ...loaded, voiceId: target.voiceId };
 }
 
 export async function persistVoiceCredential(

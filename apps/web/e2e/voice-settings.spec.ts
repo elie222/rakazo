@@ -49,6 +49,7 @@ test("a bot can choose its own voice and preview it without changing the default
     voiceProvider: "scripted",
     voiceId: "alloy-test",
   });
+  await captureScreenshot(page, testInfo, "bot-voice-personality");
   const spoken = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/voice/speak") && response.request().method() === "POST",
@@ -57,7 +58,6 @@ test("a bot can choose its own voice and preview it without changing the default
   const response = await spoken;
   expect(response.status()).toBe(200);
   expect(response.request().postDataJSON()).toMatchObject({ botId });
-  await captureScreenshot(page, testInfo, "bot-voice-personality");
   expect(await rpc(page, "voice/status", {})).toMatchObject({
     provider: "scripted",
     voiceId: "alloy-test",

@@ -137,7 +137,7 @@ export async function listBotVoices(
   scope: Pick<Actor, "userId" | "spaceId">,
   context: AdapterContext,
   providerId?: string | null,
-): Promise<VoiceInfo[] | null> {
+): Promise<{ provider: string; voices: VoiceInfo[] } | null> {
   const credential = providerId
     ? await findVoiceCredential(deps.prisma, scope, providerId)
     : await findDefaultVoiceCredential(deps.prisma, scope);
@@ -160,7 +160,7 @@ export async function listBotVoices(
     plaintext,
     context.signal,
   );
-  return provider.listVoices(apiKey, context);
+  return { provider: credential.provider, voices: await provider.listVoices(apiKey, context) };
 }
 
 const VOICES_SHOWN = 10;
@@ -202,7 +202,7 @@ export async function prepareOwnBotSettings(
   scope: Pick<Actor, "userId" | "spaceId">,
   bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel">,
   args: { model?: unknown; thinkingLevel?: unknown; readAloud?: unknown; voice?: unknown },
-  listVoices: () => Promise<VoiceInfo[] | null> = async () => null,
+  listVoices: () => Promise<{ provider: string; voices: VoiceInfo[] } | null> = async () => null,
 ): Promise<{ data: BotSettingsValues } | { error: string }> {
   const data: BotSettingsValues = {};
   if (args.readAloud !== undefined) {
@@ -210,17 +210,20 @@ export async function prepareOwnBotSettings(
     data.autoSpeak = args.readAloud;
   }
   if (typeof args.voice === "string" && args.voice.trim()) {
-    let voices: VoiceInfo[] | null;
+    let selection: { provider: string; voices: VoiceInfo[] } | null = null;
+    const useDefault = args.voice.trim().toLowerCase() === "default";
     try {
-      voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
+      if (!useDefault) selection = await listVoices();
     } catch (error) {
       if (error instanceof VoiceAccountError) return { error: error.message };
       return { error: "Could not list voices right now; try again." };
     }
-    if (!voices) return { error: "Connect a voice provider first." };
-    const voice = resolveVoiceChoice(voices, args.voice);
+    if (!useDefault && !selection) return { error: "Connect a voice provider first." };
+    const voice = resolveVoiceChoice(selection?.voices ?? [], args.voice);
     if (!voice.ok) return { error: voice.error };
     data.voiceId = voice.voiceId;
+    // A custom voice belongs to the connection whose catalog supplied it, even if Settings changes.
+    if (selection) data.voiceProvider = selection.provider;
   }
   const model = typeof args.model === "string" ? args.model.trim() : "";
   const level = typeof args.thinkingLevel === "string" ? args.thinkingLevel.trim() : "";

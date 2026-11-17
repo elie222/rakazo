@@ -151,7 +151,7 @@ export function SettingsOverlays({
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
-  const voiceStatusKey = queries.voice.status.queryKey();
+  const voiceStatusKey = queries.voice.status.key();
   return (
     <>
       {overlay?.kind === "settings" && showSettings ? (
@@ -227,13 +227,13 @@ export function SettingsOverlays({
           }}
           onVoiceStatusMaybeChanged={async () => {
             try {
-              queryClient.setQueryData(
-                voiceStatusKey,
-                await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
-              );
+              await Promise.race([
+                queryClient.resetQueries({ queryKey: voiceStatusKey }),
+                voiceStatusRefreshTimeout(),
+              ]);
             } catch {
-              // Prefer reopening Voice settings over starting a call with stale readiness.
-              void queryClient.resetQueries({ queryKey: voiceStatusKey });
+              // Reset already cleared stale readiness. Stop a hung refresh without holding dismissal.
+              void queryClient.cancelQueries({ queryKey: voiceStatusKey });
             }
           }}
           onClose={() => setOverlay(null)}

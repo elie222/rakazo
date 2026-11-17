@@ -309,13 +309,13 @@ describe("prepareOwnBotSettings voice", () => {
   });
 
   it("lists voices only when a voice is asked for and stores the match", async () => {
-    const list = vi.fn(async () => voices);
+    const list = vi.fn(async () => ({ provider: "provider-a", voices }));
     expect(await prepareOwnBotSettings(deps(), scope, bot, { readAloud: true }, list)).toEqual({
       data: { autoSpeak: true },
     });
     expect(list).not.toHaveBeenCalled();
     expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, list)).toEqual({
-      data: { voiceId: "voice-rachel" },
+      data: { voiceProvider: "provider-a", voiceId: "voice-rachel" },
     });
   });
 

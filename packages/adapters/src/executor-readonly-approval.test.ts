@@ -30,6 +30,7 @@ import { FakeWebProvider } from "./providers/web/fake/fake-web.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
+import * as voiceFactory from "./voice-factory.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -2220,6 +2221,111 @@ describe("own instructions through update_bot", () => {
 });
 
 describe("own settings through update_bot", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function voiceFixture(voiceProvider: string | null = null, voiceId: string | null = null) {
+    const f = fixture({ name: "update_bot", builtin: true });
+    const state = { voiceProvider, voiceId, defaultProvider: "provider-a" };
+    const read = f.prisma.bot.findUniqueOrThrow.getMockImplementation()!;
+    f.prisma.bot.findUniqueOrThrow.mockImplementation(async () => ({
+      ...(await read()),
+      ...state,
+    }));
+    const update = f.prisma.bot.update.getMockImplementation()!;
+    f.prisma.bot.update.mockImplementation(async (query) => {
+      const { where } = query as typeof query & { where: Record<string, unknown> };
+      if (
+        Object.entries(where).some(
+          ([key, value]) => key in state && state[key as keyof typeof state] !== value,
+        )
+      )
+        throw Object.assign(new Error("Settings conflict"), { code: "P2025" });
+      Object.assign(state, query.data);
+      return update(query);
+    });
+    Object.assign(f.prisma, {
+      userVoicePreference: {
+        findFirst: vi.fn(async ({ where }: { where: { credential?: { provider: string } } }) => ({
+          voiceId: "settings-voice",
+          speechModel: null,
+          isDefault: true,
+          credential: {
+            id: "voice-credential",
+            userId: "user-1",
+            provider: where.credential?.provider ?? state.defaultProvider,
+            secretId: "voice-secret",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        })),
+      },
+    });
+    const listVoices = vi.fn(async () => [{ id: "voice-rachel", label: "Rachel" }]);
+    vi.spyOn(voiceFactory, "createVoiceProvider").mockReturnValue({ listVoices } as never);
+    return { ...f, voiceState: state, listVoices };
+  }
+
+  it("pins a custom voice to its catalog provider and includes both fields in undo", async () => {
+    const f = voiceFixture();
+    f.listVoices.mockImplementation(async () => {
+      // Settings switches while its old provider's catalog request is in flight.
+      f.voiceState.defaultProvider = "provider-b";
+      return [{ id: "voice-rachel", label: "Rachel" }];
+    });
+    f.setCalls([{ args: { voice: "Rachel" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, voice: "voice-rachel" }]);
+    expect(f.voiceState).toMatchObject({ voiceProvider: "provider-a", voiceId: "voice-rachel" });
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", voiceProvider: null, voiceId: null },
+        data: { voiceProvider: "provider-a", voiceId: "voice-rachel" },
+      }),
+    );
+    expect(f.prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({
+              settingsUpdate: {
+                botId: "bot-1",
+                before: { voiceProvider: null, voiceId: null },
+                after: { voiceProvider: "provider-a", voiceId: "voice-rachel" },
+              },
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it.each([null, "provider-a"])(
+    "refuses a voice from the old catalog when the bot provider changes from %s",
+    async (provider) => {
+      const f = voiceFixture(provider, "original-voice");
+      f.listVoices.mockImplementation(async () => {
+        f.voiceState.voiceProvider = "provider-b";
+        return [{ id: "voice-rachel", label: "Rachel" }];
+      });
+      f.setCalls([{ args: { voice: "Rachel" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results).toEqual([
+        {
+          error: "Your settings changed meanwhile; read them and try again.",
+        },
+      ]);
+      expect(f.voiceState).toMatchObject({
+        voiceProvider: "provider-b",
+        voiceId: "original-voice",
+      });
+      expect(
+        f.prisma.message.create.mock.calls.some(([query]) =>
+          JSON.stringify(query).includes("settingsUpdate"),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("never widens its own powers", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([

@@ -152,7 +152,7 @@ it("keeps the accepted voice after a failed save and previews that bot, not the 
   const speak = vi.spyOn(Speaker.prototype, "speak").mockResolvedValue(undefined);
   vi.spyOn(Speaker.prototype, "unlock").mockImplementation(() => undefined);
   await render();
-  await choose("provider", "Speech A");
+  await choose("voice", "Bright");
   const sample = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.getAttribute("aria-label") === "Hear a sample",
   )!;
@@ -167,4 +167,27 @@ it("keeps the accepted voice after a failed save and previews that bot, not the 
     spaceId: "space-1",
     messageId: expect.any(String),
   });
+});
+
+it("pins a custom voice chosen under Default until the provider is reset", async () => {
+  await render();
+  await choose("voice", "Calm");
+  expect(bot.voiceProvider).toBe("speech-a");
+  expect(bot.voiceId).toBe("calm");
+  credentials = credentials.map((entry) => ({
+    ...entry,
+    isDefault: entry.provider === "speech-b",
+  }));
+  await act(async () => {
+    await client.invalidateQueries({
+      queryKey: spaceQueries(null, "space-1").voice.credentials.queryKey(),
+    });
+  });
+  await act(flush);
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Speech A");
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Calm");
+  await choose("provider", "Default (Speech B)");
+  expect(bot.voiceProvider).toBeNull();
+  expect(bot.voiceId).toBeNull();
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Default (Bright)");
 });

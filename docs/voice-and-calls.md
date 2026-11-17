@@ -32,8 +32,9 @@ don't have to keep holding.
 - To hear every reply from a bot, open its settings, expand **Advanced**, and turn on
   **Read replies aloud**.
 - In a bot's profile, choose a **Voice provider** and **Voice** to override Settings → Voice,
-  then use the play button beside the voice to hear a sample. **Default** follows Settings live. Connections and
-  keys stay in Settings → Voice; reconnect a disconnected provider there before it can speak.
+  then use the play button beside the voice to hear a sample. Choosing a custom voice also fixes
+  its provider. Choose **Default** under **Voice provider** to follow Settings again. Connections
+  and keys stay in Settings → Voice; reconnect a disconnected provider there before it can speak.
 
 ## Call a bot
 

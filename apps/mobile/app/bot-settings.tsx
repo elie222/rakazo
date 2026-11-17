@@ -321,7 +321,7 @@ export default function BotSettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       let current = true;
-      void loadDeviceVoiceEnabled()
+      void loadDeviceVoiceEnabled(botId)
         .then((enabled) => {
           if (current) setDeviceVoiceEnabled(enabled);
         })
@@ -331,7 +331,7 @@ export default function BotSettingsScreen() {
       return () => {
         current = false;
       };
-    }, []),
+    }, [botId]),
   );
 
   useEffect(() => {

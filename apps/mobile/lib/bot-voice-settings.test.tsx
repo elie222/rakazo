@@ -47,8 +47,16 @@ vi.mock("./api", () => ({
       ];
     if (proc === "voice/credentials")
       return [
-        { provider: "provider-a", voiceId: "a-default" },
-        { provider: "provider-b", voiceId: "b-default" },
+        {
+          provider: "provider-a",
+          voiceId: "a-default",
+          isDefault: state.defaultProvider === "provider-a",
+        },
+        {
+          provider: "provider-b",
+          voiceId: "b-default",
+          isDefault: state.defaultProvider === "provider-b",
+        },
       ];
     if (proc === "voice/voices")
       return [
@@ -206,14 +214,9 @@ it("offers connected catalog labels and clears voice when the provider changes",
 it("keeps inherited choices null while Settings defaults update live", async () => {
   await open();
   expect(container.textContent).toContain("Default (Provider A)");
+  state.defaultProvider = "provider-b";
   await act(async () => {
-    queryClient.setQueryData(rpcQuery("voice/status").queryKey, {
-      ready: true,
-      configured: true,
-      transcribe: false,
-      provider: "provider-b",
-      voiceId: "b-default",
-    });
+    await queryClient.invalidateQueries({ queryKey: rpcQuery("voice/credentials").queryKey });
   });
   expect(container.textContent).toContain("Default (Provider B)");
   expect(state.bot.voiceProvider).toBeNull();
@@ -241,4 +244,68 @@ it("plays only an explicit sample with the saved effective provider and voice, a
   expect(container.textContent).not.toContain("Could not play that sample.");
   await act(async () => root.render(null));
   expect(state.stop).toHaveBeenCalledWith(owner);
+});
+
+it("pins a custom voice chosen under Default and resumes inheritance when reset", async () => {
+  await open();
+  await act(async () => button("Custom voice").click());
+  await act(async () => {
+    await vi.waitFor(() => expect(button("Provider A").getAttribute("aria-pressed")).toBe("true"));
+  });
+  expect(state.bot.voiceProvider).toBe("provider-a");
+  expect(state.bot.voiceId).toBe("custom");
+  state.defaultProvider = "provider-b";
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: rpcQuery("voice/credentials").queryKey });
+    await queryClient.invalidateQueries({
+      queryKey: rpcQuery("voice/status", { botId: "bot-a" }).queryKey,
+    });
+  });
+  expect(button("Provider A").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Custom voice").getAttribute("aria-pressed")).toBe("true");
+  await act(async () => button("Hear a sample").click());
+  expect(state.speak).toHaveBeenLastCalledWith(expect.any(String), {
+    botId: "bot-a",
+    provider: "provider-a",
+    voiceId: "custom",
+    owner: expect.any(Symbol),
+  });
+  await act(async () => button("Default (Provider B)").click());
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(button("Default (Provider B)").getAttribute("aria-pressed")).toBe("true"),
+    );
+  });
+  expect(state.bot.voiceProvider).toBeNull();
+  expect(state.bot.voiceId).toBeNull();
+  expect(button("Default (Settings voice)").getAttribute("aria-pressed")).toBe("true");
+  state.defaultProvider = "provider-a";
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: rpcQuery("voice/credentials").queryKey });
+  });
+  expect(button("Default (Provider A)").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("keeps the accepted provider and voice when a new selection fails to save", async () => {
+  state.bot.voiceProvider = "provider-b";
+  state.bot.voiceId = "custom";
+  const gate = deferred();
+  state.save.mockReturnValueOnce(gate.promise);
+  await open();
+  await act(async () => button("Settings voice").click());
+  expect(button("Hear a sample").disabled).toBe(true);
+  await act(async () => gate.reject(new Error("Could not save voice")));
+  await act(async () => {
+    await vi.waitFor(() => expect(button("Hear a sample").disabled).toBe(false));
+  });
+  expect(container.textContent).toContain("Could not save voice");
+  expect(button("Provider B").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Custom voice").getAttribute("aria-pressed")).toBe("true");
+  await act(async () => button("Hear a sample").click());
+  expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
+    botId: "bot-a",
+    provider: "provider-b",
+    voiceId: "custom",
+    owner: expect.any(Symbol),
+  });
 });

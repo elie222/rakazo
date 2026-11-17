@@ -28,7 +28,7 @@ export function ChatHeader({
   activeGroup: Group | undefined;
   activeSnapshot: ThreadSnapshot | null;
   phoneCallsEnabled: boolean;
-  /** False while the voice status loads or no voice is connected; the button then opens voice settings. */
+  /** The last known bot readiness; Call confirms its current status before starting. */
   voiceReady: boolean;
   inCall: boolean;
   panelOpen: boolean;

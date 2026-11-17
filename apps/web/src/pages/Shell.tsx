@@ -48,7 +48,7 @@ import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
-import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
+import { setCallMinimized, useCallSession } from "../lib/call-session";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { computersAreUnavailable } from "../lib/computer-sandbox";
@@ -93,6 +93,7 @@ import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar"
 import { Transcript } from "./shell/transcript";
 import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/transcript-member-name";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
+import { useCallBot } from "./shell/use-call-bot";
 import { useChatRead } from "./shell/use-chat-read";
 import { useChatSnooze } from "./shell/use-chat-snooze";
 import { useComposerActions } from "./shell/use-composer-actions";
@@ -228,21 +229,6 @@ function SpaceShell() {
         ? null
         : undefined;
   const call = useCallSession();
-  /** Calls a bot, or opens voice settings first when no voice is connected. */
-  const callBot = (bot: Bot) => {
-    if (!bootstrapMe?.phoneCallsEnabled) return;
-    if (!botVoiceStatus?.ready) {
-      openSettings("voice");
-      return;
-    }
-    startCall({
-      botId: bot.id,
-      botName: bot.name,
-      botColor: bot.color,
-      botAvatarSet: bot.avatarSet,
-      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
-    });
-  };
   const voiceStatus: VoiceStatus | null =
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
@@ -297,6 +283,12 @@ function SpaceShell() {
   const activeGroup = groups.find((group) => group.id === groupId);
   const activeBotId = useRef<string | undefined>(inGroup ? undefined : active?.id);
   activeBotId.current = inGroup ? undefined : active?.id;
+  const callBot = useCallBot({
+    enabled: Boolean(bootstrapMe?.phoneCallsEnabled),
+    activeBotId,
+    queries,
+    onConfigure: () => openSettings("voice"),
+  });
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });

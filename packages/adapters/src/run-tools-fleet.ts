@@ -326,6 +326,7 @@ export const fleetTools: ToolHandlers = {
       () => listBotVoices(deps, run, context, live.voiceProvider),
     );
     if ("error" in settings) return call.finish(settings);
+    // Custom voice selections include their catalog provider: guard it and show it on undo too.
     const before = BotSettingsValuesSchema.parse(
       Object.fromEntries(
         Object.keys(settings.data).map((key) => [key, live[key as keyof typeof settings.data]]),

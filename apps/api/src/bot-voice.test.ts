@@ -4,7 +4,13 @@ import { IsolationError } from "@rakazo/db";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
-import { mountVoiceHttpRoutes, prepareVoice, synthesizeVoice, voiceStatus } from "./voice.js";
+import {
+  mountVoiceHttpRoutes,
+  prepareVoice,
+  synthesizeVoice,
+  transcribeVoice,
+  voiceStatus,
+} from "./voice.js";
 
 const actor = {
   userId: "user-1",
@@ -146,6 +152,24 @@ describe("bot voice", () => {
       voiceId: "bot-voice",
     });
     expect(secrets.load).not.toHaveBeenCalled();
+  });
+
+  it("transcribes with the Settings default even when the bot overrides speech", async () => {
+    const { deps, createProvider, synthesize } = fixture({
+      voiceProvider: "provider-b",
+      voiceId: "bot-voice",
+    });
+    const transcribe = vi.fn(async () => ({ text: "Hello" }));
+    createProvider.mockReturnValue({ synthesize, transcribe } as never);
+    await expect(
+      transcribeVoice(deps, actor, { audio: new Uint8Array([1]), mimeType: "audio/webm" }),
+    ).resolves.toEqual({ text: "Hello" });
+    expect(createProvider).toHaveBeenCalledWith("provider-a", expect.anything());
+    expect(transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "test-key" }),
+      expect.anything(),
+    );
+    expect(synthesize).not.toHaveBeenCalled();
   });
 
   it("previews an explicit provider and its default voice instead of the saved bot voice", async () => {

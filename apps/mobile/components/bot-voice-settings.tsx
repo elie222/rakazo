@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { botVoiceChoices, botVoiceProviderChoices } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -30,13 +31,17 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
   const botQuery = useScreenQuery(botRead);
   const catalog = useScreenQuery(rpcQuery("voice/catalog"));
   const credentials = useScreenQuery(rpcQuery("voice/credentials"));
-  const defaults = useScreenQuery(rpcQuery("voice/status"));
   const statusRead = rpcQuery("voice/status", { botId });
   const status = useScreenQuery(statusRead);
   const bot = botQuery.data;
-  const provider = bot?.voiceProvider ?? defaults.data?.provider ?? "";
+  const providers = botVoiceProviderChoices({
+    provider: bot?.voiceProvider,
+    credentials: credentials.data,
+    catalog: catalog.data,
+  });
+  const provider = bot?.voiceProvider ?? providers.connection?.provider ?? "";
   const voices = useScreenQuery(rpcQuery("voice/voices", { provider }), {
-    enabled: Boolean(provider),
+    enabled: Boolean(providers.connection),
   });
   const change = useSave({
     save: async (patch: { voiceProvider?: string | null; voiceId?: string | null }, send) => {
@@ -64,34 +69,23 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     },
   });
   const busy = change.pending || sample.pending || !bot;
-  const providerChoices = (catalog.data ?? [])
-    .filter((entry) => credentials.data?.some((credential) => credential.provider === entry.id))
-    .map((entry) => ({ key: entry.id, label: entry.name }));
-  // A disconnected choice remains visible so it can be reset, rather than looking like Default.
-  if (bot?.voiceProvider && !providerChoices.some((choice) => choice.key === bot.voiceProvider)) {
-    providerChoices.push({
-      key: bot.voiceProvider,
-      label:
-        catalog.data?.find((entry) => entry.id === bot.voiceProvider)?.name ?? bot.voiceProvider,
-    });
-  }
-  const defaultProvider = catalog.data?.find((entry) => entry.id === defaults.data?.provider)?.name;
-  const providerDefault = defaultProvider ? t`Default (${defaultProvider})` : t`Default`;
-  const voiceChoices = (voices.data ?? []).map((voice) => ({ key: voice.id, label: voice.label }));
-  if (bot?.voiceId && !voiceChoices.some((choice) => choice.key === bot.voiceId)) {
-    voiceChoices.push({ key: bot.voiceId, label: bot.voiceId });
-  }
-  const defaultVoiceId = credentials.data?.find((entry) => entry.provider === provider)?.voiceId;
-  const defaultVoice =
-    voices.data?.find((voice) => voice.id === defaultVoiceId)?.label ?? defaultVoiceId;
-  const voiceDefault = defaultVoice ? t`Default (${defaultVoice})` : t`Default`;
+  const providerDefault = providers.defaultLabel
+    ? t`Default (${providers.defaultLabel})`
+    : t`Default`;
+  const voiceChoices = botVoiceChoices({
+    voices: voices.data,
+    voiceId: bot?.voiceId,
+    defaultVoiceId: providers.connection?.voiceId,
+  });
+  const voiceDefault = voiceChoices.defaultLabel
+    ? t`Default (${voiceChoices.defaultLabel})`
+    : t`Default`;
   const failure =
     change.error ??
     sample.error ??
     botQuery.error ??
     catalog.error ??
     credentials.error ??
-    defaults.error ??
     status.error ??
     voices.error;
 
@@ -99,9 +93,12 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     <SettingsGroup label={t`Voice`} footer={failure ? errorText(failure) : undefined}>
       <MenuPicker
         label={t`Provider`}
-        choices={[{ key: "", label: providerDefault }, ...providerChoices]}
+        choices={[
+          { key: "", label: providerDefault },
+          ...providers.options.map((choice) => ({ key: choice.value, label: choice.label })),
+        ]}
         value={bot?.voiceProvider ?? ""}
-        disabled={busy || !catalog.data || !credentials.data || !defaults.data}
+        disabled={busy || !catalog.data || !credentials.data}
         onChange={(key) => {
           if (key !== (bot?.voiceProvider ?? "")) {
             sample.reset();
@@ -114,13 +111,23 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
           <View style={styles.voicePicker}>
             <MenuPicker
               label={t`Voice`}
-              choices={[{ key: "", label: voiceDefault }, ...voiceChoices]}
+              choices={[
+                { key: "", label: voiceDefault },
+                ...voiceChoices.options.map((choice) => ({
+                  key: choice.value,
+                  label: choice.label,
+                })),
+              ]}
               value={bot?.voiceId ?? ""}
-              disabled={busy || !voices.data}
+              disabled={busy || !providers.connection || !voices.data}
               onChange={(key) => {
                 if (key !== (bot?.voiceId ?? "")) {
                   sample.reset();
-                  change.run({ voiceId: key || null });
+                  change.run({
+                    voiceProvider:
+                      bot?.voiceProvider || (key ? providers.connection?.provider : null) || null,
+                    voiceId: key || null,
+                  });
                 }
               }}
             />
