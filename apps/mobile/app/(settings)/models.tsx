@@ -13,23 +13,29 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { ModelProviders } from "../../components/model-providers";
-import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
-import { ModelRoleSettings } from "../../components/model-role-settings";
-import { SpaceBotsModel } from "../../components/space-bots-model";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
-import type { ModelConnectionRequest } from "../../lib/model-connection-request";
-import { closeModelConnection, openModelConnection } from "../../lib/model-connection-request";
-import type { ModelPickerRequest } from "../../lib/model-picker-selection";
-import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
-import { native, useThemedStyles } from "../../lib/native";
-import type { SaveSend } from "../../lib/query";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { ACCOUNT_SETTINGS, settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { ModelProviders } from "../../components/models/model-providers";
+import type {
+  ConnectableProvider,
+  ModelConnectIntent,
+} from "../../components/models/model-role-settings";
+import { ModelRoleSettings } from "../../components/models/model-role-settings";
+import { SpaceBotsModel } from "../../components/settings/space-bots-model";
+import { LoadFailure } from "../../components/ui/load-failure";
+import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import type { ModelConnectionRequest } from "../../lib/models/model-connection-request";
+import {
+  closeModelConnection,
+  openModelConnection,
+} from "../../lib/models/model-connection-request";
+import type { ModelPickerRequest } from "../../lib/models/model-picker-selection";
+import { closeModelPicker, openModelPicker } from "../../lib/models/model-picker-selection";
+import { native, useThemedStyles } from "../../lib/native/native";
+import type { SaveSend } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS, settingsTarget } from "../../lib/query/settings-target";
 
 const noModels: MobileModel[] = [];
 const noCredentials: MobileModelCredential[] = [];

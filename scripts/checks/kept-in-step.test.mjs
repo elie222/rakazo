@@ -23,7 +23,7 @@ test("Android's recent-runs page size matches the API's", () => {
       "apps/mobile/modules/rakazo-notifications/android/src/main/java/com/rakazo/notifications/RakazoNotificationService.kt",
       /const val RECENT_LIMIT = (\d+)/,
     ),
-    capture("apps/api/src/runs.ts", /const RECENT_LIMIT = (\d+);/),
+    capture("apps/api/src/threads/runs.ts", /const RECENT_LIMIT = (\d+);/),
   );
 });
 
@@ -33,7 +33,7 @@ test("iOS file drop finds the composer by its test id", () => {
       "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
       /static let composerID = "([^"]+)"/,
     ),
-    capture("apps/mobile/components/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
+    capture("apps/mobile/components/composer/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
   );
 });
 
@@ -49,24 +49,28 @@ test("the supervisor refuses a page browser request with the code adapters recog
 
 test("the updater's default project name is the one production Compose pins", () => {
   assert.equal(
-    capture("packages/core/src/compose-update.ts", /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/),
+    capture(
+      "packages/core/src/deployment/compose-update.ts",
+      /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/,
+    ),
     capture("infra/compose/docker-compose.prod.yml", /^name: (\S+)$/m),
   );
 });
 
-test("Kubernetes computers default to the Compose stack's computer image", () => {
-  const [image, tag] = capture(
+test("Kubernetes computers use the published Compose image repository", () => {
+  const [image] = capture(
     "infra/compose/docker-compose.images.yml",
     /^ {4}image: (\$\{RAKAZO_COMPUTER_IMAGE:-[^}]+\}:\$\{RAKAZO_COMPUTER_IMAGE_TAG:-[^}]+\})$/m,
   )
     .match(/:-([^}]+)\}:\$\{RAKAZO_COMPUTER_IMAGE_TAG:-([^}]+)\}/)
     .slice(1);
   assert.equal(
+    // Source/main deployments retain their development channel; published installs use stable.
     capture(
       "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts",
       /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/,
-    ),
-    `${image}:${tag}`,
+    ).split(":")[0],
+    image,
   );
 });
 
@@ -77,5 +81,15 @@ test("table column widths are capped at the cell's own max-width", () => {
       "packages/chat-ui/src/markdown-table.css",
       /^\.rk-table-cell-text \{[^}]*max-width: (\S+);/m,
     ),
+  );
+});
+
+test("Depot's pull request test workflow is the one GitHub runs on main", () => {
+  const [depot, github] = [".depot", ".github"].map((folder) =>
+    readFileSync(path.join(root, folder, "workflows/test-suites.yml"), "utf8"),
+  );
+  assert.ok(
+    depot === github,
+    "copy .github/workflows/test-suites.yml to .depot/workflows/test-suites.yml",
   );
 });

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
-} from "../../components/ModelConnectionPreflightNotice";
-import { ModelSignInProgress } from "../../components/ModelSignInProgress";
+} from "../../components/models/ModelConnectionPreflightNotice";
+import { ModelSignInProgress } from "../../components/models/ModelSignInProgress";
 import { CompatibleKeyField } from "./compatible-key-field";
 import type { ModelSettingsState } from "./use-model-settings";
 

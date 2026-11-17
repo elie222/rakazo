@@ -25,6 +25,7 @@ import {
   COMPUTER_IMAGE,
   COMPUTER_IMAGE_CONTEXT_FILES,
   computerBridgeNameFor,
+  computerBrowserProxyPacMatches,
   computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
@@ -43,6 +44,7 @@ import {
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
   publishedLoopbackControlHostPort,
+  resolveComputerBrowserProxyPacUrl,
   resolveComputerComputeGpus,
   resolveComputerControlEndpoint,
   resolveComputerDns,
@@ -208,6 +210,60 @@ describe("graphical computer spec", () => {
     expect(containerCreateOptions({ ...base, dns: ["1.1.1.1"] }).HostConfig).toMatchObject({
       Dns: ["1.1.1.1"],
     });
+  });
+
+  it("parses the browser PAC URL, with none when unset", () => {
+    expect(resolveComputerBrowserProxyPacUrl(undefined)).toBeUndefined();
+    expect(resolveComputerBrowserProxyPacUrl("  ")).toBeUndefined();
+    expect(resolveComputerBrowserProxyPacUrl(" https://proxy.example.com/proxy.pac ")).toBe(
+      "https://proxy.example.com/proxy.pac",
+    );
+    expect(resolveComputerBrowserProxyPacUrl("http://proxy.example.com:8080/p.pac")).toBe(
+      "http://proxy.example.com:8080/p.pac",
+    );
+    const pac = `data:application/x-ns-proxy-autoconfig;base64,${Buffer.from(
+      'function FindProxyForURL(url, host) { return shExpMatch(host, "*.example.com") ? "PROXY proxy.example.com:3128" : "DIRECT"; }',
+    ).toString("base64")}`;
+    expect(resolveComputerBrowserProxyPacUrl(pac)).toBe(pac);
+    for (const value of [
+      "proxy.example.com/proxy.pac",
+      "/etc/proxy.pac",
+      "file:///etc/proxy.pac",
+      "ftp://proxy.example.com/proxy.pac",
+      "javascript:alert(1)",
+      "https://proxy.example.com/a b.pac",
+      "https://proxy.example.com/\tproxy.pac",
+      "https://proxy.example.com/\u0000proxy.pac",
+      "https://proxy.example.com/\u007fproxy.pac",
+      "data:application/x-ns-proxy-autoconfig,function FindProxyForURL() {}",
+      `data:application/x-ns-proxy-autoconfig;base64,${"A".repeat(64 * 1024)}`,
+    ])
+      expect(() => resolveComputerBrowserProxyPacUrl(value)).toThrow(
+        /SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL/,
+      );
+  });
+
+  it("hands computers the browser PAC URL only when configured", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    const pac = "https://proxy.example.com/proxy.pac";
+    const unset = containerCreateOptions(base).Env;
+    expect(unset.some((entry) => entry.startsWith("RAKAZO_BROWSER_PROXY_PAC_URL="))).toBe(false);
+    const env = containerCreateOptions({ ...base, browserProxyPacUrl: pac }).Env;
+    expect(env).toContain(`RAKAZO_BROWSER_PROXY_PAC_URL=${pac}`);
+
+    // The environment is fixed at creation, so adding, changing or removing it replaces a computer.
+    expect(computerBrowserProxyPacMatches(unset, undefined)).toBe(true);
+    expect(computerBrowserProxyPacMatches(null, undefined)).toBe(true);
+    expect(computerBrowserProxyPacMatches(env, pac)).toBe(true);
+    expect(computerBrowserProxyPacMatches(unset, pac)).toBe(false);
+    expect(computerBrowserProxyPacMatches(env, undefined)).toBe(false);
+    expect(computerBrowserProxyPacMatches(env, "https://proxy.example.com/other.pac")).toBe(false);
   });
 
   it("gives computers host GPUs only when configured", () => {
@@ -1101,6 +1157,57 @@ describe("graphical computer spec", () => {
         expect(run("pt_BR:pt").accept).toEqual(["--accept-lang=pt-BR,pt,en-US,en"]);
         expect(run("en-GB").accept).toEqual(["--accept-lang=en-GB,en"]);
         for (const value of ["", "pl;id", "-x", "pl pl"]) expect(run(value).accept).toEqual([]);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "passes the operator's PAC URL to the browser as one flag, and nothing when unset",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-proxy-pac-"));
+      const bin = path.join(temp, "bin");
+      const capture = path.join(temp, "args");
+      mkdirSync(bin);
+      // A path the unquoted flag list would glob a data: URL's * into.
+      mkdirSync(path.join(temp, "data:text"));
+      writeFileSync(path.join(temp, "data:text", "plain"), "");
+      const chromium = path.join(bin, "chromium");
+      writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@" > "$RAKAZO_TEST_ARGS"\n');
+      chmodSync(chromium, 0o755);
+      const run = (pac: string | undefined, args: string[] = []) => {
+        const { RAKAZO_BROWSER_PROXY_PAC_URL: _host, ...env } = process.env;
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser"), ...args], {
+          cwd: temp,
+          env: {
+            ...env,
+            ...(pac === undefined ? {} : { RAKAZO_BROWSER_PROXY_PAC_URL: pac }),
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        return readFileSync(capture, "utf8")
+          .trim()
+          .split(/\r?\n/)
+          .filter((arg) => arg.startsWith("--proxy-pac-url"));
+      };
+      try {
+        expect(run(undefined)).toEqual([]);
+        expect(run("")).toEqual([]);
+        const url = "https://proxy.example.com/proxy.pac";
+        expect(run(url)).toEqual([`--proxy-pac-url=${url}`]);
+        expect(run(url, [`--user-data-dir=${path.join(temp, "custom")}`])).toEqual([
+          `--proxy-pac-url=${url}`,
+        ]);
+        expect(run("data:text/*")).toEqual(["--proxy-pac-url=data:text/*"]);
+        for (const value of [`${url} --no-sandbox`, `${url}\tx`, `${url}\nx`])
+          expect(run(value)).toEqual([]);
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }

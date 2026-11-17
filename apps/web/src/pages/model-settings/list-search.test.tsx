@@ -5,7 +5,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { FoundModelPicker } from "../../components/FoundModelPicker";
+import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ProvidersSection } from "./providers-section";
 import { RoleModelPicker } from "./role-model-picker";
 

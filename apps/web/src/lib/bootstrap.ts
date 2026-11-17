@@ -2,9 +2,9 @@ import type { AppBootstrap, LabFeature } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes, parseLabs } from "@rakazo/contracts";
 import { displayIdentityResult } from "@rakazo/core";
 import { initialBootstrapTarget } from "./bootstrap-target";
-import { identityLabels } from "./identity-display";
-import { markOnce } from "./performance";
-import { rpc, selectedSpaceId } from "./rpc";
+import { identityLabels } from "./bots/identity-display";
+import { markOnce } from "./platform/performance";
+import { rpc, selectedSpaceId } from "./query/rpc";
 
 let labs: readonly LabFeature[] = [];
 let maxUploadSizeBytes = ATTACHMENT_MAX_BYTES;

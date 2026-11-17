@@ -1,0 +1,105 @@
+import type { SecretStore } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
+import type { PrismaClient } from "@rakazo/db";
+import { findModelCredential, findModelCredentialById } from "@rakazo/db";
+import {
+  resolveStoredModelAuth,
+  withModelCredentialLock,
+} from "../models/model-credential-refresh.js";
+import { isRetiredModelCredentialError } from "../runtime/pi/models/pi-oauth.js";
+import type { SecretCleanupDeps } from "../secrets/secret-cleanup.js";
+import { voiceCatalogEntry } from "./voice-factory.js";
+
+/**
+ * A voice connection's secret when it authenticates with one of the account's model connections
+ * to the same provider instead of a key of its own. It holds no token: each request reads the
+ * model connection, so a refresh or reconnect there carries over. Without `credentialId`, as
+ * saved before a connection could be chosen, it uses the provider's preferred connection.
+ */
+export function modelConnectionVoiceSecret(credentialId?: string): string {
+  return JSON.stringify(
+    credentialId ? { kind: "model_connection", credentialId } : { kind: "model_connection" },
+  );
+}
+
+/** The model connection a voice secret names, or undefined when the secret is a key. */
+export function parseModelConnectionVoiceSecret(
+  plaintext: string,
+): { credentialId?: string } | undefined {
+  // A pasted key is never parsed: only the exact shape written above counts.
+  if (!plaintext.startsWith('{"kind":"model_connection"')) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(plaintext);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || !("kind" in parsed)) return undefined;
+  if (parsed.kind !== "model_connection") return undefined;
+  const credentialId = "credentialId" in parsed ? parsed.credentialId : undefined;
+  if (credentialId !== undefined && (typeof credentialId !== "string" || !credentialId)) {
+    return undefined;
+  }
+  // Anything but exactly what modelConnectionVoiceSecret writes, such as an extra field, is a key.
+  if (plaintext !== modelConnectionVoiceSecret(credentialId)) return undefined;
+  return credentialId ? { credentialId } : {};
+}
+
+export function isModelConnectionVoiceSecret(plaintext: string): boolean {
+  return parseModelConnectionVoiceSecret(plaintext) !== undefined;
+}
+
+export type VoiceKeyDeps = {
+  prisma: Pick<PrismaClient, "$transaction" | "userModelCredential" | "userModelPreference"> &
+    SecretCleanupDeps["prisma"];
+  secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
+};
+
+/**
+ * The bearer a voice adapter sends: the stored key, or a current one from the account's model
+ * connection to the provider, refreshed and retired under the same lock a model run uses.
+ */
+export async function resolveVoiceKey(
+  deps: VoiceKeyDeps,
+  scope: { userId: string; spaceId: string },
+  provider: string,
+  plaintext: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  // Only a provider the catalog lets use the model connection may; elsewhere it is a pasted key.
+  const link = parseModelConnectionVoiceSecret(plaintext);
+  if (!link || !voiceCatalogEntry(provider)?.modelConnection) return plaintext;
+  const missing = () =>
+    new VoiceAccountError(
+      undefined,
+      `Connect ${voiceCatalogEntry(provider)?.name ?? provider} in Models settings.`,
+    );
+  const owner = { userId: scope.userId };
+  const credential = link.credentialId
+    ? await findModelCredentialById(deps.prisma, owner, link.credentialId, provider)
+    : await findModelCredential(deps.prisma, owner, provider);
+  if (!credential) throw missing();
+  return withModelCredentialLock(credential.secretId, async () => {
+    const row = await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+    });
+    if (!row) throw missing();
+    const stored = await deps.secretStore.load(row.ciphertext, row.id);
+    try {
+      const { apiKey } = await resolveStoredModelAuth(
+        deps.prisma,
+        deps.secretStore,
+        scope,
+        credential,
+        stored,
+        provider,
+        { signal },
+      );
+      if (!apiKey) throw missing();
+      return apiKey;
+    } catch (error) {
+      if (isRetiredModelCredentialError(error)) throw missing();
+      throw error;
+    }
+  });
+}

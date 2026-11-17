@@ -218,4 +218,12 @@ export const HI_MESSAGES: Record<string, string> = {
     "Docker इंस्टॉल है लेकिन चल नहीं रहा। जारी रखने के लिए Docker सेवा शुरू करें।",
   "Rakazo stopped unexpectedly.": "Rakazo अप्रत्याशित रूप से रुक गया।",
   Reload: "फिर से लोड करें",
+  "Mac app control": "Mac ऐप नियंत्रण",
+  "Set up Mac app control": "Mac ऐप नियंत्रण सेट अप करें",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "कमांड पहले से काम कर रहे हैं। ऐप इस्तेमाल करने के लिए, सिस्टम सेटिंग्स में Rakazo को ऐक्सेसिबिलिटी और स्क्रीन रिकॉर्डिंग की अनुमति दें, फिर Rakazo को रीस्टार्ट करें।",
+  "Open System Settings": "सिस्टम सेटिंग्स खोलें",
+  "Restart Rakazo": "Rakazo रीस्टार्ट करें",
+  "Not Now": "अभी नहीं",
+  "Restart Rakazo to finish setup": "सेटअप पूरा करने के लिए Rakazo रीस्टार्ट करें",
 };

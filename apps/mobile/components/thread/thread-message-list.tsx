@@ -4,13 +4,13 @@ import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { ListRenderItem } from "react-native";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileMessage } from "../../lib/mobile-types";
-import type { ThreadColumnPadding } from "../../lib/thread-edges";
-import type { ThreadListScroll } from "../../lib/thread-list-scroll";
-import type { useThreadPaging } from "../../lib/thread-paging";
-import { ThreadScrollSurface } from "../thread-scroll-surface";
+import type { MobileMessage } from "../../lib/api/mobile-types";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { ThreadColumnPadding } from "../../lib/thread/scroll/thread-edges";
+import type { ThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
+import type { useThreadPaging } from "../../lib/thread/thread-paging";
 import { JumpToLatestButton } from "./thread-list-controls";
+import { ThreadScrollSurface } from "./thread-scroll-surface";
 
 const styles = StyleSheet.create({
   // Full screen width. Column padding stays on the content so the indicator

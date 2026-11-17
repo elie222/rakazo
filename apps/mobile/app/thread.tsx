@@ -5,22 +5,22 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { Thread } from "../components/thread/thread-screen";
-import { currentApiBase, selectedSpaceId } from "../lib/api";
-import { integrationsCacheScope } from "../lib/integrations-cache";
-import { useMobileTokens } from "../lib/native";
-import {
-  threadRouteSpaceOnFocus,
-  threadSpaceRequest,
-  threadSpaceSwitchResult,
-} from "../lib/notification-open";
-import { selectSpaceAcrossOrganizations } from "../lib/organizations";
+import { currentApiBase, selectedSpaceId } from "../lib/api/api";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
   loadVerifiedIntegrationsScope,
   subscribeSessionGeneration,
-} from "../lib/session";
-import { errorText } from "../lib/user-error";
+} from "../lib/api/session";
+import { errorText } from "../lib/api/user-error";
+import { integrationsCacheScope } from "../lib/integrations/integrations-cache";
+import { useMobileTokens } from "../lib/native/native";
+import {
+  threadRouteSpaceOnFocus,
+  threadSpaceRequest,
+  threadSpaceSwitchResult,
+} from "../lib/notifications/notification-open";
+import { selectSpaceAcrossOrganizations } from "../lib/spaces/organizations";
 
 export default function ThreadRoute() {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);

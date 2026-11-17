@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RakazoDesktop } from "../lib/desktop.js";
+import type { RakazoDesktop } from "../lib/platform/desktop.js";
 import { registerServiceWorker } from "./register.js";
 
 function host(desktop?: RakazoDesktop) {
