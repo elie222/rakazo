@@ -388,9 +388,7 @@ describe("FishAudioVoiceProvider", () => {
 
     const voices = await new FishAudioVoiceProvider().listVoices("sk-test", ctx);
 
-    expect(voices).toEqual([
-      { id: "private-id", label: "Private Voice", description: "My clone" },
-    ]);
+    expect(voices).toEqual([{ id: "private-id", label: "Private Voice", description: "My clone" }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("self=true");
   });
@@ -444,11 +442,9 @@ describe("FishAudioVoiceProvider", () => {
 
     expect(voices.some((voice) => voice.id === "own-101")).toBe(true);
     expect(voices.some((voice) => voice.label === "Own 101")).toBe(true);
-    expect(
-      fetchMock.mock.calls.some(
-        (call) => String(call[0]).includes("page_number=2"),
-      ),
-    ).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("page_number=2"))).toBe(
+      true,
+    );
   });
 
   it("stops catalog crawls at page caps when has_more stays true", async () => {
@@ -501,33 +497,6 @@ describe("FishAudioVoiceProvider", () => {
       text: "Hi",
       reference_id: "voice-id",
       format: "mp3",
-    });
-  });
-
-  it("keeps Yifei on her accepted s2-pro Mandarin calibration", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([7, 8]).buffer,
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await new FishAudioVoiceProvider().synthesize(
-      {
-        text: "这个不用想复杂。",
-        voiceId: "cefd6b735801437ba1cda33b55958b98",
-        apiKey: "sk-test",
-        model: "s2.1-pro",
-      },
-      ctx,
-    );
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>).model).toBe("s2-pro");
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      reference_id: "cefd6b735801437ba1cda33b55958b98",
-      temperature: 0.55,
-      top_p: 0.61,
-      prosody: { speed: 0.9, volume: -1, normalize_loudness: true },
     });
   });
 

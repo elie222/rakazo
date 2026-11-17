@@ -31,6 +31,46 @@ services:
 `install-images.sh` layers a `docker-compose.override.yml` next to it automatically. In your own
 commands, add `-f docker-compose.override.yml` after the base file.
 
+## Managed bot voices
+
+An operator can lock a bot to an exact voice, speech model and tuning without storing private voice
+identifiers in the image or database. Put `managed-voice-profiles.json` in the API's `DATA_DIR`:
+
+```json
+{
+  "version": 1,
+  "profiles": [
+    {
+      "botId": "c000000000000000000000000",
+      "voiceId": "connection::private-voice-id",
+      "voiceLabel": "Private voice",
+      "model": "speech-model",
+      "settings": { "speed": 0.94 }
+    }
+  ]
+}
+```
+
+The connection prefix must name a voice connection already configured for the account. The optional
+`settings` object is validated by that connection's adapter; unsupported keys or values are rejected
+before a speech request is sent.
+
+Rakazo loads this file when the API starts. A missing file leaves ordinary voice selection unchanged;
+an invalid file stops startup rather than silently using another voice. Managed bots show the active
+voice, connection, model and tuning under Advanced > Voice, and their voice picker is read-only.
+Other bot settings, including reading replies aloud, remain editable.
+
+For published images, keep the real file outside the source checkout and mount it read-only:
+
+```yaml
+services:
+  api:
+    volumes:
+      - ./private/managed-voice-profiles.json:/data/managed-voice-profiles.json:ro
+```
+
+The host file survives image replacement. Restart the API after changing it.
+
 ## Core settings
 
 All of these are optional:
