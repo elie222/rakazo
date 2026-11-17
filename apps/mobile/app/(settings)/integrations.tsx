@@ -788,6 +788,30 @@ export default function Integrations() {
     }
   }
 
+  async function setVerbatimResults(item: ConnectionCatalogItem, verbatimResults: boolean) {
+    const matches = accountsFor(item);
+    if (matches.length === 0) return;
+    const isCurrent = captureConnectionScope();
+    if (!isCurrent()) return;
+    setPending(`verbatim:${catalogItemKey(item)}`);
+    setCatalogError(null);
+    try {
+      for (const row of matches) {
+        const updated = await rpc("connections/setVerbatimResults", {
+          connectionId: row.id,
+          verbatimResults,
+        });
+        if (!isCurrent()) return;
+        updateAccount(updated);
+      }
+    } catch (reason) {
+      if (!isCurrent()) return;
+      setCatalogError(errorText(reason, t`Could not update connection`));
+    } finally {
+      if (isCurrent()) setPending(null);
+    }
+  }
+
   async function uninstall(item: ConnectionCatalogItem) {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
@@ -1136,6 +1160,9 @@ export default function Integrations() {
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
                 onConnect={() => void connect(detailItem)}
+                onSetVerbatimResults={(verbatimResults) =>
+                  void setVerbatimResults(detailItem, verbatimResults)
+                }
               />
             ) : (
               <>

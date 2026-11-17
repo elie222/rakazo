@@ -44,6 +44,7 @@ import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { providerToolCallId } from "./tool-call-ids.js";
 import { textContentArg } from "./tool-text.js";
+import { isVerbatimConnectorResult } from "./verbatim-connector-result.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 import { positiveIntegerArg } from "./workspace-file-tools.js";
 
@@ -507,7 +508,20 @@ function toAgentTool(
           const args = (params ?? {}) as Record<string, unknown>;
           const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
             VERBATIM_TOOL_RESULTS.has(name) ||
-            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
+            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers) ||
+            isVerbatimConnectorResult(
+              name,
+              callArgs,
+              host.request.verbatimConnections,
+              tool.route,
+            ) ||
+            (exposedName !== name &&
+              isVerbatimConnectorResult(
+                exposedName,
+                callArgs,
+                host.request.verbatimConnections,
+                tool.route,
+              ));
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
             providerToolCallId(host.providerToolCallIds, toolCallId) ||
@@ -653,6 +667,9 @@ function toAgentTool(
                         tool.name,
                         args,
                         host.request.verbatimMcpServers,
+                        host.request.verbatimConnections,
+                        tool.route,
+                        exposedName,
                       ),
                     },
                   ],
@@ -739,6 +756,9 @@ export function serializeToolResult(
   name: string,
   args: Record<string, unknown>,
   verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
+  verbatimConnections?: AgentRunRequest["verbatimConnections"],
+  route?: ConnectorTool["route"],
+  exposedName?: string,
 ) {
   try {
     const text = JSON.stringify(result);
@@ -747,7 +767,11 @@ export function serializeToolResult(
     if (
       text.length <= TOOL_RESULT_TEXT_LIMIT ||
       VERBATIM_TOOL_RESULTS.has(name) ||
-      isVerbatimMcpResult(name, args, verbatimMcpServers)
+      isVerbatimMcpResult(name, args, verbatimMcpServers) ||
+      isVerbatimConnectorResult(name, args, verbatimConnections, route) ||
+      (exposedName !== undefined &&
+        exposedName !== name &&
+        isVerbatimConnectorResult(exposedName, args, verbatimConnections, route))
     )
       return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"

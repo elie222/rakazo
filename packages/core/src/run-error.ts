@@ -28,6 +28,10 @@ export const MODEL_CONTEXT_TOO_SMALL_ERROR =
 export const VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR =
   "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.";
 
+/** A connected app asked to keep tool results whole, and one result still does not fit. */
+export const VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR =
+  "This connection's tool result does not fit the model. Turn off Keep tool results whole for that app, or choose another model.";
+
 /** The provider account's request budget cannot fit the agent's mandatory context. */
 export const MODEL_REQUEST_LIMIT_ERROR =
   "This connection's request limit is too small. Choose another model.";
@@ -316,7 +320,8 @@ export function normalizeRunError(
   if (
     trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR ||
     trimmed === MODEL_REQUEST_LIMIT_ERROR ||
-    trimmed === VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR
+    trimmed === VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR ||
+    trimmed === VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR
   ) {
     return {
       summary: translate(trimmed),

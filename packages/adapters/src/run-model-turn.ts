@@ -147,6 +147,7 @@ function modelTurnRequest(
     fallbackModelKeys,
     fallbackModels,
     verbatimMcpServers,
+    verbatimConnections,
   } = turn.fallbacks;
   const { ctx } = turn;
   const { script, state } = turn.ctx;
@@ -154,6 +155,7 @@ function modelTurnRequest(
   return {
     botId: bot.id,
     verbatimMcpServers,
+    verbatimConnections,
     threadId: thread.id,
     runId,
     usageOperationKind: run.trigger === BACKGROUND_HELPER_TRIGGER ? "subagent" : "answer",

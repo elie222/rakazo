@@ -11,6 +11,7 @@ import type {
   ConnectorEvent,
   ConnectorTool,
   ManagedConnectorProvider,
+  VerbatimConnectorPrefixRule,
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { humanizeToolName } from "@rakazo/core";
@@ -404,6 +405,73 @@ export class ComposioConnector implements ComposioProvider {
       adapterVersion: "0.1.0",
       capabilities: { discover: true, oauth: true, secretsBrokered: true },
     };
+  }
+
+  verbatimToolRules(
+    verbatimConnections: readonly ConnectedConnector[],
+    allConnections: readonly ConnectedConnector[],
+  ): VerbatimConnectorPrefixRule[] {
+    const normalizePrefix = (externalId: string) => {
+      const key = composioSlugKey(externalId);
+      return key ? `${key}_` : "";
+    };
+    const prefixes = new Set<string>();
+    const verbatimAccountsByPrefix = new Map<string, Set<string>>();
+    const allToolkitsByPrefix = new Set<string>();
+    const prefixHasNonVerbatimSibling = new Set<string>();
+
+    for (const connection of allConnections) {
+      const prefix = normalizePrefix(connection.externalId);
+      if (prefix) allToolkitsByPrefix.add(prefix);
+    }
+
+    const verbatimIds = new Set(verbatimConnections.map((connection) => connection.id));
+    for (const connection of verbatimConnections) {
+      const prefix = normalizePrefix(connection.externalId);
+      if (!prefix) continue;
+      prefixes.add(prefix);
+      const account = connection.providerRef?.trim();
+      if (account) {
+        let accounts = verbatimAccountsByPrefix.get(prefix);
+        if (!accounts) {
+          accounts = new Set();
+          verbatimAccountsByPrefix.set(prefix, accounts);
+        }
+        accounts.add(account);
+      }
+    }
+    if (prefixes.size === 0) return [];
+
+    for (const connection of allConnections) {
+      if (verbatimIds.has(connection.id)) continue;
+      const prefix = normalizePrefix(connection.externalId);
+      if (prefix && prefixes.has(prefix)) {
+        prefixHasNonVerbatimSibling.add(prefix);
+      }
+    }
+
+    const excludedPrefixes = [...allToolkitsByPrefix].filter((candidate) =>
+      [...prefixes].some(
+        (prefix) => candidate.length > prefix.length && candidate.startsWith(prefix),
+      ),
+    );
+    const allowedAccountsByPrefix: Record<string, readonly string[]> = {};
+    for (const prefix of prefixHasNonVerbatimSibling) {
+      const accounts = verbatimAccountsByPrefix.get(prefix);
+      allowedAccountsByPrefix[prefix] = accounts ? [...accounts] : [];
+    }
+
+    return [
+      {
+        prefixes: [...prefixes],
+        ...(excludedPrefixes.length > 0 ? { excludedPrefixes } : {}),
+        batchToolNames: [COMPOSIO_MULTI_EXECUTE_TOOL],
+        batchItemsKey: "tools",
+        batchItemToolKey: "tool_slug",
+        batchItemAccountKey: "account",
+        ...(Object.keys(allowedAccountsByPrefix).length > 0 ? { allowedAccountsByPrefix } : {}),
+      },
+    ];
   }
 
   async sessionFor(userId: string): Promise<ComposioSession> {

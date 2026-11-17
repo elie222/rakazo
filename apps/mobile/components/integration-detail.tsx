@@ -9,6 +9,7 @@ import { native, useThemedStyles } from "../lib/native";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
 import { NativeActionButton } from "./native-action-button";
+import { NativeSwitch } from "./native-switch";
 import { Chevron } from "./row-accessories";
 
 export type ConnectionTool = RpcOutput<"connections/tools">[number];
@@ -29,6 +30,7 @@ export function IntegrationDetail({
   onRename,
   onRevoke,
   onConnect,
+  onSetVerbatimResults,
 }: {
   item: ConnectionCatalogItem;
   accounts: Connection[];
@@ -44,12 +46,15 @@ export function IntegrationDetail({
   onRename: (row: Connection) => void;
   onRevoke: (row: Connection) => void;
   onConnect: () => void;
+  onSetVerbatimResults: (verbatimResults: boolean) => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
+  const updatingVerbatim = pending === `verbatim:${key}`;
+  const verbatimResults = accounts.some((row) => row.verbatimResults);
   const toolCount = tools.length;
 
   return (
@@ -111,6 +116,20 @@ export function IntegrationDetail({
           prominence="secondary"
         />
       </View>
+
+      {accounts.length > 0 ? (
+        <View style={styles.card}>
+          <View style={styles.switchRow}>
+            <Text style={[styles.title, styles.grow]}>{t`Keep tool results whole`}</Text>
+            <NativeSwitch
+              accessibilityLabel={t`Keep tool results whole`}
+              disabled={updatingVerbatim || uninstalling}
+              onValueChange={onSetVerbatimResults}
+              value={verbatimResults}
+            />
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Pressable

@@ -163,6 +163,11 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const detail = page.getByTestId("connection-detail");
   await expect(detail).toBeVisible();
   await expect(page.getByTestId("connection-accounts")).toBeVisible();
+  const keepWhole = detail.getByRole("checkbox", { name: "Keep tool results whole" });
+  await expect(keepWhole).toBeVisible();
+  await expect(keepWhole).not.toBeChecked();
+  await keepWhole.click();
+  await expect(keepWhole).toBeChecked();
   await expect(page.getByTestId("connection-tools")).toBeVisible();
 
   await detail.getByRole("button", { name: "Add another", exact: true }).click();

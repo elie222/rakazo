@@ -47,6 +47,7 @@ export interface ConnectedConnector {
   externalId: string;
   displayName: string;
   providerRef?: string;
+  verbatimResults?: boolean;
 }
 
 export interface AdapterDescriptor<TCapabilities> {
@@ -646,6 +647,38 @@ export interface AgentRunModel {
 export type AgentContextStrategy = "current" | "retrieval" | "snapshots" | "cache-aware";
 export const DEFAULT_CONTEXT_STRATEGY: AgentContextStrategy = "retrieval";
 
+export interface VerbatimConnectorPrefixRule {
+  /** Lowercase normalized tool prefixes owned by verbatim connections. */
+  prefixes: readonly string[];
+  /** Longer connected prefixes that take precedence over shorter prefixes. */
+  excludedPrefixes?: readonly string[];
+  /** Batch-execution tool names whose items array can target individual tools. */
+  batchToolNames?: readonly string[];
+  /** Array property on batch-execution arguments. */
+  batchItemsKey?: string;
+  /** Tool-name property on each batch item. */
+  batchItemToolKey?: string;
+  /** Optional account-ref property on each batch item. */
+  batchItemAccountKey?: string;
+  /** Allowed account refs per prefix when sibling accounts do not all opt in. */
+  allowedAccountsByPrefix?: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface VerbatimConnectorTargets {
+  /** Connection ids whose direct tool routes must stay whole. */
+  connectionIds?: readonly string[];
+  /** Exact exposed tool names belonging to verbatim connections. */
+  toolNames?: readonly string[];
+  /** Catalog execute wrapper targets (`<connectorId>_execute_tool`) matching `args.id`. */
+  catalogMatches?: readonly {
+    executeToolName: string;
+    connectionIds: readonly string[];
+    providers: readonly string[];
+  }[];
+  /** Prefix-routed connector rules declared by adapters. */
+  prefixRules?: readonly VerbatimConnectorPrefixRule[];
+}
+
 export interface AgentRunRequest {
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
@@ -655,6 +688,8 @@ export interface AgentRunRequest {
    * (`mcp__<slug>__<tool>`); catalog calls match `ids` (`<server id>:<tool>`).
    */
   verbatimMcpServers?: { ids: readonly string[]; slugs: readonly string[] };
+  /** App connections that must return tool results whole. */
+  verbatimConnections?: VerbatimConnectorTargets;
   /** Exclusive workflow cost bucket; retrieval tool turns are detected for answer calls. */
   usageOperationKind?: UsageOperationKind;
   botId: string;

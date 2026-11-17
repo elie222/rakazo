@@ -2,7 +2,7 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { appToolLabel, catalogItemAccounts, catalogItemKey } from "@rakazo/core";
-import { Badge, Button, Disclosure, Input } from "@rakazo/ui-web";
+import { Badge, Button, Checkbox, Disclosure, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import type { PluginConnections } from "./use-plugin-connections";
 
@@ -28,11 +28,14 @@ export function ConnectorDetail({
     revokeAccount,
     uninstall,
     renameAccount,
+    setVerbatimResults,
   } = state;
   const accounts = catalogItemAccounts(connections, item);
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
+  const updatingVerbatim = pending === `verbatim:${key}`;
+  const verbatimResults = accounts.some((row) => row.verbatimResults);
   const toolCount = tools.length;
 
   return (
@@ -124,6 +127,20 @@ export function ConnectorDetail({
           {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
         </Button>
       </section>
+
+      {accounts.length > 0 ? (
+        <Field orientation="horizontal" className="px-2">
+          <Checkbox
+            id={`connection-verbatim-${key}`}
+            checked={verbatimResults}
+            disabled={updatingVerbatim || uninstalling}
+            onCheckedChange={(checked) => void setVerbatimResults(item, checked === true)}
+          />
+          <FieldLabel htmlFor={`connection-verbatim-${key}`}>
+            <Trans>Keep tool results whole</Trans>
+          </FieldLabel>
+        </Field>
+      ) : null}
 
       {toolsLoading || tools.length > 0 ? (
         <Disclosure

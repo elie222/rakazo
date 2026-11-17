@@ -14,7 +14,7 @@ import { configureProviderTransactionPool, runProviderTransaction } from "@rakaz
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
-import { createRouter, handle } from "./router-test-support.js";
+import { appHandler, createRouter, handle } from "./router-test-support.js";
 
 describe("connections.complete", () => {
   it.each([
@@ -990,5 +990,91 @@ describe("connections.complete", () => {
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
     expect(securityEvents()).toEqual([]);
+  });
+});
+
+describe("connections.setVerbatimResults", () => {
+  it("updates verbatimResults for an owned connection and rejects another space", async () => {
+    const row = {
+      id: "conn-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      connectorId: "composio",
+      provider: "gmail",
+      displayName: "Gmail",
+      providerRef: "account-1",
+      status: "connected",
+      verbatimResults: false,
+      createdAt: new Date("2026-08-26T00:00:00.000Z"),
+    };
+    const prisma = {
+      connection: {
+        findFirst: vi.fn(
+          async ({ where }: { where: { id: string; spaceId: string; userId: string } }) =>
+            where.id === row.id && where.spaceId === row.spaceId && where.userId === row.userId
+              ? { ...row }
+              : null,
+        ),
+        update: vi.fn(async ({ data }: { data: { verbatimResults: boolean } }) => {
+          row.verbatimResults = data.verbatimResults;
+          return { ...row };
+        }),
+      },
+    } as unknown as PrismaClient;
+    const handler = appHandler({
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+    } as unknown as RouterDeps);
+
+    const updated = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/connections/setVerbatimResults", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: "conn-1", verbatimResults: true } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "user-1",
+            email: "user@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        },
+      },
+    );
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({
+      json: { id: "conn-1", verbatimResults: true },
+    });
+
+    const forbidden = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/connections/setVerbatimResults", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: "conn-1", verbatimResults: false } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            spaceId: "workspace-2",
+            userId: "user-1",
+            email: "user@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        },
+      },
+    );
+    expect(forbidden.status).toBe(404);
   });
 });

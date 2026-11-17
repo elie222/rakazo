@@ -86,6 +86,12 @@ export function createIntegrationsStyles() {
       paddingHorizontal: 10,
       fontSize: 13,
     },
+    switchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
     link: { color: native.label, fontSize: 14, fontWeight: "600" },
     error: { color: destructive, fontSize: 14 },
     detail: { gap: 14 },

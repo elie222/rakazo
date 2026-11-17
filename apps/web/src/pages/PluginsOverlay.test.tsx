@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
     catalog: vi.fn(),
     list: vi.fn(),
     tools: vi.fn(),
+    setVerbatimResults: vi.fn(),
   },
   capabilities: { list: vi.fn(), catalogSearch: vi.fn(), sourcePresets: vi.fn() },
   mcp: { servers: { list: vi.fn() }, assignments: { list: vi.fn() } },
@@ -64,6 +65,27 @@ vi.mock("@rakazo/ui-web", async () => {
       "Spinner",
     ].map((name) => [name, container]),
     [
+      "Checkbox",
+      ({
+        id,
+        checked,
+        disabled,
+        onCheckedChange,
+      }: {
+        id?: string;
+        checked?: boolean;
+        disabled?: boolean;
+        onCheckedChange?: (checked: boolean) => void;
+      }) =>
+        createElement("input", {
+          id,
+          type: "checkbox",
+          checked: Boolean(checked),
+          disabled,
+          onChange: (event: Event) => onCheckedChange?.((event.target as HTMLInputElement).checked),
+        }),
+    ],
+    [
       "Button",
       ({
         children,
@@ -114,6 +136,7 @@ beforeEach(() => {
   api.connections.catalog.mockReset().mockResolvedValue([]);
   api.connections.list.mockReset().mockResolvedValue([]);
   api.connections.tools.mockReset().mockResolvedValue([]);
+  api.connections.setVerbatimResults.mockReset();
   api.capabilities.list.mockReset().mockResolvedValue([]);
   api.capabilities.sourcePresets.mockReset().mockResolvedValue([]);
   api.capabilities.catalogSearch
@@ -290,4 +313,54 @@ it("opens both Unicode fallback screenshot targets through browse and manage", a
   expect(
     host.querySelector('[data-testid="connection-detail"] .place-items-center')?.textContent,
   ).toBe("𠮷");
+});
+
+it("toggles Keep tool results whole on a connected app detail view", async () => {
+  const connectedRow = {
+    id: "conn-gmail",
+    connectorId: "fixture",
+    provider: "gmail",
+    displayName: "Gmail",
+    status: "connected",
+    verbatimResults: false,
+    createdAt: "2026-01-01",
+  };
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "fixture",
+      slug: "gmail",
+      name: "Gmail",
+      logo: null,
+      connected: true,
+      noAuth: false,
+    },
+  ]);
+  api.connections.list.mockResolvedValue([connectedRow]);
+  api.connections.setVerbatimResults.mockResolvedValue({
+    ...connectedRow,
+    verbatimResults: true,
+  });
+
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const added = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Added",
+  )!;
+  await act(async () => added.click());
+  const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(checkbox.checked).toBe(false);
+  await act(async () => checkbox.click());
+  expect(api.connections.setVerbatimResults).toHaveBeenCalledWith({
+    connectionId: "conn-gmail",
+    verbatimResults: true,
+  });
+  await vi.waitFor(() =>
+    expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true),
+  );
 });

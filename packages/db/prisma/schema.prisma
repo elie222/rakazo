@@ -1738,6 +1738,8 @@ model Connection {
   secretId    String?
   providerRef String?
   metadata    Json     @default("{}")
+  /// Tool results from this connection stay whole. A result that cannot fit fails the turn.
+  verbatimResults Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

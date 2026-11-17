@@ -203,6 +203,7 @@ export async function loadRunRecords(
         providerRef: true,
         displayName: true,
         status: true,
+        verbatimResults: true,
       },
     }),
     pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),

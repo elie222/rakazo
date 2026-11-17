@@ -1666,6 +1666,58 @@ describe("composio tool mapping", () => {
     ];
     expect(filterCatalog(items, "hacker").map((item) => item.slug)).toEqual(["hackernews"]);
   });
+
+  it("builds verbatim prefix rules excluding longer sibling toolkits and non-verbatim accounts", () => {
+    const connector = new ComposioConnector();
+    const gmailWork = {
+      id: "conn-gmail-work",
+      connectorId: "composio",
+      externalId: "gmail",
+      displayName: "Work Gmail",
+      providerRef: "ca-work",
+      verbatimResults: true,
+    };
+    const gmailPersonal = {
+      id: "conn-gmail-personal",
+      connectorId: "composio",
+      externalId: "gmail",
+      displayName: "Personal Gmail",
+      providerRef: "ca-personal",
+    };
+    const github = {
+      id: "conn-github",
+      connectorId: "composio",
+      externalId: "github",
+      displayName: "GitHub",
+      verbatimResults: true,
+    };
+    const githubMcp = {
+      id: "conn-github-mcp",
+      connectorId: "composio",
+      externalId: "github_mcp",
+      displayName: "GitHub MCP",
+    };
+
+    expect(
+      connector.verbatimToolRules(
+        [gmailWork, github],
+        [gmailWork, gmailPersonal, github, githubMcp],
+      ),
+    ).toEqual([
+      {
+        prefixes: ["gmail_", "github_"],
+        excludedPrefixes: ["github_mcp_"],
+        batchToolNames: ["COMPOSIO_MULTI_EXECUTE_TOOL"],
+        batchItemsKey: "tools",
+        batchItemToolKey: "tool_slug",
+        batchItemAccountKey: "account",
+        allowedAccountsByPrefix: {
+          gmail_: ["ca-work"],
+        },
+      },
+    ]);
+    expect(connector.verbatimToolRules([], [gmailPersonal])).toEqual([]);
+  });
 });
 
 describe("Composio during pnpm test", () => {

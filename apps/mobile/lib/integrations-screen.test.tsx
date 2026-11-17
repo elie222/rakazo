@@ -91,6 +91,27 @@ vi.mock("../components/native-symbol", () => ({
   ),
 }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    value,
+    disabled,
+    onValueChange,
+    accessibilityLabel,
+  }: {
+    value: boolean;
+    disabled?: boolean;
+    onValueChange: (next: boolean) => void;
+    accessibilityLabel?: string;
+  }) => (
+    <input
+      type="checkbox"
+      aria-label={accessibilityLabel}
+      checked={value}
+      disabled={disabled}
+      onChange={(event) => onValueChange(event.target.checked)}
+    />
+  ),
+}));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -1231,4 +1252,37 @@ it("clears a failed add when another type is picked from the header menu", async
   expect(container.textContent).toContain("Could not add source");
   await pick("OpenAPI");
   expect(container.textContent).not.toContain("Could not add source");
+});
+
+it("toggles Keep tool results whole on a connected app detail screen", async () => {
+  state.read.mockReturnValue({
+    catalog: [item],
+    connections: [{ ...account, verbatimResults: false }],
+  });
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "connections/setVerbatimResults") {
+      return Promise.resolve({ ...account, verbatimResults: true });
+    }
+    return original(proc, args);
+  });
+  await render();
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Added")?.click(),
+  );
+  const toggle = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Keep tool results whole"]',
+  )!;
+  expect(toggle.checked).toBe(false);
+  await act(async () => toggle.click());
+  expect(state.rpc).toHaveBeenCalledWith("connections/setVerbatimResults", {
+    connectionId: account.id,
+    verbatimResults: true,
+  });
+  await vi.waitFor(() =>
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="Keep tool results whole"]')
+        ?.checked,
+    ).toBe(true),
+  );
 });

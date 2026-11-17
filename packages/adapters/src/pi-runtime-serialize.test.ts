@@ -89,6 +89,29 @@ describe("serializeToolResult", () => {
     expect(JSON.parse(text)).toEqual(message);
   });
 
+  it("returns an opted-in app connection result verbatim", () => {
+    const message = {
+      body: `${"x".repeat(8_000)}https://sessions.example.test/join/conn${"y".repeat(8_000)}`,
+    };
+    const text = serializeToolResult(
+      message,
+      "retrieval",
+      "GMAIL_GET_MESSAGE",
+      {},
+      undefined,
+      {
+        connectionIds: ["conn-gmail"],
+        prefixRules: [{ prefixes: ["gmail_"] }],
+      },
+      {
+        connectorId: "composio",
+        connectionId: "conn-gmail",
+        toolName: "GMAIL_GET_MESSAGE",
+      },
+    );
+    expect(JSON.parse(text)).toEqual(message);
+  });
+
   it("still bounds other large tool results", () => {
     const text = serializeToolResult({ output: "x".repeat(20_000) }, "current", "shell", {});
     expect(text.length).toBeLessThan(20_000);
