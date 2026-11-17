@@ -2922,13 +2922,17 @@ describe("MCP connector tool list cache", () => {
         { name: "echo", inputSchema: { type: "object" } },
         { name: "added", inputSchema: { type: "object" } },
       ];
+      const run = () => ({ ...(context as object), signal: new AbortController().signal }) as never;
       expect(
-        await connector.resolveCall({ tool: "mcp__demo__added", args: {} } as never, context),
+        await connector.resolveCall({ tool: "mcp__demo__added", args: {} } as never, run()),
       ).toMatchObject({ call: { tool: "mcp__demo__added" } });
       expect(state.lists).toBe(2);
-      await expect(
-        connector.resolveCall({ tool: "mcp__demo__missing", args: {} } as never, context),
-      ).rejects.toThrow("Tool is unknown");
+      // Repeated guesses in one run re-list the server once.
+      const guessing = run();
+      for (const tool of ["mcp__demo__missing", "mcp__demo__missing_too"])
+        await expect(connector.resolveCall({ tool, args: {} } as never, guessing)).rejects.toThrow(
+          "Tool is unknown",
+        );
       expect(state.lists).toBe(3);
       // A catalog id names its server by id; an id naming no server re-lists nothing.
       const execute = (id: string) =>
@@ -2938,7 +2942,7 @@ describe("MCP connector tool list cache", () => {
             args: { id, arguments: {} },
             route: { connectorId: "mcp", toolName: CATALOG_EXECUTE },
           } as never,
-          context,
+          run(),
         );
       state.tools = [...state.tools, { name: "later", inputSchema: { type: "object" } }];
       expect(await execute(`${SERVER.id}:later`)).toMatchObject({

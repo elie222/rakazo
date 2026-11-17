@@ -448,6 +448,9 @@ export class McpConnector implements ConnectorProvider {
 
   /** The bot's catalog. Tool lists are cached per session, so a tool the cached lists lack
    * (added or renamed on the server since) lists its server again once before failing. */
+  /** Servers re-listed for a missing tool, per run (keyed by the run's signal). */
+  private readonly relistedInRun = new WeakMap<AbortSignal, Set<string>>();
+
   private async catalogFor(
     context: AdapterContext,
     lookup?: Record<string, unknown>,
@@ -459,14 +462,18 @@ export class McpConnector implements ConnectorProvider {
       return entries;
     } catch (error) {
       if (!(error instanceof UnknownCatalogToolError)) return entries;
-      // Only the server the id names re-lists, so a typo or a removed tool never re-lists the
-      // bot's other servers (and risks their rate limits).
+      // Only the server the id names re-lists, once per run, so typos and repeated guesses
+      // never spend a server's rate limit on more listings.
       const id = String(lookup.id ?? "");
+      const relisted = this.relistedInRun.get(context.signal) ?? new Set<string>();
+      this.relistedInRun.set(context.signal, relisted);
       return catalogEntries(
-        await this.authorizedTools(
-          context,
-          (serverId, slug) => id.startsWith(`${serverId}:`) || id.startsWith(`mcp__${slug}__`),
-        ),
+        await this.authorizedTools(context, (serverId, slug) => {
+          if (relisted.has(serverId)) return false;
+          if (!id.startsWith(`${serverId}:`) && !id.startsWith(`mcp__${slug}__`)) return false;
+          relisted.add(serverId);
+          return true;
+        }),
       );
     }
   }
