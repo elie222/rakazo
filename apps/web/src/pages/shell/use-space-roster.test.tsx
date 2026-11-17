@@ -125,7 +125,6 @@ function SpaceShell() {
   });
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const signals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer: () => {},

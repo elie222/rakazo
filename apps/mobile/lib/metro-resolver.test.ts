@@ -17,7 +17,10 @@ const { resolveTypeScriptSource } = require("../metro-resolver.js") as {
 
 describe("mobile Metro resolver", () => {
   it("resolves Node ESM-style JavaScript specifiers to TypeScript source", () => {
-    const resolved = { type: "sourceFile", filePath: "/repo/packages/core/src/async.ts" };
+    const resolved = {
+      type: "sourceFile",
+      filePath: "/repo/packages/core/src/primitives/async.ts",
+    };
     const resolveRequest = vi.fn((_context, moduleName: string) => {
       if (moduleName === "./async") return resolved;
       throw new Error(`Unexpected module: ${moduleName}`);
