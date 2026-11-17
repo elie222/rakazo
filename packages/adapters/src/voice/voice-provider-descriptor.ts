@@ -18,5 +18,7 @@ export interface VoiceProviderDefinition {
   customEndpoints?: boolean;
   /** A fixed synthesis model when the endpoint has no model selector. */
   synthesisModel?: string;
+  /** A fixed recognition model when the deployment supports one model. */
+  transcriptionModel?: string;
   create(options: VoiceProviderOptions): VoiceProvider;
 }

@@ -91,12 +91,35 @@ suite("operator speech costs (PostgreSQL)", () => {
       runAsSystem("test conflicting evidence", () =>
         confirmSpeechCost(db.prisma, id, { ...evidence, source: "different-source" }),
       ),
-    ).rejects.toThrow("different evidence");
+    ).rejects.toMatchObject({
+      kind: "CONFLICT",
+      message: "Speech cost already confirmed with different evidence",
+    });
     expect(await used()).toBe(15n);
     expect((await system.speechCost.findUniqueOrThrow({ where: { id } })).state).toBe("confirmed");
     await expect(
       runAsTenant(actor, () => confirmSpeechCost(db.prisma, id, evidence)),
     ).rejects.toThrow("system context");
+  });
+  it("classifies invalid reconciliation evidence and missing cost rows", async () => {
+    await expect(
+      runAsSystem("test invalid evidence", () =>
+        confirmSpeechCost(db.prisma, "missing-speech-call", {
+          costMicros: -1n,
+          source: "fixture",
+          reference: "fixture",
+        }),
+      ),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+    await expect(
+      runAsSystem("test missing speech record", () =>
+        confirmSpeechCost(db.prisma, "missing-speech-call", {
+          costMicros: 0n,
+          source: "fixture",
+          reference: "fixture",
+        }),
+      ),
+    ).rejects.toMatchObject({ kind: "NOT_FOUND" });
   });
   it.each([
     { rate: 0.07, units: 100, expected: 7n },

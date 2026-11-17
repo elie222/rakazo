@@ -1,13 +1,16 @@
+import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import type * as Database from "@rakazo/db";
-import { settleSpeech } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { admitSpeech, settleSpeech } from "@rakazo/db";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "../calls/voice.js";
 import {
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   synthesizeVoice,
+  transcribeInboundVoice,
   transcribeVoice,
 } from "../calls/voice.js";
 import { deploymentVoiceFromEnv } from "./deployment-config.js";
@@ -102,6 +105,42 @@ describe("deployment speech default", () => {
         ),
       ).toThrow("Invalid DEPLOYMENT_VOICE");
     }
+  });
+  it.each([
+    { plaintext: "fake-server-key" },
+    {
+      plaintext: "fake-server-key",
+      baseUrl: "https://speech.example.test/v1",
+      sttApiKey: "fake-unused-key",
+    },
+  ])("rejects incomplete compatible connections before advertising speech", (connection) => {
+    expect(() =>
+      deploymentVoiceFromEnv(
+        JSON.stringify({ ...config, provider: "openai-compatible", connection }),
+      ),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
+  });
+  it("validates a provider's fixed transcription model independently", () => {
+    const valid = {
+      ...config,
+      provider: "xai",
+      pricing: {
+        synthesize: { ...price, model: "tts" },
+        transcribe: { ...price, unit: "seconds", model: "grok-voice-transcribe-2.0" },
+      },
+    };
+    expect(deploymentVoiceFromEnv(JSON.stringify(valid))).toBeDefined();
+    expect(() =>
+      deploymentVoiceFromEnv(
+        JSON.stringify({
+          ...valid,
+          pricing: {
+            ...valid.pricing,
+            transcribe: { ...valid.pricing.transcribe, model: "mistyped-model" },
+          },
+        }),
+      ),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
   });
   it("does not advertise or choose included speech without an available grant", async () => {
     for (const allowance of [null, { limitMicros: 10n, usedMicros: 10n }]) {
@@ -202,4 +241,71 @@ it("returns completed audio when settlement storage fails", async () => {
   expect(clip.mimeType).toBe("audio/mpeg");
   expect(clip.bytes.length).toBeGreaterThan(0);
   expect(settleSpeech).toHaveBeenCalledWith(expect.anything(), "speech-call", undefined, undefined);
+});
+
+describe("automatic included voice-note consent", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each(["missing", "synthesis-only", "previous-endpoint", "allowed"])(
+    "checks the actual recognition recipient before dispatch (%s)",
+    async (consent) => {
+      const d = deps();
+      const connection = {
+        plaintext: "fake-server-key",
+        baseUrl: "https://speech.example.test/v1",
+        sttBaseUrl: "https://recognition.example.test/v1",
+      };
+      d.env!.deploymentVoice = deploymentVoiceFromEnv(
+        JSON.stringify({ ...config, provider: "openai-compatible", connection }),
+      )!;
+      const recipient = adapters.aiRecipient({
+        provider: "openai-compatible",
+        use: "voice",
+        baseUrl:
+          consent === "synthesis-only"
+            ? connection.baseUrl
+            : consent === "previous-endpoint"
+              ? "https://old-recognition.example.test/v1"
+              : connection.sttBaseUrl,
+      })!;
+      const findMany = vi.fn(async () =>
+        consent === "missing" ? [] : [{ recipientKey: recipient.key }],
+      );
+      Object.assign(d.prisma, { aiDataConsent: { findMany } });
+      const transcribe = vi.fn(async () => ({ text: "Synthetic transcript" }));
+      const create = vi
+        .spyOn(adapters, "createVoiceProvider")
+        .mockReturnValue({ transcribe } as never);
+      vi.mocked(admitSpeech).mockClear();
+      const result = await transcribeInboundVoice(d, actor, {
+        audio: new Uint8Array([1]),
+        mimeType: "audio/ogg",
+      });
+      expect(result).toBe(consent === "allowed" ? "Synthetic transcript" : null);
+      expect(findMany).toHaveBeenCalledWith({
+        where: {
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          version: AI_DISCLOSURE_VERSION,
+          recipientKey: {
+            in: [
+              adapters.aiRecipient({
+                provider: "openai-compatible",
+                use: "voice",
+                baseUrl: connection.sttBaseUrl,
+              })!.key,
+            ],
+          },
+        },
+        select: { recipientKey: true },
+      });
+      if (consent === "allowed") {
+        expect(transcribe).toHaveBeenCalledOnce();
+        expect(admitSpeech).toHaveBeenCalledOnce();
+      } else {
+        expect(create).not.toHaveBeenCalled();
+        expect(transcribe).not.toHaveBeenCalled();
+        expect(admitSpeech).not.toHaveBeenCalled();
+      }
+    },
+  );
 });

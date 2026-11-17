@@ -50,12 +50,19 @@ Configure a provider-side spend limit as well. Upload byte limits do not bound a
 `sttBaseUrl`, `sttApiKey`, `ttsModel`, `sttModel`. For compatible servers, set the model fields to
 match the pricing models. Endpoint fields require valid HTTP(S) URLs and a provider that
 supports custom endpoints; unsupported fields are rejected so consent names the actual recipient.
+Compatible connections require the main server URL; a separate recognition key requires its own
+recognition URL. Fixed recognition models are validated by the provider descriptor.
 Endpoint/private-network restrictions remain in force. Keep server keys
 out of account settings, client configuration, repository files and logs. Use a dedicated speech
 service key, separate from reasoning credentials. No provider purchase or key retrieval is automated.
 
 See the [adapter pricing and calibration notes](../packages/adapters/src/providers/voice/xai/HOSTED.md)
 for a concrete existing-provider configuration and official research sources.
+
+Automatic messaging voice-note transcription checks the owner's recorded consent for the actual
+recognition recipient and current disclosure version in that Space before dispatch or allowance
+admission. Without it, the attachment remains available without a transcript. Web and mobile use
+the same recipient identities in their existing disclosure.
 
 ## Allowances and remaining policy
 

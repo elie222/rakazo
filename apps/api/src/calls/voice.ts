@@ -51,6 +51,7 @@ import type { Context, Hono } from "hono";
 import { clientErrorStatus } from "../client-error-status.js";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
+import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
@@ -820,6 +821,17 @@ export async function transcribeInboundVoice(
     "transcribe",
   );
   if (!loaded) return null;
+  if (loaded.deployment) {
+    const deployment = deps.env?.deploymentVoice;
+    if (
+      !deployment ||
+      !(await hasDeploymentVoiceConsent(deps.prisma, owner, deployment, {
+        synthesize: false,
+        transcribe: true,
+      }))
+    )
+      return null;
+  }
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
   const { text } = await withSpeechCost(deps, owner, loaded, "transcribe", () =>

@@ -116,7 +116,7 @@ export async function confirmSpeechCost(
   if (currentDbContext()?.kind !== "system")
     throw new Error("Speech reconciliation requires system context");
   if (evidence.costMicros < 0n || !evidence.source || !evidence.reference)
-    throw new Error("Invalid speech cost evidence");
+    throw new ClientError("BAD_REQUEST", "Invalid speech cost evidence");
   await prisma.$transaction(async (tx) => {
     const [row] = await tx.$queryRaw<
       Array<{
@@ -130,14 +130,14 @@ export async function confirmSpeechCost(
     >`
       SELECT "userId", "accountedMicros", state, "costMicros", "confirmationReference", "confirmationSource"
       FROM speech_costs WHERE id = ${id} FOR UPDATE`;
-    if (!row) throw new Error("Speech cost not found");
+    if (!row) throw new ClientError("NOT_FOUND", "Speech cost not found");
     if (row.state === "confirmed") {
       if (
         row.costMicros !== evidence.costMicros ||
         row.confirmationReference !== evidence.reference ||
         row.confirmationSource !== evidence.source
       )
-        throw new Error("Speech cost already confirmed with different evidence");
+        throw new ClientError("CONFLICT", "Speech cost already confirmed with different evidence");
       return;
     }
     await tx.$executeRaw`UPDATE speech_allowances SET "usedMicros" = "usedMicros" +

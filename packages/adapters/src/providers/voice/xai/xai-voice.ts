@@ -24,6 +24,7 @@ import {
 import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 export const XAI_VOICE_PROVIDER_ID = "xai";
+const TRANSCRIPTION_MODEL = "grok-voice-transcribe-2.0";
 const API = "https://api.x.ai/v1";
 const PROVIDER = "xAI";
 
@@ -111,7 +112,7 @@ export class XaiVoiceProvider implements VoiceProvider {
     context: AdapterContext,
   ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }> {
     const form = new FormData();
-    const model = request.model || "grok-voice-transcribe-2.0";
+    const model = request.model || TRANSCRIPTION_MODEL;
     form.set("model", model);
     const language = voiceLanguageHint(request.language);
     if (language) {
@@ -163,6 +164,7 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
 
 export const xaiVoice: VoiceProviderDefinition = {
   synthesisModel: "tts",
+  transcriptionModel: TRANSCRIPTION_MODEL,
   catalog: {
     name: "xAI",
     description: "Expressive Grok voices and transcription, with a key or a Grok sign-in.",

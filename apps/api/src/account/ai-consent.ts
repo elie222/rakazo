@@ -30,6 +30,7 @@ import {
 import { includedVoice, voiceCredentialServer } from "../calls/voice.js";
 import type { RouterDeps } from "../router.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
+import { deploymentVoiceRecipients } from "../voice/deployment-consent.js";
 
 export async function aiConsentStatus(
   deps: RouterDeps,
@@ -224,15 +225,9 @@ export async function aiConsentStatus(
   }
   if (uses.includes("voice") && !voices.some((voice) => voice.isDefault)) {
     const included = await includedVoice(deps, actor, query.settingsScope);
-    if (included) {
-      const { provider, connection } = included.deployment;
-      if (included.synthesize || (included.transcribe && !connection.sttBaseUrl)) {
-        add(aiRecipient({ provider, use: "voice", baseUrl: connection.baseUrl }));
-      }
-      if (included.transcribe && connection.sttBaseUrl) {
-        add(aiRecipient({ provider, use: "voice", baseUrl: connection.sttBaseUrl }));
-      }
-    }
+    if (included)
+      for (const recipient of deploymentVoiceRecipients(included.deployment, included))
+        add(recipient);
   }
   for (const voice of voices) {
     // A self-hosted server is disclosed by its own origin, like a custom model endpoint.

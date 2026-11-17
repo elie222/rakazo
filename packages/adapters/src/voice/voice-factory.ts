@@ -49,9 +49,15 @@ export class NoVoiceConfigured extends Error {
 export { isSpeechModelId, MAX_SPEAK_CHARS } from "./voice-http.js";
 export const MAX_TRANSCRIBE_BYTES = 8 * 1024 * 1024;
 
-export function voiceDeploymentModelSupported(provider: string, model: string): boolean {
+export function voiceDeploymentModelSupported(
+  provider: string,
+  model: string,
+  operation: "synthesize" | "transcribe" = "synthesize",
+): boolean {
   const definition = knownVoiceProvider(provider);
-  return !!definition && (!definition.synthesisModel || definition.synthesisModel === model);
+  const fixed =
+    operation === "synthesize" ? definition?.synthesisModel : definition?.transcriptionModel;
+  return !!definition && (!fixed || fixed === model);
 }
 
 /** Endpoint fields must affect dispatch whenever consent uses them to identify a recipient. */
@@ -60,11 +66,9 @@ export function voiceDeploymentConnectionSupported(
   connection: { baseUrl?: string; sttBaseUrl?: string; sttApiKey?: string },
 ): boolean {
   const definition = knownVoiceProvider(provider);
-  return (
-    Boolean(definition) &&
-    (definition?.customEndpoints === true ||
-      [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].every(
-        (value) => value === undefined,
-      ))
+  if (!definition || (connection.sttApiKey !== undefined && !connection.sttBaseUrl)) return false;
+  if (definition.customEndpoints) return Boolean(connection.baseUrl);
+  return [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].every(
+    (value) => value === undefined,
   );
 }

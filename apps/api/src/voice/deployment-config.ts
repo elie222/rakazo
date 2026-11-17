@@ -46,6 +46,11 @@ export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoi
       !isVoiceProviderId(config.provider) ||
       !voiceDeploymentConnectionSupported(config.provider, config.connection) ||
       !voiceDeploymentModelSupported(config.provider, config.pricing.synthesize.model) ||
+      !voiceDeploymentModelSupported(
+        config.provider,
+        config.pricing.transcribe.model,
+        "transcribe",
+      ) ||
       (config.connection.ttsModel &&
         config.connection.ttsModel !== config.pricing.synthesize.model) ||
       (config.connection.sttModel && config.connection.sttModel !== config.pricing.transcribe.model)
