@@ -220,4 +220,6 @@ export const KO_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} 시작 중…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 Docker 서비스를 시작하세요.",
+  "Rakazo stopped unexpectedly.": "Rakazo가 예기치 않게 중단되었습니다.",
+  Reload: "다시 로드",
 };

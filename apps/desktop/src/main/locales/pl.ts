@@ -237,4 +237,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Starting {app}…": "Uruchamianie {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker jest zainstalowany, ale nie działa. Uruchom usługę Docker, aby kontynuować.",
+  "Rakazo stopped unexpectedly.": "Rakazo zatrzymał się nieoczekiwanie.",
+  Reload: "Odśwież",
 };
