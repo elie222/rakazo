@@ -97,6 +97,9 @@ describe("the images compose file", () => {
   it("keeps the optional scheduled updater private and disabled by default", () => {
     const updater = compose.services.updater;
     expect(updater?.profiles).toEqual(["updater"]);
+    expect(updater?.environment?.RAKAZO_COMPUTER_IMAGE).toBe(
+      interpolated("RAKAZO_COMPUTER_IMAGE", "ghcr.io/elie222/rakazo/computer"),
+    );
     expect(updater?.ports).toBeUndefined();
     expect(updater?.env_file).toBeUndefined();
     expect(updater?.build).toBeUndefined();

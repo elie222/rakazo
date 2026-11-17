@@ -307,7 +307,7 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls).toHaveLength(0);
   });
 
-  it("preserves computer history when only the application image changes", async () => {
+  it("captures the complete prior pairing when only the application image changes", async () => {
     const subject = await fixture(
       `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
       older,
@@ -316,8 +316,15 @@ describe("scheduled release state and recovery", () => {
     subject.state.computer = `${computerImage}:sha-${newer}`;
     subject.state.images[cachedOlder] = `sha256:${"1".repeat(64)}`;
     expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
-    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`);
-    expect(subject.state.images[cachedOlder]).toBeDefined();
+    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedNewer}\n`);
+    expect(subject.state.images[cachedNewer]).toBeDefined();
+    const rollback = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await expect(rollback.json()).resolves.toMatchObject({ ok: true });
+    expect(subject.state.versions.worker).toBe(older);
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedNewer}`);
   });
 
   it("saves the replaced computer during a computer-only repair", async () => {

@@ -321,6 +321,25 @@ describe("updater HTTP surface", () => {
     await expect(rolledBack.json()).resolves.toMatchObject({ ok: true });
   });
 
+  it("reports a disabled schedule for a managed computer mirror", async () => {
+    const fixture = await deployment();
+    const config = resolveUpdaterConfig({
+      RAKAZO_DEPLOY_DIR: fixture.deployDir,
+      RAKAZO_UPDATER_TOKEN: token,
+      RAKAZO_COMPUTER_IMAGE: "registry.example.com/mirror/computer",
+      RAKAZO_UPDATE_SERVICES: "supervisor,computer",
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+    });
+    const subject = createUpdaterApp(config, { run: async () => ok() });
+    const state = await subject.request("/state", { headers: authorized });
+    expect(state.status).toBe(200);
+    await expect(state.json()).resolves.toMatchObject({
+      autoUpdateIntervalHours: 0,
+      autoUpdateDisabledReason: expect.stringContaining("managed computer"),
+    });
+    await expect(applyStableUpdate(subject)).rejects.toThrow(/managed computer/);
+  });
+
   it.each([true, false])("logs whether image recovery succeeded: %s", async (recovered) => {
     const fixture = await deployment();
     const run: UpdaterCommandRunner = async (command, args, options) => {

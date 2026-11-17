@@ -704,6 +704,7 @@ services:
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       # `-p` is available to Compose interpolation but is not injected into containers unless it is
       # declared here. The sidecar must target the project the operator actually started.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}

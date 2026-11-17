@@ -7,6 +7,7 @@ import {
   isValidImageTag,
   OFFICIAL_SERVER_IMAGE,
   PREVIOUS_IMAGE_TAG_ENV,
+  PUBLISHED_IMAGE_REPO,
   RECREATED_SERVICES,
   resolveComposeProjectName,
 } from "@rakazo/core";
@@ -102,9 +103,13 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
     throw new Error("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS must be 0 (disabled) or 1–168.");
   }
+  const officialComputerImage = `ghcr.io/${PUBLISHED_IMAGE_REPO}/computer`;
+  const mirroredComputer =
+    updateServices.includes("computer") &&
+    (env.RAKAZO_COMPUTER_IMAGE?.trim() || officialComputerImage) !== officialComputerImage;
   const autoUpdateDisabledReason =
-    hours > 0 && image !== OFFICIAL_SERVER_IMAGE
-      ? "Scheduled updates require the official stable release image. Scheduling is disabled; manual controls remain available."
+    hours > 0 && (image !== OFFICIAL_SERVER_IMAGE || mirroredComputer)
+      ? "Scheduled updates require the official stable release images for the app and managed computer. Scheduling is disabled; manual controls remain available."
       : null;
   return {
     autoUpdateIntervalMs: autoUpdateDisabledReason === null ? hours * 60 * 60 * 1_000 : 0,

@@ -653,6 +653,7 @@ services:
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo}
       RAKAZO_DEPLOY_DIR: ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
       RAKAZO_COMPOSE_FILE: ${RAKAZO_COMPOSE_FILE:-docker-compose.images.yml}

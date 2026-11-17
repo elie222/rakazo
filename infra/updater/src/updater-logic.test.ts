@@ -54,6 +54,24 @@ describe("resolveUpdaterConfig", () => {
     ).toMatchObject({ autoUpdateIntervalMs: 0, autoUpdateDisabledReason: null });
   });
 
+  it("disables scheduling for a managed mirrored computer repository", () => {
+    const env = {
+      ...base,
+      RAKAZO_COMPUTER_IMAGE: "registry.example.com/mirror/computer",
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+    };
+    expect(
+      resolveUpdaterConfig({ ...env, RAKAZO_UPDATE_SERVICES: "supervisor,computer" }),
+    ).toMatchObject({
+      autoUpdateIntervalMs: 0,
+      autoUpdateDisabledReason: expect.stringContaining("managed computer"),
+    });
+    expect(resolveUpdaterConfig(env)).toMatchObject({
+      autoUpdateIntervalMs: 6 * 3_600_000,
+      autoUpdateDisabledReason: null,
+    });
+  });
+
   it("uses the Compose-injected project name so -p matches the running stack", () => {
     expect(
       resolveUpdaterConfig({ ...base, COMPOSE_PROJECT_NAME: "operator-stack" }).projectName,

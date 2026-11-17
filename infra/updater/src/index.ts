@@ -319,6 +319,8 @@ export function createUpdaterApp(
     // In-process entry point: scheduled work cannot weaken its safeguards or choose a fork.
     applyScheduledUpdate: () =>
       withRunLock(async () => {
+        if (config.autoUpdateDisabledReason)
+          throw new UpdateRefused(config.autoUpdateDisabledReason);
         if (config.image !== OFFICIAL_SERVER_IMAGE) {
           throw new UpdateRefused("Scheduled updates require the official stable release image.");
         }
@@ -697,9 +699,10 @@ export function createUpdaterApp(
     steps: ComposeUpdateStep[];
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
-    const computerUnchanged = input.computerTags?.fromTag === input.computerTags?.toTag;
+    const preserveComputerHistory =
+      input.computerTags?.fromTag === input.computerTags?.toTag && input.fromTag === input.toTag;
     let cachedComputerTag = input.computerTags?.fromTag ?? "";
-    if (input.computerTags && !computerUnchanged) {
+    if (input.computerTags && !preserveComputerHistory) {
       cachedComputerTag = await cacheComputerImage(
         config,
         await readEnvFile(),
@@ -788,7 +791,7 @@ export function createUpdaterApp(
           ...(input.computerTags
             ? {
                 [COMPUTER_TAG_ENV]: input.computerTags.toTag,
-                [PREVIOUS_COMPUTER_TAG_ENV]: computerUnchanged
+                [PREVIOUS_COMPUTER_TAG_ENV]: preserveComputerHistory
                   ? (input.computerTags.previousTag ?? "")
                   : cachedComputerTag,
               }
