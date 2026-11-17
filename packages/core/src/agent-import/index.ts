@@ -34,8 +34,8 @@ import {
   OPENCLAW_RUNTIME_FILES,
   parseOpenClaw,
 } from "./openclaw.js";
-import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
+import type { AgentImportParse, SkillFiles } from "./types.js";
+import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./types.js";
 
 export {
   AGENT_IMPORT_ARCHIVE_LIMITS,
@@ -76,8 +76,8 @@ export {
   readGrokBotExportJson,
 } from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
-export type { AgentImportReader, SkillFiles } from "./shared.js";
-export { renameSkillMd } from "./shared.js";
+export type { AgentImportReader, SkillFiles } from "./types.js";
+export { renameSkillMd } from "./types.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
