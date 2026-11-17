@@ -23,16 +23,11 @@ describe("statusLinesFrom", () => {
 describe("startStatusLines", () => {
   function target(writer: StatusLineWriter | undefined, show?: (text: string) => Promise<void>) {
     const shown: string[] = [];
-    let held = false;
     return {
       shown,
-      hold: () => {
-        held = true;
-      },
       target: {
         writer: Promise.resolve(writer),
         request: "How much is the plan?",
-        held: () => held,
         show: async (text: string) => {
           await show?.(text);
           shown.push(text);
@@ -226,7 +221,6 @@ describe("startStatusLines", () => {
           step: async () => steps.shift(),
         }),
         request: "",
-        held: () => false,
         show: async (text) => {
           if (text === "Listing files") await stuck.promise;
           shown.push(text);
@@ -267,23 +261,11 @@ describe("startStatusLines", () => {
     expect(live.active()).toBe(false);
   });
 
-  it("leaves the line to the bot's own note", async () => {
-    const t = target({
-      opening: async () => "Reading your question",
-      step: async () => undefined,
-    });
-    t.hold();
-    startStatusLines(t.target);
-    await flush();
-    expect(t.shown).toEqual([]);
-  });
-
   it("is active while the status model is looked up and with one, until the run ends", async () => {
     const writer = deferred<StatusLineWriter | undefined>();
     const live = startStatusLines({
       writer: writer.promise,
       request: "",
-      held: () => false,
       show: async () => {},
     });
     // An early step waits for the lookup instead of showing its technical line.

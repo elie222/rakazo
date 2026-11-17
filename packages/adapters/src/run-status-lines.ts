@@ -38,8 +38,6 @@ export type StatusLineTarget = {
   signal?: AbortSignal;
   /** Shows one status as the working line. */
   show(text: string): Promise<unknown>;
-  /** Whether the bot's own note holds the working line right now. */
-  held(): boolean;
 };
 
 /**
@@ -78,7 +76,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
    */
   const show = (text: string, mine: number, { latestOnly = false, again = false } = {}) => {
     showing = showing.then(async () => {
-      if (closed || target.held() || mine <= supersededAt) return;
+      if (closed || mine <= supersededAt) return;
       const shownAt = lastShown?.generation ?? 0;
       if (latestOnly ? mine !== generation : again ? mine < shownAt : mine <= shownAt) return;
       const write = target.show(text).then(() => true);

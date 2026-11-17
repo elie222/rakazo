@@ -254,7 +254,6 @@ export async function createRunContext(
     settleRunningHelpers: settleHelpers,
     stopHeartbeatAfterCompletion,
   };
-  hold.statusLines.held = () => ctx.state.reply.narrationStatusShowing;
   return ctx;
 }
 

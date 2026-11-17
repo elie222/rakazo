@@ -308,8 +308,6 @@ export interface RunStatusLines {
   live: LiveStatusLines | undefined;
   /** Lets the status model hear the request once the main model's key is redacted. */
   secretsReady: () => void;
-  /** True while a narration sentence holds the status line. */
-  held: () => boolean;
 }
 
 export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
@@ -386,7 +384,7 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
     abort,
     detachShutdown: undefined,
     dispatchHandedOff: false,
-    statusLines: { live: undefined, secretsReady: () => {}, held: () => false },
+    statusLines: { live: undefined, secretsReady: () => {} },
   };
   return hold;
 }

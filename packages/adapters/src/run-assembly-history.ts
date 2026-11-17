@@ -337,7 +337,6 @@ function startRunStatusLines(
     ready,
     opening: !parts.resumesEarlierWork,
     signal: parts.connected.runAbortController.signal,
-    held: () => hold.statusLines.held(),
     show: (text) =>
       deps.events.append({
         spaceId: run.spaceId,
