@@ -4,14 +4,14 @@ import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
-import { MenuPicker } from "../components/menu-picker";
-import { ModelPickerList } from "../components/model-picker-list";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { chatModelPickerChoices } from "../lib/chat-model";
-import { rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { thinkingLevelLabel } from "../lib/thinking-level";
-import { errorText } from "../lib/user-error";
+import { ModelPickerList } from "../components/models/model-picker-list";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { MenuPicker } from "../components/ui/menu-picker";
+import { errorText } from "../lib/api/user-error";
+import { chatModelPickerChoices } from "../lib/models/chat-model";
+import { thinkingLevelLabel } from "../lib/models/thinking-level";
+import { rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 /** A chat's model and thinking, opened from the composer; each change saves at once. */
 export default function ChatModelScreen() {

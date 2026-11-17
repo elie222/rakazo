@@ -89,7 +89,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           body,
         },
       );
-      providerRequestId = response.headers.get("x-request-id");
+      providerRequestId = response.headers.get("x-request-id")?.trim() || null;
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
@@ -109,7 +109,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           new TextDecoder().decode(await readBodyCapped(response, 64_000, context.signal)),
         ),
       );
-      providerRequestId = parsed.id ?? providerRequestId;
+      providerRequestId = parsed.id?.trim() || providerRequestId;
       usage = {
         inputTokens: parsed.usage?.input_tokens ?? null,
         outputTokens: parsed.usage?.output_tokens ?? null,
