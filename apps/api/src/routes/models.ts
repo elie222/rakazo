@@ -4,7 +4,7 @@ import {
   isTransientModelError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { PiOAuthPersist } from "@rakazo/adapters";
+import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
   listPiCatalog,
@@ -244,10 +244,13 @@ export function modelsRoutes(ctx: RouterContext) {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
         const { role, primary, backups, scope } = input;
-        await validateRoleChoices(context.actor, role, [
-          ...(primary ? [primary] : []),
-          ...(backups ?? []),
-        ]);
+        const reads: CatalogReads = new Map();
+        await validateRoleChoices(
+          context.actor,
+          role,
+          [...(primary ? [primary] : []), ...(backups ?? [])],
+          reads,
+        );
         return withImageInput(
           context.actor,
           role,
@@ -261,20 +264,41 @@ export function modelsRoutes(ctx: RouterContext) {
               { primary, backups },
             ),
           ),
+          reads,
         );
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
-          ({ provider, modelId }) => ({ provider, modelId }),
+          ({ provider, modelId, credentialId, creditOfferingId }) => ({
+            provider,
+            modelId,
+            ...(credentialId ? { credentialId } : {}),
+            ...(creditOfferingId ? { creditOfferingId } : {}),
+          }),
         ),
       ),
       setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
-        await validateRoleChoices(context.actor, "main", input);
+        const previous = (await appliedModelRole(deps.prisma, context.actor, "main")).backups;
+        const backups = input.map((choice) => {
+          if (choice.credentialId || choice.creditOfferingId) return choice;
+          const matches = previous.filter(
+            (saved) => backupChoiceKey(saved) === backupChoiceKey(choice),
+          );
+          if (matches.length > 1)
+            throw new ClientError("CONFLICT", "Choose one funding connection");
+          const saved = matches[0];
+          return {
+            ...choice,
+            ...(saved?.credentialId ? { credentialId: saved.credentialId } : {}),
+            ...(saved?.creditOfferingId ? { creditOfferingId: saved.creditOfferingId } : {}),
+          };
+        });
+        await validateRoleChoices(context.actor, "main", backups);
         await updateModelRole(
           deps.prisma,
           { userId: context.actor.userId, spaceId: context.actor.spaceId },
           "main",
-          { backups: input },
+          { backups },
         );
         return { ok: true as const };
       }),
@@ -669,8 +693,8 @@ export function modelsRoutes(ctx: RouterContext) {
                 provider,
                 OR: [
                   { credentialId: { in: ids } },
-                  // Rows that name no connection ran on the provider's last one.
-                  ...(lastConnection ? [{ credentialId: null }] : []),
+                  // Legacy rows without a funding pin ran on the provider's last connection.
+                  ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
                 ],
               };
               // Its models leave every purpose in the account's models and every Space's,

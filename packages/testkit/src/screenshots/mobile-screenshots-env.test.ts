@@ -17,7 +17,7 @@ describe("mobile screenshot environment", () => {
     vi.stubEnv("DATABASE_URL", disposableUrl);
     // The Prisma config is imported after the CLI environment is configured, and dotenv
     // never overrides a variable that is already set.
-    const { configureEnvironment } = await import("../cli/mobile-screenshots.js");
+    const { configureEnvironment } = await import("./mobile-screenshots.js");
     configureEnvironment();
     process.env.DATABASE_MIGRATION_URL ??= developerUrl;
 
@@ -29,7 +29,7 @@ describe("mobile screenshot environment", () => {
   it("replaces a migration URL the shell already exported", async () => {
     vi.stubEnv("DATABASE_URL", disposableUrl);
     vi.stubEnv("DATABASE_MIGRATION_URL", developerUrl);
-    const { configureEnvironment } = await import("../cli/mobile-screenshots.js");
+    const { configureEnvironment } = await import("./mobile-screenshots.js");
     configureEnvironment();
 
     const { default: prismaConfig } = await import("../../../db/prisma.config.js");

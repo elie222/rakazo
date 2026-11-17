@@ -1,4 +1,5 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { modelRoleConnectionId } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, redactSecrets } from "@rakazo/core";
 import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -248,10 +249,10 @@ function modelTurnRequest(
     secrets: runSecrets,
     model: mainRunModel,
     computerModel,
-    fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
-      provider,
-      id: modelId,
-      ...(credentialId ? { connectionId: credentialId } : {}),
+    fallbackModels: fallbackModels.map((choice) => ({
+      provider: choice.provider,
+      id: choice.modelId,
+      connectionId: modelRoleConnectionId(choice),
     })),
     resolveFallbackModel:
       checkpointModelResolver || fallbackModelKeys.size
@@ -268,8 +269,11 @@ function modelTurnRequest(
               true,
               fallbackModels.find(
                 (candidate) =>
-                  fallbackKey(candidate.provider, candidate.modelId, candidate.credentialId) ===
-                  key,
+                  fallbackKey(
+                    candidate.provider,
+                    candidate.modelId,
+                    modelRoleConnectionId(candidate),
+                  ) === key,
               )?.thinkingLevel ?? null,
               connectionId,
             );

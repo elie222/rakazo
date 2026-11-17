@@ -10,6 +10,7 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { offeringUsage } from "../../model-credits/offerings.js";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -183,6 +184,89 @@ dbTests("durable model credit audit", () => {
       ).toMatchObject({ pending: false, reconciliationState: "complete" });
     },
   );
+  it("recovers a crash before the final tariff receipt using saved pricing after withdrawal", async () => {
+    const f = await fixture();
+    const offering = {
+      id: "withdrawn-offering",
+      connectionId: "original-connection",
+      provider: "openrouter",
+      modelId: "fixture",
+      price: { input: 2, output: 10, cacheRead: 0, cacheWrite: 0 },
+    };
+    await recordModelCreditReceipt(
+      prisma,
+      f.callId,
+      offeringUsage(offering, {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        providerRequestId: f.usage.providerRequestId,
+        usageSource: "pending",
+      }),
+    );
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({ defaultOfferingId: null, offerings: [] }),
+    );
+    try {
+      const resolve = vi.fn(async () => ({
+        provider: "openrouter",
+        lookupUsage: async () => ({
+          inputTokens: 100000,
+          outputTokens: 5000,
+          costUsd: 9,
+          costSource: "provider-reported",
+        }),
+      }));
+      const reconcile = createModelCreditReconciler({
+        prisma,
+        lookupForOffering: resolve,
+        now: () => new Date(Date.now() + 10 * 60_000),
+      });
+      await reconcile();
+      await reconcile();
+      expect(resolve).toHaveBeenCalledOnce();
+      expect(resolve).toHaveBeenCalledWith(offering);
+      expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9750000n);
+      expect(await prisma.usageRecord.findUnique({ where: { callId: f.callId } })).toMatchObject({
+        costUsd: 0.25,
+        costSource: "deployment-tariff",
+      });
+      expect(
+        await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } }),
+      ).toMatchObject({
+        pending: false,
+        reconciliationState: "complete",
+        usage: {
+          costUsd: 0.25,
+          pricingSnapshot: { connectionId: offering.connectionId, input: 2, output: 10 },
+        },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("releases a tariff hold for a definitively unsent call", async () => {
+    const f = await fixture();
+    const receipt = offeringUsage(
+      {
+        id: "offering-example",
+        connectionId: "operator-example",
+        provider: "openrouter",
+        modelId: "fixture",
+        price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+      { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "not-started" },
+    );
+    await recordModelCreditReceipt(prisma, f.callId, receipt);
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+    expect(await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } })).toMatchObject(
+      { pending: false },
+    );
+    await createModelCreditReconciler({ prisma, now: () => new Date(Date.now() + 10 * 60_000) })();
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+  });
   it("keeps both the estimate and authoritative correction in the journal", async () => {
     const f = await fixture();
     await recordModelCreditReceipt(prisma, f.callId, {

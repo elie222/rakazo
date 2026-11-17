@@ -124,7 +124,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
     .strict(),
   z.object({ name: z.literal("checkout_opened"), ...planTerms }).strict(),
   z.object({ name: z.literal("subscription_started"), ...planTerms, trial: z.boolean() }).strict(),
-  // A trial's end: its first payment, or access lost without one.
+  // A trial's end: its first payment, or access lost without one. A failed first charge that is
+  // settled later reports again as converted, so a subscription converted if any report says so.
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
   // Which lifecycle mail went out; never the address or the person.
   z.object({ name: z.literal("lifecycle_email_sent"), email: LifecycleEmailKind }).strict(),

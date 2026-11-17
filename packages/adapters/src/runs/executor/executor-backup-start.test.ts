@@ -1,10 +1,12 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import { withModelRoles } from "../../models/model-roles.test-support.js";
 import { serializeModelSecret } from "../../models/model-secret.js";
 import { OAUTH_RECONNECT_REQUIRED_ERROR } from "../../runtime/pi/models/pi-oauth.js";
 import { promptVersion } from "../assembly/prompt-version.js";
+import { isTerminalModelSetupError } from "../turn/run-model.js";
 import { createRunExecutor } from "./executor.js";
 
 vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({
@@ -68,10 +70,28 @@ const plaintexts: Record<string, string> = {
 async function runTurn({
   primaryConnected,
   backupConnected = true,
+  creditPrimary = false,
 }: {
   primaryConnected: boolean;
   backupConnected?: boolean;
+  creditPrimary?: boolean;
 }) {
+  if (creditPrimary)
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "missing-operator-key",
+            provider: BACKUP.provider,
+            modelId: BACKUP.modelId,
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
   const run: Record<string, unknown> = {
     id: "run-1",
     botId: "bot-1",
@@ -139,7 +159,18 @@ async function runTurn({
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
       user: { findUnique: vi.fn(async () => null) },
-      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
+      spaceMember: {
+        findUnique: async () => ({
+          id: "member-1",
+          member: {
+            role: "owner",
+            organization: {
+              modelCredits: { mode: "credits", balanceMicros: 1_000_000n, byokFreeUntil: null },
+              billing: null,
+            },
+          },
+        }),
+      },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => run),
@@ -196,11 +227,23 @@ async function runTurn({
         findFirst: vi.fn(async () => null),
       },
       userModelCredential: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn(
           async ({ where }: { where: { userId?: string; provider?: ProviderFilter } }) =>
             credentialsFor(where),
         ),
-        findFirst: vi.fn(async () => null),
+        findFirst: vi.fn(
+          async ({
+            where,
+          }: {
+            where: { id?: string; userId: string; provider?: ProviderFilter };
+          }) => {
+            const credential = credentialsFor(where).find(
+              (row) => !where.id || row.id === where.id,
+            );
+            return credential ? { ...credential, userPreferences: [] } : null;
+          },
+        ),
       },
       secret: {
         findMany: vi.fn(async () => []),
@@ -210,6 +253,17 @@ async function runTurn({
         ),
       },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
+      space: {
+        findUnique: vi.fn(async () => ({ organizationId: "organization-1" })),
+        findFirst: vi.fn(async () => ({
+          organization: { modelCredits: { mode: "credits", balanceMicros: 1_000_000n } },
+        })),
+      },
+      member: { findUnique: vi.fn(async () => ({ role: "owner" })) },
+      billingAccount: { findUnique: vi.fn(async () => null) },
+      modelCreditAccount: {
+        upsert: vi.fn(async () => ({ mode: "credits", balanceMicros: 1_000_000n })),
+      },
       taughtSkill: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
@@ -220,8 +274,21 @@ async function runTurn({
       artifact: { findMany: vi.fn(async () => []) },
     },
     [
-      { userId: USER_ID, role: "main", position: 0, thinkingLevel: null, ...PRIMARY },
-      { userId: USER_ID, role: "main", position: 1, thinkingLevel: null, ...BACKUP },
+      {
+        userId: USER_ID,
+        role: "main",
+        position: 0,
+        thinkingLevel: null,
+        ...(creditPrimary ? { ...BACKUP, creditOfferingId: "approved" } : PRIMARY),
+      },
+      {
+        userId: USER_ID,
+        role: "main",
+        position: 1,
+        thinkingLevel: null,
+        ...BACKUP,
+        ...(creditPrimary ? { credentialId: connection(BACKUP.provider, "secret-backup").id } : {}),
+      },
     ],
   );
   // The run's lease runs in a transaction too.
@@ -233,7 +300,7 @@ async function runTurn({
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     prisma,
-    billingEnabled: false,
+    billingEnabled: creditPrimary,
     secretStore: {
       load: vi.fn(async (_ciphertext: string, secretId: string) => plaintexts[secretId]),
       put: vi.fn(async () => ({ ciphertext: "sealed-marker" })),
@@ -256,14 +323,42 @@ async function runTurn({
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   await executor.continueRun("run-1", "worker-1");
-  return { request, run, runtimeRun, finalizeRun };
+  return {
+    request,
+    run,
+    runtimeRun,
+    finalizeRun,
+    operatorLookup: prisma.userModelCredential.findUnique,
+  };
 }
 
 describe("a main model that cannot start runs on the member's backup", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
+  it("starts on the explicit personal backup when its credit primary's operator key is missing", async () => {
+    const { request, run, operatorLookup, finalizeRun } = await runTurn({
+      primaryConnected: false,
+      creditPrimary: true,
+    });
+    expect(operatorLookup).toHaveBeenCalledWith({ where: { id: "missing-operator-key" } });
+    expect(request?.model).toMatchObject({
+      provider: BACKUP.provider,
+      id: BACKUP.modelId,
+      apiKey: "fake-backup-key",
+      connectionId: connection(BACKUP.provider, "secret-backup").id,
+    });
+    expect(request?.model.callObserver).toBeUndefined();
+    expect(run).toMatchObject({ modelProvider: BACKUP.provider, modelId: BACKUP.modelId });
+    expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
+  });
+  it("keeps secret-store outages retryable rather than treating them as broken model choices", () => {
+    expect(isTerminalModelSetupError(new SecretStoreUnavailableError(503, "fake-outage"))).toBe(
+      false,
+    );
+  });
   it("starts on the backup when the main model has no connection", async () => {
     const { request, run, finalizeRun } = await runTurn({ primaryConnected: false });
 

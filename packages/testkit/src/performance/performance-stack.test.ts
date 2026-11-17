@@ -4,12 +4,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  benchmarkEnvironment,
-  safeName,
-  stopProcess,
-  waitForUrl,
-} from "../cli/performance-stack.js";
+import { benchmarkEnvironment, safeName, stopProcess, waitForUrl } from "./performance-stack.js";
 
 describe("benchmarkEnvironment", () => {
   afterEach(() => vi.unstubAllEnvs());

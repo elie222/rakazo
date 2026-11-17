@@ -36,7 +36,7 @@ describe("iOS screenshot backend environment", () => {
   it("migrates the catalog's fresh database over inherited database URLs", async () => {
     process.env.DATABASE_MIGRATION_URL = developerUrl;
     process.env.REALTIME_DATABASE_URL = developerUrl;
-    const { startIosScreenshotBackend } = await import("../cli/ios-screenshot-backend.js");
+    const { startIosScreenshotBackend } = await import("./ios-screenshot-backend.js");
 
     await expect(
       startIosScreenshotBackend({

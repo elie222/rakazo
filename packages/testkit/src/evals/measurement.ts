@@ -217,13 +217,18 @@ export class SpendBudget {
   }
   reserve(
     inputTokens: number,
-    maxOutputTokens: number,
+    maxOutputTokens: number | null,
     cacheWriteRetention?: "1h",
     pricing = this.pricing,
   ): string {
     if (this.unavailablePricing)
       throw new Error("Eval model has no configured pricing for observed cache writes");
     if (!pricing) throw new Error("Live inference requires explicit pricing");
+    if (maxOutputTokens === null) {
+      if (pricing.output > 0 || (pricing.longContext?.output ?? 0) > 0)
+        throw new Error("An unbounded protocol requires a zero output price");
+      maxOutputTokens = 0;
+    }
     if (![inputTokens, maxOutputTokens].every((v) => Number.isSafeInteger(v) && v >= 0))
       throw new Error("A conservative token estimate is required before inference");
     // The input estimate is an upper bound: actual usage may fall into either tier.

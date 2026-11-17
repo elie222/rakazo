@@ -1,6 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
@@ -26,6 +26,7 @@ import { resolveComputerRunModel } from "../../computers/computer-model-settings
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
+import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { selectConfiguredModel } from "../../models/model-roles.js";
 import {
@@ -122,7 +123,10 @@ export async function startTurnModel(
     run.modelPinned &&
     !(
       (await modelCreditBillingEnabled(deps)) &&
-      modelChoice.modelProvider === runDeployment?.provider
+      (modelChoice.modelProvider === runDeployment?.provider ||
+        (modelChoice.modelProvider &&
+          modelChoice.modelId &&
+          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
     )
       ? pinnedModelCredentialError(modelChoice, overrideCredential)
       : undefined;
@@ -132,6 +136,7 @@ export async function startTurnModel(
         id: pinnedComputerModels.main.id,
         thinkingLevel: pinnedComputerModels.main.thinkingLevel,
         credential: null,
+        connectionId: pinnedComputerModels.main.connectionId,
       }
     : selectConfiguredModel({
         override: modelChoice,
@@ -192,6 +197,7 @@ export async function startTurnModel(
       provider: selectedProvider,
       id: selectedModelId,
       credential: selected.credential,
+      connectionId: selected.connectionId,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,
@@ -879,14 +885,14 @@ export async function loadModelFallbacks(
       !backups.unavailable.has(candidate) &&
       (candidate.provider !== runModelProvider ||
         candidate.modelId !== runModelId ||
-        (candidate.credentialId !== undefined &&
-          candidate.credentialId !== mainRunModel.connectionId)),
+        (modelRoleConnectionId(candidate) !== undefined &&
+          modelRoleConnectionId(candidate) !== mainRunModel.connectionId)),
   );
   const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
     JSON.stringify([provider, modelId, credentialId ?? null]);
   const fallbackModelKeys = new Set(
     fallbackModels.map((candidate) =>
-      fallbackKey(candidate.provider, candidate.modelId, candidate.credentialId),
+      fallbackKey(candidate.provider, candidate.modelId, modelRoleConnectionId(candidate)),
     ),
   );
   const fallbackModelIds = new Set(

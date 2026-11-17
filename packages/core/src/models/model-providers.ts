@@ -296,8 +296,14 @@ export function credentialForModel<C extends CredentialModelRef>(
  */
 export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
   credentials: readonly C[],
-  choice: { provider: string; modelId: string; credentialId?: string | null },
+  choice: {
+    provider: string;
+    modelId: string;
+    credentialId?: string | null;
+    creditOfferingId?: string | null;
+  },
 ): C | undefined {
+  if (choice.creditOfferingId) return undefined;
   if (choice.credentialId) return credentials.find((entry) => entry.id === choice.credentialId);
   const provider = credentials.filter(
     (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),

@@ -300,6 +300,7 @@ async function main() {
   const reconciler = createRunReconciler(
     {
       prisma,
+      secretStore: secrets,
       jobs,
       events,
       notifications,

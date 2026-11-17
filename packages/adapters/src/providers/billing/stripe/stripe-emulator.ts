@@ -98,6 +98,13 @@ export class StripeEmulator {
       ended_at: null,
       default_payment_method: `pm_fake_${n}`,
       cardFingerprint,
+      // A trial's first invoice is free; without one the checkout charged the first period.
+      latestInvoice: {
+        id: `in_fake_${n}`,
+        status: "paid",
+        total: trialEnd || (status && status !== "active") ? 0 : 1000,
+        status_transitions: { paid_at: nowSeconds },
+      },
       items: {
         object: "list",
         data: [
@@ -125,6 +132,28 @@ export class StripeEmulator {
       subscription.status = "canceled";
       subscription.ended_at = Math.floor(this.now() / 1000);
     }
+  }
+
+  /** The newest subscription's period invoice: paid in full, or left open by a failed charge. */
+  billPeriod(customerId: string, outcome: "paid" | "failed") {
+    const newest = this.forCustomer(customerId)[0];
+    if (!newest) throw new Error(`No subscription for ${customerId}`);
+    const nowSeconds = Math.floor(this.now() / 1000);
+    newest.status = outcome === "paid" ? "active" : "past_due";
+    newest.latestInvoice =
+      outcome === "paid"
+        ? {
+            id: `in_fake_${++this.sequence}`,
+            status: "paid",
+            total: 1000,
+            status_transitions: { paid_at: nowSeconds },
+          }
+        : {
+            id: `in_fake_${++this.sequence}`,
+            status: "open",
+            total: 1000,
+            status_transitions: { paid_at: null },
+          };
   }
 
   /** Moves the customer's newest subscription to a raw Stripe status. */
@@ -218,20 +247,24 @@ export class StripeEmulator {
       const expandCard = Object.entries(form).some(
         ([key, value]) => key.startsWith("expand[") && value === "data.default_payment_method",
       );
+      const expandInvoice = Object.entries(form).some(
+        ([key, value]) => key.startsWith("expand[") && value === "data.latest_invoice",
+      );
       const data = matching
         .slice(start, start + limit)
-        .map(({ cardFingerprint, ...subscription }) =>
-          expandCard && subscription.default_payment_method
+        .map(({ cardFingerprint, latestInvoice, ...subscription }) => ({
+          ...subscription,
+          latest_invoice: expandInvoice ? latestInvoice : latestInvoice.id,
+          ...(expandCard && subscription.default_payment_method
             ? {
-                ...subscription,
                 default_payment_method: {
                   id: subscription.default_payment_method,
                   object: "payment_method",
                   card: { fingerprint: cardFingerprint },
                 },
               }
-            : subscription,
-        );
+            : {}),
+        }));
       return Response.json({ object: "list", has_more: start + limit < matching.length, data });
     }
     const balance = /^\/v1\/customers\/([^/]+)\/balance_transactions$/.exec(path);
@@ -291,6 +324,12 @@ export class StripeEmulator {
       const nowSeconds = Math.floor(this.now() / 1000);
       found.status = "active";
       found.trial_end = nowSeconds;
+      found.latestInvoice = {
+        id: `in_fake_${++this.sequence}`,
+        status: "paid",
+        total: 1000,
+        status_transitions: { paid_at: nowSeconds },
+      };
       for (const entry of found.items.data) {
         entry.current_period_start = nowSeconds;
         entry.current_period_end = nowSeconds + 30 * 86_400;
@@ -336,6 +375,13 @@ export interface StripeSubscriptionRecord {
   default_payment_method?: string | null;
   /** Emulator-only: the card's fingerprint, returned when the payment method is expanded. */
   cardFingerprint?: string;
+  /** Emulator-only: the latest invoice, returned whole when expanded and as its id otherwise. */
+  latestInvoice: {
+    id: string;
+    status: string;
+    total: number;
+    status_transitions: { paid_at: number | null };
+  };
   items: {
     object: "list";
     data: Array<{

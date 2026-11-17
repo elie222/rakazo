@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import type { PlaywrightPrCommentScreenshot } from "../screenshots/playwright-pr-screenshot-comment.js";
-import { buildPlaywrightPrScreenshotComment } from "../screenshots/playwright-pr-screenshot-comment.js";
+import type { PlaywrightPrCommentScreenshot } from "./playwright-pr-screenshot-comment.js";
+import { buildPlaywrightPrScreenshotComment } from "./playwright-pr-screenshot-comment.js";
 
 const [reviewPath, changedPathsPath] = process.argv.slice(2);
 

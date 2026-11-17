@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import type { ModelRoleChoice } from "@rakazo/contracts";
+import { creditOfferingFromConnectionId, modelRoleConnectionId } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR, MODEL_ACCESS_REQUIRED_RUN_ERROR } from "@rakazo/core";
 import { memberHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -51,7 +52,7 @@ export function runModelBackups(
           choice.modelId,
           registerSecrets,
           true,
-          choice.credentialId,
+          modelRoleConnectionId(choice),
         );
         getLogger().warn("model.primary_unavailable.backup_used", {
           runId: run.id,
@@ -88,6 +89,7 @@ export async function startRunModel(
     id: string | null | undefined;
     credential: Awaited<ReturnType<typeof resolveConnectedModelKey>>["credential"];
     thinkingLevel: AgentRunRequest["model"]["thinkingLevel"];
+    connectionId?: string;
   },
   pinned: Awaited<ReturnType<typeof restoreComputerModels>>["main"] | undefined,
   backups: ReturnType<typeof runModelBackups>,
@@ -111,6 +113,7 @@ export async function startRunModel(
         resolved: pinned
           ? {
               ...pinned,
+              connectionId: pinned.connectionId,
               apiKey: pinned.apiKey,
               callObserver: pinned.callObserver,
               oauth: pinned.oauth?.credential,
@@ -127,6 +130,12 @@ export async function startRunModel(
               selected.provider,
               selected.id,
               registerSecrets,
+              {
+                creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
+                requireStoredSecret: Boolean(
+                  selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),
+                ),
+              },
             ),
       };
     } catch (error) {

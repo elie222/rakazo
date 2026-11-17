@@ -2,8 +2,8 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
+import { formatWebhookPrompt } from "../messaging/inbound-delivery.prompt.js";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
-import { formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
@@ -14,11 +14,14 @@ import {
 } from "./webhook-inbound.js";
 
 export {
+  formatUntrustedDeliveryPayload,
+  formatWebhookPrompt,
+} from "../messaging/inbound-delivery.prompt.js";
+export {
   formatGithubEventPrompt,
   githubEventName,
   hasValidGithubSignature,
 } from "./github-webhook.js";
-export { formatUntrustedDeliveryPayload, formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 export {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,

@@ -32,6 +32,7 @@ import { createMessagingContextLoader } from "../../messaging/messaging-context.
 import { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import { TeamChat } from "../../messaging/team-chat/team-chat.js";
 import { ModelTeamChatEngagementJudge } from "../../messaging/team-chat/team-chat-judge.js";
+import { modelCreditUsageLookup } from "../../model-credits/routing.js";
 import { createModelCreditReconciler } from "../../models/credits/model-credit-reconciler.js";
 import {
   deploymentModelUsageLookup,
@@ -332,7 +333,13 @@ type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
 export function createRunReconciler(
   deps: Pick<
     ExecutorDeps,
-    "prisma" | "jobs" | "events" | "notifications" | "billingEnabled" | "mediaGeneration"
+    | "prisma"
+    | "jobs"
+    | "events"
+    | "notifications"
+    | "billingEnabled"
+    | "mediaGeneration"
+    | "secretStore"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     userCloudAgents?: ExecutorDeps["userCloudAgents"];
@@ -363,6 +370,7 @@ export function createRunReconciler(
     reconcileModelCredits: createModelCreditReconciler({
       prisma,
       lookup: deploymentModelUsageLookup(),
+      lookupForOffering: (offering) => modelCreditUsageLookup(prisma, deps.secretStore, offering),
     }),
     reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
       prisma,

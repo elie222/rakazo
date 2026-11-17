@@ -8,11 +8,14 @@ import {
   Prisma,
   RECONCILED_ESTIMATE_COST_SOURCE,
   readJsonColumn,
+  recordModelCreditReceipt,
   recordUsage,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
+import type { ModelCreditOffering } from "../../model-credits/offerings.js";
+import { offeringUsage } from "../../model-credits/offerings.js";
 import { PAID_SERVICE_USAGE_PROVIDER } from "../../payments/paid-service-tools.js";
 
 const tokens = z.number().nullable();
@@ -43,6 +46,50 @@ const StoredUsage = z
     countedTokens: CountedTokens.extend({ ifStopped: CountedTokens.optional() }).nullish(),
   })
   .nullable() satisfies z.ZodType<AgentUsage | null>;
+
+const StoredPricing = StoredUsage.unwrap()
+  .pick({ pricingVersion: true, pricingSnapshot: true })
+  .nullable();
+
+const StoredTariff = z.object({
+  creditOfferingId: z.string().min(1),
+  connectionId: z.string().min(1),
+  input: z.number().finite().positive(),
+  output: z.number().finite().nonnegative(),
+  cacheRead: z.number().finite().nonnegative(),
+  cacheWrite: z.number().finite().nonnegative(),
+});
+
+function storedTariff(call: {
+  id: string;
+  provider: string;
+  model: string;
+  usage: unknown;
+}): ModelCreditOffering | undefined {
+  // Recover pricing provenance independently if unrelated receipt fields are unreadable.
+  const usage = readJsonColumn(
+    StoredPricing,
+    call.usage,
+    { table: "model_credit_entries", column: "usage", id: call.id },
+    "reject",
+  );
+  if (!usage?.pricingVersion?.startsWith("deployment-tariff:")) return undefined;
+  const { creditOfferingId, connectionId, ...price } = readJsonColumn(
+    StoredTariff,
+    usage.pricingSnapshot,
+    { table: "model_credit_entries", column: "usage", id: call.id },
+    "reject",
+  );
+  if (usage.pricingVersion !== `deployment-tariff:${creditOfferingId}`)
+    throw new Error("Stored customer tariff identity does not match");
+  return {
+    id: creditOfferingId,
+    connectionId,
+    provider: call.provider,
+    modelId: call.model,
+    price,
+  };
+}
 
 /**
  * The stored receipt, or why it could not be read. A receipt in another shape is never priced,
@@ -136,6 +183,7 @@ function fallbackUsage(
 export function createModelCreditReconciler(deps: {
   prisma: PrismaClient;
   lookup?: ModelUsageLookup;
+  lookupForOffering?: (offering: ModelCreditOffering) => Promise<ModelUsageLookup | undefined>;
   now?: () => Date;
 }) {
   const { prisma, lookup } = deps;
@@ -175,6 +223,7 @@ export function createModelCreditReconciler(deps: {
           });
           if (!claimed.count) return;
           let complete = false;
+          let canLookUp = false;
           // Why this attempt could not settle the hold, for whoever reviews it.
           let reason = "usage unavailable";
           const lastAttempt = call.reconciliationAttempts >= 5;
@@ -186,12 +235,26 @@ export function createModelCreditReconciler(deps: {
             const receipt = storedUsage(call);
             let usage = receipt.usage;
             let reconciled = false;
-            const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
+            const tariff = storedTariff({ ...call, provider: call.provider, model: call.model });
+            const recoveryLookup = tariff
+              ? !(usage && hasFinalModelCost(usage)) && call.providerRequestId
+                ? await deps.lookupForOffering?.(tariff)
+                : undefined
+              : lookup;
+            canLookUp = recoveryLookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {
               try {
-                const recovered = await lookup.lookupUsage(call.providerRequestId!);
+                const recovered = await recoveryLookup!.lookupUsage(call.providerRequestId!);
                 if (recovered) {
-                  usage = { ...usage, ...recovered };
+                  usage = tariff
+                    ? offeringUsage(tariff, {
+                        ...usage,
+                        ...recovered,
+                        costUsd: null,
+                        costSource: null,
+                        usageSource: "provider-reconciled",
+                      })
+                    : { ...usage, ...recovered };
                   reconciled = true;
                 } else reason = "provider has no usage for the request";
               } catch (error) {
@@ -206,7 +269,12 @@ export function createModelCreditReconciler(deps: {
             // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run,
             // and a stuck-run cancel records why in `error`.
             let stoppedByUser = false;
-            if (call.runId && ((!usage && lastAttempt) || usage?.countedTokens?.ifStopped)) {
+            const awaitingReceipt =
+              !usage || (receipt.usage?.usageSource === "pending" && !hasFinalModelCost(usage));
+            if (
+              call.runId &&
+              ((awaitingReceipt && lastAttempt) || usage?.countedTokens?.ifStopped)
+            ) {
               const run = await prisma.run.findUnique({
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true, error: true },
@@ -215,7 +283,7 @@ export function createModelCreditReconciler(deps: {
               // Keep the conservative full-rate count until provider evidence replaces it.
               stoppedByUser = !run || (run.status === "cancelled" && run.error == null);
               running =
-                !usage &&
+                awaitingReceipt &&
                 (run?.status === "leased" || run?.status === "running") &&
                 !!run.leaseExpiresAt &&
                 run.leaseExpiresAt > now;
@@ -229,6 +297,7 @@ export function createModelCreditReconciler(deps: {
             if (
               !(usage && hasFinalModelCost(usage)) &&
               !running &&
+              !tariff &&
               !unfinishedPaidService &&
               (lastAttempt || (usage && !canLookUp))
             ) {
@@ -251,6 +320,7 @@ export function createModelCreditReconciler(deps: {
               usage.costUsd != null &&
               (call.pending || reconciled || hasFinalModelCost(usage))
             ) {
+              if (tariff && reconciled) await recordModelCreditReceipt(prisma, call.id, usage);
               await recordUsage(
                 prisma,
                 {
@@ -304,7 +374,7 @@ export function createModelCreditReconciler(deps: {
               pending: call.pending,
               attempts: call.reconciliationAttempts + 1,
               hasProviderRequestId: Boolean(call.providerRequestId),
-              canLookUpUsage: lookup?.provider === call.provider,
+              canLookUpUsage: canLookUp,
             });
         }),
       );
