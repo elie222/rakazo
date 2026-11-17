@@ -3313,6 +3313,35 @@ describe("createMessagingInboundHandler linking", () => {
     expect(deps.send).toHaveBeenCalledWith([{ identityId: "mi-linked" }]);
   });
 
+  it("links a shared deployment bot to the code owner's account and refuses token reuse", async () => {
+    const deps = createDeps({ identity: null, linkCode: { ...liveCode } });
+    (deps as unknown as { openSignup: boolean }).openSignup = false;
+    const handle = createMessagingInboundHandler(deps);
+    const event = {
+      ...dmEvent,
+      provider: "telegram",
+      from: "123",
+      threadId: "telegram:123",
+      content: "ABCD-2345",
+    };
+    await handle(event);
+    await handle({ ...event, from: "456", threadId: "telegram:456", handle: "other-message" });
+    expect(deps.createdIdentities).toEqual([
+      expect.objectContaining({
+        provider: "telegram",
+        address: "123",
+        dmThreadId: "telegram:123",
+        userId: liveCode.userId,
+        spaceId: liveCode.spaceId,
+        botId: liveCode.botId,
+      }),
+    ]);
+    expect(deps.linkCodes).toHaveLength(0);
+    expect(deps.outboundRows).toHaveLength(1);
+    expect(deps.provision).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("rolls back linking when confirmation fails, then retries without starting a run", async () => {
     const deps = createDeps({ identity: null, linkCode: { ...liveCode } });
     deps.openSignup = false;

@@ -1,6 +1,6 @@
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../../openai-compatible-url.js";
+import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../../models/endpoints/openai-compatible-url.js";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
