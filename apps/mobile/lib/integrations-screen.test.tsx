@@ -6,10 +6,10 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Integrations from "../app/(settings)/integrations";
 import { ConnectorIcon } from "../components/connector-icon";
+import { queryClient } from "./query";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -21,7 +21,7 @@ const state = vi.hoisted(() => ({
   scope: vi.fn(),
   persisted: vi.fn(),
   focused: true,
-  appStateChange: null as null | ((state: string) => void),
+  authSession: vi.fn(),
   headerMenu: false,
   navigation: { setOptions: vi.fn() },
 }));
@@ -38,9 +38,18 @@ vi.mock("expo-router", () => ({
 }));
 // The plugin catalog has its own seam so app-catalog tests keep their own rpc fakes.
 vi.mock("./api", () => ({
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-fixture",
+  captureApiRequestContext: async (spaceId: string | null = "space-fixture") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
   rpc: (proc: string, ...args: unknown[]) =>
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: state.authSession }));
 vi.mock("../components/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
 }));
@@ -175,12 +184,6 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ width: 390 }),
     Alert: { alert: vi.fn() },
     Linking: { openURL: vi.fn() },
-    AppState: {
-      addEventListener: vi.fn((_event: string, callback: (value: string) => void) => {
-        state.appStateChange = callback;
-        return { remove: vi.fn() };
-      }),
-    },
   };
 });
 
@@ -208,7 +211,8 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.current = true;
   state.focused = true;
-  state.appStateChange = null;
+  state.authSession.mockReset().mockResolvedValue({ type: "cancel" });
+  queryClient.clear();
   state.headerMenu = false;
   state.navigation.setOptions.mockReset();
   state.scope.mockReset().mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
@@ -1047,11 +1051,17 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
     if (proc === "mcp/oauth/begin")
       return Promise.resolve({
         status: "authorization_required",
-        sessionId: "test-session",
+        sessionId: "mobile-session",
         authorizationUrl: "https://identity.example.test/authorize",
       });
+    if (proc === "mcp/oauth/complete") {
+      signedIn = true;
+      return Promise.resolve({ ok: true });
+    }
     return fallback?.(proc, args);
   });
+  const browser = deferred<{ type: "success"; url: string }>();
+  state.authSession.mockReturnValue(browser.promise);
   await openMcpSource();
   await act(async () => {
     [...container.querySelectorAll("button")]
@@ -1069,20 +1079,30 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
       transport: "streamable_http",
     }),
   );
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
-  expect(Linking.openURL).toHaveBeenCalledWith("https://identity.example.test/authorize");
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", {
+    serverId: "oauth-server",
+    client: "mobile",
+  });
+  expect(state.authSession).toHaveBeenCalledWith(
+    "https://identity.example.test/authorize",
+    "rakazo://mcp-oauth",
+  );
 
   const row = () => container.querySelector('[data-testid="registered-mcp-server"]');
   expect(row()?.textContent).toBe("TTestNot connectedConnect");
 
-  const initialReads = state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length;
-  signedIn = true;
-  await act(async () => {
-    state.appStateChange?.("active");
+  await act(async () =>
+    browser.resolve({
+      type: "success",
+      url: "rakazo://mcp-oauth?code=code-1&state=mobile-session",
+    }),
+  );
+  await settle();
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/complete", {
+    sessionId: "mobile-session",
+    code: "code-1",
+    state: "mobile-session",
   });
-  expect(
-    state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
-  ).toBeGreaterThan(initialReads);
   expect(row()?.textContent).toBe("TTestConnected");
 });
 
@@ -1117,7 +1137,10 @@ it("keeps an MCP sign-in that needed no browser when the following refresh fails
   await render();
   await act(async () => catalog.resolve([]));
   await press("Reconnect");
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "expired" });
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", {
+    serverId: "expired",
+    client: "mobile",
+  });
   expect(container.textContent).toContain("Could not load integrations");
   expect(container.textContent).not.toContain("Could not start MCP OAuth");
 });
@@ -1157,9 +1180,9 @@ it("starts the browser sign-in for a new OAuth server when the following refresh
   await press("Verify and add");
   expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).toBeNull();
   expect(container.textContent).toContain("Could not load integrations");
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
-  expect(Linking.openURL).toHaveBeenCalledWith(
+  expect(state.authSession).toHaveBeenCalledWith(
     "https://identity.example.test/authorize-after-failed-refresh",
+    "rakazo://mcp-oauth",
   );
 });
 
@@ -1231,4 +1254,96 @@ it("clears a failed add when another type is picked from the header menu", async
   expect(container.textContent).toContain("Could not add source");
   await pick("OpenAPI");
   expect(container.textContent).not.toContain("Could not add source");
+});
+
+async function searchFor(text: string) {
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, text);
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+const catalogResult = (auth: { type: string } | null) => ({
+  enabled: true,
+  results: [
+    {
+      domain: "tracker.example",
+      name: "Tracker",
+      description: "",
+      pageUrl: null,
+      surfaces: [
+        {
+          kind: "mcp",
+          slug: "tracker",
+          source: "https://mcp.tracker.example/mcp",
+          auth: auth && { ...auth, headerName: null, note: null },
+        },
+      ],
+    },
+  ],
+});
+
+it("looks a search up in the public catalog only when asked, and signs in from there", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve(catalogResult({ type: "oauth" }));
+    if (proc === "mcp/servers/connect")
+      return Promise.resolve({
+        server: { id: "tracker-server", name: "Tracker", enabled: true },
+        signIn: {
+          status: "authorization_required",
+          sessionId: "mobile-session",
+          authorizationUrl: "https://identity.example.test/authorize",
+        },
+      });
+    return fallback?.(proc, args);
+  });
+  await render();
+  await act(async () => catalog.resolve([]));
+  await searchFor("tracker");
+  expect(container.textContent).toContain("No apps match your search.");
+  expect(state.rpc).not.toHaveBeenCalledWith("capabilities/catalogSearch", expect.anything());
+
+  await press("Search more apps");
+  expect(state.rpc).toHaveBeenCalledWith(
+    "capabilities/catalogSearch",
+    { query: "tracker", usePublicCatalog: true },
+    expect.anything(),
+  );
+  const rows = () => container.querySelector('[data-testid="integration-catalog-search"]');
+  expect(rows()?.textContent).toBe("TTrackerConnect");
+
+  await press("Connect");
+  expect(state.rpc).toHaveBeenCalledWith(
+    "mcp/servers/connect",
+    { name: "Tracker", endpoint: "https://mcp.tracker.example/mcp", client: "mobile" },
+    expect.anything(),
+  );
+  expect(state.authSession).toHaveBeenCalledWith(
+    "https://identity.example.test/authorize",
+    "rakazo://mcp-oauth",
+  );
+  expect(state.rpc).not.toHaveBeenCalledWith("mcp/oauth/complete", expect.anything());
+  // A cancelled sign-in still shows the added server, so it can be connected later.
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length).toBe(2);
+});
+
+it("does not offer a catalog server that needs a key", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/catalogSearch"
+      ? Promise.resolve(catalogResult({ type: "bearer" }))
+      : fallback?.(proc, args),
+  );
+  await render();
+  await act(async () => catalog.resolve([]));
+  await searchFor("tracker");
+  await press("Search more apps");
+
+  expect(container.querySelector('[data-testid="integration-catalog-search"]')?.textContent).toBe(
+    "",
+  );
+  expect(container.textContent?.match(/No apps match your search\./g)).toHaveLength(1);
 });

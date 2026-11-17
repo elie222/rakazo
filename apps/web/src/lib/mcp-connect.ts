@@ -16,6 +16,11 @@ export type McpOauthResult =
   | "already_connected"
   | "authorization_not_requested";
 
+/** Where providers send the user back; a pre-registered client must allow it. */
+export function mcpOAuthRedirectUri(): string {
+  return `${window.location.origin}${MCP_OAUTH_CALLBACK_PATH}`;
+}
+
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
  * broadcasts completion or the popup is closed without finishing.
@@ -24,14 +29,32 @@ export type McpOauthResult =
  * provider login pages with COOP sever the opener link. The desktop shell
  * gives each server its own browser session, so its popup never reaches the
  * callback page; the main process captures the code and reports it instead. */
-/** Where providers send the user back; a pre-registered client must allow it. */
-export function mcpOAuthRedirectUri(): string {
-  return `${window.location.origin}${MCP_OAUTH_CALLBACK_PATH}`;
-}
-
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({ serverId, redirectUri: mcpOAuthRedirectUri() });
   if (started.status !== "authorization_required") return started.status;
+  return await signInInPopup(serverId, started);
+}
+
+/** Adds a remote MCP server by URL, or reuses the one already added, and signs in to it. The
+ * bot gets the server once the sign-in finishes, even when it finishes in this tab instead. */
+export async function connectMcpEndpoint(input: {
+  name: string;
+  endpoint: string;
+  botId?: string;
+}): Promise<McpOauthResult> {
+  const { server, signIn } = await rpc.mcp.servers.connect({
+    ...input,
+    redirectUri: mcpOAuthRedirectUri(),
+  });
+  if (signIn.status !== "authorization_required") return signIn.status;
+  // The popup opens only now: on desktop its name carries the server id.
+  return await signInInPopup(server.id, signIn);
+}
+
+async function signInInPopup(
+  serverId: string,
+  started: { sessionId: string; authorizationUrl: string },
+): Promise<McpOauthResult> {
   const browser = desktopBridge()?.mcpBrowser;
   const popup = window.open(
     started.authorizationUrl,

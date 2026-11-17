@@ -29,7 +29,6 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -47,6 +46,7 @@ import type {
 import { AddCustomForm, AddCustomMenu } from "../../components/add-custom-integration";
 import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { ConnectorIcon } from "../../components/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integration-catalog-search";
 import type { ConnectionTool } from "../../components/integration-detail";
 import { IntegrationDetail } from "../../components/integration-detail";
 import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integration-plugins";
@@ -67,6 +67,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -140,7 +141,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -250,6 +250,11 @@ export default function Integrations() {
           matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
+  const noMatch =
+    catalogsReady &&
+    filtering &&
+    catalogApps.length + pluginMatches.length + brandMatches.length + savedServerMatches.length ===
+      0;
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
 
   const detailItem = useMemo(() => {
@@ -450,16 +455,6 @@ export default function Integrations() {
       };
     }, []),
   );
-
-  useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -834,15 +829,8 @@ export default function Integrations() {
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await retryRefresh(isCurrent);
-      }
+      await signInToMcpServer(rpc, serverId);
+      if (isCurrent()) await retryRefresh(isCurrent);
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
     } finally {
@@ -1205,13 +1193,18 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogsReady &&
-                catalogApps.length === 0 &&
-                pluginMatches.length === 0 &&
-                brandMatches.length === 0 &&
-                savedServerMatches.length === 0 &&
-                filtering ? (
+                {noMatch ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
+                ) : null}
+                {catalogsReady && !category ? (
+                  <IntegrationCatalogSearch
+                    query={query}
+                    noMatchShown={noMatch}
+                    onChanged={(serverId) => {
+                      if (serverId) setOauthServerId(serverId);
+                      void retryRefresh();
+                    }}
+                  />
                 ) : null}
 
                 {!category && renderedApps.length < catalogApps.length ? (
