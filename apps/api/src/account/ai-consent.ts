@@ -27,9 +27,10 @@ import {
   modelRoleTarget,
   voicePreferenceTarget,
 } from "@rakazo/db";
-import { voiceCredentialServer } from "../calls/voice.js";
+import { includedVoice, voiceCredentialServer } from "../calls/voice.js";
 import type { RouterDeps } from "../router.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
+import { deploymentVoiceRecipients } from "../voice/deployment-consent.js";
 
 export async function aiConsentStatus(
   deps: RouterDeps,
@@ -94,7 +95,7 @@ export async function aiConsentStatus(
       uses.includes("voice")
         ? query.uses
           ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential }] : []),
+              (credential) => (credential ? [{ credential, isDefault: true }] : []),
             )
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
@@ -221,6 +222,12 @@ export async function aiConsentStatus(
         }),
       );
     }
+  }
+  if (uses.includes("voice") && !voices.some((voice) => voice.isDefault)) {
+    const included = await includedVoice(deps, actor, query.settingsScope);
+    if (included)
+      for (const recipient of deploymentVoiceRecipients(included.deployment, included))
+        add(recipient);
   }
   for (const voice of voices) {
     // A self-hosted server is disclosed by its own origin, like a custom model endpoint.

@@ -14,15 +14,16 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("voice HTTP routes answering a typed client error", () => {
   it.each([
-    ["BAD_REQUEST", 400],
-    ["UNAUTHORIZED", 401],
-    ["FORBIDDEN", 403],
-    ["NOT_FOUND", 404],
-    ["CONFLICT", 409],
-    ["TOO_MANY_REQUESTS", 429],
-    ["SERVICE_UNAVAILABLE", 503],
-  ] as const)("answers %s with its own status and message", async (kind, status) => {
-    const refusal = new ClientError(kind, "Written for the person");
+    ["BAD_REQUEST", 400, undefined],
+    ["UNAUTHORIZED", 401, undefined],
+    ["FORBIDDEN", 403, undefined],
+    ["NOT_FOUND", 404, undefined],
+    ["CONFLICT", 409, undefined],
+    ["TOO_MANY_REQUESTS", 429, undefined],
+    ["SERVICE_UNAVAILABLE", 503, undefined],
+    ["FORBIDDEN", 403, "AI_CONSENT_REQUIRED"],
+  ] as const)("answers %s with its own status and message", async (kind, status, code) => {
+    const refusal = new ClientError(kind, "Written for the person", code);
     const deps = {
       prisma: { spaceSettingOverride: { findUnique: vi.fn().mockRejectedValue(refusal) } },
     } as unknown as VoiceDeps;
@@ -36,7 +37,10 @@ describe("voice HTTP routes answering a typed client error", () => {
     });
 
     expect(response.status).toBe(status);
-    await expect(response.json()).resolves.toEqual({ error: "Written for the person" });
+    await expect(response.json()).resolves.toEqual({
+      error: "Written for the person",
+      ...(code ? { code } : {}),
+    });
   });
 });
 

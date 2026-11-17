@@ -10,6 +10,8 @@ import {
 import { rpc, selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 
+import { ensureVoiceConsent, invalidateVoiceConsent } from "./voice-consent.js";
+
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
 export interface SpeechSnapshot {
@@ -21,6 +23,7 @@ export interface SpeechSnapshot {
 }
 
 interface SpeakOptions {
+  callId?: string;
   spaceId?: string | null;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
@@ -181,6 +184,8 @@ export class Speaker {
     signal: AbortSignal,
     spaceId: string | null,
   ): Promise<string[]> {
+    await ensureVoiceConsent(spaceId, opts.scope, signal);
+    signal.throwIfAborted();
     const body = await rpc.voice.prepare(
       { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
       { signal, context: { spaceId } },
@@ -213,6 +218,7 @@ export class Speaker {
             voiceId: opts.voiceId,
             botId: opts.botId,
             scope: opts.scope,
+            callId: opts.callId,
           }),
           signal: deadline.signal,
         }),
@@ -220,6 +226,7 @@ export class Speaker {
       );
       if (!res.ok) {
         const body = await readVoiceError(res, deadline.signal);
+        if (body.code === "AI_CONSENT_REQUIRED") invalidateVoiceConsent();
         throw new Error(voiceAccountErrorText(body) ?? body.error ?? "");
       }
       // A superseded request must not overwrite the voice of the one that replaced it.
