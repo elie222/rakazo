@@ -7,7 +7,8 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
-import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
+import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";

@@ -7,7 +7,7 @@ import type {
   WebSearchHit,
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { z } from "zod";
 import { combineSignals } from "../../../connector-safety.js";
 import type { RemoteTransportDependencies } from "../../../remote-mcp.js";

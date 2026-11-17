@@ -22,7 +22,8 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { abortableDelay } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "../../../computer-screens.js";
 import {
@@ -891,7 +892,6 @@ async function stopDaytonaSandbox(sandbox: DaytonaSandbox): Promise<void> {
           case SandboxState.PAUSED:
             await sandbox.stop(seconds());
             continue;
-          // Let these settle, then act on the state they land in.
           case SandboxState.STOPPING:
           case SandboxState.CREATING:
           case SandboxState.RESTORING:
