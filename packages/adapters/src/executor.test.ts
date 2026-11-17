@@ -28,6 +28,7 @@ import {
   desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   persistentComputerInstruction,
+  RAKAZO_PLATFORM_INSTRUCTION,
   threadContextForRun,
   userTurnInstructions,
   VOICE_CALL_INSTRUCTION,
@@ -1495,6 +1496,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "This entire computer workspace is your private home.",
@@ -1532,6 +1534,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "This entire computer workspace is your private home.",
@@ -1581,6 +1584,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "Catalog guidance",
@@ -1628,7 +1632,7 @@ describe("userTurnInstructions", () => {
         agentSkillsLine: undefined,
         taughtSkillsLine: undefined,
         followUpsOffered,
-      }).filter(Boolean)[1];
+      }).filter(Boolean)[2];
     const offered = toolLine(true);
     expect(offered).toContain(
       "(not reminders — those are schedule_*). Do not wait to be asked about open loops.",

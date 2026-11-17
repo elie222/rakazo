@@ -389,6 +389,10 @@ export function formatSharedSpaceNote(memberNames: string[], requesterName?: str
     .join(" ");
 }
 
+/** Bots otherwise learn only their own name, and ask the user what Rakazo is. */
+export const RAKAZO_PLATFORM_INSTRUCTION =
+  "You run on Rakazo, the open-source platform where the user creates and chats with bots like you. You know Rakazo, so never ask the user to explain it; read the Rakazo skill when you need details.";
+
 // Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 export function userTurnInstructions(parts: {
   botInstructions: string;
@@ -419,6 +423,7 @@ export function userTurnInstructions(parts: {
   userComputer?: UserComputerState;
 }): (string | undefined)[] {
   return [
+    RAKAZO_PLATFORM_INSTRUCTION,
     parts.botInstructions,
     parts.historyRetrievalEnabled &&
     builtinOffered(parts.disabledBuiltinTools, "search_history") &&
@@ -461,7 +466,7 @@ export function userTurnInstructions(parts: {
       offeredBuiltinClause(
         parts.disabledBuiltinTools,
         "skill_read",
-        "When asked how Rakazo or you work, or how to set something up (apps, the user's own computer, billing), read the Rakazo skill before answering or acting.",
+        "For anything about Rakazo itself (what it is, how it or you work, setup, its source code), read the Rakazo skill first.",
       ),
     parts.taughtSkillsLine,
     offeredBuiltinClause(
