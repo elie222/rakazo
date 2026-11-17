@@ -382,6 +382,23 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "schedule_create" }] },
   },
   {
+    id: "schedule-webhook",
+    area: "schedules",
+    kind: "guard",
+    purpose: "Start a routine from a webhook instead of a clock.",
+    prompt: "Whenever our CI calls your webhook, summarize what failed and tell me.",
+    expect: { calls: [{ tool: "schedule_create", args: { on: "~webhook" } }] },
+  },
+  {
+    id: "schedule-git-event",
+    area: "schedules",
+    kind: "guard",
+    purpose: "Start a routine from a Git event instead of polling.",
+    prompt:
+      "Each time someone opens a pull request on our GitHub repo acme/api, check that its description says how it was tested and tell me if not. Set it up so GitHub notifies you.",
+    expect: { calls: [{ tool: "schedule_create", args: { on: "~git" } }] },
+  },
+  {
     id: "schedule-list",
     area: "schedules",
     kind: "guard",

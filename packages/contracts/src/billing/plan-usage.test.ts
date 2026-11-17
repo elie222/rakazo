@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { planUsagePercent } from "../domain.js";
 import type { BillingStatus } from "./billing.js";
 import { modelCreditsUsd } from "./billing.js";
+import { planUsagePercent } from "./usage.js";
 
 describe("modelCreditsUsd", () => {
   const status = (overrides: Partial<BillingStatus>) => overrides as BillingStatus;

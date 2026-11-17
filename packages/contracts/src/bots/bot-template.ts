@@ -4,7 +4,7 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BotSchema,
-} from "../domain.js";
+} from "./bot.js";
 
 const slug = z
   .string()

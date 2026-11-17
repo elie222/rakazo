@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { displayName } from "@rakazo/core";
 import { bootstrapUserSpace } from "../account/bootstrap-user.js";
-import { createRepos } from "../bots/repos.js";
+import { createRepos } from "../bots/bot-repository.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";

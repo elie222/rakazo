@@ -59,7 +59,7 @@ export async function scheduleCreateRefusal(
   const { deps, run, bot, thread } = ctx;
   const error =
     commandWatchGuardError(ctx, args.watch) ??
-    (await scheduleCreateError(deps.prisma, {
+    (await scheduleCreateError(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
@@ -237,6 +237,7 @@ export const taskTools: ToolHandlers = {
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
         schedule: compactScheduleInput(scheduleTimingArgs(args)),
+        on: isScheduleValueProvided(args.on) ? args.on : undefined,
       }),
     );
   },

@@ -432,4 +432,83 @@ describe("readInboundEmail", () => {
     expect(email.attachments[0]).toMatchObject({ name: "report.csv", mimeType: "text/csv" });
     expect(new TextDecoder().decode(email.attachments[0]?.bytes)).toBe("a,b\n1,2\n");
   });
+
+  it("keeps a forwarded body while removing a standard signature from the model text", async () => {
+    const raw = message(
+      plain,
+      [
+        "Please review the invoice.",
+        "",
+        "-- ",
+        "Signature details",
+        "",
+        "---------- Forwarded message ----------",
+        "From: billing@example.test",
+        "",
+        "> The invoice is due on Friday.",
+        "",
+      ].join("\r\n"),
+    );
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.text).toContain("Signature details");
+    expect(email.modelText).not.toContain("Signature details");
+    expect(email.modelText).toContain("Please review the invoice.");
+    expect(email.modelText).toContain("> The invoice is due on Friday.");
+  });
+
+  it("keeps quoted history in the inbox and drops a trailing quoted reply from model text", async () => {
+    const raw = message(
+      plain,
+      "Friday works for me.\r\n\r\nOn Monday, Ada wrote:\r\n> Can we move the meeting?\r\n",
+    );
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.text).toContain("> Can we move the meeting?");
+    expect(email.modelText).toBe("Friday works for me.");
+  });
+
+  it("keeps related images after explicit attachments and strips marked HTML signatures", async () => {
+    const raw = message(
+      [
+        ...plain.filter((line) => !line.startsWith("Content-Type")),
+        'Content-Type: multipart/mixed; boundary="outer"',
+      ],
+      [
+        "--outer",
+        'Content-Type: multipart/related; boundary="related"',
+        "",
+        "--related",
+        "Content-Type: text/html; charset=utf-8",
+        "",
+        '<p>See the screenshot.</p><img src="cid:shot@example.test"><div class="gmail_signature">Signature details</div>',
+        "--related",
+        "Content-Type: image/png",
+        'Content-Disposition: inline; filename="screenshot.png"',
+        "Content-ID: <shot@example.test>",
+        "Content-Transfer-Encoding: base64",
+        "",
+        "aW1hZ2U=",
+        "--related--",
+        "--outer",
+        "Content-Type: application/pdf",
+        'Content-Disposition: attachment; filename="invoice.pdf"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        "cGRm",
+        "--outer--",
+        "",
+      ].join("\r\n"),
+    );
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.text).toContain("Signature details");
+    expect(email.modelText).toBe("See the screenshot.");
+    expect(email.attachments.map((attachment) => attachment.name)).toEqual([
+      "invoice.pdf",
+      "screenshot.png",
+    ]);
+    expect(email.attachments[0]?.inline).toBeUndefined();
+    expect(email.attachments[1]?.inline).toBe(true);
+  });
 });
