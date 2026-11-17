@@ -2198,3 +2198,44 @@ describe("completion pushes", () => {
     expect(completionPushes()).toHaveLength(1);
   });
 });
+
+describe("monitor-only group handoffs", () => {
+  it("keeps a split silence marker out of durable messages and streamed progress", async () => {
+    const result = await runTurn("NO_RESPONSE", false, [], [], "request", {
+      trigger: "follow_up",
+      group: { optional: false },
+      runtimeEvents: [
+        ...[..."NO_RESPONSE"].map((text): AgentRuntimeEvent => ({ type: "text", text })),
+        { type: "done" },
+      ],
+    });
+    expect(result.finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed", blocks: [], markUnread: false }),
+    );
+    expect(result.messages).toEqual([]);
+    expect(result.append.mock.calls.filter(([event]) => event.type === "thread.progress")).toEqual(
+      [],
+    );
+  });
+
+  it("still delivers new findings from a handoff", async () => {
+    const result = await runTurn(
+      "The interview overlaps your dentist appointment.",
+      false,
+      [],
+      [],
+      "request",
+      {
+        trigger: "follow_up",
+        group: { optional: false },
+      },
+    );
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "completed",
+        markUnread: true,
+        blocks: [{ kind: "text", text: "The interview overlaps your dentist appointment." }],
+      }),
+    );
+  });
+});

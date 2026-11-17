@@ -34,7 +34,9 @@ export type Step =
       ifScheduled?: true;
     }
   /** A request from the case's peer bot, delivered through message_bot's product path. */
-  | { fromPeer: string };
+  | { fromPeer: string }
+  /** A member posts a handoff through the real group delivery path. */
+  | { fromMember: string; text: string };
 export type Evidence = {
   text: string;
   delegation?: {

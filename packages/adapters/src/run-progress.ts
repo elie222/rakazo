@@ -209,18 +209,23 @@ export function tryFlushPendingTools(reply: ReplyState) {
 }
 
 /**
- * A member a group message named nobody for may answer with the silence sentinel, so what it
- * has written stays unseen while that is still possible. Once the text turns into a reply it
- * all shows.
+ * Silent-allowed runs keep a possible silence sentinel out of the live stream.
+ * Once the text turns into a reply it all shows.
  */
 export function progressHeldForSilence(ctx: RunContext) {
   const { reply } = ctx.state;
   return !reply.hasStreamedText && mayBeSilentEnding(ctx, reply.pendingProgress);
 }
 
-/** Text a member a group message named nobody for may still turn into its silent ending. */
-export function mayBeSilentEnding(ctx: Pick<RunContext, "groupReplyOptional">, text: string) {
-  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
+/** Text that may still become an allowed silent ending. */
+export function mayBeSilentEnding(
+  ctx: Pick<RunContext, "groupReplyOptional" | "allowSilentEmptyRun">,
+  text: string,
+) {
+  return (
+    ((ctx.groupReplyOptional || ctx.allowSilentEmptyRun) && couldBecomeNoResponse(text)) ||
+    (ctx.groupReplyOptional && isPlaceholderText(text))
+  );
 }
 
 export async function flushProgress(ctx: RunContext) {
