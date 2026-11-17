@@ -22,7 +22,7 @@ import {
   SpaceDeletionInProgressError,
   spaceTakesWork,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
 import { protectedComputerLifecycleRefusal } from "./providers/computer/desktop/desktop-command-guard.js";
@@ -102,22 +102,24 @@ export async function deleteSpentOneShotRoutine(
   prisma: PrismaClient,
   run: { routineId: string; userId: string },
 ): Promise<void> {
-  await prisma.routine
-    .deleteMany({
+  await bestEffort(
+    "delete spent one-time routine",
+    prisma.routine.deleteMany({
       where: {
         id: run.routineId,
         userId: run.userId,
         crons: { equals: [ONCE_ROUTINE_CRON] },
         active: false,
         nextRunAt: null,
+        lastRunAt: { not: null },
         webhookEnabled: false,
         githubEnabled: false,
         messageProvider: null,
         emailSenders: null,
         runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
       },
-    })
-    .catch((error: unknown) => getLogger().error("routine.one_shot_delete", error));
+    }),
+  );
 }
 
 async function notifyFailedRoutineRun(

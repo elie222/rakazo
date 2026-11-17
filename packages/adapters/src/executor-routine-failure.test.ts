@@ -1209,6 +1209,7 @@ describe("a one-time routine after its run", () => {
         crons: { equals: ["@once"] },
         active: false,
         nextRunAt: null,
+        lastRunAt: { not: null },
       }),
     });
   });

@@ -102,17 +102,18 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
   });
 
   it("deletes only a spent one-time routine and keeps its run history", async () => {
-    const spent = { crons: ["@once"], active: false, nextRunAt: null };
+    const spent = { crons: ["@once"], active: false, nextRunAt: null, lastRunAt: new Date() };
     const create = (data: Partial<Prisma.RoutineUncheckedCreateInput>) =>
       system.routine.create({
         data: { ...identity, name: "reminder", prompt: "remind me", ...spent, ...data },
       });
-    const [done, rescheduled, recurring, webhook, busy] = await Promise.all([
+    const [done, rescheduled, recurring, webhook, busy, paused] = await Promise.all([
       create({}),
       create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
       create({ crons: ["0 9 * * *"] }),
       create({ webhookEnabled: true }),
       create({}),
+      create({ lastRunAt: null }),
     ]);
     const task = await system.task.create({
       data: { ...identity, prompt: "remind me", status: "completed" },
@@ -123,16 +124,19 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       });
     const finished = await runFor(done.id, "completed");
     await runFor(busy.id, "running");
+    await runFor(paused.id, "completed");
 
-    for (const routine of [done, rescheduled, recurring, webhook, busy])
+    for (const routine of [done, rescheduled, recurring, webhook, busy, paused])
       await deleteSpentOneShotRoutine(system, { routineId: routine.id, userId: identity.userId });
 
     const left = await system.routine.findMany({
-      where: { id: { in: [done.id, rescheduled.id, recurring.id, webhook.id, busy.id] } },
+      where: {
+        id: { in: [done.id, rescheduled.id, recurring.id, webhook.id, busy.id, paused.id] },
+      },
       select: { id: true },
     });
     expect(left.map((row) => row.id).sort()).toEqual(
-      [rescheduled.id, recurring.id, webhook.id, busy.id].sort(),
+      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id].sort(),
     );
     await expect(
       system.run.findUniqueOrThrow({ where: { id: finished.id }, select: { routineId: true } }),
