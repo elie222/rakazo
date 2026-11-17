@@ -4,6 +4,7 @@ import { createAdapterContext } from "@rakazo/adapter-kit";
 import type { Actor, AgentImportPlan, McpServerConfigInput } from "@rakazo/contracts";
 import {
   AgentImportCreateInput,
+  BOT_NAME_MAX_LENGTH,
   ConnectionSetupError,
   GROK_BOT_EXPORT_MAX_LENGTH,
   GROK_BOT_EXPORT_PATH,
@@ -90,7 +91,9 @@ export async function readRunAgentExport(
       continue;
     }
     if (block.kind !== "file" || !deps.artifacts) continue;
-    if (!EXPORT_FILE.test(block.mimeType) && !block.name.toLowerCase().endsWith(".json")) continue;
+    const fileName = typeof block.name === "string" ? block.name : "";
+    if (!EXPORT_FILE.test(String(block.mimeType)) && !fileName.toLowerCase().endsWith(".json"))
+      continue;
     // A file that would take the text past the size an export may have is not one.
     if (length + block.size > GROK_BOT_REPLY_MAX_LENGTH) continue;
     const row = await deps.prisma.artifact.findFirst({
@@ -132,6 +135,7 @@ function readExport(text: string): GrokBot[] | { error: string } {
   }
 }
 
+const savedName = (bot: GrokBot) => bot.name.slice(0, BOT_NAME_MAX_LENGTH);
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -182,12 +186,19 @@ export function prepareAgentImportRequest(
       bots: picked.map(({ index, bot }) => ({ index, name: bot.name })),
     },
     summary: {
+      // Each bot under the name it is created with, and only the skills with text to save.
       title:
-        picked.length === 1 ? `Import ${picked[0]!.bot.name}?` : `Import ${picked.length} bots?`,
+        picked.length === 1
+          ? `Import ${savedName(picked[0]!.bot)}?`
+          : `Import ${picked.length} bots?`,
       lines: picked.map(
         ({ bot }) =>
-          `${bot.name}: ${[
-            count(bot.skills.length, "skill", "skills"),
+          `${savedName(bot)}: ${[
+            count(
+              bot.skills.filter((skill) => skill.instructions.trim()).length,
+              "skill",
+              "skills",
+            ),
             count(bot.routines.length, "routine", "routines"),
             count(bot.apps.length, "app", "apps"),
           ].join(", ")}`,
