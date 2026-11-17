@@ -1,4 +1,5 @@
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import type { ChatModelChoice } from "./model-providers.js";
 import {
   chatModelChoices,
   connectedModelChoices,
@@ -13,8 +14,8 @@ type SpaceDefault = { defaultProvider: string | null; defaultModel: string | nul
 
 /**
  * A bot's model as its pickers show it: the models it can switch to (the Space default first),
- * its own model as the catalog names it today (`modelKey` is "" for the Space default), and the
- * thinking levels the model in effect offers.
+ * its own model as the catalog names it today (`modelKey` is "" for the Space default), the
+ * short name a compact picker shows, and the thinking levels the model in effect offers.
  */
 export function botModelState({
   credentials,
@@ -49,6 +50,22 @@ export function botModelState({
     defaultEntry?.images,
   );
 
+  // The model's own name, without its connection; the Space default's when the bot follows it.
+  const named = (choice: ChatModelChoice | undefined) => choice?.modelLabel ?? choice?.label;
+  const selectedName = selectedModelKey
+    ? named(choices.find((choice) => choice.key === selectedModelKey))
+    : (named(
+        choices.find(
+          (choice) =>
+            choice.key !== "" &&
+            choice.provider === me?.defaultProvider &&
+            choice.modelId === me?.defaultModel,
+        ),
+      ) ??
+      defaultEntry?.label ??
+      me?.defaultModel ??
+      undefined);
+
   const provider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const modelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
   const entry =
@@ -70,6 +87,7 @@ export function botModelState({
     selectedModelKey,
     defaultEntry,
     choices,
+    selectedName,
     thinkingLevels,
     defaultThinkingLevel,
   };

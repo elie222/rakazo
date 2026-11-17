@@ -1,5 +1,6 @@
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { composerModelChip } from "./composer-model";
 import type { MobileMe } from "./mobile-types";
 
 // Only the label logic runs here; the reads and navigation are not exercised.
@@ -7,8 +8,6 @@ vi.mock("expo-router", () => ({ useRouter: vi.fn() }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 vi.mock("./query", () => ({ rpcQuery: vi.fn() }));
 vi.mock("./screen-query", () => ({ useScreenQuery: vi.fn() }));
-
-const { composerModelChip } = await import("./composer-model");
 
 const me = { defaultProvider: "acme", defaultModel: "fast" } as MobileMe;
 const catalog = [

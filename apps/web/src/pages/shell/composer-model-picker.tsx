@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
-import type { ChatModelChoice } from "@rakazo/core";
 import { botModelState, modelOptionKey, parseModelOptionKey } from "@rakazo/core";
 import { Command, CommandGroup, CommandItem, CommandList, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -56,7 +55,7 @@ export function ComposerModelPicker({
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "";
   const pendingModel = saveModel.pending ? saveModel.input : undefined;
   const modelPending = pendingModel !== undefined;
-  const { selectedModelKey, defaultEntry, choices, thinkingLevels, defaultThinkingLevel } =
+  const { selectedModelKey, selectedName, choices, thinkingLevels, defaultThinkingLevel } =
     botModelState({
       credentials,
       catalog,
@@ -76,21 +75,6 @@ export function ComposerModelPicker({
     ? thinkingLevelLabel(thinking ?? defaultThinkingLevel)
     : undefined;
   const defaultLabel = thinkingLevelLabel(defaultThinkingLevel);
-  const named = (choice: ChatModelChoice | undefined) => choice?.modelLabel ?? choice?.label;
-  const shortLabel = selectedModelKey
-    ? named(choices.find((choice) => choice.key === selectedModelKey))
-    : (named(
-        choices.find(
-          (choice) =>
-            choice.key !== "" &&
-            choice.provider === me.defaultProvider &&
-            choice.modelId === me.defaultModel,
-        ),
-      ) ??
-      defaultEntry?.label ??
-      me.defaultModel ??
-      undefined);
-
   return (
     <ChatModelPicker
       compact
@@ -98,7 +82,7 @@ export function ComposerModelPicker({
       value={selectedModelKey}
       // The button names the model alone (the one behind the Space default when the bot follows
       // it); the list keeps each row's full name.
-      selectedLabel={shortLabel}
+      selectedLabel={selectedName}
       detail={shownThinking}
       disabled={disabled || saveModel.pending || saveThinking.pending}
       onChange={(key) => {
@@ -115,6 +99,8 @@ export function ComposerModelPicker({
                         key={level ?? "default"}
                         value={level ?? "default"}
                         data-checked={level === thinking}
+                        // A model save resets thinking, so a level picked meanwhile would be lost.
+                        disabled={saveModel.pending}
                         onSelect={() => {
                           if (level !== thinking) saveThinking.run(level);
                           close();

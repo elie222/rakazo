@@ -1,5 +1,4 @@
 import { t } from "@lingui/core/macro";
-import type { ChatModelChoice } from "@rakazo/core";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
@@ -61,22 +60,9 @@ export function composerModelChip(
   });
   // Nothing to switch between.
   if (state.choices.length < 2) return null;
-  const named = (choice: ChatModelChoice | undefined) => choice?.modelLabel ?? choice?.label;
-  const label = state.selectedModelKey
-    ? named(state.choices.find((choice) => choice.key === state.selectedModelKey))
-    : (named(
-        state.choices.find(
-          (choice) =>
-            choice.key !== "" &&
-            choice.provider === me.defaultProvider &&
-            choice.modelId === me.defaultModel,
-        ),
-      ) ??
-      state.defaultEntry?.label ??
-      me.defaultModel);
   const level = (bot.thinkingLevel as typeof state.defaultThinkingLevel | null | undefined) ?? null;
   return {
-    label: label ?? t`Space default`,
+    label: state.selectedName ?? t`Space default`,
     thinking: state.thinkingLevels.length
       ? thinkingLevelLabel(level ?? state.defaultThinkingLevel)
       : undefined,
