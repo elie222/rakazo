@@ -7,7 +7,7 @@ import type {
   AgentImportSkill,
 } from "@rakazo/contracts";
 import { parse as parseYaml } from "yaml";
-import { parseSkillMd } from "../agent-skill.js";
+import { parseSkillMd } from "../skills/agent-skill.js";
 
 /** Names of the other files in each skill's folder, by SKILL.md path. */
 export type SkillFiles = Readonly<Record<string, readonly string[]>>;
