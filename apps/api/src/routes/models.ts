@@ -693,8 +693,8 @@ export function modelsRoutes(ctx: RouterContext) {
                 provider,
                 OR: [
                   { credentialId: { in: ids } },
-                  // Rows that name no connection ran on the provider's last one.
-                  ...(lastConnection ? [{ credentialId: null }] : []),
+                  // Legacy rows without a funding pin ran on the provider's last connection.
+                  ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
                 ],
               };
               // Its models leave every purpose in the account's models and every Space's,
