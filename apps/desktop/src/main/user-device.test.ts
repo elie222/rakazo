@@ -214,6 +214,7 @@ describe("remote computer access", () => {
       if (source === "settings") await access.setAllowed(origin, true);
       else expect(await clients[0]!.authorize()).toBe(true);
       expect(prepareAccess).toHaveBeenCalledOnce();
+      await prepareAccess.mock.results[0]!.value;
     },
   );
 
@@ -260,17 +261,47 @@ describe("remote computer access", () => {
     expect(access.state(origin)?.allowed).toBe(false);
   });
 
-  it("refuses a pending request when access is revoked during permission setup", async () => {
+  it.each(["disable", "revoke"] as const)(
+    "does not start setup after %s while saving allowed consent",
+    async (action) => {
+      const saved = deferred<void>();
+      const prepareAccess = vi.fn(async () => undefined);
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      vi.mocked(setupStore.writePrivateFile)
+        .mockClear()
+        .mockImplementationOnce(() => saved.promise);
+      const turningOn = access.setAllowed(origin, true);
+      await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+      const turningOff =
+        action === "disable" ? access.setAllowed(origin, false) : clients[0]!.revoke();
+      saved.resolve();
+      await turningOn;
+      await turningOff;
+      expect(prepareAccess).not.toHaveBeenCalled();
+      expect(access.state(origin)?.allowed).toBe(false);
+      await vi.waitFor(async () =>
+        expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" }),
+      );
+    },
+  );
+
+  it("runs commands while setup is open, and invalidates setup when access is revoked", async () => {
     const ready = deferred<void>();
-    const prepareAccess = vi.fn(() => ready.promise);
+    const prepareAccess = vi.fn((_valid: () => boolean) => ready.promise);
     const { access, clients } = setup({ prepareAccess });
     await access.select(origin);
     await access.pair();
-    const request = clients[0]!.authorize();
-    await vi.waitFor(() => expect(prepareAccess).toHaveBeenCalledOnce());
+    expect(await clients[0]!.authorize()).toBe(true);
+    expect(prepareAccess).toHaveBeenCalledOnce();
+    const valid = prepareAccess.mock.calls[0]![0];
+    expect(valid()).toBe(true);
     await access.setAllowed(origin, false);
+    expect(valid()).toBe(false);
     ready.resolve();
-    expect(await request).toBe(false);
+    await prepareAccess.mock.results[0]!.value;
+    expect(await clients[0]!.authorize()).toBe(false);
   });
 
   it("asks once on the first request, keeps the answer, and lets waiting requests share it", async () => {

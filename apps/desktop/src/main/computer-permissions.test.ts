@@ -91,6 +91,30 @@ describe("computer permission setup", () => {
     expect(deps.showSetup).toHaveBeenCalledOnce();
   });
 
+  it("does not request permissions for an invalid request", async () => {
+    const { deps, prepare } = setup();
+    await prepare(() => false);
+    expect(deps.permissions.isTrustedAccessibilityClient).not.toHaveBeenCalled();
+    expect(deps.showSetup).not.toHaveBeenCalled();
+  });
+
+  it.each(["restart", "settings"] as const)(
+    "ignores a stale dialog's %s action",
+    async (action) => {
+      const answer = deferred<typeof action>();
+      const showSetup = vi.fn(() => answer.promise);
+      const { deps, prepare } = setup({ showSetup });
+      let valid = true;
+      const request = prepare(() => valid);
+      await vi.waitFor(() => expect(showSetup).toHaveBeenCalledOnce());
+      valid = false;
+      answer.resolve(action);
+      await request;
+      expect(deps.restart).not.toHaveBeenCalled();
+      expect(deps.openSettings).not.toHaveBeenCalled();
+    },
+  );
+
   it("shares one setup flow across concurrent requests", async () => {
     const answer = deferred<"later">();
     const showSetup = vi.fn(() => answer.promise);

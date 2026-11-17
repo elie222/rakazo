@@ -13,8 +13,8 @@ export function createComputerPermissionSetup(deps: {
 }) {
   let pending: Promise<void> | undefined;
 
-  async function prepare() {
-    if (deps.platform !== "darwin") return;
+  async function prepare(valid: () => boolean) {
+    if (deps.platform !== "darwin" || !valid()) return;
     const accessibility = deps.permissions.isTrustedAccessibilityClient(false);
     const screen = deps.permissions.getMediaAccessStatus("screen") === "granted";
     if (accessibility && screen) return;
@@ -24,8 +24,9 @@ export function createComputerPermissionSetup(deps: {
       await bestEffort("request Mac screen permission", deps.permissions.requestScreenCapture());
 
     let readyForRestart = false;
-    for (;;) {
+    while (valid()) {
       const action = await deps.showSetup(readyForRestart);
+      if (!valid()) return;
       if (action === "later") return;
       if (action === "restart") {
         deps.restart();
@@ -33,14 +34,15 @@ export function createComputerPermissionSetup(deps: {
       }
       // Resolves only when the person returns to Rakazo.
       await deps.openSettings();
+      if (!valid()) return;
       const accessibility = deps.permissions.isTrustedAccessibilityClient(false);
       const screen = deps.permissions.getMediaAccessStatus("screen") === "granted";
       readyForRestart = accessibility && screen;
     }
   }
 
-  return () => {
-    pending ??= prepare().finally(() => {
+  return (valid: () => boolean = () => true) => {
+    pending ??= prepare(valid).finally(() => {
       pending = undefined;
     });
     return pending;

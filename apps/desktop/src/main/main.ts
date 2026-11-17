@@ -876,7 +876,12 @@ app.whenReady().then(async () => {
         return false;
       if (desktop.hostComputer.isEnabled()) {
         await persistHostChoice("this-mac");
-        await bestEffort("prepare local computer app control", prepareComputerAccess());
+        await bestEffort(
+          "prepare local computer app control",
+          prepareComputerAccess(
+            () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,
+          ),
+        );
         return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
       }
       const allowed = await confirmComputerAccess(
@@ -894,7 +899,12 @@ app.whenReady().then(async () => {
         throw error;
       }
       installApplicationMenu();
-      await bestEffort("prepare local computer app control", prepareComputerAccess());
+      await bestEffort(
+        "prepare local computer app control",
+        prepareComputerAccess(
+          () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,
+        ),
+      );
       return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
     } finally {
       requestingComputerAccess = false;

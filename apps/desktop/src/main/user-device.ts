@@ -147,7 +147,7 @@ export function createUserDeviceAccess(deps: {
   /** The native consent prompt. Resolves true only when the person clicks Allow. */
   confirm: (host: string) => Promise<boolean>;
   /** Optional screen setup follows the persisted consent, including consent asked by a bot. */
-  prepareAccess?: () => Promise<void>;
+  prepareAccess?: (valid: () => boolean) => Promise<void>;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   connect: (
     origin: string,
@@ -265,7 +265,10 @@ export function createUserDeviceAccess(deps: {
     }
     await decide(origin, answer ? "allowed" : "declined");
     if (answer && current === origin && isAllowed(origin) && deps.prepareAccess)
-      await bestEffort("prepare computer app control", deps.prepareAccess());
+      void bestEffort(
+        "prepare computer app control",
+        deps.prepareAccess(() => current === origin && isAllowed(origin)),
+      );
     return answer && current === origin && isAllowed(origin);
   }
 
@@ -447,8 +450,11 @@ export function createUserDeviceAccess(deps: {
       if (!paired.has(origin)) throw new Error("Could not pair this computer");
       if (changes.get(origin) !== seen) return;
       await decide(origin, "allowed");
-      if (current === origin && deps.prepareAccess)
-        await bestEffort("prepare computer app control", deps.prepareAccess());
+      if (current === origin && isAllowed(origin) && deps.prepareAccess)
+        void bestEffort(
+          "prepare computer app control",
+          deps.prepareAccess(() => current === origin && isAllowed(origin)),
+        );
     },
     close() {
       ++generation;
