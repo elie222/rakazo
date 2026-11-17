@@ -5,6 +5,8 @@ export type ClientErrorKind =
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
+  /** The request was made for a state that no longer holds, such as a key reused for another. */
+  | "PRECONDITION_FAILED"
   | "TOO_MANY_REQUESTS"
   | "SERVICE_UNAVAILABLE";
 

@@ -6,6 +6,7 @@ const STATUS = {
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  PRECONDITION_FAILED: 412,
   TOO_MANY_REQUESTS: 429,
   SERVICE_UNAVAILABLE: 503,
 } as const satisfies Record<ClientErrorKind, number>;

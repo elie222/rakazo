@@ -63,8 +63,7 @@ export class AgentImportError extends ClientError {
     message: string,
     provider?: string,
   ) {
-    // Precondition failures are answered as conflicts: the request no longer fits what exists.
-    super(kind === "PRECONDITION_FAILED" ? "CONFLICT" : kind, message, kind);
+    super(kind, message);
     this.name = "AgentImportError";
     this.data = provider === undefined ? { reason } : { reason, provider };
   }
