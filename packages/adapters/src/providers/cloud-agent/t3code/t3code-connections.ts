@@ -13,7 +13,7 @@ import type { McpOAuthBroker } from "../../../mcp/mcp-oauth.js";
 import { TOKEN_REFRESH_SKEW_MS } from "../../../mcp/mcp-oauth.js";
 import { mcpToolAllowed } from "../../../mcp/mcp-tool-permissions.js";
 import { listRemoteMcpTools } from "../../../mcp/remote-mcp.js";
-import { credentialDigest } from "../../../shared/credential-digest.js";
+import { credentialDigest } from "../../../secrets/credential-digest.js";
 import type { T3CodeCloudAgentOptions } from "./t3code-cloud-agent.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
 

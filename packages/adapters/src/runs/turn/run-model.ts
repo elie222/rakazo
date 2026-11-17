@@ -86,6 +86,7 @@ export async function fleetPrepareDeps(
     : undefined;
   return {
     prisma: deps.prisma,
+    ...(deps.inboundEmailDomain ? { inboundEmailDomain: deps.inboundEmailDomain } : {}),
     modelChange: {
       hostedProvider,
       secretStore: deps.secretStore,

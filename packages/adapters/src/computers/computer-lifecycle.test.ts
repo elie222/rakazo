@@ -24,7 +24,6 @@ import { clearThread, planComputerSize } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
-import { SandboxUnsafeStopError, sandboxNotFoundError } from "../sandboxes/sandbox-errors.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import {
   acquireComputerExecutionLease,
@@ -39,6 +38,7 @@ import {
   waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { SandboxUnsafeStopError, sandboxNotFoundError } from "./sandbox/sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
 vi.mock("@rakazo/db", async (importOriginal) => ({

@@ -2,8 +2,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import * as modelRoles from "../../models/model-roles.js";
+import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
-import { mainRole, withModelRoles } from "../../testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,

@@ -4,8 +4,8 @@ import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
-} from "../cli-models/claude-code/provider-id.js";
-import { OpenRouterUsageLookup } from "./credits/openrouter-usage.js";
+} from "../providers/cli-model/claude-code/provider-id.js";
+import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
  * What Rakazo knows about a model provider beyond the model registry it runs on. A provider

@@ -24,6 +24,7 @@ import {
 } from "../../computers/computer-lifecycle.js";
 import { resolveComputerRunModel } from "../../computers/computer-model-settings.js";
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
+import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
@@ -38,7 +39,6 @@ import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
-import { sandboxKindCapabilities } from "../../sandboxes/sandbox-kind-capabilities.js";
 import {
   createEarlierFileQueue,
   listCurrentTurnFiles,

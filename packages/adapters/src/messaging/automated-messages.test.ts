@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { formatFinishedShellCommand } from "../computers/sandbox/shell-command-stream.js";
 import {
   SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
   SILENT_TOOL_CONTINUATION_PROMPT,
@@ -12,7 +13,6 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "../runtime/pi/models/pi-openai-compatible-provider.js";
 import { reliableModelStream } from "../runtime/pi/stream/pi-runtime-stream.js";
-import { formatFinishedShellCommand } from "../sandboxes/shell-command-stream.js";
 import { relabelToolImageMessages, withAutomatedLabels } from "./automated-messages.js";
 import {
   AUTOMATED_MESSAGE_LABEL,
