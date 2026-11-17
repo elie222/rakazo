@@ -86,5 +86,5 @@ test("Rakazo credits are chosen like a provider, with nothing else to fill in", 
   await expect(page.getByLabel(/API key/)).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-rakazo-credits");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect.poll(() => funding).toEqual({ funding: "credits" });
+  await expect.poll(() => funding).toEqual({ funding: "credits", surface: "web" });
 });

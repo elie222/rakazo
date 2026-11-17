@@ -41,7 +41,7 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
 import { syncCallIdentity } from "./lib/calls/call-session";
-import { desktopBridge } from "./lib/platform/desktop";
+import { analyticsSurface } from "./lib/platform/desktop";
 import { identifyMonitoringUser } from "./lib/platform/monitoring";
 import { markAfterPaint, markOnce } from "./lib/platform/performance";
 import { lazyComponent } from "./lib/platform/preload-recovery";
@@ -146,7 +146,7 @@ function SessionApp() {
     if (lastScreen.current === key) return;
     lastScreen.current = key;
     void Promise.resolve()
-      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
+      .then(() => rpc.analytics.screen({ screen, surface: analyticsSurface() }))
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);

@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { AnalyticsSurface } from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import {
@@ -57,7 +58,9 @@ export const modelsRpc = {
     setBackups: oc
       .input(modelChoiceListSchema(ModelRoleChoiceSchema))
       .output(z.object({ ok: z.literal(true) })),
-    connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
+    connect: oc
+      .input(ModelConnectInputSchema.and(z.object({ surface: AnalyticsSurface.optional() })))
+      .output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(
         z.object({
@@ -90,6 +93,7 @@ export const modelsRpc = {
           scope: SettingsScopeSchema.optional(),
           /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
           codePage: z.boolean().optional(),
+          surface: AnalyticsSurface.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
