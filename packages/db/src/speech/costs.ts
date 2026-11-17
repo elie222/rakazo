@@ -65,10 +65,12 @@ export async function settleSpeech(
           spaceId: string;
           model: string;
           unit: string;
-          microsPerUnit: number;
+          calculatedMicros: string | null;
           reservedMicros: bigint;
         }>
-      >`SELECT "userId", "spaceId", model, unit, "microsPerUnit", "reservedMicros" FROM speech_costs
+      >`SELECT "userId", "spaceId", model, unit, "reservedMicros",
+      ceil(${usage && Number.isFinite(usage.units) && usage.units >= 0 ? String(usage.units) : null}::numeric
+        * ("microsPerUnit"::text)::numeric)::text AS "calculatedMicros" FROM speech_costs
       WHERE id = ${id} AND state = 'pending' FOR UPDATE`;
       if (!row) return;
       if (
@@ -84,7 +86,9 @@ export async function settleSpeech(
         usage.unit !== "tokens" &&
         Number.isFinite(usage.units) &&
         usage.units >= 0;
-      const calculated = matches ? Math.ceil(usage.units * row.microsPerUnit) : null;
+      // Decimal multiplication avoids rounding an exact integer up due to binary floats.
+      const calculated =
+        matches && row.calculatedMicros !== null ? Number(row.calculatedMicros) : null;
       const micros = calculated !== null && Number.isSafeInteger(calculated) ? calculated : null;
       // Unknown costs keep the reservation. Observed overages also count against future admission.
       const refund = micros !== null ? row.reservedMicros - BigInt(micros) : 0n;

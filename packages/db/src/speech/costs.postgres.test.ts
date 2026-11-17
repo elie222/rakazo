@@ -98,6 +98,29 @@ suite("operator speech costs (PostgreSQL)", () => {
       runAsTenant(actor, () => confirmSpeechCost(db.prisma, id, evidence)),
     ).rejects.toThrow("system context");
   });
+  it.each([
+    { rate: 0.07, units: 100, expected: 7n },
+    { rate: 0.07, units: 101, expected: 8n },
+    { rate: 0.7, units: 0.1, expected: 1n },
+    { rate: 1e-7, units: 1e7, expected: 1n },
+  ])("settles decimal pricing exactly ($rate × $units)", async ({ rate, units, expected }) => {
+    const id = await runAsTenant(actor, () =>
+      admitSpeech(db.prisma, actor, "test-provider", "synthesize", {
+        ...price,
+        microsPerUnit: rate,
+      }),
+    );
+    await runAsTenant(actor, () =>
+      settleSpeech(db.prisma, id, { model: price.model, unit: price.unit, units }),
+    );
+    expect(await used()).toBe(expected);
+    expect(await system.speechCost.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      state: "estimated",
+      costMicros: expected,
+      accountedMicros: expected,
+    });
+  });
+
   it("retains uncertain reservations and recovers only with evidence, including a zero charge", async () => {
     const pending = await admit();
     const unresolved = await admit();
