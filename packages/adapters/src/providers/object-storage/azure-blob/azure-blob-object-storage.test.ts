@@ -377,4 +377,17 @@ describe("azureBlobConfigFromEnv", () => {
       }),
     ).toThrow(/OBJECT_STORAGE_ACCESS_KEY_ID/);
   });
+
+  it("refuses a plain-http endpoint under an Entra kind, at startup", () => {
+    expect(() =>
+      azureBlobConfigFromEnv({
+        ...base,
+        OBJECT_STORAGE_AUTH: "client-secret",
+        OBJECT_STORAGE_TENANT: "directory",
+        OBJECT_STORAGE_CLIENT_ID: "principal",
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
+        OBJECT_STORAGE_ENDPOINT: "http://127.0.0.1:10000/devstoreaccount1",
+      }),
+    ).toThrow(/https OBJECT_STORAGE_ENDPOINT/);
+  });
 });

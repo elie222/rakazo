@@ -48,6 +48,12 @@ export function azureBlobConfigFromEnv(
       throw new Error(
         "OBJECT_STORAGE_ACCESS_KEY_ID (the storage account name) is required with OBJECT_STORAGE_BUCKET",
       );
+    // The SDK never sends Entra tokens over plain http, so say so here, at startup, rather
+    // than letting every first upload fail; the account key keeps working on an emulator URL.
+    if (target.endpoint && !target.endpoint.startsWith("https://"))
+      throw new Error(
+        "OBJECT_STORAGE_AUTH needs an https OBJECT_STORAGE_ENDPOINT: Entra tokens travel over TLS only",
+      );
     return {
       container: target.bucket,
       account,

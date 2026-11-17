@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as IdentitySdk from "@azure/identity";
 import { describe, expect, it } from "vitest";
 import { entraAuthFromEnv, entraCredential } from "./azure-entra-credential.js";
 
@@ -72,7 +73,7 @@ describe("entraAuthFromEnv", () => {
         ...principal,
         OBJECT_STORAGE_CERTIFICATE: "/certs/not-there.pem",
       }),
-    ).toThrow(/ENOENT|not-there\.pem/);
+    ).toThrow(/OBJECT_STORAGE_CERTIFICATE could not be read/);
     const directory = mkdtempSync(join(tmpdir(), "entra-"));
     try {
       const cases: [string, string][] = [
@@ -81,6 +82,14 @@ describe("entraAuthFromEnv", () => {
         [
           "a certificate without its private key",
           certificate.split("-----BEGIN PRIVATE KEY-----")[0]!,
+        ],
+        [
+          "garbage inside valid-looking headers",
+          `-----BEGIN CERTIFICATE-----\nnot base64 at all\n-----END CERTIFICATE-----\n${generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "sec1", format: "pem" })}`,
+        ],
+        [
+          "a password-protected key",
+          `${certificate.split("-----BEGIN PRIVATE KEY-----")[0]}-----BEGIN ENCRYPTED PRIVATE KEY-----\nnot really\n-----END ENCRYPTED PRIVATE KEY-----\n`,
         ],
       ];
       for (const [name, contents] of cases) {
@@ -94,7 +103,7 @@ describe("entraAuthFromEnv", () => {
               OBJECT_STORAGE_CERTIFICATE: path,
             }),
           name,
-        ).toThrow(/PEM bundle/);
+        ).toThrow(/PEM bundle|password-protected|not usable/);
       }
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -124,7 +133,7 @@ describe("entraAuthFromEnv", () => {
           ...principal,
           OBJECT_STORAGE_FEDERATED_TOKEN_FILE: join(directory, "not-mounted"),
         }),
-      ).toThrow(/ENOENT|not-mounted/);
+      ).toThrow(/OBJECT_STORAGE_FEDERATED_TOKEN_FILE could not be read/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -163,32 +172,29 @@ describe("entraAuthFromEnv", () => {
 
 describe("entraCredential", () => {
   it("builds the SDK credential for a client secret", async () => {
-    const identity = await import("@azure/identity");
     const credential = await entraCredential({
       kind: "client-secret",
       tenant: "directory",
       clientId: "principal",
       clientSecret: "secret",
     });
-    expect(credential).toBeInstanceOf(identity.ClientSecretCredential);
+    expect(credential).toBeInstanceOf(IdentitySdk.ClientSecretCredential);
   });
 
   it("builds the SDK credential for a certificate", async () => {
     // A throwaway key minted for this test: construction stores the material, and nothing
     // reaches the network, so its shape — not its identity — is what matters here.
     const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
-    const identity = await import("@azure/identity");
     const credential = await entraCredential({
       kind: "client-certificate",
       tenant: "directory",
       clientId: "principal",
       certificate: privateKey.export({ type: "sec1", format: "pem" }) as string,
     });
-    expect(credential).toBeInstanceOf(identity.ClientCertificateCredential);
+    expect(credential).toBeInstanceOf(IdentitySdk.ClientCertificateCredential);
   });
 
   it("builds the SDK credential for a federated workload identity and managed identities", async () => {
-    const identity = await import("@azure/identity");
     expect(
       await entraCredential({
         kind: "federated-identity",
@@ -196,13 +202,13 @@ describe("entraCredential", () => {
         clientId: "principal",
         tokenFile: "/var/run/secrets/tokens/oidc-token",
       }),
-    ).toBeInstanceOf(identity.WorkloadIdentityCredential);
+    ).toBeInstanceOf(IdentitySdk.WorkloadIdentityCredential);
     expect(await entraCredential({ kind: "managed-identity" })).toBeInstanceOf(
-      identity.ManagedIdentityCredential,
+      IdentitySdk.ManagedIdentityCredential,
     );
     expect(
       await entraCredential({ kind: "managed-identity", clientId: "user-assigned" }),
-    ).toBeInstanceOf(identity.ManagedIdentityCredential);
+    ).toBeInstanceOf(IdentitySdk.ManagedIdentityCredential);
   });
 
   it("passes an injected credential through untouched", async () => {

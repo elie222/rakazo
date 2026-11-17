@@ -1,3 +1,4 @@
+import { createPrivateKey, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 /**
@@ -29,13 +30,18 @@ const KINDS =
   '"account-key", "client-secret", "client-certificate", "federated-identity" or "managed-identity"';
 
 /**
- * Reads and checks the certificate here, while the settings are parsed, so a missing file or a
- * malformed bundle fails at startup instead of on the first upload: the SDK parses it lazily.
- * Accepts the PEM bundle inline, or a path to one.
+ * Reads and checks the certificate here, while the settings are parsed, so a missing file, a
+ * malformed bundle or an unusable key fails at startup instead of on the first upload: the SDK
+ * parses it lazily. Accepts the PEM bundle inline, or a path to one.
  */
 function certificateBundle(value: string): string {
-  // A PEM bundle inline, or a path to one; read and check here, at startup.
-  const certificate = (value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")).trim();
+  let certificate: string;
+  try {
+    // A PEM bundle inline, or a path to one.
+    certificate = (value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")).trim();
+  } catch (error) {
+    throw new Error(`OBJECT_STORAGE_CERTIFICATE could not be read: ${(error as Error).message}`);
+  }
   const begins = certificate.match(/^-----BEGIN [^-]+-----$/gm) ?? [];
   const ends = certificate.match(/^-----END [^-]+-----$/gm) ?? [];
   if (
@@ -47,6 +53,17 @@ function certificateBundle(value: string): string {
     throw new Error(
       "OBJECT_STORAGE_CERTIFICATE must hold a PEM bundle with a certificate and its private key",
     );
+  if (certificate.includes("-----BEGIN ENCRYPTED PRIVATE KEY-----"))
+    throw new Error(
+      "OBJECT_STORAGE_CERTIFICATE holds a password-protected key; export it without a passphrase",
+    );
+  try {
+    // Prove both blocks parse, so garbage inside valid-looking headers also fails here.
+    new X509Certificate(certificate);
+    createPrivateKey(certificate);
+  } catch (error) {
+    throw new Error(`OBJECT_STORAGE_CERTIFICATE is not usable: ${(error as Error).message}`);
+  }
   return certificate;
 }
 
@@ -105,7 +122,13 @@ export function entraAuthFromEnv(env: NodeJS.ProcessEnv): EntraAuthConfig | unde
       });
       // The SDK reads the token on each request; prove the file is readable now, so a missing
       // mount fails at startup instead of on the first home save.
-      readFileSync(tokenFile!);
+      try {
+        readFileSync(tokenFile!);
+      } catch (error) {
+        throw new Error(
+          `OBJECT_STORAGE_FEDERATED_TOKEN_FILE could not be read: ${(error as Error).message}`,
+        );
+      }
       return {
         kind: "federated-identity",
         tenant: tenant!,
