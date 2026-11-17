@@ -71,6 +71,7 @@ afterEach(() => {
   act(() => root.unmount());
   queryClient.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 it("waits for an in-flight bot status without sending a ready bot to Settings", async () => {
@@ -129,4 +130,18 @@ it("opens Voice settings only after the selected bot is confirmed not ready", as
   await act(async () => container.querySelector("button")!.click());
   await vi.waitFor(() => expect(mocks.configure).toHaveBeenCalledOnce());
   expect(mocks.start).not.toHaveBeenCalled();
+});
+
+it("releases a timed-out status read so a later Call can succeed", async () => {
+  vi.useFakeTimers();
+  const stalled = deferred<VoiceStatus>();
+  mocks.status.mockReturnValueOnce(stalled.promise).mockResolvedValue(ready);
+  await render();
+  await act(async () => container.querySelector("button")!.click());
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(mocks.error).toHaveBeenCalledWith("Voice request timed out.");
+  expect(mocks.configure).not.toHaveBeenCalled();
+  expect(mocks.start).not.toHaveBeenCalled();
+  await act(async () => container.querySelector("button")!.click());
+  await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledOnce());
 });
