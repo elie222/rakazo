@@ -12,6 +12,7 @@ import {
   secretCleanupJob,
   secretCleanupJobKey,
   secretIsHeld,
+  secretWriteTransaction,
 } from "./secret-cleanup.js";
 
 type Candidate = { id: string; ciphertext: string };
@@ -192,14 +193,9 @@ export function withSecretPersistence(
     model: string,
     operation: string,
     input: Mutation,
-  ): Promise<void> {
+  ): Promise<Candidate[]> {
     if (model in secretTables) {
       const written = trackWrites(state, model, input);
-      // The row commits with its entry, so the entry's write-ahead job goes with the same commit.
-      const queue = jobs?.();
-      for (const row of written)
-        if (queue && store.isRemote(row.ciphertext))
-          await queue.cancelIn(state.client!, secretCleanupJobKey(row.ciphertext));
       // A change that leaves the reference in place has nothing to clean up after it.
       if (dropsReference(operation, input)) {
         const old = await lockedRows(state, model, input.where);
@@ -212,7 +208,7 @@ export function withSecretPersistence(
           ),
         );
       }
-      return;
+      return written;
     }
     const parents = await lockedRows(state, model, input.where);
     let filter: Record<string, unknown> = {
@@ -231,6 +227,36 @@ export function withSecretPersistence(
       await dropping(state, await lockedRows(state, "VaultCredential", filter));
     }
     await dropping(state, await lockedRows(state, "BotSecret", filter));
+    return [];
+  }
+  /**
+   * After the mutation: an entry the table now holds commits with its row, so its write-ahead
+   * job goes with the same commit. An upsert's unused branch keeps its job, as does a write
+   * that matched no row.
+   */
+  async function saved(state: Cleanup, model: string, written: Candidate[]): Promise<void> {
+    const queue = jobs?.();
+    if (!queue) return;
+    const client = state.client!;
+    const delegate = Reflect.get(client, model[0]!.toLowerCase() + model.slice(1));
+    for (const ref of new Set(written.map((row) => row.ciphertext)))
+      if (
+        store.isRemote(ref) &&
+        (await Reflect.apply(delegate.count, delegate, [{ where: { ciphertext: ref } }]))
+      )
+        await queue.cancelIn(client, secretCleanupJobKey(ref));
+  }
+  async function mutate(
+    state: Cleanup,
+    model: string,
+    operation: string,
+    input: Mutation,
+    run: () => Promise<unknown>,
+  ): Promise<unknown> {
+    const written = await prepare(state, model, operation, input);
+    const result = await run();
+    await saved(state, model, written);
+    return result;
   }
   const extended = prisma.$extends({
     query: {
@@ -256,10 +282,8 @@ export function withSecretPersistence(
             // Fail before changing refs rather than break batch atomicity.
             throw new Error("Use an interactive transaction for secret persistence");
           }
-          if (active?.client) {
-            await prepare(active, model, operation, args as Mutation);
-            return query(args);
-          }
+          if (active?.client)
+            return mutate(active, model, operation, args as Mutation, () => query(args));
           const state: Cleanup = { old: [], written: [], recorded: new Map() };
           try {
             // Standalone mutations also need a transaction, so capture and replacement
@@ -267,9 +291,10 @@ export function withSecretPersistence(
             const result = await prisma.$transaction((tx) =>
               transaction.run(state, async () => {
                 state.client = tx;
-                await prepare(state, model, operation, args as Mutation);
                 const delegate = Reflect.get(tx, model[0]!.toLowerCase() + model.slice(1));
-                return Reflect.apply(delegate[operation], delegate, [args]);
+                return mutate(state, model, operation, args as Mutation, () =>
+                  Reflect.apply(delegate[operation], delegate, [args]),
+                );
               }),
             );
             await cleanup([...state.old, ...state.written], state.recorded);
@@ -291,18 +316,27 @@ export function withSecretPersistence(
             ? (args[0] as (tx: Prisma.TransactionClient) => Promise<unknown>)
             : undefined;
         const state: Cleanup = { old: [], written: [], recorded: new Map() };
+        const writes = {
+          client: undefined as Prisma.TransactionClient | undefined,
+          rolledBack: [] as Array<() => Promise<void>>,
+        };
         if (callback)
           args[0] = (tx: Prisma.TransactionClient) => {
             state.client = tx;
+            writes.client = tx;
             return callback(tx);
           };
         try {
           const result = await transaction.run(state, () =>
-            Reflect.apply(target.$transaction, target, args),
+            secretWriteTransaction.run(writes, () =>
+              Reflect.apply(target.$transaction, target, args),
+            ),
           );
           await cleanup([...state.old, ...state.written], state.recorded);
           return result;
         } catch (error) {
+          for (const record of writes.rolledBack)
+            await bestEffort("record a rolled-back secret write's backup", record());
           await cleanup(state.written);
           throw error;
         }

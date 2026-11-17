@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   AdapterContext,
   BackgroundJob,
@@ -287,6 +288,16 @@ export async function retrySecretCleanup(
 }
 
 /**
+ * The transaction a remote write runs inside, if any. Its backup is recorded on that
+ * transaction's own connection, since waiting for a second one while it holds the first can stall
+ * the pool. A rollback takes the backup with it, so `rolledBack` records it again afterwards.
+ */
+export const secretWriteTransaction = new AsyncLocalStorage<{
+  client?: JobTransaction;
+  rolledBack: Array<() => Promise<void>>;
+}>();
+
+/**
  * Every remote write first records the job that deletes its entry unless a row holds it by then,
  * so a process that dies between the write and the save leaves nothing behind. The save removes
  * the job (`savedSecret`, or the secret tables' transaction). Without a queue, writes go ahead
@@ -294,7 +305,7 @@ export async function retrySecretCleanup(
  */
 export function withSecretWriteAhead<T extends SecretStore>(
   store: T,
-  jobs: () => Pick<JobPublisher, "enqueue"> | undefined,
+  jobs: () => Pick<JobPublisher, "enqueue" | "enqueueIn"> | undefined,
 ): T {
   const put = (plaintext: string, context: AdapterContext, options: SecretPutOptions = {}) => {
     const queue = jobs();
@@ -306,12 +317,14 @@ export function withSecretWriteAhead<T extends SecretStore>(
         ...options,
         beforeWrite: async (entry) => {
           await options.beforeWrite?.(entry);
-          await queue.enqueue(
-            secretCleanupJob(
-              { kind: "store_write", ...entry },
-              new Date(Date.now() + STORE_WRITE_MS + SAVE_MARGIN_MS),
-            ),
+          const job = secretCleanupJob(
+            { kind: "store_write", ...entry },
+            new Date(Date.now() + STORE_WRITE_MS + SAVE_MARGIN_MS),
           );
+          const open = secretWriteTransaction.getStore();
+          if (!open?.client) return queue.enqueue(job);
+          await queue.enqueueIn(open.client, job);
+          open.rolledBack.push(() => queue.enqueue(job));
         },
       },
     );

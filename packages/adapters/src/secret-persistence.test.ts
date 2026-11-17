@@ -652,6 +652,57 @@ describe("secret store write-ahead", () => {
     }
   });
 
+  it("keeps the backup of an upsert's unused branch, removing it with the entry", async () => {
+    const { fake, store, ahead, db, queue, prisma } = await setup();
+    try {
+      const kept = await ahead.put("kept", context, { recordId: "row" });
+      db.tables.get("secret")!.push({ ...secretFields, ciphertext: kept.ref });
+      const [created, updated] = [
+        await ahead.put("created", context, { recordId: "row" }),
+        await ahead.put("updated", context, { recordId: "row" }),
+      ];
+      await prisma.secret.upsert({
+        where: { id: "row" },
+        create: { ...secretFields, ciphertext: created.ref },
+        update: { ciphertext: updated.ref },
+      });
+      expect(queue.jobs.cancelIn).toHaveBeenCalledWith(
+        expect.anything(),
+        secretCleanupJobKey(updated.ref),
+      );
+      // Had the process died at the commit, this backup would still delete the unused entry.
+      expect(queue.jobs.cancelIn).not.toHaveBeenCalledWith(
+        expect.anything(),
+        secretCleanupJobKey(created.ref),
+      );
+      await expect(store.load(updated.ref, "row")).resolves.toBe("updated");
+      await expect(store.load(created.ref, "row")).rejects.toThrow();
+      expect(fake.values.size).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records a write's backup in the transaction it runs inside, and again on rollback", async () => {
+    const { store, ahead, queue, prisma } = await setup();
+    try {
+      let written = "";
+      await expect(
+        prisma.$transaction(async (tx) => {
+          written = (await ahead.put("refreshed", context, { recordId: "row" })).ref;
+          expect(queue.jobs.enqueueIn).toHaveBeenCalledWith(tx, expect.anything());
+          expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+          throw new Error("refresh failed");
+        }),
+      ).rejects.toThrow("refresh failed");
+      expect(queue.jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ replaceKey: secretCleanupJobKey(written) }),
+      );
+    } finally {
+      await store.close();
+    }
+  });
+
   it("keeps the entry when the backup runs after the row was saved", async () => {
     const { fake, store, ahead, db, queue, worker } = await setup();
     try {

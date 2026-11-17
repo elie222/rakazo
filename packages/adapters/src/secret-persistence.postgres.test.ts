@@ -1,4 +1,9 @@
-import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  JobPublisher,
+  SecretPutOptions,
+  SecretStore,
+} from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
@@ -6,7 +11,7 @@ import { unwrapJobPayload } from "@rakazo/logging";
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
-import { secretCleanupJobKey } from "./secret-cleanup.js";
+import { secretCleanupJobKey, withSecretWriteAhead } from "./secret-cleanup.js";
 import { withSecretPersistence } from "./secret-persistence.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
@@ -172,6 +177,59 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     reachable = true;
     await runQueued(ref);
     expect(entries.has(ref)).toBe(false);
+  });
+
+  it("records a write's backup on its own transaction's connection, and again after a rollback", async () => {
+    // One connection: a backup that waited for a second one while the transaction holds it
+    // would never get one.
+    const single = createDb(runtimeUrl!, { poolMax: 1 });
+    const singleJobs = new GraphileJobPublisher(single.pool);
+    const remote = {
+      ...store,
+      put: async (_value: string, _context: AdapterContext, options: SecretPutOptions = {}) => {
+        const ref = entry(`in-transaction-${refs.length}`);
+        await options.beforeWrite?.({ recordId: "row", ref });
+        return { ref };
+      },
+    } as unknown as SecretStore;
+    const ahead = withSecretWriteAhead(remote, () => singleJobs);
+    const client = withSecretPersistence(single.prisma, ahead, () => singleJobs);
+    const write = () => ahead.put("value", {} as AdapterContext, { recordId: "row" });
+    try {
+      const saved = await asApp(() =>
+        client.$transaction(async (tx) => {
+          const { ref } = await write();
+          await tx.secret.create({
+            data: {
+              id: `in-transaction-${suffix}`,
+              userId,
+              kind: "computer-provider",
+              ciphertext: ref,
+            },
+          });
+          return ref;
+        }),
+      );
+      expect(await queued(saved)).toEqual([]);
+
+      let rolledBack = "";
+      await expect(
+        asApp(() =>
+          client.$transaction(async () => {
+            rolledBack = (await write()).ref;
+            throw new Error("refresh failed");
+          }),
+        ),
+      ).rejects.toThrow("refresh failed");
+      expect(await queued(rolledBack)).toMatchObject([{ due: false }]);
+      await runQueued(rolledBack);
+      expect(entries.has(rolledBack)).toBe(false);
+      expect(entries.has(saved)).toBe(true);
+    } finally {
+      await singleJobs.close();
+      await single.prisma.$disconnect();
+      await single.pool.end();
+    }
   });
 
   it("never removes an entry another row still holds, also when the job runs later", async () => {

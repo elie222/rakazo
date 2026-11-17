@@ -79,8 +79,12 @@ removes the job, in its own transaction for the four secret tables and right
 after the commit elsewhere. If the process dies between the write and the save,
 the job runs, finds no row in any column that can hold a ref, and deletes the
 key; a key a row holds by then is kept. A write whose job cannot be queued is
-refused, so no key is created without one. Writes made before the queue starts,
-and by tools that run without one, are not recorded.
+refused, so no key is created without one. A write inside a database transaction
+(a credential refresh) queues its job on that transaction's connection, so it
+never waits for a second one; if the transaction rolls back, the job is queued
+again afterwards. A process that dies while that transaction is still open loses
+the job with it. Writes made before the queue starts, and by tools that run
+without one, are not recorded.
 
 ## Availability
 
