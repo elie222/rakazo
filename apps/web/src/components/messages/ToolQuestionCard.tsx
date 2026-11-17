@@ -178,11 +178,14 @@ export function ToolQuestionCard({
 }
 
 /** A date-time as the browser's local picker shows it; a default with an offset shows too. */
-function localDateTime(value: string | boolean | undefined): string {
+export function localDateTime(value: string | boolean | undefined): string {
   if (typeof value !== "string" || value === "") return "";
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return value;
+  // Read in local parts, never by shifting the instant: a date at the edge of the range must
+  // show as empty, not throw while the chat renders.
   const time = new Date(value);
-  if (Number.isNaN(time.getTime())) return "";
-  const local = new Date(time.getTime() - time.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  const year = time.getFullYear();
+  if (Number.isNaN(year) || year < 1 || year > 9999) return "";
+  const two = (part: number) => String(part).padStart(2, "0");
+  return `${String(year).padStart(4, "0")}-${two(time.getMonth() + 1)}-${two(time.getDate())}T${two(time.getHours())}:${two(time.getMinutes())}`;
 }
