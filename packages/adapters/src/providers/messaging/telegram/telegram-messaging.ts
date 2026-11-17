@@ -178,6 +178,7 @@ class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
   verifiedLinkAddress: string | undefined;
   private addressLookup: Promise<string | undefined> | undefined;
   private nextAddressLookupAt = 0;
+  private identityLookupVersion = 0;
 
   async resolveLinkAddress(signal?: AbortSignal): Promise<string | undefined> {
     signal?.throwIfAborted();
@@ -204,8 +205,10 @@ class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
     request?: { signal?: AbortSignal },
   ): Promise<TResult> {
     if (method !== "getMe") return super.telegramFetch<TResult>(method, payload, request);
+    const version = ++this.identityLookupVersion;
     try {
       const result = await super.telegramFetch<TResult>(method, payload, request);
+      if (version !== this.identityLookupVersion) return result;
       const identity = asRecord(result);
       this.verifiedLinkAddress = telegramLinkAddress(
         identity ? stringField(identity, "username") : undefined,
@@ -216,8 +219,10 @@ class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
       if (this.verifiedLinkAddress) this._userName = this.verifiedLinkAddress.slice(1);
       return result;
     } catch (error) {
-      this.verifiedLinkAddress = undefined;
-      this.nextAddressLookupAt = Date.now() + 30_000;
+      if (version === this.identityLookupVersion) {
+        this.verifiedLinkAddress = undefined;
+        this.nextAddressLookupAt = Date.now() + 30_000;
+      }
       throw error;
     }
   }

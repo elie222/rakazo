@@ -174,6 +174,41 @@ describe("Telegram authenticated linking destination", () => {
     await surface.shutdown();
   });
 
+  it.each([false, true])(
+    "does not let a late startup lookup replace or clear a newer identity (failure=%s)",
+    async (failure) => {
+      const { surface } = createSurface();
+      const startup = deferred<Response>();
+      const refresh = deferred<Response>();
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(() => startup.promise)
+        .mockImplementationOnce(() => refresh.promise);
+      vi.stubGlobal("fetch", fetchMock);
+      const initializing = surface.initialize();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      const resolving = surface.resolveAddresses();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      refresh.resolve(
+        Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+      );
+      expect(await resolving).toEqual({ telegram: "@renamed_testbot" });
+      if (failure) startup.reject(new TypeError("startup lookup failed"));
+      else
+        startup.resolve(
+          Response.json({
+            ok: true,
+            result: { id: 999, is_bot: true, username: "previous_testbot" },
+          }),
+        );
+      await initializing;
+      expect(surface.platforms()[0]?.address).toBe("@renamed_testbot");
+      expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await surface.shutdown();
+    },
+  );
+
   it("discovers default and named bot destinations independently from their own tokens", async () => {
     vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
     vi.stubGlobal(
