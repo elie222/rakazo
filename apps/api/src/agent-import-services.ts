@@ -116,9 +116,12 @@ export function createAgentImportServices({
     insertMcpServer,
     findBot: async (actor, botId) =>
       (await repos.listBots(actor)).find((bot) => bot.id === botId) ?? null,
-    routineTriggers: {
-      messageProviders: deps.messaging?.providers ?? [],
-      email: Boolean(deps.env.inboundEmailDomain),
+    // Read when an import runs, from the settings the routine editor reads.
+    get routineTriggers() {
+      return {
+        messageProviders: deps.messaging?.providers ?? [],
+        email: Boolean(deps.env.inboundEmailDomain),
+      };
     },
     assertRoutineSchedule,
     routineNextRunAt,
