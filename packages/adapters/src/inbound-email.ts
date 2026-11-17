@@ -285,8 +285,12 @@ function isInboundImagePart(
 function contentIdsReferencedByHtml(html: string | undefined): Set<string> {
   const ids = new Set<string>();
   if (!html) return ids;
-  for (const match of html.matchAll(/cid:([^"'\s<>()]+)/gi)) {
-    const token = match[1] ?? "";
+  // Visible text that happens to say "cid:..." is not a reference to an image.
+  const references = html.matchAll(
+    /(?:src|href|background|poster)\s*=\s*(?:"cid:([^"<>]+)"|'cid:([^'<>]+)'|cid:([^\s<>"']+))|url\(\s*(?:"cid:([^"<>]+)"|'cid:([^'<>]+)'|cid:([^)\s"']+))\s*\)/gi,
+  );
+  for (const match of references) {
+    const token = match.slice(1).find(Boolean) ?? "";
     ids.add(normalizeContentId(token));
     try {
       ids.add(normalizeContentId(decodeURIComponent(token)));
