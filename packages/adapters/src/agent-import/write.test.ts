@@ -1,18 +1,18 @@
 import { AgentImportCreateInput, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentImportServices } from "./agent-import-write.js";
+import type { AgentImportServices } from "./write.js";
 import {
   agentImportSetupState,
   createImportedBot,
   previewAgentImport,
   requestDigest,
-} from "./agent-import-write.js";
+} from "./write.js";
 import {
   actor,
   importedBot as bot,
   fakeDb,
   fakeImportServices as services,
-} from "./agent-import-write.test-support.js";
+} from "./write.test-support.js";
 
 const input = AgentImportCreateInput.parse({
   files: [

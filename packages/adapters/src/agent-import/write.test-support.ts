@@ -1,5 +1,5 @@
 import type { Actor, Bot } from "@rakazo/contracts";
-import type { AgentImportServices } from "./agent-import-write.js";
+import type { AgentImportServices } from "./write.js";
 
 export const actor: Actor = {
   userId: "user-1",

@@ -3,7 +3,7 @@ import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@
 import { redactSecrets } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
-import { readRunAgentExport } from "./agent-import-chat.js";
+import { readRunAgentExport } from "./agent-import/chat.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
 import {

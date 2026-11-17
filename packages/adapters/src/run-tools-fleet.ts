@@ -12,7 +12,7 @@ import {
   writeBotInstructions,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { importAgentsFromChat } from "./agent-import-chat.js";
+import { importAgentsFromChat } from "./agent-import/chat.js";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {

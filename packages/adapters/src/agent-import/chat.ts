@@ -27,6 +27,17 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
+import type { FleetCardSummary } from "../approval-ask.js";
+import type { ExecutorDeps } from "../executor-deps.js";
+import { insertMcpServerRow } from "../mcp-server-rows.js";
+import { buildMcpCredentialBlob } from "../mcp-server-tool.js";
+import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "../remote-mcp.js";
+import {
+  announceRoutineRow,
+  assertRoutineSchedule,
+  routineNextRunAt,
+  routineRowData,
+} from "../routine-rows.js";
 import {
   AGENT_EXPORT_CHANGED,
   AGENT_EXPORT_NOT_FOUND,
@@ -40,20 +51,9 @@ import {
   LEFT_OUT_FOR_REVIEW,
   SERVER_ADDRESS_REFUSED,
   skippedText,
-} from "./agent-import-chat.prompt.js";
-import type { AgentImportServices } from "./agent-import-write.js";
-import { createImportedBot, previewAgentImport } from "./agent-import-write.js";
-import type { FleetCardSummary } from "./approval-ask.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { insertMcpServerRow } from "./mcp-server-rows.js";
-import { buildMcpCredentialBlob } from "./mcp-server-tool.js";
-import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "./remote-mcp.js";
-import {
-  announceRoutineRow,
-  assertRoutineSchedule,
-  routineNextRunAt,
-  routineRowData,
-} from "./routine-rows.js";
+} from "./chat.prompt.js";
+import type { AgentImportServices } from "./write.js";
+import { createImportedBot, previewAgentImport } from "./write.js";
 
 /**
  * import_agents: an agent export the owner sends in chat becomes bots through the same import

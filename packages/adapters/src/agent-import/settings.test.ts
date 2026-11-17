@@ -6,7 +6,7 @@ import {
   parseDotEnv,
   readAgentImportSettings,
   readGrokBotImportSettings,
-} from "./agent-import-settings.js";
+} from "./settings.js";
 
 // Shaped like a real `~/.openclaw/openclaw.json` (JSON5: comments and trailing commas).
 const openclawJson = `{

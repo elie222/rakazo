@@ -22,7 +22,7 @@ import {
   parseDotEnv,
   readAgentImportConfig,
 } from "@rakazo/core";
-import { isCatalogProviderBaseUrl, listPiCatalog } from "./pi-models.js";
+import { isCatalogProviderBaseUrl, listPiCatalog } from "../pi-models.js";
 
 /**
  * Translates OpenClaw and Hermes settings (model, MCP servers, scheduled jobs, API keys)

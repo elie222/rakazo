@@ -27,7 +27,7 @@ import {
   storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { prepareAgentImportRequest } from "./agent-import-chat.js";
+import { prepareAgentImportRequest } from "./agent-import/chat.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";

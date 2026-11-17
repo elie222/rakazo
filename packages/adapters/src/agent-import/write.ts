@@ -46,10 +46,10 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
-import type { AgentImportSettings, ImportedMcpServer } from "./agent-import-settings.js";
-import { readAgentImportSettings, readGrokBotImportSettings } from "./agent-import-settings.js";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
-import { isCatalogModelChoice } from "./model-selection.js";
+import { BUILTIN_AGENT_SKILLS } from "../builtin-skills.prompt.js";
+import { isCatalogModelChoice } from "../model-selection.js";
+import type { AgentImportSettings, ImportedMcpServer } from "./settings.js";
+import { readAgentImportSettings, readGrokBotImportSettings } from "./settings.js";
 
 /**
  * A refusal of an import request, with the reason clients show their own copy for. The API

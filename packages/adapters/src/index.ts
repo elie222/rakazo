@@ -2,8 +2,8 @@ export * from "./advisory-lock.js";
 export * from "./agent-connections.js";
 export * from "./agent-environment.js";
 export { formatAgentEnvironmentInstruction } from "./agent-environment.prompt.js";
-export * from "./agent-import-settings.js";
-export * from "./agent-import-write.js";
+export * from "./agent-import/settings.js";
+export * from "./agent-import/write.js";
 export * from "./ai-consent.js";
 export type { ApnsVoipConfig } from "./apns-voip.js";
 export {
