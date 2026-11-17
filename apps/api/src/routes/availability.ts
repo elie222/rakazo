@@ -1,4 +1,4 @@
-import { chooseForSpace, listOwnItems, setAvailability } from "../availability.js";
+import { chooseForSpace, listOwnItems, setAvailability } from "../spaces/availability.js";
 import type { RouterContext } from "./context.js";
 
 export function availabilityRoutes(ctx: RouterContext) {
