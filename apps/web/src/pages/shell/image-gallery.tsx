@@ -57,14 +57,16 @@ function GalleryThumb({
   active,
   onSelect,
   tabIndex,
+  enabled,
 }: {
   image: GalleryImage;
   active: boolean;
   onSelect: () => void;
   tabIndex?: number;
+  enabled: boolean;
 }) {
   const { t } = useLingui();
-  const src = useArtifactImage(image.target, image.artifactId);
+  const src = useArtifactImage(image.target, image.artifactId, enabled);
   return (
     <button
       type="button"
@@ -208,6 +210,7 @@ function LightboxView({
                       onSelect={() => setIndex(position)}
                       // Clipped neighbours stay out of the tab order; the arrows reach every image.
                       tabIndex={distance > 1 ? -1 : undefined}
+                      enabled={distance <= 3}
                     />
                   </div>
                 );

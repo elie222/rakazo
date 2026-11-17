@@ -156,3 +156,35 @@ it("keeps clipped thumbnails out of the tab order", async () => {
   expect(thumb(3)?.tabIndex).toBe(-1);
   expect(thumb(7)?.tabIndex).toBe(-1);
 });
+
+it("fetches only thumbnails near the selected picture", async () => {
+  const many: GalleryImage[] = Array.from({ length: 10 }, (_, index) => ({
+    artifactId: `lazy-${index}`,
+    name: `lazy-${index}`,
+    target: { botId: "bot" },
+  }));
+  await act(async () => {
+    root.render(
+      <ImageGalleryProvider images={many}>
+        {many.map((image) => (
+          <Opener key={image.name} image={image} />
+        ))}
+      </ImageGalleryProvider>,
+    );
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "open lazy-5")
+      ?.click();
+  });
+  await act(async () => {});
+  const fetched = [
+    ...new Set(
+      vi
+        .mocked(rpc.artifacts.get)
+        .mock.calls.map(([input]) => (input as { artifactId: string }).artifactId)
+        .filter((id) => id.startsWith("lazy-")),
+    ),
+  ].sort();
+  expect(fetched).toEqual(["lazy-2", "lazy-3", "lazy-4", "lazy-5", "lazy-6", "lazy-7", "lazy-8"]);
+});
