@@ -7,7 +7,7 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { parseRetryAfter, redactSecrets } from "@rakazo/core";
-import { readBodyCapped } from "../../../web-ssrf.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;

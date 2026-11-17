@@ -12,6 +12,7 @@ import type {
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { truncateUtf8 } from "../../../shared/utf8.js";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -19,9 +20,8 @@ import {
   localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
-} from "../../../local-service-endpoint.js";
-import type { ResolveHostname } from "../../../network-address.js";
-import { truncateUtf8 } from "../../../utf8.js";
+} from "../../../web/local-service-endpoint.js";
+import type { ResolveHostname } from "../../../web/network-address.js";
 import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,

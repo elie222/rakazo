@@ -19,6 +19,12 @@ describe("specStemsFromChangedPaths", () => {
       ]),
     ).toEqual(["tool-activity-disclosure", "tool-activity-shell"]);
   });
+
+  it("prefixes a spec in a feature folder with the folder, as Playwright's output folders do", () => {
+    expect(specStemsFromChangedPaths(["apps/web/e2e/chat/chat-find.spec.ts"])).toEqual([
+      "chat-chat-find",
+    ]);
+  });
 });
 
 describe("screenshotMatchesSpecStem", () => {
@@ -90,7 +96,7 @@ describe("selectPlaywrightPrFeatureFrames", () => {
 
   it("skips NEW checkpoints from specs outside the PR diff", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/e2e/plugin-marketplace.spec.ts"],
+      changedPaths: ["apps/web/e2e/settings/plugin-marketplace.spec.ts"],
       screenshots: [
         screenshot({
           comparison: "new",

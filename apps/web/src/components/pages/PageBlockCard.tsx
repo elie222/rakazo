@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { PageBlock } from "../../lib/page-cards";
-import { useOpenPage, usePageDocument } from "../../lib/pages";
-import { useSpaceQueries } from "../../lib/query";
-import { errorCode } from "../../lib/user-error";
+import type { PageBlock } from "../../lib/pages/page-cards";
+import { useOpenPage, usePageDocument } from "../../lib/pages/pages";
+import { useSpaceQueries } from "../../lib/query/query";
+import { errorCode } from "../../lib/query/user-error";
 import { PageCard } from "./PageCard";
 
 /**
