@@ -36,7 +36,8 @@ const CREDENTIAL_START = new RegExp(
   "gi",
 );
 
-const QUOTE = /(\\*)(["'`])/y;
+// The lookahead captures the backslash run atomically, so a long run cannot backtrack into itself.
+const QUOTE = /(?=(\\*))\1(["'`])/y;
 // An unquoted value ends at a quote, so one inside a JSON string leaves the string closed.
 const BARE_VALUE = /[^\s"'`]/;
 const QUERY_VALUE = /[^\s"'`&#]/;

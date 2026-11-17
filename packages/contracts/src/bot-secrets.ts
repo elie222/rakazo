@@ -345,8 +345,11 @@ export function authenticatorKey(text: string): AuthenticatorKey | undefined {
     if (![6, 8].includes(options.digits) || ![30, 60].includes(options.period)) return undefined;
   }
   secret = secret.replace(/[\s-]/g, "").toUpperCase();
-  const padding = secret.length - secret.replace(/=+$/, "").length;
-  secret = secret.slice(0, secret.length - padding);
+  // Count trailing padding by walking, not a regex: /=+$/ backtracks quadratically on '=' runs.
+  let end = secret.length;
+  while (end > 0 && secret[end - 1] === "=") end -= 1;
+  const padding = secret.length - end;
+  secret = secret.slice(0, end);
   // A key is whole bytes: 1, 3 or 6 characters past a group of eight never are, and padding,
   // when there is any, fills the last group exactly. Otherwise a mistyped key gives wrong codes.
   const remainder = secret.length % 8;
