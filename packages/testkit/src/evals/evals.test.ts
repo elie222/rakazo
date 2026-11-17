@@ -208,9 +208,9 @@ describe("independent outcome graders", () => {
     e.files["results/language.txt"] = "French";
     expect(passes("updated-preference", e)).toBe(false);
   });
-  it("has 16 distinct cases, each rejects empty evidence and a completion claim", () => {
-    expect(EVAL_CASES).toHaveLength(16);
-    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(16);
+  it("has 18 distinct cases, each rejects empty evidence and a completion claim", () => {
+    expect(EVAL_CASES).toHaveLength(18);
+    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(18);
     for (const scenario of EVAL_CASES) {
       expect(
         passes(scenario.id, { ...evidence(), text: "Done! I completed everything." }),
@@ -382,6 +382,12 @@ describe("independent outcome graders", () => {
 });
 
 /** What each judged case needs before its judge is asked, built from a reviewed example. */
+/** A chat the bot answered turn by turn, with nothing else to show. */
+const conversation = (e: Evidence, reviewed: Record<string, unknown>) => {
+  const turns = (reviewed.conversation ?? []) as Array<{ reply: string }>;
+  e.replies = turns.map((turn) => turn.reply);
+  e.text = e.replies.at(-1) ?? "";
+};
 const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, string>) => void> = {
   "inbox-triage": (e, { file }) => {
     e.calls.push({ tool: "GMAIL_LIST_MESSAGES", args: {}, outcome: "read" });
@@ -442,6 +448,8 @@ const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, st
     });
     e.files["results/watched-release.txt"] = file!;
   },
+  "rakazo-development-bot": conversation,
+  "what-is-rakazo": conversation,
 };
 /** Every reviewed example that is a product case's own judge input, with the evidence behind it. */
 const PRODUCT_REVIEWED = PRODUCT_JUDGE_CALIBRATION.flatMap((anchor) =>

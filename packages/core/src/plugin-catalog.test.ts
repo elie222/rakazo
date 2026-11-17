@@ -98,6 +98,28 @@ describe("managedAppFor", () => {
     expect(managedAppFor(entry({ name: "google-calendar" }), apps)).toBe(apps[0]);
     expect(managedAppFor(entry({ name: "calcom", displayName: "Calcom" }), apps)).toBeUndefined();
   });
+
+  it("matches non-Latin names without colliding with unrelated apps", () => {
+    const apps = [
+      { name: "日历", slug: "calendar" },
+      { name: "笔记", slug: "notes" },
+    ];
+    expect(managedAppFor(entry({ name: "plugin", displayName: "笔 记" }), apps)).toBe(apps[1]);
+    expect(managedAppFor(entry({ name: "plugin", displayName: "相册" }), apps)).toBeUndefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "α\u0301" }), [{ name: "ά", slug: "a" }]),
+    ).toBeDefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "ος" }), [{ name: "ΟΣ", slug: "o" }]),
+    ).toBeDefined();
+  });
+
+  it("does not match empty, punctuation-only or emoji-only names", () => {
+    const apps = [{ name: "\u2708\uFE0F", slug: "calendar" }];
+    for (const displayName of ["", "---", "\u2615\uFE0F"]) {
+      expect(managedAppFor(entry({ name: "notes", displayName }), apps)).toBeUndefined();
+    }
+  });
 });
 
 describe("installedPluginParts", () => {
