@@ -178,6 +178,7 @@ it("fetches only thumbnails near the selected picture", async () => {
       ?.click();
   });
   await act(async () => {});
+  expect(document.querySelectorAll('[aria-label^="Show "]')).toHaveLength(7);
   const fetched = [
     ...new Set(
       vi

@@ -62,16 +62,14 @@ function GalleryThumb({
   active,
   onSelect,
   tabIndex,
-  enabled,
 }: {
   image: GalleryImage;
   active: boolean;
   onSelect: () => void;
   tabIndex?: number;
-  enabled: boolean;
 }) {
   const { t } = useLingui();
-  const src = useArtifactImage(image.target, image.artifactId, enabled);
+  const src = useArtifactImage(image.target, image.artifactId);
   return (
     <button
       type="button"
@@ -194,6 +192,7 @@ export function ImageLightbox({
               {images.map((image, position) => {
                 const offset = position - index;
                 const distance = Math.abs(offset);
+                if (distance > 3) return null;
                 return (
                   <div
                     key={galleryImageKey(image)}
@@ -202,7 +201,6 @@ export function ImageLightbox({
                       transform: `translate(-50%, -50%) translateX(${offset * 88}px) translateZ(${-distance * 28}px) scale(${1 - distance * 0.2})`,
                       opacity: distance === 0 ? 1 : 0.35,
                       zIndex: images.length - distance,
-                      pointerEvents: distance > 3 ? "none" : undefined,
                     }}
                   >
                     <GalleryThumb
@@ -211,7 +209,6 @@ export function ImageLightbox({
                       onSelect={() => onSelect(galleryImageKey(image))}
                       // Clipped neighbours stay out of the tab order; the arrows reach every image.
                       tabIndex={distance > 1 ? -1 : undefined}
-                      enabled={distance <= 3}
                     />
                   </div>
                 );
