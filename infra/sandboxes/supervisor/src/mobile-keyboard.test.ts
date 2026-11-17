@@ -347,6 +347,39 @@ describe("mobile computer keyboard", () => {
     detach();
   });
 
+  it("turns the trackpad off for a moving mouse but not a still browser move", () => {
+    const classes = new Set<string>();
+    const surfaceListeners = new Map<string, (event: object) => void>();
+    const button = {
+      hidden: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      setAttribute: () => {},
+      classList: {
+        toggle: (name: string, on: boolean) => (on ? classes.add(name) : classes.delete(name)),
+      },
+    };
+    const surface = {
+      addEventListener: (type: string, listener: (event: object) => void) =>
+        surfaceListeners.set(type, listener),
+      removeEventListener: () => {},
+      querySelector: () => null,
+      classList: { toggle: () => {}, remove: () => {} },
+      style: {},
+    };
+    const detach = attachMobileTrackpad(
+      { viewOnly: false },
+      { button, surface, documentTarget: {} },
+    );
+    const move = surfaceListeners.get("mousemove");
+    move?.({ isTrusted: true, movementX: 0, movementY: 0 });
+    move?.({ isTrusted: false, movementX: 4, movementY: 2 });
+    expect(classes.has("active")).toBe(true);
+    move?.({ isTrusted: true, movementX: 4, movementY: 2 });
+    expect(classes.has("active")).toBe(false);
+    detach();
+  });
+
   it("ships and initializes the keyboard bridge in the computer image", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
