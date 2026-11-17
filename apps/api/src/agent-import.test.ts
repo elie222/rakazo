@@ -179,7 +179,13 @@ describe("a Grok Bot's event routines", () => {
     expect(plan.routines.map((routine) => [routine.title, routine.status])).toEqual([
       ["Hooks", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "webhook" }] }],
       ["Pulls", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "webhook" }] }],
-      ["Support", { kind: "needs_setup", needs: [{ kind: "turn_on" }] }],
+      [
+        "Support",
+        {
+          kind: "needs_setup",
+          needs: [{ kind: "turn_on" }, { kind: "chat_app", provider: "Slack" }],
+        },
+      ],
       ["Mail", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "email_address" }] }],
     ]);
     expect(plan.routines[2]?.content).toBe("Trigger: slack\n\nHandle it.");

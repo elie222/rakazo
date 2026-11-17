@@ -34,6 +34,7 @@ import {
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
+  messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
   readGrokBotExportJson,
@@ -274,12 +275,15 @@ async function buildPlan(
       return [];
     }
     routineInputs.set(routine.id, parsed.data);
-    const { crons, webhookEnabled, githubEnabled, emailSenders } = parsed.data;
+    const { crons, webhookEnabled, githubEnabled, emailSenders, messageProvider } = parsed.data;
     const schedule = crons.length ? `${crons.join(", ")} (${timezone})\n\n` : "";
     const needs: AgentImportNeed[] = [
       { kind: "turn_on" },
       ...(webhookEnabled || githubEnabled ? [{ kind: "webhook" as const }] : []),
       ...(emailSenders ? [{ kind: "email_address" as const }] : []),
+      ...(messageProvider
+        ? [{ kind: "chat_app" as const, provider: messagingProviderName(messageProvider) }]
+        : []),
     ];
     return [
       {

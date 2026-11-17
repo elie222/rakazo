@@ -42,9 +42,10 @@ Routines come over paused, on the matching trigger:
 | Email                              | An email trigger for mail from you, when this server receives email |
 
 Turn each one off in Grok Bot before you turn it on here, so it doesn't run twice. Point a
-webhook or Git routine's source at the address its trigger shows here, and give the bot an email
-address before an email routine can run. An event routine's prompt starts with its original
-trigger and details, such as the channel or repository, so the bot knows what it was for.
+webhook or Git routine's source at the address its trigger shows here. Give the bot an email
+address before an email routine can run, and connect it to Slack before a Slack routine can. An
+event routine's prompt starts with its original trigger and details, such as the channel or
+repository, so the bot knows what it was for.
 
 Routines whose schedule could not be read, or whose event this server does not receive, are
 saved in the bot's memory as `grok-bot-routines.md`, with their trigger and full instruction, so

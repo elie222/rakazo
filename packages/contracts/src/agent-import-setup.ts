@@ -15,6 +15,8 @@ export const AgentImportNeedSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("webhook") }),
   /** An email routine: the new bot has no email address yet. */
   z.object({ kind: z.literal("email_address") }),
+  /** A chat message routine: the new bot must be connected to that chat app. */
+  z.object({ kind: z.literal("chat_app"), provider: z.string() }),
   z.object({ kind: z.literal("bundled_files") }),
 ]);
 export type AgentImportNeed = z.infer<typeof AgentImportNeedSchema>;

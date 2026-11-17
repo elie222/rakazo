@@ -34,6 +34,10 @@ export function useImportStatusText() {
         return t`Point its source at the new webhook`;
       case "email_address":
         return t`Needs an email address`;
+      case "chat_app": {
+        const app = item.provider;
+        return t`Connect it to ${app}`;
+      }
       case "bundled_files":
         return t`Uses files that are not imported`;
     }

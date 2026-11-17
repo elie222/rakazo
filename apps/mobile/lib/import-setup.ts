@@ -24,6 +24,8 @@ export function importNeedText(need: AgentImportNeed): string {
       return t`Point its source at the new webhook`;
     case "email_address":
       return t`Needs an email address`;
+    case "chat_app":
+      return t`Connect it to ${ph({ app: need.provider })}`;
     case "bundled_files":
       return t`Uses files that are not imported`;
   }
