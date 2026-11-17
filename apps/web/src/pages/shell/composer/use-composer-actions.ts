@@ -8,7 +8,12 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { attachmentMaxBytes, attachmentMaxCount, attachmentSizeLabel } from "@rakazo/contracts";
+import {
+  attachmentMaxBytes,
+  attachmentMaxCount,
+  attachmentSizeLabel,
+  isAttachmentImageMimeType,
+} from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
@@ -304,7 +309,8 @@ export function useComposerActions({
           id: newClientId(),
           threadKey,
           file,
-          previewUrl: mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+          // Only types a browser shows inline get a preview; a HEIC photo would be a broken image.
+          previewUrl: isAttachmentImageMimeType(mimeType) ? URL.createObjectURL(file) : undefined,
         });
       }
       if (next.length) setPendingAttachments((current) => [...current, ...next]);

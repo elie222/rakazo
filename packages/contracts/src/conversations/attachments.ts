@@ -59,6 +59,10 @@ export const ATTACHMENT_ARCHIVE_MIME_TYPES = [
 export const ATTACHMENT_FILE_MIME_TYPES = [
   ...ATTACHMENT_AUDIO_MIME_TYPES,
   "video/mp4",
+  "video/quicktime",
+  "video/3gpp",
+  "image/heic",
+  "image/heif",
   "application/pdf",
   "text/plain",
   "text/markdown",
