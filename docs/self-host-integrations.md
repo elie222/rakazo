@@ -139,6 +139,15 @@ alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CL
 `PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
 API and worker.
 
+A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
+`.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
+to lack it. To let a bot read or send from one, create an Outlook auth config in the Composio
+dashboard that lists the defaults plus the `.Shared` variants you need (`Mail.Read.Shared`,
+`Mail.ReadWrite.Shared`, `Mail.Send.Shared`), and make it the config new Outlook connections use. The
+person's account also needs Full Access to the mailbox in Exchange, and a tenant admin may need to
+consent to the `.Shared` permissions. A new config affects new connections only, so people connected
+before the change must disconnect and reconnect Outlook.
+
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
 base URL; Rakazo appends `api/search`.
