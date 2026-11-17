@@ -317,6 +317,10 @@ export class PiAgentRuntime implements AgentRuntime {
         const toolsByAgentName = agentToolDefinitions(toolDefs);
         // Replayed calls to tools the model no longer has say so in their results.
         const offeredToolNames = new Set(allTools.map((tool) => tool.name));
+        // Tools the run can call but does not list are reached through use_tool, and replay so.
+        const deferredToolNames = new Set(
+          [...toolsByAgentName.keys()].filter((name) => !offeredToolNames.has(name)),
+        );
         let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -340,6 +344,7 @@ export class PiAgentRuntime implements AgentRuntime {
             request.prompt,
             request.sourceMessageId,
             offeredToolNames,
+            deferredToolNames,
           );
         const representedHistoryIds = new Set(
           restored
@@ -1156,7 +1161,13 @@ export class PiAgentRuntime implements AgentRuntime {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
-              const replayed = toHistory(addedHistory, "", undefined, offeredToolNames);
+              const replayed = toHistory(
+                addedHistory,
+                "",
+                undefined,
+                offeredToolNames,
+                deferredToolNames,
+              );
               for (const id of runToolCallIds(replayed as Message[]).used) toolCallIds.used.add(id);
               agent.state.messages.push(...replayed);
               for (const message of addedHistory)

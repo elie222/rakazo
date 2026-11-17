@@ -248,18 +248,18 @@ export class ComputerBrowserProvider implements BrowserProvider {
     context: AdapterContext,
   ): Promise<BrowserPurchaseCheckResult> {
     if (this.canUseInProcess(computer)) return { purchase: null };
-    const live = await this.runLive(
-      computer,
-      {
-        command: "purchase_check",
-        actions: request.actions,
-        desktop: request.desktop,
-        enter: request.enter,
-        points: request.points,
-        unplaced: request.unplaced,
-      },
-      context,
-    );
+    const probe: PageBrowserCommand = {
+      command: "purchase_check",
+      actions: request.actions,
+      desktop: request.desktop,
+      enter: request.enter,
+      points: request.points,
+      unplaced: request.unplaced,
+    };
+    let live = await this.runLive(computer, probe, context);
+    // A busy page often answers the next probe; the probe presses nothing, so one retry is safe.
+    if (live?.ok !== true && live?.error?.startsWith("Page browser timed out;"))
+      live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       if (!cannotCheck(live?.error)) {
         // The check started and failed (timed out, killed, a page it could not read): ask.

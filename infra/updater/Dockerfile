@@ -29,4 +29,5 @@ RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 WORKDIR /app/infra/updater
 ARG GIT_SHA
 ENV GIT_SHA=$GIT_SHA
-CMD ["pnpm", "exec", "tsx", "src/index.ts"]
+# Keep Node as the container process so SIGTERM reaches the graceful shutdown handler.
+CMD ["node", "--import", "tsx", "src/index.ts"]

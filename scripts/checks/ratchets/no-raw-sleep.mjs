@@ -9,7 +9,7 @@ export const exclude = [
   "**/*.{test,spec}.*",
   "**/*{.,-}test-support.*",
   "**/testing/**",
-  "packages/core/src/{async,retry,retry-policy}.ts",
+  "packages/core/src/primitives/{async,retry,retry-policy}.ts",
 ];
 
 // The promise-returning setTimeout (or scheduler.wait) from the timers module, however it is named.

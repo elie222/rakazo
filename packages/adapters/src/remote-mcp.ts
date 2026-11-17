@@ -124,7 +124,7 @@ export function mcpToolFields(
 
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
   const list = async (client: Client, signal: AbortSignal | undefined): Promise<ConnectorTool[]> =>
-    (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).map((tool) => ({
+    (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).tools.map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
       ...mcpToolFields(tool),
@@ -145,21 +145,27 @@ function positiveIntegerOrDefault(value: string | undefined, fallback: number): 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Follow `tools/list` cursors, bounded by the shared page and tool caps. Tools only a
- * server's own app may call are left out: the model never sees them. */
-export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
+/** Follow `tools/list` cursors within the shared caps, with the shortest `ttlMs` any page sent.
+ * Tools only a server's own app may call are left out: the model never sees them. */
+export async function listMcpTools(
+  client: Client,
+  options: RequestOptions,
+): Promise<{ tools: Tool[]; ttlMs?: number }> {
   const maxTools = positiveIntegerOrDefault(process.env.MCP_MAX_TOOLS, DEFAULT_MAX_MCP_TOOLS);
   const maxPages = positiveIntegerOrDefault(process.env.MCP_MAX_PAGES, DEFAULT_MAX_MCP_PAGES);
   const tools: Tool[] = [];
+  let ttlMs: number | undefined;
   let cursor: string | undefined;
   for (let page = 0; page < maxPages && tools.length < maxTools; page += 1) {
     const result = await client.listTools(cursor ? { cursor } : undefined, options);
     const visible = result.tools.filter(mcpToolVisibleToModel);
     tools.push(...visible.slice(0, maxTools - tools.length));
+    if (typeof result.ttlMs === "number" && Number.isFinite(result.ttlMs))
+      ttlMs = Math.min(ttlMs ?? Number.POSITIVE_INFINITY, Math.max(0, result.ttlMs));
     cursor = result.nextCursor;
     if (!cursor) break;
   }
-  return tools;
+  return { tools, ttlMs };
 }
 
 /** Call through the guarded transport, optionally projecting before the final byte limit. */

@@ -1,5 +1,9 @@
 name: Start Postgres
 description: Boot the CI test database in the background and export CI_POSTGRES_URL. Run wait.sh in this directory before the first query, so the database boots beside the install.
+inputs:
+  image:
+    description: The Postgres image to run, cache and hand to Testcontainers.
+    default: mirror.gcr.io/library/postgres:18-alpine
 runs:
   using: composite
   steps:
@@ -12,20 +16,24 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ runner.temp }}/docker-postgres-cache
-        key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+        key: docker-postgres-v3-${{ inputs.image }}-${{ steps.postgres-cache-week.outputs.week }}
 
     - name: Load or pull Postgres image
       shell: bash
+      env:
+        POSTGRES_IMAGE: ${{ inputs.image }}
       run: bash .github/scripts/restore-postgres-image.sh
 
     - name: Start Postgres
       shell: bash
+      env:
+        POSTGRES_IMAGE: ${{ inputs.image }}
       run: |
         docker run -d --name ci-postgres \
           -e POSTGRES_USER=postgres \
           -e POSTGRES_PASSWORD=postgres \
           -e POSTGRES_DB=rakazo \
           -p 5432:5432 \
-          mirror.gcr.io/library/postgres:18-alpine \
+          "$POSTGRES_IMAGE" \
           postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
         echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
