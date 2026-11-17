@@ -377,7 +377,11 @@ export async function buildTurnPrompt(
     // A hang-up turn is read, not heard: no spoken-reply constraint.
     voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
     // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-    formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
+    formatCurrentTimeInstruction(
+      deps.now?.() ?? new Date(),
+      userTimeZone,
+      previousMessageAt(history, currentTurnMessage?.id),
+    ),
     lateRoutineNote,
     sharedSpaceNote,
   ]
@@ -449,3 +453,17 @@ export async function buildTurnPrompt(
 }
 
 export type TurnPrompt = Awaited<ReturnType<typeof buildTurnPrompt>>;
+
+/** When the latest message before this turn was sent, so the time anchor can say how long ago. */
+export function previousMessageAt(
+  history: ReadonlyArray<{ id?: string; createdAt?: string }>,
+  currentId: string | undefined,
+): Date | undefined {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index]!;
+    if (message.id && message.id === currentId) continue;
+    const at = message.createdAt ? new Date(message.createdAt) : undefined;
+    if (at && !Number.isNaN(at.getTime())) return at;
+  }
+  return undefined;
+}
