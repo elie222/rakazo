@@ -61,7 +61,6 @@ export { applyStableUpdate } from "./schedule.js";
 import type { UpdaterConfig } from "./updater-logic.js";
 import {
   missingSecretAssignments,
-  readEnvAssignment,
   readTagState,
   resolveUpdaterConfig,
   truncateOutput,
