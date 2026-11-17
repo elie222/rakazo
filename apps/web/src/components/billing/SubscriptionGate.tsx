@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createContext, Suspense, useContext, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
-import { loadBillingStatus } from "../../lib/auth/referral";
+import { loadBillingStatus } from "../../lib/billing/referral";
 import { peekInitialBootstrap } from "../../lib/bootstrap";
 import { lazyComponent } from "../../lib/platform/preload-recovery";
 import type { SupportChat } from "../../lib/platform/support-chat";

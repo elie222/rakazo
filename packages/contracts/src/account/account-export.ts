@@ -1,6 +1,10 @@
 import * as z from "zod";
-import { PageSourceSchema, PageTitleSchema } from "../conversations/pages.js";
+import { PageSourceSchema, PageTitleSchema } from "../artifacts/pages.js";
+import { BotSchema } from "../bots/bot.js";
+import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { Id, IsoDate, ReplyModeSchema } from "../ids.js";
+import { RoutineSchema } from "../routines/routine.js";
+import { ThreadMessageSchema } from "../threads/thread-message.js";
 
 /**
  * A whole account as one zip, to move between Rakazo installs (Cloud to self-hosted and back).
@@ -255,3 +259,19 @@ export const AccountImportResultSchema = z.object({
   spaces: z.array(z.object({ id: Id, name: z.string() })),
 });
 export type AccountImportResult = z.infer<typeof AccountImportResultSchema>;
+
+export const ExportManifestSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.string(),
+  bot: BotSchema.pick({ name: true, description: true, instructions: true }).extend({
+    color: z.string().optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
+  }),
+  memory: z.array(z.object({ path: z.string(), content: z.string() })),
+  routines: z.array(RoutineSchema.pick({ name: true, prompt: true, crons: true, timezone: true })),
+  files: z.array(
+    z.object({ path: z.string(), content: z.string(), encoding: z.literal("base64").optional() }),
+  ),
+  history: z.array(ThreadMessageSchema),
+});
+export type ExportManifest = z.infer<typeof ExportManifestSchema>;

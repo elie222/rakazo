@@ -6,7 +6,7 @@ import { useState } from "react";
 import { AccountMenu } from "../../components/account/AccountMenu";
 import { CreditChoice } from "../../components/billing/ModelCredits";
 import { useSignOut } from "../../lib/auth/sign-out";
-import { formatBillingPrice } from "../../lib/billing";
+import { formatBillingPrice } from "../../lib/billing/billing";
 import type { RpcClient } from "../../lib/query/rpc";
 import { AuthFrame, submitClass } from "./Auth";
 

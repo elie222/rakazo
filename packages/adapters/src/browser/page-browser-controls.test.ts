@@ -13,6 +13,7 @@ type Secrets = {
   cardTyped: (length: number) => boolean;
   payTokenAccount: () => string | null;
   setPayToken: (token: string) => boolean;
+  filledChoices: () => string[];
 };
 
 /** The saved-login, card and pay-token script page_secrets runs in a frame's isolated world. */
@@ -54,8 +55,8 @@ describe("saved logins and cards in the focused field", () => {
     expect(fill("Notes", "fake-password", origin, "password")).toThrow(
       /Refused: A saved password can only be typed into a password field/,
     );
-    expect(fill("Plan", "fake-user", origin, "username")).toThrow(
-      /Refused: A saved username can only be typed into a text, email, or telephone field/,
+    expect(fill("Plan", "fake-password", origin, "password")).toThrow(
+      /Refused: A saved password can only be typed into a password field/,
     );
     expect(fill("Bio", "fake-user", origin, "username")).toThrow(/Refused: A saved username/);
     expect(fill("Plan", "4242", origin, "card")).toThrow(
@@ -71,6 +72,74 @@ describe("saved logins and cards in the focused field", () => {
     fill("Password", "fake-password", origin, "password")();
     expect(field("Password").value).toBe("fake-password");
     expect(field("Password").hasAttribute("data-rakazo-filled")).toBe(true);
+  });
+
+  it("picks a dropdown option for a visible saved field and marks it hidden", () => {
+    const { secrets, field, win } = installSecrets(`<select aria-label="Branch">
+      <option value="" disabled selected>Choose</option><option value="v1">A1</option>
+      <option>A2</option><option disabled>A3</option></select>`);
+    const changes: string[] = [];
+    field("Branch").addEventListener("change", () => changes.push(field("Branch").value));
+    const fill = (value: string, site = origin, kind = "username") => {
+      field("Branch").focus();
+      return () => secrets.fill(value, site, kind);
+    };
+    fill("A2")();
+    expect(field("Branch").value).toBe("A2");
+    fill("v1")();
+    expect(field("Branch").value).toBe("v1");
+    fill(" a2 ")();
+    expect(changes).toEqual(["A2", "v1", "A2"]);
+    for (const value of ["fake-999", "A3"]) {
+      let error = "";
+      try {
+        fill(value)();
+      } catch (thrown) {
+        error = String(thrown);
+      }
+      expect(error).toBe(
+        'Error: Refused: This dropdown has no option for this saved field. Its options: "A1", "A2".',
+      );
+    }
+    expect(field("Branch").value).toBe("A2");
+    expect(fill("A2", origin, "password")).toThrow(/Refused: A saved password/);
+    expect(fill("A2", "https://other.example.test")).toThrow(/Refused: This login is saved for/);
+    expect(fill("A2", origin, "code")).toThrow(/Refused: A code can only be typed/);
+    expect(fill("4242", origin, "card")).toThrow(/Refused: A card can only be typed/);
+    expect(field("Branch").value).toBe("A2");
+    // Marked like any saved field, so the page browser's snapshots never show the choice.
+    expect(field("Branch").hasAttribute("data-rakazo-filled")).toBe(true);
+    expect(win.document.body.innerHTML).not.toContain("fake-999");
+  });
+
+  it("reports the options saved logins chose, inside open shadow trees too", () => {
+    const { secrets, win } = installSecrets(`<div id="host"></div><select aria-label="Plain">
+      <option>A1</option><option selected>A2</option></select>`);
+    const root = win.document.getElementById("host")!.attachShadow({ mode: "open" });
+    root.innerHTML = `<select aria-label="Code"><option value="+1">US (+1)</option>
+      <option value="+44">UK (+44)</option></select>`;
+    expect(secrets.filledChoices()).toEqual([]);
+    (root.querySelector("select") as HTMLSelectElement).focus();
+    secrets.fill("+44", origin, "username");
+    expect(secrets.filledChoices()).toEqual(["+44", "UK (+44)"]);
+  });
+
+  it("cuts long option labels and keeps the refusal short", () => {
+    const long = `${"a".repeat(60)}${"b".repeat(60)}`;
+    const many = Array.from({ length: 300 }, (_, n) => `<option>${long}${n}</option>`).join("");
+    const { secrets, field } = installSecrets(`<select aria-label="Branch">${many}</select>`);
+    field("Branch").focus();
+    let error = "";
+    try {
+      secrets.fill("fake-branch", origin, "username");
+    } catch (thrown) {
+      error = String(thrown);
+    }
+    expect(error).toContain(`"${"a".repeat(50)}…${"b".repeat(28)}0", `);
+    expect(error).not.toContain("a".repeat(51));
+    expect(error).toMatch(/, and \d+ more\.$/);
+    expect(error.length).toBeLessThan(2200);
+    expect(error).not.toContain("fake-branch");
   });
 
   it("refuses when nothing has focus, so a secret never lands elsewhere", () => {

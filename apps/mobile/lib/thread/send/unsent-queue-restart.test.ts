@@ -61,7 +61,7 @@ vi.mock("../../notifications/live-notifications", () => ({
   stopLiveNotifications: async () => {},
 }));
 vi.mock("../../api/network-cache", () => ({ clearNetworkCache: () => {} }));
-vi.mock("../../spaces/referral", () => ({ forgetReferrals: () => {} }));
+vi.mock("../../billing/referral", () => ({ forgetReferrals: () => {} }));
 vi.mock("../../auth/returning-user", () => ({ rememberSignedIn: async () => {} }));
 vi.mock("../../models/model-settings", () => ({ askToAddModel: () => {} }));
 vi.mock("../../i18n/i18n", () => ({ t: (text: string) => text }));

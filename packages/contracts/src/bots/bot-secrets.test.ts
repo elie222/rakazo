@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_SECRET_NAME_PATTERN } from "../domain.js";
+import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import {
   authenticatorKey,
   BOT_SECRET_ORIGIN_MISSING_MESSAGE,

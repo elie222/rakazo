@@ -27,8 +27,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { HoldToTalkStrip, useHoldToTalk } from "../../../components/composer/HoldToTalk";
-import { recordMessageSent } from "../../../components/GitHubStarPrompt";
 import { useCallSession } from "../../../lib/calls/call-session";
 import { attachmentPickerAccept } from "../../../lib/composer/attachment-picker-accept";
 import {
@@ -47,9 +45,9 @@ import {
   writeComposerRetryNonce,
 } from "../../../lib/composer/composer-draft";
 import { isFilePaste } from "../../../lib/composer/pending-attachments";
-import { hasOpenDialog } from "../../../lib/has-open-dialog";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { usePageSession } from "../../../lib/pages/pages";
+import { hasOpenDialog } from "../../../lib/platform/has-open-dialog";
 import { useEventListener } from "../../../lib/use-event-listener";
 import { ComposerReplyPreview } from "../chat/chat-context";
 import type { PendingAttachment } from "../chat/chat-shared";
@@ -63,6 +61,8 @@ import {
   PendingAttachmentChips,
   SlashPicker,
 } from "./composer-parts";
+import { recordMessageSent } from "./github-star-prompt";
+import { HoldToTalkStrip, useHoldToTalk } from "./hold-to-talk";
 import { useComposerFileDrop } from "./use-composer-file-drop";
 import { useComposerLayout } from "./use-composer-layout";
 import { useComposerTriggers } from "./use-composer-triggers";

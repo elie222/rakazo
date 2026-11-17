@@ -12,7 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../../app/group-settings";
 import { BotMemberPicker } from "../../components/bots/bot-member-picker";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
-import { notifyArchivedChatsChanged } from "../inbox/archived-chats";
+import { notifyArchivedChatsChanged } from "../inbox/archived/archived-chats";
 import { queryClient } from "../query/query";
 
 const { rpc, back, push, replace } = vi.hoisted(() => ({

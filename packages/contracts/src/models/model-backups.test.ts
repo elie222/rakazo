@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expectLinearTime } from "../timing.test-support.js";
+import { expectLinearTime } from "../testing/timing.test-support.js";
 import {
   connectedBackupOptions,
   connectionDisplayName,

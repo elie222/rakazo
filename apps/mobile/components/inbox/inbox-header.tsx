@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens, resolveMobileAppearance } from "../../lib/appearance/appearance";
-import type { CreateAction } from "../../lib/home/create-chooser";
-import { createMenuActions, isCreateAction } from "../../lib/home/create-chooser";
+import type { CreateAction } from "../../lib/inbox/create-chooser";
+import { createMenuActions, isCreateAction } from "../../lib/inbox/create-chooser";
 import { useThemedStyles } from "../../lib/native/native";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
-import { CREATE_MENU_GAP, createHomeStyles } from "./home-styles";
+import { CREATE_MENU_GAP, createInboxStyles } from "./inbox-styles";
 
 /**
  * The inbox's own header where it has no native bar: beside a chat in split view, and before
@@ -35,7 +35,7 @@ export function InboxHeader({
 }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -118,7 +118,7 @@ function HeaderButton({
   active?: boolean;
   accent?: boolean;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   return (
     <Pressable
       testID={testID}

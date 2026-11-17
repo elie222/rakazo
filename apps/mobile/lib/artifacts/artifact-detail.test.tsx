@@ -23,7 +23,7 @@ vi.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
   setItemAsync: async () => {},
 }));
-vi.mock("../home/activity", () => ({ formatActivityRelativeTime: () => "now" }));
+vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("../notifications/live-notifications", () => ({}));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ artifactId: state.id }),
