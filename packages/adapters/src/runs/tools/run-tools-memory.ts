@@ -59,6 +59,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
     allowMyChats,
     searchAt: run.createdAt,
+    ...(run.trigger === "routine" ? { ownerOnly: run.userId } : {}),
   };
   const given = withoutBlankFields(args);
   let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;

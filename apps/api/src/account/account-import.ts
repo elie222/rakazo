@@ -781,6 +781,8 @@ class AccountImporter implements ArchiveSink {
             // Nothing fires on the new install until its owner turns the routine on.
             active: false,
             notify: record.notify,
+            // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+            inChat: record.inChat && !record.watch,
             messageProvider: record.messageProvider,
             modelProvider: record.modelProvider,
             modelId: record.modelId,

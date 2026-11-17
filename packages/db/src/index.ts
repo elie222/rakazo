@@ -50,6 +50,7 @@ export * from "./models/model-credentials.js";
 export * from "./models/model-roles.js";
 export * from "./models/voice-credentials.js";
 export * from "./runs/cancel-runs.js";
+export * from "./runs/chat-holding-runs.js";
 export * from "./runs/expire-stuck-run.js";
 export * from "./runs/run-secrets.js";
 export * from "./runs/run-timing.js";
