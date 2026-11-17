@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
-import { AUDIT_IDENTIFYING_METADATA } from "@rakazo/contracts";
+import { AuditIdentifyingKeySchema } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -14,9 +14,10 @@ const PAGE_SIZE = 50;
 
 function detailLabels(event: AuditEvent): string[] {
   const target = [event.targetLabel, event.targetId, event.targetType].find(Boolean);
-  const labels = [target, ...AUDIT_IDENTIFYING_METADATA.map((key) => event.metadata[key])].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  );
+  const labels = [
+    target,
+    ...AuditIdentifyingKeySchema.options.map((key) => event.metadata[key]),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
   return [...new Set(labels)];
 }
 

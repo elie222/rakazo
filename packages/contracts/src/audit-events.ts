@@ -12,8 +12,8 @@ export type AuditOutcome = z.infer<typeof AuditOutcomeSchema>;
 export const AuditEventMetadataSchema = SecurityEventMetadataSchema;
 export type AuditEventMetadata = z.infer<typeof AuditEventMetadataSchema>;
 
-/** Metadata that names what changed, for an event with no target label of its own. */
-export const AUDIT_IDENTIFYING_METADATA = [
+/** Metadata keys that name what changed, for an event with no target label of its own. */
+export const AuditIdentifyingKeySchema = z.enum([
   "connectorId",
   "connectionId",
   "provider",
@@ -21,7 +21,7 @@ export const AUDIT_IDENTIFYING_METADATA = [
   "id",
   "botId",
   "name",
-] as const;
+]);
 
 export const AuditEventSchema = z.object({
   id: z.string(),
