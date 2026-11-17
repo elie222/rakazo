@@ -436,8 +436,9 @@ export class PiAgentRuntime implements AgentRuntime {
               });
           },
         };
-        // The idle watchdog may clone a terminal message, preserving its content array.
-        const providerFailures = new WeakSet<AssistantMessage["content"]>();
+        // The idle watchdog may clone a terminal message, preserving its content array. Each
+        // failure records whether the provider had accepted that request before it failed.
+        const providerFailures = new WeakMap<AssistantMessage["content"], boolean>();
         const rejectedRequests: RejectedProviderRequest[] = [];
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
@@ -461,6 +462,7 @@ export class PiAgentRuntime implements AgentRuntime {
           cutReplies: new WeakMap(),
           retriesEmptyReply: wouldEndEmpty,
           stream: (target, ctx, options) => {
+            let accepted = false;
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
             }
@@ -488,8 +490,9 @@ export class PiAgentRuntime implements AgentRuntime {
                     {
                       ...usageHooks,
                       prepareContext,
-                      onProviderError: (message) => providerFailures.add(message.content),
+                      onProviderError: (message) => providerFailures.set(message.content, accepted),
                       onRejectedRequest: (rejection, model) => {
+                        accepted = !rejection;
                         if (rejection) {
                           if (rejectedRequests.push(rejection) > MAX_REJECTED_REQUESTS)
                             rejectedRequests.shift();
@@ -1259,6 +1262,9 @@ export class PiAgentRuntime implements AgentRuntime {
           const failure = modelFailure(error, message, {
             provider: activeStreamTarget.config.provider,
             primaryProvider: fallbackState.request.model.provider,
+            failedAfterAccepting:
+              terminalMessage?.role === "assistant" &&
+              providerFailures.get(terminalMessage.content) === true,
           });
           // Only a rejection nothing explains needs its request's shape to be reproduced.
           throw failure.constructor === Error

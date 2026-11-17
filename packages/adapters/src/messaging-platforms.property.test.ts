@@ -3,7 +3,8 @@ import { WhatsAppAdapter } from "@chat-adapter/whatsapp";
 import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { splitOutboundBody, telegramFallbackText } from "./messaging-platforms.js";
+import { splitOutboundBody } from "./messaging-platforms.js";
+import { telegramFallbackText } from "./providers/messaging/telegram/telegram-messaging.js";
 
 const LIMIT = 4096;
 

@@ -4,6 +4,6 @@
     "lib": ["ES2023", "DOM"],
     "types": ["node", "electron"]
   },
-  "include": ["src/app-document-state.test.ts", "src/setup.test.ts"],
+  "include": ["src/main/app-document-state.test.ts", "src/setup-renderer/setup.test.ts"],
   "exclude": []
 }

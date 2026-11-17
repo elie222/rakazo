@@ -948,6 +948,8 @@ export interface BackgroundJobPayloads {
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
+  /** Drop the run-only logins and codes of a run still waiting on someone after the expiry. */
+  "run.forget-secrets": { runId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };

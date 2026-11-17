@@ -1,8 +1,10 @@
 import { ORPCError } from "@orpc/server";
+import { spaceInvitationEmail } from "@rakazo/auth";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
+  addSpaceMember,
   cancelSpaceInvites,
   createExternalConversationRepos,
   createSpaceForMember,
@@ -26,6 +28,7 @@ import {
   spaceSettingOverrides,
 } from "@rakazo/db";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bot-space.js";
+import { invitationRecipientKey, sendInvitationEmail } from "../invitation-email.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
@@ -151,6 +154,23 @@ export function spacesRoutes(ctx: RouterContext) {
             }),
           ),
         ),
+        add: authed.spaces.members.add.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const added = await addSpaceMember(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+              memberUserId: input.userId,
+            });
+            if (added)
+              await recordAuditEvent({
+                action: "space.member.added",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+                target: { type: "user", id: input.userId },
+              });
+            return { ok: true as const };
+          }),
+        ),
         remove: authed.spaces.members.remove.handler(({ context, input }) =>
           asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
             const departure = await removeSpaceMember(deps.prisma, {
@@ -198,22 +218,43 @@ export function spacesRoutes(ctx: RouterContext) {
         ),
       },
       invites: {
+        // Ownership is checked inside. An email's daily limits count the security log, and its
+        // language is the invitee's, neither of which a Space's scope can see.
         create: authed.spaces.invites.create.handler(({ context, input }) =>
-          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
-            const invite = await createSpaceInvite(deps.prisma, {
-              spaceId: input.spaceId,
-              userId: context.actor.userId,
-            });
-            await recordAuditEvent({
-              action: "space.invite.created",
-              actor: { type: "user", id: context.actor.userId },
-              spaceId: input.spaceId,
-            });
-            return {
-              url: new URL(`/invite/${invite.token}`, deps.env.webOrigin).toString(),
-              expiresAt: invite.expiresAt.toISOString(),
-            };
-          }),
+          asMemberOf(deps.prisma, context.actor, input.spaceId, () =>
+            runAsSystem("invite someone to a Space", async () => {
+              const invite = await createSpaceInvite(deps.prisma, {
+                spaceId: input.spaceId,
+                userId: context.actor.userId,
+                ...(input.email
+                  ? {
+                      email: {
+                        address: input.email,
+                        sendsEmail: Boolean(deps.email),
+                        recipientKey: invitationRecipientKey(deps),
+                      },
+                    }
+                  : {}),
+              });
+              await recordAuditEvent({
+                action: "space.invite.created",
+                actor: { type: "user", id: context.actor.userId },
+                spaceId: input.spaceId,
+              });
+              const url = new URL(`/invite/${invite.token}`, deps.env.webOrigin).toString();
+              const { email } = invite;
+              const emailed = email
+                ? await sendInvitationEmail(deps, context.actor.userId, email.to, (locale) =>
+                    spaceInvitationEmail(email.to, { ...email, url }, locale),
+                  )
+                : false;
+              return {
+                url,
+                expiresAt: invite.expiresAt.toISOString(),
+                ...(input.email ? { emailed } : {}),
+              };
+            }),
+          ),
         ),
         // The invitee is not a member yet, so these look the Space up by the link alone.
         preview: authed.spaces.invites.preview.handler(({ context, input }) =>
@@ -347,6 +388,7 @@ async function memberSpaceNavigation(
     externalConversations,
     contentBots,
     contentGroups,
+    guestSpaces,
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
@@ -367,7 +409,15 @@ async function memberSpaceNavigation(
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
+    // Spaces someone from outside their organization belongs to, marked so nobody shares
+    // there unaware.
+    deps.prisma.spaceMember.findMany({
+      where: { spaceId: { in: spaceIds }, member: { role: GUEST_ROLE } },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
   ]);
+  const withGuests = new Set(guestSpaces.map((row) => row.spaceId));
   const botCounts = new Map(contentBots.map((row) => [row.spaceId, row._count._all]));
   const spacesWithContent = new Set([
     ...contentBots.map((row) => row.spaceId),
@@ -405,6 +455,7 @@ async function memberSpaceNavigation(
         isDefault: membership.space.isDefault && owner,
         hasContent: spacesWithContent.has(membership.spaceId),
         shared: membership.space._count.memberships > 1,
+        hasGuests: withGuests.has(membership.spaceId),
         botCount: botCounts.get(membership.spaceId) ?? 0,
         canRename: owner && membership.space.deletingAt === null,
         canDelete:

@@ -52,6 +52,7 @@ vi.mock("./bot-messages.js", () => ({
     repliesToRequest: false,
   })),
   returnBotMessageOutcome: vi.fn(async () => undefined),
+  reportBotMessageWait: vi.fn(async () => undefined),
 }));
 
 async function runTurn(

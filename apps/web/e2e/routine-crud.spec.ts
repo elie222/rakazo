@@ -43,6 +43,8 @@ test("a delayed schedule is visible only while the routine is active", async ({
   });
   await page.reload();
   await openBotPanel(page);
+  // The page's first load lists the routine unrouted, so wait for the routed list to replace it.
+  await expect(page.getByRole("switch", { name: "Turn Morning report on or off" })).toBeChecked();
   await page.getByRole("button", { name: /Morning report/ }).click();
   const delay = page.getByRole("status").filter({ hasText: "Schedule delayed" });
   await expect(delay).toBeVisible();

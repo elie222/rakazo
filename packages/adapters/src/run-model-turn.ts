@@ -8,6 +8,8 @@ import { personSpeaker } from "./history-speakers.js";
 import { promptVersion } from "./prompt-version.js";
 import type { AssembledTurn } from "./run-assembly.js";
 import type { RunExecutorServices, RunHold } from "./run-attempt.js";
+import { completeRun } from "./run-complete.js";
+import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "./run-fail.js";
 import {
   botEmailInstruction,
   runIdentityInstruction,
@@ -16,13 +18,7 @@ import {
 import { GROUP_UNADDRESSED_REPLY_GUIDANCE, runReplyGuidance } from "./run-replies.prompt.js";
 import { followUpsOffered, offeredFleetTools } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
-import {
-  completeRun,
-  consumeRunEvents,
-  failRun,
-  handoffEndedTurn,
-  requeueRunAfterDatabaseOutage,
-} from "./run-turn.js";
+import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
 import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";

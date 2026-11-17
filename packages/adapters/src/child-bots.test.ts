@@ -417,13 +417,10 @@ describe("destroyBot", () => {
 
     expect(transaction).toHaveBeenCalledOnce();
     expect(releaseComputers).toHaveBeenCalledWith({
-      where: {
-        OR: [{ controlBotId: "bot-1" }, { executionBotId: "bot-1" }],
-      },
+      where: { controlBotId: "bot-1" },
       data: expect.objectContaining({
         controlHolder: "none",
         controlBotId: null,
-        executionBotId: null,
       }),
     });
     expect(executeRaw).toHaveBeenCalledOnce();
@@ -620,7 +617,7 @@ describe("destroyBot", () => {
       const cancelTasks = vi.fn().mockResolvedValue({ count: 1 });
       const deleteExecutionLeases = vi.fn().mockResolvedValue({ count: 1 });
       const expireExecutionLeases = vi.fn().mockResolvedValue({ count: 1 });
-      const clearExecution = vi.fn().mockResolvedValue({ count: 1 });
+      const updateComputers = vi.fn().mockResolvedValue({ count: 1 });
       const queryRaw = vi.fn().mockResolvedValue([{ id: "group-1" }, { id: "group-2" }]);
       const activeGroupRuns = [
         {
@@ -707,7 +704,7 @@ describe("destroyBot", () => {
             deleteMany: deleteExecutionLeases,
             updateMany: expireExecutionLeases,
           },
-          computer: { updateMany: clearExecution },
+          computer: { updateMany: updateComputers },
           $executeRaw: preservePersonal,
           botDeletion: { create: vi.fn() },
           bot: { delete: vi.fn() },
@@ -784,14 +781,6 @@ describe("destroyBot", () => {
         data: { expiresAt: new Date(0) },
       });
       expect(deleteExecutionLeases).toHaveBeenCalledWith({ where: { botId: "bot-1" } });
-      expect(clearExecution).toHaveBeenCalledWith({
-        where: { executionRunId: { in: ["group-run"] } },
-        data: {
-          executionRunId: null,
-          executionBotId: null,
-          executionLeaseExpiresAt: null,
-        },
-      });
       expect(cancel.mock.calls).toEqual([["run:group-run"]]);
       expect(releaseScreen).toHaveBeenCalledTimes(1);
       expect(releaseScreen).toHaveBeenCalledWith(

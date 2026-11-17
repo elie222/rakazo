@@ -5175,61 +5175,6 @@ describe("claimSteering", () => {
 });
 
 describe("clearThread", () => {
-  it("reports a committed clear even when the legacy binding sweep fails", async () => {
-    const tx = {
-      $queryRaw: vi.fn(async () => []),
-      $executeRaw: vi.fn(async () => 0),
-      threadRead: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-      thread: {
-        findMany: vi.fn(async () => []),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-        update: vi
-          .fn()
-          .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
-          .mockResolvedValue({ nextEventSeq: 1 }),
-      },
-      run: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
-          ]),
-        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
-          where.id.in.map((id) => ({ id })),
-        ),
-      },
-      attempt: { updateMany: vi.fn() },
-      task: { updateMany: vi.fn() },
-      secret: { deleteMany: vi.fn() },
-      computerExecutionLease: { updateMany: vi.fn() },
-      computer: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
-      artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
-      event: {
-        deleteMany: vi.fn(),
-        create: vi.fn().mockResolvedValue({ ...event(0), type: "thread.cleared" }),
-      },
-      bot: { update: vi.fn() },
-    };
-    const prisma = {
-      computer: { updateMany: vi.fn().mockRejectedValue(new Error("connection lost")) },
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    await expect(
-      clearThread(
-        prisma,
-        { spaceId: "workspace-1", threadId: "thread-1", botId: "bot-1" },
-        new TestFanout(),
-      ),
-    ).resolves.toMatchObject({ event: { type: "thread.cleared" }, cancelledRunIds: ["run-1"] });
-    expect(prisma.computer.updateMany).toHaveBeenCalled();
-  });
-
   it("releases the computer execution lease without dropping the computer", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
@@ -5276,7 +5221,6 @@ describe("clearThread", () => {
       bot: { update: vi.fn() },
     };
     const prisma = {
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -5290,17 +5234,8 @@ describe("clearThread", () => {
       where: { runId: { in: ["run-1"] } },
       data: { expiresAt: new Date(0) },
     });
-    // The legacy execution binding is cleared after the transaction commits, so the
-    // transaction never reaches for the computer row under the thread-row lock.
+    // The clear never reaches for the computer row under the thread-row lock.
     expect(tx.computer.updateMany).not.toHaveBeenCalled();
-    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { executionRunId: { in: ["run-1"] } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
     // Every deleted message counts as compacted, so compaction cannot summarize cleared history.
     expect(tx.thread.update).toHaveBeenCalledWith({
       where: { id: "thread-1" },
@@ -5374,7 +5309,6 @@ describe("clearThread", () => {
       chatGroup: { update: vi.fn() },
     };
     const prisma = {
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -5405,14 +5339,6 @@ describe("clearThread", () => {
     expect(tx.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["group-run-1", "group-run-2"] } },
       data: { expiresAt: new Date(0) },
-    });
-    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
     });
     expect(tx.computerExecutionLease.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ botId: expect.anything() }) }),

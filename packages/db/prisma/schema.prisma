@@ -103,7 +103,7 @@ model User {
   agentSecrets               AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
-  pushToken                   PushToken?
+  pushRegistrations           PushRegistration[]
   callPushDevices             CallPushDevice[]
   workActivityTokens          WorkActivityToken[]
   workActivityStartTokens     WorkActivityStartToken[]
@@ -151,19 +151,21 @@ model Session {
   @@map("session")
 }
 
-/// One current device registration per account, matching the notification API contract.
+/// One row per signed-in device; a device token belongs to one account at a time.
 /// No session FK: password changes delete a session before the replacement is created.
-model PushToken {
-  userId String @id
+model PushRegistration {
+  userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ciphertext String
   tokenDigest String @unique
   sessionId String
+  ciphertext String
   /// "android_sender" when the installed Android build renders data-only sender pushes.
   presentation String?
   updatedAt DateTime @updatedAt
 
-  @@map("push_tokens")
+  @@id([userId, tokenDigest])
+  @@index([sessionId])
+  @@map("push_registrations")
 }
 
 /// Encrypted call registrations per installation. Legacy message push remains compatible.
@@ -311,8 +313,8 @@ model Passkey {
   @@map("passkey")
 }
 
-// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin. Field names and
-// types must match the plugin's schema; the plugin reads and writes these tables directly.
+// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin, which reads and
+// writes these tables directly; a test in packages/auth compares them with its schema.
 
 model ScimConnectionBinding {
   id                              String    @id
@@ -1729,7 +1731,7 @@ model Connection {
   spaceId     String
   space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   userId      String
-  connectorId String   @default("composio")
+  connectorId String
   provider    String
   displayName String
   status      String
@@ -1878,10 +1880,6 @@ model Computer {
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)
-  executionRunId          String?
-  executionBotId          String?
-  executionLeaseExpiresAt DateTime?
-  executionFence          Int                      @default(0)
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
@@ -1899,7 +1897,6 @@ model Computer {
   homeDeletionNotice      HomeDeletionNotice?
 
   @@index([spaceId, scope])
-  @@index([executionRunId])
   @@map("computers")
 }
 

@@ -8,7 +8,7 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accountVault, fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
-import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
+import { protectedComputerLifecycleRefusal } from "./providers/computer/desktop/desktop-command-guard.js";
 import type { RoutineWatchTickDeps } from "./routine-watch.js";
 import {
   checkRoutineWatch,

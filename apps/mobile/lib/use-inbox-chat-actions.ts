@@ -8,12 +8,18 @@ import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import {
+  alertGroupNotDeleted,
+  confirmDeleteBot,
+  confirmDeleteGroup,
+  deleteGroup,
+} from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
+import { sendWith } from "./query";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
@@ -190,33 +196,36 @@ export function useInboxChatActions({
       if (action === "delete") {
         const confirmation = kind === "bot" ? beginDelete() : undefined;
         if (kind === "bot" && !confirmation) return;
-        const deleted = () => {
-          notifyArchivedChatsChanged();
-          void loadBots();
-        };
         // Capture fails only when the session or server changed; the delete is dropped quietly.
-        let requestContext: ApiRequestContext | undefined;
+        let requestContext: ApiRequestContext;
         try {
-          requestContext =
-            kind === "bot"
-              ? await captureApiRequestContext(chat.spaceId ?? selectedSpaceId())
-              : await chatRequestContext(chat.spaceId);
+          requestContext = await captureApiRequestContext(chat.spaceId ?? selectedSpaceId());
         } catch {
           confirmation?.finish();
           return;
         }
-        if (kind === "bot") {
-          void confirmDeleteBot(
-            { id: chat.id, name: chat.name },
-            (removedGroupIds, recoveryContext) => {
-              deleted();
-              void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
-            },
-            confirmation!.current,
-            requestContext,
-            confirmation!.finish,
-          );
-        } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
+        // Each confirmed delete is sent, so deleting two groups in a row deletes both.
+        if (!confirmation) {
+          const send = sendWith(requestContext);
+          confirmDeleteGroup(chat, () => {
+            void deleteGroup(chat.id, send).then(() => {
+              notifyArchivedChatsChanged();
+              void loadBots();
+            }, alertGroupNotDeleted);
+          });
+          return;
+        }
+        void confirmDeleteBot(
+          { id: chat.id, name: chat.name },
+          (removedGroupIds, recoveryContext) => {
+            notifyArchivedChatsChanged();
+            void loadBots();
+            void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
+          },
+          confirmation.current,
+          requestContext,
+          confirmation.finish,
+        );
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>

@@ -9,11 +9,11 @@ import {
   prepareApiInstall,
   prepareGraphqlInstall,
   previewPluginInstall,
-  sanitizeIntegrationError,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
+import { ConnectionSetupError } from "@rakazo/contracts";
+import { ClientError, comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { requireAdmin } from "../admins.js";
@@ -122,19 +122,13 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           deps.env.integrationsCatalogUrl ??
           (input.usePublicCatalog ? "https://integrations.sh" : undefined);
         if (!baseUrl) return { enabled: false, results: [] };
-        try {
-          const results = await searchIntegrationCatalog({
-            baseUrl,
-            query: input.query,
-            signal: context.signal ?? new AbortController().signal,
-            fetch: deps.remoteConnectors?.fetch,
-          });
-          return { enabled: true, results };
-        } catch (error) {
-          throw new ORPCError("BAD_GATEWAY", {
-            message: error instanceof Error ? error.message : "Integration catalog search failed",
-          });
-        }
+        const results = await searchIntegrationCatalog({
+          baseUrl,
+          query: input.query,
+          signal: context.signal ?? new AbortController().signal,
+          fetch: deps.remoteConnectors?.fetch,
+        });
+        return { enabled: true, results };
       }),
       install: authed.capabilities.install.handler(async ({ context, input }) => {
         if (input.kind === "plugin") {
@@ -175,48 +169,41 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             message: "Credentials are only accepted for MCP, API, and GraphQL tool sources",
           });
         }
-        try {
-          if (input.kind === "mcp") {
-            ({ source, config } = applyMcpSourcePreset(source, config));
-            const verified = await verifyMcpInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            config = verified.config;
-          }
-          if (input.kind === "api") {
-            const prepared = await prepareApiInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            source = prepared.source;
-            config = prepared.config;
-          }
-          if (input.kind === "graphql") {
-            const prepared = await prepareGraphqlInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            source = prepared.source;
-            config = prepared.config;
-          }
-        } catch (error) {
-          const message = sanitizeIntegrationError(error);
-          throw new ORPCError("BAD_REQUEST", {
-            message: credential ? message.split(credential).join("[redacted]") : message,
+        if (input.kind === "mcp") {
+          ({ source, config } = applyMcpSourcePreset(source, config));
+          const verified = await verifyMcpInstall({
+            source,
+            config,
+            credential,
+            signal: context.signal,
+            remote: deps.remoteConnectors,
+            allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
           });
+          config = verified.config;
+        }
+        if (input.kind === "api") {
+          const prepared = await prepareApiInstall({
+            source,
+            config,
+            credential,
+            signal: context.signal,
+            remote: deps.remoteConnectors,
+            allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
+          });
+          source = prepared.source;
+          config = prepared.config;
+        }
+        if (input.kind === "graphql") {
+          const prepared = await prepareGraphqlInstall({
+            source,
+            config,
+            credential,
+            signal: context.signal,
+            remote: deps.remoteConnectors,
+            allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
+          });
+          source = prepared.source;
+          config = prepared.config;
         }
         const stored = credential
           ? await deps.secrets.put(credential, {
@@ -291,13 +278,15 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             installedSource: `${preview.source.gitUrl}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
           };
         } catch (error) {
-          // An endpoint the plugin names that is refused (an ORPCError) is about the plugin too.
-          if (!(error instanceof ORPCError)) rethrowUnlessPluginSourceFailed(error, context.signal);
+          // An endpoint the plugin names that is refused is about the plugin too.
+          if (!(error instanceof ConnectionSetupError))
+            rethrowUnlessPluginSourceFailed(error, context.signal);
           // Only content we can't support leaves browse; a slow or failing host is retried.
           if (!isTransientFetchError(error)) pluginMarketplace.markUnreadable(input.source);
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Could not preview a supported plugin from this repository",
-          });
+          throw new ClientError(
+            "BAD_REQUEST",
+            "Could not preview a supported plugin from this repository",
+          );
         }
       }),
       remove: authed.capabilities.remove.handler(async ({ context, input }) => {

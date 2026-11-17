@@ -2,15 +2,17 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
+import { fetchFresh } from "@rakazo/core/query";
 import { useLocalSearchParams, usePreventRemove, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
 import { useScreenHeader } from "../../lib/screen-header";
+import { useScreenQuery } from "../../lib/screen-query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -27,48 +29,90 @@ export default function MemoryNoteScreen() {
   const { t } = useLingui();
   const [note, setNote] = useState<MemoryDocument | null>(null);
   const [draft, setDraft] = useState("");
-  const [state, setState] = useState<"loading" | "ready" | "failed" | "gone">("loading");
-  const [busy, setBusy] = useState(false);
+  const [gone, setGone] = useState(false);
   const [closing, setClosing] = useState(false);
   const [discarding, setDiscarding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const live = useRef(true);
   const { id, botId } = params;
 
   // There is no single-note read, so find the note in its bot's or the space's list.
-  const latest = async () =>
-    (await rpc("memory/list", botId ? { botId, scope: "bot" } : { scope: "user" })).find(
-      (doc) => doc.id === id,
-    );
-  const latestRef = useRef(latest);
-  latestRef.current = latest;
+  const botList = formRead(
+    rpcQuery("memory/list", botId ? { botId, scope: "bot" } : { scope: "user" }),
+  );
+  // Each note reads the list afresh: another note's read is not this one as it is now.
+  const listRead = {
+    ...botList,
+    queryKey: [...botList.queryKey, id] as unknown as typeof botList.queryKey,
+  };
+  const listQuery = useScreenQuery(listRead, { onForeground: false });
+  const { refetch } = listQuery;
+  // Only what this visit read: a copy an earlier one left is not the note as it is now.
+  const listed =
+    listQuery.isFetchedAfterMount && listQuery.status === "success" ? listQuery.data : undefined;
 
   // A different note in the same screen starts from its own content, never the previous one's.
-  useEffect(() => {
-    live.current = true;
+  const [shown, setShown] = useState<string | null>(null);
+  const key = `${botId ?? ""}:${id}`;
+  if (shown !== null && shown !== key) {
+    setShown(null);
     setNote(null);
     setDraft("");
-    setState("loading");
-    setError(null);
-    latestRef
-      .current()
-      .then((found) => {
-        if (!live.current) return;
-        if (!found) return setState("gone");
-        setNote(found);
-        setDraft(found.content);
-        setState("ready");
-      })
-      .catch((reason) => {
-        if (!live.current) return;
-        setError(errorText(reason, t`Could not load memory`));
-        setState("failed");
+    setGone(false);
+  }
+  useEffect(() => {
+    if (!listed || shown === key) return;
+    const found = listed.find((doc) => doc.id === id);
+    setShown(key);
+    if (!found) return setGone(true);
+    setNote(found);
+    setDraft(found.content);
+  }, [listed, shown, key, id]);
+
+  const saving = useSave({
+    save: async (
+      input: { documentId: string; content: string; expectedRevision?: number },
+      send,
+    ): Promise<
+      { kind: "saved"; note: MemoryDocument } | { kind: "changed"; latest?: MemoryDocument }
+    > => {
+      try {
+        return { kind: "saved", note: await send("memory/update", input) };
+      } catch (reason) {
+        if (errorCode(reason) === "NOT_FOUND") return { kind: "changed" };
+        if (errorCode(reason) !== "CONFLICT") throw reason;
+        const latest = await fetchFresh(queryClient, listRead).catch(() => {
+          throw new Error(t`Could not save`);
+        });
+        return { kind: "changed", latest: latest.find((doc) => doc.id === input.documentId) };
+      }
+    },
+    onSaved: (outcome) => {
+      if (outcome.kind === "saved") {
+        setNote(outcome.note);
+        setClosing(true);
+      } else if (!outcome.latest) setGone(true);
+      else offerLatest(outcome.latest);
+    },
+  });
+  const removal = useSave({
+    save: async (documentId: string, send) => {
+      // Already deleted elsewhere: the outcome asked for.
+      await send("memory/remove", { documentId }).catch((reason: unknown) => {
+        if (errorCode(reason) !== "NOT_FOUND") throw reason;
       });
-    return () => {
-      live.current = false;
-    };
-  }, [id, botId, t, attempt]);
+    },
+    onSaved: () => setClosing(true),
+    closesScreen: true,
+  });
+  const busy = saving.pending || removal.pending;
+  const loadFailed = Boolean(listQuery.error) && !listQuery.isFetching && !note && !gone;
+  const state = gone ? "gone" : note ? "ready" : loadFailed ? "failed" : "loading";
+  const error = loadFailed
+    ? errorText(listQuery.error, t`Could not load memory`)
+    : saving.error
+      ? errorText(saving.error, t`Could not save`)
+      : removal.error
+        ? errorText(removal.error, t`Could not delete note`)
+        : null;
 
   useEffect(() => {
     if (closing) router.back();
@@ -94,11 +138,7 @@ export default function MemoryNoteScreen() {
     ]);
   });
 
-  async function offerLatest() {
-    const found = await latestRef.current().catch(() => null);
-    if (!live.current) return;
-    if (found === null) return setError(t`Could not save`);
-    if (!found) return setState("gone");
+  function offerLatest(found: MemoryDocument) {
     // The edit stays in the editor until its author picks which version wins.
     Alert.alert(t`This note changed`, undefined, [
       { text: t`Cancel`, style: "cancel" },
@@ -112,31 +152,16 @@ export default function MemoryNoteScreen() {
       {
         text: t`Save mine`,
         style: "destructive",
-        onPress: () => void saveRef.current(found.revision),
+        onPress: () => save(found.revision),
       },
     ]);
   }
 
-  async function save(expectedRevision = note?.revision) {
+  function save(expectedRevision = note?.revision) {
     if (!note) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setNote(
-        await rpc("memory/update", { documentId: note.id, content: draft, expectedRevision }),
-      );
-      if (live.current) setClosing(true);
-    } catch (reason) {
-      if (!live.current) return;
-      if (errorCode(reason) === "CONFLICT") await offerLatest();
-      else if (errorCode(reason) === "NOT_FOUND") setState("gone");
-      else setError(errorText(reason, t`Could not save`));
-    } finally {
-      if (live.current) setBusy(false);
-    }
+    removal.reset();
+    saving.run({ documentId: note.id, content: draft, expectedRevision });
   }
-  const saveRef = useRef(save);
-  saveRef.current = save;
 
   function confirmDelete() {
     if (!note) return;
@@ -146,19 +171,8 @@ export default function MemoryNoteScreen() {
         text: t`Delete`,
         style: "destructive",
         onPress: () => {
-          setBusy(true);
-          setError(null);
-          rpc("memory/remove", { documentId: note.id })
-            .then(() => {
-              if (live.current) setClosing(true);
-            })
-            .catch((reason) => {
-              if (!live.current) return;
-              // Already deleted elsewhere: the outcome asked for.
-              if (errorCode(reason) === "NOT_FOUND") return setClosing(true);
-              setError(errorText(reason, t`Could not delete note`));
-              setBusy(false);
-            });
+          saving.reset();
+          removal.run(note.id);
         },
       },
     ]);
@@ -169,7 +183,7 @@ export default function MemoryNoteScreen() {
     action:
       !note || state === "gone"
         ? null
-        : { label: t`Save`, disabled: !(dirty && writable), onPress: () => void save() },
+        : { label: t`Save`, disabled: !(dirty && writable), onPress: () => save() },
   });
 
   return (
@@ -206,7 +220,7 @@ export default function MemoryNoteScreen() {
           <NativeActionButton
             fill={false}
             label={t`Retry`}
-            onPress={() => setAttempt((count) => count + 1)}
+            onPress={() => void refetch()}
             prominence="secondary"
           />
         ) : null}

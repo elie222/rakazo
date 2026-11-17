@@ -7,7 +7,7 @@ on:
       - infra/sandboxes/computer/**
       - infra/sandboxes/supervisor/**
       - packages/core/src/node/**
-      - packages/adapters/src/docker-sandbox.ts
+      - packages/adapters/src/providers/computer/docker/docker-sandbox.ts
       - packages/adapters/src/computer-browser.ts
       - packages/testkit/src/computer-*.ts
       - packages/testkit/src/cli/computer-replay.ts

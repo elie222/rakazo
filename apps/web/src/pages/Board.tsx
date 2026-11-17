@@ -8,7 +8,7 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
+import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -58,7 +58,7 @@ export function BoardPage() {
           ? queries.tickets.comments.queryKey({ input: { ticketId } })
           : queries.tickets.comments.key(),
       });
-    let cancelRetry: (() => void) | undefined;
+    const stopped = new AbortController();
     void (async () => {
       while (active) {
         const controller = new AbortController();
@@ -87,23 +87,16 @@ export function BoardPage() {
           controller.abort();
         }
         if (!active || !isRetryableError(failure)) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          );
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
+        await abortableDelay(
+          opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
+          stopped.signal,
+        );
       }
     })();
     return () => {
       active = false;
       currentController?.abort();
-      cancelRetry?.();
+      stopped.abort();
     };
   }, [queries]);
 

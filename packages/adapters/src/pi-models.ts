@@ -15,10 +15,11 @@ import {
   trimEndChars,
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
-import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
+import { loadProviderOAuth } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   probeOpenAiCompatibleModels,
@@ -57,39 +58,9 @@ export type PiCatalogEntry = {
   live?: true;
 };
 
-/**
- * Product defaults for new connections; only exact catalog IDs are recommended. A provider
- * without one preselects its first offered model, so set one where that model is a poor start.
- */
-const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
-  "cloudflare-workers-ai": "@cf/openai/gpt-oss-20b",
-  "openai-codex": "gpt-6-luna",
-  openai: "gpt-6-luna",
-  openrouter: "anthropic/claude-haiku-5.5",
-  anthropic: "claude-haiku-5-5",
-  google: "gemini-4-hydrogen",
-  "google-vertex": "gemini-4-hydrogen",
-  groq: "openai/gpt-oss-120b",
-  minimax: "MiniMax-M3",
-};
-
 export function isRecommendedCatalogModel(provider: string, id: string): boolean {
-  return RECOMMENDED_MODEL_IDS[canonicalPiProviderId(provider)] === id;
+  return modelProviderDefinition(canonicalPiProviderId(provider))?.recommendedModel === id;
 }
-
-/**
- * Bundled ids the provider refuses to agent runs for every new account. The registry has no
- * field that says so, so each entry is backed by the provider's own rejection:
- * - google: "no longer available to new users" (the 2.5 family).
- * - groq, minimax: retired, answered with "does not exist" / "no longer available".
- * - github-copilot: "not available for integrator", the Copilot integration Pi identifies as.
- */
-const UNSERVED_MODEL_IDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  google: new Set(["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]),
-  groq: new Set(["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]),
-  minimax: new Set(["MiniMax-M2.7"]),
-  "github-copilot": new Set(["gemini-3.7-flash", "grok-4.5", "mai-code-1-flash-picker"]),
-};
 
 /**
  * Whether an agent run can use this model. Pickers leave the rest out so a new user cannot
@@ -105,7 +76,7 @@ export function catalogModelServesAgents(
   if (model.id.endsWith(":batch")) return false;
   // OpenCode's free tier only answers its own app; the registry prices those models at zero.
   if (provider === "opencode" && model.cost?.input === 0 && model.cost.output === 0) return false;
-  return !UNSERVED_MODEL_IDS[provider]?.has(model.id);
+  return !modelProviderDefinition(provider)?.unservedModels?.includes(model.id);
 }
 
 /** Drop models agents cannot run, keeping any `provider:id` the account has already saved. */
@@ -151,43 +122,7 @@ export function catalogProviderProbeBaseUrl(provider: string): string | null {
   return catalogProbeBaseUrls.get(canonicalPiProviderId(provider)) ?? null;
 }
 
-/** Read-only authenticated endpoints; public catalogs cannot establish key validity. */
-const KEY_CHECK_URLS = new Map([
-  ["openrouter", "https://openrouter.ai/api/v1/key"],
-  ["deepseek", "https://api.deepseek.com/models"],
-  ["google", "https://generativelanguage.googleapis.com/v1beta/models"],
-]);
-
 const KEY_CHECK_CANCELLED = "Could not verify the API key. Try again.";
-
-/** Google reports invalid keys as HTTP 400 with a structured ErrorInfo reason. */
-async function googleKeyWasRejected(response: Response): Promise<boolean> {
-  const reader = response.body?.getReader();
-  if (!reader) return false;
-  try {
-    const decoder = new TextDecoder();
-    let text = "";
-    let bytes = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > 4096) return false;
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    const body = JSON.parse(text) as { error?: { details?: Array<{ reason?: string }> } };
-    return (
-      Array.isArray(body.error?.details) &&
-      body.error.details.some((detail) => detail?.reason === "API_KEY_INVALID")
-    );
-  } catch {
-    return false;
-  } finally {
-    void reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
-}
 
 /** Refuses only a key the provider rejects; a slow or failing provider is no reason to block saving it. */
 export async function verifyCatalogProviderApiKey(
@@ -197,15 +132,13 @@ export async function verifyCatalogProviderApiKey(
 ): Promise<void> {
   assertHeaderSafeApiKey(input.apiKey.trim());
   const provider = canonicalPiProviderId(input.provider);
-  const url = KEY_CHECK_URLS.get(provider);
-  if (!url) return;
+  // Public catalogs cannot establish key validity, so only a provider's own check can.
+  const check = modelProviderDefinition(provider)?.keyCheck;
+  if (!check) return;
   let response: Response;
   try {
-    response = await fetchImpl(url, {
-      headers:
-        provider === "google"
-          ? { "x-goog-api-key": input.apiKey.trim() }
-          : { Authorization: `Bearer ${input.apiKey.trim()}` },
+    response = await fetchImpl(check.url, {
+      headers: check.headers(input.apiKey.trim()),
       redirect: "error",
       signal: AbortSignal.any([
         AbortSignal.timeout(MODEL_CONNECT_TIMEOUT_MS),
@@ -217,10 +150,7 @@ export async function verifyCatalogProviderApiKey(
     if (signal?.aborted) throw new ConnectionSetupError(KEY_CHECK_CANCELLED);
     return;
   }
-  const rejected =
-    provider === "google" && response.status === 400
-      ? await googleKeyWasRejected(response)
-      : response.status === 401 || response.status === 403;
+  const rejected = await check.rejected(response);
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
     throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
@@ -283,12 +213,6 @@ export function listPiCatalog(): PiCatalogEntry[] {
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
-// Keep existing display names across pi 1.3's provider renames.
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  "openai-codex": "OpenAI Codex",
-  azure: "Azure OpenAI",
-};
-
 function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
   catalogBaseUrls.clear();
@@ -299,12 +223,13 @@ function buildPiCatalog(): PiCatalogEntry[] {
   );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
-    const providerName = PROVIDER_DISPLAY_NAMES[provider.id] ?? provider.name;
+    const definition = modelProviderDefinition(provider.id);
+    const providerName = definition?.displayName ?? provider.name;
     const apiKey = Boolean(provider.auth.apiKey);
     const oauthAuth = loadProviderOAuth(provider.id);
     const oauth = Boolean(oauthAuth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
-    const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[provider.id];
+    const signInMeta = definition?.signIn;
     const oauthLabel = signInMeta?.loginLabel ?? oauthAuth?.loginLabel ?? oauthAuth?.name;
     const subscription = Boolean(oauthAuth?.isSubscription);
     const billing = catalogBilling(provider.id, providerName, {
@@ -321,10 +246,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
-    const routingFields =
-      provider.id === "google-vertex"
-        ? (["projectId", "region"] as ("projectId" | "region")[])
-        : cloudflareRoutingFields(provider.id);
+    const routingFields = definition?.routingFields ?? cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       if (maximumModelCallCost(model.cost, 0, 0) !== undefined)
@@ -436,7 +358,7 @@ function catalogBilling(
   name: string,
   opts: { apiKey: boolean; oauth: boolean },
 ) {
-  const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[providerId];
+  const signInMeta = modelProviderDefinition(providerId)?.signIn;
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
     return "Runs on infrastructure configured by the server operator. No model charges from Rakazo.";

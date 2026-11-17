@@ -4,10 +4,12 @@ import {
   BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
+  botMessageWaitingText,
   buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
   resolveBotAddress,
+  retry,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -19,7 +21,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
 import { wakeRun } from "./wake-run.js";
@@ -86,7 +88,8 @@ export async function messageBot(
     /** Attachments filed under the recipient's chat, shown there and copied to its computer. */
     files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
-  options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
+  /** `ended` or `waiting` sends a return to the requester from a run that is no longer running. */
+  options?: { returnFrom?: "ended" | "waiting"; forceUnread?: boolean },
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
@@ -110,8 +113,9 @@ export async function messageBot(
   if (target.id === sender.id) return { ok: false as const, error: "a bot cannot message itself" };
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
+  const returnFrom = options?.returnFrom;
   const returnsToSender =
-    options?.allowTerminalSource === true &&
+    returnFrom !== undefined &&
     (intent === "result" || intent === "status") &&
     (sourceContext?.intent === undefined ||
       sourceContext.intent === "request" ||
@@ -190,9 +194,12 @@ export async function messageBot(
             threadId: run.threadId,
             botId: run.botId,
             userId: run.userId,
-            status: options?.allowTerminalSource
-              ? { in: ["completed", "failed", "cancelled"] }
-              : "running",
+            status:
+              returnFrom === "ended"
+                ? { in: ["completed", "failed", "cancelled"] }
+                : returnFrom === "waiting"
+                  ? "waiting_input"
+                  : "running",
           },
           select: { id: true },
         });
@@ -221,7 +228,7 @@ export async function messageBot(
           botId: run.botId,
           runId: run.id,
           markUnread: options?.forceUnread === true,
-          allowCancelledRun: options?.allowTerminalSource === true,
+          allowCancelledRun: returnFrom === "ended",
           lease: runLeaseFor(deps, run.id),
         });
         const inboundBlock: MessageBlock = {
@@ -282,7 +289,7 @@ export async function messageBot(
           botId: run.botId,
           type: "thread.message.created",
           runId: run.id,
-          allowCancelledRun: options?.allowTerminalSource === true,
+          allowCancelledRun: returnFrom === "ended",
           lease: runLeaseFor(deps, run.id),
           payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
@@ -325,31 +332,46 @@ export async function messageBot(
   };
 }
 
+type DelegatedRun = {
+  id: string;
+  spaceId: string;
+  threadId: string;
+  botId: string;
+  userId: string;
+  sourceMessageId?: string | null;
+};
+
+/** The bot that handed this run its request or question, while it can still take a reply. */
+async function requesterBotId(
+  prisma: PrismaClient,
+  run: DelegatedRun,
+): Promise<string | undefined> {
+  const source = await loadBotMessageContext(prisma, run.sourceMessageId);
+  if (!source) return undefined;
+  const sourceIntent = source.intent ?? "request";
+  if (sourceIntent !== "request" && sourceIntent !== "question") return undefined;
+  // messageBot reaches only active bots of this space, so an archived or deleted
+  // requester can never take the reply.
+  const requester = await prisma.bot.findFirst({
+    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
+    select: { id: true },
+  });
+  return requester?.id;
+}
+
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */
 export async function returnBotMessageOutcome(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
-  run: {
-    id: string;
-    spaceId: string;
-    threadId: string;
-    botId: string;
-    userId: string;
-    sourceMessageId?: string | null;
-  },
+  run: DelegatedRun,
   sender: { id: string; name: string },
   text: string,
   intent: "result" | "status" = "result",
   options?: { forceUnread?: boolean },
 ) {
-  const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
-  if (!source) {
+  const requesterId = await requesterBotId(deps.prisma, run);
+  if (!requesterId) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
-    return true;
-  }
-  const sourceIntent = source.intent ?? "request";
-  if (sourceIntent !== "request" && sourceIntent !== "question") {
-    await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
   const sent = await deps.prisma.message.findMany({
@@ -362,21 +384,11 @@ export async function returnBotMessageOutcome(
     storedMessageBlocks(message).some(
       (block) =>
         block.kind === "bot_message_sent" &&
-        block.toBotId === source.fromBotId &&
+        block.toBotId === requesterId &&
         block.intent === "result",
     ),
   );
   if (alreadyReturned) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
-    return true;
-  }
-  // messageBot reaches only active bots of this space, so an archived or deleted
-  // requester can never take the outcome. Handled: nothing is left to deliver.
-  const requester = await deps.prisma.bot.findFirst({
-    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
-    select: { id: true },
-  });
-  if (!requester) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
@@ -385,19 +397,62 @@ export async function returnBotMessageOutcome(
     run,
     sender,
     {
-      bot_id: source.fromBotId,
+      bot_id: requesterId,
       message: clampBotMessage(text),
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,
     },
-    {
-      allowTerminalSource: true,
-      forceUnread: options?.forceUnread,
-    },
+    { returnFrom: "ended", forceUnread: options?.forceUnread },
   );
   if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);
   return outcome.ok;
+}
+
+/**
+ * Tell the requester a delegated run is waiting on the user, so it can say so instead of
+ * hearing nothing until the user answers. `waitId` is the paused attempt: one notice per wait.
+ */
+export async function reportBotMessageWait(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
+  run: DelegatedRun & { trigger: string },
+  sender: { id: string; name: string },
+  ask: string,
+  waitId: string,
+) {
+  if (run.trigger !== "bot_message") return;
+  // The delivery key makes a repeat a replay, so any failure is worth another try.
+  await bestEffort(
+    "bot message wait notice",
+    retry(() => sendWaitNotice(deps, run, sender, ask, waitId), {
+      attempts: 3,
+      retryable: () => true,
+    }),
+  );
+}
+
+async function sendWaitNotice(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
+  run: DelegatedRun,
+  sender: { id: string; name: string },
+  ask: string,
+  waitId: string,
+) {
+  const requesterId = await requesterBotId(deps.prisma, run);
+  if (!requesterId) return;
+  const sent = await messageBot(
+    deps,
+    run,
+    sender,
+    {
+      bot_id: requesterId,
+      message: clampBotMessage(botMessageWaitingText(ask)),
+      intent: "status",
+      deliveryKey: `waiting:${waitId}`,
+    },
+    { returnFrom: "waiting", forceUnread: true },
+  );
+  if (!sent.ok) getLogger().warn("bot message wait notice not sent", { error: sent.error });
 }
 
 async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {

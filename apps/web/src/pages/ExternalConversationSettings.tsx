@@ -32,6 +32,8 @@ import {
 import { RotateCcw } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
+import { useSave } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
 export function ExternalConversationSettings({
@@ -41,7 +43,7 @@ export function ExternalConversationSettings({
 }: {
   conversation: ExternalConversation;
   bot: Bot;
-  onSave: (policy: ExternalConversationPolicy) => Promise<void>;
+  onSave: (policy: ExternalConversationPolicy, client: RpcClient) => Promise<void>;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
@@ -52,9 +54,16 @@ export function ExternalConversationSettings({
   const [policies, setPolicies] = useState<AutomatedSenderPolicies>(
     conversation.automatedSenderPolicies,
   );
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useSave({
+    save: ({ policy }: { policy: ExternalConversationPolicy; json: string }, client) =>
+      onSave(policy, client),
+    // Only the draft the save carried is confirmed; one edited meanwhile stays unsaved,
+    // without a false "Saved" marker.
+    onSaved: (_, { json }) => {
+      if (latestDraftJson.current === json) setSaved(true);
+    },
+  });
   // The draft this render would save; an edit made while a save is in flight
   // changes it, and that newer draft is still unsaved when the save lands.
   const draftJson = JSON.stringify({
@@ -219,30 +228,27 @@ export function ExternalConversationSettings({
           </div>
         </div>
       ) : null}
-      {error ? <p className="mt-3 text-body-sm text-destructive">{error}</p> : null}
+      {save.error ? (
+        <p className="mt-3 text-body-sm text-destructive">
+          {errorText(save.error, t`Could not save`)}
+        </p>
+      ) : null}
       <div className="mt-6 flex min-h-10 items-center gap-3">
         <Button
-          disabled={saving}
+          disabled={save.pending}
           onClick={() => {
-            setSaving(true);
             setSaved(false);
-            setError(null);
-            const savedJson = draftJson;
-            void onSave({
-              teamChatAmbientEnabled: ambientValue(mode),
-              teamChatRules: rules,
-              automatedSenderPolicies: policies,
-            })
-              .then(() => {
-                // Only the draft the save carried is confirmed; one edited
-                // meanwhile stays unsaved, without a false "Saved" marker.
-                if (latestDraftJson.current === savedJson) setSaved(true);
-              })
-              .catch((cause) => setError(errorText(cause, t`Could not save`)))
-              .finally(() => setSaving(false));
+            save.run({
+              policy: {
+                teamChatAmbientEnabled: ambientValue(mode),
+                teamChatRules: rules,
+                automatedSenderPolicies: policies,
+              },
+              json: draftJson,
+            });
           }}
         >
-          {saving ? <Trans>Saving...</Trans> : <Trans>Save</Trans>}
+          {save.pending ? <Trans>Saving...</Trans> : <Trans>Save</Trans>}
         </Button>
         {saved ? <SuccessPop label={t`Saved`} /> : null}
       </div>

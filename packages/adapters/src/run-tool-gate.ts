@@ -49,6 +49,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { reportBotMessageWait } from "./bot-messages.js";
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
@@ -75,6 +76,7 @@ import {
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
+import { scheduleRunSecretsExpiry } from "./run-secrets-expiry.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
@@ -776,6 +778,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     attemptId: ctx.attempt.id,
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
+    onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
     blocks: [
       buildApprovalAskBlock(
         applied!.effect.id,
@@ -793,6 +796,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     throw new Error("Could not pause this run for approval; try sending again.");
   }
   await enqueueSteeringContinuation(deps, paused.continuationRunId);
+  await reportBotMessageWait(deps, run, bot, `approve ${name}`, ctx.attempt.id);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

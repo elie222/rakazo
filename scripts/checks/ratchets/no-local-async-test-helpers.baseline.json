@@ -1,21 +1,10 @@
 {
-  "apps/api/src/checkout-lease.test-support.ts": 1,
-  "apps/api/src/home-retention.postgres.test.ts": 1,
-  "apps/api/src/messaging-inbound.postgres.test.ts": 1,
-  "apps/desktop/src/monitoring.test.ts": 2,
-  "apps/desktop/src/native-crashes.test.ts": 1,
-  "apps/web/src/pages/Onboarding.test.tsx": 1,
-  "apps/web/src/pages/shell/bot-settings.test.tsx": 1,
-  "packages/adapters/src/schedule-timezone.postgres.test.ts": 1,
-  "packages/db/src/bot-update.postgres.test.ts": 2,
+  "packages/db/src/bot-update.postgres.test.ts": 1,
   "packages/db/src/content-encryption.postgres.test.ts": 1,
   "packages/logging/src/hono.test.ts": 1,
   "packages/logging/src/logger.test.ts": 1,
-  "packages/memory/src/commit.postgres.test.ts": 1,
   "packages/testkit/src/computer-use.e2e.test.ts": 2,
   "packages/testkit/src/eval-group.postgres.test.ts": 1,
-  "packages/testkit/src/mention-targets.postgres.test.ts": 1,
-  "packages/testkit/src/pages.postgres.test.ts": 2,
   "packages/testkit/src/providers.canary.test.ts": 1,
   "packages/testkit/src/release-watch.canary.test.ts": 1
 }

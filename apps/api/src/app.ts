@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -109,12 +110,14 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  joinedOrganizationIds,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -305,6 +308,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
   // Set once push delivery is configured below; thread changes before then have no cards.
@@ -518,6 +523,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         onAccountChange: (change) => directoryChanges.getStore()?.push(change),
       })
     : undefined;
+  // Organizations an account being deleted joined, kept until it is gone to count their seats again.
+  const seatsAfterDeletion = new Map<string, string[]>();
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
@@ -579,6 +586,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await workActivities
         ?.endUser(userId)
         .catch((error) => getLogger().error("live status card removal failed", error));
+      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
+    },
+    // Its memberships went with it, so the organizations it joined stop paying for its seat.
+    afterDeleteUser: async (userId) => {
+      const organizationIds = seatsAfterDeletion.get(userId) ?? [];
+      seatsAfterDeletion.delete(userId);
+      for (const organizationId of organizationIds)
+        await bestEffort(
+          "seat count after an account deletion",
+          billing?.syncSeats(organizationId),
+        );
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
@@ -775,7 +793,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     integrationSettings,
     mcpOAuth,
     mcp,
-    composio: stack.composio,
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
@@ -817,6 +834,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       webOrigin: env.webOrigin,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,
+      invitationRecipientKey: createHmac("sha256", env.authSecret)
+        .update("organization-invitation-recipient")
+        .digest("hex"),
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       integrationsCatalogUrl: env.integrationsCatalogUrl,
@@ -899,6 +919,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       passkeyRpId: auth.passkeyRpId,
       nativePasskeys: nativePasskeys(env, auth.passkeyRpId),
       crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,
+      demoAccount: env.demoAccount ?? null,
     } satisfies AuthCapabilities);
   });
   mountAppAssociation(app, env);

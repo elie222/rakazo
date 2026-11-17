@@ -11,11 +11,13 @@ import type {
   ModelCredentialRetireReason,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { ModelOAuthBegin, ModelOAuthSignInMode, SettingsScope } from "@rakazo/contracts";
+import type { ModelOAuthBegin, SettingsScope } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { ModelProviderDefinition } from "./model-provider-registry.js";
+import { modelProviders } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
@@ -25,42 +27,12 @@ export const COPILOT_OAUTH_PROVIDER = "github-copilot";
 export const XAI_OAUTH_PROVIDER = "xai";
 export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 
-export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
-  string,
-  {
-    mode: ModelOAuthSignInMode;
-    loginLabel: string;
-    hint: string;
-    billing: string;
-  }
-> = {
-  [CHATGPT_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with ChatGPT",
-    hint: "ChatGPT Plus/Pro",
-    billing:
-      "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
-  },
-  [COPILOT_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with GitHub Copilot",
-    hint: "Copilot",
-    billing: "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
-  },
-  [XAI_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with SuperGrok or X Premium",
-    hint: "SuperGrok / key",
-    billing: "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
-  },
-  [ANTHROPIC_OAUTH_PROVIDER]: {
-    mode: "auth-url",
-    loginLabel: "Sign in with Claude",
-    hint: "Claude Pro/Max / key",
-    // Button + "Or paste an API key" already explain the choices; no extra paragraph.
-    billing: "",
-  },
-};
+/** Providers Rakazo offers a subscription sign-in for, by id. */
+export const SUBSCRIPTION_SIGN_IN_PROVIDERS = Object.fromEntries(
+  Object.entries(modelProviders as Record<string, ModelProviderDefinition>).flatMap(
+    ([id, { signIn }]) => (signIn ? [[id, signIn]] : []),
+  ),
+) as Record<string, NonNullable<ModelProviderDefinition["signIn"]>>;
 
 export const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;

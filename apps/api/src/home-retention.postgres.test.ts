@@ -418,13 +418,16 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     );
     await pending.promise;
     const swept = sweep();
-    for (;;) {
-      const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
-        SELECT count(*)::int AS waiting FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND query LIKE '%billing_accounts%FOR SHARE%'`;
-      if (waiting) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    // No limit of its own: the test's timeout bounds it.
+    await vi.waitUntil(
+      async () => {
+        const [{ waiting }] = await system.$queryRaw<[{ waiting: number }]>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%billing_accounts%FOR SHARE%'`;
+        return waiting > 0;
+      },
+      { interval: 20, timeout: 30_000 },
+    );
     held.resolve();
     await payment;
     await swept;

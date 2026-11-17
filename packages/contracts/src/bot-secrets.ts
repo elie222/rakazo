@@ -785,7 +785,7 @@ export function decodeContactSecret(plaintext: string): ContactSecretValue {
  * or undefined when it is not one.
  */
 export function parseCardExpiry(text: string): { expMonth: number; expYear: number } | undefined {
-  const match = /^\s*(\d{1,2})\s*[/\-. ]?\s*(\d{2}|\d{4})\s*$/.exec(text);
+  const match = /^(\d{1,2})\s*(?:[/\-.]\s*)?(\d{2}|\d{4})$/.exec(text.trim());
   if (!match) return undefined;
   const expMonth = Number(match[1]);
   const year = Number(match[2]);

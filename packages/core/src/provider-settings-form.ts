@@ -1,4 +1,5 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
+import { trimEndChars } from "@rakazo/contracts";
 
 type Values = Record<string, string>;
 
@@ -109,7 +110,7 @@ function scopeValue(
   if (!shown(field, fields, values)) return "";
   const value = settingsFieldValue(field, values);
   // Clients drop trailing slashes, so they name the same server.
-  if (field.kind === "url") return value.replace(/\/+$/, "");
+  if (field.kind === "url") return trimEndChars(value, "/");
   if (field.kind === "list") return [...new Set(listItems(value))].sort().join(",");
   return value;
 }

@@ -10,6 +10,7 @@ import { requestDeadline } from "@rakazo/core";
 import type { HeldLease, Prisma, ThreadEvents } from "@rakazo/db";
 import {
   assertLeaseHeld,
+  assertNoOwnedOrganizationWithMembers,
   assertOrganizationOwner,
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
@@ -82,6 +83,10 @@ export async function deleteAccountContent(
       lease.signal.throwIfAborted();
     }
     claim = taken;
+    // Nobody can take an organization over yet, so its owner removes the others first. Checked
+    // once the claims hold: a join waits for the claim on its organization's default Space, or is
+    // refused by it, so nobody joins after this passes.
+    await assertNoOwnedOrganizationWithMembers(deps.prisma, userId);
     const { claimId, spaceIds } = claim;
     // Cancel under the claims, so a checkout opened while another organization's cancellation
     // waits is refused by the deletion check instead of outliving the account.

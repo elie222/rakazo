@@ -11,6 +11,7 @@ import type { ArtifactTarget } from "../lib/artifact-open";
 import { fetchArtifactBytes } from "../lib/artifact-open";
 import { composerDraftKey, offerComposerText } from "../lib/composer-draft";
 import { useAppTheme, useMedia } from "../lib/pages";
+import { useEventListener } from "../lib/use-event-listener";
 
 type AppBlock = Extract<MessageBlock, { kind: "app" }>;
 
@@ -124,23 +125,16 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: Artifac
     return { ...created, usedGesture };
   }, [appDocument, csp]);
 
-  useEffect(() => {
-    if (!host) return;
-    function receive(event: MessageEvent) {
-      if (!host || event.source !== frame.current?.contentWindow) return;
-      const data = event.data as { type?: unknown; message?: unknown; gesture?: unknown };
-      if (data?.type !== "rakazo-app:view") return;
-      host.usedGesture.latest = typeof data.gesture === "string" ? data.gesture : null;
-      const message = data.message as { method?: unknown };
-      if (message?.method === "ui/initialize") setStarted(true);
-      host.receive(data.message);
-    }
-    window.addEventListener("message", receive);
-    return () => {
-      window.removeEventListener("message", receive);
-      host.teardown();
-    };
-  }, [host]);
+  useEventListener(host ? window : null, "message", (event) => {
+    if (!host || event.source !== frame.current?.contentWindow) return;
+    const data = event.data as { type?: unknown; message?: unknown; gesture?: unknown };
+    if (data?.type !== "rakazo-app:view") return;
+    host.usedGesture.latest = typeof data.gesture === "string" ? data.gesture : null;
+    const message = data.message as { method?: unknown };
+    if (message?.method === "ui/initialize") setStarted(true);
+    host.receive(data.message);
+  });
+  useEffect(() => (host ? () => host.teardown() : undefined), [host]);
 
   // A running view hears about later changes instead of restarting.
   useEffect(

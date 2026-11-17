@@ -7,9 +7,12 @@ import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { LocalAgentHomeStore } from "./home.js";
+import {
+  FakeBoatApi,
+  fakeBoatProvider,
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
 import { InMemoryJobQueue } from "./wakeup.js";
 
 // Boat's polling waits advance a virtual clock instead of sleeping.

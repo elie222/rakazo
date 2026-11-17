@@ -16,8 +16,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sleepComputerIfIdle } from "./computer-idle.js";
 import { provisionComputer } from "./computer-lifecycle.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;

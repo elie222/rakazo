@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
 import { selectedSpaceId, selectSpace } from "../../lib/rpc";
 import { commitSpaceRename } from "./space-sidebar";
 import type { useSpaceRoster } from "./use-space-roster";
@@ -22,10 +22,10 @@ export function useSpaceActions({
   bootstrapMe: Roster["bootstrapMe"];
   closePanel: () => void;
 }) {
-  async function renameSpace(spaceId: string, name: string) {
+  async function renameSpace(spaceId: string, name: string, client: RpcClient) {
     await commitSpaceRename({
       rename: async () => {
-        await rpc.spaces.rename({ spaceId, name });
+        await client.spaces.rename({ spaceId, name });
       },
       apply: () => {
         setSpaces((current) =>

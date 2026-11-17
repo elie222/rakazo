@@ -3,6 +3,7 @@
 import { GROUP_MEMBER_MAX } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
@@ -12,6 +13,7 @@ import GroupSettings from "../app/group-settings";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import type { MobileBot, MobileGroup } from "./mobile-types";
+import { queryClient } from "./query";
 
 const { rpc, back, push, replace } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -21,11 +23,17 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 const space = vi.hoisted(() => ({ id: "space-a" }));
-vi.mock("./api", () => ({ rpc, selectedSpaceId: () => space.id }));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => space.id,
+  captureApiRequestContext: async (spaceId: string | null = space.id) => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 0,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
+}));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -125,11 +133,15 @@ const group = {
   name: "Team",
   members: [{ botId: "bot-1" }, { botId: "bot-2" }],
 } as MobileGroup;
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   space.id = "space-a";
   vi.clearAllMocks();
+  queryClient.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -188,11 +200,15 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   await click("Show selected");
   expect(switches()).toHaveLength(3);
   await click("Save");
-  expect(rpc).toHaveBeenCalledWith("groups/update", {
-    groupId: "group-1",
-    botIds: ["bot-1", "bot-2", "bot-3"],
-    expectedBotIds: ["bot-1", "bot-2"],
-  });
+  expect(rpc).toHaveBeenCalledWith(
+    "groups/update",
+    {
+      groupId: "group-1",
+      botIds: ["bot-1", "bot-2", "bot-3"],
+      expectedBotIds: ["bot-1", "bot-2"],
+    },
+    expect.anything(),
+  );
   expect(back).toHaveBeenCalledOnce();
 });
 
@@ -262,7 +278,11 @@ it("keeps members closed while a save is running", async () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await click("Save");
-  expect(rpc).toHaveBeenCalledWith("groups/update", { groupId: "group-1", name: "Crew" });
+  expect(rpc).toHaveBeenCalledWith(
+    "groups/update",
+    { groupId: "group-1", name: "Crew" },
+    expect.anything(),
+  );
   expect(openButtons()).toHaveLength(2);
   expect(openButtons().every((button) => button.disabled)).toBe(true);
   await act(async () => finish.resolve());
@@ -351,7 +371,7 @@ it("shows refreshed members while collapsed and adopts an unedited server rename
   expect(switches()).toHaveLength(3);
   await act(async () => switches()[2]!.click());
   await click("Save");
-  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+  expect(rpc.mock.calls.map(([procedure]) => procedure)).not.toContain("groups/update");
 });
 
 it("does not overwrite a refreshed member order when saving", async () => {
@@ -365,7 +385,7 @@ it("does not overwrite a refreshed member order when saving", async () => {
   );
   await act(async () => notifyArchivedChatsChanged());
   await click("Save");
-  expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
+  expect(rpc.mock.calls.map(([procedure]) => procedure)).not.toContain("groups/update");
 });
 
 it("keeps a failed save visible after a successful refresh", async () => {

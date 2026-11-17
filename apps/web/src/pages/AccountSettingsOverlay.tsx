@@ -38,11 +38,14 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";
+import type { RpcClient } from "../lib/rpc";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
@@ -56,7 +59,7 @@ export type SettingsGeneralProps = {
   onNameSaved?: () => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
-  onTimezoneChange?: (timezone: string) => Promise<void>;
+  onTimezoneChange?: (timezone: string, client: RpcClient) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -79,40 +82,39 @@ export function GeneralSettingsPanels({
   const account = accountDisplay({ name, email }, t`You`);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [namePending, setNamePending] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const nameSave = useSave({
+    save: async (nextName: string) => {
+      const result = await authClient.updateUser({ name: nextName }).catch(() => {
+        throw new Error(t`Could not update name`);
+      });
+      if (result.error) throw new Error(authErrorText(result.error, t`Could not update name`));
+      // The shell shows the name too, so it refreshes even after this panel is gone.
+      void Promise.resolve()
+        .then(() => onNameSaved?.())
+        .catch(() => undefined);
+    },
+    onSaved: () => setEditingName(false),
+  });
+  const namePending = nameSave.pending;
   const nameId = useId();
+  const shownNameError = nameSave.error?.message ?? nameError;
 
-  async function saveName() {
+  function saveName() {
     const nextName = nameDraft.trim();
     if (namePending || !nextName || nextName.length > 80) return;
+    nameSave.reset();
     if (!displayName(nextName, "")) {
       setNameError(t`Could not update name`);
       return;
     }
+    setNameError(null);
     // Nothing to save, so close without a request that could only fail.
     if (nextName === (account.label === email ? "" : displayName(name, ""))) {
-      setNameError(null);
       setEditingName(false);
       return;
     }
-    setNamePending(true);
-    setNameError(null);
-    try {
-      const result = await authClient.updateUser({ name: nextName });
-      if (result.error) {
-        setNameError(authErrorText(result.error, t`Could not update name`));
-        return;
-      }
-      setEditingName(false);
-      void Promise.resolve()
-        .then(() => onNameSaved?.())
-        .catch(() => undefined);
-    } catch {
-      setNameError(t`Could not update name`);
-    } finally {
-      setNamePending(false);
-    }
+    nameSave.run(nextName);
   }
 
   const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
@@ -131,6 +133,8 @@ export function GeneralSettingsPanels({
   const showToolActivityId = useId();
   const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
+  const composerModel = composerModelPickerPreference.use();
+  const composerModelId = useId();
   const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
   const timezoneId = useId();
@@ -157,8 +161,13 @@ export function GeneralSettingsPanels({
       )
     : [];
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
-  const [timezonePending, setTimezonePending] = useState(false);
-  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+  const queries = useSpaceQueries();
+  const timezoneSave = useSave({
+    save: (next: string, client) => onTimezoneChange?.(next, client) ?? Promise.resolve(),
+    // Usage is grouped by day in the account's timezone.
+    stale: [queries.usage.breakdown.key()],
+  });
+  const timezonePending = timezoneSave.pending;
   const deviceTimezone = localTimezone();
   const selectedTimezone = timezone ?? deviceTimezone;
 
@@ -172,17 +181,9 @@ export function GeneralSettingsPanels({
     });
   }
 
-  async function chooseTimezone(next: string) {
+  function chooseTimezone(next: string) {
     if (!onTimezoneChange || timezonePending || next === timezone) return;
-    setTimezonePending(true);
-    setTimezoneError(null);
-    try {
-      await onTimezoneChange(next);
-    } catch {
-      setTimezoneError(t`Couldn't update your timezone`);
-    } finally {
-      setTimezonePending(false);
-    }
+    timezoneSave.run(next);
   }
 
   return (
@@ -193,7 +194,7 @@ export function GeneralSettingsPanels({
             className="space-y-3 px-4 py-4"
             onSubmit={(event) => {
               event.preventDefault();
-              void saveName();
+              saveName();
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -217,12 +218,13 @@ export function GeneralSettingsPanels({
                 onChange={(event) => {
                   setNameDraft(event.target.value);
                   setNameError(null);
+                  nameSave.reset();
                 }}
               />
             </Field>
-            {nameError ? (
+            {shownNameError ? (
               <p role="alert" className="text-body-sm text-destructive">
-                {nameError}
+                {shownNameError}
               </p>
             ) : null}
             <div className="flex items-center gap-3">
@@ -256,6 +258,7 @@ export function GeneralSettingsPanels({
                 onClick={() => {
                   setNameDraft(account.label === email ? "" : displayName(name, ""));
                   setNameError(null);
+                  nameSave.reset();
                   setEditingName(true);
                 }}
               >
@@ -380,7 +383,7 @@ export function GeneralSettingsPanels({
                     value: zone,
                     label: zone.replaceAll("_", " "),
                   }))}
-                  onValueChange={(zone) => void chooseTimezone(zone)}
+                  onValueChange={(zone) => chooseTimezone(zone)}
                   className="w-56 max-w-full"
                 />
               }
@@ -393,7 +396,7 @@ export function GeneralSettingsPanels({
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
                     disabled={timezonePending}
                     data-testid="timezone-use-device"
-                    onClick={() => void chooseTimezone(deviceTimezone)}
+                    onClick={() => chooseTimezone(deviceTimezone)}
                   >
                     <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
                       Use {deviceTimezone.replaceAll("_", " ")}
@@ -401,9 +404,9 @@ export function GeneralSettingsPanels({
                   </Button>
                 </div>
               ) : null}
-              {timezoneError ? (
+              {timezoneSave.error ? (
                 <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
-                  {timezoneError}
+                  {t`Couldn't update your timezone`}
                 </p>
               ) : null}
             </SettingsRow>
@@ -424,6 +427,21 @@ export function GeneralSettingsPanels({
               data-testid="composer-enter-to-send-toggle"
               checked={enterToSend}
               onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
+            />
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={composerModelId} className="text-body font-normal text-foreground">
+              <Trans>Model picker in chat</Trans>
+            </Label>
+          }
+          control={
+            <Switch
+              id={composerModelId}
+              data-testid="composer-model-picker-toggle"
+              checked={composerModel}
+              onCheckedChange={(checked) => composerModelPickerPreference.set(checked)}
             />
           }
         />
@@ -561,39 +579,38 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function changePassword() {
-    if (pending) return;
-    if (newPassword !== confirmation) {
-      setError(t`Passwords do not match`);
-      return;
-    }
-    setPending(true);
-    setSaved(false);
-    setError(null);
-    try {
-      const result = await authClient.changePassword({
-        currentPassword,
-        newPassword,
-        revokeOtherSessions: true,
-      });
-      if (result.error) {
-        setError(authErrorText(result.error, t`Could not change password`));
-        return;
-      }
+  const [mismatch, setMismatch] = useState(false);
+  const change = useSave({
+    save: async (passwords: { currentPassword: string; newPassword: string }) => {
+      const result = await authClient
+        .changePassword({ ...passwords, revokeOtherSessions: true })
+        .catch(() => {
+          throw new Error(t`Could not reach the server`);
+        });
+      if (result.error) throw new Error(authErrorText(result.error, t`Could not change password`));
+    },
+    onSaved: () => {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmation("");
       setOpen(false);
       setSaved(true);
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      setPending(false);
+    },
+  });
+  const pending = change.pending;
+  const error = change.error?.message ?? (mismatch ? t`Passwords do not match` : null);
+
+  function changePassword() {
+    if (pending) return;
+    change.reset();
+    if (newPassword !== confirmation) {
+      setMismatch(true);
+      return;
     }
+    setMismatch(false);
+    setSaved(false);
+    change.run({ currentPassword, newPassword });
   }
 
   function close() {
@@ -601,7 +618,8 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
     setCurrentPassword("");
     setNewPassword("");
     setConfirmation("");
-    setError(null);
+    setMismatch(false);
+    change.reset();
   }
 
   return (
@@ -630,7 +648,7 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
           className="mt-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void changePassword();
+            changePassword();
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape" && !pending) {

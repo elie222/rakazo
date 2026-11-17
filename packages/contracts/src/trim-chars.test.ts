@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectLinearTime } from "./timing.test-support.js";
 import { trimEndChars, trimStartChars } from "./trim-chars.js";
 
 describe("trimEndChars", () => {
@@ -11,9 +12,7 @@ describe("trimEndChars", () => {
 
   it("stays fast on a long run that does not reach the end", () => {
     const text = `${"-".repeat(200_000)}a`;
-    const started = performance.now();
-    expect(trimEndChars(text, "-")).toBe(text);
-    expect(performance.now() - started).toBeLessThan(200);
+    expectLinearTime(() => expect(trimEndChars(text, "-")).toBe(text));
   });
 });
 

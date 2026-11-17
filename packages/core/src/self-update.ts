@@ -1,5 +1,10 @@
 /** The repository a stock Rakazo deployment tracks. */
 export const OFFICIAL_REPO_URL = "https://github.com/elie222/rakazo";
+/**
+ * The same repository under the organization it is moving to. GitHub redirects the old address, so
+ * an install cloned from either one tracks the official repository and pulls its published images.
+ */
+const OFFICIAL_REPO_URLS = [OFFICIAL_REPO_URL, "https://github.com/rakazobot/rakazo"];
 export const DEFAULT_UPDATE_REMOTE = "origin";
 
 const SCP_LIKE = /^(?<user>[A-Za-z0-9._-]+)@(?<host>[A-Za-z0-9._-]+):(?<path>[^:]+)$/;
@@ -109,7 +114,9 @@ function safePath(url: string): string | null {
 
 export function isOfficialRepoUrl(url: string): boolean {
   const identity = repoIdentity(url);
-  return identity !== null && identity === repoIdentity(OFFICIAL_REPO_URL);
+  return (
+    identity !== null && OFFICIAL_REPO_URLS.some((official) => identity === repoIdentity(official))
+  );
 }
 
 export function normalizeUpdateBranch(input: string): BranchResult {

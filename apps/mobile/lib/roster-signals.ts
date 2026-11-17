@@ -5,6 +5,7 @@ import { subscribeSpaceSelection } from "./api";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
 import { computerUpdates } from "./computer-updates";
+import { refreshOrganizationReads } from "./organizations";
 import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
@@ -58,6 +59,9 @@ async function follow(signal: AbortSignal) {
           if (connection.signal.aborted) return;
           if (kind === "computerUpdates") computerUpdates.signalled();
           else for (const listener of spaceChangeListeners) listener(kind);
+        },
+        () => {
+          if (!connection.signal.aborted) void refreshOrganizationReads();
         },
       );
     } catch (error) {

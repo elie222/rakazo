@@ -20,8 +20,6 @@ const { rpc, selectSpace, selectedSpaceId, alert, share, router } = vi.hoisted((
   router: { back: vi.fn(), dismissAll: vi.fn(), replace: vi.fn() },
 }));
 
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   selectedSpaceId,
@@ -68,7 +66,7 @@ vi.mock("@expo/ui/community/menu", () => ({
     onPressAction,
   }: {
     children?: ReactNode;
-    actions: { id: string; title: string }[];
+    actions: { id: string; title: string; attributes?: { disabled?: boolean } }[];
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
   }) =>
     createElement(
@@ -81,6 +79,7 @@ vi.mock("@expo/ui/community/menu", () => ({
           {
             key: action.id,
             type: "button",
+            disabled: action.attributes?.disabled,
             onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
           },
           action.title,
@@ -89,7 +88,22 @@ vi.mock("@expo/ui/community/menu", () => ({
     ),
 }));
 vi.mock("../components/settings-group", () => ({
-  SettingsGroup: ({ children }: { children?: ReactNode }) => createElement("ul", null, children),
+  SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
+    createElement("ul", null, children, footer ? createElement("p", null, footer) : null),
+  SettingsInputRow: ({
+    accessibilityLabel,
+    value,
+    onChangeText,
+  }: {
+    accessibilityLabel: string;
+    value: string;
+    onChangeText: (text: string) => void;
+  }) =>
+    createElement("input", {
+      "aria-label": accessibilityLabel,
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+    }),
   SettingsRow: ({
     title,
     detail,
@@ -165,7 +179,10 @@ function pressAlertButton(text: string) {
 }
 
 /** What the server holds, so a read after a change sees it. */
-const server = { members: [owner, member], openInvites: 0 };
+const server: { members: Array<typeof owner & { guest?: boolean }>; openInvites: number } = {
+  members: [owner, member],
+  openInvites: 0,
+};
 const pinned = {
   requestContext: {
     apiBase: "https://app.example.test",
@@ -214,7 +231,7 @@ it("lets the owner share an invite link and remove a member after confirming", a
   ]);
   expect(buttonNamed("Leave space")).toBeUndefined();
 
-  await act(async () => buttonNamed("Invite")?.click());
+  await act(async () => buttonNamed("Share invite link")?.click());
   await act(flush);
   expect(rpc).toHaveBeenCalledWith("spaces/invites/create", { spaceId: "space-shared" }, pinned);
   expect(share).toHaveBeenCalledWith({ url: "https://rakazo.example/invite/token-1" });
@@ -239,7 +256,7 @@ it("lets the owner share an invite link and remove a member after confirming", a
 
 it("lets a member leave and returns home in their own space", async () => {
   await render(false);
-  expect(buttonNamed("Invite")).toBeUndefined();
+  expect(buttonNamed("Share invite link")).toBeUndefined();
   expect(buttonNamed("Remove")).toBeUndefined();
 
   await act(async () => buttonNamed("Leave space")?.click());
@@ -275,7 +292,7 @@ it("retries a failed first load without reopening the members screen", async () 
     finishRetry.resolve({ spaceName: "Home", members: [owner, member], canManage: true }),
   );
   expect(host.textContent).toContain("Ada Lovelace");
-  expect(buttonNamed("Invite")).toBeDefined();
+  expect(buttonNamed("Share invite link")).toBeDefined();
   expect(buttonNamed("Retry")).toBeUndefined();
   expect(host.querySelector('[role="progressbar"]')).toBeNull();
 });
@@ -293,20 +310,20 @@ it("offers retry again if reloading the members fails", async () => {
 
 it("holds Invite while open invites are being cancelled, so a new link is not cancelled with them", async () => {
   await render(true);
-  await act(async () => buttonNamed("Invite")?.click());
+  await act(async () => buttonNamed("Share invite link")?.click());
   await act(flush);
   const cancelling = deferred<unknown>();
   rpc.mockImplementationOnce(() => cancelling.promise);
   await act(async () => buttonNamed("Cancel open invites")?.click());
-  expect(buttonNamed("Invite")?.disabled).toBe(true);
-  await act(async () => buttonNamed("Invite")?.click());
+  expect(buttonNamed("Share invite link")?.disabled).toBe(true);
+  await act(async () => buttonNamed("Share invite link")?.click());
   expect(
     rpc.mock.calls.filter(([procedure]) => procedure === "spaces/invites/create"),
   ).toHaveLength(1);
   server.openInvites = 0;
   await act(async () => cancelling.resolve({ ok: true }));
   await act(flush);
-  expect(buttonNamed("Invite")?.disabled).toBe(false);
+  expect(buttonNamed("Share invite link")?.disabled).toBe(false);
   expect(buttonNamed("Cancel open invites")).toBeUndefined();
 });
 
@@ -323,13 +340,13 @@ it("removes a member once when the confirmation is pressed twice, and reads the 
   expect(
     rpc.mock.calls.filter(([procedure]) => procedure === "spaces/members/remove"),
   ).toHaveLength(1);
-  expect(buttonNamed("Invite")?.disabled).toBe(true);
+  expect(buttonNamed("Share invite link")?.disabled).toBe(true);
   server.members = [owner];
   await act(async () => removing.resolve({ ok: true }));
   await act(flush);
   expect(reads().length).toBe(before + 1);
   expect(host.querySelectorAll("li")).toHaveLength(2);
-  expect(buttonNamed("Invite")?.disabled).toBe(false);
+  expect(buttonNamed("Share invite link")?.disabled).toBe(false);
 });
 
 it("keeps a member and releases the controls when removing fails", async () => {
@@ -342,7 +359,7 @@ it("keeps a member and releases the controls when removing fails", async () => {
   await act(flush);
   expect(alert).toHaveBeenLastCalledWith("Could not remove member", "Offline");
   expect(host.textContent).toContain("Bob Stone");
-  expect(buttonNamed("Invite")?.disabled).toBe(false);
+  expect(buttonNamed("Share invite link")?.disabled).toBe(false);
 });
 
 it("holds Leave until the space is left, and releases it when leaving fails", async () => {
@@ -357,4 +374,66 @@ it("holds Leave until the space is left, and releases it when leaving fails", as
   expect(alert).toHaveBeenLastCalledWith("Could not leave space", "Offline");
   expect(buttonNamed("Leave space")?.disabled).toBe(false);
   expect(router.replace).not.toHaveBeenCalled();
+});
+
+it("tags guests, and says before inviting someone by email that they are outside the organization", async () => {
+  await render(true);
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  server.members = [owner, { ...member, guest: true }];
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "spaces/members/list")
+      return {
+        spaceName: "Home",
+        members: server.members,
+        openInvites: 0,
+        canManage: true,
+        addable: [colleague],
+        organizationName: "Acme",
+      };
+    if (procedure === "spaces/invites/create")
+      return { url: "https://rakazo.example/invite/token-2", expiresAt: "", emailed: true };
+    return { ok: true };
+  });
+  await act(async () => queryClient.invalidateQueries());
+  await act(flush);
+  expect(host.textContent).toContain("Bob Stone | bob@example.test | External");
+
+  await act(async () => buttonNamed("Invite by email")?.click());
+  const notice = "Not in Acme. They'll only see this Space.";
+  const type = async (text: string) => {
+    const field = host.querySelector<HTMLInputElement>('input[aria-label="Email"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, text);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await type("cy@example.test");
+  expect(host.textContent).not.toContain(notice);
+  await type("dee@example.test");
+  expect(host.textContent).toContain(notice);
+  await act(async () => buttonNamed("Invite")?.click());
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith(
+    "spaces/invites/create",
+    { spaceId: "space-shared", email: "dee@example.test" },
+    pinned,
+  );
+  // Emailed, so there is no link to share by hand.
+  expect(share).not.toHaveBeenCalled();
+  expect(host.querySelector('input[aria-label="Email"]')).toBeNull();
+
+  await act(async () => buttonNamed("Invite by email")?.click());
+  await type("cy@example.test");
+  await act(async () => buttonNamed("Invite")?.click());
+  await act(flush);
+  expect(rpc).toHaveBeenCalledWith(
+    "spaces/members/add",
+    { spaceId: "space-shared", userId: "user-colleague" },
+    pinned,
+  );
 });

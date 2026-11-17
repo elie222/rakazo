@@ -195,6 +195,7 @@ export function createHomeStyles() {
       minHeight: 44,
       justifyContent: "center",
     },
+    spaceTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     spaceTitle: {
       color: native.label,
       fontSize: 14,

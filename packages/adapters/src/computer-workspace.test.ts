@@ -35,8 +35,8 @@ import {
   teamBrowserProfileName,
   WORKSPACE_SAVE_LIMITS,
 } from "./computer-workspace.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const context = {
   operationId: "workspace-test",

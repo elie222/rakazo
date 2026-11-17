@@ -65,4 +65,15 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "除非你重新訂閱，否則你儲存的電腦檔案將於 {date} 被刪除。",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "除非你選擇一個方案，否則你儲存的電腦檔案將於 {date} 被刪除。",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} 邀請你加入 Rakazo 上的 {organization}",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} 邀請你加入 Rakazo 上的 {organization}。",
+  "Join {organization}": "加入 {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "此邀請將在 7 天後過期。請使用此電子郵件地址登入以接受邀請。",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} 邀請你加入 Rakazo 上的 {space}",
+  "{inviter} invited you to join {space} on Rakazo.": "{inviter} 邀請你加入 Rakazo 上的 {space}。",
+  "Join {space}": "加入 {space}",
+  "This invitation expires in 7 days.": "此邀請將在 7 天後過期。",
 };

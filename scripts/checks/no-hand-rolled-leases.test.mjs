@@ -9,8 +9,6 @@ const SCHEMA = new URL("../../packages/db/prisma/schema.prisma", import.meta.url
 const EXISTING = new Set([
   "ScimConnectionBinding.decommissionLeaseId",
   "ScimConnectionBinding.decommissionLeaseExpiresAt",
-  "BillingAccount.checkoutLeaseId",
-  "BillingAccount.checkoutLeaseExpiresAt",
   "PluginSubmission.claim",
   "Space.deletionClaimId",
   "Space.deletionAttemptId",
@@ -20,12 +18,12 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "Computer.executionLeaseExpiresAt",
-  "Computer.executionFence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
   // Moved onto `withLease`; kept only while the previous release still claims them.
+  "BillingAccount.checkoutLeaseId",
+  "BillingAccount.checkoutLeaseExpiresAt",
   "CloudAgent.leaseToken",
   "CloudAgent.leaseExpiresAt",
   "HomeDeletionNotice.claimId",

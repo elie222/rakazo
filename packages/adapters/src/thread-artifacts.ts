@@ -362,7 +362,7 @@ export async function listRecentThreadFiles(
     .slice(0, ATTACHMENT_MAX_COUNT);
 }
 
-/** The newest attachments across the last `maxTurns` user turns that carry any. */
+/** The newest attachments across the last `maxTurns` user turns, with or without attachments. */
 function recentAttachmentBlocks(
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
@@ -374,9 +374,8 @@ function recentAttachmentBlocks(
   for (let index = history.length - 1; index >= 0 && turns < input.maxTurns; index -= 1) {
     const entry = history[index];
     if (!entry?.id || entry.role !== "user" || entry.id === input.skipMessageId) continue;
-    const attached = attachmentBlocks(blocksByMessageId.get(entry.id));
-    if (!attached.length) continue;
     turns += 1;
+    const attached = attachmentBlocks(blocksByMessageId.get(entry.id));
     for (const block of attached.reverse()) {
       if (!selected.has(block.artifactId)) selected.set(block.artifactId, block);
     }

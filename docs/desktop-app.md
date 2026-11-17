@@ -25,7 +25,7 @@ Windows and Linux).
 
 > [!NOTE]
 > A local server keeps running after you quit the app, so routines still run. Choose
-> **Stop Local Stack** in the app menu to shut it down.
+> **Quit and Stop Bots** in the app menu to shut it down.
 
 ## Let bots use this computer
 

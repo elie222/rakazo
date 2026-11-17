@@ -70,6 +70,8 @@ export interface PauseRunForInput {
    * (not in message blocks) so clients still see redacted labels.
    */
   offeredActions?: Array<{ id: string; label: string }>;
+  /** Commits with the pause, as a job that must exist once the run waits. */
+  onPaused?: (tx: Prisma.TransactionClient) => Promise<void>;
 }
 
 const CHOICE_ASK_CHECKPOINT_KIND = "choice_ask_v1";
@@ -762,6 +764,7 @@ export async function pauseRunForInput(
       data: { status: "waiting_input", finishedAt: new Date() },
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
+    await input.onPaused?.(tx);
 
     const message = await createThreadMessageInTransaction(tx, {
       threadId: requestThreadId,

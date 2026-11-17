@@ -1,14 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type {
-  Bot,
-  ExternalConversation,
-  MessagingAgentConnection,
-  MessagingChannelMembership,
-  MessagingInstallationsStatus,
-  MessagingStatus,
-} from "@rakazo/contracts";
+import type { MessagingChannelMembership } from "@rakazo/contracts";
 import {
   createMessagingLinkGuard,
   messagingConnectOptions,
@@ -16,35 +9,69 @@ import {
 } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
+import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
+import type { SaveSend } from "../../lib/query";
+import { formRead, rpcQuery, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/session";
 import { errorText } from "../../lib/user-error";
+
+// One link code is issued at a time per session, across visits to this screen.
+const linkScope = {};
 
 export default function MessagingSettings() {
   const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
-  const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState("");
   const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
-  const linkGuard = useMemo(() => createMessagingLinkGuard(rpc, session), [session]);
+  const linkGuard = useMemo(() => createMessagingLinkGuard(linkScope, session), [session]);
   const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
-  const [status, setStatus] = useState<MessagingStatus | null>(null);
-  const [installations, setInstallations] = useState<MessagingInstallationsStatus>({
+  // Re-rendered on a Space switch, so the reads below are for the Space now selected.
+  useSyncExternalStore(subscribeSpaceSelection, selectedSpaceId);
+  // Requests are answered from what is on screen, so each visit reads everything afresh.
+  const definitions = [
+    formRead(rpcQuery("bots/list")),
+    formRead(rpcQuery("messaging/status")),
+    formRead(rpcQuery("messaging/installations/list")),
+    formRead(rpcQuery("messaging/channels/list")),
+    formRead(rpcQuery("messaging/connections/list")),
+    formRead(rpcQuery("spaces/list")),
+  ] as const;
+  const reads = [
+    useScreenQuery(definitions[0]),
+    useScreenQuery(definitions[1]),
+    useScreenQuery(definitions[2]),
+    useScreenQuery(definitions[3]),
+    useScreenQuery(definitions[4]),
+    useScreenQuery(definitions[5]),
+  ] as const;
+  const [botsRead, statusRead, installationsRead, channelsRead, connectionsRead, spacesRead] =
+    reads;
+  // Shown together once every read this visit has answered, as one load.
+  const loaded = reads.every((read) => read.isFetchedAfterMount && read.data);
+  const bots = (loaded && botsRead.data) || [];
+  const status = (loaded && statusRead.data) || null;
+  const installations = (loaded && installationsRead.data) || {
     available: false,
     installations: [],
-  });
-  const [channels, setChannels] = useState<MessagingChannelMembership[]>([]);
-  const [connections, setConnections] = useState<MessagingAgentConnection[]>([]);
-  const [rooms, setRooms] = useState<ExternalConversation[]>([]);
+  };
+  const channels = (loaded && channelsRead.data) || [];
+  const connections = (loaded && connectionsRead.data) || [];
+  const rooms = (loaded && spacesRead.data?.current.externalConversations) || [];
+  const readFailure = reads.find((read) => read.error)?.error;
+  const loadError = readFailure ? errorText(readFailure) : null;
+  const reload = () => {
+    for (const read of reads) void read.refetch();
+  };
   const [link, setLink] = useState<{
     code: string;
     expiresAt: string;
@@ -53,43 +80,46 @@ export default function MessagingSettings() {
     provider: string;
     knownIdentityBots: Record<string, string>;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const refresh = useCallback(async () => {
-    const [nextBots, nextStatus, nextInstallations, nextChannels, nextConnections, navigation] =
-      await Promise.all([
-        rpc("bots/list"),
-        rpc("messaging/status"),
-        rpc("messaging/installations/list"),
-        rpc("messaging/channels/list"),
-        rpc("messaging/connections/list"),
-        rpc("spaces/list"),
-      ]);
-    setBots(nextBots);
-    setStatus(nextStatus);
-    setInstallations(nextInstallations);
-    setChannels(nextChannels);
-    setConnections(nextConnections);
-    setRooms(navigation.current.externalConversations);
-    setLoadError(null);
-  }, []);
+  const change = useSave({
+    save: async (action: (send: SaveSend) => Promise<unknown>, send) => {
+      await action(send);
+    },
+    stale: definitions.map((read) => read.queryKey),
+  });
+  const issue = useSave({
+    save: async (
+      input: {
+        request: { isCurrent: () => boolean; finish: () => void };
+        provider: string;
+        botId: string;
+        knownIdentityBots: Record<string, string>;
+      },
+      send,
+    ) => {
+      try {
+        return await send("messaging/link/start", { botId: input.botId });
+      } finally {
+        input.request.finish();
+      }
+    },
+    onSaved: (issued, { request, provider, botId, knownIdentityBots }) => {
+      if (request.isCurrent()) setLink({ ...issued, botId, provider, knownIdentityBots });
+    },
+  });
+  const busy = change.pending;
+  // A code request that was superseded keeps its failure to itself.
+  const issueError = issue.error && issue.input?.request.isCurrent() ? issue.error : null;
+  const failed = change.error ?? issueError;
+  const error = failed ? errorText(failed) : null;
   useFocusEffect(
-    useCallback(() => {
-      void refresh().catch((err) => setLoadError(errorText(err)));
-      return () => {
+    useCallback(
+      () => () => {
         linkGuard.invalidate();
         setLink(null);
-      };
-    }, [refresh, linkGuard]),
+      },
+      [linkGuard],
+    ),
   );
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh().catch((err) => setLoadError(errorText(err)));
-    });
-    return () => subscription.remove();
-  }, [refresh]);
 
   useEffect(() => {
     if (!link) return;
@@ -110,20 +140,11 @@ export default function MessagingSettings() {
   );
   useTimeout(() => setLink(null), untilLinkExpiry, link);
 
-  async function act(action: () => Promise<unknown>) {
+  function act(action: (send: SaveSend) => Promise<unknown>) {
     linkGuard.invalidate();
-    setBusy(true);
-    setError(null);
-    setLoadError(null);
+    issue.reset();
     setLink(null);
-    try {
-      await action();
-      await refresh();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    change.run(action);
   }
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
@@ -176,39 +197,30 @@ export default function MessagingSettings() {
   const linkAddress = link ? status?.addresses?.[link.provider] : undefined;
 
   function installSlack() {
-    void act(async () => {
-      const { url } = await rpc("messaging/installations/start", {});
+    act(async (send) => {
+      const { url } = await send("messaging/installations/start", {});
       await Linking.openURL(url);
     });
   }
 
-  async function startLink(provider: string, linkBotId = botId, fromPicker = true) {
+  function startLink(provider: string, linkBotId = botId, fromPicker = true) {
     const request = linkGuard.begin(fromPicker);
     if (!request) return;
-    setError(null);
-    setLoadError(null);
+    change.reset();
     setLink(null);
-    try {
-      const issued = await rpc("messaging/link/start", { botId: linkBotId });
-      if (!request.isCurrent()) return;
-      setLink({
-        ...issued,
-        botId: linkBotId,
-        provider,
-        knownIdentityBots: Object.fromEntries(
-          status?.identities.map((identity) => [identity.id, identity.botId]) ?? [],
-        ),
-      });
-    } catch (err) {
-      if (request.isCurrent()) setError(errorText(err));
-    } finally {
-      request.finish();
-    }
+    issue.run({
+      request,
+      provider,
+      botId: linkBotId,
+      knownIdentityBots: Object.fromEntries(
+        status?.identities.map((identity) => [identity.id, identity.botId]) ?? [],
+      ),
+    });
   }
 
   const textAction = (
     label: string,
-    onPress: () => Promise<unknown>,
+    onPress: (send: SaveSend) => Promise<unknown>,
     prominence: "primary" | "quiet" | "destructive" = "quiet",
   ) => (
     <NativeActionButton
@@ -218,7 +230,7 @@ export default function MessagingSettings() {
       fill={false}
       variant={prominence === "primary" ? undefined : "text"}
       disabled={busy || issuingLink}
-      onPress={() => void act(onPress)}
+      onPress={() => act(onPress)}
     />
   );
   const memberLinkButton = (
@@ -232,10 +244,10 @@ export default function MessagingSettings() {
       onPress={() => startLink("slack")}
     />
   );
-  const respond = (onRespond: (accept: boolean) => Promise<unknown>) => (
+  const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
     <View style={styles.actions}>
-      {textAction(t`Approve`, () => onRespond(true), "primary")}
-      {textAction(t`Decline`, () => onRespond(false))}
+      {textAction(t`Approve`, (send) => onRespond(true, send), "primary")}
+      {textAction(t`Decline`, (send) => onRespond(false, send))}
     </View>
   );
 
@@ -248,9 +260,9 @@ export default function MessagingSettings() {
         <LoadFailure
           message={failure}
           onRetry={() => {
-            setError(null);
-            setLoadError(null);
-            void refresh().catch((err) => setLoadError(errorText(err)));
+            change.reset();
+            issue.reset();
+            reload();
           }}
         />
       ) : shownError ? (
@@ -262,8 +274,8 @@ export default function MessagingSettings() {
             key={channel.id}
             title={channel.name ?? t`Group`}
             detail={channelDetail(channel)}
-            trailing={respond((accept) =>
-              rpc("messaging/channels/respond", { membershipId: channel.id, accept }),
+            trailing={respond((accept, send) =>
+              send("messaging/channels/respond", { membershipId: channel.id, accept }),
             )}
           />
         ))}
@@ -271,8 +283,8 @@ export default function MessagingSettings() {
           <SettingsRow
             key={connection.id}
             title={`${connection.peerOwnerLabel}'s ${connection.peerBotName}`}
-            trailing={respond((accept) =>
-              rpc("messaging/connections/respond", { connectionId: connection.id, accept }),
+            trailing={respond((accept, send) =>
+              send("messaging/connections/respond", { connectionId: connection.id, accept }),
             )}
           />
         ))}
@@ -324,7 +336,7 @@ export default function MessagingSettings() {
                     ) : null}
                     {textAction(
                       t`Disconnect`,
-                      () => rpc("messaging/installations/remove", { id: installation.id }),
+                      (send) => send("messaging/installations/remove", { id: installation.id }),
                       "destructive",
                     )}
                   </View>
@@ -353,7 +365,7 @@ export default function MessagingSettings() {
             detail={`${identity.address}, ${identity.botName}`}
             trailing={textAction(
               t`Unlink`,
-              () => rpc("messaging/identities/unlink", { identityId: identity.id }),
+              (send) => send("messaging/identities/unlink", { identityId: identity.id }),
               "destructive",
             )}
           />
@@ -416,8 +428,8 @@ export default function MessagingSettings() {
             key={channel.id}
             title={channel.name ?? t`Group`}
             detail={channelDetail(channel)}
-            trailing={textAction(t`Leave`, () =>
-              rpc("messaging/channels/leave", { membershipId: channel.id }),
+            trailing={textAction(t`Leave`, (send) =>
+              send("messaging/channels/leave", { membershipId: channel.id }),
             )}
           />
         ))}
@@ -428,8 +440,8 @@ export default function MessagingSettings() {
             value={connection.status === "pending" ? t`Pending` : undefined}
             trailing={
               connection.status === "approved"
-                ? textAction(t`Revoke`, () =>
-                    rpc("messaging/connections/revoke", { connectionId: connection.id }),
+                ? textAction(t`Revoke`, (send) =>
+                    send("messaging/connections/revoke", { connectionId: connection.id }),
                   )
                 : undefined
             }

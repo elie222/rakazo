@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   buildSkillMd,
@@ -469,6 +470,12 @@ describe("skill prompt helpers", () => {
       rest: "",
     });
     expect(extractForcedSkillName("/Settings: General")).toBeNull();
+    expect(extractForcedSkillName("/")).toBeNull();
+    expect(extractForcedSkillName("Use skill:  Weekly review \nnow")).toEqual({
+      name: "Weekly review",
+      rest: "now",
+    });
+    expectLinearTime(() => expect(extractForcedSkillName(`/${"\t".repeat(200_000)}`)).toBeNull());
   });
 
   it("extracts @skill mentions from routine prompts", () => {
