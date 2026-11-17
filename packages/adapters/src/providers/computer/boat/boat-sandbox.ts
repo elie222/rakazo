@@ -865,6 +865,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
     reconnect?: { savedAt?: Date; type?: SandboxTypeEnum },
   ): Promise<boolean> {
+    const logWait = sandboxWaitLog(id, "start");
+    const gone = (sandbox: BoatMachine, reason: string) => {
+      logRecovery("gone", reason);
+      const error = boatSandboxGone(id);
+      logWait(sandbox, "failed", error);
+      return error;
+    };
     let deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let started = false;
     let recovering = false;
@@ -876,19 +883,23 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       const { sandbox } = await this.client.get({ sandboxId: id }, { signal });
       if (RUNNABLE_STATES.has(sandbox.state)) {
+        logWait(sandbox, "completed");
         if (recovering) logRecovery(forced ? "resumed" : "answered");
         return started;
       }
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
-      if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
+      if (sandbox.state === "cancelled" || sandbox.dataExpiredAt)
+        throw gone(sandbox, sandbox.dataExpiredAt ? "data_expired" : "cancelled");
+      const snapshotAt = sandbox.snapshotCompletedAt;
       if (sandbox.state === "archived" && !started) {
         // A stop forced past a failing save, or one whose last save failed, keeps an older
         // snapshot than the workspace the caller saved since; that save wins.
-        const snapshotAt = sandbox.snapshotCompletedAt;
         if (reconnect?.savedAt && snapshotAt && reconnect.savedAt > snapshotAt) {
-          logRecovery("gone", "checkpoint_newer");
-          throw boatSandboxGone(id);
+          throw gone(sandbox, "checkpoint_newer");
         }
+      }
+      if (Date.now() < deadline) logWait(sandbox);
+      if (sandbox.state === "archived" && !started) {
         // Only a reconnect moves the sandbox to another size; other wakes keep the one it has.
         await this.resume(id, signal, reconnect?.type);
         started = true;
@@ -898,25 +909,29 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (Date.now() >= deadline) {
         if (sandbox.state !== "error") {
-          throw new SandboxUnavailableError({
+          const error = new SandboxUnavailableError({
             cause: new Error(`Boat ${id} did not become ready`),
           });
+          logWait(sandbox, "failed", error);
+          throw error;
         }
-        const snapshotAt = sandbox.snapshotCompletedAt;
         if (forced || !snapshotAt) {
-          logRecovery("gone", forced ? "resume_failed" : "no_snapshot");
-          throw boatSandboxGone(id);
+          throw gone(sandbox, forced ? "resume_failed" : "no_snapshot");
         }
         if (!reconnect) {
           logRecovery("deferred");
-          throw new SandboxUnavailableError({ cause: new Error(`Boat ${id} is not answering`) });
+          const error = new SandboxUnavailableError({
+            cause: new Error(`Boat ${id} is not answering`),
+          });
+          logWait(sandbox, "failed", error);
+          throw error;
         }
         if (reconnect.savedAt && reconnect.savedAt >= snapshotAt) {
-          logRecovery("gone", "checkpoint_newer");
-          throw boatSandboxGone(id);
+          throw gone(sandbox, "checkpoint_newer");
         }
         // Read just now and still not answering, so the stop cannot cut off live work.
         logRecovery("force_stop");
+        logWait(sandbox, "force_stop");
         await this.client.stop({ sandboxId: id, stopRequest: { force: true } }, { signal });
         forced = true;
         started = false;
@@ -1000,16 +1015,30 @@ export class BoatSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     onWait?: (sandbox: BoatMachine) => Promise<void>,
   ): Promise<BoatMachine> {
+    const logWait = sandboxWaitLog(id, "stop");
     const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     for (let pause = 1_000; ; pause = nextPoll(pause)) {
       if (context.signal.aborted) throw context.signal.reason ?? new Error("Boat wait aborted");
       const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
-      if (states.has(response.sandbox.state)) return response.sandbox;
-      if (response.sandbox.state === "error") throw new Error(`Boat ${id} entered the error state`);
+      if (states.has(response.sandbox.state)) {
+        logWait(response.sandbox, "completed");
+        return response.sandbox;
+      }
+      if (response.sandbox.state === "error") {
+        const error = new Error(`Boat ${id} entered the error state`);
+        logWait(response.sandbox, "failed", error);
+        throw error;
+      }
+      if (Date.now() < deadline) logWait(response.sandbox);
       await onWait?.(response.sandbox);
       // A transition Boat has not finished in time is a delay on its side; the caller retries.
-      if (Date.now() >= deadline)
-        throw new SandboxUnresponsiveError(`Boat ${id} did not reach ${[...states].join("/")}`);
+      if (Date.now() >= deadline) {
+        const error = new SandboxUnresponsiveError(
+          `Boat ${id} did not reach ${[...states].join("/")}`,
+        );
+        logWait(response.sandbox, "failed", error);
+        throw error;
+      }
       await delay(pause, undefined, { signal: context.signal });
     }
   }
@@ -1523,6 +1552,49 @@ function logRecovery(
   reason?: string,
 ): void {
   getLogger().warn("sandbox.recover", { provider: "boat", step, ...(reason ? { reason } : {}) });
+}
+
+/** State changes only, never each poll. Keep provider responses and stop errors out of logs. */
+function sandboxWaitLog(id: string, operation: "start" | "stop") {
+  const startedAt = Date.now();
+  let previous: string | undefined;
+  return (
+    sandbox: BoatMachine,
+    outcome: "waiting" | "completed" | "failed" | "force_stop" = "waiting",
+    error?: Error,
+  ) => {
+    if (outcome === "completed" && previous === undefined) return;
+    const state = {
+      state: sandbox.state,
+      hydrated: sandbox.hydrated ?? null,
+      lastSnapshotStatus: sandbox.lastSnapshotStatus ?? null,
+      stopStatus: sandbox.stop?.status ?? null,
+      snapshotCompletedAt: sandbox.snapshotCompletedAt?.toISOString() ?? null,
+      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt?.toISOString() ?? null,
+      stopRequestedAt: sandbox.stop?.requestedAt?.toISOString() ?? null,
+      stopLastAttemptAt: sandbox.stop?.lastAttemptAt?.toISOString() ?? null,
+    };
+    const signature = JSON.stringify(state);
+    if (outcome === "waiting" && signature === previous) return;
+    previous = signature;
+    const bindings = {
+      provider: "boat",
+      "sandbox.id": id,
+      operation,
+      outcome,
+      durationMs: Date.now() - startedAt,
+      ...state,
+    };
+    if (error) {
+      // A background caller may retry this wait; only its operation boundary knows it failed.
+      getLogger().warn("sandbox.wait", {
+        ...bindings,
+        error,
+      });
+    } else {
+      getLogger().info("sandbox.wait", bindings);
+    }
+  };
 }
 
 /** A signed transfer Boat failed on its side is an outage there, like any other Boat call. */

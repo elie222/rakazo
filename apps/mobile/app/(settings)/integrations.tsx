@@ -62,7 +62,7 @@ import { Chevron } from "../../components/ui/row-accessories";
 import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { loadLastBotId } from "../../lib/home/last-bot";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
 import type {
   IntegrationsCacheScope,
   IntegrationsSnapshot,

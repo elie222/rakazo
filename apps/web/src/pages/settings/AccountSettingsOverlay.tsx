@@ -38,7 +38,6 @@ import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkS
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
-import { remoteImagesPreference } from "../../lib/chat/remote-images-preference";
 import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
@@ -49,10 +48,11 @@ import { UI_LOCALES } from "../../lib/locale/ui-locale";
 import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
 import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
+import { remoteImagesPreference } from "../../lib/preferences/remote-images-preference";
+import { responseStreamingPreference } from "../../lib/preferences/response-streaming";
 import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
-import { responseStreamingPreference } from "../../lib/query/response-streaming";
 import type { RpcClient } from "../../lib/query/rpc";
 import { authErrorText } from "../../lib/query/user-error";
 

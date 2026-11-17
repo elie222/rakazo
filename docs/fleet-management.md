@@ -41,7 +41,7 @@ A follow-up counts as yours only when its source message was written by you.
 - `set_child_instructions`: replaces another bot's instructions. The bot passes the version it read
   with `list_fleet`.
 - `set_child_bot_model`: sets or clears another bot's model and thinking level.
-- `create_child_routine`: schedules a prompt for another bot.
+- `create_child_routine`: schedules a prompt for another bot, or starts it on a webhook, Git event, chat message or email.
 - `archive_bot`: archives another bot after confirming its exact name. It cannot archive itself.
 
 ## Approval
@@ -57,7 +57,7 @@ changes, the card lists what will actually run, resolved before the pause:
 - Instructions: the whole new text, with the old and new lengths.
 - Model change: the current and the new model (From and To), and a Thinking line when the thinking
   level is set or reset.
-- Routine: the prompt and the resolved time.
+- Routine: the prompt, the resolved time and the events that start it.
 
 If the request cannot be shown whole on the card, it is refused instead of cut off. If the bot's
 instructions, model or thinking level change while the card waits, approving does not overwrite them;

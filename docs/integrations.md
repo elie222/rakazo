@@ -38,7 +38,7 @@ Choose an authentication method (**No auth**, **Bearer token** or **API key head
 **Manage MCP servers** lists every server you've added, with **Test connection**, OAuth sign-in, and
 which bots can use each one.
 
-A tool call can take a few minutes; it stops after four minutes with no answer or progress
+A tool call can take a few minutes; it stops after six minutes with no answer or progress
 from the server.
 
 A server you sign in to (OAuth, including Executor) keeps one session for you, which your runs

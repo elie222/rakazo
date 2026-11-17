@@ -11,12 +11,13 @@ import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
+import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
 import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
 import type { SpaceQueries } from "../../lib/query/query";
 import { queryClient } from "../../lib/query/query";
 import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
-import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat/chat-shared";
+import type { ShellOverlay } from "./shell-overlay-url";
 
 const SettingsOverlay = lazyOverlay(() =>
   import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay),
@@ -226,6 +227,7 @@ export function SettingsOverlays({
             void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
           }}
           onVoiceStatusMaybeChanged={async () => {
+            invalidateVoiceConsent();
             try {
               queryClient.setQueryData(
                 voiceStatusKey,

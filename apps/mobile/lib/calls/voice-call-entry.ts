@@ -18,7 +18,10 @@ export type VoiceCallPlanDeps = {
  * A device voice preference is fail-closed like speakText: a read failure must
  * not turn a local-only reply into hosted voice traffic.
  */
-export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<VoiceCallPlan> {
+export async function resolveVoiceCallPlan(
+  deps: VoiceCallPlanDeps,
+  purpose: "call" | "dictation" = "call",
+): Promise<VoiceCallPlan> {
   let deviceVoiceEnabled = false;
   try {
     deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled();
@@ -32,7 +35,7 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
   }
 
   const status = await deps.loadVoiceStatus();
-  if (!status.ready) {
+  if (!status.ready && !(purpose === "dictation" && status.transcribe)) {
     return deviceVoiceEnabled ? { kind: "dictation" } : { kind: "settings" };
   }
 

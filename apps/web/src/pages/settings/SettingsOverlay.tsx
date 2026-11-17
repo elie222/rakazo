@@ -26,8 +26,8 @@ import type { RpcClient } from "../../lib/query/rpc";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { useEventListener } from "../../lib/use-event-listener";
 import { ModelSettingsOverlay } from "../model-settings/ModelSettingsOverlay";
-import type { SettingsSpace } from "../shell/dialogs";
-import type { SettingsSection } from "../shell-overlay";
+import type { SettingsSpace } from "../shell/create-delete-dialogs";
+import type { SettingsSection } from "../shell/shell-overlay-url";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,

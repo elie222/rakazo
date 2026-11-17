@@ -167,6 +167,7 @@ export * from "./providers/web/keyless-http/keyless-http-web.js";
 export * from "./providers/web/parallel/parallel-web.js";
 export * from "./routines/release-watch.js";
 export { finishRoutineHandover } from "./routines/routine-handover.js";
+export * from "./routines/routine-triggers.js";
 export * from "./routines/routine-watch.js";
 export * from "./routines/strategic-initiative.js";
 export {

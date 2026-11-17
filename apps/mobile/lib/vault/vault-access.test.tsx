@@ -26,7 +26,7 @@ vi.mock("../native/native", () => ({
   native: {},
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
-vi.mock("../home/activity", () => ({ formatActivityRelativeTime: () => "2h ago" }));
+vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "2h ago" }));
 vi.mock("react-native", () => ({
   Modal: element("div"),
   Platform: { OS: "ios" },

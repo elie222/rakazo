@@ -46,20 +46,20 @@ import {
   setLiveNotificationSettings,
 } from "../../lib/notifications/live-notifications";
 import { registerPushToken } from "../../lib/notifications/push";
-import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
-import { createQueuedSave } from "../../lib/query/queued-save";
-import { useScreenQuery } from "../../lib/query/screen-query";
-import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
   subscribeRemoteImages,
-} from "../../lib/settings/remote-images-preference";
+} from "../../lib/preferences/remote-images-preference";
 import {
   getCachedResponseStreamingEnabled,
   setResponseStreamingPreference,
   subscribeResponseStreaming,
-} from "../../lib/settings/response-streaming";
+} from "../../lib/preferences/response-streaming";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
+import { createQueuedSave } from "../../lib/query/queued-save";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 
 let hapticsSaveVersion = 0;
