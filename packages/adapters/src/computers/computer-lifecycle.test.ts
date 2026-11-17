@@ -4153,16 +4153,33 @@ describe("computer replacement", () => {
   });
 
   it.each([
-    { action: "recover", failure: new Error("ECONNRESET"), reason: "export_failed" },
-    { action: "update", failure: sandboxNotFoundError("missing sandbox"), reason: "sandbox_gone" },
+    {
+      action: "recover",
+      failure: new Error("ECONNRESET"),
+      reason: "checkpoint_failed",
+      phase: "export",
+    },
+    {
+      action: "update",
+      failure: sandboxNotFoundError("missing sandbox"),
+      reason: "sandbox_gone",
+      phase: "export",
+    },
+    {
+      action: "recover",
+      failure: new Error("ENOSPC"),
+      reason: "checkpoint_failed",
+      phase: "staging",
+    },
   ] as const)(
-    "records the action when $action skips a checkpoint ($reason)",
-    async ({ action, failure, reason }) => {
+    "records the action when $action skips a checkpoint ($reason, $phase)",
+    async ({ action, failure, reason, phase }) => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
       const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
       const home = new LocalAgentHomeStore(homeRoot);
       const sandbox = new FakeSandboxProvider();
       const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+      if (phase === "staging") vi.spyOn(home, "createStaging").mockRejectedValueOnce(failure);
       const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
         throw failure;
       });
@@ -4221,11 +4238,13 @@ describe("computer replacement", () => {
           action,
           context,
         );
-        expect(exportWorkspace).toHaveBeenCalledOnce();
         expect(destroy).toHaveBeenCalledOnce();
-        expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
-          destroy.mock.invocationCallOrder[0]!,
-        );
+        if (phase === "export") {
+          expect(exportWorkspace).toHaveBeenCalledOnce();
+          expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+            destroy.mock.invocationCallOrder[0]!,
+          );
+        } else expect(exportWorkspace).not.toHaveBeenCalled();
         expect(ref.fresh).toBe(true);
         expect(sink.events).toContainEqual(
           expect.objectContaining({

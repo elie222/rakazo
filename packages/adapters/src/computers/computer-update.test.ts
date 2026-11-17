@@ -188,6 +188,12 @@ describe("background computer maintenance", () => {
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
+    expect(logged[0]).toMatchObject({
+      computerId: row.computerId,
+      "computer.id": row.computerId,
+      "bot.id": row.botId,
+      action: row.action,
+    });
   });
   it.each(["update", "recover"])(
     "reports a final %s wait failure once with correlation ids",

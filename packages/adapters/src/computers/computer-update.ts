@@ -602,13 +602,19 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)
           ? error
           : keptUnsaved;
-      // Background waits retry, but this requested maintenance ends as failed below.
-      const failedWait =
+      // Background operations retry, but this requested maintenance ends as failed below.
+      const failedProviderOperation =
         error instanceof SandboxUnavailableError || error instanceof SandboxUnresponsiveError;
-      if (expected && !failedWait) {
+      const failureContext = {
+        updateId,
+        computerId: update.computerId,
+        "computer.id": update.computerId,
+        "bot.id": update.botId,
+        action: update.action,
+      };
+      if (expected && !failedProviderOperation) {
         getLogger().warn("computer update failed", {
-          updateId,
-          computerId: update.computerId,
+          ...failureContext,
           reason: expected.message,
         });
         if (keptUnsaved)
@@ -617,12 +623,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
             announceUnsavedHome(deps, update.computer, keptUnsaved),
           );
       } else {
-        getLogger().error("computer update failed", error, {
-          updateId,
-          "computer.id": update.computerId,
-          "bot.id": update.botId,
-          action: update.action,
-        });
+        getLogger().error("computer update failed", error, failureContext);
       }
       // Provider errors may contain credentials or private URLs. Expose only the failed stage.
       await finishUpdate(deps.prisma, updateId, update.computerId, "failed");

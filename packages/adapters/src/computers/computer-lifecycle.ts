@@ -1354,7 +1354,7 @@ export async function replaceComputer(
           action: mode,
           "error.type": error instanceof Error ? error.name : "UnknownFailure",
           homeRevisionAt: existing.homeRevisionAt,
-          reason: isSandboxGoneError(error) ? "sandbox_gone" : "export_failed",
+          reason: isSandboxGoneError(error) ? "sandbox_gone" : "checkpoint_failed",
         });
       }
       if (revision !== undefined) {

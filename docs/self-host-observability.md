@@ -33,14 +33,15 @@ Computer usage is recorded at several boundaries:
 - `computer.suspended`: successful idle or active-limit suspension, with the active duration.
 - `sandbox.wait`: provider readiness and stop waits, with the sandbox id, state, hydration, snapshot
   status and timestamps, stop status and timestamps, and elapsed time. Unchanged polls produce no
-  extra lines; an immediate success produces none. Wait failures are warnings because background
-  jobs may retry. A requested recovery or update that ends in a wait failure reports an error
-  with computer and bot correlation ids to the optional error collector.
+  extra lines; advancing snapshot or stop attempt timestamps count as changes. An immediate
+  success produces none. Wait failures are warnings because background jobs may retry.
+  A requested recovery or update that fails because its provider is unavailable or unresponsive
+  reports an error with computer and bot correlation ids to the optional error collector.
 - `computer.maintenance_refused`: a recovery or update refused as busy, with its guard reason and
   the computer state and control reservation as last read. A refused conditional claim means
   the state may have changed, or an active run or execution lease prevented maintenance.
 - `computer.checkpoint_skipped`: replacement continuing from the last saved workspace after
-  an export failed or the old sandbox disappeared, with the action and last workspace save time.
+  a checkpoint failed or the old sandbox disappeared, with the action and last workspace save time.
 
 These records use fixed metadata, opaque correlation IDs, durations, and booleans. They do not add
 prompts, responses, filenames, file contents, command arguments, or credentials. Request/job trace

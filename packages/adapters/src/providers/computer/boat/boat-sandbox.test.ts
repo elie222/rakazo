@@ -1042,7 +1042,8 @@ describe("BoatSandboxProvider", () => {
     it("reports a stuck start once with safe provider state and keeps the same failure", async () => {
       const api = new FakeBoatApi();
       const read = api.get.bind(api);
-      const snapshotAt = new Date(Date.now() - 60_000);
+      const startedAt = Date.now();
+      const snapshotAt = new Date(startedAt - 60_000);
       const get = vi.spyOn(api, "get").mockImplementation(async (request) => {
         const response = await read(request);
         Object.assign(response.sandbox, {
@@ -1052,6 +1053,9 @@ describe("BoatSandboxProvider", () => {
           hydrated: false,
           lastSnapshotStatus: "in_progress",
           snapshotCompletedAt: snapshotAt,
+          lastSnapshotAttemptAt: new Date(
+            Date.now() - startedAt >= 5 * 60_000 ? Date.now() : startedAt,
+          ),
           stop: {
             id: "stop-1",
             status: "pending",
@@ -1099,13 +1103,32 @@ describe("BoatSandboxProvider", () => {
       expect(api.creates).toHaveLength(1);
     });
 
-    it("records changing states and eventual readiness without reporting an error", async () => {
+    it("records retry timestamps even while statuses stay unchanged, then eventual readiness", async () => {
       const api = new FakeBoatApi();
       const read = api.get.bind(api);
-      const states: SandboxStateEnum[] = ["archiving", "archiving", "provisioning", "ready"];
+      const states: SandboxStateEnum[] = [
+        "archiving",
+        "archiving",
+        "archiving",
+        "provisioning",
+        "ready",
+      ];
+      const firstAttempt = new Date(Date.now() - 60_000);
+      const retryAttempt = new Date();
+      let polls = 0;
       vi.spyOn(api, "get").mockImplementation(async (request) => {
         const response = await read(request);
         response.sandbox.state = states.shift() ?? "ready";
+        const attemptedAt = polls++ < 2 ? firstAttempt : retryAttempt;
+        response.sandbox.lastSnapshotAttemptAt = attemptedAt;
+        response.sandbox.stop = {
+          id: "stop-1",
+          status: "pending",
+          requestedAt: firstAttempt,
+          lastAttemptAt: attemptedAt,
+          endedAt: null,
+          error: null,
+        };
         return response;
       });
       const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
@@ -1115,10 +1138,44 @@ describe("BoatSandboxProvider", () => {
       await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
       expect(sink.events.map(({ state, outcome, level }) => ({ state, outcome, level }))).toEqual([
         { state: "archiving", outcome: "waiting", level: "info" },
+        { state: "archiving", outcome: "waiting", level: "info" },
         { state: "provisioning", outcome: "waiting", level: "info" },
         { state: "ready", outcome: "completed", level: "info" },
       ]);
+      expect(sink.events[0]).toMatchObject({
+        lastSnapshotAttemptAt: firstAttempt.toISOString(),
+        stopLastAttemptAt: firstAttempt.toISOString(),
+      });
+      expect(sink.events[1]).toMatchObject({
+        lastSnapshotAttemptAt: retryAttempt.toISOString(),
+        stopLastAttemptAt: retryAttempt.toISOString(),
+      });
     });
+  });
+
+  it("records only the failed outcome when a stop first observes an error state", async () => {
+    const api = new FakeBoatApi();
+    const read = api.get.bind(api);
+    let reads = 0;
+    vi.spyOn(api, "get").mockImplementation(async (request) => {
+      const response = await read(request);
+      if (++reads > 1) response.sandbox.state = "error";
+      return response;
+    });
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await expect(provider.stop(computer, context)).rejects.toThrow("entered the error state");
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        message: "sandbox.wait",
+        operation: "stop",
+        outcome: "failed",
+        state: "error",
+        level: "warn",
+      }),
+    ]);
   });
 
   describe("a stop Boat refuses because its saves fail", () => {

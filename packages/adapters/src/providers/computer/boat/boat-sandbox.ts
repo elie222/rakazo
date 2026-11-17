@@ -881,9 +881,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         if (recovering) logRecovery(forced ? "resumed" : "answered");
         return started;
       }
-      logWait(sandbox);
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
       if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
+      if (Date.now() < deadline) logWait(sandbox);
       if (sandbox.state === "archived" && !started) {
         // A stop forced past a failing save, or one whose last save failed, keeps an older
         // snapshot than the workspace the caller saved since; that save wins.
@@ -1018,12 +1018,12 @@ export class BoatSandboxProvider implements SandboxProvider {
         logWait(response.sandbox, "completed");
         return response.sandbox;
       }
-      logWait(response.sandbox);
       if (response.sandbox.state === "error") {
         const error = new Error(`Boat ${id} entered the error state`);
         logWait(response.sandbox, "failed", error);
         throw error;
       }
+      if (Date.now() < deadline) logWait(response.sandbox);
       await onWait?.(response.sandbox);
       // A transition Boat has not finished in time is a delay on its side; the caller retries.
       if (Date.now() >= deadline) {
@@ -1563,6 +1563,10 @@ function sandboxWaitLog(id: string, operation: "start" | "stop") {
       hydrated: sandbox.hydrated ?? null,
       lastSnapshotStatus: sandbox.lastSnapshotStatus ?? null,
       stopStatus: sandbox.stop?.status ?? null,
+      snapshotCompletedAt: sandbox.snapshotCompletedAt?.toISOString() ?? null,
+      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt?.toISOString() ?? null,
+      stopRequestedAt: sandbox.stop?.requestedAt?.toISOString() ?? null,
+      stopLastAttemptAt: sandbox.stop?.lastAttemptAt?.toISOString() ?? null,
     };
     const signature = JSON.stringify(state);
     if (outcome === "waiting" && signature === previous) return;
@@ -1574,10 +1578,6 @@ function sandboxWaitLog(id: string, operation: "start" | "stop") {
       outcome,
       durationMs: Date.now() - startedAt,
       ...state,
-      snapshotCompletedAt: sandbox.snapshotCompletedAt?.toISOString() ?? null,
-      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt?.toISOString() ?? null,
-      stopRequestedAt: sandbox.stop?.requestedAt?.toISOString() ?? null,
-      stopLastAttemptAt: sandbox.stop?.lastAttemptAt?.toISOString() ?? null,
     };
     if (error) {
       // A background caller may retry this wait; only its operation boundary knows it failed.
