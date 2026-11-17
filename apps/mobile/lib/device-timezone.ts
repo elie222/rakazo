@@ -27,8 +27,9 @@ async function keptZone(userId: string): Promise<KeptTimezone | null> {
   const known = kept.get(userId);
   if (known !== undefined) return known;
   const saved = parseStored(await SecureStore.getItemAsync(keptKey(userId)).catch(() => null));
-  kept.set(userId, saved);
-  return saved;
+  // A Keep answered while this read was out is newer than what it read.
+  if (!kept.has(userId)) kept.set(userId, saved);
+  return kept.get(userId) ?? null;
 }
 
 /**

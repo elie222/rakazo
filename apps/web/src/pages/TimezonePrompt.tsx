@@ -60,7 +60,10 @@ export function TimezonePrompt({
     // Only fills an empty zone, so it never replaces a choice; a failure leaves bots on UTC.
     void rpc.preferences
       .adoptTimezone({ timezone: device })
-      .then(onSaved)
+      .then((me) => {
+        // The shell remounts this per account, so a late answer for another one is dropped.
+        if (adoptedFor.current === userId) onSaved(me);
+      })
       .catch(() => {
         // The next focus or visit tries again.
         adoptedFor.current = null;
@@ -69,6 +72,12 @@ export function TimezonePrompt({
   useEffect(() => {
     if (step === "adopt") adopt();
   }, [step, returns]);
+  useEffect(
+    () => () => {
+      adoptedFor.current = null;
+    },
+    [],
+  );
 
   if (step !== "ask") return null;
   const place = timeZonePlace(device);

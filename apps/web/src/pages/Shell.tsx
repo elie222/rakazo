@@ -979,6 +979,7 @@ function SpaceShell() {
       ) : null}
       {userId && bootstrapMe ? (
         <TimezonePrompt
+          key={userId}
           userId={userId}
           timezone={bootstrapMe.timezone}
           onSaved={(me) =>
