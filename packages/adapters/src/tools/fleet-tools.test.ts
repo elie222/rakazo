@@ -1,6 +1,10 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ROUTINE_CHAT_TRIGGER_NOTE,
+  ROUTINE_WEBHOOK_SETUP_NOTE,
+} from "../routines/routine-triggers.prompt.js";
 import type { FleetDeps, FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
   createChildRoutine,
@@ -1679,7 +1683,18 @@ describe("createChildRoutine", () => {
   it("looks up a retry by the approved events too", async () => {
     const { prisma } = fakeFleet({
       ...fleet,
-      routines: [{ id: "routine-1", name: "Daily", crons: [], nextRunAt: null }],
+      routines: [
+        {
+          id: "routine-1",
+          name: "Daily",
+          crons: [],
+          nextRunAt: null,
+          webhookEnabled: true,
+          githubEnabled: false,
+          messageProvider: "slack",
+          emailSenders: null,
+        },
+      ],
     });
     // The bot is linked to Slack now, so only a Slack routine is the approved one.
     (prisma as { messagingIdentity?: unknown }).messagingIdentity = {
@@ -1690,7 +1705,14 @@ describe("createChildRoutine", () => {
       schedule: {},
       on: { webhook: true, chat: "Slack" },
     });
-    expect(result).toMatchObject({ ok: true, routineId: "routine-1" });
+    // A retry tells the bot what a first creation would: the events and where the key is.
+    expect(result).toMatchObject({
+      ok: true,
+      routineId: "routine-1",
+      on: { webhook: true, chat: "Slack" },
+      setup: ROUTINE_WEBHOOK_SETUP_NOTE,
+      chatNote: ROUTINE_CHAT_TRIGGER_NOTE,
+    });
     expect(prisma.routine.create).not.toHaveBeenCalled();
     expect(prisma.routine.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({

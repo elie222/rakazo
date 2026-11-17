@@ -56,6 +56,7 @@ import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
   compactScheduleInput,
   createScheduleFromTool,
+  eventsResult,
   isScheduleValueProvided,
   resolveScheduleTiming,
   scheduleTimingArgs,
@@ -1096,7 +1097,16 @@ export async function createChildRoutine(
       messageProvider: chatProvider,
       emailSenders: typeof on?.email === "string" ? on.email : null,
     },
-    select: { id: true, name: true, crons: true, nextRunAt: true },
+    select: {
+      id: true,
+      name: true,
+      crons: true,
+      nextRunAt: true,
+      webhookEnabled: true,
+      githubEnabled: true,
+      messageProvider: true,
+      emailSenders: true,
+    },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
   if (existing) {
@@ -1107,6 +1117,7 @@ export async function createChildRoutine(
       cron: existing.crons[0],
       nextRunAt: existing.nextRunAt?.toISOString() ?? null,
       oneShot: Boolean(runAt),
+      ...eventsResult(existing),
       ...target,
     };
   }

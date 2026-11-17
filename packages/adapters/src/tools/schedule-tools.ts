@@ -353,7 +353,7 @@ async function ensureWebhookKey(
 }
 
 /** What a created or changed routine's events tell the bot. */
-function eventsResult(events: RoutineEvents) {
+export function eventsResult(events: Parameters<typeof routineEventsView>[0]) {
   if (!hasRoutineEvents(events)) return {};
   return {
     on: routineEventsView(events),
