@@ -350,31 +350,26 @@ describe("history on the wire", () => {
     });
     const body = await wireBody(compatible, completionsReply, {
       history: [
-        { id: "m1", role: "user", content: "Ask Anya for the report, then publish it." },
+        { id: "m1", role: "user", content: "Read the fleet, then publish the report." },
         {
           id: "m2",
           role: "assistant",
           content: "Done.",
           segments: [
             {
-              steps: [
-                step("message_bot", { bot: "Anya", message: "Send the report." }),
-                step("save_page", { title: "Report" }),
-              ],
+              steps: [step("list_fleet", { bot_id: "b1" }), step("save_page", { title: "Report" })],
             },
             { text: "Done." },
           ],
         },
       ],
-      // message_bot is a deferred built-in, reached through find_tool and use_tool;
+      // list_fleet is a deferred built-in, reached through find_tool and use_tool;
       // save_page is not offered to this run at all.
-      tools: [
-        { name: "message_bot", description: "Message a bot.", inputSchema: { type: "object" } },
-      ],
+      tools: [{ name: "list_fleet", description: "List bots.", inputSchema: { type: "object" } }],
     });
     const listed = body.tools?.map((tool) => tool.function.name);
     expect(listed).toContain("use_tool");
-    expect(listed).not.toContain("message_bot");
+    expect(listed).not.toContain("list_fleet");
     type WireCall = { function: { name: string; arguments: string } };
     const calls = (body.messages as Array<{ tool_calls?: WireCall[] }>)
       .flatMap((message) => message.tool_calls ?? [])
@@ -382,7 +377,7 @@ describe("history on the wire", () => {
     expect(calls).toEqual([
       {
         name: "use_tool",
-        arguments: { name: "message_bot", arguments: { bot: "Anya", message: "Send the report." } },
+        arguments: { name: "list_fleet", arguments: { bot_id: "b1" } },
       },
       { name: "save_page", arguments: { title: "Report" } },
     ]);

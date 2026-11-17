@@ -468,13 +468,13 @@ describe("replaying an earlier reply's tool steps", () => {
         {
           steps: [
             {
-              label: "Message bot",
-              tool: "message_bot",
+              label: "Read fleet",
+              tool: "list_fleet",
               count: 2,
               calls: [
-                { arguments: '{"bot_id":"b1","message":"Hi"}', result: '{"ok":true}' },
+                { arguments: '{"bot_id":"b1"}', result: '{"ok":true}' },
                 {
-                  arguments: '{"bot_id":"b2","message":"Hi"}',
+                  arguments: '{"bot_id":"b2"}',
                   result: "No such bot",
                   failed: true as const,
                 },
@@ -490,13 +490,13 @@ describe("replaying an earlier reply's tool steps", () => {
       "",
       undefined,
       new Set(["find_tool", "use_tool"]),
-      new Set(["message_bot"]),
+      new Set(["list_fleet"]),
     );
     expect(
       call?.role === "assistant" && call.content.filter((part) => part.type === "toolCall"),
     ).toMatchObject([
-      { name: "use_tool", arguments: { name: "message_bot", arguments: { bot_id: "b1" } } },
-      { name: "use_tool", arguments: { name: "message_bot", arguments: { bot_id: "b2" } } },
+      { name: "use_tool", arguments: { name: "list_fleet", arguments: { bot_id: "b1" } } },
+      { name: "use_tool", arguments: { name: "list_fleet", arguments: { bot_id: "b2" } } },
     ]);
     // Exact text: a result the bot can still reach carries no unavailable note.
     expect(first).toMatchObject({
