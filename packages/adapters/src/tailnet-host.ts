@@ -1,6 +1,8 @@
 import { BlockList, isIP } from "node:net";
 import type { TailnetDestination } from "@rakazo/contracts";
-import { normalizeHost, parseNetworkDestination, tailnetDestinationKey } from "@rakazo/contracts";
+import { normalizeHost, parseNetworkDestination } from "@rakazo/contracts";
+import { TAILNET_CONNECT_TOOL } from "@rakazo/core";
+import { requestSite } from "@rakazo/core/egress";
 
 /** 100.64.0.0/10 and fd7a:115c:a1e0::/48, where a tailnet numbers its nodes. */
 const PEERS = new BlockList();
@@ -52,13 +54,13 @@ export function parseTailnetDestination(
   return destination && isTailnetHost(destination.host) ? destination : undefined;
 }
 
-/** The `host:port` a tailnet_connect call asks for, or undefined when it is not on a tailnet. */
+/**
+ * The `host:port` a tailnet_connect call asks for, or undefined when it is not on a tailnet. The
+ * key is the one approvals are stored under (`requestSite`); this only adds the tailnet check.
+ */
 export function tailnetConnectSite(request: unknown): string | undefined {
-  const values = request && typeof request === "object" ? (request as Record<string, unknown>) : {};
-  const { host, port } = values;
-  const destination = parseTailnetDestination(
-    typeof host === "string" ? host : "",
-    typeof port === "number" || typeof port === "string" ? port : "",
-  );
-  return destination ? tailnetDestinationKey(destination) : undefined;
+  const site = requestSite(TAILNET_CONNECT_TOOL, request);
+  if (!site) return undefined;
+  const host = site.slice(0, site.lastIndexOf(":")).replace(/^\[|\]$/g, "");
+  return isTailnetHost(host) ? site : undefined;
 }
