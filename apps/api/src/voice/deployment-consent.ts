@@ -1,6 +1,7 @@
 import { aiRecipient } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { DeploymentVoice } from "./deployment-config.js";
 
@@ -18,7 +19,7 @@ export function deploymentVoiceRecipients(
   return recipients.filter((recipient) => recipient !== null);
 }
 
-/** Background speech may share data only with the recipients the owner already approved. */
+/** Deployment speech may share data only with the recipients the owner already approved. */
 export async function hasDeploymentVoiceConsent(
   prisma: Pick<PrismaClient, "aiDataConsent">,
   owner: Pick<Actor, "userId" | "spaceId">,
@@ -38,4 +39,23 @@ export async function hasDeploymentVoiceConsent(
   });
   const allowed = new Set(consents.map((consent) => consent.recipientKey));
   return recipients.every((recipient) => allowed.has(recipient.key));
+}
+
+export async function requireDeploymentVoiceConsent(
+  prisma: Pick<PrismaClient, "aiDataConsent">,
+  owner: Pick<Actor, "userId" | "spaceId">,
+  deployment: DeploymentVoice,
+  operation: "synthesize" | "transcribe",
+): Promise<void> {
+  if (
+    !(await hasDeploymentVoiceConsent(prisma, owner, deployment, {
+      synthesize: operation === "synthesize",
+      transcribe: operation === "transcribe",
+    }))
+  )
+    throw new ClientError(
+      "FORBIDDEN",
+      "Review voice data sharing before continuing.",
+      "AI_CONSENT_REQUIRED",
+    );
 }

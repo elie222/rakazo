@@ -33,7 +33,7 @@ import {
   setSpeechRecognizer,
   stop as stopDictation,
 } from "../voice/dictation";
-import { ensureVoiceConsent, setDictationAudio } from "../voice/voice";
+import { ensureVoiceConsent, setDictationAudio, speakText } from "../voice/voice";
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   ECHO_GUARD_MS,
@@ -2702,7 +2702,6 @@ describe("mobile call on a session change", () => {
       sessionGeneration: currentSessionGeneration(),
     }));
     const fake = fakes();
-    const { speakText } = await import("../voice/voice");
     vi.mocked(speakText).mockResolvedValue(true);
     const { send: _send, endCall: _endCall, speak: _speak, ...deps } = fake.deps;
     const startedCallId = startCall(

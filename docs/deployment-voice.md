@@ -67,10 +67,10 @@ service key, separate from reasoning credentials. No provider purchase or key re
 See the [adapter pricing and calibration notes](../packages/adapters/src/providers/voice/xai/HOSTED.md)
 for a concrete existing-provider configuration and official research sources.
 
-Automatic messaging voice-note transcription checks the owner's recorded consent for the actual
-recognition recipient and current disclosure version in that Space before dispatch or allowance
-admission. Without it, the attachment remains available without a transcript. Web and mobile use
-the same recipient identities in their existing disclosure.
+All operator-funded speech checks the member's recorded consent for the actual operation's
+recipient and current disclosure version in that Space before dispatch or allowance admission.
+Web, Electron and mobile ask through their voice disclosure. Automatic messaging voice-note
+transcription leaves the attachment without a transcript when that consent is absent.
 
 ## Allowances and remaining policy
 
@@ -123,3 +123,7 @@ No production configuration, purchases, paid calibration, browser E2E, or deploy
 this change. Offline API, adapter, call-session and PostgreSQL concurrency/recovery tests cover
 the implementation. Enable hosted traffic only after setting the policy, provisioning grants,
 checking the provider key and measuring the calibration cases below.
+
+A completed request whose settlement write fails still returns its audio or transcript. The error
+log identifies `speechCostId`, provider, operation and provider request ID (when available), so an
+operator can locate its pending row without transcript, audio or credentials in the log.

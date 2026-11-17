@@ -4,6 +4,8 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Speaker } from "./tts.js";
 
+vi.mock("./voice-consent.js", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();

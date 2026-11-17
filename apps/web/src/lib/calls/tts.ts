@@ -10,6 +10,8 @@ import {
 import { rpc, selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 
+import { ensureVoiceConsent } from "./voice-consent.js";
+
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
 export interface SpeechSnapshot {
@@ -182,6 +184,8 @@ export class Speaker {
     signal: AbortSignal,
     spaceId: string | null,
   ): Promise<string[]> {
+    await ensureVoiceConsent(spaceId, opts.scope, signal);
+    signal.throwIfAborted();
     const body = await rpc.voice.prepare(
       { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
       { signal, context: { spaceId } },

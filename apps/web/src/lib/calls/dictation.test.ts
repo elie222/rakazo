@@ -9,6 +9,9 @@ import {
   webSpeechAvailable,
   webSpeechNeedsServerFallback,
 } from "./dictation.js";
+import { ensureVoiceConsent } from "./voice-consent.js";
+
+vi.mock("./voice-consent.js", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -44,6 +47,32 @@ function stubRecorderFallback(fetchMock: ReturnType<typeof vi.fn>) {
 }
 
 describe("Dictation recorder fallback", () => {
+  it("waits for disclosure without using up the provider request deadline", async () => {
+    vi.useFakeTimers();
+    const consent = deferred<void>();
+    vi.mocked(ensureVoiceConsent).mockReturnValueOnce(consent.promise);
+    const fetchMock = vi.fn(async () => Response.json({ text: "Synthetic transcript" }));
+    stubRecorderFallback(fetchMock);
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal });
+    dictation.submitHold();
+    await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS + 1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dictation.state.status).toBe("transcribing");
+    consent.resolve();
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("Synthetic transcript"));
+  });
+  it("does not upload audio when voice disclosure is refused", async () => {
+    const fetchMock = vi.fn();
+    stubRecorderFallback(fetchMock);
+    vi.mocked(ensureVoiceConsent).mockRejectedValueOnce(new Error("Consent refused"));
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(dictation.state.error).toBe("Consent refused"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("stops tracks if hold-to-talk is cancelled while the mic prompt is open", async () => {
     const track = { stop: vi.fn() };
     const grant = deferred<{ getTracks: () => Array<{ stop: () => void }> }>();

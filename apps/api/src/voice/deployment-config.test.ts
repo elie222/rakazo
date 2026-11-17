@@ -3,6 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import type * as Database from "@rakazo/db";
 import { admitSpeech, settleSpeech } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "../calls/voice.js";
 import {
@@ -300,11 +301,31 @@ describe("deployment speech default", () => {
 });
 
 it("returns completed audio when settlement storage fails", async () => {
+  const log = vi.spyOn(getLogger(), "error");
+  const usage = {
+    model: "speech-model",
+    unit: "characters" as const,
+    units: 12,
+    providerRequestId: "fake-provider-request",
+  };
+  const provider = vi
+    .spyOn(adapters, "createVoiceProvider")
+    .mockReturnValue({
+      synthesize: async () => ({ mimeType: "audio/mpeg", bytes: new Uint8Array([1]), usage }),
+    } as never);
   vi.mocked(settleSpeech).mockRejectedValueOnce(new Error("temporary database outage"));
   const clip = await synthesizeVoice(deps(), actor, { text: "Synthetic speech sample" });
   expect(clip.mimeType).toBe("audio/mpeg");
   expect(clip.bytes.length).toBeGreaterThan(0);
-  expect(settleSpeech).toHaveBeenCalledWith(expect.anything(), "speech-call", undefined, undefined);
+  expect(settleSpeech).toHaveBeenCalledWith(expect.anything(), "speech-call", usage, undefined);
+  expect(log).toHaveBeenCalledWith("Operator speech settlement requires reconciliation", {
+    speechCostId: "speech-call",
+    provider: "scripted",
+    operation: "synthesize",
+    providerRequestId: "fake-provider-request",
+  });
+  provider.mockRestore();
+  log.mockRestore();
 });
 
 describe("automatic included voice-note consent", () => {
@@ -369,6 +390,82 @@ describe("automatic included voice-note consent", () => {
         expect(create).not.toHaveBeenCalled();
         expect(transcribe).not.toHaveBeenCalled();
         expect(admitSpeech).not.toHaveBeenCalled();
+      }
+    },
+  );
+});
+
+describe("interactive included speech consent", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each(["synthesize", "transcribe"] as const)(
+    "requires consent for the actual %s recipient before admission or dispatch",
+    async (operation) => {
+      for (const consent of ["missing", "other-operation", "allowed"]) {
+        const d = deps();
+        const connection = {
+          plaintext: "fake-server-key",
+          baseUrl: "https://speech.example.test/v1",
+          sttBaseUrl: "https://recognition.example.test/v1",
+        };
+        d.env!.deploymentVoice = deploymentVoiceFromEnv(
+          JSON.stringify({ ...config, provider: "openai-compatible", connection }),
+        );
+        const requestedUrl =
+          operation === "synthesize" ? connection.baseUrl : connection.sttBaseUrl;
+        const otherUrl = operation === "synthesize" ? connection.sttBaseUrl : connection.baseUrl;
+        const recipient = adapters.aiRecipient({
+          provider: "openai-compatible",
+          use: "voice",
+          baseUrl: consent === "other-operation" ? otherUrl : requestedUrl,
+        })!;
+        const findMany = vi.fn(async () =>
+          consent === "missing" ? [] : [{ recipientKey: recipient.key }],
+        );
+        Object.assign(d.prisma, { aiDataConsent: { findMany } });
+        const synthesize = vi.fn(async () => ({
+          mimeType: "audio/mpeg",
+          bytes: new Uint8Array([1]),
+        }));
+        const transcribe = vi.fn(async () => ({ text: "Synthetic transcript" }));
+        const create = vi
+          .spyOn(adapters, "createVoiceProvider")
+          .mockReturnValue({ synthesize, transcribe } as never);
+        vi.mocked(admitSpeech).mockClear();
+        const request =
+          operation === "synthesize"
+            ? synthesizeVoice(d, actor, { text: "Synthetic speech" })
+            : transcribeVoice(d, actor, { audio: new Uint8Array([1]), mimeType: "audio/wav" });
+        if (consent === "allowed") {
+          await expect(request).resolves.toBeDefined();
+          expect(operation === "synthesize" ? synthesize : transcribe).toHaveBeenCalledOnce();
+          expect(admitSpeech).toHaveBeenCalledOnce();
+        } else {
+          await expect(request).rejects.toMatchObject({
+            kind: "FORBIDDEN",
+            code: "AI_CONSENT_REQUIRED",
+          });
+          expect(synthesize).not.toHaveBeenCalled();
+          expect(transcribe).not.toHaveBeenCalled();
+          expect(admitSpeech).not.toHaveBeenCalled();
+        }
+        expect(findMany).toHaveBeenCalledWith({
+          where: {
+            userId: actor.userId,
+            spaceId: actor.spaceId,
+            version: AI_DISCLOSURE_VERSION,
+            recipientKey: {
+              in: [
+                adapters.aiRecipient({
+                  provider: "openai-compatible",
+                  use: "voice",
+                  baseUrl: requestedUrl,
+                })!.key,
+              ],
+            },
+          },
+          select: { recipientKey: true },
+        });
+        create.mockRestore();
       }
     },
   );

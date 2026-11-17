@@ -13,6 +13,7 @@ import { desktopBridge } from "../platform/desktop.js";
 import { selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 import { DesktopSpeechRecognition } from "./desktop-speech.js";
+import { ensureVoiceConsent } from "./voice-consent.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -616,11 +617,11 @@ export class Dictation {
     this.transcribeAbort = abort;
     const timedOutMessage = t`Transcription request timed out.`;
     const couldNotTranscribe = t`Could not transcribe that recording.`;
-    const timer = setTimeout(
-      () => abort.abort(new Error(timedOutMessage)),
-      VOICE_RESPONSE_TIMEOUT_MS,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      await ensureVoiceConsent(spaceId, undefined, abort.signal);
+      if (this.token !== mine) return;
+      timer = setTimeout(() => abort.abort(new Error(timedOutMessage)), VOICE_RESPONSE_TIMEOUT_MS);
       const audioBase64 = await blobToBase64(blob);
       if (this.token !== mine) return;
       const res = await withAbort(
