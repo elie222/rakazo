@@ -282,6 +282,9 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                ...(routineDraft.inChat !== targetRoutine.inChat
+                  ? { inChat: routineDraft.inChat }
+                  : {}),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel
@@ -303,6 +306,7 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                inChat: routineDraft.inChat,
                 ...routineModel,
               });
             }

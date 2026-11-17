@@ -487,7 +487,6 @@ function SpaceShell() {
     else if (active) read.markBotReadIfVisible(active.id);
   }, [openChatWoke]);
   const {
-    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,
@@ -607,7 +606,6 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
     beginSpaceSwitch: roster.beginSpaceSwitch,
-    startChatRead,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;

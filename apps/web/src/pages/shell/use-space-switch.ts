@@ -24,7 +24,6 @@ export function useOpenSpaceChat({
   overlayRevision,
   closeMobileSidebar,
   beginSpaceSwitch,
-  startChatRead,
 }: {
   bootstrapSpaceId: string | undefined;
   userId: string | undefined;
@@ -34,8 +33,6 @@ export function useOpenSpaceChat({
   closeMobileSidebar: () => void;
   /** Keeps the route from being moved under a switch while `live`; the returned function ends that. */
   beginSpaceSwitch: (live: () => boolean) => (leftSpace: boolean) => void;
-  /** Starts loading a chat in this space before the route change renders it. */
-  startChatRead: (target: { botId?: string; groupId?: string }) => void;
 }) {
   const spaceSwitchRequest = useRef(0);
   useEventListener(window, "popstate", () => {
@@ -59,10 +56,7 @@ export function useOpenSpaceChat({
       const previousEffective = selectedSpaceId() ?? bootstrapSpaceId;
       // Persist the active space (including primary) so voice/RPC headers match the chat.
       if (previousEffective === spaceId) {
-        if (!selectSpace(spaceId)) return;
-        const target = initialBootstrapTarget(path, false);
-        if (target) startChatRead(target);
-        navigate(path);
+        if (selectSpace(spaceId)) navigate(path);
         return;
       }
       // Signing out clears the selected space; a switch that finishes afterwards must not select one.
@@ -157,14 +151,6 @@ export function useOpenSpaceChat({
         }
       })();
     },
-    [
-      beginSpaceSwitch,
-      bootstrapSpaceId,
-      navigate,
-      navigationRevision,
-      overlayRevision,
-      startChatRead,
-      userId,
-    ],
+    [beginSpaceSwitch, bootstrapSpaceId, navigate, navigationRevision, overlayRevision, userId],
   );
 }

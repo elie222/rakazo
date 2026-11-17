@@ -50,6 +50,7 @@ export * from "./models/model-credentials.js";
 export * from "./models/model-roles.js";
 export * from "./models/voice-credentials.js";
 export * from "./runs/cancel-runs.js";
+export * from "./runs/chat-holding-runs.js";
 export * from "./runs/expire-stuck-run.js";
 export * from "./runs/run-secrets.js";
 export * from "./runs/run-timing.js";
@@ -65,6 +66,7 @@ export * from "./spaces/space-changes.js";
 export * from "./spaces/space-members.js";
 export * from "./spaces/space-settings.js";
 export * from "./spaces/spaces.js";
+export * from "./speech/costs.js";
 export * from "./threads/chat-alerts.js";
 export {
   eventsAfter,

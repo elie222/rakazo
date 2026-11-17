@@ -56,6 +56,7 @@ import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
+  effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   persistVoiceCredential,
@@ -549,8 +550,7 @@ export function accountRoutes(ctx: RouterContext) {
         accountVoiceCatalog(deps, context.actor),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
-        return toVoiceStatus(cred);
+        return effectiveVoiceStatus(deps, context.actor, input?.scope);
       }),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);

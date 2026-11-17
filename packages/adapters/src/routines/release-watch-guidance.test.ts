@@ -11,11 +11,11 @@ describe("release-watch guidance", () => {
     };
     expect(schema.oneOf).toHaveLength(6);
     expect(schema.oneOf?.map((branch) => branch.required)).toEqual([
-      ["name", "prompt", "cron"],
-      ["name", "prompt", "every", "unit"],
-      ["name", "prompt", "runAt"],
-      ["name", "prompt", "delayMinutes"],
-      ["name", "prompt", "delaySeconds"],
+      ["name", "prompt", "inChat", "cron"],
+      ["name", "prompt", "inChat", "every", "unit"],
+      ["name", "prompt", "inChat", "runAt"],
+      ["name", "prompt", "inChat", "delayMinutes"],
+      ["name", "prompt", "inChat", "delaySeconds"],
       ["name", "prompt", "watch"],
     ]);
     expect(schema.oneOf?.every((branch) => branch.additionalProperties === false)).toBe(true);
@@ -28,6 +28,7 @@ describe("release-watch guidance", () => {
       parseConnectorToolArgs(schema, {
         name: "Morning",
         prompt: "Send the report",
+        inChat: false,
         cron: "0 9 * * *",
         every: null,
         unit: "",
@@ -40,6 +41,7 @@ describe("release-watch guidance", () => {
       parseConnectorToolArgs(schema, {
         name: "Morning",
         prompt: "Send the report",
+        inChat: false,
         cron: "0 9 * * *",
         delayMinutes: 5,
       }),

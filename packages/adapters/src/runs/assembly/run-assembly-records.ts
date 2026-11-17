@@ -44,6 +44,7 @@ import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { isDelegatedRun, loadRunOrigin } from "../lifecycle/run-origin.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
+import type { HistoryReach } from "./run-instructions.prompt.js";
 
 export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold) {
   const { resolveConnectedModel } = services;
@@ -110,6 +111,26 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
 
 export type SavedTurn = Awaited<ReturnType<typeof loadSavedTurn>>;
 
+/** Messages a routine running alongside its chat reads: the chat's latest, as people saw them. */
+export const ROUTINE_RECENT_MESSAGES = 10;
+/** Replies of the routine's own earlier runs it also reads, so it can tell what is new. */
+export const ROUTINE_EARLIER_RESULTS = 2;
+
+/**
+ * How much of the chat a run reads. A routine that runs in its chat reads all of it; one that runs
+ * alongside reads its latest messages and its own earlier results. A creation intro and a check-in
+ * read none.
+ */
+export function runHistoryReach(run: {
+  trigger: string;
+  routine?: { inChat: boolean } | null;
+}): HistoryReach {
+  if (run.trigger === "created") return "none";
+  if (run.trigger !== "routine") return "all";
+  if (!run.routine) return "none";
+  return run.routine.inChat ? "all" : "recent";
+}
+
 export async function loadRunRecords(
   services: RunExecutorServices,
   hold: RunHold,
@@ -140,6 +161,7 @@ export async function loadRunRecords(
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
     messagingChannelRun && !channelId ? messagingSource?.id : undefined;
+  const historyReach = runHistoryReach(run);
   const [
     { bot, ownerLabs },
     thread,
@@ -181,7 +203,7 @@ export async function loadRunRecords(
     loadRunHistoryMessages(
       deps.prisma,
       run,
-      LEGACY_HISTORY_WINDOW_SIZE,
+      historyReach === "recent" ? ROUTINE_RECENT_MESSAGES : LEGACY_HISTORY_WINDOW_SIZE,
       run.trigger === BACKGROUND_HELPER_TRIGGER
         ? undefined
         : channelId
@@ -189,6 +211,12 @@ export async function loadRunRecords(
           : unknownChannelSourceId
             ? { sourceMessageId: unknownChannelSourceId }
             : undefined,
+      run.trigger === "routine" && run.routineId
+        ? {
+            routineId: run.routineId,
+            earlierResults: historyReach === "recent" ? ROUTINE_EARLIER_RESULTS : 0,
+          }
+        : undefined,
     ),
     run.trigger === "bot_message"
       ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
@@ -281,6 +309,7 @@ export async function loadRunRecords(
         )
       : null;
   return {
+    historyReach,
     origin,
     conversationRun,
     conversationThread,
