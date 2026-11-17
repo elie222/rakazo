@@ -5,7 +5,10 @@ import {
   masterKeysFromEnv,
   withLocalMasterKeys,
 } from "@rakazo/db";
-import { AwsKmsKeyProvider, awsKmsConfigFromEnv } from "./aws-kms-key-provider.js";
+import {
+  AwsKmsKeyProvider,
+  awsKmsConfigFromEnv,
+} from "./providers/key/aws-kms/aws-kms-key-provider.js";
 import { isWrappedEnvValue, unwrapEnv } from "./wrapped-env.js";
 
 /** Settings that build the key provider, which must be readable before anything unwraps. */
