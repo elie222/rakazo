@@ -566,10 +566,15 @@ function tokenizeProtectedShellCommand(
   }
 }
 
+const KILL_COMMANDS = /^(?:kill|pkill|killall|xkill)$/;
+const SERVICE_COMMANDS = /^(?:systemctl|service)$/;
+const BROWSER_PROFILE_PATH = /(?:\.browser-profiles|--user-data-dir)/;
+const X11_PATH = /(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/;
+
 function protectedWordRefusal(words: readonly string[]): string | undefined {
   for (const word of words) {
     const base = (word.split("/").at(-1) ?? "").toLowerCase();
-    if (/^(?:kill|pkill|killall|xkill)$/.test(base)) return `protected command ${base}`;
+    if (KILL_COMMANDS.test(base)) return `protected command ${base}`;
   }
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? "";
@@ -582,15 +587,15 @@ function protectedWordRefusal(words: readonly string[]): string | undefined {
   }
   const service = words
     .map((word) => (word.split("/").at(-1) ?? "").toLowerCase())
-    .find((word) => word === "systemctl" || word === "service");
+    .find((word) => SERVICE_COMMANDS.test(word));
   if (service) {
     const action = words.find((word) => /^(?:stop|restart|kill)$/.test(word.toLowerCase()));
     if (action) return `${service} ${action.toLowerCase()}`;
   }
   for (const word of words) {
     const folded = word.toLowerCase();
-    if (/(?:\.browser-profiles|--user-data-dir)/.test(folded)) return "browser profile path";
-    if (/(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(folded)) return "X11 path";
+    if (BROWSER_PROFILE_PATH.test(folded)) return "browser profile path";
+    if (X11_PATH.test(folded)) return "X11 path";
   }
   for (let index = 0; index < words.length; index += 1) {
     const name = (words[index]?.split("/").at(-1) ?? "").toLowerCase();
@@ -650,14 +655,12 @@ const SYNTAX_REFUSALS = new Set([
 
 /** Whether the raw text names anything the guard protects, wherever it sits. */
 function namesProtectedTarget(command: string): boolean {
-  if (/\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock/i.test(command)) {
-    return true;
-  }
-  return command
-    .split(/[^\w./-]+/)
-    .some((word) =>
-      /^(?:kill|pkill|killall|xkill|systemctl|service)$/i.test(word.split("/").at(-1) ?? ""),
-    );
+  const folded = command.toLowerCase();
+  if (BROWSER_PROFILE_PATH.test(folded) || X11_PATH.test(folded)) return true;
+  return folded.split(/[^\w./-]+/).some((word) => {
+    const base = word.split("/").at(-1) ?? "";
+    return KILL_COMMANDS.test(base) || SERVICE_COMMANDS.test(base);
+  });
 }
 
 export function desktopProtectionGuardMessage(reason: string, command: string): string {
