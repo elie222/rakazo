@@ -214,4 +214,60 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     expect(entries.has(shared)).toBe(false);
     expect(await queued(shared)).toEqual([]);
   });
+  it("removes the entries of a wallet and a purchase that go with their deleted user and Space", async () => {
+    const holder = `secret-persistence-cascade-${suffix}`;
+    const fixture = asSystem(owner.prisma);
+    await fixture.user.create({
+      data: { id: holder, name: "Cascade", email: `${holder}@rakazo.test`, emailVerified: true },
+    });
+    await fixture.organization.create({
+      data: { id: holder, name: "Cascade", slug: holder, createdAt: new Date() },
+    });
+    await fixture.space.create({ data: { id: holder, organizationId: holder, name: "Cascade" } });
+    const [wallet, card, request] = [entry("wallet"), entry("card"), entry("request")];
+    await fixture.paymentWallet.create({
+      data: { userId: holder, provider: "fake", status: "active", ciphertext: wallet },
+    });
+    const purchase = await fixture.purchase.create({
+      data: {
+        operationKey: `operation-${suffix}`,
+        spaceId: holder,
+        userId: holder,
+        botId: "bot",
+        threadId: "thread",
+        threadGeneration: 0,
+        provider: "fake",
+        remoteId: `remote-${suffix}`,
+        merchantName: "Shop",
+        merchantUrl: "https://shop.example.test",
+        amount: 100,
+        currency: "usd",
+        status: "pending",
+        cardCiphertext: card,
+        requestCiphertext: request,
+      },
+    });
+
+    reachable = false;
+    await asApp(() => prisma.space.deleteMany({ where: { id: holder } }));
+    expect(await queued(card)).toMatchObject([{ due: true }]);
+    expect(unwrapJobPayload((await queued(request))[0]!.payload).payload).toEqual({
+      kind: "purchase_request",
+      recordId: `purchase-request:${purchase.operationKey}`,
+      ref: request,
+    });
+    reachable = true;
+    await runQueued(card);
+    await runQueued(request);
+    expect([entries.has(card), entries.has(request)]).toEqual([false, false]);
+
+    await asApp(() => prisma.user.deleteMany({ where: { id: holder } }));
+    await fixture.organization.deleteMany({ where: { id: holder } });
+    expect(entries.has(wallet)).toBe(false);
+    expect(store.delete).toHaveBeenCalledWith(
+      wallet,
+      expect.objectContaining({ recordId: `payment-wallet:${holder}` }),
+    );
+    expect(await queued(wallet)).toEqual([]);
+  });
 });

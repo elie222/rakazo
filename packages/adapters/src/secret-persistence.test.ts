@@ -33,6 +33,10 @@ type Row = {
   endpoint?: string;
   secretId?: string | null;
   organizationId?: string;
+  operationKey?: string;
+  cardCiphertext?: string | null;
+  requestCiphertext?: string | null;
+  tokenCiphertext?: string | null;
 };
 type Args = { where?: Record<string, unknown>; data?: Row; create?: Row; update?: Row };
 type Hook = (input: {
@@ -53,6 +57,9 @@ function database() {
     ["bot", []],
     ["mcpServer", []],
     ["mcpServerSpace", []],
+    ["messagingInstallation", []],
+    ["paymentWallet", []],
+    ["purchase", []],
   ]);
   const matches = (row: Row, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([key, value]) => {
@@ -71,6 +78,10 @@ function database() {
   for (const [table, rows] of tables) {
     client[table] = {
       findFirst: async (args: Args) => {
+        const row = rows.find((row) => matches(row, args.where));
+        return row ? { ...row } : null;
+      },
+      findUnique: async (args: Args) => {
         const row = rows.find((row) => matches(row, args.where));
         return row ? { ...row } : null;
       },
@@ -100,7 +111,7 @@ function database() {
         const removed = rows.filter((row) => matches(row, args.where));
         for (const row of removed) rows.splice(rows.indexOf(row), 1);
         if (table === "user")
-          for (const target of ["secret", "botSecret"]) {
+          for (const target of ["secret", "botSecret", "messagingInstallation", "paymentWallet"]) {
             const children = tables.get(target)!;
             for (let i = children.length - 1; i >= 0; i--)
               if (removed.some((parent) => children[i]?.userId === parent.id))
@@ -116,7 +127,9 @@ function database() {
               : removed;
           if (table === "organization")
             for (const space of removedSpaces) spaces.splice(spaces.indexOf(space), 1);
-          for (const target of table === "bot" ? ["botSecret"] : ["secret", "botSecret"]) {
+          for (const target of table === "bot"
+            ? ["botSecret", "messagingInstallation"]
+            : ["secret", "botSecret", "messagingInstallation", "purchase"]) {
             const children = tables.get(target)!;
             for (let i = children.length - 1; i >= 0; i--)
               if (
@@ -148,6 +161,9 @@ function database() {
       spaces: "space",
       bots: "bot",
       organization: "organization",
+      messaging_installations: "messagingInstallation",
+      payment_wallets: "paymentWallet",
+      purchases: "purchase",
     };
     return (
       tables
@@ -511,6 +527,58 @@ describe("secret persistence cleanup with a queue", () => {
       await prisma.secret.deleteMany({ where: { id: "row" } });
       expect(fake.values.size).toBe(0);
       expect(queue.queued.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("removes the entries of installs, wallets and purchases that go with a deleted parent", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const put = (value: string, recordId: string) =>
+      store.put(value, context, { recordId }).then((record) => record.ref);
+    const install = await put("install", "install");
+    const wallet = await put("wallet", "payment-wallet:user");
+    const card = await put("card", "purchase-card:purchase");
+    const request = await put("request", "purchase-request:operation");
+    const otherInstall = await put("other", "other-install");
+    db.tables.get("messagingInstallation")!.push(
+      { id: "install", userId: "user", spaceId: "space", botId: "bot", ciphertext: install },
+      {
+        id: "other-install",
+        userId: "other",
+        spaceId: "other",
+        botId: "other",
+        ciphertext: otherInstall,
+      },
+    );
+    db.tables.get("paymentWallet")!.push({ id: "wallet", userId: "user", ciphertext: wallet });
+    db.tables.get("purchase")!.push({
+      id: "purchase",
+      operationKey: "operation",
+      spaceId: "space",
+      userId: "user",
+      cardCiphertext: card,
+      requestCiphertext: request,
+      tokenCiphertext: null,
+    });
+    const remove = vi.spyOn(store, "delete");
+    try {
+      remove.mockRejectedValueOnce(new Error("store unavailable"));
+      await prisma.user.deleteMany({ where: { id: "user" } });
+      expect(queue.cleanups()).toEqual([
+        expect.objectContaining({ kind: "messaging_installation", ref: install, due: true }),
+      ]);
+      expect(fake.values.size).toBe(4);
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(3);
+
+      await prisma.space.deleteMany({ where: { id: "space" } });
+      expect(queue.queued.size).toBe(0);
+      expect([...fake.values.keys()]).toEqual([otherInstall.slice("infisical:v1:".length)]);
+      expect(remove).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({ recordId: "purchase-request:operation" }),
+      );
     } finally {
       await store.close();
     }
