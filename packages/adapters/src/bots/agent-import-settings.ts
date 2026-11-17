@@ -2,6 +2,7 @@ import type {
   AgentImportNeed,
   AgentImportStatus,
   AgentImportWarning,
+  CreateRoutineInput,
   McpServerConfigInput,
 } from "@rakazo/contracts";
 import {
@@ -9,10 +10,10 @@ import {
   isValidTimeZone,
   McpServerConfigInput as McpServerConfigSchema,
 } from "@rakazo/contracts";
-import type { GrokBot } from "@rakazo/core";
+import type { GrokBot, RoutineTriggersAvailable } from "@rakazo/core";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
-  grokRoutineCron,
+  grokRoutineTrigger,
   grokSkillNames,
   looksLikeCredential,
   mcpServerImportable,
@@ -51,13 +52,21 @@ export type ImportedMcpServer = {
   warnings: AgentImportWarning[];
   status: AgentImportStatus;
 };
+/** A routine's trigger, as `CreateRoutineInput` takes it: a schedule or an event. */
+export type ImportedRoutineTrigger = Pick<CreateRoutineInput, "crons"> &
+  Partial<
+    Pick<
+      CreateRoutineInput,
+      "webhookEnabled" | "githubEnabled" | "messageProvider" | "emailSenders"
+    >
+  >;
 export type ImportedRoutine = {
   id: string;
   title: string;
   content: string;
   name: string;
   prompt: string;
-  cron: string;
+  trigger: ImportedRoutineTrigger;
   /** The job's own IANA timezone, when it has one. */
   timezone: string | null;
   warnings: AgentImportWarning[];
@@ -76,6 +85,7 @@ export { normalizeImportProvider, parseDotEnv };
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
 /**
  * Reads the settings of an OpenClaw home or Hermes home. Key values are only read with
@@ -181,10 +191,12 @@ const KEY_LIKE_SEGMENT = /^(?=.*\d)(?=.*[a-zA-Z])[A-Za-z0-9_-]{24,}$/;
 
 /**
  * A Grok Bot's routines and connected apps, from the export it wrote. It has no model to
- * choose and the export never holds keys. Routines on an event stay in its memory note.
+ * choose and the export never holds keys. A routine starts on its schedule or, when this server
+ * receives that event, on its event; any other stays in its memory note.
  */
 export function readGrokBotImportSettings(
   bot: GrokBot,
+  triggers: RoutineTriggersAvailable,
 ): AgentImportSettings & { keyValues: Map<string, string> } {
   const skipped: Skipped[] = [];
   const skillNames = grokSkillNames(bot);
@@ -198,16 +210,24 @@ export function readGrokBotImportSettings(
       skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
     }
-    const cron = grokRoutineCron(source);
-    if (!cron) continue;
-    if ([source.name, source.instruction, source.details, source.when].some(looksLikeCredential)) {
+    const trigger = grokRoutineTrigger(source, triggers);
+    if (!trigger) continue;
+    if (
+      [source.name, source.instruction, source.details, source.when, source.trigger].some(
+        looksLikeCredential,
+      )
+    ) {
       skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
     }
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
-    const instruction = [source.instruction, source.details, source.when]
-      .filter(Boolean)
-      .join("\n\n");
+    // An event routine says what started it first, so the bot reads which channel, repository
+    // or senders it is for before the event it is given.
+    const scope = [source.details, source.when].filter(Boolean).map(oneLine).join("; ");
+    const instruction =
+      trigger.kind === "schedule"
+        ? [source.instruction, source.details, source.when].filter(Boolean).join("\n\n")
+        : `Trigger: ${source.trigger}${scope ? ` (${scope})` : ""}\n\n${source.instruction}`;
     if (instruction.length > AGENT_IMPORT_MAX_FILE_LENGTH) {
       skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
@@ -215,12 +235,40 @@ export function readGrokBotImportSettings(
     const prompt = uses.length
       ? `${instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
       : instruction;
-    const result = routine({ name: source.name }, prompt, cron, source.timeZone, false, false);
-    if ("reason" in result) {
-      skipped.push({ path: `routines: ${safeLabel}`, reason: result.reason });
-    } else {
-      routines.push({ ...result, id: `routine:${index}` });
+    if (trigger.kind === "schedule") {
+      const result = routine(
+        { name: source.name },
+        prompt,
+        trigger.cron,
+        source.timeZone,
+        false,
+        false,
+      );
+      if ("reason" in result) {
+        skipped.push({ path: `routines: ${safeLabel}`, reason: result.reason });
+      } else {
+        routines.push({ ...result, id: `routine:${index}` });
+      }
+      continue;
     }
+    const name = (source.name || "Routine").slice(0, 80);
+    routines.push({
+      id: `routine:${index}`,
+      title: name,
+      name,
+      prompt,
+      trigger: {
+        crons: [],
+        ...(trigger.kind === "webhook" ? { webhookEnabled: true } : {}),
+        ...(trigger.kind === "git" ? { githubEnabled: true } : {}),
+        ...(trigger.kind === "message" ? { messageProvider: trigger.provider } : {}),
+        // Only mail from the owner starts it: anyone could write to the bot's address.
+        ...(trigger.kind === "email" ? { emailSenders: "owner" as const } : {}),
+      },
+      timezone: null,
+      warnings: [],
+      content: prompt,
+    });
   }
 
   const mcpServers: ImportedMcpServer[] = [];
@@ -539,7 +587,7 @@ function routine(
     title: name,
     name,
     prompt,
-    cron,
+    trigger: { crons: [cron] },
     timezone,
     warnings: [
       ...(droppedSettings ? (["dropped_settings"] as const) : []),
