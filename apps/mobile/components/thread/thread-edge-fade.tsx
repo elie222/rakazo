@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import Animated from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { mobileTokens } from "../../lib/appearance";
+import { mobileTokens } from "../../lib/appearance/appearance";
 
 /**
  * Fades messages scrolling under the header or the composer into the thread background.

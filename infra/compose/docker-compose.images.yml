@@ -396,6 +396,7 @@ services:
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       SANDBOX_COMPUTER_MOUNTS: ${SANDBOX_COMPUTER_MOUNTS:-}
       SANDBOX_COMPUTER_COMPUTE_GPUS: ${SANDBOX_COMPUTER_COMPUTE_GPUS:-}
+      SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL: ${SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
       AXIOM_TOKEN: ${AXIOM_TOKEN:-}
@@ -523,6 +524,7 @@ services:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     ports:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
@@ -559,7 +561,7 @@ services:
     # takes most of the worker's CPU.
     command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]

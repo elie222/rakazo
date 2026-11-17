@@ -5,8 +5,8 @@ import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useSpaceQueries } from "../../lib/query";
-import { createQueryRoot } from "../../lib/query-root.test-support";
+import { useSpaceQueries } from "../../lib/query/query";
+import { createQueryRoot } from "../../lib/query/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
@@ -41,7 +41,7 @@ const client = vi.hoisted(() => ({
     saveModelSettings: vi.fn(async () => ({ ok: true as const })),
   },
 }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: client,
   rpcForSpace: () => client,
   createSpaceRpc: () => client,

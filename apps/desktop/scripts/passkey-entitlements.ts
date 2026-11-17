@@ -5,7 +5,7 @@
 // values as for `pnpm build`.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { passkeyEntitlements } from "../src/main/passkeys.js";
+import { passkeyEntitlements } from "../src/main/auth/passkeys.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {

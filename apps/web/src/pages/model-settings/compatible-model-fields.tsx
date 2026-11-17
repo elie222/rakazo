@@ -9,8 +9,8 @@ import {
   ListSearchInput,
   OptionSelect,
 } from "@rakazo/ui-web";
-import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
-import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { ModelPreflightFeedback } from "../../components/models/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";

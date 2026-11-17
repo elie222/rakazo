@@ -10,10 +10,10 @@ import {
   prepareCallAudio,
   startCall,
   useCallSession,
-} from "../../lib/call-session";
-import { rpc, selectedSpaceId } from "../../lib/rpc";
+} from "../../lib/calls/call-session";
+import { rpc, selectedSpaceId } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 import { useEventListener } from "../../lib/use-event-listener";
-import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
 
 /** Two short rising tones every two seconds: an incoming ring, unlike the outgoing ringback. */

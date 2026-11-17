@@ -3,10 +3,10 @@ import type { IntegrationCatalogResult } from "@rakazo/contracts";
 import { customMcpServerInput } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
-import { connectMcpOauth } from "../../lib/mcp-connect";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */

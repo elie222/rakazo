@@ -8,8 +8,8 @@ on:
       - infra/sandboxes/supervisor/**
       - packages/core/src/node/**
       - packages/adapters/src/providers/computer/docker/docker-sandbox.ts
-      - packages/adapters/src/computer-browser.ts
-      - packages/testkit/src/computer-*.ts
+      - packages/adapters/src/computers/screens/computer-browser.ts
+      - packages/testkit/src/computers/computer-*.ts
       - packages/testkit/src/cli/computer-replay.ts
       - pnpm-lock.yaml
   workflow_dispatch:

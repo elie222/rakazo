@@ -3,14 +3,14 @@ import { useNow } from "@rakazo/chat-ui/hooks";
 import { BotAvatar, Button, cn, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { CallState } from "../../lib/call-session";
+import type { CallState } from "../../lib/calls/call-session";
 import {
   endCall,
   setCallMinimized,
   toggleMute,
   toggleTranscript,
   useCallSession,
-} from "../../lib/call-session";
+} from "../../lib/calls/call-session";
 import { useEventListener } from "../../lib/use-event-listener";
 import { CallWindow } from "./CallWindow";
 

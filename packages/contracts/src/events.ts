@@ -1,10 +1,14 @@
 import * as z from "zod";
-import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
-import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
+import {
+  botSecretDestinationSchema,
+  LoginFieldLabels,
+  OneTimeCodeTarget,
+} from "./bots/bot-secrets.js";
+import { PAGE_TITLE_MAX_LENGTH } from "./conversations/pages.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
-import { McpTransportSchema } from "./mcp.js";
-import { McpAppCspSchema } from "./mcp-app.js";
-import { PAGE_TITLE_MAX_LENGTH } from "./pages.js";
+import { AgentImportSetupItemSchema } from "./integrations/agent-import-setup.js";
+import { McpTransportSchema } from "./integrations/mcp.js";
+import { McpAppCspSchema } from "./integrations/mcp-app.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",

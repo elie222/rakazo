@@ -15,8 +15,8 @@ import {
   requireOk,
   verifyVoiceHttpGet,
   voiceRequestError,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 const API = "https://api.cartesia.ai";
 // From 2026-03-01 errors are JSON with a `message`; `/voices` pages with `limit`.

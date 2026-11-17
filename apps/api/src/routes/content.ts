@@ -10,6 +10,7 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import {
   createOwnedArtifact,
   deleteArtifactFamily,
@@ -18,11 +19,10 @@ import {
   getSpaceArtifactById,
   listArtifactVersions,
   listSpaceArtifacts,
-} from "../artifacts.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { listSpaceRuns } from "../runs.js";
-import { querySpaceSearch } from "../search.js";
-import { loadAllMessages } from "../thread-message-pages.js";
+} from "../content/artifacts.js";
+import { querySpaceSearch } from "../content/search.js";
+import { listSpaceRuns } from "../threads/runs.js";
+import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
@@ -111,7 +111,11 @@ export function contentRoutes(ctx: RouterContext) {
     usage: {
       list: authed.usage.list.handler(async ({ context }) => {
         const rows = await deps.prisma.usageRecord.findMany({
-          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          where: {
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            fundingSource: "customer",
+          },
           orderBy: { createdAt: "desc" },
           take: 100,
         });
@@ -150,7 +154,11 @@ export function contentRoutes(ctx: RouterContext) {
         ),
       ),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        const where = {
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+          fundingSource: "customer",
+        };
         const sums = {
           inputTokens: true,
           outputTokens: true,
@@ -283,13 +291,13 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
             SELECT u.provider, u.model, ${totalsSelect}
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
@@ -306,7 +314,7 @@ export function contentRoutes(ctx: RouterContext) {
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY bucket
             ORDER BY bucket ASC
@@ -320,7 +328,7 @@ export function contentRoutes(ctx: RouterContext) {
             FROM usage_records u
             LEFT JOIN bots b ON b.id = u."botId"
             LEFT JOIN bot_deletions bd ON bd.id = u."botId"
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               AND u."botId" IS NOT NULL
               ${rangeFilter}
             GROUP BY u."botId", b.id, b.name, bd.name
@@ -329,7 +337,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
             SELECT u.provider, u.model
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
