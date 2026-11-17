@@ -21,14 +21,14 @@ import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
 import { computerSnapshotName } from "../../../computers/computer-base-snapshot.js";
-import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
-import { PREPARE_LINUX_DESKTOP } from "../../../computers/screens/linux-desktop.js";
-import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandboxes/sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
+import { PREPARE_LINUX_DESKTOP } from "../../../computers/screens/linux-desktop.js";
 import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
 import {

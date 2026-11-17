@@ -30,14 +30,14 @@ import { ClientError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { sanitizeConnectorError } from "../connectors/connector-safety.js";
-import { isUnreachableHost } from "../connectors/connector-source.js";
+import { sanitizeConnectorError } from "../integrations/connector-safety.js";
+import { isUnreachableHost } from "../integrations/connector-source.js";
+import { advisoryLock } from "../locks/advisory-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../locks/refresh-lock.js";
 import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../shared/refresh-lock.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,

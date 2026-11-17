@@ -1,7 +1,7 @@
 import { registrableDomain } from "@rakazo/core/egress";
 import { JSDOM } from "jsdom";
-import { detectImageMimeType } from "../shared/image-mime-type.js";
-import type { ResolveHostname } from "./network-address.js";
+import { detectImageMimeType } from "../media/image-mime-type.js";
+import type { ResolveHostname } from "../network/network-address.js";
 import { fetchSafeWebBytes } from "./web-ssrf.js";
 
 const PAGE_MAX_BYTES = 256 * 1024;

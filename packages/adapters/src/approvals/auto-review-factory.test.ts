@@ -1,8 +1,8 @@
 import type { AutoReviewProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { JevAutoReviewProvider } from "../providers/decision/typesafe/jev-auto-review.js";
 import { LlmAutoReviewProvider } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
-import { JevAutoReviewProvider } from "./jev-auto-review.js";
 import { ScriptedAutoReviewProvider } from "./scripted-auto-review.js";
 
 const context = {

@@ -9,7 +9,7 @@ import {
 import {
   classifyLocalServiceSettings,
   revalidateLocalServiceSettings,
-} from "../../../web/local-service-endpoint.js";
+} from "../../../network/local-service-endpoint.js";
 import {
   createHonchoProvider,
   honchoRequiresPrivateEndpoint,

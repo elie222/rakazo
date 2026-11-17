@@ -19,10 +19,10 @@ import {
   isTerminatingReplyResult,
   isToolPauseResult,
 } from "../../../approvals/approval-effect.js";
+import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { textContentArg } from "../../../runs/turn/tool-text.js";
-import type { FinishedShellCommand } from "../../../sandboxes/shell-command-stream.js";
 import {
   connectionIdArgument,
   credentialArgument,

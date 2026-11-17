@@ -1,5 +1,5 @@
 import { HttpDecisionProvider } from "../../../approvals/http-decisions.js";
-import type { DecisionModelDescriptor } from "../../../decisions/model-descriptor.js";
+import type { DecisionModelDescriptor } from "../../../approvals/model-descriptor.js";
 
 export const typesafeDecisionModel: DecisionModelDescriptor = {
   create: (options) => new HttpDecisionProvider("typesafe", options),

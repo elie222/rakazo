@@ -9,8 +9,8 @@ import type {
 import { SecretNotFoundError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { credentialDigest } from "../../../secrets/credential-digest.js";
 import { SecretChanges } from "../../../secrets/secret-changes.js";
-import { credentialDigest } from "../../../shared/credential-digest.js";
 
 export { SecretNotFoundError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 

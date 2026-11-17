@@ -1,9 +1,9 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
+import { withModelRoles } from "../../models/model-roles.test-support.js";
 import { serializeModelSecret } from "../../models/model-secret.js";
 import { OAUTH_RECONNECT_REQUIRED_ERROR } from "../../runtime/pi/models/pi-oauth.js";
-import { withModelRoles } from "../../testing/model-roles.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import { createRunExecutor } from "./executor.js";
 
