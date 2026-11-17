@@ -504,6 +504,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/prepare", { text: "Nope" }],
       ["voice/setSpeechModel"],
       ["analytics/screen"],
+      ["analytics/modelSignInStep"],
       ["aiConsent/status"],
       ["aiConsent/allow"],
       ["aiConsent/revoke"],

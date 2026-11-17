@@ -367,6 +367,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     cancelOAuthAttempt,
     codeCopied,
     copyOAuthCode,
+    reportSignInStep,
     oauth,
     oauthPending,
     pasteCode,
@@ -387,6 +388,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                   Sign in at{" "}
                   <a
                     href={oauth.verificationUri}
+                    onClick={() => reportSignInStep("page_opened")}
                     target="_blank"
                     rel="noreferrer"
                     className="text-foreground underline"
@@ -424,6 +426,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                     Open{" "}
                     <a
                       href={oauth.verificationUri}
+                      onClick={() => reportSignInStep("page_opened")}
                       target="_blank"
                       rel="noreferrer"
                       className="text-foreground underline"
@@ -437,6 +440,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                     A sign-in tab opened at{" "}
                     <a
                       href={oauth.verificationUri}
+                      onClick={() => reportSignInStep("page_opened")}
                       target="_blank"
                       rel="noreferrer"
                       className="text-foreground underline"

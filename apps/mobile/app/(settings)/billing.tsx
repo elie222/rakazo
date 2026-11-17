@@ -33,6 +33,7 @@ import {
 import { rememberReferral } from "../../lib/billing/referral";
 import { dateLocaleForUi } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import { analyticsSurface } from "../../lib/native/analytics-surface";
 import type { SaveSend } from "../../lib/query/query";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -382,7 +383,10 @@ export default function BillingScreen() {
               disabled={pending || !status.creditPurchasesEnabled}
               onPress={() =>
                 action(async (send) => {
-                  await send("billing/selectFunding", { funding: "credits" });
+                  await send("billing/selectFunding", {
+                    funding: "credits",
+                    surface: analyticsSurface(),
+                  });
                   router.replace("/models");
                   return undefined;
                 })

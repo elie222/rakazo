@@ -6,7 +6,11 @@ import type {
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./account/ai-consent.js";
-import { AnalyticsScreenInput } from "./account/analytics.js";
+import {
+  AnalyticsModelSignInStepInput,
+  AnalyticsScreenInput,
+  AnalyticsSurface,
+} from "./account/analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./account/audit-events.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./account/security-events.js";
 import { SpaceAvailabilitySchema } from "./account/space-availability.js";
@@ -334,7 +338,13 @@ export const OrganizationListSchema = z.object({
 export type OrganizationList = z.infer<typeof OrganizationListSchema>;
 
 export const appContract = {
-  analytics: { screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })) },
+  analytics: {
+    screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })),
+    /** A step of a subscription sign-in only the app can see. */
+    modelSignInStep: oc
+      .input(AnalyticsModelSignInStepInput)
+      .output(z.object({ ok: z.literal(true) })),
+  },
   aiConsent: {
     status: oc.input(AiConsentQuerySchema).output(AiConsentStatusSchema),
     allow: oc
@@ -364,6 +374,7 @@ export const appContract = {
         z.object({
           funding: z.enum(["byok", "credits"]),
           client: BillingClientSchema,
+          surface: AnalyticsSurface.optional(),
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
           /** The own-key plan's tier; Standard when omitted. */
@@ -596,7 +607,9 @@ export const appContract = {
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelBackupChoiceSchema)),
     setBackups: oc.input(ModelBackupListSchema).output(z.object({ ok: z.literal(true) })),
-    connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
+    connect: oc
+      .input(ModelConnectInputSchema.and(z.object({ surface: AnalyticsSurface.optional() })))
+      .output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(
         z.object({
@@ -629,6 +642,7 @@ export const appContract = {
           scope: SettingsScopeSchema.optional(),
           /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
           codePage: z.boolean().optional(),
+          surface: AnalyticsSurface.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),

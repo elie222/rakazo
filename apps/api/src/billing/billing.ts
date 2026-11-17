@@ -266,14 +266,22 @@ export function createBillingService(deps: {
         const added = await syncCreditPurchases(prisma, account.organizationId, () =>
           listCreditPurchases(customerId),
         );
-        await prisma.modelCreditAccount.updateMany({
-          where: {
-            organizationId: account.organizationId,
-            balanceMicros: { gt: 0n },
-            OR: [{ mode: null }, ...(added ? [{ pendingCreditCheckout: true }] : [])],
-          },
-          data: { mode: "credits", pendingCreditCheckout: false },
+        const funded = { organizationId: account.organizationId, balanceMicros: { gt: 0n } };
+        const data = { mode: "credits", pendingCreditCheckout: false };
+        const first = await prisma.modelCreditAccount.updateMany({
+          where: { ...funded, mode: null },
+          data,
         });
+        if (added)
+          await prisma.modelCreditAccount.updateMany({
+            where: { ...funded, pendingCreditCheckout: true },
+            data,
+          });
+        if (first.count > 0)
+          await bestEffort(
+            "credits connect analytics",
+            reportCreditsConnected(account.organizationId),
+          );
       }
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -370,6 +378,27 @@ export function createBillingService(deps: {
       { id: live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
     );
+  }
+
+  /**
+   * The outcome of choosing credits with none on the account: the purchase that funds it.
+   * It lands from the payment provider, so no app is named; only an owner who began
+   * connecting a first model is counted, with the number of that try.
+   */
+  async function reportCreditsConnected(organizationId: string) {
+    const { analytics } = deps;
+    const owner = analytics && (await ownerUserId(organizationId));
+    if (!owner) return;
+    const started = await prisma.user.findUnique({
+      where: { id: owner },
+      select: { modelConnectStarts: true },
+    });
+    if (!started?.modelConnectStarts) return;
+    analytics.capture(owner, {
+      name: "model_connected",
+      method: "credits",
+      attempt: started.modelConnectStarts,
+    });
   }
 
   async function ownerUserId(organizationId: string) {
