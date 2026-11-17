@@ -240,7 +240,7 @@ export * from "./remote-mcp.js";
 export { finishRoutineHandover } from "./routine-handover.js";
 export * from "./routine-watch.js";
 export { notifyMemberMessage } from "./run-notifications.js";
-export { loadRunOrigin } from "./run-origin.js";
+export { loadRunOrigin, runStartedByMember } from "./run-origin.js";
 export * from "./run-runtime.js";
 export * from "./run-secret.js";
 export { createRunTrustLoaders } from "./run-trust.js";

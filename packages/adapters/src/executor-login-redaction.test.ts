@@ -491,13 +491,14 @@ describe("tailnet settings in shell commands", () => {
 
   it("gives a chat the member started the tunnel and hides its token", async () => {
     const asked: unknown[] = [];
+    const prepareComputer = vi.fn(async () => undefined);
     const { toolResults, commands } = await runAfterFill(
       [{ name: "shell", args: { command: "env" } }],
       {
         savedLogin: false,
         trigger: "user",
         tailnet: {
-          prepareComputer: async () => undefined,
+          prepareComputer,
           environment: async (run) => {
             asked.push(run);
             return {
@@ -524,6 +525,7 @@ describe("tailnet settings in shell commands", () => {
     const text = JSON.stringify(toolResults);
     expect(text).toContain("token=[redacted]");
     expect(text).not.toContain(TOKEN);
+    expect(prepareComputer).toHaveBeenCalled();
   });
 
   it("refuses tailnet_connect in a run whose member didn't allow the bot", async () => {
@@ -561,15 +563,16 @@ describe("tailnet settings in shell commands", () => {
     );
   });
 
-  it.each(["routine", "bot_message", "helper"])(
-    "does not give a %s run a tunnel token",
+  it.each(["routine", "messaging", "bot_message", "helper"])(
+    "does not give a %s run a tunnel token or the browser pass",
     async (trigger) => {
       const asked: unknown[] = [];
+      const prepareComputer = vi.fn(async () => undefined);
       const { commands } = await runAfterFill([{ name: "shell", args: { command: "env" } }], {
         savedLogin: false,
         trigger,
         tailnet: {
-          prepareComputer: async () => undefined,
+          prepareComputer,
           environment: async (run) => {
             asked.push(run);
             return {
@@ -582,6 +585,7 @@ describe("tailnet settings in shell commands", () => {
         },
       });
       expect(asked).toEqual([]);
+      expect(prepareComputer).not.toHaveBeenCalled();
       const shell = commands.find((command) => command.argv.at(-1) === "env");
       expect(shell?.env).not.toHaveProperty("RAKAZO_NET_TOKEN");
     },

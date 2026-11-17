@@ -7,7 +7,7 @@ import type {
   TailnetTunnelDeps,
   TailnetTunnelRecord,
 } from "@rakazo/adapters";
-import { TailnetTunnelGateway, tailnetTunnelKey } from "@rakazo/adapters";
+import { runStartedByMember, TailnetTunnelGateway, tailnetTunnelKey } from "@rakazo/adapters";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { tailnetDestinationKey } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
@@ -80,8 +80,10 @@ export async function activeTailnetRun(
 
 /**
  * Who is using a bot's screen on a computer now, for its browser's tunnels: the member holding
- * control of that screen, otherwise the bot's run executing there. Nobody once the computer has
- * restarted since the pass was issued, or the bot is not of the computer's Space.
+ * control of that screen, otherwise a run the member started that is executing there. A run the
+ * member did not start gets nothing, and while it holds the lease the member's control does not
+ * either. Nobody once the computer has restarted since the pass was issued, or the bot is not of
+ * the computer's Space.
  */
 export async function activeTailnetScreen(
   prisma: Pick<PrismaClient, "run" | "computer" | "bot" | "computerExecutionLease">,
@@ -111,6 +113,34 @@ export async function activeTailnetScreen(
       select: { name: true },
     });
     if (!bot) return undefined;
+    const lease = await prisma.computerExecutionLease.findUnique({
+      where: { computerId_botId: { computerId: pass.computerId, botId } },
+      select: { runId: true, expiresAt: true },
+    });
+    const run =
+      lease && lease.expiresAt > now
+        ? await prisma.run.findFirst({
+            where: {
+              id: lease.runId,
+              botId,
+              spaceId: computer.spaceId,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
+            },
+            select: {
+              userId: true,
+              threadId: true,
+              trigger: true,
+              sourceMessage: { select: { role: true } },
+            },
+          })
+        : null;
+    const memberStarted =
+      run !== null &&
+      runStartedByMember(run.trigger, {
+        ownerStartedRun: run.sourceMessage?.role === "user",
+        nonOwnerChat: false,
+      });
+    if (run && !memberStarted) return undefined;
     if (
       hasActiveComputerControl(computer, now) &&
       computer.controlBotId === botId &&
@@ -126,21 +156,7 @@ export async function activeTailnetScreen(
         },
       };
     }
-    const lease = await prisma.computerExecutionLease.findUnique({
-      where: { computerId_botId: { computerId: pass.computerId, botId } },
-      select: { runId: true, expiresAt: true },
-    });
-    if (!lease || lease.expiresAt <= now) return undefined;
-    const run = await prisma.run.findFirst({
-      where: {
-        id: lease.runId,
-        botId,
-        spaceId: computer.spaceId,
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-      },
-      select: { userId: true, threadId: true },
-    });
-    if (!run) return undefined;
+    if (!run || !lease) return undefined;
     return {
       kind: "run",
       run: {

@@ -93,7 +93,12 @@ describe("who uses a bot's screen, for its browser", () => {
     overrides: {
       computer?: Record<string, unknown> | null;
       lease?: { runId: string; expiresAt: Date } | null;
-      run?: { userId: string; threadId: string } | null;
+      run?: {
+        userId: string;
+        threadId: string;
+        trigger?: string;
+        sourceMessage?: { role: string };
+      } | null;
     } = {},
   ) {
     const computer =
@@ -111,7 +116,9 @@ describe("who uses a bot's screen, for its browser", () => {
             ...overrides.computer,
           };
     const runQuery = vi.fn(async () =>
-      overrides.run === null ? null : (overrides.run ?? { userId: "alice", threadId: "thread1" }),
+      overrides.run === null
+        ? null
+        : (overrides.run ?? { userId: "alice", threadId: "thread1", trigger: "user" }),
     );
     const prisma = {
       computer: { findUnique: async () => computer },
@@ -179,6 +186,56 @@ describe("who uses a bot's screen, for its browser", () => {
     ["a computer that is gone", { computer: null }],
   ] as const)("is nobody with %s", async (_case, overrides) => {
     const { prisma } = fixture(overrides as Parameters<typeof fixture>[0]);
+    expect(await activeTailnetScreen(prisma, PASS, "helper", NOW)).toBeUndefined();
+  });
+
+  it.each([
+    ["routine", "routine"],
+    ["channel", "messaging"],
+    ["bot message", "bot_message"],
+    ["spawn", "helper"],
+  ] as const)(
+    "gives a %s run no tailnet access, with the screen free or held by the member",
+    async (_label, trigger) => {
+      const run = { userId: "alice", threadId: "thread1", trigger };
+      const idle = fixture({ run });
+      expect(await activeTailnetScreen(idle.prisma, PASS, "helper", NOW)).toBeUndefined();
+      const held = fixture({ run, computer: control });
+      expect(await activeTailnetScreen(held.prisma, PASS, "helper", NOW)).toBeUndefined();
+    },
+  );
+
+  it("is a follow-up the member wrote", async () => {
+    const { prisma } = fixture({
+      run: {
+        userId: "alice",
+        threadId: "thread1",
+        trigger: "follow_up",
+        sourceMessage: { role: "user" },
+      },
+    });
+    expect(await activeTailnetScreen(prisma, PASS, "helper", NOW)).toEqual({
+      kind: "run",
+      run: {
+        runId: "run1",
+        userId: "alice",
+        spaceId: "home",
+        botId: "helper",
+        botName: "Helper",
+        threadId: "thread1",
+      },
+    });
+  });
+
+  it("is nobody for a follow-up the bot wrote", async () => {
+    const { prisma } = fixture({
+      run: {
+        userId: "alice",
+        threadId: "thread1",
+        trigger: "follow_up",
+        sourceMessage: { role: "bot" },
+      },
+    });
     expect(await activeTailnetScreen(prisma, PASS, "helper", NOW)).toBeUndefined();
   });
 

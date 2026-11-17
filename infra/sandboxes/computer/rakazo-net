@@ -1,4 +1,4 @@
-#!/usr/bin/python3 -I
+#!/usr/bin/env -S python3 -I
 """Reach machines on the tailnet of the person this bot works for.
 
 Rakazo runs the bot's tailnet node outside this computer; this helper reaches it over a WebSocket

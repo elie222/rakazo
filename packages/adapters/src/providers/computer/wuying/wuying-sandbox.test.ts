@@ -157,6 +157,33 @@ describe("WuyingSandboxProvider", () => {
     );
   });
 
+  it("keeps the tailnet helper out of the command environment", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "b", homePath: "/h" }, ctx);
+    const script = "print('rakazo-net')\n";
+    for await (const _event of provider.execute(
+      computer,
+      {
+        argv: ["powershell.exe", "-Command", "rakazo-net"],
+        env: {
+          RAKAZO_NET_HELPER: Buffer.from(script).toString("base64"),
+          RAKAZO_NET_VERSION: "abc",
+        },
+        timeoutMs: 30_000,
+      },
+      ctx,
+    ));
+    const exec = desktop.calls.findLast((call) => call.tool === "process_exec");
+    const env = exec?.args.env as Record<string, string>;
+    expect(env).not.toHaveProperty("RAKAZO_NET_HELPER");
+    expect(env.RAKAZO_NET_FILE).toMatch(/\\rakazo-net\.py$/);
+    const written = desktop.calls.find(
+      (call) => call.tool === "fs_write" && String(call.args.path).endsWith("\\rakazo-net.py"),
+    );
+    expect(written?.args.data).toBe(script);
+  });
+
   it("reports a command that ran out of time", async () => {
     const desktop = new FakeWuyingDesktop();
     const computer = await provisionPrepared(

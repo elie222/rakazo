@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   lstat,
@@ -302,23 +303,36 @@ export class DesktopSandboxProvider implements SandboxProvider {
     }
     await mkdir(cwd, { recursive: true });
     const argv = request.argv.length ? request.argv : ["echo", "ready"];
+    const env = request.env ? { ...request.env } : undefined;
+    let stagedHelper: string | undefined;
+    if (env?.RAKAZO_NET_HELPER && process.platform === "win32") {
+      stagedHelper = path.join(box.home, ".cache", "rakazo", `net-${randomUUID()}.py`);
+      await mkdir(path.dirname(stagedHelper), { recursive: true });
+      await writeFile(stagedHelper, Buffer.from(env.RAKAZO_NET_HELPER, "base64"));
+      env.RAKAZO_NET_FILE = stagedHelper;
+      delete env.RAKAZO_NET_HELPER;
+    }
     this.sweepProcesses();
     if (this.processTrees.size >= 256) throw new Error("Too many local background commands");
-    yield* streamLocalCommand(
-      argv,
-      cwd,
-      boundedSandboxCommandTimeoutMs(request.timeoutMs),
-      context.signal,
-      request,
-      (tree) => {
-        this.processTrees.set(tree, { home: box.home, runId: context.runId });
-        if (!this.processSweep) {
-          this.processSweep = setInterval(() => this.sweepProcesses(), 1000);
-          this.processSweep.unref();
-        }
-      },
-      () => this.sweepProcesses(),
-    );
+    try {
+      yield* streamLocalCommand(
+        argv,
+        cwd,
+        boundedSandboxCommandTimeoutMs(request.timeoutMs),
+        context.signal,
+        env ? { ...request, env } : request,
+        (tree) => {
+          this.processTrees.set(tree, { home: box.home, runId: context.runId });
+          if (!this.processSweep) {
+            this.processSweep = setInterval(() => this.sweepProcesses(), 1000);
+            this.processSweep.unref();
+          }
+        },
+        () => this.sweepProcesses(),
+      );
+    } finally {
+      if (stagedHelper) await rm(stagedHelper, { force: true }).catch(() => undefined);
+    }
   }
 
   async connectScreen(

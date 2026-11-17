@@ -177,7 +177,6 @@ type TunnelGroup = {
   timer?: ReturnType<typeof setInterval>;
 };
 
-/** Who opened a tunnel, and how to tell later that they still may. */
 /**
  * Who opened a tunnel, how to tell later that they still may, and the group it counts in: one per
  * opener and credential, so one group's recheck never closes tunnels another credential opened.

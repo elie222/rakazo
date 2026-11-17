@@ -235,7 +235,13 @@ export async function prepareRunComputer(
   },
 ) {
   const { deps, run, runId, computerUse } = hold;
-  const { bot } = parts.records;
+  const { bot, messages, nonOwnerChatRun, origin } = parts.records;
+  const memberStarted = runStartedByMember(run.trigger, {
+    ownerStartedRun:
+      messages.find((message) => message.id === run.sourceMessageId)?.role === "user" ||
+      origin?.sourceMessage?.role === "user",
+    nonOwnerChat: nonOwnerChatRun,
+  });
   const { context, runAbortController } = parts.connected;
   const { currentTurnMessage, history, historyMessages, turnBlocks } = parts.turnContext;
   const { resolved, runModelId, runModelProvider } = parts.model;
@@ -274,17 +280,20 @@ export async function prepareRunComputer(
       recordComputerDisk(deps, storedComputer.id, computer, context);
       scheduleComputerSleep(deps.jobs, storedComputer.id);
       // The browsers' tailnet proxy, in the background: only screen actions wait for it, so a
-      // browser's first visit to a tailnet host finds it listening.
-      computerUse.tailnetBrowser = bestEffort(
-        "prepare the tailnet browser proxy",
-        deps.tailnet?.prepareComputer({
-          sandbox: deps.sandbox,
-          computerId: storedComputer.id,
-          computer,
-          member: { userId: run.userId, spaceId: run.spaceId, botId: bot.id },
-          context,
-        }),
-      );
+      // browser's first visit to a tailnet host finds it listening. Only a run the member
+      // started may leave the pass on the computer.
+      if (memberStarted) {
+        computerUse.tailnetBrowser = bestEffort(
+          "prepare the tailnet browser proxy",
+          deps.tailnet?.prepareComputer({
+            sandbox: deps.sandbox,
+            computerId: storedComputer.id,
+            computer,
+            member: { userId: run.userId, spaceId: run.spaceId, botId: bot.id },
+            context,
+          }),
+        );
+      }
       // Earlier attachments wait for the computer's first use; every start copies them
       // again, so they need no checkpoint, and each copy logs and skips its own failure.
       if (artifacts) {

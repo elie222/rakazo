@@ -553,11 +553,58 @@ export class WuyingSandboxProvider implements SandboxProvider {
     const env = { ...request.env };
     // The gateway's environment overlay has no unset; an empty value is the closest it offers.
     for (const name of request.unsetEnv ?? []) env[name] = "";
+    const stagedHelper = await this.stageTailnetHelper(env, context.signal);
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
-    if (timeoutMs > MAX_COMMAND_MS) {
-      yield* this.executeInBackground({ program, args, cwd, env, timeoutMs }, context);
-      return;
+    try {
+      if (timeoutMs > MAX_COMMAND_MS) {
+        yield* this.executeInBackground({ program, args, cwd, env, timeoutMs }, context);
+        return;
+      }
+      yield* this.executeInCall({ program, args, cwd, env, timeoutMs }, context);
+    } finally {
+      if (stagedHelper)
+        await this.tools
+          .call("fs_delete", { path: stagedHelper, recursive: true }, AbortSignal.timeout(15_000))
+          .catch(() => undefined);
     }
+  }
+
+  /** The helper is too large for a Windows process environment, so the command reads a file. */
+  private async stageTailnetHelper(
+    env: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
+    const encoded = env.RAKAZO_NET_HELPER;
+    if (!encoded) return undefined;
+    delete env.RAKAZO_NET_HELPER;
+    const dir = `${await this.userProfile(signal)}\\rakazo\\.runs\\${randomUUID()}`;
+    const file = `${dir}\\rakazo-net.py`;
+    await this.mkdirs(dir, signal);
+    await this.tools.call(
+      "fs_write",
+      {
+        path: file,
+        data: Buffer.from(encoded, "base64").toString("utf8"),
+        encoding: "utf8",
+        overwrite: true,
+      },
+      signal,
+    );
+    env.RAKAZO_NET_FILE = file;
+    return dir;
+  }
+
+  private async *executeInCall(
+    command: {
+      program: string;
+      args: string[];
+      cwd: string;
+      env: Record<string, string>;
+      timeoutMs: number;
+    },
+    context: AdapterContext,
+  ): AsyncIterable<ProcessEvent> {
+    const { program, args, cwd, env, timeoutMs } = command;
     const { data } = await this.tools.call(
       "process_exec",
       {

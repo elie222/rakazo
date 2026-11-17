@@ -1,7 +1,8 @@
 /**
  * Install rakazo-net from the command's tunnel settings, then run the command.
- * Unix uses the login shell; Windows uses PowerShell. RAKAZO_NET_HOME is the computer's
- * home when the host has one, otherwise $HOME or $env:USERPROFILE.
+ * Unix reads RAKAZO_NET_HELPER. Windows reads the file at RAKAZO_NET_FILE, because the helper
+ * does not fit in a Windows process environment. RAKAZO_NET_HOME is the computer's home when
+ * the host has one, otherwise $HOME or $env:USERPROFILE.
  */
 const UNIX_TAILNET_INSTALL = [
   'if [ -n "$RAKAZO_NET_HELPER" ]; then',
@@ -19,22 +20,28 @@ const UNIX_TAILNET_INSTALL = [
 ].join("\n");
 
 const WINDOWS_TAILNET_INSTALL = [
-  "if ($env:RAKAZO_NET_HELPER) {",
+  "if ($env:RAKAZO_NET_FILE) {",
   "  $root = if ($env:RAKAZO_NET_HOME) { $env:RAKAZO_NET_HOME } else { $env:USERPROFILE }",
   '  $bin = Join-Path $root ".cache\\rakazo\\net\\$env:RAKAZO_NET_VERSION"',
   '  $script = Join-Path $bin "rakazo-net.py"',
   '  $cmd = Join-Path $bin "rakazo-net.cmd"',
+  '  $part = "$cmd.$PID"',
   "  New-Item -ItemType Directory -Force -Path $bin | Out-Null",
-  "  if (-not (Test-Path $script)) {",
+  "  if (-not (Test-Path -LiteralPath $script)) {",
   "    try {",
-  "      [IO.File]::WriteAllBytes($script, [Convert]::FromBase64String($env:RAKAZO_NET_HELPER))",
-  "      Set-Content -Path $cmd -Value @('@echo off', 'py -3 \"%~dp0rakazo-net.py\" %*')",
+  "      Copy-Item -LiteralPath $env:RAKAZO_NET_FILE -Destination $script -Force",
+  "      Set-Content -LiteralPath $part -Encoding ascii -Value @(",
+  "        '@echo off',",
+  '        \'where python >nul 2>&1 && python "%~dp0rakazo-net.py" %* || python3 "%~dp0rakazo-net.py" %*\'',
+  "      )",
+  "      Move-Item -LiteralPath $part -Destination $cmd -Force",
   "    } catch {",
+  "      Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue",
   '      Write-Error "rakazo-net could not be installed"',
   "    }",
   "  }",
   '  $env:Path = "$bin;" + $env:Path',
-  "  Remove-Item Env:RAKAZO_NET_HELPER, Env:RAKAZO_NET_VERSION, Env:RAKAZO_NET_HOME -ErrorAction SilentlyContinue",
+  "  Remove-Item Env:RAKAZO_NET_FILE, Env:RAKAZO_NET_VERSION, Env:RAKAZO_NET_HOME -ErrorAction SilentlyContinue",
   "}",
 ].join("\n");
 
