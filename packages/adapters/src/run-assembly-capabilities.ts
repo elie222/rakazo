@@ -4,6 +4,7 @@ import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
+  isBackgroundRunTrigger,
   isCallClientNonce,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
@@ -74,6 +75,7 @@ import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { filterStrategicInitiativeTools } from "./strategic-initiative.js";
 import { refreshTakeoverContinuePlan } from "./takeover-resume.js";
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
+import { hasVoiceForMessages } from "./voice-message.js";
 import {
   createEarlierFileQueue,
   listCurrentTurnFiles,
@@ -688,6 +690,15 @@ export async function selectRunTools(
       semanticMemoryReflects: Boolean(semanticMemory?.reflect),
       mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
       mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+      voiceMessagesEnabled:
+        Boolean(deps.artifacts) &&
+        !isBackgroundRunTrigger(run.trigger) &&
+        !nonOwnerChatRun &&
+        (await hasVoiceForMessages(
+          deps.prisma,
+          { userId: run.userId, spaceId: run.spaceId },
+          bot.voiceId,
+        )),
       paidServicesEnabled: Boolean(paidServices),
       cloudAgentEnabled: Boolean(cloudAgent),
       cloudAgentCleanupEnabled,

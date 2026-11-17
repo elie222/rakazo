@@ -1,11 +1,12 @@
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { SecretStore, VoiceProvider } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential } from "@rakazo/db";
+import { findDefaultVoiceCredential, findModelCredential } from "@rakazo/db";
 import { resolveStoredModelAuth, withModelCredentialLock } from "./model-credential-refresh.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
-import { voiceCatalogEntry } from "./voice-factory.js";
+import { createVoiceProvider, voiceCatalogEntry } from "./voice-factory.js";
 
 /**
  * A voice connection's secret when it authenticates with the account's model connection to the
@@ -69,4 +70,42 @@ export async function resolveVoiceKey(
       throw error;
     }
   });
+}
+
+export type DefaultVoiceDeps = {
+  prisma: PrismaClient;
+  secretStore: VoiceKeyDeps["secretStore"];
+  /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
+  mcpAllowPrivateEndpoint?: boolean;
+};
+
+/**
+ * The person's default voice connection where they are, its adapter and the bearer it sends.
+ * Null when they have none.
+ */
+export async function loadDefaultVoice(
+  deps: DefaultVoiceDeps,
+  scope: { userId: string; spaceId: string },
+  signal?: AbortSignal,
+): Promise<{
+  credential: NonNullable<Awaited<ReturnType<typeof findDefaultVoiceCredential>>>;
+  provider: VoiceProvider;
+  apiKey: string;
+} | null> {
+  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
+  const secret =
+    credential &&
+    (await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+    }));
+  if (!credential || !secret) return null;
+  // A self-hosted speech server on a private address is limited like model endpoints.
+  const provider = createVoiceProvider(credential.provider, {
+    allowPrivateEndpoint:
+      credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
+      deps.mcpAllowPrivateEndpoint === true,
+  });
+  const plaintext = await deps.secretStore.load(secret.ciphertext, secret.id);
+  const apiKey = await resolveVoiceKey(deps, scope, credential.provider, plaintext, signal);
+  return { credential, provider, apiKey };
 }

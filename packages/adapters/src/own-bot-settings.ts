@@ -1,16 +1,13 @@
-import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import type { AdapterContext } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
-import { findDefaultVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { botModelLabel } from "./fleet-tools.js";
 import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
-import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
-import { createVoiceProvider } from "./voice-factory.js";
-import { resolveVoiceKey } from "./voice-model-connection.js";
+import type { DefaultVoiceDeps } from "./voice-model-connection.js";
+import { loadDefaultVoice } from "./voice-model-connection.js";
 
 export type OwnBotSettingsRow = {
   name: string;
@@ -129,35 +126,16 @@ export async function readOwnBotSettings(
 
 /** The voices the settings screen offers: those of the user's default voice connection here. */
 export async function listDefaultVoices(
-  deps: {
-    prisma: PrismaClient;
-    secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
-    mcpAllowPrivateEndpoint?: boolean;
-  },
+  deps: DefaultVoiceDeps,
   scope: Pick<Actor, "userId" | "spaceId">,
   context: AdapterContext,
 ): Promise<VoiceInfo[] | null> {
-  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
-  const secret =
-    credential &&
-    (await deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
-    }));
-  if (!credential || !secret) return null;
-  const provider = createVoiceProvider(credential.provider, {
-    allowPrivateEndpoint:
-      credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
-      deps.mcpAllowPrivateEndpoint === true,
-  });
-  const plaintext = await deps.secretStore.load(secret.ciphertext, secret.id);
-  const apiKey = await resolveVoiceKey(
+  const voice = await loadDefaultVoice(
     deps,
     { userId: scope.userId, spaceId: scope.spaceId },
-    credential.provider,
-    plaintext,
     context.signal,
   );
-  return provider.listVoices(apiKey, context);
+  return voice ? voice.provider.listVoices(voice.apiKey, context) : null;
 }
 
 const VOICES_SHOWN = 10;

@@ -49,6 +49,7 @@ export const BUILTIN_TOOL_NAMES = [
   "save_page",
   "generate_image",
   "generate_video",
+  "voice_message",
   "add_mcp_server",
   "remember",
   "save_shared_memory",
