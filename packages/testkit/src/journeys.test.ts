@@ -368,6 +368,44 @@ describeJourneys("required product journeys", () => {
     expect(computer.controlLeaseId).toBeNull();
   });
 
+  it("restarting one bot's screen hands control back and leaves the computer running", async () => {
+    const cookie = await signup(app, `maintenance-screen-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Screen user",
+      title: "Screen user",
+      description: "Uses the screen",
+      instructions: "Help.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    const status = await rpc<{ state: string; canRestartScreen?: boolean }>(
+      app,
+      cookie,
+      "computer/restartScreen",
+      { botId: bot.id },
+    );
+    expect(status.state).toBe("running");
+    expect(status.canRestartScreen).toBe(true);
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(computer.state).toBe("running");
+    expect(computer.controlHolder).not.toBe("user");
+    expect(computer.controlLeaseId).toBeNull();
+    // The lease row stays as an expired tombstone, so nothing live holds the bot's screen.
+    expect(
+      await prisma.computerExecutionLease.count({
+        where: { computerId: computer.id, expiresAt: { gt: new Date() } },
+      }),
+    ).toBe(0);
+  });
+
   it("resetting a computer the user has taken over hands control back first", async () => {
     const cookie = await signup(app, `maintenance-reset-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

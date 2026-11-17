@@ -161,6 +161,28 @@ describe("toComputerStatus", () => {
   });
 });
 
+describe("canRestartScreen", () => {
+  const status = (kind: string, scope: "team" | "dedicated" = "team") =>
+    toComputerStatus("bot-1", {
+      kind,
+      state: "running",
+      scope,
+      controlHolder: "none",
+      homeRevision: "r1",
+    });
+
+  it("is offered only for a kind that declares it", () => {
+    expect(status("docker").canRestartScreen).toBe(true);
+    expect(status("wuying").canRestartScreen).toBeUndefined();
+    expect(status("unknown-kind").canRestartScreen).toBeUndefined();
+  });
+
+  it("is not offered on a Private computer, which the restart refuses", () => {
+    expect(status("docker", "dedicated").canRestartScreen).toBeUndefined();
+    expect(toComputerStatus("bot-1", null).canRestartScreen).toBeUndefined();
+  });
+});
+
 describe("resolveComputerWork", () => {
   const work = (lease: { runId: string; live: boolean } | null, runStatus?: string) =>
     resolveComputerWork(

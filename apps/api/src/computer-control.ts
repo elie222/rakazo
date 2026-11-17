@@ -5,6 +5,7 @@ import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   anotherPersonHoldsControl,
+  BrowserStoppedReleaseError,
   ComputerBusyError,
   clearInactiveUserComputerControl,
   controlLeaseExpiresAt,
@@ -20,9 +21,10 @@ import {
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
+  toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor, ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -247,6 +249,72 @@ export async function runComputerReplace(
       { handBackIdleTakeover: true },
     );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
+  } finally {
+    await releaseComputerExecutionLease(deps.prisma, lease);
+  }
+  return computerStatus(deps, context.actor, botId);
+}
+
+/**
+ * Stop one Team bot's browser and screen without touching the shared computer or the other bots'
+ * screens. Its Chrome profile stays on disk, so the screen comes back signed in on the next read.
+ * Refused while the bot is working, or waiting on someone at its screen, so no run loses its page.
+ */
+export async function restartBotScreen(
+  deps: RouterDeps,
+  context: { actor: Actor },
+  botId: string,
+): Promise<ComputerStatus> {
+  const repos = createRepos(deps.prisma);
+  const bot = await repos.getBot(context.actor, botId);
+  const computer = bot.computer;
+  if (!computer) throw new IsolationError();
+  if (computer.scope !== "team") {
+    throw new ClientError("BAD_REQUEST", "Only a Team computer has a screen of its own to restart");
+  }
+  assertNotAnotherPersonsControl(computer, context.actor);
+  // A stopped computer has no screen running, and the next boot starts a fresh one.
+  if (computer.state !== "running" || !computer.providerRef) {
+    return computerStatus(deps, context.actor, botId);
+  }
+  const releaseScreen = deps.sandbox.releaseScreen?.bind(deps.sandbox);
+  if (sandboxKindCapabilities(computer.kind).restartScreen !== true || !releaseScreen) {
+    throw new ClientError("BAD_REQUEST", "Restarting the screen is not available on this computer");
+  }
+  const working = await deps.prisma.run.findFirst({
+    where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
+    select: { id: true },
+  });
+  if (working) {
+    throw new ClientError("CONFLICT", "This bot is working or waiting. Stop it, then try again");
+  }
+
+  const manualRunId = `screen:${randomUUID()}`;
+  // Held while the screen goes down, so a run of this bot cannot claim it half way.
+  const lease = await acquireComputerExecutionLease(deps.prisma, {
+    computerId: computer.id,
+    runId: manualRunId,
+    botId: bot.id,
+  });
+  try {
+    // Control of this bot's screen ends first: a person's session must not outlive its browser.
+    if (holdsComputerControl(computer, bot.id, context.actor)) {
+      await releaseComputerControl(deps, context.actor, computer, bot.id);
+    }
+    try {
+      // No lease id on purpose: the slot still names the bot's last run, and a release that
+      // names another owner is refused as stale without stopping anything. The lease above is
+      // what keeps a newer run from taking the screen meanwhile.
+      await releaseScreen(toComputerRef(computer), {
+        ...computerContext(context.actor, bot.id, "screen.restart"),
+        cancelRunWork: true,
+      });
+    } catch (error) {
+      // The browser stopped and only clearing its slot failed: the next read reuses the slot.
+      if (!(error instanceof BrowserStoppedReleaseError)) {
+        await clearGoneSandbox(deps, computer, error);
+      }
+    }
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }

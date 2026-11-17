@@ -889,6 +889,8 @@ export const appContract = {
     stop: oc.input(botId).output(ComputerStatusSchema),
     recover: oc.input(botId).output(ComputerUpdateSchema),
     reset: oc.input(botId).output(ComputerStatusSchema),
+    /** Stops one Team bot's screen and browser; the computer and its profile stay. */
+    restartScreen: oc.input(botId).output(ComputerStatusSchema),
     update: oc.input(botId).output(ComputerUpdateSchema),
     updates: oc.output(z.array(ComputerUpdateSchema)),
     releaseInterrupted: oc

@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  isRealSandboxProvider,
   openBotPanel,
   rpc,
   signup,
@@ -68,6 +69,35 @@ test(
     await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
     await captureScreenshot(page, testInfo, "computer-full-screen-recover-confirm");
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    // Only the docker and fake kinds declare the restart; the real providers named by
+    // isRealSandboxProvider do not show the button.
+    if (!isRealSandboxProvider()) {
+      await page
+        .getByRole("alert")
+        .getByRole("button", { name: "Restart screen", exact: true })
+        .click();
+      const restart = page.getByRole("alertdialog");
+      await expect(restart).toContainText("Restart screen?");
+      await expect(restart).toContainText("Closes this bot's browser. Its saved sign-ins stay.");
+      await captureScreenshot(page, testInfo, "computer-full-screen-restart-confirm");
+      // The server refuses while the bot's first run is still queued, which would make this flaky;
+      // the real call is covered by the journey test. Here the dialog flow is what matters.
+      const status = await rpc<{ state: string }>(page, "computer/status", { botId });
+      const restarted: Array<string | null> = [];
+      await page.route("**/rpc/computer/restartScreen", (route) => {
+        restarted.push(route.request().postData());
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ json: status }),
+        });
+      });
+      await restart.getByRole("button", { name: "Restart", exact: true }).click();
+      await expect(restart).toHaveCount(0);
+      expect(restarted).toHaveLength(1);
+      expect(restarted[0]).toContain(botId);
+    }
+
     failScreen = false;
     await page.getByRole("button", { name: "Retry screen" }).click();
     await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);

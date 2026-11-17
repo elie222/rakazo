@@ -290,6 +290,8 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /** One bot's screen can be stopped on its own, leaving the other bots on a Team computer alone. Off unless declared. */
+  restartScreen?: boolean;
 }
 
 export interface SandboxCapabilities {

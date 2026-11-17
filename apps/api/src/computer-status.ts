@@ -122,6 +122,7 @@ export function toComputerStatus(
     busyBotName: work.busyBotName,
     canUpdate: capabilities.inPlaceUpdate,
     terminalAvailable: capabilities.terminal,
+    ...(capabilities.restartScreen && computer?.scope === "team" ? { canRestartScreen: true } : {}),
     ...(capabilities.runsOnUserMachine ? { runsOnUserMachine: true } : {}),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };

@@ -57,6 +57,7 @@ import {
   keepComputerAwake,
   releaseComputerControl,
   renewComputerControl,
+  restartBotScreen,
   runComputerReplace,
   takeComputerControl,
   waitingTakeoverRun,
@@ -270,6 +271,9 @@ export function computerRoutes(ctx: RouterContext) {
         });
         return status;
       }),
+      restartScreen: authed.computer.restartScreen.handler(async ({ context, input }) =>
+        restartBotScreen(deps, context, input.botId),
+      ),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();

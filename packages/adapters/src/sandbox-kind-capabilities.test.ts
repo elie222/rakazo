@@ -72,7 +72,17 @@ describe("sandbox kind capabilities", () => {
   });
 
   it.each(knownSandboxKinds)("%s declares the pinned values", (kind) => {
-    expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
+    expect(sandboxKindCapabilities(kind)).toEqual({
+      ...capabilities(EXPECTED[kind]),
+      ...(kind === "docker" || kind === "fake" ? { restartScreen: true } : {}),
+    });
+  });
+
+  it("offers a bot's screen restart only on the kinds whose release was checked", () => {
+    expect(sandboxKindsWhere((entry) => entry.restartScreen === true).sort()).toEqual([
+      "docker",
+      "fake",
+    ]);
   });
 
   it.each(["unknown", "", null, undefined])("reads undeclared kind %j as before", (kind) => {
