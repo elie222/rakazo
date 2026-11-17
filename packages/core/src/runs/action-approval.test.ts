@@ -997,7 +997,17 @@ describe("toolResultTaintsRun", () => {
   });
 
   it("does not taint on the bot's own writes and saved state", () => {
-    for (const tool of ["ask_user", "remember", "recall_memory", "skill_read", "write_file"]) {
+    // A skill write confirms the bot's own arguments, so a second save in a clean run stays clean.
+    for (const tool of [
+      "ask_user",
+      "remember",
+      "recall_memory",
+      "skill_create",
+      "skill_read",
+      "skill_update",
+      "skill_delete",
+      "write_file",
+    ]) {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });
