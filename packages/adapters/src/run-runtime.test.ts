@@ -1,4 +1,5 @@
-import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
+import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { describe, expect, it } from "vitest";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { deploymentLabsFromEnv } from "./labs-env.js";

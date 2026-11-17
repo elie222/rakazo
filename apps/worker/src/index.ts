@@ -64,7 +64,8 @@ import {
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { abortableDelay, resolveSupervisorToken } from "@rakazo/core";
+import { abortableDelay } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,

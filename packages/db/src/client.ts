@@ -1,6 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
-import { resolveContentEncryption } from "@rakazo/core";
+import { resolveContentEncryption } from "@rakazo/core/node/secrets-guard";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { Pool } from "pg";

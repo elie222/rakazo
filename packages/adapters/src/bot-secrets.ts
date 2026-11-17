@@ -46,7 +46,8 @@ import {
   VAULT_ITEM_LIMIT,
   vaultLoginKey,
 } from "@rakazo/contracts";
-import { ClientError, resolveEncryptionKey } from "@rakazo/core";
+import { ClientError } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   ContentDecryptionError,

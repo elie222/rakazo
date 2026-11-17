@@ -23,7 +23,7 @@ import {
   safeScreenProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
 } from "@rakazo/core/node/screen-proxy-response";
-import { resolveScreenProxySecret } from "@rakazo/core/secrets-guard";
+import { resolveScreenProxySecret } from "@rakazo/core/node/secrets-guard";
 import type { Logger } from "@rakazo/logging";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./asset-archive.js";
 import { instanceThemeIndexMiddleware, instanceThemeMiddleware } from "./instance-theme.js";

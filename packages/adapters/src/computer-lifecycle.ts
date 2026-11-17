@@ -22,10 +22,9 @@ import {
   ClientError,
   computerUsingRuns,
   isRetryableError,
-  parseScreenLeaseId,
   pollUntil,
-  screenLeaseId,
 } from "@rakazo/core";
+import { parseScreenLeaseId, screenLeaseId } from "@rakazo/core/node/screen-lease";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,

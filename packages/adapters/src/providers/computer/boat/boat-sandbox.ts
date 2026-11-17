@@ -43,7 +43,8 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { boundedSandboxCommandTimeoutMs, deadlineSignal } from "@rakazo/core";
+import { deadlineSignal } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,

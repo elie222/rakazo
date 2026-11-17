@@ -16,8 +16,9 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { anySignal, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { anySignal } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type * as Railway from "railway";
 import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";

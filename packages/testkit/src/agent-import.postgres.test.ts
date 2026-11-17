@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { EncryptedSecretStore, InMemoryRealtimeFanout } from "@rakazo/adapters";
 import type { AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

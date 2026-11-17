@@ -9,8 +9,8 @@ import {
   PREVIOUS_IMAGE_TAG_ENV,
   RECREATED_SERVICES,
   resolveComposeProjectName,
-  resolveUpdaterToken,
 } from "@rakazo/core";
+import { resolveUpdaterToken } from "@rakazo/core/node/secrets-guard";
 
 export const DEFAULT_UPDATER_PORT = 7092;
 export const DEFAULT_COMPOSE_FILE = "infra/compose/docker-compose.prod.yml";

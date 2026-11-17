@@ -14,8 +14,8 @@ import {
   vaultItemsUnderOlderKeys,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { ContentMigrationMode } from "@rakazo/db";
 import {
   contentEncryptionStatus,

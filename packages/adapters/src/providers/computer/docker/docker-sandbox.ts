@@ -24,13 +24,9 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
-import {
-  boundedSandboxCommandTimeoutMs,
-  cancelResponseBody,
-  ResponseTooLargeError,
-  requestDeadline,
-  resolveSupervisorToken,
-} from "@rakazo/core";
+import { cancelResponseBody, ResponseTooLargeError, requestDeadline } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import { ComputerScreenUnavailableError } from "../../../computer-screens.js";
 import {

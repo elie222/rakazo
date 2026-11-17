@@ -18,7 +18,6 @@ import {
   gitStatusArgv,
   gitUntrackedFilesArgv,
   gitWorktreeContentDiffArgv,
-  hasValidBearerToken,
   IMAGE_TAG_ENV,
   imageRef,
   isGitCommit,
@@ -34,6 +33,7 @@ import {
   upsertEnvAssignments,
   validateUpdateRequest,
 } from "@rakazo/core";
+import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { Logger } from "@rakazo/logging";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
