@@ -1,6 +1,6 @@
 // Fails unless the packaged update config at argv[2] is bound to the signing publisher argv[3].
 import { readFileSync } from "node:fs";
-import { updateConfigBindsPublisher } from "../src/main/update-publisher.js";
+import { updateConfigBindsPublisher } from "../src/main/updates/update-publisher.js";
 
 const [config = "", publisher = ""] = process.argv.slice(2);
 if (!updateConfigBindsPublisher(readFileSync(config, "utf8"), publisher)) {

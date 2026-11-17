@@ -181,7 +181,7 @@
     {
       "includes": [
         "packages/adapters/**",
-        "apps/desktop/src/main/monitoring.ts",
+        "apps/desktop/src/main/system/monitoring.ts",
         "apps/web/src/lib/monitoring.ts",
         "apps/mobile/lib/monitoring.ts",
         "packages/logging/src/sentry.ts",
