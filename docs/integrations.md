@@ -28,8 +28,8 @@ The **+** in **Integrations** adds tools that aren't in the catalog:
   directory of them. A self-hosted server can also run local (stdio) MCP servers, which an admin
   adds; see [Tools and integrations](./self-host-integrations.md).
 - **OpenAPI** and **GraphQL**: point at an API's description and the bot can call it.
-- **Executor**: a tool gateway. Choose **Save and sign in** and sign in with your Executor
-  account. For a self-hosted Executor, change the URL to its own `/mcp` address.
+- **Executor**: a tool gateway you sign in to with your Executor account. For a self-hosted
+  Executor, change the URL to its own `/mcp` address.
 - **From GitHub**: install a plugin from its repository. See [Build a plugin](./build-a-plugin.md).
 
 Choose an authentication method (**No auth**, **Bearer token** or **API key header**) and then
