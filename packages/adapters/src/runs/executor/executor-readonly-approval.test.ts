@@ -960,7 +960,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.commit).not.toHaveBeenCalled();
     });
 
-    it("judges a skill save by the general rules, not the memory ones, in Auto", async () => {
+    it("judges a skill save on the owner's own words, as a standing instruction, in Auto", async () => {
       reviewMock.mockResolvedValue({ decision: "ask", reason: "Unasked", model: "mock" });
       const f = fixture({
         name: "skill_update",
@@ -973,7 +973,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       ]);
       await f.run();
       expect(reviewMock).toHaveBeenCalledOnce();
-      expect(reviewMock.mock.calls[0]?.[0]).not.toHaveProperty("memoryWrite", true);
+      expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({ savedContextWrite: true });
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     });
 
@@ -985,7 +985,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       await f.run();
       expect(reviewMock).toHaveBeenCalledOnce();
       // Judged as a standing instruction for later runs, not as a step of this task.
-      expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({ memoryWrite: true });
+      expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({ savedContextWrite: true });
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(f.commit).toHaveBeenCalledOnce();
     });
@@ -1004,7 +1004,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       f.setCalls([{ args: { content: "Dentist moved to Thursday." }, executionId: "call-1" }]);
       await f.run();
       expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({
-        memoryWrite: true,
+        savedContextWrite: true,
         userTask: "Remember that my dentist moved to Thursday.",
       });
     });

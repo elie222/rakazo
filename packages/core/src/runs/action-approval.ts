@@ -301,11 +301,6 @@ export function connectorReadRequiresApproval(input: {
 const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
 const SKILL_WRITE_TOOLS = new Set(["skill_create", "skill_update"]);
 
-/** A memory save, which the approval reviewer judges by its own rules. */
-export function isMemoryWriteTool(toolName: string): boolean {
-  return MEMORY_WRITE_TOOLS.has(toolName);
-}
-
 /**
  * A memory or skill save goes through the run's approval mode like any consequential action
  * whenever the run's current action permissions are reduced: fresh outside input entered it, or

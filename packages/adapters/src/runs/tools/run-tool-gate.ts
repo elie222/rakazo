@@ -17,7 +17,6 @@ import {
   displayName,
   HELPER_RESULT_TRIGGER,
   humanizeToolName,
-  isMemoryWriteTool,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -136,7 +135,7 @@ type ToolReview = {
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
   newSite: boolean;
-  memoryWrite: boolean;
+  savedContextWrite: boolean;
   fetchUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
@@ -498,7 +497,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
-      memoryWrite: savedContextWriteGated && isMemoryWriteTool(name),
+      savedContextWrite: savedContextWriteGated,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -834,9 +833,9 @@ async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site or a memory save after outside content is judged on the owner's own words only:
+    // A new site, or a memory or skill save after outside content, is judged on the owner's own words only:
     // the task prompt of a webhook or bot-started run carries text someone else wrote.
-    const ownerWordsOnly = (review.newSite && fetchUrl) || review.memoryWrite;
+    const ownerWordsOnly = (review.newSite && fetchUrl) || review.savedContextWrite;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -851,7 +850,7 @@ async function reviewToolCall(
       botDescription,
       matchingRules: review.matchingRules,
       ...(review.newSite && fetchUrl ? { newSite: true } : {}),
-      ...(review.memoryWrite ? { memoryWrite: true } : {}),
+      ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
     };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,
