@@ -188,3 +188,32 @@ it("fetches only thumbnails near the selected picture", async () => {
   ].sort();
   expect(fetched).toEqual(["lazy-2", "lazy-3", "lazy-4", "lazy-5", "lazy-6", "lazy-7", "lazy-8"]);
 });
+
+it("keeps the selected picture when earlier images arrive", async () => {
+  const first: GalleryImage[] = ["a", "b", "c"].map((name) => ({
+    artifactId: name,
+    name,
+    target: { botId: "bot" },
+  }));
+  const render = async (list: GalleryImage[]) => {
+    await act(async () => {
+      root.render(
+        <ImageGalleryProvider images={list}>
+          {list.map((image) => (
+            <Opener key={image.name} image={image} />
+          ))}
+        </ImageGalleryProvider>,
+      );
+    });
+  };
+  await render(first);
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "open b")
+      ?.click();
+  });
+  expect(previewName()).toBe("b");
+  await render([{ artifactId: "x", name: "x", target: { botId: "bot" } }, ...first]);
+  expect(previewName()).toBe("b");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("3 / 4");
+});

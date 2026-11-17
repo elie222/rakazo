@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useArtifactImage } from "../../lib/use-artifact-image";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -34,19 +34,24 @@ export function ImageGalleryProvider({
   images: GalleryImage[];
   children: ReactNode;
 }) {
-  const [openAt, setOpenAt] = useState<number | null>(null);
-  const open = useMemo(() => {
-    const positions = new Map(images.map((image, index) => [galleryImageKey(image), index]));
-    return (image: GalleryImage) => {
-      const index = positions.get(galleryImageKey(image));
-      if (index !== undefined) setOpenAt(index);
-    };
-  }, [images]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const open = useCallback((image: GalleryImage) => setSelectedKey(galleryImageKey(image)), []);
+  const selectedAt = selectedKey
+    ? images.findIndex((image) => galleryImageKey(image) === selectedKey)
+    : -1;
+  useEffect(() => {
+    if (selectedKey && selectedAt === -1) setSelectedKey(null);
+  }, [selectedKey, selectedAt]);
   return (
     <ImageGalleryContext.Provider value={open}>
       {children}
-      {openAt !== null && images[openAt] ? (
-        <ImageLightbox images={images} start={openAt} onClose={() => setOpenAt(null)} />
+      {selectedKey && selectedAt !== -1 ? (
+        <ImageLightbox
+          images={images}
+          selectedKey={selectedKey}
+          onSelect={setSelectedKey}
+          onClose={() => setSelectedKey(null)}
+        />
       ) : null}
     </ImageGalleryContext.Provider>
   );
@@ -89,32 +94,27 @@ function GalleryThumb({
  * The picture at full size over the page, with the chat's other pictures beside it: arrows and
  * the carousel move through them, and the arrow keys, Escape or a click dismiss the lightbox.
  */
-export function ImageLightbox(props: {
-  images: GalleryImage[];
-  start: number;
-  onClose: () => void;
-}) {
-  if (!(props.images[props.start] ?? props.images[0])) return null;
-  return <LightboxView {...props} />;
-}
-
-function LightboxView({
+export function ImageLightbox({
   images,
-  start,
+  selectedKey,
+  onSelect,
   onClose,
 }: {
   images: GalleryImage[];
-  start: number;
+  selectedKey: string;
+  onSelect: (key: string) => void;
   onClose: () => void;
 }) {
   const { t } = useLingui();
-  const [index, setIndex] = useState(start);
-  const current = (images[index] ?? images[0])!;
-  const src = useArtifactImage(current.target, current.artifactId);
+  const index = images.findIndex((image) => galleryImageKey(image) === selectedKey);
+  const current = images[index];
+  const src = useArtifactImage(current?.target, current?.artifactId ?? "", Boolean(current));
   const close = useRef<HTMLButtonElement>(null);
   const single = images.length < 2;
-  const step = (delta: number) =>
-    setIndex((position) => (position + delta + images.length) % images.length);
+  const step = (delta: number) => {
+    const next = images[(index + delta + images.length) % images.length];
+    if (next) onSelect(galleryImageKey(next));
+  };
 
   useEffect(() => {
     close.current?.focus();
@@ -130,6 +130,7 @@ function LightboxView({
     },
     true,
   );
+  if (!current) return null;
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -207,7 +208,7 @@ function LightboxView({
                     <GalleryThumb
                       image={image}
                       active={distance === 0}
-                      onSelect={() => setIndex(position)}
+                      onSelect={() => onSelect(galleryImageKey(image))}
                       // Clipped neighbours stay out of the tab order; the arrows reach every image.
                       tabIndex={distance > 1 ? -1 : undefined}
                       enabled={distance <= 3}

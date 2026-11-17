@@ -18,7 +18,7 @@ import { useArtifactImage } from "../../lib/use-artifact-image";
 import { useEventListener } from "../../lib/use-event-listener";
 import type { ErrorDetails } from "../../lib/user-error";
 import { errorDetails, errorText } from "../../lib/user-error";
-import { ImageLightbox, useOpenImage } from "./image-gallery";
+import { galleryImageKey, ImageLightbox, useOpenImage } from "./image-gallery";
 
 export function ChoiceCard({
   botId,
@@ -560,7 +560,8 @@ export function ArtifactImage({
       {src && open && !openImage ? (
         <ImageLightbox
           images={[{ artifactId, name, target }]}
-          start={0}
+          selectedKey={galleryImageKey({ artifactId, name, target })}
+          onSelect={() => undefined}
           onClose={() => setOpen(false)}
         />
       ) : null}
