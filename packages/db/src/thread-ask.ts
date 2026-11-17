@@ -41,7 +41,7 @@ import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { publishSpaceChange } from "./space-changes.js";
-import { createPendingSteeringRun } from "./thread-steering.js";
+import { createPendingSteeringRun, releaseUnreadHandovers } from "./thread-steering.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
@@ -799,6 +799,7 @@ export async function pauseRunForInput(
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
+    await releaseUnreadHandovers(tx, input.runId);
     const continuationRunId = input.requestThreadId
       ? null
       : await createPendingSteeringRun(tx, input);

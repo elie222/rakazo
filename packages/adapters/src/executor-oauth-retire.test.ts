@@ -86,7 +86,7 @@ function oauthPrisma() {
     // The row lock secret persistence takes before a write replaces a reference.
     $queryRaw: vi.fn(async (query: { values: unknown[] }) =>
       state.secrets
-        .filter((row) => query.values.includes(row.id))
+        .filter((row) => query.values.flat().includes(row.id))
         .map(({ id, ciphertext }) => ({ id, ciphertext })),
     ),
     secret: {
