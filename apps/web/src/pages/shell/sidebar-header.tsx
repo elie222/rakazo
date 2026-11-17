@@ -75,7 +75,7 @@ export function SidebarHeader({
         {toggle}
       </div>
       <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-1"}`}>
-        {onSearch ? (
+        {onSearch && !mini ? (
           <IconTooltip label={t`Search`} side={labelSide}>
             <Button
               variant="ghost"
@@ -90,25 +90,27 @@ export function SidebarHeader({
             </Button>
           </IconTooltip>
         ) : null}
-        <IconTooltip label={t`Activity`} side={labelSide}>
-          <Button
-            variant="ghost"
-            size={iconSize}
-            aria-label={t`Activity`}
-            aria-pressed={activityMode}
-            data-activity-mode={activityMode ? "on" : "off"}
-            onClick={toggleActivityMode}
-            className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-          >
-            {/* A filled bell marks Activity on, so on and hovered never look alike. */}
-            <Bell
-              size={ICON}
-              strokeWidth={STROKE}
-              fill={activityMode ? "currentColor" : "none"}
-              aria-hidden="true"
-            />
-          </Button>
-        </IconTooltip>
+        {mini ? null : (
+          <IconTooltip label={t`Activity`} side={labelSide}>
+            <Button
+              variant="ghost"
+              size={iconSize}
+              aria-label={t`Activity`}
+              aria-pressed={activityMode}
+              data-activity-mode={activityMode ? "on" : "off"}
+              onClick={toggleActivityMode}
+              className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+            >
+              {/* A filled bell marks Activity on, so on and hovered never look alike. */}
+              <Bell
+                size={ICON}
+                strokeWidth={STROKE}
+                fill={activityMode ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+            </Button>
+          </IconTooltip>
+        )}
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
           <IconTooltip label={t`Create`} side={labelSide}>
             <PopoverTrigger
