@@ -1681,6 +1681,10 @@ describe("createChildRoutine", () => {
       ...fleet,
       routines: [{ id: "routine-1", name: "Daily", crons: [], nextRunAt: null }],
     });
+    // The bot is linked to Slack now, so only a Slack routine is the approved one.
+    (prisma as { messagingIdentity?: unknown }).messagingIdentity = {
+      findUnique: vi.fn(async () => ({ provider: "slack" })),
+    };
     const result = await createChildRoutine(writeDeps(prisma), run, {
       ...canonical,
       schedule: {},
@@ -1694,7 +1698,7 @@ describe("createChildRoutine", () => {
           crons: { equals: [] },
           webhookEnabled: true,
           githubEnabled: false,
-          messageProvider: { not: null },
+          messageProvider: "slack",
           emailSenders: null,
         }),
       }),

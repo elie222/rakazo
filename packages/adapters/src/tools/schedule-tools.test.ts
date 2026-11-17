@@ -3,6 +3,10 @@ import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ROUTINE_CHAT_TRIGGER_NOTE,
+  ROUTINE_WEBHOOK_SETUP_NOTE,
+} from "../routines/routine-triggers.prompt.js";
+import {
   cancelScheduleFromTool,
   changeUserTimezone,
   commandWatchFromTool,
@@ -1812,7 +1816,7 @@ describe("schedule tools with events", () => {
     expect(result).toMatchObject({
       ok: true,
       on: { webhook: true },
-      setup: expect.stringContaining("Never ask them for the key"),
+      setup: ROUTINE_WEBHOOK_SETUP_NOTE,
     });
     expect(key.plaintext).not.toBe("");
     expect(JSON.stringify(result)).not.toContain(key.plaintext);
@@ -1837,7 +1841,7 @@ describe("schedule tools with events", () => {
     expect(result).toMatchObject({
       ok: true,
       on: { chat: "Slack" },
-      chatNote: expect.stringContaining("instead of a normal reply"),
+      chatNote: ROUTINE_CHAT_TRIGGER_NOTE,
     });
   });
 
