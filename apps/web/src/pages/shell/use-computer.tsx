@@ -1,7 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type { ComputerStatus } from "@rakazo/contracts";
-import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
+import type { ComputerStatus, RunStatus } from "@rakazo/contracts";
+import {
+  createScreenReconnects,
+  QUEUE_HOLDING_RUN_STATUSES,
+  screenProbeUrl,
+  waitForScreenPage,
+} from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComputerScreenResult } from "../../lib/computer-screen";
@@ -39,11 +44,14 @@ export function useComputerState({
   panel,
   activeId,
   activeBotId,
+  runStatus,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
   activeId: string | undefined;
   activeBotId: RefObject<string | undefined>;
+  /** The run the chat is showing; it holds the computer up while it is queued or working. */
+  runStatus?: RunStatus;
 }) {
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -374,8 +382,23 @@ export function useComputerState({
   useEventListener(viewport, "resize", syncViewport);
   useEventListener(viewport, "scroll", syncViewport);
   const screenRequest = useRef(0);
+  // The sidebar's Computer tab shows the screen only while the bot's run holds the computer up
+  // for its own work, so watching here never keeps an idle computer awake.
+  const previewWanted =
+    panel === "computer" &&
+    !computerOpen &&
+    activeId !== undefined &&
+    computer?.botId === activeId &&
+    computer.state === "running" &&
+    runStatus !== undefined &&
+    (QUEUE_HOLDING_RUN_STATUSES as readonly string[]).includes(runStatus);
   const computerVisible = useRef(false);
-  computerVisible.current = computerOpen;
+  computerVisible.current = computerOpen || previewWanted;
+  // The tab can open after a URL was read long ago, and another viewer's read signs that one out.
+  useEffect(() => {
+    if (!previewWanted || !activeId) return;
+    void refreshComputerScreen(activeId).catch(() => null);
+  }, [previewWanted, activeId]);
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 
@@ -576,6 +599,7 @@ export function useComputerState({
     screenAwaitsRetry,
     resetScreenReconnect,
     computerVisible,
+    previewVisible: previewWanted,
     refreshComputerScreen,
     ownControlLease,
     expectOwnAnswer,

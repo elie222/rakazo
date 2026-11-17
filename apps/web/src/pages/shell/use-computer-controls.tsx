@@ -103,8 +103,8 @@ export function useComputerControls({
   const holdComputerRecovery = useCallback(() => setRecoveryHold({}), []);
   useTimeout(releaseComputerRecovery, recoveryHold ? 4000 : null, recoveryHold);
   useEffect(() => {
-    // The recovery hint shows in the bot panel; leaving it lets the hint go.
-    if (panel !== "settings") releaseComputerRecovery();
+    // The recovery hint shows in the panel's Computer tab; leaving it lets the hint go.
+    if (panel !== "computer") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;

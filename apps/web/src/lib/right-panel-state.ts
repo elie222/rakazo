@@ -1,4 +1,5 @@
 export type Panel =
+  | "computer"
   | "routines"
   | "pages"
   | "settings"
@@ -40,7 +41,7 @@ export function readRightPanelState(key: string): RightPanelState {
     )
       return { panel: null };
     return {
-      panel: restoredPanel(value.panel as string | null),
+      panel: value.panel as Panel,
       ...(value.panel === "routine" &&
       "routineId" in value &&
       typeof value.routineId === "string" &&
@@ -53,16 +54,7 @@ export function readRightPanelState(key: string): RightPanelState {
   }
 }
 
-/**
- * A bot's panel reopens on the panel itself: a whole list is somewhere it led to, and the
- * computer tab an older version stored is gone.
- */
-function restoredPanel(panel: string | null): Panel {
-  return panel === "computer" || panel === "routines" || panel === "pages"
-    ? "settings"
-    : (panel as Panel);
-}
-
+/** A bot's panel reopens on the tab it was left on, so someone watching the computer finds it again. */
 export function writeRightPanelState(key: string, panel: Panel, routineId?: string) {
   // Keep the last durable preference while create-group or an import is open.
   if (panel === "create-group" || panel === "import-agent") return;

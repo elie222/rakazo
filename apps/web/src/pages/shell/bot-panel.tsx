@@ -20,10 +20,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
-  SectionHeading,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
@@ -40,7 +43,6 @@ import { AvatarStudioPopover } from "./avatar-studio-popover";
 import {
   DescriptionGroup,
   ModelRow,
-  PanelSection,
   SettingsCard,
   SwitchRow,
   ToolsGroup,
@@ -66,12 +68,11 @@ function advancedValues(bot: Bot) {
   ] as const;
 }
 
-/** The panel itself, or one of its whole lists. */
-export type BotPanelView = "settings" | "routines" | "pages";
+/** The panel itself, or one of its tabs. */
+export type BotPanelView = "computer" | "routines" | "pages" | "settings";
 
 /**
- * A bot's panel: its profile, then its computer, routines and pages, then its settings, with the
- * rarely changed ones folded away.
+ * A bot's panel: its profile above the Computer, Routines, Pages and Settings tabs.
  */
 export function BotSettings({
   bot,
@@ -116,15 +117,21 @@ export function BotSettings({
   const { t } = useLingui();
   const ids = useId();
   const modelRef = useRef<HTMLDivElement>(null);
+  // The panel keeps its own tab when it is used without a parent that stores one.
+  const [ownView, setOwnView] = useState<BotPanelView>(view);
+  const tab = onViewChange ? view : ownView;
+  function changeView(next: BotPanelView) {
+    setOwnView(next);
+    onViewChange?.(next);
+  }
   // A model deep link opens Settings, then focuses the model once Settings is shown: a control
-  // inside a hidden section cannot take focus.
+  // inside a hidden tab cannot take focus.
   const modelFocusPending = useRef(false);
   useEffect(() => {
-    if (focusModel && view === "settings") {
-      modelFocusPending.current = true;
-      setSettingsOpen(true);
-    }
-  }, [view, focusModel]);
+    if (!focusModel) return;
+    modelFocusPending.current = true;
+    changeView("settings");
+  }, [focusModel]);
   const [name, setName] = useState(bot.name);
   const savedNameRef = useRef(bot.name);
   const [description, setDescription] = useState(bot.description);
@@ -178,13 +185,12 @@ export function BotSettings({
     Object.entries(changed).some(([key, on]) => on !== changedBefore[key as keyof typeof changed])
   )
     setChangedBefore(changed);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
-    if (!settingsOpen || !modelFocusPending.current) return;
+    if (tab !== "settings" || !modelFocusPending.current) return;
     modelFocusPending.current = false;
     modelRef.current?.scrollIntoView?.({ block: "nearest" });
     modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
-  }, [settingsOpen, view, focusModel]);
+  }, [tab, focusModel]);
   const [claimingEmail, setClaimingEmail] = useState(false);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
@@ -507,7 +513,6 @@ export function BotSettings({
   }, [advancedSnapshot]);
 
   const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
-  const routineCount = routines?.routines.length ?? 0;
   const headerButtons = (
     <Button
       variant="ghost"
@@ -522,167 +527,116 @@ export function BotSettings({
 
   return (
     <div data-testid="bot-settings">
-      {view !== "settings" ? (
-        <div className="mb-4 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label={t`Back`}
-            onClick={() => onViewChange?.("settings")}
+      <div className="mb-4 flex items-center justify-end gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label={t`More actions`}
+              />
+            }
           >
-            <ChevronLeft className="rtl:rotate-180" />
-          </Button>
-          <div className="text-body-lg font-medium text-foreground">
-            {view === "routines" ? <Trans>Routines</Trans> : <Trans>Pages</Trans>}
-          </div>
-          {headerButtons}
-        </div>
-      ) : null}
-      {view === "routines" && routines ? <RoutineList {...routines} /> : null}
-      {view === "pages" ? <PagesList botId={bot.id} /> : null}
-      {/* Stays mounted so drafts and the open sections survive a visit to a whole list. */}
-      <div hidden={view !== "settings"}>
-        <div className="mb-4 flex items-center justify-end gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground"
-                  aria-label={t`More actions`}
-                />
-              }
-            >
-              <MoreHorizontal size={16} strokeWidth={1.8} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {email && !email.address && !claimingEmail ? (
-                <DropdownMenuItem onClick={() => setClaimingEmail(true)}>
-                  <Trans>Get an email address</Trans>
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem
-                onClick={() => {
-                  setError(null);
-                  onExport().catch((err: unknown) => setError(errorText(err)));
-                }}
-              >
-                <Trans>Export</Trans>
+            <MoreHorizontal size={16} strokeWidth={1.8} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {email && !email.address && !claimingEmail ? (
+              <DropdownMenuItem onClick={() => setClaimingEmail(true)}>
+                <Trans>Get an email address</Trans>
               </DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onClick={onClear}>
-                <Trans>Clear conversation</Trans>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {headerButtons}
-        </div>
-        <div
-          data-testid="bot-profile-header"
-          className="flex flex-col items-center pb-5 text-center"
-        >
-          <div className="flex justify-center pb-4">
-            <AvatarStudioPopover
-              value={color}
-              identity={bot.id}
-              status={bot.status}
-              size={76}
-              avatarSet={avatarSet}
-              onChange={(newColor, nextAvatarSet) => {
-                setColor(newColor);
-                if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
-                void enqueueSave({
-                  color: newColor,
-                  ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
-                });
+            ) : null}
+            <DropdownMenuItem
+              onClick={() => {
+                setError(null);
+                onExport().catch((err: unknown) => setError(errorText(err)));
               }}
-            />
-          </div>
-          <InlineProfileField
-            label={t`Name`}
-            editLabel={t`Edit name`}
-            value={name}
-            maxLength={BOT_NAME_MAX_LENGTH}
-            className="text-heading2 font-semibold"
-            onCommit={(value) => {
-              if (!value.trim()) return;
-              setName(value.trim());
-              void enqueueSave({ name: value });
+            >
+              <Trans>Export</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onClick={onClear}>
+              <Trans>Clear conversation</Trans>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {headerButtons}
+      </div>
+      <div
+        data-testid="bot-profile-header"
+        className="flex flex-col items-center pb-5 text-center"
+      >
+        <div className="flex justify-center pb-4">
+          <AvatarStudioPopover
+            value={color}
+            identity={bot.id}
+            status={bot.status}
+            size={76}
+            avatarSet={avatarSet}
+            onChange={(newColor, nextAvatarSet) => {
+              setColor(newColor);
+              if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
+              void enqueueSave({
+                color: newColor,
+                ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
+              });
             }}
           />
-          {email && (email.address || claimingEmail) ? (
-            <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
-              <BotEmailAddressField
-                bot={{ id: bot.id, name }}
-                domain={email.domain}
-                address={email.address}
-              />
-            </div>
-          ) : null}
         </div>
-        <div className="space-y-6">
-          {computer ? (
-            <PanelSection label={<Trans>Computer</Trans>}>{computer}</PanelSection>
-          ) : null}
-          {routines ? (
-            <PanelSection
-              label={
-                routineCount > ROUTINE_PREVIEW_COUNT ? (
-                  <button
-                    type="button"
-                    onClick={() => onViewChange?.("routines")}
-                    className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Trans>Routines</Trans>
-                    <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
-                  </button>
-                ) : (
-                  <Trans>Routines</Trans>
-                )
-              }
-              action={
-                routineCount > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    data-testid="routine-create-button"
-                    aria-label={t`Create routine`}
-                    onClick={routines.onCreate}
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                ) : null
-              }
-            >
-              <RoutineList {...routines} preview />
-            </PanelSection>
-          ) : null}
-          <PagesList botId={bot.id} preview={{ onOpenAll: () => onViewChange?.("pages") }} />
-        </div>
-        <ErrorBoundary fallback={<SectionLoadFailed />}>
-          <Suspense fallback={null}>
-            <ScratchpadSection botId={bot.id} />
-          </Suspense>
-        </ErrorBoundary>
-        <div className="mt-6" data-testid="bot-settings-advanced">
-          <SectionHeading variant="label" className="flex min-h-6 items-center">
-            <button
-              type="button"
-              aria-expanded={settingsOpen}
-              aria-controls={`${ids}-settings`}
-              onClick={() => setSettingsOpen((open) => !open)}
-              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Trans>Settings</Trans>
-              <ChevronDown
-                aria-hidden="true"
-                className={`size-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          </SectionHeading>
-          {/* Stays mounted so an instructions or description draft survives folding it away. */}
-          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-2">
+        <InlineProfileField
+          label={t`Name`}
+          editLabel={t`Edit name`}
+          value={name}
+          maxLength={BOT_NAME_MAX_LENGTH}
+          className="text-heading2 font-semibold"
+          onCommit={(value) => {
+            if (!value.trim()) return;
+            setName(value.trim());
+            void enqueueSave({ name: value });
+          }}
+        />
+        {email && (email.address || claimingEmail) ? (
+          <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
+            <BotEmailAddressField
+              bot={{ id: bot.id, name }}
+              domain={email.domain}
+              address={email.address}
+            />
+          </div>
+        ) : null}
+      </div>
+      <Tabs value={tab} onValueChange={(next) => changeView(next as BotPanelView)}>
+        <TabsList className="w-full">
+          <TabsTrigger value="computer">
+            <Trans>Computer</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="routines">
+            <Trans>Routines</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="pages">
+            <Trans>Pages</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="settings">
+            <Trans>Settings</Trans>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="computer" className="pt-4">
+          {computer ?? null}
+        </TabsContent>
+        <TabsContent value="routines" className="pt-4">
+          {routines ? <RoutineList {...routines} /> : null}
+        </TabsContent>
+        <TabsContent value="pages" className="pt-4">
+          <PagesList botId={bot.id} />
+        </TabsContent>
+        {/* Stays mounted so an instructions or description draft survives a visit to a tab. */}
+        <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
+          <ErrorBoundary fallback={<SectionLoadFailed />}>
+            <Suspense fallback={null}>
+              <ScratchpadSection botId={bot.id} />
+            </Suspense>
+          </ErrorBoundary>
+          <div className="space-y-6 pt-2">
             <SettingsCard>
               <ModelRow
                 ids={ids}
@@ -792,9 +746,9 @@ export function BotSettings({
               />
             ) : null}
           </div>
-        </div>
-        {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
-      </div>
+          {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

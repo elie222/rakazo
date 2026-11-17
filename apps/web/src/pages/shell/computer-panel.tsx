@@ -6,12 +6,20 @@ import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
+import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
   bot: Bot;
   computer: ComputerStatus | null;
   computerOpen: boolean;
+  embeddedScreenUrl: string | null;
+  /** Changes to load the screen again in a new frame. */
+  screenFrameKey?: string;
+  heldScreen?: { url: string; key: string } | null;
+  screenFrameRef: (frame: HTMLIFrameElement | null) => void;
+  /** True while the bot's own run holds the computer up, so watching adds no uptime. */
+  livePreview: boolean;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
   booting: boolean;
@@ -69,6 +77,11 @@ function ComputerPreview({
   bot,
   computer,
   computerOpen,
+  embeddedScreenUrl,
+  screenFrameKey,
+  heldScreen,
+  screenFrameRef,
+  livePreview,
   computerScreenError,
   computerBooting,
   booting,
@@ -90,7 +103,17 @@ function ComputerPreview({
     !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   const rowClass = "flex min-h-14 items-center gap-3 rounded-xl bg-muted/50 px-4 text-body";
-  // The bot stands in for its screen: a live screen here would hold the computer awake.
+  // The bot's screen shows here only while its own run keeps the computer up; an idle one sleeps.
+  const live =
+    !computerOpen &&
+    !runsOnUserMachine(computer) &&
+    livePreview &&
+    computer?.state === "running" &&
+    Boolean(embeddedScreenUrl) &&
+    !computerScreenError &&
+    !showingRecoveryHint;
+  const liveUrl = live ? embeddedScreenUrl : null;
+  // The bot stands in for its screen whenever it is not being watched here.
   const tile = (asleep: boolean) => (
     <span aria-hidden className="relative shrink-0">
       <BotAvatar
@@ -120,10 +143,11 @@ function ComputerPreview({
       </div>
     );
   }
-  // A running computer is a row too; its screen is one click away.
+  // A running computer is a row too while nothing holds it up; its screen is one click away.
   if (
     !runsOnUserMachine(computer) &&
     computer?.state === "running" &&
+    !live &&
     !booting &&
     !computerBooting &&
     !computerScreenError &&
@@ -157,8 +181,13 @@ function ComputerPreview({
     <div>
       <div
         data-testid="computer-preview"
-        className={`group relative rounded-xl bg-muted/50 ${
-          showingRecoveryHint ? "" : "overflow-hidden py-6"
+        data-state={live ? "live" : undefined}
+        className={`group relative rounded-xl ${
+          live
+            ? "aspect-[16/10] overflow-hidden bg-background"
+            : showingRecoveryHint
+              ? "bg-muted/50"
+              : "overflow-hidden bg-muted/50 py-6"
         }`}
       >
         {computerOpen ? (
@@ -171,6 +200,21 @@ function ComputerPreview({
           <DesktopKindEmptyState
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
+        ) : liveUrl ? (
+          screenFrames(screenFrameKey, liveUrl, heldScreen).map((frame) => (
+            <iframe
+              key={frame.key}
+              title={frame.held ? undefined : t`Bot screen preview`}
+              aria-hidden={frame.held || undefined}
+              tabIndex={frame.held ? -1 : undefined}
+              ref={frame.held ? undefined : screenFrameRef}
+              src={frame.url}
+              sandbox={screenIframeSandbox(frame.url)}
+              className={`h-full w-full border-0 bg-black${frame.held ? " absolute inset-0" : ""}`}
+              allow="clipboard-read; clipboard-write"
+              style={{ pointerEvents: "none" }}
+            />
+          ))
         ) : (
           <div
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}

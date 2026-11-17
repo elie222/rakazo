@@ -46,8 +46,58 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const { OptionSelect } = await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
+  const TabsValue = createContext<{ value: string; change: (next: string) => void }>({
+    value: "",
+    change: () => undefined,
+  });
   return {
     useCopyText: () => [false, () => {}],
+    Tabs: ({
+      value,
+      onValueChange,
+      children,
+    }: {
+      value: string;
+      onValueChange?: (next: string) => void;
+      children: ReactNode;
+    }) => (
+      <TabsValue.Provider value={{ value, change: (next) => onValueChange?.(next) }}>
+        {children}
+      </TabsValue.Provider>
+    ),
+    TabsList: ({ children }: { children: ReactNode }) => <div role="tablist">{children}</div>,
+    TabsTrigger: ({ value, children }: { value: string; children: ReactNode }) => {
+      const tabs = useContext(TabsValue);
+      return (
+        <button
+          type="button"
+          role="tab"
+          data-value={value}
+          aria-selected={tabs.value === value}
+          onClick={() => tabs.change(value)}
+        >
+          {children}
+        </button>
+      );
+    },
+    TabsContent: ({
+      value,
+      keepMounted,
+      children,
+      ...props
+    }: {
+      value: string;
+      keepMounted?: boolean;
+      children: ReactNode;
+    } & ComponentProps<"div">) => {
+      const tabs = useContext(TabsValue);
+      if (!keepMounted && tabs.value !== value) return null;
+      return (
+        <div role="tabpanel" hidden={tabs.value !== value} {...props}>
+          {children}
+        </div>
+      );
+    },
     SectionHeading: ({
       variant: _variant,
       ...props
