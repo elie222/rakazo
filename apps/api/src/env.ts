@@ -278,7 +278,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
-    deploymentVoice: deploymentVoiceFromEnv(source.DEPLOYMENT_VOICE),
+    deploymentVoice: deploymentVoiceFromEnv(
+      source.DEPLOYMENT_VOICE,
+      source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    ),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:

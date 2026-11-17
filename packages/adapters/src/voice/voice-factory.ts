@@ -1,6 +1,6 @@
 import type { VoiceProvider, VoiceUsage } from "@rakazo/adapter-kit";
 import type { VoiceCatalogEntry } from "@rakazo/contracts";
-import type { VoiceProviderOptions } from "./voice-provider-descriptor.js";
+import type { VoiceConnectionFields, VoiceProviderOptions } from "./voice-provider-descriptor.js";
 import type { VoiceProviderId } from "./voice-providers.js";
 import { knownVoiceProvider, voiceProviders } from "./voice-providers.js";
 
@@ -63,14 +63,22 @@ export function voiceDeploymentModelSupported(
 /** Endpoint fields must affect dispatch whenever consent uses them to identify a recipient. */
 export function voiceDeploymentConnectionSupported(
   provider: string,
-  connection: { baseUrl?: string; sttBaseUrl?: string; sttApiKey?: string },
+  connection: VoiceConnectionFields,
+  options: VoiceProviderOptions = {},
 ): boolean {
   const definition = knownVoiceProvider(provider);
   if (!definition || (connection.sttApiKey !== undefined && !connection.sttBaseUrl)) return false;
-  if (definition.customEndpoints) return Boolean(connection.baseUrl);
-  return [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].every(
-    (value) => value === undefined,
-  );
+  if (definition.customEndpoints) {
+    if (!connection.baseUrl) return false;
+  } else if (
+    [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].some(
+      (value) => value !== undefined,
+    )
+  ) {
+    return false;
+  }
+  definition.validateConnection?.(connection, options);
+  return true;
 }
 
 /** Undefined requires explicit operator acceptance of manual cost reconciliation. */

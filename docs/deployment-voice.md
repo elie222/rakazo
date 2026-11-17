@@ -51,7 +51,10 @@ Configure a provider-side spend limit as well. Upload byte limits do not bound a
 match the pricing models. Endpoint fields require valid HTTP(S) URLs and a provider that
 supports custom endpoints; unsupported fields are rejected so consent names the actual recipient.
 Compatible connections require the main server URL; a separate recognition key requires its own
-recognition URL. Fixed recognition models are validated by the provider descriptor.
+recognition URL. Startup reuses the provider credential serializer for endpoint, key and effective
+model validation. Embedded URL credentials, blocked destinations and keyed public HTTP are
+rejected before speech is advertised. Private endpoints require `MCP_ALLOW_PRIVATE_ENDPOINT=true`
+at startup and dispatch. Fixed recognition models are validated by the provider descriptor.
 
 The adapter must declare usable metering for both configured models. Reported units must match
 pricing units; startup rejects mismatches. Models without reliable usage evidence, including

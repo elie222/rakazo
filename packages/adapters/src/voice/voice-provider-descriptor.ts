@@ -6,6 +6,16 @@ export interface VoiceProviderOptions {
   allowPrivateEndpoint?: boolean;
 }
 
+/** Shared connection fields accepted by deployment speech and provider validation. */
+export interface VoiceConnectionFields {
+  plaintext: string;
+  baseUrl?: string;
+  sttBaseUrl?: string;
+  sttApiKey?: string;
+  ttsModel?: string;
+  sttModel?: string;
+}
+
 /** One voice provider: everything the factory, the catalog Settings reads, and tests read about it. */
 export interface VoiceProviderDefinition {
   /** What Settings shows and what the connection form needs; the id is the registry key. */
@@ -16,6 +26,8 @@ export interface VoiceProviderDefinition {
   listed?(options: VoiceProviderOptions): boolean;
   /** The connection can route synthesis and recognition to operator-specified servers. */
   customEndpoints?: boolean;
+  /** Reuse dispatch credential validation before advertising a deployment connection. */
+  validateConnection?(connection: VoiceConnectionFields, options: VoiceProviderOptions): void;
   /** A fixed synthesis model when the endpoint has no model selector. */
   synthesisModel?: string;
   /** A fixed recognition model when the deployment supports one model. */

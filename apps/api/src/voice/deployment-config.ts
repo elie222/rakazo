@@ -18,14 +18,16 @@ const price = z
   })
   .strict();
 
+const httpEndpoint = z.url({ protocol: /^https?$/ });
+
 const deploymentVoiceSchema = z
   .object({
     provider: z.string().min(1),
     connection: z
       .object({
         plaintext: z.string().trim().min(1),
-        baseUrl: z.httpUrl().optional(),
-        sttBaseUrl: z.httpUrl().optional(),
+        baseUrl: httpEndpoint.optional(),
+        sttBaseUrl: httpEndpoint.optional(),
         sttApiKey: z.string().optional(),
         ttsModel: z.string().trim().min(1).optional(),
         sttModel: z.string().trim().min(1).optional(),
@@ -40,13 +42,21 @@ const deploymentVoiceSchema = z
 export type DeploymentVoice = z.infer<typeof deploymentVoiceSchema>;
 
 /** Deliberately omit validation details: they can contain secret input values. */
-export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoice | undefined {
+export function deploymentVoiceFromEnv(
+  value: string | undefined,
+  allowPrivateEndpoint = false,
+): DeploymentVoice | undefined {
   if (!value) return undefined;
   try {
     const config = deploymentVoiceSchema.parse(JSON.parse(value));
+    const connection = {
+      ...config.connection,
+      ttsModel: config.pricing.synthesize.model,
+      sttModel: config.pricing.transcribe.model,
+    };
     if (
       !isVoiceProviderId(config.provider) ||
-      !voiceDeploymentConnectionSupported(config.provider, config.connection) ||
+      !voiceDeploymentConnectionSupported(config.provider, connection, { allowPrivateEndpoint }) ||
       !voiceDeploymentModelSupported(config.provider, config.pricing.synthesize.model) ||
       !voiceDeploymentModelSupported(
         config.provider,
@@ -71,11 +81,7 @@ export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoi
     }
     return {
       ...config,
-      connection: {
-        ...config.connection,
-        ttsModel: config.pricing.synthesize.model,
-        sttModel: config.pricing.transcribe.model,
-      },
+      connection,
     };
   } catch {
     throw new Error("Invalid DEPLOYMENT_VOICE connection or pricing policy");

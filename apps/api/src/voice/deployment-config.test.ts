@@ -91,6 +91,55 @@ describe("deployment speech default", () => {
       ).toThrow("Invalid DEPLOYMENT_VOICE");
     },
   );
+  it.each(["baseUrl", "sttBaseUrl"])(
+    "rejects dispatch-incompatible %s at startup without exposing credentials",
+    (field) => {
+      for (const value of [
+        "https://fake-user:fake-password@speech.example.test/v1",
+        "http://speech.example.test/v1",
+        "http://169.254.169.254/v1",
+      ]) {
+        expect(() =>
+          deploymentVoiceFromEnv(
+            JSON.stringify({
+              ...config,
+              provider: "openai-compatible",
+              connection: {
+                plaintext: "fake-server-key",
+                baseUrl: "https://speech.example.test/v1",
+                [field]: value,
+                ...(field === "sttBaseUrl" ? { sttApiKey: "fake-stt-key" } : {}),
+              },
+            }),
+            true,
+          ),
+        ).toThrow(/^Invalid DEPLOYMENT_VOICE connection or pricing policy$/);
+      }
+    },
+  );
+  it("uses the deployment's private-endpoint policy and validates the effective pricing models", () => {
+    const privateConfig = {
+      ...config,
+      provider: "openai-compatible",
+      connection: { plaintext: "fake-server-key", baseUrl: "http://127.0.0.1:8880/v1" },
+    };
+    expect(() => deploymentVoiceFromEnv(JSON.stringify(privateConfig))).toThrow(
+      "Invalid DEPLOYMENT_VOICE",
+    );
+    expect(deploymentVoiceFromEnv(JSON.stringify(privateConfig), true)).toBeDefined();
+    expect(() =>
+      deploymentVoiceFromEnv(
+        JSON.stringify({
+          ...privateConfig,
+          pricing: {
+            ...privateConfig.pricing,
+            synthesize: { ...price, model: "model with spaces" },
+          },
+        }),
+        true,
+      ),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
+  });
   it.each(["baseUrl", "sttBaseUrl"])("rejects an invalid %s before consent", (field) => {
     for (const value of ["not a url", "ftp://speech.example.test"]) {
       expect(() =>
