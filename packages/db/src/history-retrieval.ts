@@ -17,6 +17,7 @@ import {
   historyReadText,
   historySearchText,
 } from "./history-text.js";
+import { OWNER_TURN_TRIGGERS } from "./messages.js";
 
 export { historyMessageText, historyReadText };
 
@@ -34,7 +35,7 @@ export interface HistoryScope {
   searchBeforeSeq?: number;
   /**
    * A routine's owner: the run acts with their accounts and nobody vouches for anyone else's
-   * words, so it reads only their messages and this bot's replies.
+   * words, so it reads only their messages and this bot's replies in turns they started.
    */
   ownerOnly?: string;
 }
@@ -198,7 +199,9 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
         ? Prisma.sql`AND (
       (m.role = 'user' AND m."authorUserId" = ${scope.ownerOnly}
         AND NOT m.blocks @> ${JSON.stringify([{ kind: "channel_message" }])}::jsonb)
-      OR (m.role = 'bot' AND m."botId" = ${scope.botId}))`
+      OR (m.role = 'bot' AND m."botId" = ${scope.botId} AND EXISTS (
+        SELECT 1 FROM runs owned WHERE owned.id = m."runId" AND owned."userId" = ${scope.ownerOnly}
+          AND owned.trigger IN (${Prisma.join([...OWNER_TURN_TRIGGERS])}))))`
         : Prisma.empty
     }
   `;

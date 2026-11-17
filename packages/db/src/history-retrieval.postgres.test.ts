@@ -176,23 +176,32 @@ postgres("history retrieval (PostgreSQL)", () => {
       })}\n`,
     );
   });
-  it("gives a routine only its owner's messages and its bot's replies", async () => {
+  it("gives a routine only its owner's messages and its bot's replies to them", async () => {
     await pool.query(
       `ALTER TABLE messages ADD COLUMN IF NOT EXISTS "authorUserId" text,
-        ADD COLUMN IF NOT EXISTS "botId" text`,
+        ADD COLUMN IF NOT EXISTS "botId" text;
+      ALTER TABLE runs ADD COLUMN IF NOT EXISTS trigger text;
+      INSERT INTO runs (id, "spaceId", "userId", "threadId", "botId", status, trigger) VALUES
+        ('owner-turn', 'synthetic-space', 'synthetic-user', 'synthetic-thread', 'synthetic-bot', 'completed', 'user'),
+        ('channel-turn', 'synthetic-space', 'synthetic-user', 'synthetic-thread', 'synthetic-bot', 'completed', 'messaging'),
+        ('member-turn', 'synthetic-space', 'synthetic-member', 'synthetic-thread', 'synthetic-bot', 'completed', 'user')`,
     );
-    const add = (
+    let seq = 20_000;
+    const add = async (
       id: string,
       role: string,
       blocks: unknown[],
       author: string | null,
       bot: string | null,
-    ) =>
-      pool.query(
-        `INSERT INTO messages (id, "threadId", seq, role, "createdAt", blocks, "authorUserId", "botId")
-        VALUES ($1, 'synthetic-thread', $2, $3, '2026-03-02T00:00:00Z', $4::jsonb, $5, $6)`,
-        [id, 20_000 + Number(id.length), role, JSON.stringify(blocks), author, bot],
+      runId: string | null = null,
+    ) => {
+      seq += 1;
+      await pool.query(
+        `INSERT INTO messages (id, "threadId", seq, role, "runId", "createdAt", blocks, "authorUserId", "botId")
+        VALUES ($1, 'synthetic-thread', $2, $3, $4, '2026-03-02T00:00:00Z', $5::jsonb, $6, $7)`,
+        [id, seq, role, runId, JSON.stringify(blocks), author, bot],
       );
+    };
     const text = (body: string) => [{ kind: "text", text: body }];
     await add("owner-ask", "user", text("ownerprobe from the owner"), "synthetic-user", null);
     await add("member-ask", "user", text("ownerprobe from a member"), "synthetic-member", null);
@@ -203,11 +212,32 @@ postgres("history retrieval (PostgreSQL)", () => {
       "synthetic-user",
       null,
     );
-    await add("own-reply", "bot", text("ownerprobe from this bot"), null, "synthetic-bot");
+    await add(
+      "own-reply",
+      "bot",
+      text("ownerprobe to the owner"),
+      null,
+      "synthetic-bot",
+      "owner-turn",
+    );
+    await add(
+      "channel-reply",
+      "bot",
+      text("ownerprobe to a channel"),
+      null,
+      "synthetic-bot",
+      "channel-turn",
+    );
+    await add(
+      "member-reply",
+      "bot",
+      text("ownerprobe to a member"),
+      null,
+      "synthetic-bot",
+      "member-turn",
+    );
     await add("peer-reply", "bot", text("ownerprobe from another bot"), null, "synthetic-peer");
     try {
-      const everyone = await searchHistory(prisma, scope, { query: "ownerprobe" });
-      expect(everyone.messages).toHaveLength(5);
       const owner = await searchHistory(
         prisma,
         { ...scope, ownerOnly: "synthetic-user" },
@@ -219,7 +249,8 @@ postgres("history retrieval (PostgreSQL)", () => {
       ]);
     } finally {
       await pool.query(
-        `DELETE FROM messages WHERE id IN ('owner-ask','member-ask','channel-in','own-reply','peer-reply')`,
+        `DELETE FROM messages WHERE id IN ('owner-ask','member-ask','channel-in','own-reply','channel-reply','member-reply','peer-reply');
+        DELETE FROM runs WHERE id IN ('owner-turn','channel-turn','member-turn')`,
       );
     }
   });

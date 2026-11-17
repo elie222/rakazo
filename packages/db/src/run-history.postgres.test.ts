@@ -183,6 +183,8 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
       expect(wholeIds).toEqual(expect.arrayContaining([latest, olderResult, ids.privateReply]));
       expect(wholeIds).not.toContain(ids.channel);
       expect(wholeIds).not.toContain(ids.privateAsk);
+      // The bot's reply in a turn a connected channel started.
+      expect(wholeIds).not.toContain(ids.ownReply);
     } finally {
       await system.message.deleteMany({ where: { id: { in: posted } } });
       await system.run.deleteMany({ where: { routineId: routine.id } });

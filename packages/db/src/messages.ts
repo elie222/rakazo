@@ -31,6 +31,13 @@ const HISTORY_MESSAGE_SELECT = (botId: string) =>
   }) satisfies Prisma.MessageSelect;
 
 /**
+ * Turns a routine's owner started themselves, in the app or through one of their routines. A
+ * reply to anyone else, a connected channel or another bot can carry their words, so a routine
+ * run leaves it out.
+ */
+export const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine"] as const;
+
+/**
  * Group turns use channel inputs and their own outputs, never private thread history.
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
  * leaves out of this run's history.
@@ -42,8 +49,8 @@ export async function loadRunHistoryMessages(
   groupTurn?: GroupTurnHistory,
   /**
    * A routine run acts with its owner's accounts and nobody is there to vouch for anyone else's
-   * words, so it reads only what its owner wrote and this bot replied, plus the latest replies of
-   * the routine's earlier runs, however far back they are.
+   * words, so it reads only what its owner wrote and this bot replied in turns they started, plus
+   * the latest replies of the routine's earlier runs, however far back they are.
    */
   routine?: { routineId: string; earlierResults: number },
 ) {
@@ -79,35 +86,62 @@ export async function loadRunHistoryMessages(
     take: limit,
     select: HISTORY_MESSAGE_SELECT(run.botId),
   });
+  const ownerReplies = routine ? await ownerTurnRunIds(prisma, run.userId, recent) : undefined;
+  const readable = ownerReplies
+    ? recent.filter(
+        (message) => message.role === "user" || (message.runId && ownerReplies.has(message.runId)),
+      )
+    : recent;
   const earlier = routine?.earlierResults
     ? await earlierRoutineResults(prisma, run, {
         routineId: routine.routineId,
         limit: routine.earlierResults,
       })
     : [];
-  const recentIds = new Set(recent.map((message) => message.id));
-  const messages = [...recent, ...earlier.filter((message) => !recentIds.has(message.id))].sort(
+  const recentIds = new Set(readable.map((message) => message.id));
+  const messages = [...readable, ...earlier.filter((message) => !recentIds.has(message.id))].sort(
     (left, right) => right.seq - left.seq,
   );
   return withOwnToolHistory(prisma, run, messages);
 }
 
-/** The last reply of each of the routine's latest completed runs that posted one. */
+/** Of the runs behind these replies, the ones their owner started themselves. */
+async function ownerTurnRunIds(
+  prisma: PrismaClient,
+  ownerId: string,
+  messages: Array<{ role: string; runId: string | null }>,
+): Promise<Set<string>> {
+  const runIds = [
+    ...new Set(messages.flatMap((m) => (m.role === "bot" && m.runId ? [m.runId] : []))),
+  ];
+  if (!runIds.length) return new Set();
+  const runs = await prisma.run.findMany({
+    where: { id: { in: runIds }, userId: ownerId, trigger: { in: [...OWNER_TURN_TRIGGERS] } },
+    select: { id: true },
+  });
+  return new Set(runs.map(({ id }) => id));
+}
+
+/**
+ * The last reply of each of the routine's latest completed runs, by its owner, that posted one.
+ * Each run costs one index lookup, so a long history of quiet runs stays cheap.
+ */
 async function earlierRoutineResults(
   prisma: PrismaClient,
-  run: { id: string; threadId: string; botId: string },
+  run: { id: string; threadId: string; botId: string; userId: string },
   earlier: { routineId: string; limit: number },
 ) {
   const latest = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM (
-      SELECT DISTINCT ON (m."runId") m.id, m.seq
-      FROM messages m JOIN runs r ON r.id = m."runId"
-      WHERE r."routineId" = ${earlier.routineId} AND r."threadId" = ${run.threadId}
-        AND r.id <> ${run.id} AND r.status = 'completed'
-        AND m."threadId" = ${run.threadId} AND m.role = 'bot'
-      ORDER BY m."runId", m.seq DESC
-    ) last_replies
-    ORDER BY seq DESC
+    SELECT last_reply.id FROM runs r
+    CROSS JOIN LATERAL (
+      SELECT m.id FROM messages m
+      WHERE m."runId" = r.id AND m."threadId" = ${run.threadId} AND m.role = 'bot'
+      ORDER BY m.seq DESC
+      LIMIT 1
+    ) last_reply
+    WHERE r."routineId" = ${earlier.routineId} AND r."threadId" = ${run.threadId}
+      AND r.id <> ${run.id} AND r.status = 'completed' AND r."userId" = ${run.userId}
+    ORDER BY r."createdAt" DESC
     LIMIT ${earlier.limit}`;
   if (!latest.length) return [];
   return prisma.message.findMany({

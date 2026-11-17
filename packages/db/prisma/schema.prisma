@@ -1334,6 +1334,7 @@ model Run {
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
   @@index([routineId])
+  @@index([routineId, createdAt])
   @@map("runs")
 }
 
