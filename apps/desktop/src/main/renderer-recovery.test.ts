@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { deferred } from "@rakazo/core/test-async";
 import type { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installRendererRecovery } from "./renderer-recovery.js";
@@ -108,16 +109,11 @@ describe("renderer recovery", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     gone();
     await vi.advanceTimersByTimeAsync(5_000);
-    let answer: (result: { response: number }) => void = () => {};
-    mocks.showMessageBox.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
-    );
+    const answer = deferred<{ response: number }>();
+    mocks.showMessageBox.mockReturnValue(answer.promise);
     gone();
     quitting.mockReturnValue(true);
-    answer({ response: 0 });
+    answer.resolve({ response: 0 });
     await vi.advanceTimersByTimeAsync(0);
     expect(contents.reload).toHaveBeenCalledTimes(2);
   });
