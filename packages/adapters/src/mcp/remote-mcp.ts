@@ -36,18 +36,9 @@ import {
 } from "../web/network-address.js";
 import { createCheckedProxyDispatcher } from "../web/proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "../web/undici-fetch.js";
-import {
-  MCP_APP_CLIENT_CAPABILITIES,
-  mcpToolAppResourceUri,
-  mcpToolVisibleToModel,
-} from "./mcp-app.js";
+import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
-import {
-  callMcpToolAsking,
-  MCP_ELICITATION_CAPABILITIES,
-  McpElicitationRouter,
-} from "./mcp-elicitation.js";
-import { createMcpClient } from "./mcp-output-schema.js";
+import { callMcpToolAsking, McpElicitationRouter, newRemoteMcpClient } from "./mcp-elicitation.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 
@@ -158,20 +149,6 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
       appResourceUri: mcpToolAppResourceUri(tool),
     }));
   return withScopedMcpClient(options, list);
-}
-
-function newMcpClient(router?: McpElicitationRouter): Client {
-  const client = createMcpClient(
-    { name: "rakazo", version: "0.1.0" },
-    {
-      capabilities: {
-        ...MCP_APP_CLIENT_CAPABILITIES,
-        ...(router ? MCP_ELICITATION_CAPABILITIES : {}),
-      },
-    },
-  );
-  router?.install(client);
-  return client;
 }
 
 type McpRun<T> = (
@@ -319,7 +296,7 @@ async function withRemoteMcpClient<T>(
     fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init), init?.headers),
   });
   const router = options.elicitation ? new McpElicitationRouter() : undefined;
-  const client = newMcpClient(router);
+  const client = newRemoteMcpClient(router);
   try {
     await client.connect(transport, { signal, timeout: MCP_TIMEOUT_MS });
     return await run(client, signal, router);
@@ -524,7 +501,7 @@ export class RemoteMcpSessionCache {
       },
     });
     const elicitation = options.elicitation ? new McpElicitationRouter() : undefined;
-    const client = newMcpClient(elicitation);
+    const client = newRemoteMcpClient(elicitation);
     const session: ScopedMcpSession = {
       elicitation,
       key,

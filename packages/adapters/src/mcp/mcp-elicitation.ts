@@ -12,6 +12,8 @@ import {
   TOOL_QUESTION_TEXT_MAX,
 } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
+import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
+import { createMcpClient } from "./mcp-output-schema.js";
 
 /** Form mode only: a server never sends this client to a URL. */
 export const MCP_ELICITATION_CAPABILITIES: ClientCapabilities = { elicitation: { form: {} } };
@@ -366,4 +368,19 @@ export async function callMcpToolAsking(
     clock.end();
     untrack();
   }
+}
+
+/** A client for a remote server: it shows apps, and with a router it may be asked questions. */
+export function newRemoteMcpClient(router?: McpElicitationRouter): Client {
+  const client = createMcpClient(
+    { name: "rakazo", version: "0.1.0" },
+    {
+      capabilities: {
+        ...MCP_APP_CLIENT_CAPABILITIES,
+        ...(router ? MCP_ELICITATION_CAPABILITIES : {}),
+      },
+    },
+  );
+  router?.install(client);
+  return client;
 }
