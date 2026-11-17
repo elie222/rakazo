@@ -137,6 +137,24 @@ describe("computer permission setup", () => {
     expect(deps.restart).not.toHaveBeenCalled();
   });
 
+  it("gives a later approval its own guide after the earlier attempt fails", async () => {
+    const answer = deferred<"later">();
+    const showSetup = vi
+      .fn()
+      .mockImplementationOnce(() => answer.promise)
+      .mockResolvedValue("later");
+    const { prepare } = setup({ showSetup });
+    const first = prepare();
+    await vi.waitFor(() => expect(showSetup).toHaveBeenCalledOnce());
+    const second = prepare();
+    const failure = new Error("Could not open native dialog");
+    const rejected = expect(first).rejects.toBe(failure);
+    answer.reject(failure);
+    await rejected;
+    await second;
+    expect(showSetup).toHaveBeenCalledTimes(2);
+  });
+
   it("shares one setup flow across concurrent requests", async () => {
     const answer = deferred<"later">();
     const showSetup = vi.fn(() => answer.promise);

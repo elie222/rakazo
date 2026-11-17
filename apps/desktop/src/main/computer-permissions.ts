@@ -60,9 +60,12 @@ export function createComputerPermissionSetup(deps: {
     if (!valid()) return;
     while (pending) {
       const active = pending;
-      await active.promise;
+      const completed = await bestEffort(
+        "wait for Mac app control setup",
+        active.promise.then(() => true),
+      );
       // An active approval already received the shared guide. A cancelled one did not.
-      if (active.valid() || !valid()) return;
+      if ((completed && active.valid()) || !valid()) return;
     }
     const active = { valid, promise: prepare(valid) };
     pending = active;
