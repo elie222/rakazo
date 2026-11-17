@@ -9,6 +9,7 @@ import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { McpConnector } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
+import { retireToReconnectMarker } from "./model-credential-refresh.js";
 import { createRunSecretWriter } from "./run-secret.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
@@ -60,6 +61,7 @@ function database() {
     ["messagingInstallation", []],
     ["paymentWallet", []],
     ["purchase", []],
+    ["userModelCredential", []],
   ]);
   const matches = (row: Row, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([key, value]) => {
@@ -173,7 +175,7 @@ function database() {
     return (
       tables
         .get(names[table ?? ""] ?? "")
-        ?.filter((row) => visible(row) && query.values.includes(row.id))
+        ?.filter((row) => visible(row) && query.values.flat().includes(row.id))
         .map((row) => ({ ...row })) ?? []
     );
   };
@@ -388,7 +390,7 @@ describe("secret persistence cleanup with a queue", () => {
     try {
       await prisma.$transaction(async (tx) => {
         await tx.secret.update({ where: { id: "row" }, data: { ciphertext: next.ref } });
-        expect(queue.jobs.enqueueIn).toHaveBeenCalledWith(tx, expect.anything());
+        expect(queue.jobs.enqueueManyIn).toHaveBeenCalledWith(tx, [expect.anything()]);
         expect(queue.cleanups()).toEqual([{ ...dropped("row", old.ref), due: false }]);
         fake.offline = true;
       });
@@ -410,7 +412,7 @@ describe("secret persistence cleanup with a queue", () => {
     try {
       await prisma.secret.create({ data: { ...secretFields, ciphertext: record.ref } });
       expect(queue.jobs.enqueue).not.toHaveBeenCalled();
-      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      expect(queue.jobs.enqueueManyIn).not.toHaveBeenCalled();
       await prisma.secret.deleteMany({ where: { id: "row" } });
       expect(fake.values.size).toBe(0);
       expect(queue.queued.size).toBe(0);
@@ -431,7 +433,8 @@ describe("secret persistence cleanup with a queue", () => {
       );
     try {
       await prisma.user.deleteMany({ where: { id: "user" } });
-      expect(queue.jobs.enqueueIn).toHaveBeenCalledOnce();
+      expect(queue.jobs.enqueueManyIn).toHaveBeenCalledOnce();
+      expect(queue.jobs.enqueueManyIn.mock.calls[0]![1]).toHaveLength(1);
       expect(fake.values.size).toBe(0);
       expect(queue.queued.size).toBe(0);
     } finally {
@@ -445,7 +448,7 @@ describe("secret persistence cleanup with a queue", () => {
     db.tables.get("secret")!.push({ id: "row", ciphertext: kept.ref });
     try {
       await prisma.secret.update({ where: { id: "row" }, data: { kind: "one-time-code" } });
-      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      expect(queue.jobs.enqueueManyIn).not.toHaveBeenCalled();
       expect(queue.jobs.enqueue).not.toHaveBeenCalled();
       expect(fake.values.size).toBe(1);
     } finally {
@@ -589,6 +592,44 @@ describe("secret persistence cleanup with a queue", () => {
     }
   });
 
+  it("leaves a Space's many purchase entries to the queue, recorded and locked in one statement each", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const purchases = 30;
+    for (let i = 0; i < purchases; i++) {
+      const card = await store.put("card", context, { recordId: `purchase-card:p${i}` });
+      const request = await store.put("request", context, {
+        recordId: `purchase-request:op${i}`,
+      });
+      db.tables.get("purchase")!.push({
+        id: `p${i}`,
+        operationKey: `op${i}`,
+        spaceId: "space",
+        userId: "user",
+        cardCiphertext: card.ref,
+        requestCiphertext: request.ref,
+        tokenCiphertext: null,
+      });
+    }
+    const locks = vi.spyOn(db.prisma, "$queryRaw");
+    const remove = vi.spyOn(store, "delete");
+    try {
+      await prisma.space.deleteMany({ where: { id: "space" } });
+      for (const [query] of locks.mock.calls)
+        expect((query as unknown as { values: unknown[] }).values.length).toBeLessThanOrEqual(1);
+      expect(queue.jobs.enqueueManyIn).toHaveBeenCalledOnce();
+      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      const cleanups = queue.cleanups();
+      expect(cleanups).toHaveLength(purchases * 2);
+      expect(cleanups.every((cleanup) => cleanup.due)).toBe(true);
+
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("records the backup of another member's install that goes with a deleted bot", async () => {
     const { store, db, queue, prisma } = await setup();
     const theirs = await store
@@ -615,6 +656,41 @@ describe("secret persistence cleanup with a queue", () => {
     }
   });
 
+  it("removes the copy a retired model sign-in replaced, and the marker one that lost never saved", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const signedIn = await store.put('{"kind":"api_key","key":"fake-key"}', context, {
+      recordId: "row",
+    });
+    db.tables.get("secret")!.push({ id: "row", userId: "user", ciphertext: signedIn.ref });
+    db.tables
+      .get("userModelCredential")!
+      .push({ id: "credential", userId: "user", secretId: "row" });
+    const retire = () =>
+      retireToReconnectMarker(
+        prisma,
+        store,
+        { userId: "user", spaceId: "space" },
+        { id: "credential", secretId: "row" },
+      )("refresh_rejected" as never, undefined);
+    try {
+      await expect(retire()).resolves.toBe(true);
+      const marker = db.tables.get("secret")![0]!.ciphertext!;
+      expect([...fake.values.keys()]).toEqual([marker.slice("infisical:v1:".length)]);
+      expect(queue.queued.size).toBe(0);
+
+      // The sign-in is gone before this retirement commits, so its marker is never saved.
+      db.tables.get("userModelCredential")!.length = 0;
+      vi.spyOn(store, "delete").mockRejectedValueOnce(new Error("store unavailable"));
+      await expect(retire()).resolves.toBe(false);
+      expect(fake.values.size).toBe(2);
+      expect(queue.cleanups()).toEqual([expect.objectContaining({ recordId: "row", due: true })]);
+      await queue.runQueued(worker);
+      expect([...fake.values.keys()]).toEqual([marker.slice("infisical:v1:".length)]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("never copies an inline reference, which is the sealed value, into a job", async () => {
     const store = new EncryptedSecretStore("fake-encryption-key");
     const db = database();
@@ -636,7 +712,7 @@ describe("secret persistence cleanup with a queue", () => {
     await prisma.secret.deleteMany({ where: { id: "row" } });
     expect(remove).toHaveBeenLastCalledWith(next.ref, expect.objectContaining({ recordId: "row" }));
     expect(queue.jobs.enqueue).not.toHaveBeenCalled();
-    expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(queue.jobs.enqueueManyIn).not.toHaveBeenCalled();
     expect(queue.jobs.cancel).not.toHaveBeenCalled();
   });
 });

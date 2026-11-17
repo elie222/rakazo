@@ -65,8 +65,8 @@ function purchaseCleanups(row: PurchaseRefs): SecretCleanup[] {
  * queue; without one, or for an inline reference, the same check runs and a failure is logged.
  */
 async function deleteUnreferenced(
-  prisma: PrismaClient,
-  store: SecretStore,
+  prisma: SecretCleanupDeps["prisma"],
+  store: SecretCleanupDeps["secrets"],
   jobs: Jobs | undefined,
   candidates: SecretCleanup[],
   recorded?: Map<string, SecretCleanup>,
@@ -102,8 +102,8 @@ async function deleteUnreferenced(
 // the writer has adopted the committed ref (notably a live OAuth session).
 const preparedWrite = new AsyncLocalStorage<{ cleanup: Array<() => Promise<void>> }>();
 export async function persistPreparedSecret<T>(
-  prisma: PrismaClient,
-  store: SecretStore,
+  prisma: SecretCleanupDeps["prisma"],
+  store: SecretCleanupDeps["secrets"],
   written: Candidate | undefined,
   commit: () => Promise<T>,
   adopted?: (result: T) => void,

@@ -18,7 +18,6 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { cloudAgentForActor } from "./cloud-agent-service.js";
-import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { screenLeaseIdForRun } from "./computer-lifecycle.js";
 import {
   computerCheckpointResolver,
@@ -35,6 +34,10 @@ import { LEGACY_HISTORY_WINDOW_SIZE } from "./history-compaction.js";
 import { resolveMemberMainModel } from "./model-roles.js";
 import { findConnectedModelCredential, runModelChoice } from "./model-selection.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
+import {
+  mergeConnectedPlugins,
+  needsLivePluginSync,
+} from "./providers/integration/composio/composio-connector.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import type { RunExecutorServices, RunHold } from "./run-attempt.js";
 import { isDelegatedRun, loadRunOrigin } from "./run-origin.js";
