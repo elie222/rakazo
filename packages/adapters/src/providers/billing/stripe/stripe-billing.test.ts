@@ -293,6 +293,28 @@ describe("Stripe billing HTTP boundary", () => {
       expect(mapStripeSubscriptionStatus(status)).toBe("canceled");
   });
 
+  it("counts a subscription as paid only once an invoice charged something", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, trialDays: 7, ...urls });
+    wire.completeCheckout(customerId);
+    // The trial's own invoice is paid, for nothing.
+    expect((await provider.getCustomerSubscription(customerId))?.paidAt).toBeUndefined();
+    // Stripe turns the subscription active before it collects the trial's charge.
+    wire.setStatus(customerId, "active");
+    expect((await provider.getCustomerSubscription(customerId))?.paidAt).toBeUndefined();
+    wire.billPeriod(customerId, "failed");
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "past_due",
+    });
+    expect((await provider.getCustomerSubscription(customerId))?.paidAt).toBeUndefined();
+    wire.billPeriod(customerId, "paid");
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "active",
+      paidAt: expect.any(Date),
+    });
+  });
+
   it("reads the subscription's card fingerprint and credits the customer balance", async () => {
     const { wire, provider } = setup();
     const { customerId } = await provider.createCustomer(owner);

@@ -150,6 +150,23 @@ function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
   return null;
 }
 
+/**
+ * How a trial ended, once that is known: true when its first charge was paid, false when the
+ * subscription stopped without one, null while the trial runs or the charge is still pending
+ * (a subscription turns active before its first charge is collected).
+ */
+export function trialOutcome(
+  previous: Pick<BillingAccount, "status" | "trialEndsAt" | "paidAt">,
+  live: Pick<BillingSubscriptionSnapshot, "status" | "paidAt">,
+): boolean | null {
+  const awaitingFirstPayment =
+    previous.status === "trialing" ||
+    (previous.status === "active" && previous.trialEndsAt !== null && !previous.paidAt);
+  if (!awaitingFirstPayment) return null;
+  if (live.paidAt) return true;
+  return live.status === "trialing" || live.status === "active" ? null : false;
+}
+
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
 function subscribedByokPrice(account: BillingAccount | null) {
   const status = account?.status ?? null;
@@ -347,16 +364,19 @@ export function createBillingService(deps: {
   }
 
   /**
-   * Reports a new subscription, or the end of its trial, when a sync records it. Concurrent syncs
-   * can both see the change, so each event carries the subscription and a time from its snapshot,
-   * which the analytics provider deduplicates on.
+   * Reports a new subscription, or how its trial ended, when a sync records it. A trial's charge
+   * is collected after the subscription turns active, so the trial ends for reporting once that
+   * charge is paid or the subscription stops being active. Concurrent syncs can both see the
+   * change, so each event carries the subscription and a time from its snapshot, which the
+   * analytics provider deduplicates on.
    */
   async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
     const { analytics } = deps;
     const same = live.subscriptionId === previous.subscriptionId;
     // A checkout whose first payment was still pending syncs as incomplete before it starts.
     const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
-    const trialEnded = same && previous.status === "trialing" && live.status !== "trialing";
+    const converted = same ? trialOutcome(previous, live) : null;
+    const trialEnded = converted !== null;
     const terms = planTerms(live);
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
@@ -366,7 +386,7 @@ export function createBillingService(deps: {
       owner,
       started
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
-        : { name: "trial_ended", ...terms, converted: live.status === "active" },
+        : { name: "trial_ended", ...terms, converted: converted === true },
       { id: live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
     );

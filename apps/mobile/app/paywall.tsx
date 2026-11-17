@@ -7,6 +7,7 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
+  paymentOverdue,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -169,6 +170,15 @@ export default function Paywall() {
     onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
   });
   const pending = checkout.pending;
+  const portal = useSave({
+    save: async (_, send) => {
+      const { url } = await send("billing/portal", { client: "mobile" });
+      const next = await openBillingPage(url, send);
+      await writeSaved(queryClient, statusRead.queryKey, () => next);
+      return next;
+    },
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
+  });
 
   function choose() {
     if (status) checkout.run({ before: status, plan, amount, interval });
@@ -311,6 +321,34 @@ export default function Paywall() {
             }}
           />
         </View>
+      </View>
+    );
+  }
+
+  // A new plan would bill beside the overdue one, so only the billing portal is offered.
+  if (paymentOverdue(status) && !dismissible) {
+    return (
+      <View
+        style={[
+          styles.screen,
+          { backgroundColor: tokens.background, paddingBottom: contentBottomInset + 16 },
+        ]}
+      >
+        {topBar}
+        <View style={styles.done}>
+          <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
+            {t`Payment failed`}
+          </Text>
+        </View>
+        {status.canManage ? (
+          <View style={styles.footer}>
+            <NativeActionButton
+              label={t`Manage billing`}
+              busy={portal.pending}
+              onPress={() => portal.run()}
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
