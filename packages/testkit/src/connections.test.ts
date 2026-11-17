@@ -1222,6 +1222,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       data: {
         spaceId: owner.spaceId,
         userId: owner.userId,
+        connectorId: "composio",
         provider,
         displayName: provider,
         status: "pending",
