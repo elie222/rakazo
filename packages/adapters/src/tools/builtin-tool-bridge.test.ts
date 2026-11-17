@@ -58,8 +58,9 @@ describe("built-in tool bridge", () => {
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
     // read_file takes a line range; ask_user carries the content being decided about;
     // search_history lists earlier tool work by kind without a keyword; message_bot is the
-    // most used deferred tool, and a lookup before each message cost a step.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(33_435);
+    // most used deferred tool, and a lookup before each message cost a step; schedule_create
+    // takes the events (webhook, Git, chat, email) a routine can start on.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(34_433);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

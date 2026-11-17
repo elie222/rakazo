@@ -590,6 +590,57 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
   });
 
+  it("prepares a routine only events start, with the events on the card", async () => {
+    const { deps } = fakeFleet(fleet);
+    const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {
+      bot_name: "Writer",
+      name: "Deploys",
+      prompt: "Summarize the deploy",
+      on: { webhook: true, git: true },
+    });
+    expect(prepared).toEqual({
+      ok: true,
+      canonical: {
+        botId: "bot-writer",
+        botName: "Writer",
+        threadId: "thread-bot-writer",
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        timezone: "UTC",
+        timezoneFromAccount: true,
+        schedule: {},
+        on: { webhook: true, git: true },
+      },
+      summary: {
+        title: "Schedule “Deploys” for Writer?",
+        lines: ["Starts on webhook, git", "Prompt: Summarize the deploy"],
+      },
+    });
+  });
+
+  it("refuses events another member's bot or a one-time schedule cannot take", async () => {
+    const { deps } = fakeFleet({
+      bots: [...fleet.bots, { id: "bot-theirs", name: "Theirs", userId: "user-2" }],
+    });
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Theirs",
+        name: "Hook",
+        prompt: "Check",
+        on: { webhook: true },
+      }),
+    ).toEqual({ ok: false, error: "Only the bot's creator can start its routines from events." });
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Writer",
+        name: "Once",
+        prompt: "Check",
+        delayMinutes: 5,
+        on: { webhook: true },
+      }),
+    ).toEqual({ ok: false, error: "A one-time schedule takes no events (on)." });
+  });
+
   it("stores a repeating schedule as its cron and shows the next run", async () => {
     const { deps } = fakeFleet(fleet);
     const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {

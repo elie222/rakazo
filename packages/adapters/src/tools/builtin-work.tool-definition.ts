@@ -79,12 +79,28 @@ const scheduleTimingSpecs = {
   },
 };
 
+/** Events that start the routine besides its timing, or instead of it. */
+const routineEventsSpec = {
+  type: "object",
+  properties: {
+    webhook: { type: "boolean" },
+    git: { type: "boolean" },
+    chat: { type: "string" },
+    email: { type: "string", enum: ["owner", "domain"] },
+  },
+  additionalProperties: false,
+};
+
 const startAtSpec = {
   type: "string",
   description:
     "ISO date or datetime a repeating schedule starts; the first run is the first match at or after it. Without an offset, read in timezone. If you already did this period's work yourself, set startAt so the first run does not repeat it.",
 };
 
+/**
+ * One way to time a routine. Repeats and watches also take events (`on`); the cron branch leaves
+ * cron optional, so a routine that only events start matches it alone.
+ */
 export function scheduleCreateBranch(
   active: readonly (keyof typeof scheduleTimingSpecs)[],
   extraProperties: Record<string, unknown> = {},
@@ -94,12 +110,13 @@ export function scheduleCreateBranch(
   for (const name of scheduleTimingNames) {
     properties[name] = activeNames.has(name) ? scheduleTimingSpecs[name] : blankScheduleTiming;
   }
-  properties.startAt =
-    activeNames.has("cron") || activeNames.has("every") ? startAtSpec : blankScheduleTiming;
+  const repeats = activeNames.has("cron") || activeNames.has("every");
+  properties.on = repeats || activeNames.has("watch") ? routineEventsSpec : blankScheduleTiming;
+  properties.startAt = repeats ? startAtSpec : blankScheduleTiming;
   return {
     type: "object",
     properties,
-    required: ["name", "prompt", ...active],
+    required: ["name", "prompt", ...active.filter((name) => name !== "cron")],
     additionalProperties: false,
   };
 }
@@ -297,7 +314,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today.',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. on: run on events too, or only (no timing); each run receives the event: webhook, git (GitHub webhook), chat (your connected chat app, by name), email (to your address from the owner or their domain).',
     inputSchema: scheduleCreateInputSchema,
   },
   {
@@ -308,7 +325,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_update",
     description:
-      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web.",
+      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web. on replaces the routine's events; {} removes them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -322,6 +339,7 @@ export const workTools: ConnectorTool[] = [
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,
+        on: routineEventsSpec,
       },
       required: ["routineId"],
     },
