@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
-import { cn } from "@rakazo/ui-web/lib/utils";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -57,26 +56,20 @@ function GalleryThumb({
   image,
   active,
   onSelect,
-  buttonRef,
 }: {
   image: GalleryImage;
   active: boolean;
   onSelect: () => void;
-  buttonRef?: (button: HTMLButtonElement | null) => void;
 }) {
   const { t } = useLingui();
   const src = useArtifactImage(image.target, image.artifactId);
   return (
     <button
-      ref={buttonRef}
       type="button"
       aria-label={t`Show ${image.name}`}
       aria-current={active || undefined}
       onClick={onSelect}
-      className={cn(
-        "size-14 shrink-0 overflow-hidden rounded-lg bg-muted ring-offset-2 ring-offset-muted/60 transition-[opacity,box-shadow]",
-        active ? "ring-2 ring-ring" : "opacity-60 hover:opacity-100",
-      )}
+      className="block h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-muted shadow-lg"
     >
       {src ? (
         <img src={src} alt="" loading="lazy" className="size-full object-cover" />
@@ -114,7 +107,6 @@ function LightboxView({
   const current = (images[index] ?? images[0])!;
   const src = useArtifactImage(current.target, current.artifactId);
   const close = useRef<HTMLButtonElement>(null);
-  const activeThumb = useRef<HTMLButtonElement | null>(null);
   const single = images.length < 2;
   const step = (delta: number) =>
     setIndex((position) => (position + delta + images.length) % images.length);
@@ -122,9 +114,6 @@ function LightboxView({
   useEffect(() => {
     close.current?.focus();
   }, []);
-  useEffect(() => {
-    activeThumb.current?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [index]);
   // Capture: the dialog popup stops arrow keys from bubbling to the page.
   useEventListener(
     single ? null : document,
@@ -156,6 +145,19 @@ function LightboxView({
           ) : (
             <div className="h-[40vh] w-full rounded-xl bg-muted" />
           )}
+          <DialogClose
+            ref={close}
+            render={
+              <Button
+                variant="floating"
+                size="icon-sm"
+                aria-label={t`Close image preview`}
+                className="absolute right-2 top-2"
+              />
+            }
+          >
+            <X strokeWidth={1.8} />
+          </DialogClose>
           {single ? null : (
             <>
               <Button
@@ -178,38 +180,36 @@ function LightboxView({
               </Button>
             </>
           )}
-          <DialogClose
-            ref={close}
-            render={
-              <Button
-                variant="floating"
-                size="icon-sm"
-                aria-label={t`Close image preview`}
-                className="absolute right-2 top-2"
-              />
-            }
-          >
-            <X strokeWidth={1.8} />
-          </DialogClose>
         </div>
         {single ? null : (
-          <div className="mt-3 flex items-center gap-3">
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto rounded-xl bg-muted/60 p-2 backdrop-blur">
-              {images.map((image, position) => (
-                <GalleryThumb
-                  key={galleryImageKey(image)}
-                  image={image}
-                  active={position === index}
-                  onSelect={() => setIndex(position)}
-                  buttonRef={
-                    position === index ? (button) => (activeThumb.current = button) : undefined
-                  }
-                />
-              ))}
+          <div className="mt-4">
+            <div className="relative h-24 overflow-hidden [perspective:900px]">
+              {images.map((image, position) => {
+                const offset = position - index;
+                const distance = Math.abs(offset);
+                return (
+                  <div
+                    key={galleryImageKey(image)}
+                    className="absolute left-1/2 top-1/2 transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none"
+                    style={{
+                      transform: `translate(-50%, -50%) translateX(${offset * 88}px) translateZ(${-distance * 28}px) scale(${1 - distance * 0.2})`,
+                      opacity: distance === 0 ? 1 : 0.35,
+                      zIndex: images.length - distance,
+                      pointerEvents: distance > 3 ? "none" : undefined,
+                    }}
+                  >
+                    <GalleryThumb
+                      image={image}
+                      active={distance === 0}
+                      onSelect={() => setIndex(position)}
+                    />
+                  </div>
+                );
+              })}
             </div>
-            <span className="shrink-0 text-body-sm text-muted-foreground tabular-nums">
+            <div className="mt-1 text-center text-label text-muted-foreground tabular-nums">
               {index + 1} / {images.length}
-            </span>
+            </div>
           </div>
         )}
       </DialogContent>
