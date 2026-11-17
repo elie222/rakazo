@@ -28,7 +28,7 @@ export function useComposerModel(botId: string | undefined): ComposerModel | und
     () => false,
   );
   const enabled = on && Boolean(botId);
-  const read = { enabled, onForeground: false };
+  const read = { enabled };
   const bot = useScreenQuery(rpcQuery("bots/get", { botId: botId ?? "" }), read).data;
   const me = useScreenQuery(rpcQuery("me"), read).data;
   const catalog = useScreenQuery(rpcQuery("models/list"), read).data;
