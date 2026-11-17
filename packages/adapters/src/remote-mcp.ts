@@ -83,6 +83,9 @@ export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrl
   /** The run whose sessions these are: `sessionPool.endRun(runId)` closes them
    * when the run ends for good. A per-call `signal` only cancels its own call. */
   sessionRunId?: string;
+  /** Let tool calls wait minutes (`MCP_TOOL_TIMEOUT_MS`, renewed by progress up to
+   * `MCP_TOOL_MAX_TOTAL_MS`), for sources whose tools do long work. Otherwise 30 seconds. */
+  longToolCalls?: boolean;
 }
 
 /** A reusable Streamable HTTP session failed below the protocol: the guarded
@@ -184,10 +187,11 @@ export async function callRemoteMcpTool(
   args: Record<string, unknown>,
   projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
+  const long = options.longToolCalls === true;
   return withScopedMcpClient(
     options,
-    (client, signal) => callMcpTool(client, signal, toolName, args, projectResult),
-    MCP_TOOL_MAX_TOTAL_MS,
+    (client, signal) => callMcpTool(client, signal, toolName, args, long, projectResult),
+    long ? MCP_TOOL_MAX_TOTAL_MS : MCP_TIMEOUT_MS,
   );
 }
 
@@ -207,15 +211,21 @@ async function callMcpTool(
   signal: AbortSignal | undefined,
   toolName: string,
   args: Record<string, unknown>,
+  long: boolean,
   projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
+  const wait: RequestOptions = long
+    ? {
+        timeout: MCP_TOOL_TIMEOUT_MS,
+        // A progress handler is what asks the server for progress reports at all.
+        onprogress: () => undefined,
+        resetTimeoutOnProgress: true,
+        maxTotalTimeout: MCP_TOOL_MAX_TOTAL_MS,
+      }
+    : { timeout: MCP_TIMEOUT_MS };
   const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
     signal,
-    timeout: MCP_TOOL_TIMEOUT_MS,
-    // A progress handler is what asks the server for progress reports at all.
-    onprogress: () => undefined,
-    resetTimeoutOnProgress: true,
-    maxTotalTimeout: MCP_TOOL_MAX_TOTAL_MS,
+    ...wait,
   });
   const isError = result.isError === true;
   const envelope = {

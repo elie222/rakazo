@@ -103,6 +103,7 @@ function scopedCall(
       sessionPool: pool,
       signal,
       sessionRunId: runId,
+      longToolCalls: true,
     },
     tool,
     {},
@@ -139,6 +140,32 @@ describe("run-scoped remote MCP sessions", () => {
     } finally {
       vi.useRealTimers();
       await pool.close();
+    }
+  });
+
+  it("keeps the short wait for callers that did not ask for long tool calls", async () => {
+    const server = mcpServer(({ message }) =>
+      message.method === "tools/call"
+        ? (new Promise<Response>(() => undefined) as unknown as Response)
+        : undefined,
+    );
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const call = callRemoteMcpTool(
+        {
+          endpoint: ENDPOINT,
+          fetch: server.fetch as unknown as typeof globalThis.fetch,
+          resolveHostname: publicResolver,
+        },
+        "do_work",
+        {},
+      );
+      const settled = expect(call).rejects.toThrow();
+      await vi.waitFor(() => expect(server.toolCalls).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    } finally {
+      vi.useRealTimers();
     }
   });
 

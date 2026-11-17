@@ -39,8 +39,6 @@ describe("optional Keenable web provider", () => {
     expect(peer.calls[0]).toEqual({
       name: "search_web_pages",
       arguments: { query: "current question", max_results: 1, output_format: "json" },
-      // Tool calls ask for progress, which keeps a long call alive.
-      _meta: { progressToken: expect.anything() },
     });
     expect(peer.requests.length).toBeGreaterThan(1);
     for (const request of peer.requests) {
@@ -113,8 +111,6 @@ describe("optional Keenable web provider", () => {
     expect(peer.calls[0]).toEqual({
       name: "fetch_page_content",
       arguments: { url: "https://example.test/page", max_chars: 101, output_format: "json" },
-      // Tool calls ask for progress, which keeps a long call alive.
-      _meta: { progressToken: expect.anything() },
     });
   });
 

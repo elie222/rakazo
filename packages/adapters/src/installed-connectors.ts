@@ -345,6 +345,8 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           endpoint: install.source,
           headers: connectorHeaders(config, credential),
           signal: context.signal,
+          // Sources people add (gateways such as Executor) run tools that take minutes.
+          longToolCalls: true,
           ...this.mcpSessionOptions(context, install),
         };
         const result = await callRemoteMcpTool(
