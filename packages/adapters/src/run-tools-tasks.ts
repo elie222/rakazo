@@ -44,7 +44,7 @@ function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undef
   const command = commandWatchFromTool(watch);
   const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
   return desktopGuardApplies(ctx.computer) && refusal
-    ? desktopProtectionGuardMessage(refusal)
+    ? desktopProtectionGuardMessage(refusal, command ?? "")
     : undefined;
 }
 
