@@ -495,6 +495,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["notifications/registerWorkActivityStarts", { token: "ab".repeat(32) }],
       ["search/query", { q: "anything" }],
       ["voice/catalog"],
+      ["voice/profile", { botId: "00000000-0000-4000-8000-000000000000" }],
       ["voice/status"],
       ["voice/credentials"],
       ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
