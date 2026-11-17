@@ -15,6 +15,8 @@ import type {
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { humanizeToolName } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { collectPages, filterCatalog } from "../../../connector-catalog.js";
+import { isVitestRuntime } from "../../../test-runtime.js";
 import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
@@ -22,8 +24,6 @@ import {
   createToolkitDirectoryCache,
   mergeCatalogWithConnected,
 } from "./composio-catalog-cache.js";
-import { collectPages, filterCatalog } from "./connector-catalog.js";
-import { isVitestRuntime } from "./test-runtime.js";
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
 
