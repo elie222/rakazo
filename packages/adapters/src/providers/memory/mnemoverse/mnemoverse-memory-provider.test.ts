@@ -272,7 +272,7 @@ describe("Mnemoverse save", () => {
     const base = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (url, init) => {
       if (String(url).endsWith("/memory/write") && JSON.parse(String(init?.body)).domain === BOT) {
-        return Response.json({ stored: false, atom_id: null, reason: "too similar" });
+        return Response.json({ stored: false, atom_id: null, reason: "exact_duplicate" });
       }
       return base(url, init);
     });
@@ -296,7 +296,7 @@ describe("Mnemoverse save", () => {
         const body = JSON.parse(String(init?.body));
         if (failSpace && body.domain === SPACE) return new Response("{}", { status: 500 });
         if (atoms.some((atom) => atom.domain === body.domain && atom.content === body.content)) {
-          return Response.json({ stored: false, reason: "too similar" });
+          return Response.json({ stored: false, reason: "exact_duplicate" });
         }
       }
       return stored(url, init);
@@ -309,7 +309,7 @@ describe("Mnemoverse save", () => {
     expect(atoms.map((atom) => atom.domain).sort()).toEqual([BOT, SPACE]);
   });
 
-  it("reports a shared save when one copy fails, or when both are refused as duplicates", async () => {
+  it("reports a shared save when one copy fails, and counts both copies as saved when both are exact duplicates", async () => {
     mnemoverse([], {});
     const base = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (url, init) => {
@@ -325,10 +325,10 @@ describe("Mnemoverse save", () => {
     expect(!partial.ok && partial.error).toContain("500");
 
     mnemoverse([], {
-      "POST /memory/write": () => Response.json({ stored: false, reason: "too similar" }),
+      "POST /memory/write": () =>
+        Response.json({ stored: false, reason: "exact_duplicate", duplicate_of: "x" }),
     });
-    const both = await provider().save(sharedSave, context);
-    expect(!both.ok && both.error).toContain("too close");
+    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
   });
 
   it("refuses content over the service limit without calling it", async () => {
@@ -374,13 +374,13 @@ describe("Mnemoverse save", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reports a write the novelty check refused instead of counting it as saved", async () => {
+  it("reports a write the service declined for another reason instead of counting it as saved", async () => {
     mnemoverse([], {
       "POST /memory/write": () =>
         Response.json({
           stored: false,
           atom_id: null,
-          reason: "too similar to an existing memory",
+          reason: "below importance threshold",
         }),
     });
     const result = await provider().save(
@@ -388,7 +388,7 @@ describe("Mnemoverse save", () => {
       context,
     );
     expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toContain("too similar to an existing memory");
+    expect(!result.ok && result.error).toContain("below importance threshold");
   });
 
   it("does not count a successful answer that never says the fact was stored", async () => {

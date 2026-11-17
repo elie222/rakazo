@@ -170,21 +170,13 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
       ),
     );
     const written = writes.filter((write) => write.ok).length;
-    const failed = writes.flatMap((write) =>
-      !write.ok && !("duplicate" in write) ? [write.error] : [],
-    );
-    if (failed.length > 0) {
-      const error = [...new Set(failed)].join("; ");
-      return {
-        ok: false,
-        error: written > 0 ? `Saved to one domain but not all: ${error}. Retrying is safe.` : error,
-      };
-    }
-    // A copy refused as too close to one already there (a retry after a half-finished save, or a
-    // near match) does not hide a copy that was written. Refused everywhere is not saved.
-    if (written > 0) return { ok: true, value: undefined };
-    const refused = writes[0];
-    return { ok: false, error: refused && !refused.ok ? refused.error : "Mnemoverse save failed." };
+    const failed = writes.flatMap((write) => (write.ok ? [] : [write.error]));
+    if (failed.length === 0) return { ok: true, value: undefined };
+    const error = [...new Set(failed)].join("; ");
+    return {
+      ok: false,
+      error: written > 0 ? `Saved to one domain but not all: ${error}. Retrying is safe.` : error,
+    };
   }
 
   async purgeHistory(

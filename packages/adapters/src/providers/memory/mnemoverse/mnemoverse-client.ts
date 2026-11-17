@@ -34,10 +34,6 @@ export interface MnemoverseItem {
 export type MnemoverseResponse<T = void> = { ok: true; value: T } | { ok: false; error: string };
 
 /** A write also says when the novelty check refused it, which a shared save treats differently. */
-export type MnemoverseWriteResponse =
-  | MnemoverseResponse
-  | { ok: false; error: string; duplicate: true };
-
 type Reply = { ok: true; data: unknown } | { ok: false; status?: number; error: string };
 
 function failure(action: string, error: unknown): string {
@@ -151,15 +147,16 @@ export async function readMnemoverse(
 }
 
 /**
- * A write the novelty check refuses answers 200 with `stored: false`: nothing was written, and
- * the text is too close to a memory already in that domain. That is reported, not counted as saved.
+ * A write answers 200 with `stored: false` and `reason: "exact_duplicate"` when a byte-identical
+ * memory already sits in that domain: that is saved, so a retry after a lost reply succeeds. Any
+ * other `stored: false` wrote nothing and is a failure.
  */
 export async function writeMnemoverse(
   config: MnemoverseConnectionConfig,
   content: string,
   domain: string,
   signal?: AbortSignal,
-): Promise<MnemoverseWriteResponse> {
+): Promise<MnemoverseResponse> {
   const memory = content.trim();
   if (!memory) return { ok: false, error: "Mnemoverse save skipped: memory content is empty." };
   if (memory.length > MAX_MEMORY_CONTENT_CHARS) {
@@ -175,13 +172,9 @@ export async function writeMnemoverse(
   if (!reply.ok) return { ok: false, error: reply.error };
   const written = reply.data as { stored?: unknown; reason?: unknown } | null;
   if (written?.stored === false) {
-    const reason =
-      typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
-    return {
-      ok: false,
-      duplicate: true,
-      error: `Mnemoverse did not store this memory because it is too close to one already saved${reason}. Forget the older memory first if this one replaces it.`,
-    };
+    if (written.reason === "exact_duplicate") return { ok: true, value: undefined };
+    const reason = typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
+    return { ok: false, error: `Mnemoverse did not store this memory${reason}.` };
   }
   // Only an explicit confirmation counts as saved.
   if (written?.stored !== true) {
