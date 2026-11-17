@@ -307,6 +307,7 @@ export async function queueMcpConnectedRun(
         threadId: thread.id,
         botId: input.botId,
         status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+        ...HOLDS_CHAT,
       },
       select: { id: true },
     }),
