@@ -25,7 +25,7 @@ function setup(
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
     /** An openai-compatible connection with this stored list and own model. */
-    compatible?: { enabledModelIds: string[]; defaultModel: string };
+    compatible?: { enabledModelIds: string[]; defaultModel: string; baseUrl?: string };
     /** Spaces whose member keeps their own models instead of the account's. */
     overrides?: Array<{ userId: string; spaceId: string }>;
   } = {},
@@ -170,7 +170,7 @@ function setup(
           : options.compatible
             ? serializeModelSecret({
                 kind: "openai_compatible",
-                baseUrl: "http://127.0.0.1:11434/v1",
+                baseUrl: options.compatible.baseUrl ?? "http://127.0.0.1:11434/v1",
                 enabledModelIds: options.compatible.enabledModelIds,
               })
             : "fake-api-key-for-offline-tests",
@@ -629,6 +629,28 @@ describe("role-based model settings API", () => {
         expect(response.status).toBe(200);
         expect((await response.json()).json.deploymentPrimary).toEqual(
           allowPrivateEndpoint ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([true, false])(
+      "checks the current public endpoint policy for an approval default: %s",
+      async (allowPublic) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", allowPublic ? "1" : "0");
+        const { call } = setup({
+          compatible: {
+            enabledModelIds: ["judge"],
+            defaultModel: "judge",
+            baseUrl: "https://models.example.test/v1",
+          },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          allowPublic ? { provider: "openai-compatible", modelId: "judge" } : null,
         );
       },
     );

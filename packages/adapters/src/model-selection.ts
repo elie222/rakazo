@@ -683,7 +683,6 @@ export async function hasReadyModelCredential(
   if (secret.kind === "openai_compatible") {
     try {
       assertAllowedOpenAiCompatibleUrl(secret.baseUrl, {
-        allowPublic: true,
         allowPrivate: resolution.allowPrivateEndpoint === true,
       });
     } catch (error) {
