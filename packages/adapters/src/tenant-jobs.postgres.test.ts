@@ -66,6 +66,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
         data: {
           spaceId: t.spaceId,
           userId: t.userId,
+          connectorId: "composio",
           provider: "test",
           displayName: t.name,
           status: "connected",

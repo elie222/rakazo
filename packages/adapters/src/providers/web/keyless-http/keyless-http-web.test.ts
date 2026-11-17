@@ -1,21 +1,21 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
-import { FakeWebProvider } from "./fake-web.js";
-import {
-  extractReadableText,
-  KeylessHttpWebProvider,
-  parseDuckDuckGoResults,
-} from "./keyless-http-web.js";
 import {
   clampMaxChars,
   clampMaxResults,
   clampOffset,
   MAX_WEB_FETCH_OFFSET,
   pageWindow,
-} from "./web-limits.js";
-import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
-import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
+} from "../../../web-limits.js";
+import { createWebProvider, resolveWebProviderKind } from "../../../web-provider-factory.js";
+import { webFetchFromTool, webSearchFromTool } from "../../../web-tools.js";
+import { FakeWebProvider } from "../fake/fake-web.js";
+import {
+  extractReadableText,
+  KeylessHttpWebProvider,
+  parseDuckDuckGoResults,
+} from "./keyless-http-web.js";
 
 const ctx: AdapterContext = {
   operationId: "1",
