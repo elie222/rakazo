@@ -923,10 +923,6 @@ export function isMcpSessionGoneError(error: unknown): boolean {
   );
 }
 
-/** Whether the connection below the protocol really broke, so the session —
- * unlike after a server's own error, including a JSON-RPC response with the
- * same -32000 code the client uses for closure — cannot be trusted for the
- * next call. A missed closure is still caught by the server's next 404. */
 /** The SDK's own wait for an answer (a tool call without progress) ran out. A cancel uses
  * the same code, but only the SDK's timers attach how long they waited. */
 function isMcpWaitTimeout(error: unknown): boolean {
@@ -937,6 +933,10 @@ function isMcpWaitTimeout(error: unknown): boolean {
   );
 }
 
+/** Whether the connection below the protocol really broke, so the session —
+ * unlike after a server's own error, including a JSON-RPC response with the
+ * same -32000 code the client uses for closure — cannot be trusted for the
+ * next call. A missed closure is still caught by the server's next 404. */
 function brokeMcpSession(session: ScopedMcpSession, error: unknown): boolean {
   return session.connectionClosed || error instanceof RemoteMcpTransportError;
 }
