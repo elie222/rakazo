@@ -1,7 +1,11 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
-import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { LAST_SIGN_IN_COOKIE, SignupAttribution } from "@rakazo/contracts";
+import type {
+  PartnerProgram,
+  ProductAnalytics,
+  TransactionalEmailProvider,
+} from "@rakazo/adapter-kit";
+import { LAST_SIGN_IN_COOKIE, PartnerClickId, SignupAttribution } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -9,16 +13,19 @@ import {
   MAX_PASSWORD_LENGTH,
   MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
+  partnerClickFromHeaders,
   signupAttributionFromHeaders,
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  OwnedOrganizationHasMembersError,
   personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -73,6 +80,10 @@ export {
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export type { OidcConfig } from "./oidc.js";
+export {
+  organizationInvitationEmail,
+  spaceInvitationEmail,
+} from "./organization-invitation-email.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {
   integrationClaimConfirmEmail,
@@ -87,6 +98,7 @@ export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {
   analytics?: ProductAnalytics;
+  partnerProgram?: PartnerProgram;
   passwordAuth?: boolean;
   /** Opt-in: rejects new passwords found in Have I Been Pwned. Calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -107,6 +119,8 @@ export interface AuthEnv {
   logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /** Runs once the account is gone. */
+  afterDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
   afterDeleteSession?: (session: AuthSession) => Promise<void>;
   /** Runs when a password change replaces the caller's own session instead of ending it. */
@@ -226,7 +240,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
       if (await hasAdmittedAccount(tx, userId)) return false;
       // Committed before the lock is released, so the next signup sees it.
-      await bootstrapUserSpace(prisma, { id: userId }, env);
+      await bootstrapUserSpace(prisma, { id: userId });
       return true;
     });
   /** The directory provisioned this account, so it is admitted whatever the signup policy. */
@@ -390,6 +404,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         signupUtmContent: attributionField,
         signupUtmTerm: attributionField,
         signupReferringDomain: attributionField,
+        signupPartnerClickId: attributionField,
       },
       validateUserInfo: async ({ user, source }, ctx) => {
         if (source.method !== "oauth") return;
@@ -472,7 +487,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           try {
             await env.beforeDeleteUser?.(user.id);
           } catch (error) {
-            if (error instanceof SpaceDeletionInProgressError)
+            if (
+              error instanceof SpaceDeletionInProgressError ||
+              error instanceof OwnedOrganizationHasMembersError
+            )
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }
@@ -492,6 +510,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });
+          await env.afterDeleteUser?.(user.id);
         },
       },
     },
@@ -560,6 +579,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (ctx.path === "/sign-in/social") {
           await addOAuthServerContext({
             signupAttribution: signupAttributionFromHeaders(ctx.headers),
+            partnerClickId: partnerClickFromHeaders(ctx.headers),
           });
         }
         if (
@@ -816,7 +836,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Registration is closed",
                 });
               }
-              if (!env.singleAccount) await bootstrapUserSpace(prisma, user, env);
+              if (!env.singleAccount) await bootstrapUserSpace(prisma, user);
               else if (!(await admitSoleAccount(user.id)))
                 throw new APIError("FORBIDDEN", {
                   code: "REGISTRATION_CLOSED",
@@ -907,6 +927,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               userId: user.id,
               metadata: { via: ctx?.path ?? null },
             });
+            // Never holds up the signup it reports.
+            const partnerClick = PartnerClickId.safeParse(user.signupPartnerClickId);
+            if (env.partnerProgram && partnerClick.success)
+              void bestEffort(
+                "partner program signup",
+                env.partnerProgram.trackSignup({
+                  clickId: partnerClick.data,
+                  customerId: user.id,
+                  name: user.name,
+                  email: user.email,
+                }),
+              );
           },
           before: async (user, ctx = null) => {
             if (isMessagingEmail(user.email)) {
@@ -920,6 +952,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const attribution = callbackAttribution.success
               ? callbackAttribution.data
               : signupAttributionFromHeaders(ctx?.headers);
+            const callbackClick = PartnerClickId.safeParse(
+              ctx?.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext?.partnerClickId
+                : undefined,
+            );
+            const partnerClickId = callbackClick.success
+              ? callbackClick.data
+              : partnerClickFromHeaders(ctx?.headers);
             return {
               data: {
                 ...user,
@@ -930,6 +970,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 signupUtmContent: attribution.utmContent,
                 signupUtmTerm: attribution.utmTerm,
                 signupReferringDomain: attribution.referringDomain,
+                signupPartnerClickId: partnerClickId,
                 ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
               },
             };

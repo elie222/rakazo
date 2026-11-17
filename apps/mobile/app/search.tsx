@@ -1,16 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { botColors, typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { TextInputInstance } from "react-native";
 import {
   Alert,
@@ -99,15 +92,10 @@ export default function SearchSheet() {
     }, [navigation, cancelOpen]),
   );
 
-  useEffect(() => {
-    // Native formSheet may finish attaching after TextInput's autoFocus runs.
-    const timer = setTimeout(() => {
-      if (focused.current && !opening.current) field.current?.focus();
-    }, 350);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
+  // Native formSheet may finish attaching after TextInput's autoFocus runs.
+  useTimeout(() => {
+    if (focused.current && !opening.current) field.current?.focus();
+  }, 350);
 
   const open = async (row: SearchSheetRow) => {
     if (!focused.current || opening.current) return;

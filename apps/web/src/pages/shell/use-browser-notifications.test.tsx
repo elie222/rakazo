@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
+
 import { i18n } from "@lingui/core";
 import type { Bot, ChatAlert } from "@rakazo/contracts";
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -38,15 +41,15 @@ let hook: ReturnType<typeof useBrowserNotifications>;
 function stream(): AsyncIterable<Frame> {
   const queue: Frame[] = [];
   let failure: unknown;
-  let wake: (() => void) | undefined;
+  let wake: Deferred | undefined;
   streams.push({
     push: (frame) => {
       queue.push(frame);
-      wake?.();
+      wake?.resolve();
     },
     fail: (error) => {
       failure = error;
-      wake?.();
+      wake?.resolve();
     },
   });
   return {
@@ -58,9 +61,8 @@ function stream(): AsyncIterable<Frame> {
           continue;
         }
         if (failure) throw failure;
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+        wake = deferred();
+        await wake.promise;
       }
     },
   };

@@ -10,9 +10,9 @@ import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
-  BACKGROUND_HELPER_TOOL_NAMES,
   BUILTIN_AGENT_TOOL_NAMES,
   PAGE_BROWSER_TOOL_NAMES,
+  SUBAGENT_HIDDEN_TOOLS,
 } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
 import { emailTools } from "./run-tools-email.js";
@@ -142,12 +142,12 @@ async function dispatchTool(
   if (
     ctx.run.trigger === BACKGROUND_HELPER_TRIGGER &&
     (BUILTIN_AGENT_TOOL_NAMES.has(name) || TOOL_HANDLERS.has(name)) &&
-    !BACKGROUND_HELPER_TOOL_NAMES.has(name)
+    (SUBAGENT_HIDDEN_TOOLS.has(name) || !ctx.tools.builtins.some((tool) => tool.name === name))
   ) {
     return refuse(
       refusal(
         "helper_tool_unavailable",
-        `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
+        `${name} is not available to a subagent. Say in your result what the parent should do.`,
       ),
     );
   }

@@ -8,6 +8,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
@@ -22,6 +23,7 @@ import {
   isSensitiveHeader,
   isTransportHeader,
   PublicHeadersSchema,
+  parseConnectorSetting,
   readBoundedText,
   requireCredential,
 } from "./connector-http.js";
@@ -30,6 +32,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "./connector-safety.js";
+import { checkConnectorSource } from "./connector-source.js";
 import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
 import {
   CATALOG_EXECUTE,
@@ -430,16 +433,20 @@ export async function verifyMcpInstall(input: {
   allowPrivateEndpoint?: boolean;
 }): Promise<{ config: Record<string, unknown>; toolCount: number }> {
   assertNoSensitiveQuery(input.source);
-  const config = McpConfigSchema.parse(input.config);
+  const config = parseConnectorSetting(McpConfigSchema, input.config);
   requireCredential(config.auth, input.credential);
-  const tools = await listRemoteMcpTools({
-    ...input.remote,
-    endpoint: input.source,
-    headers: connectorHeaders(config, input.credential),
-    signal: input.signal,
-    allowPrivateEndpoint: input.allowPrivateEndpoint,
-  });
-  if (tools.length === 0) throw new Error("MCP server returned no tools");
+  const tools = await checkConnectorSource(
+    () =>
+      listRemoteMcpTools({
+        ...input.remote,
+        endpoint: input.source,
+        headers: connectorHeaders(config, input.credential),
+        signal: input.signal,
+        allowPrivateEndpoint: input.allowPrivateEndpoint,
+      }),
+    input,
+  );
+  if (tools.length === 0) throw new ConnectionSetupError("MCP server returned no tools");
   return { config, toolCount: tools.length };
 }
 
@@ -452,9 +459,9 @@ export async function prepareApiInstall(input: {
   /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
-  const auth = AuthSchema.parse(input.config.auth);
+  const auth = parseConnectorSetting(AuthSchema, input.config.auth);
   requireCredential(auth, input.credential);
-  const headers = PublicHeadersSchema.parse(input.config.headers);
+  const headers = parseConnectorSetting(PublicHeadersSchema, input.config.headers);
   assertNoSensitiveQuery(input.source);
   const remote = { ...input.remote, allowPrivateEndpoint: input.allowPrivateEndpoint };
   let source = input.source;
@@ -466,13 +473,25 @@ export async function prepareApiInstall(input: {
       ...headers,
     };
     applyCredential(documentUrl, documentHeaders, auth, input.credential);
-    const document = await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote);
-    const imported = importOpenApiDocument(document);
+    const imported = await checkConnectorSource(
+      async () =>
+        importOpenApiDocument(
+          await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote),
+        ),
+      input,
+    );
     source = imported.baseUrl;
     operationsValue = imported.operations;
   }
-  await assertSafeRemoteUrl(source, remote.resolveHostname, remote);
-  const config = ApiConfigSchema.parse({ auth, headers, operations: operationsValue });
+  await checkConnectorSource(
+    () => assertSafeRemoteUrl(source, remote.resolveHostname, remote),
+    input,
+  );
+  const config = parseConnectorSetting(ApiConfigSchema, {
+    auth,
+    headers,
+    operations: operationsValue,
+  });
   return {
     source,
     config,
@@ -494,15 +513,15 @@ async function loadOpenApiDocument(
     });
     if (!response.ok) {
       cancelResponseBody(response);
-      throw new Error(`OpenAPI document returned HTTP ${response.status}`);
+      throw new ConnectionSetupError(`OpenAPI document returned HTTP ${response.status}`);
     }
     const size = Number(response.headers.get("content-length") ?? 0);
     if (size > 2_000_000) {
       cancelResponseBody(response);
-      throw new Error("OpenAPI document is too large");
+      throw new ConnectionSetupError("OpenAPI document is too large");
     }
     const { text, truncated } = await readBoundedText(response, 2_000_000);
-    if (truncated) throw new Error("OpenAPI document is too large");
+    if (truncated) throw new ConnectionSetupError("OpenAPI document is too large");
     return parseOpenApiText(text);
   } finally {
     await safeFetch.close().catch(() => undefined);
@@ -526,7 +545,7 @@ function parseOpenApiText(text: string): Record<string, unknown> {
     }
   }
   if (!document || typeof document !== "object" || Array.isArray(document)) {
-    throw new Error("OpenAPI document is not valid JSON or YAML");
+    throw new ConnectionSetupError("OpenAPI document is not valid JSON or YAML");
   }
   return document as Record<string, unknown>;
 }
@@ -567,13 +586,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
 } {
   const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
   if (typeof server?.url !== "string" || !server.url) {
-    throw new Error("OpenAPI document must define servers[0].url");
+    throw new ConnectionSetupError("OpenAPI document must define servers[0].url");
   }
   const variables = asRecord(server.variables);
   const serverDefault = (name: string) => {
     const variable = asRecord(variables?.[name]);
     if (typeof variable?.default !== "string") {
-      throw new Error("OpenAPI server variable must define a string default");
+      throw new ConnectionSetupError("OpenAPI server variable must define a string default");
     }
     return variable.default;
   };
@@ -584,7 +603,9 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     length += serverDefault(name!).length - placeholder.length;
   }
   if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
-    throw new Error(`OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`);
+    throw new ConnectionSetupError(
+      `OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`,
+    );
   }
   const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
     serverDefault(name),
@@ -592,7 +613,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
-    throw new Error("OpenAPI document has no paths");
+    throw new ConnectionSetupError("OpenAPI document has no paths");
   }
   const refs: OpenApiRefs = { document, size: 0, literalSizes: new Map() };
   const operations: ApiOperation[] = [];
@@ -640,7 +661,9 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         }
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
-            throw new Error(`OpenAPI operation ${id} contains unsafe header ${parameter.name}`);
+            throw new ConnectionSetupError(
+              `OpenAPI operation ${id} contains unsafe header ${parameter.name}`,
+            );
           }
           headerParameters.push(parameter.name);
         }
@@ -681,7 +704,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     if (operations.length >= 100) break;
   }
   if (operations.length === 0) {
-    throw new Error("OpenAPI document has no operations with operationId");
+    throw new ConnectionSetupError("OpenAPI document has no operations with operationId");
   }
   return { baseUrl, operations };
 }
@@ -974,7 +997,7 @@ function connectorHeaders(
   const headers = { ...config.headers };
   if (!credential || config.auth.type === "none") return headers;
   const name = config.auth.type === "header" ? config.auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
+  if (!name) throw new ConnectionSetupError("Authentication header name is required");
   headers[name] = config.auth.type === "bearer" ? `Bearer ${credential}` : credential;
   return headers;
 }

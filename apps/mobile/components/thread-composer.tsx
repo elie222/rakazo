@@ -2,6 +2,7 @@ import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type {
   buildComposerMentionOptions,
@@ -44,9 +45,11 @@ import {
 import { useComposerDictation } from "../lib/composer-dictation";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import type { ComposerModel } from "../lib/composer-model";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { BotAvatar } from "./bot-avatar";
+import { ModelChip, TrailingControls } from "./composer-model-chip";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
@@ -96,6 +99,8 @@ type ThreadComposerProps = {
   onSlashAction: (action: SlashActionId) => void;
   /** The composer holds no text: the last of it was deleted or sent. */
   onEmptied?: () => void;
+  /** The chat's model, shown in the box when the person turned the model picker on. */
+  model?: ComposerModel;
 };
 
 export function ThreadComposer({
@@ -118,6 +123,7 @@ export function ThreadComposer({
   startVoiceCall,
   onSlashAction,
   onEmptied,
+  model,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
   // A mention is plain text in the link blue; it turns bold while a backspace has it selected.
@@ -134,6 +140,9 @@ export function ThreadComposer({
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
   const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
+  // Text past one line moves the model, dictation and send to a row under it until the box empties.
+  const [wrapped, setWrapped] = useState(false);
+  const stacked = Boolean(model) && wrapped;
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
@@ -191,20 +200,19 @@ export function ThreadComposer({
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function flushDraftSave() {
-    clearTimeout(saveTimer.current);
     // A failed save stays pending, so the next flush retries it.
     if (pendingSave.current?.()) pendingSave.current = null;
   }
   useEffect(() => {
     if (!draftScope) return;
     pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
-    clearTimeout(saveTimer.current);
     // An emptied composer, such as after a send, forgets the draft right away.
     if (!draft) flushDraftSave();
-    else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
   }, [draftScope, draft, mentionBindings]);
+  // Each edit starts the pause again.
+  const draftEdit = useMemo(() => ({}), [draftScope, draft, mentionBindings]);
+  useTimeout(flushDraftSave, draftScope && draft ? DRAFT_SAVE_DELAY_MS : null, draftEdit);
   useEffect(() => {
     if (!draft) onEmptied?.();
   }, [draft, onEmptied]);
@@ -233,6 +241,7 @@ export function ThreadComposer({
       inputRef.current?.clear();
       draftRef.current = "";
       setDraft("");
+      setWrapped(false);
       nativeSelection.current = { start: 0, end: 0 };
       completedSelection.current = null;
       setSelection({ start: 0, end: 0 });
@@ -365,6 +374,8 @@ export function ThreadComposer({
     updateBindings(resolved.bindings);
     draftRef.current = resolved.text;
     setDraft(resolved.text);
+    // An emptied box goes back to one row even when its height did not change on the way.
+    if (!resolved.text) setWrapped(false);
     completedSelection.current = null;
     return resolved;
   }
@@ -422,7 +433,8 @@ export function ThreadComposer({
   // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
   // bottom margin would leave them high.
   const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
-  const pillInset = (lineHeight - composerPillStyle.height) / 2;
+  // Lines the controls up with a single line of text; under the text they center on each other.
+  const pillInset = stacked ? 0 : (lineHeight - composerPillStyle.height) / 2;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
   // Sending resets the box, which would drop a clip still recording or words still being transcribed.
@@ -590,8 +602,8 @@ export function ThreadComposer({
             flex: 1,
             minHeight: 44,
             borderRadius: 22,
-            flexDirection: "row",
-            alignItems: "flex-end",
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "stretch" : "flex-end",
             // Keeps text clear of the call/send pill even when it runs to the trailing edge (RTL).
             gap: 8,
             paddingStart: 16,
@@ -601,7 +613,9 @@ export function ThreadComposer({
         >
           <View
             style={{
-              flex: 1,
+              flex: stacked ? undefined : 1,
+              // Room for the text comes first; the model chip shrinks instead.
+              minWidth: stacked ? undefined : 96,
               flexDirection: "row",
               flexWrap: "wrap",
               alignItems: "center",
@@ -761,6 +775,13 @@ export function ThreadComposer({
                   }
                 }}
                 keyboardAppearance={colorScheme}
+                // Tracked even before a model chip loads, so a long restored draft stacks once it does.
+                onContentSizeChange={(event) => {
+                  // The stacked layout gives the text more width, so it stays until the box
+                  // empties; going back as soon as the text fits would flip between the two.
+                  if (event.nativeEvent.contentSize.height > 22 * textScale * 1.5) setWrapped(true);
+                  else if (!draftRef.current) setWrapped(false);
+                }}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -791,80 +812,92 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
-          {onCall ? null : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
-              disabled={dictation.status === "transcribing"}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={toggleDictation}
-              style={{ marginBottom: pillInset }}
-            >
-              <GlassSurface
-                tint={dictation.status === "idle" ? undefined : tokens.foreground}
-                style={composerPillStyle}
-                fallbackStyle={{
-                  backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
-                }}
+          <TrailingControls stacked={stacked}>
+            {model ? (
+              <ModelChip
+                model={model}
+                // A mark beside the text; its name and thinking once the controls sit under it.
+                full={stacked}
+                style={{ marginBottom: pillInset }}
+              />
+            ) : null}
+            {onCall ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
+                disabled={dictation.status === "transcribing"}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={toggleDictation}
+                style={{ marginBottom: pillInset }}
               >
-                {dictation.status === "transcribing" ? (
-                  <ActivityIndicator size="small" color={tokens.background} />
-                ) : (
+                <GlassSurface
+                  tint={dictation.status === "idle" ? undefined : tokens.foreground}
+                  style={composerPillStyle}
+                  fallbackStyle={{
+                    backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
+                  }}
+                >
+                  {dictation.status === "transcribing" ? (
+                    <ActivityIndicator size="small" color={tokens.background} />
+                  ) : (
+                    <NativeSymbol
+                      ios={dictation.status === "listening" ? "mic.fill" : "mic"}
+                      android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                      size={15}
+                      color={
+                        dictation.status === "idle" ? tokens.mutedForeground : tokens.background
+                      }
+                    />
+                  )}
+                </GlassSurface>
+              </Pressable>
+            )}
+            {/* No call while dictation still owns the microphone or its words are on the way. */}
+            {!canSend && botId && !onCall && dictation.status === "idle" ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t`Call`}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => void startVoiceCall()}
+                style={{ marginBottom: pillInset }}
+              >
+                <GlassSurface
+                  tint={tokens.primary}
+                  style={composerPillStyle}
+                  fallbackStyle={{ backgroundColor: tokens.primary }}
+                >
                   <NativeSymbol
-                    ios={dictation.status === "listening" ? "mic.fill" : "mic"}
-                    android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                    ios="waveform"
+                    android="pulse-outline"
                     size={15}
-                    color={dictation.status === "idle" ? tokens.mutedForeground : tokens.background}
+                    color={tokens.primaryForeground}
                   />
-                )}
-              </GlassSurface>
-            </Pressable>
-          )}
-          {/* No call while dictation still owns the microphone or its words are on the way. */}
-          {!canSend && botId && !onCall && dictation.status === "idle" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t`Call`}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={() => void startVoiceCall()}
-              style={{ marginBottom: pillInset }}
-            >
-              <GlassSurface
-                tint={tokens.primary}
-                style={composerPillStyle}
-                fallbackStyle={{ backgroundColor: tokens.primary }}
+                </GlassSurface>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t`Send`}
+                disabled={sendBlocked}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => void send()}
+                style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
               >
-                <NativeSymbol
-                  ios="waveform"
-                  android="pulse-outline"
-                  size={15}
-                  color={tokens.primaryForeground}
-                />
-              </GlassSurface>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t`Send`}
-              disabled={sendBlocked}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={() => void send()}
-              style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
-            >
-              <GlassSurface
-                tint={tokens.primary}
-                style={composerPillStyle}
-                fallbackStyle={{ backgroundColor: tokens.primary }}
-              >
-                <NativeSymbol
-                  ios="arrow.up"
-                  android="arrow-up"
-                  size={15}
-                  color={tokens.primaryForeground}
-                />
-              </GlassSurface>
-            </Pressable>
-          )}
+                <GlassSurface
+                  tint={tokens.primary}
+                  style={composerPillStyle}
+                  fallbackStyle={{ backgroundColor: tokens.primary }}
+                >
+                  <NativeSymbol
+                    ios="arrow.up"
+                    android="arrow-up"
+                    size={15}
+                    color={tokens.primaryForeground}
+                  />
+                </GlassSurface>
+              </Pressable>
+            )}
+          </TrailingControls>
         </GlassSurface>
       </View>
     </>

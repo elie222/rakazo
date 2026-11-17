@@ -34,6 +34,13 @@ The supervisor reaches Docker at `/var/run/docker.sock` (or `//./pipe/docker_eng
 
 ## Restricted computer egress
 
+On a cloud VM, explicitly choose `SANDBOX_COMPUTER_EGRESS=restricted` after installing
+the host rules. This refuses to start computers if enforcement is missing. The default
+`auto` preserves compatibility on hosts without those rules and can allow access to
+cloud metadata and internal networks. Restricted egress also blocks intentional access
+to local models, private repositories and other LAN services. Choose `open` only when
+that network access is intended and the host is appropriately isolated.
+
 Restricted egress gives Docker computers the public internet (browsing, DNS, apt, git
 over SSH) but not the Docker host, the LAN, or link-local cloud metadata such as
 `169.254.169.254`, which on a cloud VM would hand instance credentials to anything a bot runs.

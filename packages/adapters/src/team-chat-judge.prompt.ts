@@ -1,3 +1,4 @@
+import { sanitizeMessagingLabel } from "@rakazo/core";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import type { TeamChatEngagementMessage } from "./team-chat-judge.js";
 
@@ -12,13 +13,13 @@ export function renderTeamChatEngagementPrompt(input: {
   messages: TeamChatEngagementMessage[];
 }): string {
   const channel = input.channelName
-    ? `#${input.channelName} (${input.channelId})`
+    ? `#${sanitizeMessagingLabel(input.channelName)} (${input.channelId})`
     : input.channelId;
   const messages = input.messages
     .slice(-MAX_MESSAGES)
     .map(
       (message) =>
-        `[${message.eventId}] ${cleanLine(message.senderName)} (${cleanLine(message.senderId)}): ${truncate(message.content, MAX_MESSAGE_CHARS)}`,
+        `[${message.eventId}] ${sanitizeMessagingLabel(message.senderName)} (${cleanLine(message.senderId)}): ${truncate(message.content, MAX_MESSAGE_CHARS)}`,
     )
     .join("\n");
   return [

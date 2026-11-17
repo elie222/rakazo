@@ -285,6 +285,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
+    promptRenameSection,
     snoozeChat,
   } = useInboxChatActions({
     confirmationActive: inboxShown,
@@ -730,6 +731,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     day,
     now: snoozeNow,
     deleteSection,
+    promptRenameSection,
     editSectionFromMenu,
     groupAction,
     spaceId: me?.spaceId,

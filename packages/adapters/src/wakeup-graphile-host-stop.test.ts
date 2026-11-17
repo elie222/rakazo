@@ -1,4 +1,5 @@
 import { getHeapStatistics } from "node:v8";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import type * as GraphileWorker from "graphile-worker";
 import type { Runner } from "graphile-worker";
@@ -23,7 +24,6 @@ vi.mock("graphile-worker", async (importOriginal) => ({
 import { GraphileJobWorkerHost } from "./wakeup.js";
 import {
   DRAIN_MS,
-  deferred,
   handlers,
   helpers,
   IDLE_MS,

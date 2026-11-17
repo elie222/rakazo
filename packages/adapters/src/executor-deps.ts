@@ -95,8 +95,13 @@ export interface ExecutorDeps {
   codexCatalog?: CodexLiveCatalog;
   /** The run starter's connected desktop; absent never offers user_computer_shell. */
   userDevices?: UserDeviceGateway;
-  /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */
+  /** Aborts when this process's runs must stop: each hands itself back to start elsewhere. */
   shutdownSignal?: AbortSignal;
+  /**
+   * Aborts when this process begins to stop, for one that lets running turns end before
+   * `shutdownSignal` (see `drainRuns`): from then on it claims no run.
+   */
+  stoppingSignal?: AbortSignal;
   /** Set by withRunLease for one attempt; that run's history writes carry its lease. */
   runLease?: RunLease & { runId: string };
 }

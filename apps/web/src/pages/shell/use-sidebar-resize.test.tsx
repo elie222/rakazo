@@ -9,10 +9,12 @@ import { useSidebarResize } from "./use-sidebar-resize";
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 let current: ReturnType<typeof useSidebarResize>;
+let renders = 0;
 const commitCollapsed = vi.fn();
 
 function Harness({ userId = "user" }: { userId?: string }) {
   const [collapsed, setCollapsed] = useState(false);
+  renders += 1;
   current = useSidebarResize({
     userId,
     collapsed,
@@ -122,6 +124,20 @@ it("limits the sidebar on viewport resize without discarding the preferred width
   expect(current.width).toBe(480);
   await act(async () => root.render(<Harness userId="another-user" />));
   expect(current.width).toBe(316);
+});
+
+it("re-renders on viewport resize only when the sidebar's limit changes", async () => {
+  const before = renders;
+  for (const width of [1100, 1000, 900]) {
+    vi.stubGlobal("innerWidth", width);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+  }
+  expect(renders).toBe(before);
+
+  vi.stubGlobal("innerWidth", 700);
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(renders).toBeGreaterThan(before);
+  expect(current.handleProps["aria-valuemax"]).toBe(380);
 });
 
 it("does not treat a drag back to its starting point as a toggle", async () => {

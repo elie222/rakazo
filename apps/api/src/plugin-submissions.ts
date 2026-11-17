@@ -24,7 +24,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   PluginSubmissionInputSchema,
 } from "@rakazo/contracts";
-import { pluginCategory } from "@rakazo/core";
+import { ClientError, pluginCategory } from "@rakazo/core";
 import type { PluginSubmission as PluginSubmissionRow, PrismaClient } from "@rakazo/db";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -271,9 +271,10 @@ export async function reviewPluginSubmission(
       fetcher: deps.pluginRepoFetcher,
     }).catch((error) => {
       rethrowUnlessPluginSourceFailed(error, signal);
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Could not preview a supported plugin from this repository",
-      });
+      throw new ClientError(
+        "BAD_REQUEST",
+        "Could not preview a supported plugin from this repository",
+      );
     });
     for (const server of preview.mcpServers) await assertMcpRemoteEndpoint(server.endpoint, deps);
     if (preview.skipped.some((part) => part.kind !== "unsupported_field")) {

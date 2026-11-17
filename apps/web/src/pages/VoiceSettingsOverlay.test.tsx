@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -33,7 +34,8 @@ vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray) => parts.join("");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { OptionSelect } = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -51,8 +53,7 @@ vi.mock("@rakazo/ui-web", () => {
       <label htmlFor={htmlFor}>{children}</label>
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect,
   };
 });
 
@@ -82,6 +83,20 @@ const eleven = {
   speechModel: "",
   transcribe: true,
 };
+
+function selects(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLElement>('[role="combobox"]')];
+}
+
+async function choose(trigger: HTMLElement | undefined, label: string) {
+  if (!trigger) throw new Error("Missing select");
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((entry) =>
+    entry.textContent?.startsWith(label),
+  );
+  if (!option) throw new Error(`Missing option ${label}`);
+  await act(async () => option.click());
+}
 
 function speechModelInput(container: HTMLElement): HTMLInputElement | undefined {
   return [...container.querySelectorAll("input")].find((input) => {
@@ -156,12 +171,6 @@ it("saves a speech model on the existing pane of a provider that takes one", asy
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const chooseProvider = (value: string) => {
-    const select = container.querySelector("select");
-    if (!select) throw new Error("Missing provider select");
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  };
   try {
     await act(async () => {
       root.render(
@@ -176,17 +185,13 @@ it("saves a speech model on the existing pane of a provider that takes one", asy
     expect(input).toBeTruthy();
     expect(input?.placeholder).toBe("Optional");
 
-    await act(async () => {
-      chooseProvider("openai");
-    });
+    await choose(selects(container)[0], "OpenAI");
     await act(async () => {
       await Promise.resolve();
     });
     expect(speechModelInput(container)).toBeUndefined();
 
-    await act(async () => {
-      chooseProvider("elevenlabs");
-    });
+    await choose(selects(container)[0], "ElevenLabs");
     await act(async () => {
       await Promise.resolve();
     });
@@ -755,18 +760,13 @@ it("keeps the provider picked during a background refresh and only its voices", 
       () => new Promise((resolve) => (releaseCatalog = () => resolve(catalog))),
     );
     const second = await mount();
-    await act(async () => {
-      const select = container.querySelector("select");
-      if (!select) throw new Error("Missing provider select");
-      select.value = "elevenlabs";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await choose(selects(container)[0], "ElevenLabs");
     await vi.waitFor(() => expect(container.textContent).toContain("Rachel"));
     await act(async () => releaseCatalog());
     await act(async () => {
       await Promise.resolve();
     });
-    expect(container.querySelector("select")?.value).toBe("elevenlabs");
+    expect(selects(container)[0]?.textContent).toContain("ElevenLabs");
     expect(container.textContent).toContain("Rachel");
     expect(container.textContent).not.toContain("Aria");
     await act(async () => second.unmount());
@@ -1047,12 +1047,7 @@ it("picks a Space's own voice from the account's connections without managing th
     expect(buttons).not.toContain("Disconnect");
     expect(buttons).not.toContain("Replace key");
 
-    const voiceSelect = container.querySelectorAll("select")[1];
-    if (!voiceSelect) throw new Error("Missing voice select");
-    await act(async () => {
-      voiceSelect.value = "voice-2";
-      voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await choose(selects(container)[1], "Bo");
     expect(voice.setVoice).toHaveBeenCalledWith({
       scope: "space",
       voiceId: "voice-2",
@@ -1289,14 +1284,7 @@ it.each(["account", "space"] as const)(
           ),
         );
       });
-      const select = [...container.querySelectorAll("select")].find((select) =>
-        [...select.options].some((option) => option.value === "macos"),
-      );
-      expect(select).toBeTruthy();
-      await act(async () => {
-        select!.value = "macos";
-        select!.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      await choose(selects(container)[0], "Server (Mac)");
       expect(voice.setVoice).toHaveBeenCalledExactlyOnceWith({
         scope,
         provider: "macos",
@@ -1304,9 +1292,7 @@ it.each(["account", "space"] as const)(
       });
       expect(container.textContent).not.toContain("API key");
       expect(container.textContent).not.toContain("Replace key");
-      expect(
-        [...container.querySelectorAll("select")].find((select) => select.value === "Albert"),
-      ).toBeTruthy();
+      expect(selects(container).some((select) => select.textContent === "Albert")).toBe(true);
     } finally {
       await act(async () => root.unmount());
       container.remove();

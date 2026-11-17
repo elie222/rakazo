@@ -789,7 +789,9 @@ describeIntegration("run executor lifecycle", () => {
     );
     expect(claimed.map((item) => item.messageId)).toEqual([publicSend.messageId]);
     const history = await runAsSystem("background job run.continue", () =>
-      loadRunHistoryMessages(handles.prisma, seeded.run, 100, channel.channelId),
+      loadRunHistoryMessages(handles.prisma, seeded.run, 100, {
+        channelId: channel.channelId,
+      }),
     );
     expect(history.map((message) => message.id).sort()).toEqual(
       [source.id, publicSend.messageId].sort(),
@@ -829,12 +831,9 @@ describeIntegration("run executor lifecycle", () => {
     expect(
       (
         await runAsSystem("background job run.continue", () =>
-          loadRunHistoryMessages(
-            handles.prisma,
-            { ...seeded.run, id: "next-group-run" },
-            100,
-            channel.channelId,
-          ),
+          loadRunHistoryMessages(handles.prisma, { ...seeded.run, id: "next-group-run" }, 100, {
+            channelId: channel.channelId,
+          }),
         )
       )
         .map((message) => message.id)
@@ -904,6 +903,107 @@ describeIntegration("run executor lifecycle", () => {
       { fence: 2, status: "completed" },
     ]);
     expect(await repliesOf(seeded.run.id)).toBe(1);
+  });
+
+  it("starts a run again at once when the database fails right after it is claimed", async () => {
+    const seeded = await seedRun("failover-claim", "write a file that says failover-claim");
+    const failover = await failNext(
+      "failover_claim",
+      "INSERT ON attempts",
+      `NEW."runId" = '${seeded.run.id}'`,
+    );
+    try {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+      await expect
+        .poll(
+          async () => (await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).status,
+          { timeout: 10_000 },
+        )
+        .toBe("completed");
+      expect(await failover.fired()).toBe(true);
+    } finally {
+      await failover.drop();
+    }
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id }, orderBy: { fence: "asc" } }),
+    ]);
+    expect(run).toMatchObject({ status: "completed", error: null, leaseFence: 2 });
+    expect(attempts.map(({ fence, status, error }) => ({ fence, status, error }))).toEqual([
+      { fence: 1, status: "setup_failed", error: null },
+      { fence: 2, status: "completed", error: null },
+    ]);
+    expect(await repliesOf(seeded.run.id)).toBe(1);
+  });
+
+  it("hands back and counts a run whose setup fails right after it is claimed", async () => {
+    const seeded = await seedRun("claim-setup", "write a file that says claim-setup");
+    await db.bot.update({ where: { id: seeded.bot.id }, data: { computerId: null } });
+
+    await expect(
+      runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      ),
+    ).rejects.toThrow("Run setup failed; retrying");
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({ where: { runId: seeded.run.id }, orderBy: { fence: "asc" } }),
+    ]);
+    // Not left running under a lease nobody renews: it is due again after a short backoff.
+    expect(run).toMatchObject({
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      error: "Run setup failed; retrying",
+    });
+    expect(attempts[0]).toMatchObject({
+      fence: 1,
+      status: "setup_failed",
+      error: "Bot has no computer",
+    });
+  });
+
+  it("counts setup failures an earlier release recorded together with its own", async () => {
+    const seeded = await seedRun("mixed-setup", "write a file that says mixed-setup", {
+      leaseFence: 6,
+    });
+    await db.bot.update({ where: { id: seeded.bot.id }, data: { computerId: null } });
+    await db.attempt.createMany({
+      data: [1, 2, 3, 4, 5, 6].map((fence) => ({
+        runId: seeded.run.id,
+        fence,
+        status: "setup_failed",
+        error: "Run setup failed; retrying",
+        finishedAt: new Date(),
+      })),
+    });
+    const continueRun = () =>
+      runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "worker-a"),
+      );
+
+    await expect(continueRun()).rejects.toThrow("Run setup failed; retrying");
+    expect(await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).toMatchObject({
+      status: "queued",
+    });
+    await db.run.update({ where: { id: seeded.run.id }, data: { wakeAt: null } });
+    await continueRun();
+
+    const [run, attempts] = await Promise.all([
+      db.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      db.attempt.findMany({
+        where: { runId: seeded.run.id, fence: { gt: 6 } },
+        orderBy: { fence: "asc" },
+      }),
+    ]);
+    expect(run).toMatchObject({ status: "failed", error: "Bot has no computer" });
+    expect(attempts.map(({ fence, status, error }) => ({ fence, status, error }))).toEqual([
+      { fence: 7, status: "setup_failed", error: "Bot has no computer" },
+      { fence: 8, status: "failed", error: "Bot has no computer" },
+    ]);
   });
 
   it("recovers a computer a crashed worker left booting", async () => {

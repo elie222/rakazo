@@ -16,8 +16,6 @@ vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
   WebBrowserResultType: { CANCEL: "cancel", DISMISS: "dismiss" },
 }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(async () => ({ authorization: "Bearer old-session" })),
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),

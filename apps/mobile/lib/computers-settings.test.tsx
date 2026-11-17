@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -14,9 +15,6 @@ vi.mock("./native", () => ({
   native: { groupedPage: "#fff", secondaryLabel: "#888" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
@@ -122,7 +120,7 @@ afterEach(async () => {
 });
 
 async function settle() {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<ComputersSettings />));
@@ -212,10 +210,10 @@ it("keeps the revoke error when reconciliation also fails", async () => {
 });
 
 it("restores a failed removal when a newer refresh fails", async () => {
-  let finishReconcile!: (devices: (typeof laptop)[]) => void;
+  const finishReconcile = deferred<(typeof laptop)[]>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(new Promise((resolve) => (finishReconcile = resolve)))
+    .mockReturnValueOnce(finishReconcile.promise)
     .mockRejectedValueOnce(new Error("list failed"));
   vi.mocked(removeUserDevice).mockRejectedValue({});
   await render();
@@ -227,7 +225,7 @@ it("restores a failed removal when a newer refresh fails", async () => {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
   );
-  await act(async () => finishReconcile([]));
+  await act(async () => finishReconcile.resolve([]));
   expect(container.textContent).toContain("LaptopConnected");
   expect(container.textContent).toContain("list failed");
   expect(container.textContent).toContain("Retry");
@@ -259,32 +257,32 @@ function refreshBusy() {
 }
 
 it("keeps refreshing until the newest refresh finishes", async () => {
-  let finishFirst!: (devices: (typeof laptop)[]) => void;
-  let finishSecond!: (devices: (typeof laptop)[]) => void;
+  const finishFirst = deferred<(typeof laptop)[]>();
+  const finishSecond = deferred<(typeof laptop)[]>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
-    .mockReturnValueOnce(new Promise((resolve) => (finishSecond = resolve)));
+    .mockReturnValueOnce(finishFirst.promise)
+    .mockReturnValueOnce(finishSecond.promise);
   await render();
   const refresh = () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
   await act(async () => refresh());
   await act(async () => refresh());
   expect(refreshBusy()).toBe("true");
-  await act(async () => finishFirst([laptop]));
+  await act(async () => finishFirst.resolve([laptop]));
   expect(refreshBusy()).toBe("true");
-  await act(async () => finishSecond([laptop]));
+  await act(async () => finishSecond.resolve([laptop]));
   expect(refreshBusy()).toBe("false");
 });
 
 it("resets refreshing on blur and ignores the previous refresh", async () => {
-  let finishFirst!: (devices: (typeof laptop)[]) => void;
-  let finishSecond!: (devices: (typeof laptop)[]) => void;
+  const finishFirst = deferred<(typeof laptop)[]>();
+  const finishSecond = deferred<(typeof laptop)[]>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockReturnValueOnce(finishFirst.promise)
     .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(new Promise((resolve) => (finishSecond = resolve)));
+    .mockReturnValueOnce(finishSecond.promise);
   await render();
   const refresh = () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
@@ -293,17 +291,17 @@ it("resets refreshing on blur and ignores the previous refresh", async () => {
   expect(refreshBusy()).toBe("false");
   await act(async () => focus());
   await act(async () => refresh());
-  await act(async () => finishFirst([laptop]));
+  await act(async () => finishFirst.resolve([laptop]));
   expect(refreshBusy()).toBe("true");
-  await act(async () => finishSecond([laptop]));
+  await act(async () => finishSecond.resolve([laptop]));
   expect(refreshBusy()).toBe("false");
 });
 
 it("ignores a delayed refresh after a successful revoke", async () => {
-  let finishRefresh!: (devices: (typeof laptop)[]) => void;
+  const finishRefresh = deferred<(typeof laptop)[]>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(new Promise((resolve) => (finishRefresh = resolve)))
+    .mockReturnValueOnce(finishRefresh.promise)
     .mockResolvedValueOnce([]);
   vi.mocked(removeUserDevice).mockResolvedValue();
   await render();
@@ -315,15 +313,15 @@ it("ignores a delayed refresh after a successful revoke", async () => {
   );
   await act(async () => confirmRemove()?.onPress?.());
   await settle();
-  await act(async () => finishRefresh([laptop]));
+  await act(async () => finishRefresh.resolve([laptop]));
   expect(container.textContent).not.toContain("Laptop");
 });
 
 it("filters refresh results while a revoke is pending", async () => {
-  let finishRemove!: () => void;
+  const finishRemove = deferred();
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop]).mockResolvedValueOnce([laptop]);
   vi.mocked(listUserDevices).mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockReturnValue(new Promise((resolve) => (finishRemove = resolve)));
+  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
@@ -333,18 +331,18 @@ it("filters refresh results while a revoke is pending", async () => {
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
   );
   expect(container.textContent).not.toContain("Laptop");
-  await act(async () => finishRemove());
+  await act(async () => finishRemove.resolve());
   await settle();
   expect(container.textContent).not.toContain("Laptop");
 });
 
 it("clears a newer visit's load error when an earlier removal reconciles", async () => {
-  let finishRemove!: () => void;
+  const finishRemove = deferred();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop, desk])
     .mockRejectedValueOnce(new Error("list failed"))
     .mockResolvedValueOnce([desk]);
-  vi.mocked(removeUserDevice).mockReturnValue(new Promise((resolve) => (finishRemove = resolve)));
+  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
@@ -358,7 +356,7 @@ it("clears a newer visit's load error when an earlier removal reconciles", async
   expect(container.textContent).toContain("list failed");
   expect(container.textContent).toContain("Retry");
 
-  await act(async () => finishRemove());
+  await act(async () => finishRemove.resolve());
   await settle();
   expect(container.textContent).toContain("Desk PCOffline");
   expect(container.textContent).not.toContain("list failed");
@@ -366,15 +364,15 @@ it("clears a newer visit's load error when an earlier removal reconciles", async
 });
 
 it("ignores a previous visit's revoke error after a later removal succeeds", async () => {
-  let failFirst!: (error: Error) => void;
-  let finishSecond!: () => void;
+  const failFirst = deferred<never>();
+  const finishSecond = deferred();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop, desk])
     .mockResolvedValueOnce([laptop, desk])
     .mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice)
-    .mockReturnValueOnce(new Promise((_, reject) => (failFirst = reject)))
-    .mockReturnValueOnce(new Promise((resolve) => (finishSecond = resolve)));
+    .mockReturnValueOnce(failFirst.promise)
+    .mockReturnValueOnce(finishSecond.promise);
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
@@ -389,9 +387,9 @@ it("ignores a previous visit's revoke error after a later removal succeeds", asy
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC, Offline"]')?.click(),
   );
   await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => finishSecond());
+  await act(async () => finishSecond.resolve());
   await settle();
-  await act(async () => failFirst(new Error("offline")));
+  await act(async () => failFirst.reject(new Error("offline")));
   await settle();
   expect(container.textContent).not.toContain("Desk PC");
   expect(container.textContent).not.toContain("offline");
@@ -399,10 +397,10 @@ it("ignores a previous visit's revoke error after a later removal succeeds", asy
 });
 
 it("keeps the newest list when an earlier load finishes last", async () => {
-  let finishFirst!: (devices: (typeof laptop)[]) => void;
+  const finishFirst = deferred<(typeof laptop)[]>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([])
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockReturnValueOnce(finishFirst.promise)
     .mockResolvedValueOnce([]);
   await render();
   const refresh = () =>
@@ -411,17 +409,17 @@ it("keeps the newest list when an earlier load finishes last", async () => {
   await act(async () => refresh());
   await settle();
   expect(container.textContent).toContain("No paired computers");
-  await act(async () => finishFirst([laptop]));
+  await act(async () => finishFirst.resolve([laptop]));
   await settle();
   expect(container.textContent).not.toContain("Laptop");
 });
 
 it("restores an uncertain removal after returning when both requests fail", async () => {
-  let failRemove!: (error: Error) => void;
+  const failRemove = deferred<never>();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
     .mockRejectedValue(new Error("list failed"));
-  vi.mocked(removeUserDevice).mockReturnValue(new Promise((_, reject) => (failRemove = reject)));
+  vi.mocked(removeUserDevice).mockReturnValue(failRemove.promise);
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
@@ -432,7 +430,7 @@ it("restores an uncertain removal after returning when both requests fail", asyn
     focus();
   });
   await settle();
-  await act(async () => failRemove(new Error("remove failed")));
+  await act(async () => failRemove.reject(new Error("remove failed")));
   await settle();
   expect(container.textContent).toContain("LaptopConnected");
   expect(container.textContent).toContain("list failed");
@@ -440,12 +438,12 @@ it("restores an uncertain removal after returning when both requests fail", asyn
 });
 
 it("clears a failed refresh error when successful removal reconciles", async () => {
-  let finishRemove!: () => void;
+  const finishRemove = deferred();
   vi.mocked(listUserDevices)
     .mockResolvedValueOnce([laptop])
     .mockRejectedValueOnce(new Error("list failed"))
     .mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockReturnValue(new Promise((resolve) => (finishRemove = resolve)));
+  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
   await render();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
@@ -455,7 +453,7 @@ it("clears a failed refresh error when successful removal reconciles", async () 
     container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
   );
   expect(container.textContent).toContain("list failed");
-  await act(async () => finishRemove());
+  await act(async () => finishRemove.resolve());
   await settle();
   expect(container.textContent).toContain("No paired computers");
   expect(container.textContent).not.toContain("list failed");
@@ -463,10 +461,10 @@ it("clears a failed refresh error when successful removal reconciles", async () 
 });
 
 it("keeps a newer removal error when an earlier visit reconciles", async () => {
-  let finishFirst!: () => void;
+  const finishFirst = deferred();
   vi.mocked(listUserDevices).mockResolvedValue([laptop, desk]);
   vi.mocked(removeUserDevice)
-    .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    .mockReturnValueOnce(finishFirst.promise)
     .mockRejectedValueOnce(new Error("second removal failed"));
   await render();
   await act(async () =>
@@ -484,7 +482,7 @@ it("keeps a newer removal error when an earlier visit reconciles", async () => {
   await act(async () => confirmRemove()?.onPress?.());
   await settle();
   expect(container.textContent).toContain("second removal failed");
-  await act(async () => finishFirst());
+  await act(async () => finishFirst.resolve());
   await settle();
   expect(container.textContent).toContain("second removal failed");
 });

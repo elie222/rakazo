@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { Routine } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect, useLayoutEffect } from "react";
@@ -75,16 +77,11 @@ const routinesChanged = () =>
     const reads = [...(spaceChangeListeners.get("routines") ?? [])].map((listener) => listener());
     await Promise.race([
       Promise.allSettled(reads),
-      vi.isFakeTimers()
-        ? vi.advanceTimersByTimeAsync(0)
-        : new Promise((resolve) => setTimeout(resolve, 0)),
+      vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : flush(),
     ]);
   });
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
@@ -324,14 +321,6 @@ async function render(element: ReactNode) {
   });
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 function button(label: string) {
   const match = [...container.querySelectorAll("button")].find((node) =>
     node.textContent?.includes(label),
@@ -465,13 +454,16 @@ describe("bot profile", () => {
   });
 
   it("shows the row without a count until the first read lands", async () => {
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     await render(createElement(BotProfile));
     expect(rpc).toHaveBeenCalledWith("routines/list", { botId: "bot-fixture" }, expect.anything());
     expect(routinesRow().textContent).toBe("Routines");
 
-    await act(async () => load([routine("r1", "Morning digest")]));
+    await act(async () => load.resolve([routine("r1", "Morning digest")]));
     expect(routinesRow().textContent).toBe("Routines1 on");
   });
 
@@ -549,13 +541,18 @@ describe("bot profile notifications", () => {
     container.querySelector<HTMLInputElement>('input[aria-label="Notifications"]');
 
   it("shows no switch until the bot has loaded", async () => {
-    let load!: (bot: unknown) => void;
-    profileRpc(async () => [], { bot: () => new Promise((resolve) => (load = resolve)) });
+    let load!: Deferred<unknown>;
+    profileRpc(async () => [], {
+      bot: () => {
+        load = deferred<unknown>();
+        return load.promise;
+      },
+    });
     await render(createElement(BotProfile));
     expect(notificationsSwitch()).toBeNull();
     expect(container.textContent).not.toContain(footer);
 
-    await act(async () => load({ ...fixtureBot, notifyOnFinish: false }));
+    await act(async () => load.resolve({ ...fixtureBot, notifyOnFinish: false }));
     expect(notificationsSwitch()?.checked).toBe(false);
   });
 
@@ -575,10 +572,13 @@ describe("bot profile notifications", () => {
   );
 
   it("saves at once and keeps the switch enabled while saving", async () => {
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
 
@@ -591,7 +591,7 @@ describe("bot profile notifications", () => {
     });
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
 
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(notificationsSwitch()!.disabled).toBe(false);
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
@@ -599,10 +599,13 @@ describe("bot profile notifications", () => {
   });
 
   it("keeps rapid on/off/on taps responsive and skips the redundant queued save", async () => {
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
     for (const checked of [true, false, true]) {
@@ -613,7 +616,7 @@ describe("bot profile notifications", () => {
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toEqual([
       ["bots/update", { botId: "bot-fixture", notifyOnFinish: true }],
     ]);
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
     expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
@@ -652,10 +655,13 @@ describe("bot profile notifications", () => {
     "keeps the change when a reload that started %s the save returns the old value",
     async (when) => {
       const reads: Array<(bot: unknown) => void> = [];
-      let save!: () => void;
+      let save!: Deferred;
       profileRpc(async () => [], {
         bot: () => new Promise((resolve) => reads.push(resolve)),
-        update: () => new Promise<void>((resolve) => (save = resolve)),
+        update: () => {
+          save = deferred();
+          return save.promise;
+        },
       });
       await render(createElement(BotProfile));
       await act(async () => reads[0]!(fixtureBot));
@@ -667,7 +673,7 @@ describe("bot profile notifications", () => {
       if (when === "before") await refocus();
       await act(async () => notificationsSwitch()!.click());
       if (when === "during") await refocus();
-      await act(async () => save());
+      await act(async () => save.resolve());
       await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
       expect(container.textContent).toContain("Reloaded");
       expect(notificationsSwitch()!.checked).toBe(false);
@@ -681,10 +687,13 @@ describe("bot profile notifications", () => {
 
   it("keeps the change when a reload starts and resolves while the save is pending", async () => {
     const reads: Array<(bot: unknown) => void> = [];
-    let save!: () => void;
+    let save!: Deferred;
     profileRpc(async () => [], {
       bot: () => new Promise((resolve) => reads.push(resolve)),
-      update: () => new Promise<void>((resolve) => (save = resolve)),
+      update: () => {
+        save = deferred();
+        return save.promise;
+      },
     });
     await render(createElement(BotProfile));
     await act(async () => reads[0]!(fixtureBot));
@@ -700,7 +709,7 @@ describe("bot profile notifications", () => {
     expect(notificationsSwitch()!.checked).toBe(false);
     expect(notificationsSwitch()!.disabled).toBe(false);
 
-    await act(async () => save());
+    await act(async () => save.resolve());
     expect(notificationsSwitch()!.checked).toBe(false);
     expect(notificationsSwitch()!.disabled).toBe(false);
 
@@ -795,13 +804,16 @@ describe("routines screen", () => {
   });
 
   it("shows a spinner, then the empty text and a way to create one", async () => {
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     await render(createElement(RoutinesScreen));
     expect(container.querySelector("progress")).toBeTruthy();
     expect(container.textContent).toBe("");
 
-    await act(async () => load([]));
+    await act(async () => load.resolve([]));
     expect(container.querySelector("progress")).toBeNull();
     expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.New routine");
     rowFor("New routine")!.click();
@@ -858,8 +870,11 @@ describe("routines screen", () => {
   });
 
   it("pauses at once, saves once, keeps the row in place and updates the profile count", async () => {
-    let save!: (row: unknown) => void;
-    const updateRoutine = vi.fn(() => new Promise((resolve) => (save = resolve)));
+    let save!: Deferred<unknown>;
+    const updateRoutine = vi.fn(() => {
+      save = deferred<unknown>();
+      return save.promise;
+    });
     profileRpc(async () => [digest(), report()], { updateRoutine });
     await render(createElement(RoutinesScreen));
 
@@ -872,7 +887,7 @@ describe("routines screen", () => {
     expect(updateRoutine).toHaveBeenCalledExactlyOnceWith({ routineId: "r1", active: false });
 
     // Pausing clears the next run; the row still stays first.
-    await act(async () => save({ ...digest(), active: false, nextRunAt: null }));
+    await act(async () => save.resolve({ ...digest(), active: false, nextRunAt: null }));
     expect(rowTexts()[0]).toBe("Morning digestEvery day at 7:30 AM, Paused");
     expect(alert).not.toHaveBeenCalled();
 
@@ -903,17 +918,20 @@ describe("routines screen", () => {
   });
 
   it("drops a save when the session changes between the tap and the send", async () => {
-    let captured!: (context: unknown) => void;
+    let captured!: Deferred<unknown>;
     const updateRoutine = vi.fn(async () => ({ ...digest(), active: false }));
     profileRpc(async () => [digest()], { updateRoutine });
     await render(createElement(RoutinesScreen));
-    requestContext.mockImplementationOnce(() => new Promise((resolve) => (captured = resolve)));
+    requestContext.mockImplementationOnce(() => {
+      captured = deferred<unknown>();
+      return captured.promise;
+    });
 
     await act(async () => switchFor("Morning digest")!.click());
     expect(switchFor("Morning digest")!.checked).toBe(false);
     session.generation += 1;
     await act(async () =>
-      captured({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
+      captured.resolve({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
     );
     expect(updateRoutine).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
@@ -986,16 +1004,19 @@ describe("routines screen", () => {
   it("keeps a switch as tapped when a read that overlapped its save returns the old value", async () => {
     vi.useFakeTimers();
     const reads: Array<(rows: unknown) => void> = [];
-    let save!: (row: unknown) => void;
+    let save!: Deferred<unknown>;
     profileRpc(() => new Promise((resolve) => reads.push(resolve)), {
-      updateRoutine: () => new Promise((resolve) => (save = resolve)),
+      updateRoutine: () => {
+        save = deferred<unknown>();
+        return save.promise;
+      },
     });
     await render(createElement(RoutinesScreen));
     await act(async () => reads[0]!([digest()]));
 
     await routinesChanged();
     await act(async () => switchFor("Morning digest")!.click());
-    await act(async () => save({ ...digest(), active: false }));
+    await act(async () => save.resolve({ ...digest(), active: false }));
     await act(async () => reads[1]!([digest()]));
     expect(switchFor("Morning digest")!.checked).toBe(false);
 
@@ -1014,8 +1035,11 @@ describe("routines screen", () => {
   });
 
   it("asks before deleting and removes the row only once the server confirms", async () => {
-    let remove!: (value: unknown) => void;
-    const removeRoutine = vi.fn(() => new Promise((resolve) => (remove = resolve)));
+    let remove!: Deferred<unknown>;
+    const removeRoutine = vi.fn(() => {
+      remove = deferred<unknown>();
+      return remove.promise;
+    });
     profileRpc(async () => [digest(), report()], { removeRoutine });
     await render(createElement(RoutinesScreen));
 
@@ -1038,7 +1062,7 @@ describe("routines screen", () => {
     rowFor("Weekly report, Off")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
     expect(alert).toHaveBeenCalledTimes(1);
 
-    await act(async () => remove({ ok: true }));
+    await act(async () => remove.resolve({ ok: true }));
     expect(rowFor("Morning digest, On")).toBeNull();
     expect(rowFor("Weekly report, Off")).toBeTruthy();
   });
@@ -1072,12 +1096,15 @@ describe("routines screen", () => {
     const removeRoutine = vi.fn(async () => ({ ok: true }));
     profileRpc(async () => [digest(), report()], { removeRoutine });
     await render(createElement(RoutinesScreen));
-    let captured!: (context: unknown) => void;
-    requestContext.mockImplementationOnce(() => new Promise((resolve) => (captured = resolve)));
+    let captured!: Deferred<unknown>;
+    requestContext.mockImplementationOnce(() => {
+      captured = deferred<unknown>();
+      return captured.promise;
+    });
     await confirmDelete("Morning digest, On");
     session.generation += 1;
     await act(async () =>
-      captured({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
+      captured.resolve({ apiBase: "https://api.example", headers: {}, sessionGeneration: 0 }),
     );
     expect(removeRoutine).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledTimes(1);
@@ -1127,10 +1154,13 @@ describe("routine detail", () => {
   });
 
   it("reads again once a save running when it opened finishes", async () => {
-    let save!: (row: unknown) => void;
+    let save!: Deferred<unknown>;
     params.current = { botId: "bot-fixture", name: "Fixture" };
     profileRpc(async () => [routine("r1", "Morning digest"), routine("r2", "Weekly report")], {
-      updateRoutine: () => new Promise((resolve) => (save = resolve)),
+      updateRoutine: () => {
+        save = deferred<unknown>();
+        return save.promise;
+      },
     });
     await render(createElement(RoutinesScreen));
     await act(async () =>
@@ -1148,13 +1178,18 @@ describe("routine detail", () => {
         routine("r1", "Morning digest", { prompt: "Check the inbox and the calendar" }),
         routine("r2", "Weekly report", { active: false }),
       ],
-      { updateRoutine: () => new Promise((resolve) => (save = resolve)) },
+      {
+        updateRoutine: () => {
+          save = deferred<unknown>();
+          return save.promise;
+        },
+      },
     );
     params.current = { botId: "bot-fixture", botName: "Fixture", routineId: "r1" };
     await render(createElement(RoutineDetail));
     expect(listCalls()).toHaveLength(0);
 
-    await act(async () => save(routine("r2", "Weekly report", { active: false })));
+    await act(async () => save.resolve(routine("r2", "Weekly report", { active: false })));
     expect(listCalls()).toHaveLength(1);
     expect(container.textContent).toContain("Check the inbox and the calendar");
   });
@@ -1170,14 +1205,17 @@ describe("routine detail", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 1);
 
-    let load!: (rows: unknown) => void;
-    profileRpc(() => new Promise((resolve) => (load = resolve)));
+    let load!: Deferred<unknown>;
+    profileRpc(() => {
+      load = deferred<unknown>();
+      return load.promise;
+    });
     params.current = { botId: "bot-fixture", botName: "Fixture", routineId: "r1" };
     await render(createElement(RoutineDetail));
     expect(container.textContent).not.toContain("This routine no longer exists");
     expect(container.querySelector("progress")).toBeTruthy();
 
-    await act(async () => load([routine("r1", "Morning digest")]));
+    await act(async () => load.resolve([routine("r1", "Morning digest")]));
     expect(container.textContent).toContain("Check the inbox");
   });
 

@@ -461,6 +461,56 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(second).toMatchObject({ isError: true, content: [{ text: "timed out" }] });
   });
 
+  it("replays each call to a tool reached through use_tool as a use_tool call, and marks only its failed calls", () => {
+    const reply = {
+      ...toolReply,
+      segments: [
+        {
+          steps: [
+            {
+              label: "Read fleet",
+              tool: "list_fleet",
+              count: 2,
+              calls: [
+                { arguments: '{"bot_id":"b1"}', result: '{"ok":true}' },
+                {
+                  arguments: '{"bot_id":"b2"}',
+                  result: "No such bot",
+                  failed: true as const,
+                },
+              ],
+              outcomes: { succeeded: 1, failed: 1 },
+            },
+          ],
+        },
+      ],
+    };
+    const [call, first, second] = toHistory(
+      [reply],
+      "",
+      undefined,
+      new Set(["find_tool", "use_tool"]),
+      new Set(["list_fleet"]),
+    );
+    expect(
+      call?.role === "assistant" && call.content.filter((part) => part.type === "toolCall"),
+    ).toMatchObject([
+      { name: "use_tool", arguments: { name: "list_fleet", arguments: { bot_id: "b1" } } },
+      { name: "use_tool", arguments: { name: "list_fleet", arguments: { bot_id: "b2" } } },
+    ]);
+    // Exact text: a result the bot can still reach carries no unavailable note.
+    expect(first).toMatchObject({
+      toolName: "use_tool",
+      isError: false,
+      content: [{ text: '{"ok":true}' }],
+    });
+    expect(second).toMatchObject({
+      toolName: "use_tool",
+      isError: true,
+      content: [{ text: "No such bot" }],
+    });
+  });
+
   it("replays an image result with how it ended and the bot's own next words, never its content", () => {
     const observed = {
       ...toolReply,

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
@@ -120,14 +121,11 @@ describe("mobile appearance", () => {
     const { UI_APPEARANCE_STORAGE_KEY } = await import("@rakazo/ui-tokens");
     const { setItemAsync } = await import("expo-secure-store");
     const { getCachedAppearancePreference, setAppearancePreference } = await import("./appearance");
-    let releaseFirst!: () => void;
-    const firstWrite = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstWrite = deferred();
     let writes = 0;
     vi.mocked(setItemAsync).mockImplementation(async (key: string, value: string) => {
       writes += 1;
-      if (writes === 1) await firstWrite;
+      if (writes === 1) await firstWrite.promise;
       store.set(key, value);
     });
 
@@ -137,7 +135,7 @@ describe("mobile appearance", () => {
       expect(getCachedAppearancePreference()).toBe("dark");
       expect(colorSchemeOverride).toBe("dark");
 
-      releaseFirst();
+      firstWrite.resolve();
       await Promise.all([first, second]);
 
       expect(colorSchemeOverride).toBe("dark");

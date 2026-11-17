@@ -26,8 +26,11 @@ import {
   loadComputerOwnerSettings,
   loadComputerProviderSelection,
 } from "./configured-sandbox.js";
-import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import {
+  assertHostCommandsAllowed,
+  DesktopSandboxProvider,
+} from "./providers/computer/desktop/desktop-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
@@ -175,7 +178,7 @@ export class HostAwareSandbox implements SandboxProvider {
 
   async provisionKind() {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.describe().id as ComputerRef["kind"];
+    return provider.describe().id;
   }
 
   async provision(

@@ -36,11 +36,10 @@ describe.skipIf(!enabled)("message authors (PostgreSQL)", () => {
   });
   beforeEach(async () => {
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address: `message-author-${randomUUID()}` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, {
+        provider: "test",
+        address: `message-author-${randomUUID()}`,
+      }),
     );
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
     await system.user.update({

@@ -1,8 +1,9 @@
 import type { SandboxKindCapabilities } from "@rakazo/adapter-kit";
-import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import type { KnownSandboxKind } from "./sandbox-kind-capabilities.js";
 import {
-  sandboxCapabilitiesByKind,
+  isKnownSandboxKind,
+  knownSandboxKinds,
   sandboxKindCapabilities,
   sandboxKindsWhere,
 } from "./sandbox-kind-capabilities.js";
@@ -23,7 +24,7 @@ type Row = [
 
 // What the per-kind id lists in shared code answered before providers declared these themselves,
 // except boxd and railway: those lists had left out their terminal and stored team home.
-const EXPECTED: Record<SandboxKind, Row> = {
+const EXPECTED: Record<KnownSandboxKind, Row> = {
   none: [false, false, false, false, DEFAULT_SCREEN, "never", false, false],
   docker: [true, true, false, false, DEFAULT_SCREEN, "always", false, true],
   e2b: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
@@ -67,15 +68,21 @@ function capabilities([
 
 describe("sandbox kind capabilities", () => {
   it("declares every kind and no other", () => {
-    expect(Object.keys(sandboxCapabilitiesByKind).sort()).toEqual([...SandboxKind.options].sort());
+    expect([...knownSandboxKinds].sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
-  it.each(SandboxKind.options)("%s declares the pinned values", (kind) => {
+  it.each(knownSandboxKinds)("%s declares the pinned values", (kind) => {
     expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
   });
 
   it.each(["unknown", "", null, undefined])("reads undeclared kind %j as before", (kind) => {
     expect(sandboxKindCapabilities(kind)).toEqual(capabilities(UNDECLARED));
+  });
+
+  it("knows its own kinds and no other", () => {
+    expect(isKnownSandboxKind("fake")).toBe(true);
+    for (const kind of ["unknown", "", "toString", "__proto__", null, undefined])
+      expect(isKnownSandboxKind(kind)).toBe(false);
   });
 
   it("lists the kinds with a capability", () => {

@@ -9,6 +9,7 @@ import {
   readBotsSidebarWidth,
   writeBotsSidebarWidth,
 } from "../../lib/bots-sidebar-pref";
+import { useEventListener } from "../../lib/use-event-listener";
 
 function direction() {
   return document.documentElement.dir === "rtl" ? -1 : 1;
@@ -26,7 +27,8 @@ export function useSidebarResize({
   onPreviewCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  // Only the limit is kept, so resizing the window re-renders the shell only when it changes.
+  const [maxWidth, setMaxWidth] = useState(() => maximumBotsSidebarWidth(window.innerWidth));
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const drag = useRef<{
     pointerId: number;
@@ -37,8 +39,7 @@ export function useSidebarResize({
     initialCollapsed: boolean;
     mini: boolean;
   } | null>(null);
-  const maxWidth = maximumBotsSidebarWidth(viewportWidth);
-  const expandedWidth = clampBotsSidebarWidth(preferredWidth, viewportWidth);
+  const expandedWidth = clampBotsSidebarWidth(preferredWidth, maxWidth);
   const width =
     dragWidth !== null
       ? Math.min(maxWidth, dragWidth)
@@ -52,20 +53,14 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEffect(() => {
-    function resize() {
-      setViewportWidth(window.innerWidth);
-    }
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
+  useEventListener(window, "resize", () => setMaxWidth(maximumBotsSidebarWidth(window.innerWidth)));
 
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {
       onCollapsedChange(true);
       return;
     }
-    const expanded = clampBotsSidebarWidth(next, window.innerWidth);
+    const expanded = clampBotsSidebarWidth(next, maxWidth);
     setPreferredWidth(expanded);
     writeBotsSidebarWidth(userId, expanded);
     onCollapsedChange(false);
@@ -90,7 +85,7 @@ export function useSidebarResize({
       current.mini = mini;
       onPreviewCollapsedChange(mini);
     }
-    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, window.innerWidth);
+    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, maxWidth);
   }
 
   function cancelPreview() {

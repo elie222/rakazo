@@ -616,7 +616,7 @@ describe("thread cards", () => {
     expect(container.textContent).toContain("Running");
   });
 
-  it("stops a background helper from its saved card, and shows it as stopped", () => {
+  it("stops a background helper from its saved card, and shows it as stopped", async () => {
     const helper = (id: string, status: "running" | "failed", result?: string) =>
       ({
         id,
@@ -632,10 +632,13 @@ describe("thread cards", () => {
     expect(stopButton()).toBeUndefined();
     show(helper("card-1", "running"));
     act(() => stopButton()?.click());
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
-      botId: "bot-1",
-      messageId: "card-1",
-    });
+    await vi.waitFor(() =>
+      expect(rpc).toHaveBeenCalledExactlyOnceWith(
+        "threads/stopHelper",
+        { botId: "bot-1", messageId: "card-1" },
+        expect.anything(),
+      ),
+    );
     show(helper("card-1", "failed", "stopped"));
     expect(container.textContent).toContain("Stopped");
     expect(container.textContent).not.toContain("Failed");

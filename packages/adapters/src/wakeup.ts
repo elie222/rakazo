@@ -15,12 +15,18 @@ import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@
 import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
 import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
+import { recordConnectionCleanupAttemptsExhausted } from "./connection-cleanup.js";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
+import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";
 import { RunExecutionHost } from "./run-execution.js";
 
-// Adapter-local task name: the shared job contract remains run.continue. Older
-// publishers can keep publishing it while a new worker drains the legacy queue.
-const INTERACTIVE_RUN_TASK = "run.interactive";
+export {
+  ABANDONED_LAST_ATTEMPT_ERROR,
+  ABANDONED_LAST_ATTEMPT_MS,
+  createDeadJobPruner,
+  DEAD_JOB_RETENTION_DAYS,
+} from "./job-give-up.js";
+
 type RunLookup = Pick<PrismaClient, "run">;
 type Workload = "interactive" | "background" | "maintenance";
 
@@ -111,9 +117,35 @@ export class GraphileJobPublisher implements JobPublisher {
       job.name,
       JSON.stringify(wrapJobPayload(job.payload)),
       job.queueName ?? null,
-      job.availableAt ?? null,
+      // As text with its zone: a Date is sent as UTC wall-clock time with none, which a database
+      // session in another time zone reads as local time.
+      job.availableAt?.toISOString() ?? null,
       job.maxAttempts ?? null,
       job.replaceKey ?? null,
+    );
+  }
+
+  async enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    for (const job of jobs) {
+      if (job.name === "run.continue") throw new Error("Runs are not started inside a transaction");
+      if (job.keepExisting) throw new Error("keepExisting is not supported inside a transaction");
+    }
+    // add_jobs rejects one key twice in a batch.
+    const unique = [...new Map(jobs.map((job, index) => [job.replaceKey ?? index, job])).values()];
+    if (!unique.length) return;
+    await tx.$executeRawUnsafe(
+      `select count(*) from graphile_worker.add_jobs(array(
+         select spec from json_populate_recordset(null::graphile_worker.job_spec, $1::json) spec))`,
+      JSON.stringify(
+        unique.map((job) => ({
+          identifier: job.name,
+          payload: wrapJobPayload(job.payload),
+          queue_name: job.queueName ?? null,
+          run_at: job.availableAt?.toISOString() ?? null,
+          max_attempts: job.maxAttempts ?? null,
+          job_key: job.replaceKey ?? null,
+        })),
+      ),
     );
   }
 
@@ -475,7 +507,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       },
     });
     runner.events.on("job:failed", ({ job, error }) => {
+      recordJobGaveUp(job, error);
       recordHistoryCompactAttemptsExhausted(job, error);
+      recordConnectionCleanupAttemptsExhausted(job, error);
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);
@@ -643,56 +677,6 @@ export function createRoutineRetryNoticeReconciler(
   };
 }
 
-export const DEAD_JOB_RETENTION_DAYS = 7;
-const DEAD_JOB_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
-const DEAD_JOB_PRUNE_BATCH = 1_000;
-const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
-
-/**
- * Graphile keeps a job that exhausted its retries forever, and its own maintenance scans them.
- * Delete them once they are old enough that nobody is still diagnosing the failure. Exhausted
- * `routine.retry` rows are notice requests, which their reconciler deletes after delivery.
- *
- * Graphile's `cleanup` task deletes every exhausted job regardless of age or task, and
- * `completeJobs` deletes by id without rechecking, so a keyed job replaced back to life between
- * a select and the delete would go with it. This deletes in one statement that rechecks.
- */
-export function createDeadJobPruner(
-  pool: Pick<Pool, "query">,
-  options: { retentionDays?: number; intervalMs?: number } = {},
-): () => Promise<void> {
-  const retentionDays = options.retentionDays ?? DEAD_JOB_RETENTION_DAYS;
-  const intervalMs = options.intervalMs ?? DEAD_JOB_PRUNE_INTERVAL_MS;
-  let lastRun: number | undefined;
-  return async () => {
-    const now = Date.now();
-    if (lastRun !== undefined && now - lastRun < intervalMs) return;
-    lastRun = now;
-    let removed = 0;
-    for (let batch = 0; batch < DEAD_JOB_PRUNE_MAX_BATCHES; batch += 1) {
-      const { rowCount } = await pool.query(
-        `delete from graphile_worker._private_jobs as jobs
-         where jobs.id in (
-           select dead.id
-           from graphile_worker._private_jobs as dead
-           join graphile_worker._private_tasks as tasks on tasks.id = dead.task_id
-           where dead.attempts >= dead.max_attempts and dead.locked_at is null
-             and dead.updated_at < now() - make_interval(days => $1::int)
-             and tasks.identifier <> 'routine.retry'
-           order by dead.id
-           limit $2
-           for update of dead skip locked
-         )
-         and jobs.attempts >= jobs.max_attempts and jobs.locked_at is null`,
-        [retentionDays, DEAD_JOB_PRUNE_BATCH],
-      );
-      removed += rowCount ?? 0;
-      if ((rowCount ?? 0) < DEAD_JOB_PRUNE_BATCH) break;
-    }
-    if (removed > 0) getLogger().info("jobs.dead_pruned", { "jobs.removed": removed });
-  };
-}
-
 const LAST_ATTEMPT = { number: 1, max: 1 } as const;
 
 /** Graphile's default when a job sets no cap. */
@@ -775,6 +759,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   /** Not transactional: a job whose transaction rolls back still runs, and finds nothing to do. */
   async enqueueIn(_tx: JobTransaction, job: BackgroundJob): Promise<void> {
     await this.enqueue(job);
+  }
+
+  async enqueueManyIn(_tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    for (const job of jobs) await this.enqueue(job);
   }
 
   /**

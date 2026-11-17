@@ -21,11 +21,7 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
     db = createDb(url!);
     system = asSystem(db.prisma);
     const { userId, spaceId, botId, threadId } = await runAsSystem("routine backoff fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     identity = { userId, spaceId, botId, threadId };
   });
@@ -56,7 +52,14 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
     const enqueue = vi.fn(async () => undefined);
     const deps = {
       prisma: system,
-      jobs: { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() },
+      jobs: {
+        enqueue,
+        enqueueIn: vi.fn(),
+        enqueueManyIn: vi.fn(),
+        cancelIn: vi.fn(),
+        cancel: vi.fn(),
+        close: vi.fn(),
+      },
     };
     return { routine, deps, enqueue };
   }

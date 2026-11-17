@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -62,7 +63,7 @@ async function renderGate(billing: boolean, initialEntries = ["/"]) {
     );
   });
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   return { container, root };
 }
@@ -99,7 +100,7 @@ it("shows the paywall without access and opens once a recheck finds access", asy
   api.status.mockResolvedValue({ access: true });
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(container.textContent).toBe("app");
   act(() => root.unmount());
@@ -114,7 +115,7 @@ it("reloads billing for a newly selected Space", async () => {
   api.status.mockResolvedValue({ access: true });
   await act(async () => {
     window.dispatchEvent(new Event("rakazo:space-selected"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(container.textContent).toBe("app");
   act(() => root.unmount());
@@ -129,14 +130,14 @@ it("keeps checking billing after a newly selected Space's read fails", async () 
   api.status.mockRejectedValueOnce(new Error("offline"));
   await act(async () => {
     window.dispatchEvent(new Event("rakazo:space-selected"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(container.textContent).toBe("app");
 
   api.status.mockResolvedValue({ access: false });
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(container.textContent).toBe("paywall");
   act(() => root.unmount());
@@ -155,7 +156,7 @@ it("hands the plan choice the client of the space its prices were read for", asy
   // Coming back to this tab rechecks this tab's organization, not the other tab's choice.
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(space.reads.at(-1)).toBe("space-a");
   expect(container.textContent).toBe("paywall space-a");
@@ -163,7 +164,7 @@ it("hands the plan choice the client of the space its prices were read for", asy
   // Selecting another organization in this tab moves billing with it.
   await act(async () => {
     window.dispatchEvent(new Event("rakazo:space-selected"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(container.textContent).toBe("paywall space-b");
   act(() => root.unmount());
@@ -180,7 +181,7 @@ it("keeps the plans dialog over the open app on this tab's organization", async 
   space.selected = "space-b";
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(space.reads.at(-1)).toBe("space-a");
   expect(document.body.textContent).toContain("paywall space-a");
@@ -202,7 +203,7 @@ it("pins billing to the space the account opened in when nothing is selected yet
   api.status.mockRejectedValue(new Error("Space unavailable"));
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(space.reads).toEqual(["space-a", "space-a"]);
   expect(container.textContent).toBe("paywall space-a");

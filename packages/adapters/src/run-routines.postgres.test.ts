@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   appendEvent,
@@ -27,11 +28,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     db = createDb(url!);
     system = asSystem(db.prisma);
     const provisioned = await runAsSystem("routine prompt fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const { userId, spaceId, botId, threadId } = provisioned;
     identity = { userId, spaceId, botId, threadId };
@@ -269,53 +266,41 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
    * time to read the Space.
    */
   async function duringUncommittedClaim<T>(work: () => Promise<T>) {
-    let locked!: () => void;
-    let release!: () => void;
-    const lockTaken = new Promise<void>((done) => {
-      locked = done;
-    });
-    const released = new Promise<void>((done) => {
-      release = done;
-    });
+    const lockTaken = deferred();
+    const released = deferred();
     const claim = system.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity.spaceId}, 0))::text AS "lock"`;
         await tx.space.update({ where: { id: identity.spaceId }, data: claimed });
-        locked();
-        await released;
+        lockTaken.resolve();
+        await released.promise;
       },
       { timeout: 30_000 },
     );
-    await lockTaken;
+    await lockTaken.promise;
     const outcome = work().then(
       () => null,
       (error: unknown) => error,
     );
     await new Promise((done) => setTimeout(done, 300));
-    release();
+    released.resolve();
     await claim;
     return outcome;
   }
 
   /** Opens a transaction that runs `hold`, then waits until `release` is called to commit. */
   function heldTransaction(hold: (tx: Prisma.TransactionClient) => Promise<unknown>) {
-    let ready!: () => void;
-    let release!: () => void;
-    const holding = new Promise<void>((done) => {
-      ready = done;
-    });
-    const released = new Promise<void>((done) => {
-      release = done;
-    });
+    const holding = deferred();
+    const released = deferred();
     const committed = system.$transaction(
       async (tx) => {
         await hold(tx);
-        ready();
-        await released;
+        holding.resolve();
+        await released.promise;
       },
       { timeout: 30_000 },
     );
-    return { holding, release, committed };
+    return { holding: holding.promise, release: released.resolve, committed };
   }
 
   const pause = () => new Promise((done) => setTimeout(done, 300));
@@ -352,6 +337,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
           published.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

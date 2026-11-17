@@ -1,7 +1,17 @@
 import { t } from "@lingui/core/macro";
-import type { Me } from "@rakazo/contracts";
+import type { ComputerStatus, Me } from "@rakazo/contracts";
 import { rpc } from "./rpc";
 import { errorText } from "./user-error";
+
+/**
+ * Whether the computer is the user's own machine. A server from before `runsOnUserMachine` says
+ * so only by its kind; drop that reading once such servers are no longer supported.
+ */
+export function runsOnUserMachine(
+  computer: Pick<ComputerStatus, "kind" | "runsOnUserMachine"> | null | undefined,
+): boolean {
+  return computer?.runsOnUserMachine ?? computer?.kind === "desktop";
+}
 
 export function computersAreUnavailable(sandboxProvider: string | null | undefined): boolean {
   return sandboxProvider === "none" || sandboxProvider === "";

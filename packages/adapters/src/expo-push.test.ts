@@ -1,4 +1,6 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { credentialDigest } from "./credential-digest.js";
@@ -13,7 +15,7 @@ import {
 import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
 
 const loadPushToken = async (store: MemoryPushTokenStore, userId: string) =>
-  (await store.load(userId))?.token;
+  (await store.list(userId))[0]?.token;
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -99,6 +101,59 @@ describe("expo push", () => {
     );
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toMatchObject({ badge: 4 });
+  });
+
+  it("pushes to every device the user is signed in on until that device signs out", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[phone]", "session-phone");
+    await tokens.save("user-1", "ExponentPushToken[tablet]", "session-tablet");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { status: "ok", id: "ticket" } })),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const push = new ExpoPushProvider(tokens, {
+      sessionExpiresAt: async () => new Date(Date.now() + 60_000),
+    });
+    const message = {
+      kind: "completion",
+      title: "Done",
+      body: "",
+      botId: "b",
+      threadId: "t",
+    } as const;
+    const sentTo = () =>
+      fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)).to);
+
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(sentTo().sort()).toEqual(["ExponentPushToken[phone]", "ExponentPushToken[tablet]"]);
+
+    fetchMock.mockClear();
+    await tokens.endSession("user-1", "session-phone");
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(sentTo()).toEqual(["ExponentPushToken[tablet]"]);
+  });
+
+  it("delivers to the other devices when one device's push fails", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[phone]");
+    await tokens.save("user-1", "ExponentPushToken[tablet]");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        String(init.body).includes("phone")
+          ? jsonResponse({ data: { status: "error", message: "bad request" } }, 400)
+          : jsonResponse({ data: { status: "ok", id: "ticket" } }),
+      ),
+    );
+    const push = new ExpoPushProvider(tokens, { retryDelaysMs: [] });
+    await expect(
+      push.deliver(
+        { kind: "completion", title: "Done", body: "", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).resolves.toBe("delivered");
   });
 
   it("posts to Expo when a token is registered", async () => {
@@ -234,17 +289,14 @@ describe("expo push", () => {
     const tokens = new MemoryPushTokenStore();
     const token = "ExponentPushToken[device]";
     await tokens.save("user-1", token, "session-1");
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = deferred();
     let waiting = false;
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const push = new ExpoPushProvider(tokens, {
       sessionExpiresAt: async () => {
         waiting = true;
-        await gate;
+        await gate.promise;
         return new Date(Date.now() + 60_000);
       },
     });
@@ -255,7 +307,7 @@ describe("expo push", () => {
     );
     await vi.waitFor(() => expect(waiting).toBe(true));
     await tokens.save("user-2", token, "session-2");
-    release();
+    gate.resolve();
 
     await expect(delivering).resolves.toBe("undeliverable");
     expect(fetchMock).not.toHaveBeenCalled();
@@ -570,6 +622,7 @@ function recordingJobs() {
       enqueued.push(job);
     },
     enqueueIn: async () => undefined,
+    enqueueManyIn: async () => undefined,
     cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,
@@ -1008,4 +1061,31 @@ it("falls back to the small avatar when no larger one fit the payload", async ()
     String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
   );
   expect(request.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "small" });
+});
+
+describe("oversized Expo push answers", () => {
+  const send = async (response: Response) => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[test]");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    return new ExpoPushProvider(tokens).send(
+      { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+      notifyContext,
+    );
+  };
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = send(new Response(new Uint8Array(MAX_EXPO_PUSH_RESPONSE_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Expo push response is too large.");
+  });
+
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Response is too large")),
+    });
+    const failure = send(new Response(body));
+    await expect(failure).rejects.toThrow("Response is too large");
+    await expect(failure).rejects.not.toBeInstanceOf(ResponseTooLargeError);
+  });
 });

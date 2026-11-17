@@ -14,7 +14,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { encodeTerminalInput, encodeTerminalResize } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { interactiveScreenCommand, screenPorts, startTerminalCommand } from "./desktop-runtime.js";
 import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 
@@ -58,13 +58,14 @@ function connect(socket: string) {
   client.on("data", (chunk) => {
     output += chunk.toString("utf8");
   });
-  const waitFor = async (pattern: RegExp) => {
-    for (let i = 0; i < 250; i += 1) {
-      if (pattern.test(output)) return output;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error(`terminal output did not match ${pattern}: ${output}`);
-  };
+  const waitFor = (pattern: RegExp) =>
+    vi.waitFor(
+      () => {
+        expect(output).toMatch(pattern);
+        return output;
+      },
+      { timeout: 5_000, interval: 20 },
+    );
   const closed = new Promise((resolve) => client.on("close", resolve));
   return { client, waitFor, closed };
 }

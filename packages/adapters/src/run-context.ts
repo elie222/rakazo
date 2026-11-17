@@ -43,6 +43,8 @@ import type { selectRunConnections } from "./connection-context.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
+import type { ReplySnapshot } from "./reply-snapshot.js";
+import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
@@ -265,6 +267,7 @@ export interface RunSource {
   historySearchBeforeSeq: number;
   /** See historyMyChatsAllowed; claimed outside steering still revokes it per call. */
   myChatsAllowed: boolean;
+  conversationThreadId?: string;
   voiceCall: boolean;
   callEndRun: boolean;
   callClientNonce: string | null;
@@ -484,16 +487,31 @@ export function nextMutatingEffectOccurrence(
   return occurrence;
 }
 
+/**
+ * Save the runtime's turn with the effect occurrences it assigned, for the next attempt, and the
+ * reply built so far, since the next attempt reruns none of the steps behind it.
+ */
+export async function saveTurnCheckpoint(
+  ctx: RunContext,
+  checkpoint: string,
+  reply?: ReplySnapshot,
+) {
+  const { deps, run, workerId, fence } = ctx;
+  const effects = ctx.state.effects;
+  const saved = JSON.parse(checkpoint);
+  saved.effectOccurrences = effects.occurrences;
+  saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
+  if (reply) saved.reply = reply;
+  await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+  effects.storedTurnCheckpoint = true;
+}
+
 export async function persistTurnCheckpoint(ctx: RunContext, executionId?: string) {
   const { deps, run, workerId, fence } = ctx;
   const effects = ctx.state.effects;
   const capture = executionId ? effects.pendingTurnCheckpoints.get(executionId) : undefined;
   if (capture) {
-    const saved = JSON.parse(capture());
-    saved.effectOccurrences = effects.occurrences;
-    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
-    await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
-    effects.storedTurnCheckpoint = true;
+    await saveTurnCheckpoint(ctx, capture(), snapshotReply(ctx.state.reply));
   } else if (effects.storedTurnCheckpoint) {
     // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
     await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
@@ -594,6 +612,7 @@ export function restoreTurnCheckpointEffects(
     // baseline must match it, not the current row. Checkpoints without one (older saves)
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
+    restoreReply(ctx.state.reply, saved.reply, ctx.runId);
     return turnCheckpoint;
   } catch (error) {
     if (error instanceof PausedTurnToolsUnavailableError) throw error;

@@ -4,9 +4,13 @@ import {
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as ComputerIdleModule from "./computer-idle.js";
+import { announceUnsavedHome } from "./computer-idle.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { replaceComputer } from "./computer-lifecycle.js";
 import {
@@ -18,6 +22,10 @@ import {
 vi.mock("./computer-lifecycle.js", async (original) => ({
   ...(await original<typeof ComputerLifecycleModule>()),
   replaceComputer: vi.fn(),
+}));
+vi.mock("./computer-idle.js", async (original) => ({
+  ...(await original<typeof ComputerIdleModule>()),
+  announceUnsavedHome: vi.fn(async () => {}),
 }));
 const replacement = vi.mocked(replaceComputer);
 afterEach(() => {
@@ -42,6 +50,7 @@ function fixture(status = "queued") {
       scope: "team",
       spaceId: "space",
       userId: "user",
+      providerRef: "provider-1",
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
@@ -180,6 +189,57 @@ describe("background computer maintenance", () => {
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
   });
+  it("tells the bots of a computer left running because its files are too large to save", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
+    const error = new WorkspaceTooLargeError("files");
+    replacement.mockRejectedValueOnce(error);
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(computer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: row.computerId, state: "running", providerRef: "provider-1" },
+      }),
+    );
+    expect(announceUnsavedHome).toHaveBeenCalledExactlyOnceWith(deps, row.computer, error);
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+  });
+  it("reports a too-large home as a failure once the computer is no longer running", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["error"]);
+  });
+  it("still records the failure when it cannot tell whether the computer runs", async () => {
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockRejectedValueOnce(new Error("database unavailable"));
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+  });
+  it("still records the failure when the too-large note cannot be posted", async () => {
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
+    vi.mocked(announceUnsavedHome).mockRejectedValueOnce(new Error("database unavailable"));
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+  });
+  it("posts no note for other failures", async () => {
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new SandboxUnresponsiveError("provider down"));
+    await performComputerUpdate(deps, row.id);
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+  });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();
     replacement.mockRejectedValueOnce(new Error("checkpoint upload failed"));
@@ -206,12 +266,9 @@ describe("background computer maintenance", () => {
   });
   it("releases an interrupted reservation only after the worker has settled", async () => {
     const { row, deps, computer } = fixture();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const pending = deferred();
     replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
-      await pending;
+      await pending.promise;
       await progress?.("recreating");
       return {} as Awaited<ReturnType<typeof replaceComputer>>;
     });
@@ -220,7 +277,7 @@ describe("background computer maintenance", () => {
     await reconcileComputerUpdates(deps);
     expect(row.status).toBe("interrupted");
     expect(computer.updateMany).not.toHaveBeenCalled();
-    release();
+    pending.resolve();
     await work;
     expect(row.status).toBe("failed");
     expect(computer.updateMany).toHaveBeenCalledOnce();
@@ -568,11 +625,8 @@ describe("background computer maintenance", () => {
 
   it("gives an idle takeover back while provider release is still pending", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
 
@@ -594,7 +648,7 @@ describe("background computer maintenance", () => {
       }),
     );
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
     expect(harness.computer.updateMany).toHaveBeenCalledWith({
@@ -619,16 +673,13 @@ describe("background computer maintenance", () => {
 
   it("clears a lease the provider released after reconciliation gave it back", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
 
     const clearOrder = harness.computer.updateMany.mock.invocationCallOrder.at(-1) ?? 0;
@@ -656,17 +707,14 @@ describe("background computer maintenance", () => {
 
   it("keeps takeover expiry when a late release cannot clear the lease", async () => {
     const harness = takeoverQueue();
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    harness.setScreenControl.mockImplementation(() => pending);
+    const pending = deferred();
+    harness.setScreenControl.mockImplementation(() => pending.promise);
     const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
     await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
     await reconcileComputerUpdates(harness.deps);
     harness.computerRow.controlLeaseId = "lease-replaced";
 
-    release();
+    pending.resolve();
     await expect(work).rejects.toThrow("Computer is busy");
 
     expect(harness.jobs.cancel).not.toHaveBeenCalled();

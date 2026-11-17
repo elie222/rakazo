@@ -1,10 +1,10 @@
 # The bot browser: chromium by default, or BROWSER=chrome (Google Chrome, amd64
 # only) or BROWSER=brave (installed below).
 ARG BROWSER=chromium
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS capture-builder
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS capture-builder
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh && rm -f /tmp/apt-security.sh
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     build-essential \
     libx11-dev \
     libxdamage-dev \
@@ -22,7 +22,7 @@ RUN cc -O3 -fPIC -shared -Wall -Wextra -Werror -o librakazo-xcapture.so xcapture
 # Only that key goes into the keyring apt trusts for the Google Chrome
 # repository. Other builds never contact Google; the empty file they get is
 # removed below.
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS chrome-keyring
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS chrome-keyring
 ARG BROWSER
 COPY apt-security.sh /tmp/apt-security.sh
 RUN set -eux; \
@@ -34,7 +34,7 @@ RUN set -eux; \
     exit 1; \
   fi; \
   /tmp/apt-security.sh; \
-  apt-get update; \
+  apt-get update && apt-get upgrade -y --no-install-recommends; \
   apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
   export GNUPGHOME="$(mktemp -d)"; \
   curl -fsSL https://dl.google.com/linux/linux_signing_key.pub -o /tmp/google.pub; \
@@ -42,7 +42,7 @@ RUN set -eux; \
   gpg --batch --export "$fingerprint" > /google-chrome.gpg; \
   gpg --batch --show-keys --with-colons /google-chrome.gpg | grep -qx "fpr:::::::::$fingerprint:"
 
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
@@ -50,7 +50,7 @@ RUN /tmp/apt-security.sh
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
 # Debian names fd-find's binary fdfind, so the image links it as fd.
 ARG BROWSER
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
     fluxbox \
@@ -122,7 +122,7 @@ RUN set -eux; \
         echo "deb [signed-by=/usr/share/keyrings/google-chrome.gpg arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
           > /etc/apt/sources.list.d/google-chrome.list; \
         echo 'repo_add_once="false"' > /etc/default/google-chrome; \
-        apt-get update; \
+        apt-get update && apt-get upgrade -y --no-install-recommends; \
         apt-get install -y --no-install-recommends google-chrome-stable; \
         rm -rf /var/lib/apt/lists/*; \
         google-chrome-stable --version ;; \
@@ -131,7 +131,7 @@ RUN set -eux; \
         curl -fsSLo "$keyring" https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg; \
         echo "deb [signed-by=$keyring arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
           > /etc/apt/sources.list.d/brave-browser-release.list; \
-        apt-get update; \
+        apt-get update && apt-get upgrade -y --no-install-recommends; \
         apt-get install -y --no-install-recommends brave-browser; \
         rm -rf /var/lib/apt/lists/*; \
         mkdir -p /etc/brave/policies/managed; \
@@ -162,11 +162,11 @@ RUN set -eux; \
   uv --version; \
   uvx --version
 # Bookworm has no gh package; pin the upstream binary and verify sha256, same as uv.
-ARG GH_VERSION=2.100.0
+ARG GH_VERSION=2.104.0
 RUN set -eux; \
   case "$TARGETARCH" in \
-    amd64) gh_arch=amd64; gh_sha256=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be ;; \
-    arm64) gh_arch=arm64; gh_sha256=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961 ;; \
+    amd64) gh_arch=amd64; gh_sha256=98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e ;; \
+    arm64) gh_arch=arm64; gh_sha256=cb34cefc6f4e77b90731374a2b737516bb8f3033c6ca46aa949e5344f68069e3 ;; \
     *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
   esac; \
   archive="$(mktemp)"; \

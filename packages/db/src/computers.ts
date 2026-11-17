@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
-import { isTerminal } from "@rakazo/core";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
@@ -157,9 +157,9 @@ export function resolveDefaultComputerMode(
   return mode;
 }
 
-export class ComputerLimitError extends Error {
+export class ComputerLimitError extends ClientError {
   constructor(limit: number) {
-    super(`User computer limit (${limit}) reached`);
+    super("BAD_REQUEST", `User computer limit (${limit}) reached`);
     this.name = "ComputerLimitError";
   }
 }
@@ -253,7 +253,7 @@ export async function restoreBotUnderComputerQuota(
   }
 
   if (isTransactionClient(prisma)) {
-    return restore(prisma as RestoreTx);
+    return restore(prisma);
   }
   if (limit <= 0) {
     await prisma.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
@@ -273,32 +273,6 @@ export async function expireComputerExecutionLeases(
   await prisma.computerExecutionLease.updateMany({
     where,
     data: { expiresAt: new Date(0) },
-  });
-}
-
-type ExecutionBindingDb = Pick<PrismaClient, "computer" | "run">;
-
-/**
- * Clear a legacy execution binding whose run can no longer execute. Pre-lease releases
- * wrote Computer.executionRunId and only the run's own teardown cleared it, so a
- * binding stranded by a missed cleanup blocks computer suspension forever: suspension
- * requires a null binding. Bindings to runs that may still execute are left alone.
- */
-export async function clearEndedExecutionRunBinding(
-  prisma: ExecutionBindingDb,
-  computerId: string,
-): Promise<void> {
-  const binding = await prisma.computer.findUnique({
-    where: { id: computerId },
-    select: { executionRunId: true },
-  });
-  const runId = binding?.executionRunId;
-  if (!runId) return;
-  const run = await prisma.run.findUnique({ where: { id: runId }, select: { status: true } });
-  if (run && !isTerminal(run.status)) return;
-  await prisma.computer.updateMany({
-    where: { id: computerId, executionRunId: runId },
-    data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
   });
 }
 

@@ -18,7 +18,6 @@ import type {
   Prisma,
   PrismaClient,
   ProvisionedMessagingIdentity,
-  SignupPolicyEnv,
   ThreadEvents,
 } from "@rakazo/db";
 import {
@@ -34,13 +33,10 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
+import { formatMessagingEventPrompt } from "./inbound-delivery.prompt.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
-import {
-  deliverWebhookEvent,
-  formatUntrustedDeliveryPayload,
-  inboundEventName,
-} from "./webhook-inbound.js";
+import { deliverWebhookEvent } from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -49,16 +45,12 @@ export interface MessagingInboundDeps {
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
-  provision: (
-    request: MessagingIdentityRequest,
-    env: SignupPolicyEnv,
-  ) => Promise<ProvisionedMessagingIdentity>;
+  provision: (request: MessagingIdentityRequest) => Promise<ProvisionedMessagingIdentity>;
   /**
    * Poke-style open line: unknown senders auto-provision their own account.
    * Off by default — strangers' runs would bill the deployment model key.
    */
   openSignup: boolean;
-  signupPolicy: SignupPolicyEnv;
   acknowledge?: MessagingReceipts["acknowledge"];
   storeAttachment?: InboundAttachmentStore;
   /**
@@ -191,15 +183,12 @@ async function handleDirectEvent(
       created: false,
     };
   } else {
-    ids = await deps.provision(
-      {
-        provider: event.provider,
-        address: event.from,
-        dmThreadId: event.threadId,
-        displayName: event.fromLabel ? sanitizeMessagingLabel(event.fromLabel) : null,
-      },
-      deps.signupPolicy,
-    );
+    ids = await deps.provision({
+      provider: event.provider,
+      address: event.from,
+      dmThreadId: event.threadId,
+      displayName: event.fromLabel ? sanitizeMessagingLabel(event.fromLabel) : null,
+    });
   }
 
   const stored = await storeInboundMedia(deps, ids, event);
@@ -381,8 +370,7 @@ export async function wakeMessageRoutines(
   });
   if (routines.length === 0) return false;
 
-  const provider = inboundEventName(event.provider);
-  const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
+  const prompt = formatMessagingEventPrompt(event.provider, {
     provider: event.provider,
     kind: event.isDirect ? "direct" : "channel",
     handle: event.handle,

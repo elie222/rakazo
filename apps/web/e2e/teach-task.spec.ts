@@ -3,7 +3,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   expectCardWidth,
-  openBotPanelTab,
+  openBotPanel,
   signup,
 } from "./helpers";
 
@@ -12,14 +12,13 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
   await completeOnboarding(page);
 
-  await openBotPanelTab(page, "Computer");
+  await openBotPanel(page);
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
+  await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);
   await expect(sidePanel.getByTestId("teach-start-button")).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
-  await expect(sidePanel.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Take control" })).toHaveCount(0);
   await expect(sidePanel.getByTestId("computer-preview")).toBeVisible();
   await captureScreenshot(page, testInfo, "teach-sidepanel-simple");

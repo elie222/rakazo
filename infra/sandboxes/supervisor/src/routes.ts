@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import type Docker from "dockerode";
@@ -618,8 +618,7 @@ app.post("/computers/:id/browser", async (c) => {
     ])
     .safeParse(await c.req.json());
   // Refused here, before anything reaches the computer: the caller learns by this code alone that
-  // nothing ran, and may keep a one-time code for another try. Keep in step with the adapters'
-  // INVALID_BROWSER_REQUEST.
+  // nothing ran, and may keep a one-time code for another try.
   if (!parsed.success) {
     return c.json(
       { ok: false, code: "invalid_browser_request", error: "Invalid page browser request" },

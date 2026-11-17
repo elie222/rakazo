@@ -2,8 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PiAgentRuntime } from "@rakazo/adapters";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HISTORY_EVAL_CASES } from "./evals/cases.js";
+import type { EvalJudge } from "./evals/judge.js";
 import { runTrial } from "./evals/runner.js";
 import type { ModelEmulatorRequest } from "./model-emulator.js";
 import { startModelEmulator } from "./model-emulator.js";
@@ -145,6 +146,7 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
         })),
       ],
     });
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "Offline fixture verdict" }));
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-product-loop-"));
     try {
       const { createApp } = await import("@rakazo/api/app");
@@ -159,6 +161,7 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
         },
         timeoutMs: 40_000,
         maxToolCalls: 30,
+        judge,
         createApp: (composio) =>
           createApp({
             databaseUrl: process.env.DATABASE_URL!,
@@ -191,6 +194,10 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
       });
       model.assertComplete();
       expect(result).toMatchObject({ status: "passed", toolCalls: 12, cleanupFailed: false });
+      // The approval status in the reply is the judge's to grade.
+      expect(judge.mock.calls[0]![0].evidence).toMatchObject([
+        { reply: "Verified Aurora component: ledger-indexer. Approval pending; no deployment." },
+      ]);
       expect(observations.map((row) => row.segment)).toEqual(
         Array.from({ length: 12 }, (_, i) => i + 1),
       );

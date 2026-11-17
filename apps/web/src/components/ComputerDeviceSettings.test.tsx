@@ -4,8 +4,8 @@ import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 import { rpc } from "../lib/rpc";
 import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { ComputerDeviceSettings } from "./ComputerDeviceSettings";
@@ -42,7 +42,10 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 vi.mock("../lib/user-devices", () => ({ listUserDevices: vi.fn(), removeUserDevice: vi.fn() }));
-vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
+vi.mock("../lib/rpc", () => {
+  const rpc = { me: vi.fn() };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;

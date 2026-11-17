@@ -2,6 +2,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
+import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { reactToThreadMessage } from "./thread-reactions.js";
@@ -1163,7 +1164,18 @@ describe("threadSnapshot", () => {
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          threadId: "thread-1",
+          AND: [
+            {
+              OR: [
+                { threadId: "thread-1" },
+                {
+                  trigger: "helper",
+                  status: "waiting_input",
+                  sourceMessage: { threadId: "thread-1" },
+                },
+              ],
+            },
+          ],
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
           OR: [
             { trigger: { notIn: ["bot_message", "tickets"] } },
@@ -4009,7 +4021,7 @@ describe("sendThreadMessage", () => {
         { text: "book the flight", clientNonce: nonce },
       );
     await send(clientNonce);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     // A spoken turn tells no teammate; a typed message does.
     expect(members).not.toHaveBeenCalled();
 
@@ -4853,22 +4865,14 @@ describe("stopThreadRuns", () => {
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: {
-        // Production team ownership is lease-only: Computer.executionRunId stays null.
-        findMany: vi.fn().mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
-          expect(where.OR).toEqual(
-            expect.arrayContaining([
-              { id: { in: ["computer-db-team"] } },
-              { executionRunId: { in: ["run-a", "run-b"] } },
-            ]),
-          );
+        findMany: vi.fn().mockImplementation(async ({ where }: { where: unknown }) => {
+          expect(where).toEqual({ id: { in: ["computer-db-team"] } });
           return [
             {
               id: "computer-db-team",
               homeKey: "home-team",
               kind: "fake",
               providerRef: "computer-team",
-              executionBotId: null,
-              executionRunId: null,
             },
           ];
         }),
@@ -4888,12 +4892,9 @@ describe("stopThreadRuns", () => {
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
-      // Simulate workers clearing leases / execution columns as soon as the
-      // transaction commits. A post-commit lookup would now miss both sandboxes.
-      computer: {
-        findMany: vi.fn().mockResolvedValue([]),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-      },
+      // Simulate workers clearing leases as soon as the transaction commits.
+      // A post-commit lookup would now miss both sandboxes.
+      computer: { findMany: vi.fn().mockResolvedValue([]) },
       computerExecutionLease: {
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
@@ -4968,124 +4969,6 @@ describe("stopThreadRuns", () => {
       where: { runId: { in: ["run-a", "run-b"] } },
       data: { expiresAt: new Date(0) },
     });
-    expect(prisma.computer.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),
-    );
-  });
-
-  it("does not tear down a stale legacy execution run when the lease owns a cancelled run", async () => {
-    const releaseScreen = vi.fn().mockResolvedValue(undefined);
-    const execute = vi.fn(async function* () {
-      yield { type: "exit", code: 0 };
-    });
-    const transaction = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-      user: { findMany: vi.fn().mockResolvedValue([]) },
-      spaceMember: { count: vi.fn().mockResolvedValue(1) },
-      $executeRaw: vi.fn(async () => 0),
-      $queryRaw: vi.fn(),
-      thread: {
-        update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }),
-      },
-      message: { findMany: vi.fn(async () => []) },
-      run: {
-        findMany: vi.fn().mockResolvedValue([]),
-        updateManyAndReturn: vi
-          .fn()
-          .mockResolvedValue([{ id: "run-a", botId: "bot-a", threadId: "thread-1" }]),
-        findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
-      },
-      steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-      secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-      computer: {
-        // Selected via lease for cancelled run A, but legacy columns still name
-        // unrelated live run B. Legacy teardown must not cancel/release B.
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "computer-db-a",
-            homeKey: "home-a",
-            kind: "fake",
-            providerRef: "computer-a",
-            executionBotId: "bot-b",
-            executionRunId: "run-b",
-          },
-        ]),
-      },
-      computerExecutionLease: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            { computerId: "computer-db-a", botId: "bot-a", runId: "run-a", fence: 2 },
-          ]),
-      },
-      event: {
-        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data),
-        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-      },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
-        callback(transaction),
-      ),
-      computer: {
-        findMany: vi.fn().mockResolvedValue([]),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-      },
-      computerExecutionLease: {
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      },
-    } as unknown as PrismaClient;
-    const actor = {
-      spaceId: "workspace-1",
-      userId: "user-1",
-    } as Actor;
-    const target = {
-      kind: "group",
-      groupId: "group-1",
-      groupName: "Test group",
-      threadId: "thread-1",
-      members: [],
-      memberBotIds: ["bot-a", "bot-b"],
-    } satisfies ThreadTarget;
-
-    await stopThreadRuns(
-      {
-        prisma,
-        sandbox: { releaseScreen, execute } as unknown as SandboxProvider,
-        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
-      },
-      actor,
-      target,
-    );
-
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
-      expect.objectContaining({
-        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-a"]),
-      }),
-      expect.objectContaining({ cancelRunWork: true, runId: "run-a", botId: "bot-a" }),
-    );
-    expect(execute).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-b"]),
-      }),
-      expect.anything(),
-    );
-    expect(releaseScreen).toHaveBeenCalledTimes(1);
-    expect(releaseScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
-      expect.objectContaining({
-        botId: "bot-a",
-        runId: "run-a",
-        screenLeaseId: "run-a:2",
-      }),
-    );
-    expect(releaseScreen).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ runId: "run-b" }),
-    );
   });
 
   it("writes a run.cancelled event per cancelled run ahead of the progress purge", async () => {

@@ -2,6 +2,8 @@
 
 import type { ComputerStatus } from "@rakazo/contracts";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, Fragment, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -216,9 +218,6 @@ vi.mock("../components/computer-mode-picker", () => {
 });
 
 const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
 
 vi.mock("./native", () => ({
@@ -236,6 +235,7 @@ vi.mock("./native", () => ({
 }));
 
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 
 const botWorking: ComputerStatus = {
   botId: "bot-1",
@@ -797,15 +797,13 @@ describe("computer screen", () => {
   it("closes the keyboard as soon as Hand back is tapped, even if the release fails", async () => {
     const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
     respond({ ...held, busyBotName: null });
-    let fail: (error: Error) => void = () => undefined;
+    let fail!: Deferred<never>;
     const base = rpc.getMockImplementation();
-    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
-      method === "computer/release"
-        ? new Promise((_, reject) => {
-            fail = reject;
-          })
-        : base?.(method, ...rest),
-    );
+    rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+      if (method !== "computer/release") return base?.(method, ...rest);
+      fail = deferred<never>();
+      return fail.promise;
+    });
     const view = await render();
     await act(async () => preview(view).click());
     await settle();
@@ -820,7 +818,7 @@ describe("computer screen", () => {
     expect(calls("computer/release")).toHaveLength(1);
     expect(bar()?.dataset.active).toBe("false");
 
-    await act(async () => fail(new Error("offline")));
+    await act(async () => fail.reject(new Error("offline")));
     await settle();
     expect(bar()?.dataset.active).toBe("true");
   });

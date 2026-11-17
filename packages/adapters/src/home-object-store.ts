@@ -21,6 +21,7 @@ import {
   sealArtifact,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { createObjectStorage } from "./create-object-storage.js";
 import { LocalAgentHomeStore, newRevision } from "./home.js";
 import type { HomeArchiveLimits } from "./home-archive.js";
 import {
@@ -29,7 +30,6 @@ import {
   packHome,
   unpackHome,
 } from "./home-archive.js";
-import { objectStorageConfigFromEnv, S3ObjectStorage } from "./s3-object-storage.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 const HOMES_PREFIX = "homes/";
@@ -697,15 +697,11 @@ export function createAgentHomeStore(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
 ): LocalAgentHomeStore {
-  const config = objectStorageConfigFromEnv(env);
-  if (!config) return new LocalAgentHomeStore(dataDir);
+  const storage = createObjectStorage(env);
+  if (!storage) return new LocalAgentHomeStore(dataDir);
   const ring = contentEncryptionOf(prisma)?.ring;
   if (!ring) throw new Error("Storing homes in object storage needs content encryption keys");
-  return new ObjectAgentHomeStore(
-    dataDir,
-    new S3ObjectStorage(config),
-    new PrismaAgentHomeRecords(prisma, ring),
-  );
+  return new ObjectAgentHomeStore(dataDir, storage, new PrismaAgentHomeRecords(prisma, ring));
 }
 
 /**

@@ -7,7 +7,8 @@ import { ChangeLatch } from "./event-stream.js";
 const IDLE_WAIT_MS = 60_000;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
-// Workers from the previous release still announce computer updates here until they drain.
+// compat-shim(after v0.11.0): workers from the previous release still announce computer updates
+// here until they drain.
 const legacyComputerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
 
 const PUBLISH_RETRY_MS = 15_000;

@@ -5,11 +5,19 @@ import type {
 } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
+import {
+  asSystem,
+  billingAccountForOrganization,
+  claimCheckoutLease,
+  createBillingAccount,
+  createDb,
+  releaseCheckoutLease,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBillingService } from "./billing.js";
-import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
+import { expireCheckoutLease, watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -92,14 +100,6 @@ dbTests("billing checkout coordination", () => {
     ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
   });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 /** Holds the provider's customer and checkout calls until the test releases them. */
 class GatedCheckoutEmulator extends BillingEmulator {
@@ -302,14 +302,64 @@ dbTests("checkout and organization deletion", () => {
     await provider.providerCallStarted;
     // The lease lapses while the provider call is still pending — a renewal cannot resurrect
     // a lapsed lease — and the deletion's cancellation takes it over and runs to the end.
-    await prisma.billingAccount.update({
-      where: { organizationId },
-      data: { checkoutLeaseExpiresAt: new Date(Date.now() - 1000) },
-    });
+    await expireCheckoutLease(prisma, organizationId);
     const canceling = service.cancelForDeletedOrganization(organizationId);
     await provider.cancellationRan;
     provider.releaseCheckout();
     await expect(pending).rejects.toMatchObject({ code: "CONFLICT" });
     await canceling;
+  });
+  /** An organization whose billing account exists, so the previous release could claim it. */
+  async function accountFor(name: string, provider: GatedCheckoutEmulator) {
+    const organization = await organizationFor(name);
+    provider.releaseCustomer();
+    const { customerId } = await provider.createCustomer({
+      email: organization.actor.email,
+      organizationId: organization.organizationId,
+    });
+    await createBillingAccount(prisma, { organizationId: organization.organizationId, customerId });
+    return organization;
+  }
+
+  it("waits for a checkout claim the previous release holds", async () => {
+    const provider = new GatedCheckoutEmulator(`deploy-old-holds-${stamp}`, false);
+    const { organizationId, actor } = await accountFor("old-holds", provider);
+    // The previous release claims the account's columns and knows nothing of the lease.
+    const claimId = await claimCheckoutLease(prisma, organizationId, 120_000);
+    expect(claimId).toEqual(expect.any(String));
+    const watched = watchCheckoutLeaseClaims(prisma);
+    const service = createBillingService({
+      prisma: watched.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
+    let opened = false;
+    void provider.providerCallStarted.then(() => {
+      opened = true;
+    });
+    const pending = service.checkout(actor);
+    await watched.leaseRefused;
+    expect(opened).toBe(false);
+    await releaseCheckoutLease(prisma, organizationId, claimId!);
+    await provider.providerCallStarted;
+    provider.releaseCheckout();
+    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
+    await expect(
+      prisma.billingAccount.findUniqueOrThrow({ where: { organizationId } }),
+    ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
+  });
+
+  it("keeps the previous release out while it holds the checkout lease", async () => {
+    const provider = new GatedCheckoutEmulator(`deploy-new-holds-${stamp}`, false);
+    const { organizationId, actor } = await accountFor("new-holds", provider);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const pending = service.checkout(actor);
+    await provider.providerCallStarted;
+    await expect(claimCheckoutLease(prisma, organizationId, 120_000)).resolves.toBeNull();
+    provider.releaseCheckout();
+    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
+    const claimId = await claimCheckoutLease(prisma, organizationId, 120_000);
+    expect(claimId).toEqual(expect.any(String));
+    await releaseCheckoutLease(prisma, organizationId, claimId!);
   });
 });

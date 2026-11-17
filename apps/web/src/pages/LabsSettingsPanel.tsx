@@ -2,8 +2,10 @@ import { useLingui } from "@lingui/react/macro";
 import type { LabFeature } from "@rakazo/contracts";
 import { withLab } from "@rakazo/contracts";
 import { Label, Switch } from "@rakazo/ui-web";
-import { useId, useState } from "react";
+import { useId } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { useSave } from "../lib/query";
+import type { RpcClient } from "../lib/rpc";
 
 export function LabsSettingsPanel({
   labs,
@@ -13,27 +15,14 @@ export function LabsSettingsPanel({
   labs: readonly LabFeature[];
   available: readonly LabFeature[];
   /** Saves the whole list; rejects after rolling back. */
-  onLabsChange: (labs: LabFeature[]) => Promise<void>;
+  onLabsChange: (labs: LabFeature[], client: RpcClient) => Promise<void>;
 }) {
   const { t } = useLingui();
   const id = useId();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useSave({ save: (next: LabFeature[], client) => onLabsChange(next, client) });
   const copy: Record<LabFeature, { title: string; description: string }> = {
     board: { title: t`Board`, description: t`A kanban board of tickets your bots can work on` },
   };
-
-  async function toggle(feature: LabFeature, enabled: boolean) {
-    setPending(true);
-    setError(null);
-    try {
-      await onLabsChange(withLab(labs, feature, enabled));
-    } catch {
-      setError(t`Couldn't update Labs`);
-    } finally {
-      setPending(false);
-    }
-  }
 
   return (
     <div className="space-y-2">
@@ -63,16 +52,16 @@ export function LabsSettingsPanel({
                 aria-describedby={`${id}-${feature}-description`}
                 data-testid={`lab-${feature}-toggle`}
                 checked={labs.includes(feature)}
-                disabled={pending}
-                onCheckedChange={(checked) => void toggle(feature, checked)}
+                disabled={save.pending}
+                onCheckedChange={(checked) => save.run(withLab(labs, feature, checked))}
               />
             }
           />
         ))}
       </SettingsGroup>
-      {error ? (
+      {save.error ? (
         <p role="alert" className="text-body-sm text-destructive">
-          {error}
+          {t`Couldn't update Labs`}
         </p>
       ) : null}
     </div>

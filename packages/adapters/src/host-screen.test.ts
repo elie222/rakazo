@@ -7,6 +7,7 @@ import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
 import type { HostScreen } from "./host-screen.js";
 import { HostScreenError } from "./host-screen.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
 
 const observation = { app: "TextEdit", tree: "- [0] AXWindow" };
 
@@ -112,5 +113,45 @@ describe("host screen requests", () => {
     expect(
       hostComputerDeadlineMs({ method: "screenObserve", botId: "bot-1", app: "TextEdit" }),
     ).toBe(120_000);
+  });
+});
+
+describe("host computer refusals", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), "rakazo-host-refusal-test-"));
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function readFrames(input: unknown) {
+    const runner = createHostComputerRunner({ root });
+    runner.setEnabled(true);
+    const call = runner.begin()!;
+    const frames: HostComputerFrame<unknown>[] = [];
+    try {
+      await call.run(input, { open: () => undefined, write: (frame) => void frames.push(frame) });
+      return frames;
+    } finally {
+      call.end();
+      runner.close();
+    }
+  }
+
+  it("tells the caller its path leaves the workspace", async () => {
+    await expect(
+      readFrames({ method: "readFile", botId: "bot-1", path: "../outside.txt" }),
+    ).resolves.toContainEqual({ error: "Path escapes the computer workspace" });
+  });
+
+  it("keeps another failure's text on this computer, even one quoting a path refusal", async () => {
+    vi.spyOn(DesktopSandboxProvider.prototype, "readFile").mockRejectedValue(
+      new Error("Path escapes the computer workspace"),
+    );
+    await expect(
+      readFrames({ method: "readFile", botId: "bot-1", path: "notes.txt" }),
+    ).resolves.toContainEqual({ error: "Local computer operation failed" });
   });
 });

@@ -75,7 +75,6 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
   const provider = "sendblue";
   const stamp = String(Date.now()).slice(-7);
   const ownerAddress = `+1556${stamp}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let owner: { userId: string; spaceId: string };
@@ -97,7 +96,7 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
       await db.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }),
     );
     owner = provisioned;
     actor = {

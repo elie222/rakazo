@@ -196,10 +196,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 disabled={preflightTesting || apiKey.trim().length < 8}
                 onClick={() => void testApiKeyConnection()}
               >
-                {modelPreflightTestingLabel(
-                  preflightTesting && preflightTarget === "api-key",
-                  "api-key",
-                )}
+                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
               </Button>
               {preflightTarget === "api-key" ? (
                 <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />

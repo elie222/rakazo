@@ -1,5 +1,5 @@
 // Relative source path: Vercel functions cannot resolve the TypeScript exports of @rakazo/core.
-import { readBoundedJsonResponse } from "../../../packages/core/src/http-response.js";
+import { readBoundedJsonResponse } from "../../../packages/core/src/primitives/http-response.js";
 import { GITHUB_API_REPO } from "./site";
 
 export const GITHUB_STARS_TIMEOUT_MS = 5_000;
@@ -54,7 +54,8 @@ export async function fetchDesktopDownloads(
   if (!Array.isArray(payload?.assets)) return downloads;
   for (const asset of payload.assets as Array<{ name?: unknown; browser_download_url?: unknown }>) {
     const { name, browser_download_url: url } = asset ?? {};
-    if (typeof name !== "string" || typeof url !== "string" || !url.startsWith("https://")) continue;
+    if (typeof name !== "string" || typeof url !== "string" || !url.startsWith("https://"))
+      continue;
     for (const [platform, suffix] of Object.entries(DESKTOP_ASSET_SUFFIXES)) {
       if (name.endsWith(suffix)) downloads[platform as keyof DesktopDownloads] ??= url;
     }
@@ -81,12 +82,18 @@ export async function fetchRecentChanges(
     const message = entry?.commit?.message;
     const date = entry?.commit?.committer?.date;
     const url = entry?.html_url;
-    if (typeof message !== "string" || typeof date !== "string" || typeof url !== "string") continue;
+    if (typeof message !== "string" || typeof date !== "string" || typeof url !== "string")
+      continue;
     const subject = message.split("\n", 1)[0]!.trim();
     if (!subject || QUIET_COMMIT.test(subject)) continue;
     const pr = subject.match(/\s*\(#(\d+)\)$/);
     const title = subject.slice(0, pr?.index ?? subject.length).replace(/^\w+(\(.*?\))?!?:\s*/, "");
-    changes.push({ title: title.charAt(0).toUpperCase() + title.slice(1), pr: pr?.[1] ?? null, url, date });
+    changes.push({
+      title: title.charAt(0).toUpperCase() + title.slice(1),
+      pr: pr?.[1] ?? null,
+      url,
+      date,
+    });
     if (changes.length === limit) break;
   }
   return changes;
@@ -107,7 +114,9 @@ async function fetchGithubJson<T>(
           Accept: "application/vnd.github+json",
           "User-Agent": "rakazo-www",
           // Optional: anonymous requests share a 60/hour limit per IP.
-          ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+          ...(process.env.GITHUB_TOKEN
+            ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+            : {}),
         },
         signal: controller.signal,
       }),

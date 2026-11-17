@@ -6,6 +6,7 @@ import { GROUP_EVAL_CASES, GROUP_JUDGE_CALIBRATION } from "./group.js";
 function evidence(text: string, partial: Partial<Evidence> = {}): Evidence {
   return {
     text,
+    groupProgressEvents: 0,
     files: {},
     records: [],
     notes: [],
@@ -32,7 +33,8 @@ describe("group history eval", () => {
       expect(members.size).toBeGreaterThan(0);
       for (const message of scenario.history!.messages)
         if (message.author) expect(members).toContain(message.author);
-      expect(scenario.history!.messages.some((m) => m.role === "bot" && m.author)).toBe(true);
+      if (!("fromMember" in scenario.steps[0]!))
+        expect(scenario.history!.messages.some((m) => m.role === "bot" && m.author)).toBe(true);
     }
   });
 
@@ -44,6 +46,29 @@ describe("group history eval", () => {
       calls: [{ tool: "CRM_UPDATE_RECORD", args: {}, outcome: "write" }],
     });
     expect(quoted.grade(write)).toContainEqual({ id: "no-external-writes", pass: false });
+  });
+
+  it("rejects duplicate replies, acknowledgements and tool chatter for monitor-only cases", () => {
+    for (const id of ["group-monitor-email", "group-monitor-email-zh"]) {
+      const scenario = GROUP_EVAL_CASES.find((c) => c.id === id)!;
+      expect(scenario.grade(evidence("")).every((c) => c.pass)).toBe(true);
+      expect(scenario.grade(evidence("", { groupProgressEvents: 1 })).every((c) => c.pass)).toBe(
+        false,
+      );
+      expect(
+        scenario.grade(evidence("", { memberReplies: { Mika: "Received" } })).every((c) => c.pass),
+      ).toBe(false);
+      expect(scenario.grade(evidence("Received; monitoring.")).every((c) => c.pass)).toBe(false);
+      expect(
+        scenario
+          .grade(
+            evidence("", {
+              toolCalls: [{ step: 1, name: "message_user", args: { text: "Received" } }],
+            }),
+          )
+          .every((c) => c.pass),
+      ).toBe(false);
+    }
   });
 
   it("anchors the judge with a right and a wrong reply for every case", () => {

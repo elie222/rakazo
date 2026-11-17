@@ -13,10 +13,14 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
   GroupAvatar,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@rakazo/ui-web";
 import {
   ChevronDown,
   CircleAlert,
+  Globe,
   Lock,
   MoreHorizontal,
   Pencil,
@@ -24,7 +28,6 @@ import {
   Users,
 } from "lucide-react";
 import type { RefObject } from "react";
-import { IconTooltip } from "../../components/IconTooltip";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import {
   compactRosterStatusLabel,
@@ -183,17 +186,22 @@ export function SidebarRoster({
                             : undefined
                       }
                       aria-label={
-                        group.emptySpaceId
+                        (group.emptySpaceId
                           ? t`Open ${headerName(group)}`
                           : collapsed
                             ? t`Expand ${headerName(group)}`
-                            : t`Collapse ${headerName(group)}`
+                            : t`Collapse ${headerName(group)}`) +
+                        // The button's own name is what is read, so the globe's meaning joins it.
+                        (group.hasGuests ? `, ${t`Shared with guests`}` : "")
                       }
                     >
                       <span
                         className={`flex min-w-0 items-center gap-1.5 truncate ${hasSpaceActions ? "pe-7" : ""}`}
                       >
-                        {group.showLock ? (
+                        {/* People from outside the organization are marked even in a lone Space. */}
+                        {group.hasGuests ? (
+                          <Globe size={11} strokeWidth={2} aria-hidden="true" />
+                        ) : group.showLock ? (
                           group.shared ? (
                             <Users size={11} strokeWidth={2} aria-hidden="true" />
                           ) : (
@@ -286,13 +294,13 @@ export function SidebarRoster({
                       ? t`Error`
                       : compactRosterStatusLabel(item.chat.status)
                     : null;
-                const rosterLine = compact
-                  ? compactStatusLabel
-                  : (workStatusLabel ??
-                    (item.kind === "bot"
-                      ? item.chat.preview || (item.chat.status !== "idle" ? item.chat.status : "")
-                      : item.chat.preview ||
-                        item.chat.members.map((member) => member.name).join(", ")));
+                const previewLine =
+                  workStatusLabel ??
+                  (item.kind === "bot"
+                    ? item.chat.preview || (item.chat.status !== "idle" ? item.chat.status : "")
+                    : item.chat.preview ||
+                      item.chat.members.map((member) => member.name).join(", "));
+                const rosterLine = compact ? compactStatusLabel : previewLine;
                 const rowDropTarget: RosterDropTarget | null =
                   item.chat.spaceId !== bootstrapMe?.spaceId
                     ? null
@@ -308,6 +316,12 @@ export function SidebarRoster({
                 const rowSameList =
                   Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const groupMembers =
+                  item.kind === "group" && item.chat.id === activeSnapshot?.groupId
+                    ? (activeSnapshot.members ?? item.chat.members)
+                    : item.kind === "group"
+                      ? item.chat.members
+                      : [];
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
@@ -318,14 +332,7 @@ export function SidebarRoster({
                       status={item.chat.status}
                     />
                   ) : (
-                    <GroupAvatar
-                      members={
-                        item.chat.id === activeSnapshot?.groupId
-                          ? (activeSnapshot.members ?? item.chat.members)
-                          : item.chat.members
-                      }
-                      size={mini ? 40 : compact ? 28 : 38}
-                    />
+                    <GroupAvatar members={groupMembers} size={mini ? 40 : compact ? 28 : 38} />
                   );
                 const chatTrigger = (
                   <ContextMenuTrigger
@@ -405,8 +412,6 @@ export function SidebarRoster({
                           ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
                           : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
                     } text-start ${
-                      item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
-                    } ${
                       selected || rosterDropKey === rowDropKey
                         ? "bg-sidebar-accent"
                         : "group-hover/row:bg-accent"
@@ -548,16 +553,51 @@ export function SidebarRoster({
                       disabled={item.chat.spaceId !== bootstrapMe?.spaceId}
                     >
                       {mini ? (
-                        <IconTooltip
-                          side="inline-end"
-                          label={
-                            compactStatusLabel
-                              ? `${item.chat.name}: ${compactStatusLabel}`
-                              : item.chat.name
-                          }
-                        >
-                          {chatTrigger}
-                        </IconTooltip>
+                        <Tooltip>
+                          <TooltipTrigger render={chatTrigger} />
+                          <TooltipContent
+                            side="inline-end"
+                            sideOffset={8}
+                            arrow={false}
+                            className="w-64 max-w-64 flex-col items-stretch gap-1 rounded-xl border border-border bg-popover px-3 py-2.5 text-popover-foreground shadow-md"
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              {item.kind === "bot" ? (
+                                <BotAvatar
+                                  avatarSet={item.chat.avatarSet}
+                                  color={item.chat.color}
+                                  identity={item.chat.id}
+                                  size={18}
+                                  status={item.chat.status}
+                                />
+                              ) : (
+                                <GroupAvatar members={groupMembers} size={18} />
+                              )}
+                              <span
+                                dir="auto"
+                                className="truncate text-body-sm font-medium text-foreground"
+                              >
+                                {item.chat.name}
+                              </span>
+                            </span>
+                            {compactStatusLabel || previewLine ? (
+                              <span
+                                dir="auto"
+                                className={`line-clamp-2 text-body-sm ${
+                                  rowError
+                                    ? "text-destructive"
+                                    : workStatusLabel
+                                      ? "font-medium text-status-working"
+                                      : compactStatusLabel
+                                        ? "font-medium text-foreground"
+                                        : "text-muted-foreground"
+                                }`}
+                              >
+                                {compactStatusLabel ?? previewLine}
+                              </span>
+                            ) : null}
+                          </TooltipContent>
+                        </Tooltip>
                       ) : (
                         chatTrigger
                       )}

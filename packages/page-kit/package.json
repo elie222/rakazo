@@ -22,6 +22,7 @@
     "sucrase": "3.35.1"
   },
   "devDependencies": {
+    "@rakazo/core": "workspace:*",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "typescript": "7.0.2",

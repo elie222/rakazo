@@ -43,6 +43,7 @@ import {
   currentApiBase,
   rpc,
   selectedSpaceId,
+  subscribeAiConsentGranted,
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
@@ -54,6 +55,7 @@ import { AvatarScreenFocus } from "../lib/avatar-life";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { useCallActive } from "../lib/call-session";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadComposerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
@@ -66,8 +68,9 @@ import {
 import { OpenPageContext } from "../lib/message-mentions";
 import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useNavigatorMounted } from "../lib/navigator-mounted";
 import { useNotificationResponses } from "../lib/open-notification";
-import { clearQueries } from "../lib/query";
+import { clearQueries, resetRpcQueries } from "../lib/query";
 import { useReferral } from "../lib/referral";
 import {
   getCachedRemoteImagesEnabled,
@@ -111,6 +114,7 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+subscribeAiConsentGranted(() => void resetRpcQueries("aiConsent/status"));
 registerSessionDiskCache((sameAccount) => {
   if (!sameAccount) return clearLastBot();
 });
@@ -285,6 +289,7 @@ function LayoutContent() {
   const canInvite = Boolean(useReferral());
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
+  useNavigatorMounted(ready);
   useNotificationResponses(ready);
   const callSession = useSyncExternalStore(
     subscribeSessionGeneration,
@@ -371,6 +376,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
@@ -567,6 +573,15 @@ function LayoutContent() {
                         options={glassHeaderOptions(t`Chat settings`)}
                       />
                       <Stack.Screen name="bot-model" options={glassHeaderOptions(t`Model`)} />
+                      <Stack.Screen
+                        name="chat-model"
+                        options={{
+                          ...glassHeaderOptions(t`Model`),
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                        }}
+                      />
                       <Stack.Screen
                         name="thread"
                         options={({ route }) => ({

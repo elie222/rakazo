@@ -59,13 +59,13 @@ CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
-`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
-question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
+`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
 thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
 anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
 takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
-queued runs after 4 hours.
+queued runs after 4 hours. A question the bot asks stays open until someone answers it, unless its
+run holds a login or code it took only for itself: that run still stops at the expiry.
 
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
@@ -116,6 +116,30 @@ callbacks.
 | `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
 | `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
 | `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
+
+## Chat history retention
+
+Rakazo keeps chat history until someone clears the chat or deletes the bot. To delete it
+automatically, set `CHAT_HISTORY_RETENTION_DAYS` on the API and worker to a whole number of days:
+
+```env
+CHAT_HISTORY_RETENTION_DAYS=180
+```
+
+About once an hour, one instance deletes the messages and the chat events older than that, oldest
+first, so each chat keeps an unbroken recent history. A chat with a bot run in progress, or a
+question or takeover waiting for an answer, is left alone until that finishes, and so is a message
+still queued behind a run. A saved summary of older messages is dropped with them. Unset or empty keeps
+everything. Any other value that is not a whole number from 1 to 36500 (`0` included) stops the worker,
+and an API running its own jobs (`WAKEUP_DRIVER=memory`), from starting, so a typo never leaves
+history kept unnoticed. Chats already open in an app keep showing deleted messages until they
+reload.
+
+Not deleted by this setting: run records (task prompts and errors), files and
+screenshots bots stored, memory a bot saved, the quoted excerpt a reply keeps of the message it
+answers, messages copied into a connected chat app, and the [audit log](./self-host-audit-log.md#retention),
+which has its own retention. Deleted history cannot be restored from the app; [backups](./self-host-backups.md)
+keep it for their own retention.
 
 ## Database roles
 
@@ -169,6 +193,12 @@ through a transaction pooler. It defaults to `DATABASE_URL`.
 `GRAPHILE_WORKER_CONCURRENCY` (default `4`) caps concurrent deliveries from the older interactive
 job queue during rolling upgrades. New agent runs dispatch straight from Postgres and do not take
 those slots.
+
+`RUN_DRAIN_ENABLED=true` lets a stopping worker end the turns it is running, for up to five
+minutes, before it hands them back; otherwise it hands them back at once and the next worker
+repeats the model call that was in flight. `docker-compose.prod.yml` turns it on. Turn it on only
+where a stopping worker is left alone for longer than that, as Compose's `stop_grace_period` does:
+a worker killed sooner leaves a run mid-turn waiting for its lease to expire.
 
 ## API and worker memory
 

@@ -29,6 +29,9 @@ it("redraws once at each local midnight and not before", async () => {
   expect(renders).toBe(initial + 1);
   await act(async () => vi.advanceTimersByTime(24 * 60 * 60_000));
   expect(renders).toBe(initial + 2);
+  // Every night from here on leaves the same delay to the next midnight.
+  await act(async () => vi.advanceTimersByTime(24 * 60 * 60_000));
+  expect(renders).toBe(initial + 3);
 
   await act(async () => root.unmount());
   expect(vi.getTimerCount()).toBe(0);

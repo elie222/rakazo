@@ -8,10 +8,13 @@ import {
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "./computer-support.js";
-import { desktopGuardApplies, desktopProtectionGuardMessage } from "./desktop-command-guard.js";
-import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 import { mediaDelivery, scheduleMediaPoll } from "./media-video-poll.js";
+import {
+  desktopGuardApplies,
+  desktopProtectionGuardMessage,
+} from "./providers/computer/desktop/desktop-command-guard.js";
+import { protectedActivateScriptWriteRefusal } from "./providers/computer/desktop/desktop-guard-words.js";
 import type { RunContext } from "./run-context.js";
 import { persistMessageInTransaction, runLeaseFor } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
@@ -32,6 +35,16 @@ function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
     context: ctx.context,
     runSecrets: ctx.secrets,
   };
+}
+
+async function artifactGroupId(ctx: RunContext): Promise<string | undefined> {
+  const threadId = ctx.source.conversationThreadId;
+  if (!threadId || threadId === ctx.thread.id) return ctx.thread.groupId ?? undefined;
+  const conversation = await ctx.deps.prisma.thread.findFirst({
+    where: { id: threadId, spaceId: ctx.run.spaceId },
+    select: { groupId: true },
+  });
+  return conversation?.groupId ?? undefined;
 }
 
 /** Generate an image or video, or with recoverOnly, only resume a job an earlier attempt started. */
@@ -58,7 +71,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     threadGeneration: thread.historyCompactionGeneration,
     ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
       providerId: mediaGeneration.id,
-      groupId: thread.groupId ?? undefined,
+      groupId: await artifactGroupId(ctx),
       operationId: executionId,
     }),
   });
@@ -99,7 +112,7 @@ export const fileTools: ToolHandlers = {
     if (desktopGuardApplies(ctx.computer)) {
       const activateRefusal = protectedActivateScriptWriteRefusal(filePath);
       if (activateRefusal) {
-        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal) });
+        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal, filePath) });
       }
     }
     const content = new TextEncoder().encode(textContentArg(args.content, ""));
@@ -128,7 +141,7 @@ export const fileTools: ToolHandlers = {
     return renderPlotFromTool(deps, run, args, executionId, workspace, call.finish);
   },
   async attach_file(ctx, call) {
-    const { deps, run, bot, thread } = ctx;
+    const { deps, run, bot } = ctx;
     const filePath = String(call.args.path ?? "");
     const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
@@ -146,7 +159,7 @@ export const fileTools: ToolHandlers = {
         call,
         filePath,
         read.bytes,
-        { botId: bot.id, groupId: thread.groupId ?? undefined },
+        { botId: bot.id, groupId: await artifactGroupId(ctx) },
         {
           name: typeof call.args.name === "string" ? call.args.name : undefined,
           description:

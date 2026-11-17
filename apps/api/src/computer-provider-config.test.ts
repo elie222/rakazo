@@ -1,5 +1,10 @@
 import type { BackgroundJob, SandboxProvider } from "@rakazo/adapter-kit";
-import { computerProviderDescriptors, retrySecretCleanup } from "@rakazo/adapters";
+import {
+  computerProviderDescriptors,
+  recordSecretCleanup,
+  retrySecretCleanup,
+  secretCleanupJobKey,
+} from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -86,6 +91,9 @@ function makeDeps(
       enqueue: vi.fn(queue),
       enqueueIn: vi.fn((_tx: unknown, job: BackgroundJob) => queue(job)),
       cancel: vi.fn(async (key: string) => {
+        queued.delete(key);
+      }),
+      cancelIn: vi.fn(async (_tx: unknown, key: string) => {
         queued.delete(key);
       }),
     },
@@ -262,6 +270,20 @@ describe("computer provider settings", () => {
       );
       expect([...state.secrets.keys()]).toEqual(["secret-2"]);
       expect(queued.size).toBe(0);
+    });
+
+    it("keeps a backup a concurrent replace records right after the save commits", async () => {
+      const { deps, prisma, queued } = makeDeps({ remote: true });
+      prisma.$transaction.mockImplementationOnce(async (callback) => {
+        const result = await callback(prisma);
+        // Committed: another request replaces this connection and records the backup that
+        // deletes it, under the same job key as this save's write-ahead job.
+        await recordSecretCleanup(deps, prisma as never, replaced);
+        return result;
+      });
+      await save(deps);
+      expect(deps.jobs.cancelIn).toHaveBeenCalledWith(prisma, secretCleanupJobKey("secret-1"));
+      expect(queued.get(secretCleanupJobKey("secret-1"))).toMatchObject({ payload: replaced });
     });
 
     it("saves as usual when the replaced connection cannot be removed, and retries it later", async () => {
@@ -583,11 +605,54 @@ it.each(computerProviderDescriptors())(
   },
 );
 
-it("rejects unregistered providers and deployment-only providers for accounts", async () => {
-  const { deps } = makeAccountDeps();
+it("answers a provider this build does not have with a client error and saves nothing", async () => {
+  const unknown = { provider: "a-provider-since-removed", values: { apiKey: "test-key" } };
+  const refusal = {
+    name: "ClientError",
+    kind: "BAD_REQUEST",
+    message: "Unknown computer provider",
+  };
+  const deployment = makeDeps();
   await expect(
-    updateAccountComputerSettings(deps, actor, { provider: "unknown", values: {} }),
-  ).rejects.toThrow("Could not verify");
+    updateComputerProviderSettings(deployment.deps, actor, unknown),
+  ).rejects.toMatchObject(refusal);
+  expect(deployment.deps.secrets.put).not.toHaveBeenCalled();
+  expect(deployment.state.settings).toBeNull();
+  const account = makeAccountDeps();
+  await expect(updateAccountComputerSettings(account.deps, actor, unknown)).rejects.toMatchObject(
+    refusal,
+  );
+  expect(account.deps.secrets.put).not.toHaveBeenCalled();
+  expect(account.rows).toEqual([]);
+});
+
+it("reads saved settings for a provider this build does not have as the default", async () => {
+  const stored = JSON.stringify({ provider: "a-provider-since-removed", values: { apiKey: "k" } });
+  const deployment = makeDeps();
+  deployment.state.secrets.set("secret-old", stored);
+  deployment.state.settings = {
+    computerProvider: "a-provider-since-removed",
+    computerProviderCipher: "secret-old",
+  };
+  const shown = await getComputerProviderSettings(deployment.deps, actor);
+  expect(shown).toMatchObject({ provider: "default", values: {}, savedSecrets: {} });
+  expect(shown.providers.map((provider) => provider.id)).not.toContain("a-provider-since-removed");
+  const account = makeAccountDeps();
+  account.rows.push({
+    id: "secret-old",
+    userId: "user-1",
+    spaceId: null,
+    kind: "computer-provider",
+  });
+  account.state.secrets.set("secret-old", stored);
+  await expect(getAccountComputerSettings(account.deps, actor)).resolves.toMatchObject({
+    provider: "default",
+    values: {},
+  });
+});
+
+it("rejects deployment-only providers for accounts", async () => {
+  const { deps } = makeAccountDeps();
   await expect(
     updateAccountComputerSettings(deps, actor, {
       provider: "test-cloud",
@@ -625,5 +690,8 @@ it("retains previous deployment connections when changing providers", async () =
 
 vi.mock(
   "../../../packages/adapters/src/computer-provider-registry.js",
-  () => import("../../../packages/adapters/src/fake-computer-settings.test-support.js"),
+  () =>
+    import(
+      "../../../packages/adapters/src/providers/computer/fake/fake-computer-settings.test-support.js"
+    ),
 );

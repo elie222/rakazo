@@ -1,12 +1,15 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { BOT_SECRET_ORIGIN_MISSING_MESSAGE, encodeLoginSecret } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { installAuditEventStore } from "@rakazo/db";
+import { installAuditEventStore, TransactionConflictError } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODE_ALREADY_TYPED,
+  canonicalSecretValue,
   cardRedactionForms,
   credentialArgument,
   encodeRunCode,
@@ -35,6 +38,7 @@ import {
   responsePaging,
   sameSecretDestination,
   storeBotSecret,
+  VaultItemRefusedError,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { recordVaultUse } from "./run-context.js";
@@ -448,10 +452,11 @@ describe("authenticated secret requests", () => {
     const recordUse = vi.fn(async () => {});
     // Cancelled while the destination is still being checked: nothing is sent, then or after.
     const early = new AbortController();
-    let checked = (_addresses: { address: string; family: 4 }[]) => {};
-    const resolveHostname = vi.fn(
-      () => new Promise<{ address: string; family: 4 }[]>((resolve) => (checked = resolve)),
-    );
+    let checked: Deferred<{ address: string; family: 4 }[]> | undefined;
+    const resolveHostname = vi.fn(() => {
+      checked = deferred<{ address: string; family: 4 }[]>();
+      return checked.promise;
+    });
     const checking = requestWithBotSecret({
       ...input,
       recordUse,
@@ -461,8 +466,8 @@ describe("authenticated secret requests", () => {
     await vi.waitFor(() => expect(resolveHostname).toHaveBeenCalled());
     early.abort();
     expect(await checking).toHaveProperty("error");
-    checked([{ address: "203.0.113.10", family: 4 }]);
-    await new Promise((resolve) => setTimeout(resolve));
+    checked?.resolve([{ address: "203.0.113.10", family: 4 }]);
+    await flush();
     expect(recordUse).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
     // Cancelled while the request is out, with no answer yet.
@@ -1094,6 +1099,42 @@ describe("credentialArgument", () => {
       expect(collapsed).toEqual(destination);
       expect(JSON.stringify(collapsed)).not.toContain(plantedSecret);
     }
+  });
+});
+
+describe("vault refusals", () => {
+  const login = { name: "site", origin: "https://example.test", auth: { type: "login" } } as const;
+
+  it("names what is wrong with what was given as a refusal, without quoting it", () => {
+    for (const [destination, value] of [
+      [login, "{not json fake-value"],
+      [{ ...login, auth: { type: "card" } }, "fake-value"],
+    ] as const) {
+      let caught: unknown;
+      try {
+        canonicalSecretValue(destination as BotSecretDestination, value);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(VaultItemRefusedError);
+      expect((caught as Error).message).not.toContain("fake-value");
+    }
+    expect(() => normalizeSecretDestination({ name: "x" })).toThrow(VaultItemRefusedError);
+  });
+
+  it("refuses a legacy login with a blank username", () => {
+    const legacy = JSON.stringify({ username: " ", password: "fake-password" });
+    expect(() => canonicalSecretValue(login, legacy)).toThrow(
+      new VaultItemRefusedError("A website login needs a label and a value for every field"),
+    );
+  });
+
+  it("lets a failure that isn't about the value propagate", () => {
+    const fault = new TypeError("fault");
+    vi.spyOn(JSON, "parse").mockImplementationOnce(() => {
+      throw fault;
+    });
+    expect(() => canonicalSecretValue({ ...login, auth: { type: "card" } }, "{}")).toThrow(fault);
   });
 });
 
@@ -2264,7 +2305,7 @@ describe("replacing a saved login's site", () => {
     const toOther = await prepare(db, other, "fake-password-other", { replaces: before.id });
     await commit(db, toLogin);
     // It keeps whatever key is saved, so a value saved since sends it back to be prepared again.
-    await expect(commit(db, toOther)).rejects.toMatchObject({ code: "P2034" });
+    await expect(commit(db, toOther)).rejects.toBeInstanceOf(TransactionConflictError);
     await commit(db, await prepare(db, other, "fake-password-other", { replaces: before.id }));
     expect(db.rows()).toHaveLength(1);
     const [row] = db.rows();

@@ -2,7 +2,11 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
-import { longWorkProgressGuidance } from "./run-replies.prompt.js";
+import {
+  longWorkProgressGuidance,
+  midTaskMessageFromPrompt,
+  midTaskMessagePrompt,
+} from "./run-replies.prompt.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -14,7 +18,6 @@ import {
   MID_TURN_PROGRESS_MAX_PER_RUN,
   MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
   messageUserMaxLength,
-  midTaskMessagePrompt,
   midTurnProgressBudgetAllows,
   NARRATION_STATUS_MAX_LENGTH,
   narrationStatusLine,
@@ -215,5 +218,25 @@ describe("midTaskMessagePrompt", () => {
     expect(prompt).toContain("\n\nStill working?\n\n");
     expect(prompt).toContain("continue the task");
     expect(prompt).not.toMatch(/reply|answer/);
+  });
+});
+
+describe("midTaskMessageFromPrompt", () => {
+  it("labels where the message came from", () => {
+    expect(midTaskMessageFromPrompt("Hi", undefined)).toMatchInlineSnapshot(`
+      "A message arrived from another member of this chat while you were working:
+
+      Hi"
+    `);
+    expect(midTaskMessageFromPrompt("Hi", "messaging")).toMatchInlineSnapshot(`
+      "A message arrived from a connected chat while you were working:
+
+      Hi"
+    `);
+    expect(midTaskMessageFromPrompt("Hi", "webhook")).toMatchInlineSnapshot(`
+      "A message arrived from a webhook while you were working:
+
+      Hi"
+    `);
   });
 });

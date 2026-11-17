@@ -1,12 +1,20 @@
+import { lookup } from "node:dns/promises";
 import { MemoryProviderPrivateEndpointRequiredError } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
+  serializeSpaceMemoryConfig,
   updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
+
+function resolvesTo(address: string) {
+  vi.mocked(lookup).mockResolvedValue([{ address, family: 4 }] as never);
+}
 
 const actor = {
   userId: "user-1",
@@ -166,6 +174,7 @@ describe("persistMemoryProviderConfig", () => {
         settings,
         defaultMemoryScope: "isolated",
         updatedAt: "2026-08-19T00:00:00.000Z",
+        connectionLabel: "Honcho Cloud (team-notes)",
       });
       expect(JSON.stringify(result)).not.toMatch(/apiKey|hch-test-key|cipher|secret/);
     } finally {
@@ -213,26 +222,25 @@ describe("persistMemoryProviderConfig", () => {
     },
   );
 
-  it.each([
-    "http://127.0.0.1:8123/internal-action#",
-    "http://localhost:6767",
-    "http://10.0.0.8:6767",
-    "http://supermemory:6767",
-  ])("rejects ordinary Space owners before any local probe or write: %s", async (baseUrl) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
-    vi.stubGlobal("fetch", fetchMock);
-    const { deps, transaction } = makeDeps();
-    try {
-      await expect(
-        persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(deps.secrets.put).not.toHaveBeenCalled();
-      expect(transaction).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
+  it.each(["http://localhost:6767", "http://10.0.0.8:6767", "http://supermemory:6767"])(
+    "rejects ordinary Space owners before any local probe or write: %s",
+    async (baseUrl) => {
+      resolvesTo("172.18.0.5");
+      const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
+      vi.stubGlobal("fetch", fetchMock);
+      const { deps, transaction } = makeDeps();
+      try {
+        await expect(
+          persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(deps.secrets.put).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("still requires Space ownership for a deployment owner", async () => {
     const fetchMock = vi.fn();
@@ -305,7 +313,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local", "http://203.0.113.10:6767"),
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow(/HTTPS/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -330,6 +338,54 @@ describe("persistMemoryProviderConfig", () => {
         }),
       }),
     );
+    vi.unstubAllGlobals();
+  });
+
+  it("connects a public HTTPS self-hosted server without the private-endpoint setting", async () => {
+    resolvesTo("203.0.113.10");
+    const saved = {
+      mode: "local",
+      baseUrl: "https://memory.example.test",
+      endpointTrust: "public",
+    };
+    const prepareConnection = vi.fn(async () => ({
+      provider: "supermemory",
+      settings: saved,
+      credentials: { apiKey: "sm_test_key_12345" },
+    }));
+    const { deps, upsert } = makeDeps();
+
+    await persistMemoryProviderConfig(
+      { ...deps, prepareConnection },
+      actor,
+      connectionInput("local", "https://memory.example.test"),
+    );
+
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ settings: saved, allowPrivateEndpoint: false }),
+    );
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ settings: saved }) }),
+    );
+  });
+
+  it.each([
+    ["a public-looking name that resolves privately", {}],
+    ["a submitted public mark", { endpointTrust: "public" }],
+  ])("refuses %s without the setting, before any request", async (_, extra) => {
+    resolvesTo("10.0.0.5");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+    const input = connectionInput("local", "https://memory.example.test");
+    await expect(
+      persistMemoryProviderConfig(deps, actor, {
+        ...input,
+        settings: { ...input.settings, ...extra },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
@@ -384,6 +440,7 @@ describe("persistMemoryProviderConfig", () => {
       settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
       defaultMemoryScope: "isolated",
       updatedAt: "2026-08-19T00:00:00.000Z",
+      connectionLabel: "Supermemory Cloud",
     });
     expect(transaction).toHaveBeenCalledOnce();
     vi.unstubAllGlobals();
@@ -528,6 +585,30 @@ describe("updateMemoryProviderDefaultScope", () => {
 
     await expect(updateMemoryProviderDefaultScope(deps, actor, "shared")).rejects.toThrow();
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("serializeSpaceMemoryConfig", () => {
+  const stored = {
+    settings: { mode: "local", baseUrl: "http://10.0.0.8:8888", ignored: 1 },
+    defaultMemoryScope: "shared",
+    updatedAt: new Date("2026-08-19T00:00:00.000Z"),
+  };
+
+  it("names the connection in the provider's words", () => {
+    expect(serializeSpaceMemoryConfig({ ...stored, provider: "hindsight" })).toEqual({
+      provider: "hindsight",
+      settings: { mode: "local", baseUrl: "http://10.0.0.8:8888" },
+      defaultMemoryScope: "shared",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+      connectionLabel: "Self-hosted (http://10.0.0.8:8888)",
+    });
+  });
+
+  it("still serializes a connection whose provider this build does not have", () => {
+    expect(serializeSpaceMemoryConfig({ ...stored, provider: "retired" })).not.toHaveProperty(
+      "connectionLabel",
+    );
   });
 });
 
@@ -702,6 +783,59 @@ describe("updateMemoryProviderConfig", () => {
         settings: nextSettings,
         credentials: { apiKey: "sm_new_key_12345" },
       }),
+    );
+  });
+
+  it("refuses settings the provider's form would not send, before probing or writing", async () => {
+    const { deps, prepareConnection, transaction } = updateDeps({ existing: null });
+    for (const [provider, settings, message] of [
+      ["honcho", { workspaceId: "has space" }, "Use up to 512 letters, digits, _ or -."],
+      [
+        "honcho",
+        { workspaceId: "team", userPeerId: "bot-1" },
+        "rakazo-shared and IDs starting with bot- are reserved for Rakazo.",
+      ],
+      ["hindsight", { recallBudget: "deepest" }, "recallBudget is not one of its choices"],
+      ["serenity", { allowWrites: "false" }, "Serenity endpoint is required."],
+    ] as const) {
+      await expect(
+        persistMemoryProviderConfig(deps, actor, {
+          provider,
+          settings,
+          credentials: { apiKey: "sm_test_key_12345" },
+          defaultMemoryScope: "isolated",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message });
+    }
+    expect(prepareConnection).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("carries over a stored setting no field of the form edits", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: {
+        ...connected,
+        provider: "honcho",
+        settings: { reasoningLevel: "high", workspaceId: "team" },
+      },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", workspaceId: "team" },
+      credentials: {},
+    });
+    expect(prepareConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        settings: { mode: "cloud", workspaceId: "team", reasoningLevel: "high" },
+      }),
+    );
+    // An edit that names the setting still decides it.
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { reasoningLevel: "low", workspaceId: "team" },
+      credentials: {},
+    });
+    expect(prepareConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settings: { reasoningLevel: "low", workspaceId: "team" } }),
     );
   });
 

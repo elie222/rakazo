@@ -19,11 +19,13 @@ import {
   connectionModels,
   createModelProbe,
   initialModelProbeState,
+  modelConnectionFormSecrets,
   modelConnectRequest,
+  sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -48,6 +50,7 @@ import {
   modelConnectionRequest,
 } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
+import { useScreenHeader } from "../../lib/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { useListSearch } from "../../lib/use-list-search";
 import { useSubscriptionSignIn } from "../../lib/use-subscription-sign-in";
@@ -63,7 +66,6 @@ type FeedbackAnchor = "probe" | "model" | "connection";
 export default function ModelConnection() {
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
-  const navigation = useNavigation();
   const { requestId = "" } = useLocalSearchParams<{ requestId?: string }>();
   const [request] = useState(() => modelConnectionRequest(requestId));
   const makeDefault = request?.makeDefault ?? false;
@@ -254,9 +256,7 @@ export default function ModelConnection() {
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
     : (endpointPreset?.name ?? providerName);
-  useLayoutEffect(() => {
-    if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
-  }, [navigation, selectedProviderLabel]);
+  useScreenHeader({ title: selectedProviderLabel || undefined });
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
@@ -318,6 +318,13 @@ export default function ModelConnection() {
     clearFeedback();
   }
 
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
+  }
+
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
     Keyboard.dismiss();
@@ -349,7 +356,7 @@ export default function ModelConnection() {
       },
       onError: (err) =>
         publishFeedback("probe", {
-          error: errorText(err, t`Could not reach this model server`),
+          error: connectionErrorText(err, t`Could not reach this model server`),
         }),
     });
   }
@@ -425,7 +432,7 @@ export default function ModelConnection() {
       }
     } catch (err) {
       publishFeedback("connection", {
-        error: errorText(err, t`Could not connect this provider`),
+        error: connectionErrorText(err, t`Could not connect this provider`),
       });
     } finally {
       setPending(null);
@@ -624,14 +631,14 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : (
+          ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
               fill
               label={
                 oauthPending
                   ? t`Starting…`
-                  : credential
+                  : credential?.authKind === "oauth"
                     ? t`Sign in again`
                     : (selected.oauthLabel ?? t`Sign in`)
               }
@@ -639,7 +646,7 @@ export default function ModelConnection() {
               prominence="secondary"
               style={{ marginTop: 12 }}
             />
-          )
+          ) : null
         ) : null}
         {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
@@ -735,11 +742,8 @@ export default function ModelConnection() {
       </>
     ) : null;
 
-  const connectedStatusRow = credential ? (
+  const disconnectButton = credential ? (
     <View style={styles.statusRow}>
-      <View style={styles.providerCopy}>
-        <Text style={styles.secondary}>{t`Connected`}</Text>
-      </View>
       <NativeActionButton
         disabled={busy}
         fill={false}
@@ -801,16 +805,16 @@ export default function ModelConnection() {
               {compatConfig}
               {compatKeySection}
               {feedbackAnchor === "probe" ? null : feedback}
-              {connectedStatusRow}
               {modelList}
+              {disconnectButton}
             </>
           ) : credential ? (
             <>
               {provider === me?.hostCredentialProvider ? serverCredentialsNote : null}
-              {connectedStatusRow}
               {catalogConnectionControls}
               {feedbackAnchor === "connection" ? feedback : null}
               {modelList}
+              {disconnectButton}
             </>
           ) : provider === me?.hostCredentialProvider ? (
             <>

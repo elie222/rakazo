@@ -2,31 +2,6 @@ import { ComputerStatusSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
 
-describe("resolveComputerWork", () => {
-  const work = (lease: { expiresAt: Date; runId: string } | null, status: string | null) =>
-    resolveComputerWork(
-      {
-        computerExecutionLease: { findUnique: async () => lease },
-        run: {
-          findFirst: async () => null,
-          findUnique: async () => (status ? { status } : null),
-        },
-      } as never,
-      { computerId: "computer-1", botId: "bot-1", botName: "Writer" },
-    );
-  const live = { expiresAt: new Date(Date.now() + 60_000), runId: "run-1" };
-
-  it("shows the bot busy while its run holds an unexpired lease", async () => {
-    expect((await work(live, "running")).busyBotName).toBe("Writer");
-  });
-
-  it("frees the computer once the lease's run has ended, before the lease is released", async () => {
-    for (const status of ["completed", "failed", "cancelled"]) {
-      expect((await work(live, status)).busyBotName).toBeNull();
-    }
-  });
-});
-
 describe("toComputerStatus", () => {
   it("shows a quarantined computer as an error without making its screen available", () => {
     expect(
@@ -38,6 +13,29 @@ describe("toComputerStatus", () => {
         homeRevision: "saved",
       }),
     ).toMatchObject({ state: "error", screenAvailable: false });
+  });
+  it("reads a computer whose provider this build does not have without throwing", () => {
+    const status = toComputerStatus("bot", {
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      scope: "team",
+      controlHolder: "none",
+      homeRevision: "saved",
+    });
+    expect(ComputerStatusSchema.parse(status)).toMatchObject({
+      kind: "a-provider-since-removed",
+      state: "stopped",
+      screenAvailable: false,
+      terminalAvailable: false,
+    });
+    expect(status.runsOnUserMachine).toBeUndefined();
+  });
+  it("says when the computer is the person's own machine", () => {
+    const computer = { state: "running", scope: "team", controlHolder: "none", homeRevision: "r" };
+    expect(toComputerStatus("bot", { ...computer, kind: "desktop" }).runsOnUserMachine).toBe(true);
+    expect(toComputerStatus("bot", { ...computer, kind: "docker" })).not.toHaveProperty(
+      "runsOnUserMachine",
+    );
   });
   it("warns at 90% full until the user hides it, and again once the disk fills further", () => {
     const computer = {
@@ -160,5 +158,60 @@ describe("toComputerStatus", () => {
         homeRevision: "r1",
       }).canUpdate,
     ).toBe(true);
+  });
+});
+
+describe("resolveComputerWork", () => {
+  const work = (lease: { runId: string; live: boolean } | null, runStatus?: string) =>
+    resolveComputerWork(
+      {
+        computerExecutionLease: {
+          findUnique: async () =>
+            lease && {
+              runId: lease.runId,
+              expiresAt: new Date(Date.now() + (lease.live ? 60_000 : -60_000)),
+            },
+        },
+        run: {
+          findFirst: async () => (runStatus === "waiting_takeover" ? { id: "run-1" } : null),
+          findUnique: async () => (runStatus ? { status: runStatus } : null),
+        },
+      } as unknown as Parameters<typeof resolveComputerWork>[0],
+      { computerId: "computer-1", botId: "bot-1", botName: "Writer" },
+    );
+
+  it.each(["queued", "running"])(
+    "names the bot while its %s run holds the computer",
+    async (status) => {
+      expect((await work({ runId: "run-1", live: true }, status)).busyBotName).toBe("Writer");
+      expect((await work({ runId: "run-1", live: false }, status)).busyBotName).toBe("Writer");
+    },
+  );
+
+  // The run row turns terminal before its executor releases the lease.
+  it.each(["completed", "failed", "cancelled"])(
+    "is free once the run is %s, even before its lease is released",
+    async (status) => {
+      expect(await work({ runId: "run-1", live: true }, status)).toEqual({
+        busyBotName: null,
+        takeoverRequested: false,
+      });
+    },
+  );
+
+  it("names the bot while a reset, update or teaching session holds the computer", async () => {
+    expect((await work({ runId: "reset:1", live: true })).busyBotName).toBe("Writer");
+    expect((await work({ runId: "reset:1", live: false })).busyBotName).toBeNull();
+  });
+
+  it("is free and asks for a person while the run waits on takeover", async () => {
+    expect(await work({ runId: "run-1", live: true }, "waiting_takeover")).toEqual({
+      busyBotName: null,
+      takeoverRequested: true,
+    });
+  });
+
+  it("is free with no lease", async () => {
+    expect((await work(null)).busyBotName).toBeNull();
   });
 });

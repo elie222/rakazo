@@ -4,7 +4,7 @@ import type { ComposerMention, SLASH_ACTIONS, SlashActionId } from "@rakazo/core
 import { mentionChipKey, truncateSlashDescription } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Settings, Square, X } from "lucide-react";
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { useHoldToTalk } from "../../components/composer/HoldToTalk";
 import { HoldToTalkControls } from "../../components/composer/HoldToTalk";
 import type { PendingAttachment } from "./chat-shared";
@@ -204,6 +204,7 @@ export function ComposerActions({
   sendDisabled,
   stopDisabled,
   sendColors,
+  modelPicker,
   onSend,
   onStop,
 }: {
@@ -218,6 +219,7 @@ export function ComposerActions({
   stopDisabled: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
   sendColors?: { background: string; foreground: string };
+  modelPicker?: ReactNode;
   onSend: () => void;
   onStop: () => void;
 }) {
@@ -238,6 +240,7 @@ export function ComposerActions({
         expanded ? "row-start-2" : ""
       }`}
     >
+      {talk.recording?.locked ? null : modelPicker}
       {talk.recording?.locked ? (
         <HoldToTalkControls talk={talk} />
       ) : running ? (

@@ -27,6 +27,8 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import { retryConnectionCleanup } from "./connection-cleanup.js";
+import type { ConnectorRegistry } from "./connector-registry.js";
 import {
   abandonRetainedConversation,
   retainRunConversation,
@@ -36,10 +38,12 @@ import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
+import { retryMachineCleanup } from "./machine-cleanup.js";
 import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
+import { expireRunSecrets } from "./run-secrets-expiry.js";
 import { retrySecretCleanup } from "./secret-cleanup.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 import type { TeamChat } from "./team-chat.js";
@@ -94,6 +98,7 @@ export function createBackgroundJobHandlers(deps: {
   deploymentModelConfigured?: boolean;
   messagingDelivery?: MessagingDelivery;
   teamChat?: TeamChat;
+  connectors?: Pick<ConnectorRegistry, "managed">;
   cloudAgent?: CloudAgentConnection | null;
   userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
@@ -157,7 +162,23 @@ export function createBackgroundJobHandlers(deps: {
     "secret.cleanup": async (cleanup) => {
       await retrySecretCleanup(cleanupDeps, cleanup);
     },
-    // The previous release's jobs, drained once by this one.
+    "connection.cleanup": asOwner(
+      async (payload: BackgroundJobPayloads["connection.cleanup"]) => payload,
+      async (payload) => {
+        // Fail rather than finish, so the queue keeps the job for a process that has connectors.
+        if (!deps.connectors) throw new Error("connection cleanup has no connector registry");
+        await retryConnectionCleanup(
+          { prisma: deps.prisma, connectors: deps.connectors, jobs: deps.jobs },
+          payload,
+        );
+      },
+    ),
+    // The machine belongs to no Space: nothing stores it.
+    "computer.machine-cleanup": async (machine, _execution, attempt) => {
+      await retryMachineCleanup(deps, machine, attempt);
+    },
+    // The previous release's jobs, drained by this one. Jobs under this name can stay queued
+    // across releases, so it goes only once none are left.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await retrySecretCleanup(cleanupDeps, {
         kind: "messaging_installation",
@@ -224,6 +245,9 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "skill.teaching-expire": asOwner(skill, async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
+    }),
+    "run.forget-secrets": asOwner(run, async ({ runId }) => {
+      await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });

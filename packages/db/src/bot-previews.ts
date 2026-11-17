@@ -3,6 +3,7 @@ import { BACKGROUND_RUN_TRIGGERS, isBackgroundRunTrigger, userVisibleMessages } 
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { contentEncryptionOf } from "./content-encryption.js";
+import { storedMessageBlocks } from "./message-blocks.js";
 import { previewFromBlocks } from "./thread-listing.js";
 
 /** Messages scanned per page; enough to skip a short peer-run tail. */
@@ -79,7 +80,7 @@ async function messageOutlines(
       blocks:
         row.blocks === null
           ? row.kinds.map((kind) => ({ kind }) as MessageBlock)
-          : (row.blocks as MessageBlock[]),
+          : storedMessageBlocks(row),
       loaded: row.blocks !== null,
     };
     const list = byThread.get(row.threadId);
@@ -163,7 +164,7 @@ export async function botThreadPreviews(prisma: PrismaClient, threadIds: string[
         where: { id: { in: [...unloaded.keys()] } },
         select: { id: true, blocks: true },
       });
-      const blocksById = new Map(loaded.map((row) => [row.id, row.blocks as MessageBlock[]]));
+      const blocksById = new Map(loaded.map((row) => [row.id, storedMessageBlocks(row)]));
       for (const message of unloaded.values()) {
         // A message deleted since the outline read has nothing to preview.
         message.blocks = blocksById.get(message.id) ?? [];

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -19,9 +20,6 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
   useLocalSearchParams: () => state.params,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -286,35 +284,27 @@ it("keeps selected voices when a hidden provider disconnects and the read fails"
 });
 
 it("disables provider rows until the saved device preference has loaded", async () => {
-  let finish!: (value: boolean) => void;
-  state.load.mockReturnValue(
-    new Promise<boolean>((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred<boolean>();
+  state.load.mockReturnValue(finish.promise);
   await render();
   for (const entry of catalog) expect(button(entry.name).disabled).toBe(true);
   await click("Other provider");
   expect(state.save).not.toHaveBeenCalled();
   expect(state.rpc).not.toHaveBeenCalledWith("voice/setVoice", expect.anything());
-  await act(async () => finish(true));
+  await act(async () => finish.resolve(true));
   expect(button("Other provider").disabled).toBe(false);
   selected("This device");
 });
 
 it("saves device voice off before activating a connected provider's saved voice", async () => {
   await render();
-  let finish!: () => void;
-  state.save.mockReturnValue(
-    new Promise<void>((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred();
+  state.save.mockReturnValue(finish.promise);
   await click("Other provider");
   expect(state.save).toHaveBeenCalledWith(false);
   expect(state.rpc).not.toHaveBeenCalledWith("voice/setVoice", expect.anything());
   expect(button("Fish Audio").disabled).toBe(true);
-  await act(async () => finish());
+  await act(async () => finish.resolve());
   expect(state.rpc).toHaveBeenCalledWith("voice/setVoice", {
     provider: "other",
     voiceId: "other-voice",
@@ -442,13 +432,11 @@ it("edits a Space's override in that Space, leaving this device's voice and soun
 async function revisit() {
   await act(async () => root.unmount());
   root = createRoot(container);
-  let release!: () => void;
-  state.held = new Promise((resolve) => {
-    release = resolve;
-  });
+  const release = deferred();
+  state.held = release.promise;
   await render();
   return async () => {
-    await act(async () => release());
+    await act(async () => release.resolve());
   };
 }
 
@@ -544,17 +532,14 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
     sttEndpoint: "",
     sttModel: "old-model",
   };
-  let releaseConnect!: () => void;
-  const connectHeld = new Promise<void>((resolve) => {
-    releaseConnect = resolve;
-  });
+  const connectHeld = deferred();
   const original = state.rpc.getMockImplementation()!;
   state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
     if (proc === "voice/catalog")
       return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
     if (proc === "voice/credentials") return [saved];
     if (proc === "voice/connect") {
-      await connectHeld;
+      await connectHeld.promise;
       // Another device moves transcription before the refresh that follows this connect.
       Object.assign(saved, { sttEndpoint: "http://127.0.0.1:9300/v1", sttModel: "sent-model" });
       return { ok: true };
@@ -583,7 +568,7 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
   );
   await type("Transcription API key", "newer-key");
   await type("Speech model", "newer-tts");
-  await act(async () => releaseConnect());
+  await act(async () => connectHeld.resolve());
   await vi.waitFor(() => expect(field("Transcription model").value).toBe("sent-model"));
   // The key typed meanwhile stays with the address it was typed for, not the other server.
   expect(field("Transcription server URL").value).toBe("http://127.0.0.1:9200");
@@ -601,17 +586,14 @@ it("keeps an API key typed during a reconnect with the server URL it was typed f
     endpoint: "https://speech-a.example/v1",
     sttEndpoint: "",
   };
-  let releaseConnect!: () => void;
-  const connectHeld = new Promise<void>((resolve) => {
-    releaseConnect = resolve;
-  });
+  const connectHeld = deferred();
   const original = state.rpc.getMockImplementation()!;
   state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
     if (proc === "voice/catalog")
       return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
     if (proc === "voice/credentials") return [saved];
     if (proc === "voice/connect") {
-      await connectHeld;
+      await connectHeld.promise;
       // Another device saves server B before the refresh that follows this connect.
       saved.endpoint = "https://speech-b.example/v1";
       return { ok: true };
@@ -630,7 +612,7 @@ it("keeps an API key typed during a reconnect with the server URL it was typed f
     );
     field("API key").dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => releaseConnect());
+  await act(async () => connectHeld.resolve());
   await vi.waitFor(() =>
     expect(state.rpc.mock.calls.filter(([proc]) => proc === "voice/credentials").length).toBe(2),
   );
@@ -696,13 +678,10 @@ it("keeps a saved speech model when an opening read started before the save land
   await act(async () => root.unmount());
   root = createRoot(container);
   let serverSpeechModel = "speech-model";
-  let releaseCatalog!: () => void;
-  const catalogHeld = new Promise<void>((resolve) => {
-    releaseCatalog = resolve;
-  });
+  const catalogHeld = deferred();
   const original = state.rpc.getMockImplementation()!;
   state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
-    if (proc === "voice/catalog") await catalogHeld;
+    if (proc === "voice/catalog") await catalogHeld.promise;
     if (proc === "voice/credentials") {
       return credentials.map((entry) =>
         entry.id === "fish" ? { ...entry, speechModel: serverSpeechModel } : entry,
@@ -733,7 +712,7 @@ it("keeps a saved speech model when an opening read started before the save land
     scope: "account",
     speechModel: "saved-model",
   });
-  await act(async () => releaseCatalog());
+  await act(async () => catalogHeld.resolve());
   await vi.waitFor(() => expect(input().value).toBe("saved-model"));
 });
 

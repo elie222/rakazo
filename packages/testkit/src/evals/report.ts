@@ -202,6 +202,27 @@ export function restoreEvidence(value: unknown): unknown {
   );
 }
 
+/**
+ * Without a judge, trials of judged cases stay not-run (unqualified, never a pass) with `reason`,
+ * so the cases checked in code still run. Returns the held-back case ids.
+ */
+export function holdBackJudged(
+  trials: TrialResult[],
+  judged: ReadonlySet<string>,
+  reason: string,
+): Set<string> {
+  for (const trial of trials) if (judged.has(trial.caseId)) trial.reason = reason;
+  return new Set(trials.filter((t) => judged.has(t.caseId)).map((t) => t.caseId));
+}
+
+/** Gives the stop reason to trials not yet scheduled, keeping the reason a held-back trial already has. */
+export function stopRemaining(trials: TrialResult[], heldBack: ReadonlySet<string>): void {
+  for (const trial of trials)
+    if (!heldBack.has(trial.caseId))
+      trial.reason =
+        "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
+}
+
 export function emptyTrial(caseId: string, trial: number): TrialResult {
   return {
     caseId,
