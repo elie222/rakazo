@@ -398,7 +398,7 @@ export const fleetTools: ConnectorTool[] = [
         intent: {
           type: "string",
           enum: ["request", "result", "question", "status", "fyi"],
-          description: "Defaults to request.",
+          description: "What the recipient should do with it. Defaults to request.",
         },
       },
       required: ["message"],

@@ -175,10 +175,9 @@ export function selectBuiltinToolsForRun(options: {
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
-      // Alone in its Space a bot has nobody to message, unless it can make a bot first.
-      (options.hasTeammates !== false ||
-        Boolean(options.fleetManagement) ||
-        tool.name !== "message_bot") &&
+      // Alone in its Space a bot has nobody to message. A bot it creates gets its first task
+      // from spawn_bot, and its reply starts a run that offers message_bot.
+      (options.hasTeammates !== false || tool.name !== "message_bot") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||
