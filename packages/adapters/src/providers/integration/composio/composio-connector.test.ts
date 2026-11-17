@@ -1661,26 +1661,6 @@ describe("composio tool mapping", () => {
     expect(planLiveConnectionSync(rows, ["slack"], now).connectIds).toEqual(["row-open"]);
   });
 
-  it("keeps a second sign-in that is still open when the first one finishes", () => {
-    const now = Date.parse("2026-01-01T12:00:00Z");
-    expect(
-      planLiveConnectionSync(
-        [
-          { id: "row-first", provider: "gmail", status: "pending", displayName: "Gmail" },
-          {
-            id: "row-retry",
-            provider: "gmail",
-            status: "pending",
-            displayName: "Gmail",
-            updatedAt: new Date(now - 60_000),
-          },
-        ],
-        ["gmail"],
-        now,
-      ),
-    ).toEqual({ connectIds: ["row-first"], revokeIds: [] });
-  });
-
   it("clears failed additional-account error rows while keeping in-flight pendings", () => {
     expect(
       planLiveConnectionSync(

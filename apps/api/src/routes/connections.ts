@@ -31,7 +31,7 @@ async function reconcileConnections(
         connectorId,
         status: { in: ["pending", "connected"] },
       },
-      select: { id: true, provider: true, displayName: true, status: true, updatedAt: true },
+      select: { id: true, provider: true, displayName: true, status: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     })
   ).filter((row: { provider: string }) =>
