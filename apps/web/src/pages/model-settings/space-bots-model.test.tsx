@@ -4,7 +4,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { createQueryRoot as createRoot } from "../../lib/query-root.test-support";
+import { createQueryRoot as createRoot } from "../../lib/query/query-root.test-support";
 
 const { bots, client, toast } = vi.hoisted(() => {
   const bots = { list: vi.fn(), update: vi.fn() };
@@ -12,11 +12,11 @@ const { bots, client, toast } = vi.hoisted(() => {
   return { bots, client: { bots }, toast };
 });
 
-vi.mock("../../lib/space-rpc", () => ({
+vi.mock("../../lib/query/space-rpc", () => ({
   useSpaceRpc: () => client,
   useBoundSpaceId: () => "space-a",
 }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpcForSpace: () => client,
   createSpaceRpc: () => client,
   selectedSpaceId: () => "space-a",

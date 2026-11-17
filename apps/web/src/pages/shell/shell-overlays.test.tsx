@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ status: vi.fn(), close: vi.fn() }));
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { voice: { status: mocks.status } };
   return {
     rpc,
@@ -34,8 +34,8 @@ vi.mock("../../components/ErrorBoundary", () => ({
 }));
 vi.mock("../../lib/bootstrap", () => ({ setLabs: vi.fn() }));
 
-import { queryClient, spaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { queryClient, spaceQueries } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
 import { SettingsOverlays } from "./shell-overlays";
 
 let container: HTMLDivElement;

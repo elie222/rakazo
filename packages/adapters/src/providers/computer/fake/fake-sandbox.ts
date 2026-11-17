@@ -15,15 +15,18 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core/node/screen-lease";
-import { ComputerScreenUnavailableError, screenSessionKey } from "../../../computer-screens.js";
+import {
+  ComputerScreenUnavailableError,
+  screenSessionKey,
+} from "../../../computers/screens/computer-screens.js";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
   workspacePath,
-} from "../../../computer-support.js";
-import { sandboxCommandEnvironment } from "../../../sandbox-command-environment.js";
+} from "../../../computers/screens/computer-support.js";
+import { sandboxCommandEnvironment } from "../../../sandboxes/sandbox-command-environment.js";
 import { FakeScreenServer } from "./fake-screen.js";
 import { FakeTerminalGateway } from "./fake-terminal.js";
 

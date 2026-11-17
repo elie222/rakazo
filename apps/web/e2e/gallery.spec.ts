@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot } from "./helpers";
+import { captureScreenshot } from "./helpers/helpers";
 
 // Tall enough that each scenario's transcript fits without scrolling inside the chat pane.
 test.use({ viewport: { width: 1280, height: 2200 } });

@@ -1,9 +1,13 @@
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import type { MessagingEnvironmentValues } from "../../../messaging-platforms.js";
-import { messagingPlatformsFromEnv, splitOutboundBody } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingEnvironmentValues } from "../../../messaging/messaging-platforms.js";
+import {
+  messagingPlatformsFromEnv,
+  splitOutboundBody,
+} from "../../../messaging/messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
@@ -59,7 +63,213 @@ function createSurface(sendErrors: string[] = []) {
   return { surface, sends, threadId: "telegram:123" };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+describe("Telegram authenticated linking destination", () => {
+  it("publishes the token-authenticated identity rather than a configured username", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    const { surface } = createSurface();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    await surface.shutdown();
+  });
+
+  it("does not advertise a destination when identity lookup fails", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    const { surface } = createSurface();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("identity lookup failed");
+      }),
+    );
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    await surface.shutdown();
+  });
+
+  it("caches verified identities, throttles failures and recovers after expiry", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { surface } = createSurface();
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    for (let i = 0; i < 3; i++) {
+      expect(await surface.resolveAddresses()).toEqual({ telegram: "@testbot" });
+    }
+    expect(fetch).toHaveBeenCalledOnce();
+    vi.setSystemTime(Date.now() + 300_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("identity unavailable");
+      }),
+    );
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+      ),
+    );
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(fetch).not.toHaveBeenCalled();
+    vi.setSystemTime(Date.now() + 30_000);
+    expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
+    await surface.shutdown();
+  });
+
+  it("recovers a startup identity outage when concurrent settings reads request the destination", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { surface } = createSurface();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("startup outage");
+      }),
+    );
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    vi.setSystemTime(Date.now() + 30_000);
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn(async () => lookup.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const first = surface.resolveAddresses();
+    const second = surface.resolveAddresses();
+    lookup.resolve(
+      Response.json({ ok: true, result: { id: 999, is_bot: true, username: "testbot" } }),
+    );
+    expect(await Promise.all([first, second])).toEqual([
+      { telegram: "@testbot" },
+      { telegram: "@testbot" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await surface.shutdown();
+  });
+
+  it("cancels only the caller's wait while other readers refresh the shared identity", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { surface } = createSurface();
+    await surface.initialize();
+    vi.setSystemTime(Date.now() + 300_000);
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn(async (_input: string, _init: RequestInit) => lookup.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const cancelled = new AbortController();
+    const first = surface.resolveAddresses(cancelled.signal);
+    const second = surface.resolveAddresses();
+    cancelled.abort();
+    expect(await first).toEqual({});
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1].signal?.aborted).toBe(false);
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    lookup.resolve(
+      Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+    );
+    expect(await second).toEqual({ telegram: "@renamed_testbot" });
+    expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await surface.shutdown();
+  });
+
+  it.each([false, true])(
+    "does not let a late startup lookup replace or clear a newer identity (failure=%s)",
+    async (failure) => {
+      const { surface } = createSurface();
+      const startup = deferred<Response>();
+      const refresh = deferred<Response>();
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(() => startup.promise)
+        .mockImplementationOnce(() => refresh.promise);
+      vi.stubGlobal("fetch", fetchMock);
+      const initializing = surface.initialize();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      const resolving = surface.resolveAddresses();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      refresh.resolve(
+        Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+      );
+      expect(await resolving).toEqual({ telegram: "@renamed_testbot" });
+      if (failure) startup.reject(new TypeError("startup lookup failed"));
+      else
+        startup.resolve(
+          Response.json({
+            ok: true,
+            result: { id: 999, is_bot: true, username: "previous_testbot" },
+          }),
+        );
+      await initializing;
+      expect(surface.platforms()[0]?.address).toBe("@renamed_testbot");
+      expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await surface.shutdown();
+    },
+  );
+
+  it("keeps a destination hidden when an older lookup succeeds after a newer failure", async () => {
+    const { surface } = createSurface();
+    const startup = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => startup.promise)
+      .mockRejectedValueOnce(new TypeError("newer verification failed"));
+    vi.stubGlobal("fetch", fetchMock);
+    const initializing = surface.initialize();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(await surface.resolveAddresses()).toEqual({});
+    startup.resolve(
+      Response.json({
+        ok: true,
+        result: { id: 999, is_bot: true, username: "previous_testbot" },
+      }),
+    );
+    await initializing;
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await surface.shutdown();
+  });
+
+  it("discovers default and named bot destinations independently from their own tokens", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const named = new URL(input).pathname.includes("botnamed-token/");
+        return Response.json({
+          ok: true,
+          result: {
+            id: named ? 1000 : 999,
+            is_bot: true,
+            username: named ? "actual_support_bot" : "actual_default_bot",
+          },
+        });
+      }),
+    );
+    const surface = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        telegramBotToken: "default-token",
+        telegramWebhookSecret: "fake-default-secret",
+        telegramBots: [
+          { name: "support", botToken: "named-token", webhookSecret: "fake-support-secret" },
+        ],
+      }),
+    );
+    expect(surface.platforms().every(({ address }) => address === undefined)).toBe(true);
+    await surface.initialize();
+    expect(surface.platforms().map(({ provider, address }) => ({ provider, address }))).toEqual([
+      { provider: "telegram", address: "@actual_default_bot" },
+      { provider: "telegram-support", address: "@actual_support_bot" },
+    ]);
+    await surface.shutdown();
+  });
+});
 
 describe("Telegram messaging Markdown", () => {
   it.each([
@@ -348,6 +558,25 @@ describe("Telegram bots side by side", () => {
     expect(await surface.openDirectThread("telegram-work", "123", context)).toBe(
       "telegram-work:123",
     );
+  });
+
+  it("refuses a webhook with no shared-secret header", async () => {
+    const { surface, inbound } = createTwoBotSurface();
+    const request = webhook("home-secret", "forged");
+    request.headers.delete("x-telegram-bot-api-secret-token");
+    expect((await surface.handleWebhook("telegram", request))?.status).toBe(401);
+    expect(inbound).toEqual([]);
+  });
+
+  it("acknowledges a repeated webhook without delivering it twice", async () => {
+    const { surface, inbound } = createTwoBotSurface();
+    expect((await surface.handleWebhook("telegram", webhook("home-secret", "hello")))?.status).toBe(
+      200,
+    );
+    expect((await surface.handleWebhook("telegram", webhook("home-secret", "hello")))?.status).toBe(
+      200,
+    );
+    expect(inbound).toHaveLength(1);
   });
 
   it("rejects an update signed with another bot's webhook secret", async () => {

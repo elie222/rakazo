@@ -61,8 +61,8 @@ import {
   takeComputerControl,
   waitingTakeoverRun,
   withViewOnly,
-} from "../computer-control.js";
-import { scrollPoint } from "../computer-input.js";
+} from "../computers/computer-control.js";
+import { scrollPoint } from "../computers/computer-input.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 

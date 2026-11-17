@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
   spaceId: "space-a",
 }));
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { voice: { status: mocks.status } };
   return {
     rpc,
@@ -24,13 +24,13 @@ vi.mock("../../lib/rpc", () => {
     selectedSpaceId: () => mocks.spaceId,
   };
 });
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   startCall: mocks.start,
   prepareCallAudio: mocks.unlock,
 }));
 vi.mock("@rakazo/ui-web", () => ({ toast: { error: mocks.error } }));
 
-import { queryClient, spaceQueries } from "../../lib/query";
+import { queryClient, spaceQueries } from "../../lib/query/query";
 import { useCallBot } from "./use-call-bot";
 
 const ready: VoiceStatus = {

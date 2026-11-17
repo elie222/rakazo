@@ -229,4 +229,12 @@ export const NL_MESSAGES: Record<string, string> = {
     "Docker is geïnstalleerd maar draait niet. Start de Docker-service om door te gaan.",
   "Rakazo stopped unexpectedly.": "Rakazo is onverwacht gestopt.",
   Reload: "Opnieuw laden",
+  "Mac app control": "Mac-appbediening",
+  "Set up Mac app control": "Mac-appbediening instellen",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "Opdrachten werken al. Geef Rakazo toestemming voor Toegankelijkheid en Schermopname in Systeeminstellingen om apps te gebruiken en start Rakazo daarna opnieuw.",
+  "Open System Settings": "Systeeminstellingen openen",
+  "Restart Rakazo": "Rakazo opnieuw starten",
+  "Not Now": "Niet nu",
+  "Restart Rakazo to finish setup": "Start Rakazo opnieuw om de configuratie te voltooien",
 };

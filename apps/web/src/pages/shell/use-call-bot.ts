@@ -5,11 +5,11 @@ import { fetchFresh } from "@rakazo/core/query";
 import { toast } from "@rakazo/ui-web";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { prepareCallAudio, startCall } from "../../lib/call-session";
-import type { SpaceQueries } from "../../lib/query";
-import { queryClient } from "../../lib/query";
-import { selectedSpaceId } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { prepareCallAudio, startCall } from "../../lib/calls/call-session";
+import type { SpaceQueries } from "../../lib/query/query";
+import { queryClient } from "../../lib/query/query";
+import { selectedSpaceId } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 const CALL_STATUS_TIMEOUT_MS = 10_000;
 
