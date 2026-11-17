@@ -1,10 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { callRemoteMcpTool } from "../../../remote-mcp.js";
-import { MAX_WEB_FETCH_OFFSET } from "../../../web-limits.js";
-import { createWebProvider, resolveWebProviderKind } from "../../../web-provider-factory.js";
-import { webFetchFromTool, webSearchFromTool } from "../../../web-tools.js";
+import { callRemoteMcpTool } from "../../../mcp/remote-mcp.js";
+import { MAX_WEB_FETCH_OFFSET } from "../../../web/web-limits.js";
+import { createWebProvider, resolveWebProviderKind } from "../../../web/web-provider-factory.js";
+import { webFetchFromTool, webSearchFromTool } from "../../../web/web-tools.js";
 import { ParallelWebProvider } from "./parallel-web.js";
 import { parallelMcpFixture } from "./parallel-web.test-support.js";
 

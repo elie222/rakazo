@@ -14,8 +14,8 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
-import { MAX_SPEAK_CHARS } from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+import { MAX_SPEAK_CHARS } from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 export const MACOS_VOICE_PROVIDER_ID = "macos";
 const SAY_BIN = "/usr/bin/say";

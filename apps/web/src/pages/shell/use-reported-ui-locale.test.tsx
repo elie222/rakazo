@@ -3,9 +3,9 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { activateUiLocale, setCatalogLoadersForTests } from "../../lib/i18n";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { UI_LOCALES } from "../../lib/ui-locale";
+import { activateUiLocale, setCatalogLoadersForTests } from "../../lib/locale/i18n";
+import { UI_LOCALES } from "../../lib/locale/ui-locale";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 import { useReportedUiLocale } from "./use-reported-ui-locale";
 
 let container: HTMLDivElement;

@@ -14,6 +14,6 @@
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
   "apps/mobile/app/routine.tsx": 1,
-  "apps/mobile/components/AppConnectCard.tsx": 3,
-  "apps/mobile/components/model-role-settings.tsx": 1
+  "apps/mobile/components/cards/AppConnectCard.tsx": 3,
+  "apps/mobile/components/models/model-role-settings.tsx": 1
 }

@@ -1,13 +1,13 @@
 import { abortableDelay } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
+import { leaveOrganization } from "../../lib/auth/organizations";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
-import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/call-session";
-import { leaveOrganization } from "../../lib/organizations";
-import { queryClient, spaceSeedKey } from "../../lib/query";
-import { selectedSpaceId, selectSpace } from "../../lib/rpc";
+import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/calls/call-session";
+import { speaker } from "../../lib/calls/tts";
+import { queryClient, spaceSeedKey } from "../../lib/query/query";
+import { selectedSpaceId, selectSpace } from "../../lib/query/rpc";
 import { remountShellForSpace, spaceSwitchDecision } from "../../lib/space-switch";
-import { speaker } from "../../lib/tts";
 import { useEventListener } from "../../lib/use-event-listener";
 import { readShellOverlay, searchString, withShellOverlay } from "../shell-overlay";
 import type { useShellNavigation } from "./use-shell-navigation";
@@ -24,6 +24,7 @@ export function useOpenSpaceChat({
   overlayRevision,
   closeMobileSidebar,
   beginSpaceSwitch,
+  startChatRead,
 }: {
   bootstrapSpaceId: string | undefined;
   userId: string | undefined;
@@ -33,6 +34,8 @@ export function useOpenSpaceChat({
   closeMobileSidebar: () => void;
   /** Keeps the route from being moved under a switch while `live`; the returned function ends that. */
   beginSpaceSwitch: (live: () => boolean) => (leftSpace: boolean) => void;
+  /** Starts loading a chat in this space before the route change renders it. */
+  startChatRead: (target: { botId?: string; groupId?: string }) => void;
 }) {
   const spaceSwitchRequest = useRef(0);
   useEventListener(window, "popstate", () => {
@@ -56,7 +59,10 @@ export function useOpenSpaceChat({
       const previousEffective = selectedSpaceId() ?? bootstrapSpaceId;
       // Persist the active space (including primary) so voice/RPC headers match the chat.
       if (previousEffective === spaceId) {
-        if (selectSpace(spaceId)) navigate(path);
+        if (!selectSpace(spaceId)) return;
+        const target = initialBootstrapTarget(path, false);
+        if (target) startChatRead(target);
+        navigate(path);
         return;
       }
       // Signing out clears the selected space; a switch that finishes afterwards must not select one.
@@ -151,6 +157,14 @@ export function useOpenSpaceChat({
         }
       })();
     },
-    [beginSpaceSwitch, bootstrapSpaceId, navigate, navigationRevision, overlayRevision, userId],
+    [
+      beginSpaceSwitch,
+      bootstrapSpaceId,
+      navigate,
+      navigationRevision,
+      overlayRevision,
+      startChatRead,
+      userId,
+    ],
   );
 }
