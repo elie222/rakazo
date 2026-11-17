@@ -459,7 +459,7 @@ describe("messageConnectedAgent", () => {
     expect(deps.txCalls.messageCreate).toHaveLength(0);
   });
 
-  it("refuses when the hop budget is exhausted", async () => {
+  it("delivers past six bot-to-bot messages in a chain", async () => {
     const deps = createDeps({
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
       sourceHop: 6,
@@ -470,9 +470,10 @@ describe("messageConnectedAgent", () => {
       sender,
       { address: "+15552222222", message: "again" },
     );
-    expect(result).toEqual(
-      expect.objectContaining({ ok: false, error: expect.stringMatching(/limit/i) }),
-    );
+    expect(result).toEqual(expect.objectContaining({ ok: true, botId: "bot-2" }));
+    const inbound = deps.txCalls.messageCreate[0] as Record<string, unknown>;
+    expect(inbound.blocks).toEqual([expect.objectContaining({ hop: 7 })]);
+    expect(deps.txCalls.runCreate).toHaveLength(1);
   });
 });
 

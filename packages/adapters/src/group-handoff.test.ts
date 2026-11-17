@@ -185,8 +185,8 @@ describe("group handoff ownership", () => {
     expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
-  it("caps a coordinator and worker handing a stage back and forth", async () => {
-    const { deps, runCreate } = harness([
+  it("lets a coordinator and worker keep handing a stage back past six handoffs", async () => {
+    const { deps, messageCreate, runCreate } = harness([
       { kind: "handoff", fromBotId: "bot-b", toBotId: "bot-a", text: "Revise again", hop: 6 },
     ]);
 
@@ -195,28 +195,15 @@ describe("group handoff ownership", () => {
         bot_id: "bot-b",
         message: "Revised",
       }),
-    ).resolves.toEqual({
-      error:
-        "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
-    });
-    expect(runCreate).not.toHaveBeenCalled();
-  });
-
-  it("caps longer multi-agent handoff chains", async () => {
-    const { deps, runCreate } = harness([
-      { kind: "handoff", fromBotId: "bot-b", toBotId: "bot-a", text: "Stage six", hop: 6 },
-    ]);
-
-    await expect(
-      handoffToGroupBot(deps as never, run, "group-1", {
-        bot_id: "bot-c",
-        message: "Stage seven",
+    ).resolves.toMatchObject({ ok: true, botId: "bot-b" });
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [expect.objectContaining({ kind: "handoff", toBotId: "bot-b", hop: 7 })],
+        }),
       }),
-    ).resolves.toEqual({
-      error:
-        "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
-    });
-    expect(runCreate).not.toHaveBeenCalled();
+    );
+    expect(runCreate).toHaveBeenCalledOnce();
   });
 
   it("reuses the recorded transfer when a source run is retried", async () => {
@@ -362,7 +349,7 @@ describe("explicit group destinations", () => {
     },
   );
 
-  it("keeps the chain limit when a direct conversation continues in a group", async () => {
+  it("carries the chain's hop on when a direct conversation continues in a group", async () => {
     const h = privateTurn();
     h.tx.run.findFirst.mockResolvedValue({
       id: run.id,
@@ -386,8 +373,15 @@ describe("explicit group destinations", () => {
         bot_id: "bot-b",
         message: "Continue",
       }),
-    ).resolves.toHaveProperty("error");
-    expect(h.runCreate).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ ok: true, botId: "bot-b" });
+    expect(h.messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [expect.objectContaining({ kind: "handoff", hop: 7 })],
+        }),
+      }),
+    );
+    expect(h.runCreate).toHaveBeenCalledOnce();
   });
 
   it("delivers distinct calls to the same group and replays only the matching call", async () => {
