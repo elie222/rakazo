@@ -8,7 +8,6 @@ import {
   messagingChannelId,
   QUEUE_HOLDING_RUN_STATUSES,
   STEERING_CONTINUATION_PROMPT,
-  WORKING_RUN_STATUSES,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
@@ -431,8 +430,9 @@ export async function handQueuedRunToWorkingRun(
           botId: queued.botId,
           userId: queued.userId,
           startedAt: { not: null },
-          // A run paused for a takeover reads nothing until the person resumes it.
-          status: { in: [...WORKING_RUN_STATUSES] },
+          // Only mid-turn: a run paused for a takeover reads nothing until resumed, and one
+          // between attempts would take the task as its opening steering, unlabelled.
+          status: "running",
         },
         orderBy: [{ startedAt: "desc" }, { id: "desc" }],
         select: {
