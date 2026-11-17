@@ -13,6 +13,8 @@ export type InboundAttachmentStore = (input: {
   attachment: MessagingInboundAttachment;
   clientNonce: string;
   downloadDeadline?: number;
+  downloadTimeoutMs?: number;
+  attempts?: number;
 }) => Promise<
   InboundArtifact & {
     /** Downloaded content; absent when a replayed delivery returned a stored row. */
@@ -30,11 +32,17 @@ export async function storeInboundAttachments(
   store: InboundAttachmentStore | undefined,
   owner: { spaceId: string; userId: string; botId: string },
   attachments: MessagingInboundAttachment[],
-  options: { clientNonce: (index: number) => string; limit: number; downloadDeadline?: number },
+  options: {
+    clientNonce: (index: number) => string;
+    limit: number;
+    downloadDeadline?: number;
+    downloadTimeoutMs?: number;
+    attempts?: number;
+  },
 ) {
   const stored: Array<{ artifact: InboundArtifact; bytes: Uint8Array | undefined }> = [];
   const unavailable: string[] = [];
-  const { downloadDeadline } = options;
+  const { downloadDeadline, downloadTimeoutMs, attempts } = options;
   for (const [index, attachment] of attachments.entries()) {
     const label = `[file: ${sanitizeMessagingLabel(attachment.name)} (unavailable)]`;
     if (!store || index >= options.limit) {
@@ -49,6 +57,8 @@ export async function storeInboundAttachments(
         attachment,
         clientNonce: options.clientNonce(index),
         ...(downloadDeadline !== undefined ? { downloadDeadline } : {}),
+        ...(downloadTimeoutMs !== undefined ? { downloadTimeoutMs } : {}),
+        ...(attempts !== undefined ? { attempts } : {}),
       });
       stored.push({
         artifact,

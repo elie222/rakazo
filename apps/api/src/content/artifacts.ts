@@ -19,6 +19,7 @@ import {
   inferAttachmentMimeType,
   messageBlockForArtifact,
   promptTextForAttachments,
+  retry,
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -60,6 +61,9 @@ export async function createOwnedArtifact(
   return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
 }
 
+/** Pauses after the first and second failed download tries; the last repeats. */
+const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 5_000];
+
 /** A stored inbound attachment plus its downloaded content when it was fresh. */
 export type StoredInboundAttachment = ReturnType<typeof createdArtifact> & {
   bytes?: Uint8Array;
@@ -77,6 +81,10 @@ export async function storeInboundAttachment(
     attachment: MessagingInboundAttachment;
     clientNonce: string;
     downloadDeadline?: number;
+    /** Time one download try may take, within `downloadDeadline`. */
+    downloadTimeoutMs?: number;
+    /** Download tries in total, with a pause between them. */
+    attempts?: number;
     /** Stored as a file of its own, never as the next version of one with the same name. */
     standalone?: boolean;
   },
@@ -97,19 +105,27 @@ export async function storeInboundAttachment(
     `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
   );
   if ((attachment.size ?? 0) > maxBytes) throw tooLarge;
-  const timeoutMs = Math.min(2_000, (input.downloadDeadline ?? Infinity) - Date.now());
-  if (timeoutMs <= 0) throw new AttachmentValidationError("Attachment download timed out");
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new AttachmentValidationError("Attachment download timed out")),
-      timeoutMs,
+  const { downloadDeadline = Infinity, downloadTimeoutMs = 2_000, attempts = 1 } = input;
+  const download = async () => {
+    // Each try gets its own budget, capped by what is left of the shared deadline.
+    const timeoutMs = Math.min(downloadTimeoutMs, downloadDeadline - Date.now());
+    if (timeoutMs <= 0) throw new AttachmentValidationError("Attachment download timed out");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new AttachmentValidationError("Attachment download timed out")),
+        timeoutMs,
+      );
+    });
+    return Promise.race([Promise.resolve().then(() => attachment.fetch()), timeout]).finally(() =>
+      clearTimeout(timer),
     );
+  };
+  const bytes = await retry(download, {
+    attempts,
+    delayMs: DOWNLOAD_RETRY_DELAYS_MS,
+    retryable: () => Date.now() < downloadDeadline,
   });
-  const bytes = await Promise.race([
-    Promise.resolve().then(() => attachment.fetch()),
-    timeout,
-  ]).finally(() => clearTimeout(timer));
   if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
   if (bytes.byteLength > maxBytes) throw tooLarge;
   const stored = await storeOwnedArtifact(deps, owner, {

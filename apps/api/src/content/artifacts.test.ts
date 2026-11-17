@@ -500,12 +500,14 @@ describe("storeInboundAttachment", () => {
     const store = (
       attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"],
       downloadDeadline?: number,
+      options: { downloadTimeoutMs?: number; attempts?: number } = {},
     ) =>
       storeInboundAttachment(deps, actor, {
         botId: "bot-1",
         attachment,
         clientNonce: "nonce-1",
         downloadDeadline,
+        ...options,
       });
     return { put, store, findFirst };
   }
@@ -523,6 +525,82 @@ describe("storeInboundAttachment", () => {
       await Promise.resolve();
       expect(put).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed download up to attempts and stores the third try", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("reset"))
+        .mockRejectedValueOnce(new Error("reset"))
+        .mockResolvedValue(new Uint8Array(3));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, undefined, { attempts: 3 }),
+      ).rejects.toBe(reachedStorage);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await result;
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(put).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up after attempts and reports the download as unavailable", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const fetch = vi.fn().mockRejectedValue(new Error("reset"));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, undefined, { attempts: 3 }),
+      ).rejects.toThrow("reset");
+      await vi.advanceTimersByTimeAsync(6_000);
+      await result;
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not start another try once the shared deadline has passed", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = setup();
+      const fetch = vi.fn().mockRejectedValue(new Error("reset"));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() + 500, { attempts: 3 }),
+      ).rejects.toThrow("Attachment download timed out");
+      await vi.advanceTimersByTimeAsync(1_000);
+      await result;
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a long download finish within downloadTimeoutMs", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const download = deferred<Uint8Array>();
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch: () => download.promise }, undefined, {
+          downloadTimeoutMs: 60_000,
+        }),
+      ).rejects.toBe(reachedStorage);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(put).not.toHaveBeenCalled();
+      download.resolve(new Uint8Array(3));
+      await result;
+      expect(put).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }
