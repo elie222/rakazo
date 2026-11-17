@@ -1,4 +1,5 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
@@ -44,6 +45,22 @@ function fixture() {
   return { rows, prisma, adapter, factory, secrets, settings };
 }
 describe("integration provider settings", () => {
+  it.each([true, false])("forwards app tools with discovery fallback: %s", async (hasCatalog) => {
+    const f = fixture();
+    const tools = [{ name: "example_action", description: "An action", inputSchema: {} }];
+    const listAppTools = vi.fn(async () => tools);
+    if (hasCatalog) f.adapter.listAppTools = listAppTools;
+    vi.mocked(f.adapter.discoverTools).mockResolvedValue(tools);
+    await f.settings.save({ provider: "composio", apiKey: "fake-key" }, context);
+    const provider = f.settings.providers().find((entry) => entry.describe().id === "composio")!;
+    expect(await provider.listAppTools!(context, "example")).toEqual(tools);
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(context, "example");
+      expect(f.adapter.discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(f.adapter.discoverTools).toHaveBeenCalledWith(context);
+    }
+  });
   it("encrypts credentials and shares updates with a separately created worker resolver", async () => {
     const f = fixture();
     const worker = new IntegrationProviderSettings(
@@ -64,6 +81,36 @@ describe("integration provider settings", () => {
       provider: "composio",
       apiKey: "fake-replacement-key",
     });
+  });
+  it("knows its own providers and reads any other id as unavailable", async () => {
+    const f = fixture();
+    const known = f.settings.providers().map((provider) => provider.describe().id);
+    expect(known.length).toBeGreaterThan(0);
+    for (const id of known) expect(f.settings.has(id)).toBe(true);
+    // A stored row for a provider this build no longer has is never read or built.
+    f.rows.set("a-provider-since-removed", { id: "a-provider-since-removed", ciphertext: "x" });
+    for (const id of ["a-provider-since-removed", "", "toString"]) {
+      expect(f.settings.has(id)).toBe(false);
+      await expect(f.settings.configured(id)).resolves.toBe(false);
+      await expect(f.settings.resolve(id)).resolves.toBeUndefined();
+    }
+    expect(f.prisma.integrationProviderConfig.findUnique).not.toHaveBeenCalled();
+    expect(f.factory).not.toHaveBeenCalled();
+  });
+  it("refuses to save an unknown provider or the wrong credentials, as the caller's mistake", async () => {
+    const f = fixture();
+    await expect(
+      f.settings.save({ provider: "a-provider-added-later", apiKey: "fake-key" }, context),
+    ).rejects.toMatchObject({
+      name: "ClientError",
+      kind: "BAD_REQUEST",
+      message: "Unknown integration provider",
+    });
+    const refused = f.settings.save({ provider: "composio", token: "fake-other-field" }, context);
+    await expect(refused).rejects.toMatchObject({ name: "ClientError", kind: "BAD_REQUEST" });
+    await expect(refused).rejects.not.toThrow(/fake-other-field/);
+    expect(f.factory).not.toHaveBeenCalled();
+    expect(f.rows.size).toBe(0);
   });
   it("lists connected plugin slugs for the user, or none before setup", async () => {
     const f = fixture();
@@ -146,6 +193,26 @@ describe("integration provider settings", () => {
     settings.warmDirectories();
     await vi.waitFor(() => expect(warm).toHaveBeenCalledOnce());
   });
+  it.each([false, true, undefined])(
+    "forwards the prepared provider's reconnect requirement %s",
+    async (reconnect) => {
+      const f = fixture();
+      const needsReconnect = vi.fn(async () => reconnect ?? false);
+      if (reconnect !== undefined) f.adapter.needsReconnect = needsReconnect;
+      await f.settings.save({ provider: "composio", apiKey: "fake-key" }, context);
+      const wrapper = f.settings
+        .providers()
+        .find((provider) => provider.describe().id === "composio")!;
+      const { provider } = await prepareManagedConnectorForTransaction(wrapper);
+
+      expect(await provider?.needsReconnect?.(context, "gmail")).toBe(reconnect ?? false);
+      if (reconnect !== undefined) {
+        expect(needsReconnect).toHaveBeenCalledExactlyOnceWith(context, "gmail");
+      } else {
+        expect(needsReconnect).not.toHaveBeenCalled();
+      }
+    },
+  );
   it("exposes the prepared provider's account resolution bound to that provider", async () => {
     const f = fixture();
     class AccountAdapter {
@@ -182,21 +249,15 @@ describe("integration credentials with Infisical", () => {
     });
     await store.start();
     let row: { id: string; ciphertext: string } | undefined;
-    let release!: () => void;
-    let started!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const saving = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const gate = deferred();
+    const saving = deferred();
     const prisma = {
       integrationProviderConfig: {
         findUnique: vi.fn(async () => row),
         upsert: vi.fn(async ({ create }: { create: { id: string; ciphertext: string } }) => {
           row = create;
-          started();
-          await gate;
+          saving.resolve();
+          await gate.promise;
           return row;
         }),
       },
@@ -214,13 +275,13 @@ describe("integration credentials with Infisical", () => {
     );
     try {
       const pending = settings.save({ provider: "composio", apiKey: "fake-initial" }, context);
-      await saving;
+      await saving.promise;
       fake.values.set(
         row!.ciphertext.split(":").at(-1)!,
         JSON.stringify({ provider: "composio", apiKey: "fake-rotated" }),
       );
       await vi.advanceTimersByTimeAsync(100);
-      release();
+      gate.resolve();
       await pending;
       const changed = vi.fn();
       store.onChange(changed);
@@ -244,7 +305,7 @@ describe("integration credentials with Infisical", () => {
       expect(factory).toHaveBeenLastCalledWith({ provider: "composio", apiKey: "fake-again" });
       expect(changed).not.toHaveBeenCalled();
     } finally {
-      release();
+      gate.resolve();
       await store.close();
       vi.useRealTimers();
     }

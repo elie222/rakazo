@@ -1,4 +1,5 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hapticSuccess } from "./haptics";
 import type { ThreadAnswerContext } from "./thread-answer";
@@ -119,16 +120,13 @@ describe("mobile ask answers", () => {
     "uses navigation focus at answer completion (%s) while keeping the target refresh",
     async (focusedAtCompletion) => {
       let focused = !focusedAtCompletion;
-      let accept!: () => void;
-      const request = new Promise<void>((resolve) => {
-        accept = resolve;
-      });
+      const request = deferred();
       const h = setup(async () => undefined, { isFocused: () => focused });
-      h.rpc.mockReturnValueOnce(request);
+      h.rpc.mockReturnValueOnce(request.promise);
       const saving = h.answerMessage(message, "yes");
       expect(hapticSuccess).not.toHaveBeenCalled();
       focused = focusedAtCompletion;
-      accept();
+      request.resolve();
       await saving;
       expect(hapticSuccess).toHaveBeenCalledTimes(focusedAtCompletion ? 1 : 0);
       expect(h.refresh).toHaveBeenCalledOnce();

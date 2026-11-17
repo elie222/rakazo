@@ -2,7 +2,7 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import { ModelAccountError, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RunErrorKind } from "@rakazo/contracts";
 import { nextCronDateAcross, nextRoutineRunDateAcross, normalizeRunError } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /** The first account-error failure holds the routine this long; each further one doubles it. */
@@ -12,6 +12,7 @@ const ROUTINE_ACCOUNT_BACKOFF_MAX_MS = 24 * 60 * 60_000;
 interface RoutineBackoffDeps {
   prisma: PrismaClient;
   jobs: JobPublisher;
+  events?: Pick<ThreadEvents, "publishSpaceChange">;
 }
 
 /**
@@ -141,7 +142,7 @@ async function updateSchedule(
 ): Promise<void> {
   const { routineId } = run;
   try {
-    const nextRunAt = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const changed = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$queryRaw`SELECT id FROM routines WHERE id = ${routineId} FOR UPDATE`;
       const routine = await tx.routine.findUnique({
         where: { id: routineId },
@@ -153,15 +154,18 @@ async function updateSchedule(
           nextRunAt: true,
           accountFailures: true,
           userId: true,
+          spaceId: true,
         },
       });
       if (routine && routine.userId !== run.userId) return null;
       const data = routine ? change(routine) : null;
-      if (!data) return null;
+      if (!routine || !data) return null;
       await tx.routine.update({ where: { id: routineId }, data });
-      return data.nextRunAt ?? null;
+      return { spaceId: routine.spaceId, nextRunAt: data.nextRunAt };
     });
-    if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routineId, nextRunAt));
+    if (!changed) return;
+    await deps.events?.publishSpaceChange?.(changed.spaceId, "routines");
+    if (changed.nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routineId, changed.nextRunAt));
   } catch (error) {
     getLogger().error(logMessage, error);
   }

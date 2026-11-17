@@ -1,9 +1,6 @@
 import type { PageDetail } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 const sessionCaches: Array<() => void> = [];
 vi.mock("./session", () => ({

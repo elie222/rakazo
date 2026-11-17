@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { pollUntil } from "@rakazo/core";
 import type { HostScreen, HostScreenAction, HostScreenObservation } from "./host-screen.js";
 import {
   actThenObserve,
@@ -192,13 +193,14 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     );
   }
 
-  async function windowsWithin(query: string, ms: number, signal: AbortSignal) {
-    const deadline = Date.now() + ms;
-    for (;;) {
-      const matching = named(await listWindows(query, signal), query);
-      if (matching.length || Date.now() > deadline) return matching;
-      await sleep(400, undefined, { signal });
-    }
+  function windowsWithin(query: string, ms: number, signal: AbortSignal) {
+    return pollUntil(
+      async () => {
+        const matching = named(await listWindows(query, signal), query);
+        return matching.length > 0 && matching;
+      },
+      { intervalMs: 400, timeoutMs: ms, signal, onTimeout: (): AgentDesktopWindow[] => [] },
+    );
   }
 
   async function target(query: string, signal: AbortSignal): Promise<Target> {

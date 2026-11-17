@@ -1,30 +1,12 @@
 import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { MemoryProviderDescriptor } from "@rakazo/contracts";
+import { settingsFieldProblem, visibleSettingsFields } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import {
-  createHonchoProvider,
-  HONCHO_PROVIDER_ID,
-  honchoRequiresPrivateEndpoint,
-  prepareHonchoConnection,
-} from "./honcho-memory-provider.js";
-import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
-import {
-  classifySerenityConnectionSettings,
-  createSerenityProvider,
-  prepareSerenityConnection,
-  SERENITY_PROVIDER_ID,
-  serenityRequiresPrivateEndpoint,
-} from "./serenity-memory-provider.js";
+import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
+import { knownMemoryProvider, memoryProviders } from "./memory-providers.js";
 
-export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
-
-import {
-  createSupermemoryProvider,
-  decodeLegacySupermemoryCredentials,
-  prepareSupermemoryConnection,
-  SUPERMEMORY_PROVIDER_ID,
-  supermemoryRequiresPrivateEndpoint,
-} from "./supermemory-memory-provider.js";
+export { MemoryProviderPrivateEndpointRequiredError } from "./providers/memory/serenity/serenity-memory-provider.js";
 
 export interface MemoryProviderConnectionInput {
   provider: string;
@@ -49,63 +31,65 @@ export interface MemoryProviderResolver {
   resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null>;
 }
 
-interface MemoryProviderAdapter {
-  requiresPrivateEndpoint(settings: Record<string, string>): boolean;
-  /** Async trust classification (e.g. DNS) without probing credentials. */
-  classifySettings?(settings: Record<string, string>): Promise<Record<string, string>>;
-  /** Recheck persisted endpoint settings before their credentials are decrypted. */
-  revalidate?(settings: Record<string, string>): Promise<void>;
-  prepare(
-    settings: Record<string, string>,
-    credentials: Record<string, string>,
-    options?: { allowPrivateEndpoint?: boolean },
-  ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }>;
-  create(
-    settings: Record<string, string>,
-    credentials: Record<string, string>,
-  ): SemanticMemoryProvider;
-  decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
-}
-
-const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
-  [
-    SUPERMEMORY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: supermemoryRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareSupermemoryConnection,
-      create: createSupermemoryProvider,
-      decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
-    },
-  ],
-  [
-    SERENITY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: serenityRequiresPrivateEndpoint,
-      classifySettings: classifySerenityConnectionSettings,
-      prepare: (
-        settings: Record<string, string>,
-        credentials: Record<string, string>,
-        options?: { allowPrivateEndpoint?: boolean },
-      ) => prepareSerenityConnection(settings, credentials, undefined, options),
-      create: createSerenityProvider,
-    },
-  ],
-  [
-    HONCHO_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: honchoRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareHonchoConnection,
-      create: createHonchoProvider,
-    },
-  ],
-]);
-
-function memoryProviderAdapter(provider: string): MemoryProviderAdapter {
-  const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
+function memoryProviderAdapter(provider: string): MemoryProviderDefinition {
+  const adapter = knownMemoryProvider(provider);
   if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
   return adapter;
+}
+
+/** Every provider's settings form, in the order a Space picks from; the first is offered first. */
+export function memoryProviderDescriptors(): MemoryProviderDescriptor[] {
+  return Object.entries(memoryProviders).map(
+    ([
+      id,
+      {
+        settings: { displayName, fields },
+      },
+    ]) => ({
+      id,
+      displayName,
+      fields,
+    }),
+  );
+}
+
+/** One line naming a saved connection, or nothing for a provider this build does not have. */
+export function memoryProviderConnectionLabel(
+  provider: string,
+  settings: Record<string, string>,
+): string | undefined {
+  return knownMemoryProvider(provider)?.settings.connectionLabel(settings);
+}
+
+/**
+ * Refuses settings the provider's form would not send. Settings no field names are left to the
+ * provider, and so are secrets: only it knows whether a key is needed where it connects.
+ */
+export function assertMemoryProviderSettings(
+  provider: string,
+  settings: Record<string, string>,
+): void {
+  const { fields } = memoryProviderAdapter(provider).settings;
+  for (const field of visibleSettingsFields(fields, settings)) {
+    if (field.kind === "secret") continue;
+    const problem = settingsFieldProblem(field, settings);
+    if (!problem) continue;
+    if (problem.message) throw new Error(problem.message);
+    if (problem.rule === "required") throw new Error(`${field.key} is required`);
+    if (problem.rule === "length") throw new Error(`${field.key} is the wrong length`);
+    throw new Error(`${field.key} is not one of its choices`);
+  }
+}
+
+/** The stored settings an edit carries over because no field of the form holds them. */
+export function keptMemoryProviderSettings(
+  provider: string,
+  stored: Record<string, string>,
+): Record<string, string> {
+  const kept = memoryProviderAdapter(provider).settings.keptSettings ?? [];
+  return Object.fromEntries(
+    kept.flatMap((key) => (stored[key] === undefined ? [] : [[key, stored[key]]])),
+  );
 }
 
 /** Adapters classify their settings; callers enforce the deployment trust boundary. */
@@ -114,6 +98,14 @@ export function memoryProviderRequiresPrivateEndpoint(
   settings: Record<string, string>,
 ): boolean {
   return memoryProviderAdapter(provider).requiresPrivateEndpoint(settings);
+}
+
+/** Where a provider's stored credentials would be sent and what they could read there. */
+export function memoryProviderCredentialTarget(
+  provider: string,
+  settings: Record<string, string>,
+): string {
+  return memoryProviderAdapter(provider).credentialTarget(settings);
 }
 
 /**
@@ -143,8 +135,9 @@ export function createMemoryProvider(
   provider: string,
   settings: Record<string, string>,
   credentials: Record<string, string>,
+  connectionVersion?: string,
 ): SemanticMemoryProvider {
-  return memoryProviderAdapter(provider).create(settings, credentials);
+  return memoryProviderAdapter(provider).create(settings, credentials, connectionVersion);
 }
 
 export function toStringRecord(value: unknown): Record<string, string> {
@@ -166,6 +159,15 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
   const legacyCredentials = memoryProviderAdapter(provider).decodeLegacyCredentials?.(plaintext);
   if (legacyCredentials) return legacyCredentials;
   throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
+}
+
+/** Decrypts a Space's stored provider credentials. */
+export async function loadMemoryProviderCredentials(
+  secrets: Pick<SecretStore, "load">,
+  provider: string,
+  secret: { id: string; ciphertext: string },
+): Promise<Record<string, string>> {
+  return decodeCredentials(provider, await secrets.load(secret.ciphertext, secret.id));
 }
 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
@@ -192,12 +194,19 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       getLogger().warn("Semantic memory disabled: endpoint revalidation failed");
       return null;
     }
-    const credentials = decodeCredentials(
+    const credentials = await loadMemoryProviderCredentials(
+      this.secrets,
       config.provider,
-      await this.secrets.load(config.secret.ciphertext, config.secret.id),
+      config.secret,
     );
     return {
-      provider: createMemoryProvider(config.provider, settings, credentials),
+      provider: createMemoryProvider(
+        config.provider,
+        settings,
+        credentials,
+        // Memory connection saves create a new secret ID when credentials change.
+        JSON.stringify([config.id, config.secretId, config.provider]),
+      ),
       defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
     };
   }

@@ -3,6 +3,7 @@ import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter
 import type { MessageBlock } from "@rakazo/contracts";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { VaultKeyUnavailableError } from "./bot-secrets.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import * as runMessages from "./run-messages.js";
@@ -14,6 +15,7 @@ const provisionComputer = vi.hoisted(() => vi.fn());
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));
@@ -378,14 +380,17 @@ describe("run computer provisioning", () => {
     );
   });
 
-  it("spreads retries over minutes while the computer provider is down", async () => {
+  it.each([
+    ["the computer provider", new SandboxUnresponsiveError("Boat could not be reached")],
+    ["the key manager", new VaultKeyUnavailableError(new Error("fake key manager outage"))],
+  ])("spreads retries over minutes while %s is down", async (_name, setupError) => {
     // Every clock read moves on a millisecond, so two separate reads would disagree.
     let clock = Date.now();
     const now = vi.spyOn(Date, "now").mockImplementation(() => (clock += 1));
     try {
       const before = Date.now();
       const { run, enqueue } = await runRoutine([], {
-        setupError: new SandboxUnresponsiveError("Boat could not be reached"),
+        setupError,
         onRunStarted: vi.fn(),
         priorSetupFailures: 2,
       });
@@ -619,18 +624,21 @@ describe("run computer provisioning", () => {
     );
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "error", message: "run setup failed" }),
+      expect.objectContaining({ level: "error", message: "run.setup_failed" }),
     );
   });
 
-  it("retries setup after a computer provider outage without an error report", async () => {
-    provisionComputer.mockRejectedValue(new SandboxUnresponsiveError("Boat could not be reached"));
+  it.each([
+    ["a computer provider", new SandboxUnresponsiveError("Boat could not be reached")],
+    ["the key manager", new VaultKeyUnavailableError(new Error("fake key manager outage"))],
+  ])("retries setup after an outage at %s without an error report", async (_name, outage) => {
+    provisionComputer.mockRejectedValue(outage);
 
     await expect(runRoutine([{ name: "list_files", args: { path: "" } }])).rejects.toThrow(
       "Run setup failed; retrying",
     );
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
@@ -657,7 +665,7 @@ describe("run computer provisioning", () => {
     }
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
@@ -715,7 +723,7 @@ describe("run computer provisioning", () => {
       status: "queued",
       leaseOwner: null,
       leaseExpiresAt: null,
-      wakeAt: null,
+      wakeAt: expect.any(Date),
     });
     expect(prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({

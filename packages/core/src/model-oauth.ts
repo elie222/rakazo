@@ -1,4 +1,5 @@
 import { abortableDelay } from "./async.js";
+import { isRetryableError } from "./retry-policy.js";
 
 export type ModelOAuthCompletion =
   | { status: "pending" }
@@ -33,7 +34,15 @@ export async function waitForModelOAuthCompletion(
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     throwIfAborted(options.signal);
-    const result = await complete();
+    let result: ModelOAuthCompletion;
+    try {
+      result = await complete();
+    } catch (error) {
+      throwIfAborted(options.signal);
+      if (!isRetryableError(error)) throw error;
+      // A failed status read does not mean the sign-in itself failed.
+      result = { status: "pending" };
+    }
     throwIfAborted(options.signal);
     if (result.status === "ready") return result;
     if (result.status === "error") throw new Error(result.error);

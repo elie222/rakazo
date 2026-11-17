@@ -125,6 +125,13 @@ function conformance(name: string, create: () => KeyProvider) {
       const wrapped = await provider.wrap(randomBytes(32), context);
       await expect(provider.unwrap(wrapped, { ...context, spaceId: "space-b" })).rejects.toThrow();
       await expect(provider.unwrap(wrapped, { ...context, version: 2 })).rejects.toThrow();
+      // A member's account vault key is scoped to the member, beside the space keys.
+      const member = { spaceId: "user:user-a", version: 1 };
+      const dataKey = randomBytes(32);
+      const vault = await provider.wrap(dataKey, member);
+      expect(Buffer.from(await provider.unwrap(vault, member))).toEqual(dataKey);
+      await expect(provider.unwrap(vault, { ...member, spaceId: "user:user-b" })).rejects.toThrow();
+      await expect(provider.unwrap(vault, context)).rejects.toThrow();
     });
 
     it("rejects tampered wraps and unknown master keys", async () => {

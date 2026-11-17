@@ -127,6 +127,29 @@ describe("ContentKeyRing", () => {
     expect(Buffer.from((await other.byId(v1.id)).key)).toEqual(Buffer.from(v1.key));
   });
 
+  it.each(["current", "rotate"] as const)(
+    "stores no key from a %s call whose signal aborted while the key manager was wrapping",
+    async (call) => {
+      const store = memoryStore();
+      const provider = new LocalKeyProvider([master("a")]);
+      const ring = new ContentKeyRing(provider, store);
+      if (call === "rotate") await ring.current("space-1");
+      const before = store.rows.length;
+      const controller = new AbortController();
+      // The key manager answers only once the command has given up.
+      const wrap = provider.wrap.bind(provider);
+      provider.wrap = async (key, context) => {
+        controller.abort(new Error("interrupted"));
+        return wrap(key, context);
+      };
+      await expect(ring[call]("space-1", controller.signal)).rejects.toThrow("interrupted");
+      expect(store.rows).toHaveLength(before);
+      // A later run, or one that is not interrupted, still gets the key.
+      expect((await ring[call]("space-1")).version).toBe(before + 1);
+      expect(store.rows).toHaveLength(before + 1);
+    },
+  );
+
   it("resolves row spaces from its cache or the store and forgets deleted spaces", async () => {
     const ring = new ContentKeyRing(new LocalKeyProvider([master("a")]), memoryStore());
     await expect(ring.spaceOf("threads", "thread-1")).resolves.toBe("space-1");

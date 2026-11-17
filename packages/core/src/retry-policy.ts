@@ -31,13 +31,38 @@ export function parseRetryAfter(
   return Number.isFinite(ms) ? Math.min(Math.max(ms, 0), MAX_RETRY_AFTER_MS) : undefined;
 }
 
-/** Wait the server asked for (an error's `retryAfterMs`), otherwise the caller's own backoff. */
-export function retryDelayMs(error: unknown, backoffMs: number): number {
+/** Between half of `ms` and all of it, so clients that failed together retry apart. */
+export function jitterMs(ms: number, random: () => number = Math.random): number {
+  return Math.round(ms - (random() * ms) / 2);
+}
+
+/**
+ * Wait the server asked for (an error's `retryAfterMs`), otherwise the caller's backoff, jittered
+ * after a failure. Without a failure the caller's own interval stands.
+ */
+export function retryDelayMs(
+  error: unknown,
+  backoffMs: number,
+  random: () => number = Math.random,
+): number {
   const asked =
     typeof error === "object" && error !== null && "retryAfterMs" in error
       ? error.retryAfterMs
       : undefined;
-  return typeof asked === "number" && Number.isFinite(asked) && asked >= 0
-    ? Math.min(Math.max(asked, backoffMs), MAX_RETRY_AFTER_MS)
-    : backoffMs;
+  if (typeof asked === "number" && Number.isFinite(asked) && asked >= 0) {
+    return Math.min(Math.max(asked, backoffMs), MAX_RETRY_AFTER_MS);
+  }
+  return error === undefined ? backoffMs : jitterMs(backoffMs, random);
+}
+
+/** Longest a client waits to reopen a live stream that ended after it was open. */
+export const RECONNECT_SPREAD_MS = 5_000;
+
+/**
+ * Wait before reopening a live stream that ended after it was open. A deploy ends every client's
+ * stream at once, so each picks its own moment within a few seconds instead of all returning
+ * together. A wait the server asked for still stands.
+ */
+export function reconnectDelayMs(error: unknown, random: () => number = Math.random): number {
+  return Math.max(retryDelayMs(error, 0), Math.round(random() * RECONNECT_SPREAD_MS));
 }

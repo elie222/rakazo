@@ -1,5 +1,10 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Deferred } from "./async.test-support.js";
+import { deferred } from "./async.test-support.js";
+import { RECONNECT_SPREAD_MS } from "./retry-policy.js";
+import type { LiveThreadSnapshot } from "./thread-snapshot-events.js";
+import { mergeThreadSnapshot, reduceThreadSnapshot } from "./thread-snapshot-events.js";
 import { IDLE_TIMEOUT_MS, runThreadSubscription } from "./thread-subscription.js";
 
 const head = { threadId: "thread", cursor: 10 };
@@ -18,29 +23,22 @@ function event(seq: number): ProductEvent {
 function heartbeat(): ProductEvent {
   return { ...event(0), id: "heartbeat", type: "heartbeat" };
 }
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 function stream() {
-  let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+  let next: Deferred<IteratorResult<ProductEvent>> | undefined;
   const events: AsyncIterable<ProductEvent> = {
     [Symbol.asyncIterator]() {
       return {
-        next: () =>
-          new Promise((resolve) => {
-            deliver = resolve;
-          }),
+        next: () => {
+          next = deferred<IteratorResult<ProductEvent>>();
+          return next.promise;
+        },
       };
     },
   };
   return {
     events,
-    send: (value: ProductEvent) => deliver?.({ value, done: false }),
-    end: () => deliver?.({ value: undefined, done: true }),
+    send: (value: ProductEvent) => next?.resolve({ value, done: false }),
+    end: () => next?.resolve({ value: undefined, done: true }),
   };
 }
 function setup(committed: typeof head | null = head) {
@@ -57,6 +55,7 @@ function setup(committed: typeof head | null = head) {
     beforeEvent: vi.fn(),
     applyEvent: vi.fn(),
     onEvent: vi.fn(),
+    random: () => 0,
   };
   return { abort, channel, state, callbacks };
 }
@@ -96,6 +95,23 @@ describe("thread subscription recovery", () => {
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
     expect(callbacks.beforeEvent).toHaveBeenCalledTimes(2);
     expect(callbacks.onEvent).toHaveBeenCalledTimes(2);
+    abort.abort();
+    await running;
+  });
+
+  it("waits a random part of the reconnect spread before refreshing a stream the server closed", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    callbacks.random = () => 0.5;
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.end();
+    await vi.advanceTimersByTimeAsync(RECONNECT_SPREAD_MS / 2 - 1);
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callbacks.refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
     abort.abort();
     await running;
   });
@@ -868,6 +884,77 @@ describe("thread subscription recovery", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
     expect(callbacks.refresh).not.toHaveBeenCalled();
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("keeps a finished run finished when a refresh gets ahead of the live stream", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const run = { id: "run-1", botId: "bot", status: "running" };
+    type Shown = LiveThreadSnapshot & { cursor: number };
+    let shown: Shown = { ...head, olderCursor: null, messages: [], run, activeRuns: [run] };
+    const running = runThreadSubscription({
+      ...callbacks,
+      currentSnapshot: () => shown,
+      applyEvent: (item) => {
+        shown = reduceThreadSnapshot(shown, item) ?? shown;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The run asked, was answered and finished before the stream delivered any of it.
+    const refreshed: Shown = { ...shown, cursor: 14, run: null, activeRuns: [] };
+    shown = mergeThreadSnapshot(shown, refreshed);
+    channel.send({ ...event(12), type: "run.waiting_input", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toBe(refreshed);
+    channel.send({ ...event(15), type: "run.started", runId: "run-2" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toMatchObject({ cursor: 15, run: { id: "run-2", status: "running" } });
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("keeps a group member working when a refresh covers its run's start", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const member = { botId: "bot", status: "idle" };
+    type Shown = LiveThreadSnapshot & { cursor: number };
+    let shown: Shown = {
+      ...head,
+      groupId: "group",
+      olderCursor: null,
+      messages: [],
+      run: null,
+      activeRuns: [],
+      members: [member],
+    };
+    const running = runThreadSubscription({
+      ...callbacks,
+      currentSnapshot: () => shown,
+      applyEvent: (item) => {
+        shown = reduceThreadSnapshot(shown, item) ?? shown;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The refresh read the member's status with its cursor, so it already shows the run.
+    const run = { id: "run-1", botId: "bot", status: "running" };
+    const refreshed: Shown = {
+      ...shown,
+      cursor: 12,
+      run,
+      activeRuns: [run],
+      members: [{ ...member, status: "running" }],
+    };
+    shown = mergeThreadSnapshot(shown, refreshed);
+    channel.send({ ...event(12), type: "run.started", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toBe(refreshed);
+    channel.send({ ...event(13), type: "run.completed", runId: run.id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toMatchObject({ cursor: 13, activeRuns: [], members: [{ status: "idle" }] });
     abort.abort();
     channel.end();
     await running;

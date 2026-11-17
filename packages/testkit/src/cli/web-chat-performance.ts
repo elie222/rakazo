@@ -43,7 +43,7 @@ import {
 const SCHEMA_VERSION = 1;
 const VIEWPORT = { width: 1440, height: 900 };
 
-/** Every reported metric, in table order; `lowerIsBetter` is true for all of them. */
+/** Every reported metric, in table order; lower is better for all of them. */
 const METRICS = [
   ["coldOpenMs", "Cold open to transcript painted", "ms"],
   ["cachedSwitchMs", "Switch to a cached chat", "ms"],

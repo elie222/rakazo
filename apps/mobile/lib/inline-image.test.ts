@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import { createKeyedPromiseCache, fitImageSize, isInlineImageMimeType } from "./inline-image.js";
 
@@ -75,20 +77,18 @@ describe("createKeyedPromiseCache", () => {
     expect(calls).toBe(2);
   });
   it("a late failure after clearing cannot evict a replacement load", async () => {
-    let fail!: (reason: Error) => void;
+    let fail!: Deferred<string>;
     let calls = 0;
     const cache = createKeyedPromiseCache(() => {
       calls += 1;
-      return calls === 1
-        ? new Promise<string>((_resolve, reject) => {
-            fail = reject;
-          })
-        : Promise.resolve("fresh");
+      if (calls !== 1) return Promise.resolve("fresh");
+      fail = deferred<string>();
+      return fail.promise;
     });
     const old = cache.get("one");
     cache.clear();
     const fresh = cache.get("one");
-    fail(new Error("stale"));
+    fail.reject(new Error("stale"));
     await expect(old).rejects.toThrow("stale");
     expect(cache.get("one")).toBe(fresh);
     await expect(fresh).resolves.toBe("fresh");

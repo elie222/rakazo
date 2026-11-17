@@ -1,15 +1,15 @@
 import { GITHUB_URL } from "../site";
 import {
+  aboutUsd,
   MONTH_HOURS,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RAILWAY_ESTIMATE,
   RUNTIME_DOC,
-  WORKDAY_HOURS,
-  aboutUsd,
   railwayAppMonthly,
   railwayComputerMonthly,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -67,13 +67,39 @@ export const railway: Sandbox = {
         caption: "Railway plans and rates as of November 2026",
         columns: ["Plan", "Trial and Free", "Hobby", "Pro"],
         rows: [
-          { topic: "Plan fee", cells: ["$0. Trial gives $5 of credit, Free $1 a month", "$5 a month, including $5 of usage", "$20 a month per workspace, including $20 of usage"] },
-          { topic: "Largest sandbox", cells: ["2 vCPU / 2 GB", "8 vCPU / 8 GB", "32 vCPU / 32 GB"] },
-          { topic: "Sandbox idle timeout", cells: ["1 to 5 minutes, always on", "1 to 120 minutes, or off", "1 to 120 minutes, or off"] },
+          {
+            topic: "Plan fee",
+            cells: [
+              "$0. Trial gives $5 of credit, Free $1 a month",
+              "$5 a month, including $5 of usage",
+              "$20 a month per workspace, including $20 of usage",
+            ],
+          },
+          {
+            topic: "Largest sandbox",
+            cells: ["2 vCPU / 2 GB", "8 vCPU / 8 GB", "32 vCPU / 32 GB"],
+          },
+          {
+            topic: "Sandbox idle timeout",
+            cells: [
+              "1 to 5 minutes, always on",
+              "1 to 120 minutes, or off",
+              "1 to 120 minutes, or off",
+            ],
+          },
           { topic: "Sandboxes running at once", cells: ["10", "50", "100"] },
-          { topic: "Sandbox CPU and memory", cells: ["$50 per vCPU-month used, $50 per GB-month held", "Same", "Same"] },
-          { topic: "App and database", cells: ["$20 per vCPU-month, $10 per GB-month", "Same", "Same"] },
-          { topic: "Volumes and egress", cells: ["$0.15 per GB-month, $0.05 per GB out", "Same", "Same"] },
+          {
+            topic: "Sandbox CPU and memory",
+            cells: ["$50 per vCPU-month used, $50 per GB-month held", "Same", "Same"],
+          },
+          {
+            topic: "App and database",
+            cells: ["$20 per vCPU-month, $10 per GB-month", "Same", "Same"],
+          },
+          {
+            topic: "Volumes and egress",
+            cells: ["$0.15 per GB-month, $0.05 per GB out", "Same", "Same"],
+          },
         ],
         note: `${PRICES_NOTE} Sources: [Railway pricing](https://railway.com/pricing) and [Railway sandboxes](https://docs.railway.com/sandboxes).`,
       },
@@ -87,10 +113,34 @@ export const railway: Sandbox = {
         caption: "Estimated monthly bill on Railway Hobby",
         columns: ["Part", "Assumption", "Cost"],
         rows: [
-          { topic: "Bot computer", cells: [`${computer.vcpus} vCPU and ${computer.gb} GB, ${WORKDAY_HOURS} hours`, capitalize(aboutUsd(computerWorkday))] },
-          { topic: "Rakazo app", cells: [`About ${app.gb} GB and ${app.vcpus} vCPU, all month`, capitalize(aboutUsd(railwayAppMonthly - RAILWAY_ESTIMATE.databaseAndVolumes))] },
-          { topic: "Postgres and volumes", cells: ["A small database and a few GB of files", capitalize(aboutUsd(RAILWAY_ESTIMATE.databaseAndVolumes))] },
-          { topic: "Total", cells: ["The $5 plan fee counts toward this", capitalize(aboutUsd(computerWorkday + railwayAppMonthly))] },
+          {
+            topic: "Bot computer",
+            cells: [
+              `${computer.vcpus} vCPU and ${computer.gb} GB, ${WORKDAY_HOURS} hours`,
+              capitalize(aboutUsd(computerWorkday)),
+            ],
+          },
+          {
+            topic: "Rakazo app",
+            cells: [
+              `About ${app.gb} GB and ${app.vcpus} vCPU, all month`,
+              capitalize(aboutUsd(railwayAppMonthly - RAILWAY_ESTIMATE.databaseAndVolumes)),
+            ],
+          },
+          {
+            topic: "Postgres and volumes",
+            cells: [
+              "A small database and a few GB of files",
+              capitalize(aboutUsd(RAILWAY_ESTIMATE.databaseAndVolumes)),
+            ],
+          },
+          {
+            topic: "Total",
+            cells: [
+              "The $5 plan fee counts toward this",
+              capitalize(aboutUsd(computerWorkday + railwayAppMonthly)),
+            ],
+          },
         ],
         note: `Estimated from Railway's rates, checked November 2026. A computer left running around the clock at the same load would cost ${aboutUsd(railwayComputerMonthly(MONTH_HOURS))} on its own. Your model provider bills separately.`,
       },

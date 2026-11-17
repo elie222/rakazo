@@ -1,6 +1,6 @@
-import type { VoiceProvider } from "./types";
 import { GITHUB_URL } from "../site";
 import { VOICE_DOC, VOICE_MODELS_DOC, voicePriceTable, withPricingSources } from "./shared";
+import type { VoiceProvider } from "./types";
 
 const COMPARED = ["macos", "selfHosted", "openai", "fish", "elevenlabs", "cartesia"] as const;
 
@@ -108,7 +108,8 @@ export const macos: VoiceProvider = {
     width: 1280,
     height: 720,
     alt: "Rakazo showing an incoming call from the bot Chief, with Decline and Answer buttons beside the chat.",
-    caption: "Chief calling from Rakazo. With macOS voices, its side of the call is spoken by the server's Mac.",
+    caption:
+      "Chief calling from Rakazo. With macOS voices, its side of the call is spoken by the server's Mac.",
   },
   faq: [
     {
@@ -144,14 +145,14 @@ export const macos: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    {
-      label: "Apple, change the voice your Mac uses to speak text",
-      href: "https://support.apple.com/guide/mac-help/mchlp2290/mac",
-    },
-    { label: "ss64, the say command", href: "https://ss64.com/mac/say.html" },
-    VOICE_DOC,
-    VOICE_MODELS_DOC,
-    { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
+      {
+        label: "Apple, change the voice your Mac uses to speak text",
+        href: "https://support.apple.com/guide/mac-help/mchlp2290/mac",
+      },
+      { label: "ss64, the say command", href: "https://ss64.com/mac/say.html" },
+      VOICE_DOC,
+      VOICE_MODELS_DOC,
+      { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
     ],
     { prices: COMPARED },
   ),

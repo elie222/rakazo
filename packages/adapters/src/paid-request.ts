@@ -24,6 +24,8 @@ import {
   walletSupports,
   withPurchaseWallet,
 } from "./purchase-service.js";
+import type { SecretCleanup } from "./secret-cleanup.js";
+import { cleanUpUnsavedSecret, purchaseRequestRecordId } from "./secret-cleanup.js";
 import type { SafeHttpResponse } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
@@ -82,25 +84,35 @@ export async function executePaidRequest(
     });
   }
   // Headers and body can hold personal data or keys, so the request to send again is sealed.
-  const recordId = `purchase-request:${context.operationId}`;
+  const recordId = purchaseRequestRecordId(context.operationId);
   const sealed = await deps.secretStore.put(JSON.stringify(request), context, { recordId });
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
+  const copy: SecretCleanup = { kind: "purchase_request", recordId, ref: sealed.ciphertext };
   const url = new URL(request.url);
-  const result = await createPurchase(deps, provider, context, run, {
-    credential: { kind: "http_payment", challenge: challenge.challenge },
-    amount: challenge.amount,
-    currency: challenge.currency,
-    reason: input.reason,
-    merchantName: url.hostname,
-    merchantUrl: `${url.origin}${url.pathname}`,
-    paymentChallenge: challenge.challenge,
-    requestCiphertext: sealed.ciphertext,
-  });
+  let result: Awaited<ReturnType<typeof createPurchase>>;
+  try {
+    result = await createPurchase(deps, provider, context, run, {
+      credential: { kind: "http_payment", challenge: challenge.challenge },
+      amount: challenge.amount,
+      currency: challenge.currency,
+      reason: input.reason,
+      merchantName: url.hostname,
+      merchantUrl: `${url.origin}${url.pathname}`,
+      paymentChallenge: challenge.challenge,
+      requestCiphertext: sealed.ciphertext,
+    });
+  } catch (error) {
+    // The purchase may have been recorded before this failed; the cleanup spares a copy it holds.
+    await cleanUpUnsavedSecret(cleanupDeps, copy);
+    throw error;
+  }
   const saved = await deps.prisma.purchase.findUnique({
     where: { operationKey: context.operationId },
     select: { requestCiphertext: true },
   });
   if (saved?.requestCiphertext !== sealed.ciphertext) {
-    await deps.secretStore.delete(sealed.ciphertext, { recordId }).catch(() => undefined);
+    // No purchase holds this copy: the wallet refused, or a replay recorded its own.
+    await cleanUpUnsavedSecret(cleanupDeps, copy);
   }
   return plain(result);
 }
@@ -135,7 +147,7 @@ async function payApproved(
   }
   const request = JSON.parse(
     await deps.secretStore.load(purchase.requestCiphertext!, {
-      recordId: `purchase-request:${purchase.operationKey}`,
+      recordId: purchaseRequestRecordId(purchase.operationKey),
     }),
   ) as StoredRequest;
 

@@ -1,8 +1,23 @@
 import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
+import { isQuestionAskBlock } from "./ask-kind.js";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
+import { isDeliveryMessage } from "./message-visibility.js";
+
+/** Bound the source considered when deriving a reply excerpt. */
+export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+
+/** The first nonblank reply line, capped without splitting a surrogate pair. */
+export function compactReplyExcerpt(text: string): string {
+  const first = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const excerpt = (first ?? "").slice(0, 280);
+  return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
+}
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -139,6 +154,7 @@ export function previewMessageText(
   message: { role: string; blocks: MessageBlock[] },
   labels: { photo: string; attachment: string; message: string },
 ): string {
+  if (isDeliveryMessage(message.blocks)) return labels.message;
   const text = message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return block.text;
@@ -152,6 +168,12 @@ export function previewMessageText(
     .join(" ")
     .trim();
   if (text) return text;
+  for (const block of message.blocks) {
+    if (block.kind === "ask" && isQuestionAskBlock(block)) {
+      const excerpt = compactReplyExcerpt(block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH));
+      if (excerpt) return excerpt;
+    }
+  }
   const attachment = replyAttachment(message.blocks);
   if (attachment)
     return attachment.kind === "image" ? labels.photo : attachment.name || labels.attachment;

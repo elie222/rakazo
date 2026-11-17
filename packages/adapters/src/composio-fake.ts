@@ -228,6 +228,22 @@ export class FakeComposioClient implements ComposioClient {
     },
   };
 
+  getClient(): ReturnType<ComposioClient["getClient"]> {
+    return {
+      tools: {
+        list: async (query) => {
+          const tools = toolsFor(query.toolkit_slug.toUpperCase());
+          const offset = Number(query.cursor ?? 0);
+          const end = offset + query.limit;
+          return {
+            items: tools.slice(offset, end),
+            next_cursor: end < tools.length ? String(end) : null,
+          };
+        },
+      },
+    };
+  }
+
   readonly connectedAccounts: ComposioClient["connectedAccounts"] = {
     list: async (query?: ConnectedAccountListParams): Promise<ConnectedAccountListResponse> => {
       this.accountListCalls.push(query ?? {});

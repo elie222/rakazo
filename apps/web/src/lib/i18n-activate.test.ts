@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateUiLocale,
@@ -123,14 +124,11 @@ describe("activateUiLocale", () => {
   });
 
   it("lets the latest locale selection win under concurrency", async () => {
-    let resolveDe!: (value: { messages: Record<string, string> }) => void;
-    const dePromise = new Promise<{ messages: Record<string, string> }>((resolve) => {
-      resolveDe = resolve;
-    });
+    const de = deferred<{ messages: Record<string, string> }>();
 
     setCatalogLoadersForTests({
       en: async () => ({ messages: { Settings: "Settings" } }),
-      de: async () => dePromise,
+      de: async () => de.promise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
@@ -148,7 +146,7 @@ describe("activateUiLocale", () => {
 
     const first = activateUiLocale("de");
     const second = activateUiLocale("ko");
-    resolveDe({ messages: { Settings: "Einstellungen" } });
+    de.resolve({ messages: { Settings: "Einstellungen" } });
 
     await expect(first).resolves.toBe("ko");
     await expect(second).resolves.toBe("ko");
@@ -157,14 +155,11 @@ describe("activateUiLocale", () => {
   });
 
   it("cancels a pending activation when re-selecting the already-active locale", async () => {
-    let resolveDe!: (value: { messages: Record<string, string> }) => void;
-    const dePromise = new Promise<{ messages: Record<string, string> }>((resolve) => {
-      resolveDe = resolve;
-    });
+    const de = deferred<{ messages: Record<string, string> }>();
 
     setCatalogLoadersForTests({
       en: async () => ({ messages: { Settings: "Settings" } }),
-      de: async () => dePromise,
+      de: async () => de.promise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
@@ -185,7 +180,7 @@ describe("activateUiLocale", () => {
 
     const pendingDe = activateUiLocale("de");
     const backToEn = activateUiLocale("en");
-    resolveDe({ messages: { Settings: "Einstellungen" } });
+    de.resolve({ messages: { Settings: "Einstellungen" } });
 
     await expect(pendingDe).resolves.toBe("en");
     await expect(backToEn).resolves.toBe("en");
@@ -196,14 +191,11 @@ describe("activateUiLocale", () => {
 
   it("does not let a stale setUiLocale fallback overwrite the latest stored locale", async () => {
     const store = stubLocaleStorage();
-    let resolveDe!: (value: { messages: Record<string, string> }) => void;
-    const dePromise = new Promise<{ messages: Record<string, string> }>((resolve) => {
-      resolveDe = resolve;
-    });
+    const de = deferred<{ messages: Record<string, string> }>();
 
     setCatalogLoadersForTests({
       en: async () => ({ messages: { Settings: "Settings" } }),
-      de: async () => dePromise,
+      de: async () => de.promise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
@@ -224,7 +216,7 @@ describe("activateUiLocale", () => {
     const pendingKo = setUiLocale("ko");
     expect(store.get(UI_LOCALE_STORAGE_KEY)).toBe("ko");
 
-    resolveDe({ messages: { Settings: "Einstellungen" } });
+    de.resolve({ messages: { Settings: "Einstellungen" } });
     await expect(pendingDe).resolves.toBe("ko");
     await expect(pendingKo).resolves.toBe("ko");
     expect(getActiveUiLocale()).toBe("ko");

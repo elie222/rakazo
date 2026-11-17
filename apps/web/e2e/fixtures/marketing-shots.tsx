@@ -46,6 +46,8 @@ const demoRpc: Record<string, unknown> = {
   me: null,
   "scratchpad/list": [],
   "memory/list": [],
+  "pages/list": { items: [], nextCursor: null },
+  "bots/emailAddress": null,
   "agentSkills/list": [],
 };
 
@@ -149,8 +151,7 @@ function ModelShot() {
     >
       <BotSettings
         bot={inboxBot()}
-        memoryProviderConfigured={false}
-        onSkillsChange={() => undefined}
+        focusModel={1}
         onSave={async () => undefined}
         onExport={async () => undefined}
         onClear={() => undefined}
@@ -228,7 +229,9 @@ function ApprovalShot() {
 }
 
 const subscriptionMe: Me = {
+  labs: [],
   ticketBoardEnabled: false,
+  labsAvailable: [],
   navLinks: [],
   phoneCallsEnabled: false,
   userId: "user-demo",
@@ -321,9 +324,11 @@ function SubscriptionShot() {
         onSectionChange={() => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
-        onUsageOpen={() => undefined}
         timezone="UTC"
         onTimezoneChange={async () => undefined}
+        labs={[]}
+        labsAvailable={[]}
+        onLabsChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>

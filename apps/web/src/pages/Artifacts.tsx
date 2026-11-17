@@ -15,8 +15,6 @@ import {
   EmptyMedia,
   EmptyTitle,
   ListSearchInput,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   Select,
   SelectContent,
@@ -55,12 +53,12 @@ import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { desktopBridge } from "../lib/desktop";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
-import { rpc } from "../lib/rpc";
 import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
+import { useRedrawAtMidnight } from "./shell/use-redraw-at-midnight";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
@@ -92,6 +90,7 @@ function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): 
 export function ArtifactsPage() {
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
+  const today = useRedrawAtMidnight();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const viewMode = viewModePreference.use();
@@ -100,8 +99,6 @@ export function ArtifactsPage() {
   const [madeByBots, setMadeByBots] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ArtifactSummary | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -160,7 +157,8 @@ export function ArtifactsPage() {
         (item.description?.toLowerCase().includes(query) ?? false)
       );
     });
-  }, [items, searchQuery, dateFilter]);
+    // `today` is listed so the midnight tick invalidates cached date filters.
+  }, [items, searchQuery, dateFilter, today]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
@@ -178,32 +176,25 @@ export function ArtifactsPage() {
     void loadMore();
   }, [clientFilterActive, nextCursor, loadingMore, items, filteredItems]);
 
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      await rpc.artifacts.remove({ artifactId: pendingDelete.id });
+  const remove = useSave({
+    save: async (artifact: ArtifactSummary, rpc) => {
+      await rpc.artifacts.remove({ artifactId: artifact.id });
+      // Gone from this list at once, even when reading it again fails.
       await writeSaved(queryClient, listingOptions.queryKey, (current) => ({
         pages: (current?.pages ?? []).map((page) => ({
           ...page,
-          items: page.items.filter((item) => item.id !== pendingDelete.id),
+          items: page.items.filter((item) => item.id !== artifact.id),
         })),
         pageParams: current?.pageParams ?? [],
       }));
-      // Listings for other bots may hold it too; they refresh when next shown.
-      void queryClient.invalidateQueries({
-        queryKey: queries.artifacts.listSpace.key(),
-        refetchType: "none",
-      });
-      if (artifactId === pendingDelete.id) navigate("/app/artifacts");
+    },
+    // Listings for other bots may hold it too.
+    stale: [queries.artifacts.listSpace.key()],
+    onSaved: (_removed, artifact) => {
+      if (artifactId === artifact.id) navigate("/app/artifacts");
       setPendingDelete(null);
-    } catch (error) {
-      setDeleteError(errorText(error, t`Could not delete this artifact.`));
-    } finally {
-      setDeleteBusy(false);
-    }
-  }
+    },
+  });
 
   const serverFilterActive = activeBotId !== null || madeByBots;
   const filtersActive = serverFilterActive || clientFilterActive;
@@ -356,7 +347,10 @@ export function ArtifactsPage() {
 
       {pendingDelete ? (
         <ConfirmDialog
-          onCancel={() => setPendingDelete(null)}
+          onCancel={() => {
+            setPendingDelete(null);
+            remove.reset();
+          }}
           title={<Trans>Delete "{pendingDelete.name}"?</Trans>}
           description={
             pendingDelete.versionCount > 1 ? (
@@ -368,10 +362,10 @@ export function ArtifactsPage() {
               <Trans>This can't be undone.</Trans>
             )
           }
-          error={deleteError}
-          busy={deleteBusy}
-          onConfirm={() => void confirmDelete()}
-          confirmLabel={deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+          error={remove.error ? errorText(remove.error, t`Could not delete this artifact.`) : null}
+          busy={remove.pending}
+          onConfirm={() => remove.run(pendingDelete)}
+          confirmLabel={remove.pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
         />
       ) : null}
     </div>
@@ -931,18 +925,16 @@ function PreviewPane({
           ) : null}
         </div>
         {versions && versions.length > 1 && selectedVersionId ? (
-          <NativeSelect
+          <OptionSelect
             aria-label={t`Version`}
             className="w-auto shrink-0 text-body-sm"
             value={selectedVersionId}
-            onChange={(event) => setSelectedVersionId(event.target.value)}
-          >
-            {versions.map((entry) => (
-              <NativeSelectOption key={entry.id} value={entry.id}>
-                {`v${entry.version} (${formatRelativeTime(entry.createdAt)})`}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={versions.map((entry) => ({
+              value: entry.id,
+              label: `v${entry.version} (${formatRelativeTime(entry.createdAt)})`,
+            }))}
+            onValueChange={setSelectedVersionId}
+          />
         ) : null}
         {state.status === "ready" ? (
           <>

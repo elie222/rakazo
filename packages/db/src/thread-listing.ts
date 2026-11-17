@@ -2,9 +2,9 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
+  isDeliveryMessage,
   plainTextFromMarkdown,
 } from "@rakazo/core";
-
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -33,6 +33,24 @@ export function primaryActiveRun<T extends { status: string }>(runs: readonly T[
     runs.find((run) => run.status === "running") ??
     runs.find((run) => run.status === "leased") ??
     runs[0]
+  );
+}
+
+/** Each bot's status from its active runs in any thread; idle without one. */
+export async function botRunStatuses(
+  prisma: Pick<PrismaClient, "run">,
+  botIds: string[],
+): Promise<Map<string, string>> {
+  const runs = await prisma.run.findMany({
+    where: { botId: { in: botIds }, ...activeRunSelection.where },
+    orderBy: activeRunSelection.orderBy,
+    select: { botId: true, status: true },
+  });
+  return new Map(
+    botIds.map((botId) => [
+      botId,
+      primaryActiveRun(runs.filter((run) => run.botId === botId))?.status ?? "idle",
+    ]),
   );
 }
 
@@ -75,6 +93,8 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
 
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
+  // A delivery's text is the bot's prompt, hidden in chat.
+  if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
     if (
       block &&

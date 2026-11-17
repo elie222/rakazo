@@ -2,21 +2,21 @@ import {
   BOAT,
   BOAT_RAKAZO,
   BOAT_SIZES,
+  boatMonthly,
   E2B_PRO_FEE,
+  euro,
+  homepage,
   METHOD_NOTE,
   MONTH_HOURS,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RATES,
   RUNTIME_DOC,
   SERVERS,
-  WORKDAY_HOURS,
-  boatMonthly,
-  euro,
-  homepage,
-  monthly,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -31,8 +31,7 @@ export const boat: Sandbox = {
   keeps: "Its disk and each bot's Chrome profile",
   bestFor: "Many bots with separate logins",
   title: "Boat AI agent sandbox: pricing, limits and how Rakazo runs bots on Boat VMs",
-  description:
-    `Boat rents persistent Ubuntu VMs for AI agents from $${BOAT.minimum} a month. Its pricing, sizes and limits, what a bot's computer really costs compared with E2B and Daytona, and how Rakazo runs every bot on Boat.`,
+  description: `Boat rents persistent Ubuntu VMs for AI agents from $${BOAT.minimum} a month. Its pricing, sizes and limits, what a bot's computer really costs compared with E2B and Daytona, and how Rakazo runs every bot on Boat.`,
   h1: "Boat for AI agents: a cloud computer for every bot",
   intro: [
     "[Boat](https://boat.dev) rents out persistent Ubuntu virtual machines built for AI agents. Each one is a full Linux computer in the cloud that keeps its disk when it stops, so an agent can come back to the same files and installed tools later.",
@@ -43,7 +42,8 @@ export const boat: Sandbox = {
     color: "#F5A03C",
     where: "Computer on Boat",
     ask: "work the seed-stage fintech list overnight, nothing sent without me",
-    reply: "on it. signed in to hubspot and linkedin in my own browser. drafts will wait for you at 6am.",
+    reply:
+      "on it. signed in to hubspot and linkedin in my own browser. drafts will wait for you at 6am.",
     computer: {
       task: "Scoring the list in HubSpot.",
       screen: {
@@ -72,12 +72,37 @@ export const boat: Sandbox = {
         caption: "Boat machine sizes as of November 2026",
         columns: ["Size", "vCPU / memory / disk", "Per hour", "Full month"],
         rows: [
-          { topic: "small", cells: [`${BOAT.small.vcpus} / ${BOAT.small.gb} GB / 51 GB`, `$${BOAT.small.hour}`, fullMonth(BOAT.small.hour)] },
-          { topic: "default", cells: [`${BOAT.default.vcpus} / ${BOAT.default.gb} GB / 51 GB`, `$${BOAT.default.hour}`, fullMonth(BOAT.default.hour)] },
-          { topic: "large", cells: [`${BOAT.large.vcpus} / ${BOAT.large.gb} GB / 111 GB`, `$${BOAT.large.hour}`, fullMonth(BOAT.large.hour)] },
+          {
+            topic: "small",
+            cells: [
+              `${BOAT.small.vcpus} / ${BOAT.small.gb} GB / 51 GB`,
+              `$${BOAT.small.hour}`,
+              fullMonth(BOAT.small.hour),
+            ],
+          },
+          {
+            topic: "default",
+            cells: [
+              `${BOAT.default.vcpus} / ${BOAT.default.gb} GB / 51 GB`,
+              `$${BOAT.default.hour}`,
+              fullMonth(BOAT.default.hour),
+            ],
+          },
+          {
+            topic: "large",
+            cells: [
+              `${BOAT.large.vcpus} / ${BOAT.large.gb} GB / 111 GB`,
+              `$${BOAT.large.hour}`,
+              fullMonth(BOAT.large.hour),
+            ],
+          },
           {
             topic: "xlarge",
-            cells: [`${BOAT.xlarge.vcpus} / ${BOAT.xlarge.gb} GB / 251 GB`, `$${BOAT.xlarge.hour.toFixed(3)}`, `${fullMonth(BOAT.xlarge.hour)}, on plans of $100 or more`],
+            cells: [
+              `${BOAT.xlarge.vcpus} / ${BOAT.xlarge.gb} GB / 251 GB`,
+              `$${BOAT.xlarge.hour.toFixed(3)}`,
+              `${fullMonth(BOAT.xlarge.hour)}, on plans of $100 or more`,
+            ],
           },
         ],
         note: `${PRICES_NOTE} Source: [boat.dev](https://boat.dev).`,
@@ -107,7 +132,10 @@ export const boat: Sandbox = {
           },
           {
             topic: "[Novita](/sandboxes/novita/)",
-            cells: [usd(monthly(RATES.novita, WORKDAY_HOURS, BOAT_RAKAZO)), usd(monthly(RATES.novita, MONTH_HOURS, BOAT_RAKAZO))],
+            cells: [
+              usd(monthly(RATES.novita, WORKDAY_HOURS, BOAT_RAKAZO)),
+              usd(monthly(RATES.novita, MONTH_HOURS, BOAT_RAKAZO)),
+            ],
           },
           {
             topic: "[E2B](/sandboxes/e2b/)",
@@ -118,11 +146,17 @@ export const boat: Sandbox = {
           },
           {
             topic: "[Daytona](/sandboxes/daytona/)",
-            cells: [usd(monthly(RATES.daytona, WORKDAY_HOURS, BOAT_RAKAZO)), usd(monthly(RATES.daytona, MONTH_HOURS, BOAT_RAKAZO))],
+            cells: [
+              usd(monthly(RATES.daytona, WORKDAY_HOURS, BOAT_RAKAZO)),
+              usd(monthly(RATES.daytona, MONTH_HOURS, BOAT_RAKAZO)),
+            ],
           },
           {
             topic: "[Docker](/sandboxes/docker/) on a rented server",
-            cells: [`${euro(SERVERS.hetznerCx33)} for a 4 vCPU / 8 GB Hetzner CX33`, euro(SERVERS.hetznerCx33)],
+            cells: [
+              `${euro(SERVERS.hetznerCx33)} for a 4 vCPU / 8 GB Hetzner CX33`,
+              euro(SERVERS.hetznerCx33),
+            ],
           },
         ],
         note: "Computed from each provider's rates, checked November 2026, before free credits. Daytona caps one sandbox at 4 vCPU / 8 GiB. The Docker server also has to run Rakazo itself. Your model provider bills separately.",

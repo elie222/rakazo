@@ -82,7 +82,8 @@
     "react-native-svg": "15.16.0",
     "react-native-web": "0.21.4",
     "react-native-webview": "14.0.1",
-    "react-native-worklets": "0.13.0"
+    "react-native-worklets": "0.13.0",
+    "expo-apple-authentication": "58.0.3"
   },
   "devDependencies": {
     "@lingui/babel-plugin-lingui-macro": "6.12.0",

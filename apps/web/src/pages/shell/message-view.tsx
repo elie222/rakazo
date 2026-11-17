@@ -5,6 +5,7 @@ import type {
   BotAvatarSet,
   ComputerReleaseReason,
   LoginFieldInput,
+  MessageBlock,
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
@@ -56,6 +57,7 @@ import { MessageHoverActions } from "./message-hover-actions";
 export const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
+  separateAnswers,
   canDismiss,
   message,
   meId,
@@ -90,6 +92,7 @@ export const MessageView = memo(function MessageView({
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   message: ThreadMessage;
   /** The signed-in person; anyone else's message is named and set apart. */
@@ -644,6 +647,7 @@ export const MessageView = memo(function MessageView({
               <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
+                  answerIsSeparate={separateAnswers?.has(block)}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
                   onAnswer={(text, fields, remember) =>

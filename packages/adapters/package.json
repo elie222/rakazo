@@ -10,7 +10,7 @@
     "./host-computer-server": "./src/host-computer-server.ts",
     "./host-screen": "./src/host-screen.ts",
     "./model-json": "./src/model-json.ts",
-    "./wuying-screen-policy": "./src/wuying-screen-policy.ts",
+    "./wuying-screen-policy": "./src/providers/computer/wuying/wuying-screen-policy.ts",
     "./user-device-client": "./src/user-device-client.ts"
   },
   "scripts": {
@@ -23,6 +23,7 @@
     "@alicloud/openapi-core": "1.0.9",
     "@aws-sdk/client-kms": "3.1164.0",
     "@aws-sdk/client-s3": "3.1164.0",
+    "@azure/storage-blob": "12.34.0",
     "@boatdev/sdk": "1.13.0",
     "@boxd-sh/sdk": "0.3.0",
     "@chat-adapter/slack": "4.44.0",
@@ -37,7 +38,7 @@
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-telemetry": "1.5.0",
-    "@insforge/instabox-sdk": "0.8.0",
+    "@insforge/instabox-sdk": "0.9.0",
     "@kubernetes/client-node": "2.0.2",
     "@larksuiteoapi/node-sdk": "1.76.0",
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -85,6 +86,7 @@
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
+    "fast-check": "4.10.2",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }

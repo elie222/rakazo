@@ -14,6 +14,11 @@ describe("thinking signatures bound to a different conversation", () => {
       ),
     ).toBe(true);
     expect(isThinkingSignatureMismatch("Invalid signature in thinking block")).toBe(true);
+    expect(
+      isThinkingSignatureMismatch(
+        '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"The encrypted content for item rs_1 could not be verified.\\",\\"code\\":\\"invalid_encrypted_content\\"}}","provider_error_code":"invalid_encrypted_content"}}',
+      ),
+    ).toBe(true);
     expect(isThinkingSignatureMismatch("thinking.adaptive.block_binding: Extra inputs")).toBe(
       false,
     );

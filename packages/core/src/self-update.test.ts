@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_UPDATE_BRANCH,
-  decideUpdateAvailability,
   detectRestartSupervisor,
   isOfficialRepoUrl,
   normalizeRepoUrl,
@@ -11,8 +9,6 @@ import {
   RESTART_SUPERVISOR_ENV,
   repoIdentity,
   restartSupervisorAdvice,
-  shortCommit,
-  updateSteps,
 } from "./self-update.js";
 
 describe("normalizeRepoUrl", () => {
@@ -79,7 +75,10 @@ describe("repoIdentity", () => {
 
   it("only calls the real upstream official", () => {
     expect(isOfficialRepoUrl("git@github.com:elie222/rakazo.git")).toBe(true);
+    expect(isOfficialRepoUrl("https://github.com/rakazobot/rakazo.git")).toBe(true);
+    expect(isOfficialRepoUrl("git@github.com:rakazobot/rakazo.git")).toBe(true);
     expect(isOfficialRepoUrl("https://github.com/attacker/rakazo")).toBe(false);
+    expect(isOfficialRepoUrl("https://github.com/rakazobot/rakazo-fork")).toBe(false);
     expect(isOfficialRepoUrl("https://githubb.com/elie222/rakazo")).toBe(false);
   });
 });
@@ -127,55 +126,6 @@ describe("parseGitStatusPorcelain", () => {
   });
 });
 
-describe("updateSteps", () => {
-  it("orders the work so migrations land immediately before the restart", () => {
-    const steps = updateSteps({
-      remoteUrl: OFFICIAL_REPO_URL,
-      branch: DEFAULT_UPDATE_BRANCH,
-      targetCommit: "2".repeat(40),
-    });
-    expect(steps.map((step) => step.id)).toEqual([
-      "fetch",
-      "merge",
-      "install",
-      "generate",
-      "build",
-      "migrate",
-    ]);
-  });
-
-  it("passes every value as its own argument so nothing reaches a shell", () => {
-    const steps = updateSteps({
-      remoteUrl: "git@github.com:me/rakazo.git",
-      branch: "release/1.2",
-      targetCommit: "2".repeat(40),
-      repointRemote: true,
-    });
-    expect(steps[0]).toEqual({
-      id: "remote",
-      label: "Point the checkout at the chosen repository",
-      command: "git",
-      args: ["remote", "set-url", "origin", "git@github.com:me/rakazo.git"],
-    });
-    expect(steps.find((step) => step.id === "merge")?.args).toEqual([
-      "merge",
-      "--ff-only",
-      "2".repeat(40),
-    ]);
-  });
-
-  it("never rewrites history, so local commits fail the update instead of vanishing", () => {
-    const args = updateSteps({
-      remoteUrl: OFFICIAL_REPO_URL,
-      branch: "main",
-      targetCommit: "2".repeat(40),
-    }).flatMap((step) => step.args);
-    expect(args).not.toContain("--hard");
-    expect(args).not.toContain("--force");
-    expect(args).toContain("--ff-only");
-  });
-});
-
 describe("detectRestartSupervisor", () => {
   it("takes the operator's declaration first", () => {
     expect(detectRestartSupervisor({ [RESTART_SUPERVISOR_ENV]: "docker" })).toEqual({
@@ -200,51 +150,5 @@ describe("detectRestartSupervisor", () => {
     });
     expect(restartSupervisorAdvice(detectRestartSupervisor({}))).toContain(RESTART_SUPERVISOR_ENV);
     expect(restartSupervisorAdvice({ kind: "systemd", label: "systemd" })).toContain("systemd");
-  });
-});
-
-describe("decideUpdateAvailability", () => {
-  it("refuses when the checkout cannot be updated at all", () => {
-    expect(decideUpdateAvailability({ checkoutReason: "Not a git checkout." })).toEqual({
-      status: "unavailable",
-      reason: "Not a git checkout.",
-    });
-    expect(decideUpdateAvailability({ commit: "abc" })).toEqual({
-      status: "unavailable",
-      reason: "Could not read the current commit.",
-    });
-  });
-
-  it("refuses a dirty tree before comparing commits", () => {
-    expect(
-      decideUpdateAvailability({
-        commit: "aaa",
-        targetCommit: "bbb",
-        status: { clean: false, changed: ["apps/api/src/app.ts"] },
-      }),
-    ).toEqual({ status: "dirty", changed: ["apps/api/src/app.ts"] });
-  });
-
-  it("separates up to date from an available update", () => {
-    const clean = { clean: true, changed: [] };
-    expect(decideUpdateAvailability({ commit: "aaa", targetCommit: "aaa", status: clean })).toEqual(
-      { status: "up-to-date", commit: "aaa" },
-    );
-    expect(
-      decideUpdateAvailability({
-        commit: "aaa",
-        targetCommit: "bbb",
-        behindBy: 4,
-        status: clean,
-      }),
-    ).toEqual({ status: "available", commit: "aaa", targetCommit: "bbb", behindBy: 4 });
-  });
-});
-
-describe("shortCommit", () => {
-  it("shortens a sha and names the unknown case", () => {
-    expect(shortCommit("3c6e2091a2b3c4")).toBe("3c6e209");
-    expect(shortCommit(null)).toBe("unknown");
-    expect(shortCommit("")).toBe("unknown");
   });
 });

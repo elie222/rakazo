@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { AccountItem, Actor, AvailabilityKind, SpaceAvailability } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
@@ -28,6 +29,14 @@ const CONFLICT_MESSAGE = {
   skill: "A skill with that name already exists in one of these spaces.",
   mcpServer: "An MCP server with that name already exists in one of these spaces.",
 } as const;
+
+/** The owner already has a skill or MCP server by this name where the new one would be seen. */
+export class NameTakenError extends ClientError {
+  constructor(kind: keyof typeof CONFLICT_MESSAGE) {
+    super("CONFLICT", CONFLICT_MESSAGE[kind]);
+    this.name = "NameTakenError";
+  }
+}
 
 /**
  * A skill name or MCP server slug must stay unique wherever its owner can see it. The owner's
@@ -64,7 +73,7 @@ export async function assertNameFreeWhereAvailable(
         });
   const rows = await runAsSystemInTransaction(tx, "owner's names across their spaces", read);
   if (rows.some((row) => overlaps(spaceAvailability(row), availability)))
-    throw new ORPCError("CONFLICT", { message: CONFLICT_MESSAGE[kind] });
+    throw new NameTakenError(kind);
 }
 
 async function assertOwnSpaces(

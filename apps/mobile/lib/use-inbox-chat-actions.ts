@@ -8,15 +8,23 @@ import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
+import {
+  alertGroupNotDeleted,
+  confirmDeleteBot,
+  confirmDeleteGroup,
+  deleteGroup,
+} from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
 import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
+import { sendWith } from "./query";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
+import { useConfirmationGuard } from "./use-confirmation-guard";
+import { useLeaveDeletedChat } from "./use-leave-deleted-chat";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -43,17 +51,21 @@ type ListUpdate<T> = Dispatch<SetStateAction<T[]>>;
 
 /** Row actions on inbox chats: read state, pin, archive, delete, organize and sections. */
 export function useInboxChatActions({
+  confirmationActive,
   loadBots,
   setBots,
   setGroups,
   setSpaces,
 }: {
+  confirmationActive?: boolean;
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
+  const leaveDeletedChat = useLeaveDeletedChat();
+  const beginDelete = useConfirmationGuard(confirmationActive);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -182,27 +194,45 @@ export function useInboxChatActions({
       }
       // The same confirmation as the chat's own menu; the row goes once the server deletes it.
       if (action === "delete") {
-        const deleted = () => {
-          notifyArchivedChatsChanged();
-          void loadBots();
-        };
+        const confirmation = kind === "bot" ? beginDelete() : undefined;
+        if (kind === "bot" && !confirmation) return;
         // Capture fails only when the session or server changed; the delete is dropped quietly.
-        let requestContext: ApiRequestContext | undefined;
+        let requestContext: ApiRequestContext;
         try {
-          requestContext = await chatRequestContext(chat.spaceId);
+          requestContext = await captureApiRequestContext(chat.spaceId ?? selectedSpaceId());
         } catch {
+          confirmation?.finish();
           return;
         }
-        if (kind === "bot") {
-          confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
-        } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
+        // Each confirmed delete is sent, so deleting two groups in a row deletes both.
+        if (!confirmation) {
+          const send = sendWith(requestContext);
+          confirmDeleteGroup(chat, () => {
+            void deleteGroup(chat.id, send).then(() => {
+              notifyArchivedChatsChanged();
+              void loadBots();
+            }, alertGroupNotDeleted);
+          });
+          return;
+        }
+        void confirmDeleteBot(
+          { id: chat.id, name: chat.name },
+          (removedGroupIds, recoveryContext) => {
+            notifyArchivedChatsChanged();
+            void loadBots();
+            void leaveDeletedChat(chat.id, removedGroupIds, recoveryContext);
+          },
+          confirmation.current,
+          requestContext,
+          confirmation.finish,
+        );
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
         Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
-    [loadBots, sendReadState, t, updateChat],
+    [beginDelete, loadBots, leaveDeletedChat, sendReadState, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),
@@ -273,6 +303,22 @@ export function useInboxChatActions({
     },
     [loadBots, snoozeQueue, setBots, setGroups, setSpaces, t],
   );
+  /** Renames a section from its heading's menu, with the iOS name prompt. */
+  const promptRenameSection = useCallback(
+    (section: { id: string; name: string }, spaceId?: string) =>
+      promptSectionName({
+        title: t`Rename section`,
+        cancelLabel: t`Cancel`,
+        submitLabel: t`Save`,
+        defaultValue: section.name,
+        onSubmit: (name) =>
+          void renameSection(section.id, name, spaceId).catch((err) =>
+            Alert.alert(t`Could not rename section`, errorText(err, t`Try again.`)),
+          ),
+      }),
+    [renameSection, t],
+  );
+
   const editSectionFromMenu = useCallback(
     (
       kind: InboxChatKind,
@@ -284,20 +330,21 @@ export function useInboxChatActions({
       const current =
         mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
+      if (current) {
+        promptRenameSection(current, chat.spaceId);
+        return;
+      }
       promptSectionName({
-        title: current ? t`Rename section` : t`New section`,
+        title: t`New section`,
         cancelLabel: t`Cancel`,
-        submitLabel: current ? t`Save` : t`Create`,
-        defaultValue: current?.name,
+        submitLabel: t`Create`,
         onSubmit: (name) =>
-          void (
-            current
-              ? renameSection(current.id, name, chat.spaceId)
-              : createSection(kind, chat.id, name, chat.spaceId)
-          ).catch((err) => Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`))),
+          void createSection(kind, chat.id, name, chat.spaceId).catch((err) =>
+            Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
+          ),
       });
     },
-    [createSection, renameSection, t],
+    [createSection, promptRenameSection, t],
   );
 
   const deleteSection = useCallback(
@@ -326,6 +373,7 @@ export function useInboxChatActions({
     renameSection,
     organizeFromMenu,
     editSectionFromMenu,
+    promptRenameSection,
     deleteSection,
     snoozeChat,
   };

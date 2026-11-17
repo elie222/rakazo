@@ -2,7 +2,10 @@ import type { BillingProvider, BillingSubscriptionStatus } from "@rakazo/adapter
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { BillingEmulator } from "./billing-emulator.js";
-import { StripeBillingProvider, signStripeWebhook } from "./stripe-billing.js";
+import {
+  StripeBillingProvider,
+  signStripeWebhook,
+} from "./providers/billing/stripe/stripe-billing.js";
 import { StripeEmulator } from "./testing/stripe-emulator.js";
 
 const NOW = Date.UTC(2026, 0, 1);
@@ -314,7 +317,7 @@ describe("offline checkout cancellation", () => {
       cancelUrl: "https://example.test/cancel",
     };
     await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
-    await provider.createCreditCheckout({ customerId, amountCents: 1000, monthly: true, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 2000, monthly: true, ...urls });
     await provider.cancelCustomerSubscriptions(customerId);
     expect(() => provider.completeByokCheckout(customerId)).toThrow();
     expect(() => provider.completeCreditCheckout(customerId)).toThrow();

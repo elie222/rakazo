@@ -16,7 +16,7 @@ import type {
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { draftRecordingsOfLease, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork, providerKeepsHome } from "./computer-idle.js";
 import { computerProviderDescriptor } from "./computer-provider-registry.js";
@@ -26,8 +26,11 @@ import {
   loadComputerOwnerSettings,
   loadComputerProviderSelection,
 } from "./configured-sandbox.js";
-import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import {
+  assertHostCommandsAllowed,
+  DesktopSandboxProvider,
+} from "./providers/computer/desktop/desktop-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
@@ -98,6 +101,11 @@ async function createBaseRunSandbox(
       : opts.referenceInUse,
     onUnsafeStop: opts.prisma
       ? async (providerRef) => {
+          // Quarantine ends any person's control; a recording made under it ends with it.
+          const held = await opts.prisma!.computer.findMany({
+            where: { kind, providerRef, controlLeaseId: { not: null } },
+            select: { spaceId: true, controlLeaseId: true },
+          });
           const quarantined = await opts.prisma!.computer.updateMany({
             where: { kind, providerRef },
             data: {
@@ -110,11 +118,13 @@ async function createBaseRunSandbox(
               controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             },
           });
           if (quarantined.count === 0)
             throw new Error("Computer recovery requirement could not be recorded");
+          for (const { spaceId, controlLeaseId } of held) {
+            await draftRecordingsOfLease(opts.prisma!, { spaceId, leaseId: controlLeaseId! });
+          }
         }
       : opts.onUnsafeStop,
   });
@@ -168,7 +178,7 @@ export class HostAwareSandbox implements SandboxProvider {
 
   async provisionKind() {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.describe().id as ComputerRef["kind"];
+    return provider.describe().id;
   }
 
   async provision(

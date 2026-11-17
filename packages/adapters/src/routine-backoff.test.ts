@@ -45,7 +45,7 @@ function fakeRoutine(overrides: Partial<Row> = {}) {
     ),
   };
   const enqueue = vi.fn(async () => undefined);
-  const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
+  const jobs = { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() };
   const deps = { prisma: prisma as unknown as PrismaClient, jobs };
   return { row, deps, enqueue, lock };
 }

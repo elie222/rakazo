@@ -1,4 +1,6 @@
 import { generateMessageId } from "@lingui/message-utils/generateMessageId";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-localization", () => ({
@@ -149,23 +151,17 @@ describe("mobile i18n", () => {
     const { getActiveUiLocale, resetI18nForTests, setUiLocale } = await import("./i18n");
     resetI18nForTests("en");
 
-    const gates = new Map<string, { release: () => void; wait: Promise<void> }>();
-    for (const locale of ["en", "zh-CN", "ru", "de"] as const) {
-      let release!: () => void;
-      const wait = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      gates.set(locale, { release, wait });
-    }
+    const gates = new Map<string, Deferred>();
+    for (const locale of ["en", "zh-CN", "ru", "de"] as const) gates.set(locale, deferred());
     vi.mocked(setItemAsync).mockImplementation(async (_key, value) => {
-      await gates.get(String(value))?.wait;
+      await gates.get(String(value))?.promise;
     });
 
     const first = setUiLocale("en");
     const second = setUiLocale("zh-CN");
     // First write is slower to settle; second must still win after the queue drains.
-    queueMicrotask(() => gates.get("zh-CN")?.release());
-    queueMicrotask(() => gates.get("en")?.release());
+    queueMicrotask(() => gates.get("zh-CN")?.resolve());
+    queueMicrotask(() => gates.get("en")?.resolve());
     await Promise.all([first, second]);
 
     expect(getActiveUiLocale()).toBe("zh-CN");

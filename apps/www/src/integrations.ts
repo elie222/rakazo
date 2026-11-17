@@ -3,6 +3,7 @@ import type { PluginCategory } from "@rakazo/core";
 import { PLUGIN_CATEGORIES } from "@rakazo/core";
 import { z } from "zod";
 import { CATALOG_URL, INTEGRATION_CLAIMS_URL, SITE_URL } from "./site";
+import { breadcrumbNode } from "./structured-data";
 
 const IntegrationSchema = z.object({
   slug: z.string().regex(/^[a-z0-9_-]+$/),
@@ -164,7 +165,12 @@ const SOURCE_CATEGORIES: Record<PluginCategory, readonly string[]> = {
   ],
   code: ["developer tools", "model context protocol", "app builder", "internet of things"],
   data: ["analytics", "business intelligence", "dashboards", "databases"],
-  ops: ["server monitoring", "it operations", "security & identity tools", "ai safety compliance detection"],
+  ops: [
+    "server monitoring",
+    "it operations",
+    "security & identity tools",
+    "ai safety compliance detection",
+  ],
 };
 
 const CATEGORY_BY_SOURCE = new Map(
@@ -232,7 +238,9 @@ export function integrationClaimPath(slug: string): string {
 /** Round down so the headline count stays true as the catalog shifts. */
 export function integrationCountLabel(): string {
   const count = INTEGRATIONS.length;
-  return count >= 1000 ? `${(Math.floor(count / 100) * 100).toLocaleString("en-US")}+` : String(count);
+  return count >= 1000
+    ? `${(Math.floor(count / 100) * 100).toLocaleString("en-US")}+`
+    : String(count);
 }
 
 export function relatedIntegrations(integration: Integration, limit = 6): Integration[] {
@@ -243,7 +251,8 @@ export function relatedIntegrations(integration: Integration, limit = 6): Integr
   )
     .toSorted(
       (a, b) =>
-        Number(popular.has(b.slug)) - Number(popular.has(a.slug)) || b.actions.length - a.actions.length,
+        Number(popular.has(b.slug)) - Number(popular.has(a.slug)) ||
+        b.actions.length - a.actions.length,
     )
     .slice(0, limit);
 }
@@ -257,18 +266,13 @@ export const CHAT_CHANNELS = [
 ] as const;
 
 export function integrationBreadcrumbs(integration: Integration) {
+  const path = integrationPath(integration.slug);
   return {
     "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Integrations", item: `${SITE_URL}${INTEGRATIONS_PATH}` },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: integration.name,
-        item: `${SITE_URL}${integrationPath(integration.slug)}`,
-      },
-    ],
+    ...breadcrumbNode(new URL(path, SITE_URL).toString(), [
+      { name: "Integrations", path: INTEGRATIONS_PATH },
+      { name: integration.name, path },
+    ]),
   };
 }
 

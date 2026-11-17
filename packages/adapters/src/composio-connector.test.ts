@@ -18,6 +18,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  withSharedAccessHint,
 } from "./composio-connector.js";
 import { collectPages, filterCatalog } from "./connector-catalog.js";
 import { ConnectorRegistry } from "./connector-registry.js";
@@ -36,7 +37,10 @@ const composioSdkState = vi.hoisted(() => ({
     error: string | null;
     resultType?: "completed" | "failed" | "blocked";
   },
+  executeThrows: null as null | string,
   failTools: null as null | string[],
+  repeatToolCursor: false,
+  rawToolQueries: [] as Array<{ toolkit_slug: string; limit: number; cursor?: string }>,
   logIds: null as null | string[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
@@ -75,6 +79,25 @@ vi.mock("@composio/core", () => ({
         return session;
       },
     };
+
+    getClient() {
+      return {
+        tools: {
+          list: async (query: { toolkit_slug: string; limit: number; cursor?: string }) => {
+            composioSdkState.rawToolQueries.push(query);
+            const offset = Number(query.cursor ?? 0);
+            const end = Math.min(offset + query.limit, 250);
+            return {
+              items: Array.from({ length: end - offset }, (_, index) => ({
+                slug: `GMAIL_ACTION_${offset + index}`,
+                description: "An action",
+              })),
+              next_cursor: composioSdkState.repeatToolCursor ? "0" : end < 250 ? String(end) : null,
+            };
+          },
+        },
+      };
+    }
 
     readonly connectedAccounts = {
       list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
@@ -133,6 +156,7 @@ vi.mock("@composio/core", () => ({
           options?: { account?: string },
         ) => {
           composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
+          if (composioSdkState.executeThrows) throw new Error(composioSdkState.executeThrows);
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
           const result = failed
             ? { data: { ok: false }, error: "listing failed" }
@@ -149,6 +173,62 @@ vi.mock("@composio/core", () => ({
     }
   },
 }));
+
+describe("composio app tools", () => {
+  it("rejects a repeated catalog cursor", async () => {
+    composioSdkState.repeatToolCursor = true;
+    try {
+      await expect(
+        new ComposioConnector().listAppTools(
+          {
+            operationId: "app-tools",
+            traceId: "app-tools",
+            spaceId: "workspace",
+            userId: "user-1",
+            signal: new AbortController().signal,
+          },
+          "gmail",
+        ),
+      ).rejects.toThrow("pagination did not terminate");
+    } finally {
+      composioSdkState.repeatToolCursor = false;
+    }
+  });
+
+  it("does not fetch tools for an aborted request", async () => {
+    const signal = AbortSignal.abort(new Error("Cancelled"));
+    const before = composioSdkState.rawToolQueries.length;
+    await expect(
+      new ComposioConnector().listAppTools(
+        {
+          operationId: "app-tools",
+          traceId: "app-tools",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal,
+        },
+        "gmail",
+      ),
+    ).rejects.toThrow("Cancelled");
+    expect(composioSdkState.rawToolQueries).toHaveLength(before);
+  });
+  it("lists the app's own actions rather than the session's search tools", async () => {
+    composioToolkitDirectory.invalidate();
+    const tools = await new ComposioConnector().listAppTools(
+      {
+        operationId: "composio-app-tools",
+        traceId: "composio-app-tools",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      },
+      "gmail",
+    );
+    expect(tools).toHaveLength(250);
+    expect(tools.at(-1)?.name).toBe("GMAIL_ACTION_249");
+    expect(composioSdkState.rawToolQueries.at(-1)?.toolkit_slug.toLowerCase()).toBe("gmail");
+  });
+});
 
 describe("composio tool mapping", () => {
   it("maps OpenAI-style session tools and raw slugs", () => {
@@ -503,6 +583,64 @@ describe("composio tool mapping", () => {
           toolkits: ["GITHUB"],
           connectedAccounts: { GITHUB: ["ca_current"] },
         },
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github", blocked: false },
+    { tool: "github_mcp_list_repos", batch: true, stale: "github", blocked: false },
+    { tool: "GITHUB_GET_REPOS", batch: false, stale: "github", blocked: true },
+    { tool: "GITHUB_GET_REPOS", batch: true, stale: "github", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github_mcp", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: true, stale: "github_mcp", blocked: true },
+  ])("routes overlapping toolkit names: %o", async ({ tool, batch, stale, blocked }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts([stale === "github" ? "ca-mcp" : "ca-github"]);
+    try {
+      const connector = new ComposioConnector();
+      const args = batch ? { tools: [{ tool_slug: tool, arguments: {} }] } : {};
+      const call = {
+        tool: batch ? "COMPOSIO_MULTI_EXECUTE_TOOL" : tool,
+        args,
+        executionId: "overlapping-toolkits",
+      };
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(call, {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "github",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "GitHub",
+            providerRef: "ca-github",
+          },
+          {
+            id: "mcp",
+            connectorId: "composio",
+            externalId: "GitHub_MCP",
+            displayName: "GitHub MCP",
+            providerRef: "ca-mcp",
+          },
+        ],
+      }))
+        events.push(event);
+      expect(events.map((event) => event.type)).toEqual([blocked ? "error" : "result"]);
+      expect(composioSdkState.executions).toEqual(blocked ? [] : [{ tool: call.tool, args }]);
+      expect(composioSdkState.created.at(-1)?.config).toMatchObject({
+        toolkits: [stale === "github" ? "GITHUB_MCP" : "GITHUB"],
+        connectedAccounts:
+          stale === "github" ? { GITHUB_MCP: ["ca-mcp"] } : { GITHUB: ["ca-github"] },
       });
     } finally {
       restore();
@@ -980,6 +1118,131 @@ describe("composio tool mapping", () => {
           '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
       },
     ]);
+  });
+
+  it("says which shared-access permission a refused mailbox call lacks", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {},
+      error:
+        "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared",
+      resultType: "failed",
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-shared-scope",
+      traceId: "composio-shared-scope",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-mail",
+          connectorId: "composio",
+          externalId: "outlook",
+          displayName: "Mail",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "OUTLOOK_LIST_MESSAGES",
+          args: { user_id: "shared@example.test" },
+          executionId: "composio-shared-scope",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message:
+          "Access denied: delegated access to another mailbox requires Mail.Read.Shared or Mail.ReadBasic.Shared. This call needs the Mail.Read.Shared permission; reconnect if the connection was made before it was added.",
+      },
+    ]);
+  });
+
+  it("adds the shared-access hint when the provider throws the refusal", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeThrows = "Access denied: requires Mail.Send.Shared";
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-shared-scope-thrown",
+      traceId: "composio-shared-scope-thrown",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-mail",
+          connectorId: "composio",
+          externalId: "outlook",
+          displayName: "Mail",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "OUTLOOK_SEND_EMAIL",
+          args: { user_id: "shared@example.test" },
+          executionId: "composio-shared-scope-thrown",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeThrows = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message: expect.stringContaining("This call needs the Mail.Send.Shared permission;"),
+      },
+    ]);
+  });
+
+  it("leaves other refusals as the provider worded them", () => {
+    expect(withSharedAccessHint("Access denied")).toBe("Access denied");
+    expect(withSharedAccessHint("Shared folder not found")).toBe("Shared folder not found");
+    for (const message of [
+      "Not Found: repository Contoso.Shared does not exist",
+      "File Report.Shared.docx not found",
+      "File Mail.Read.Shared.docx not found",
+    ]) {
+      expect(withSharedAccessHint(message)).toBe(message);
+    }
+  });
+
+  it("names the permission when it ends a sentence or sits in a list", () => {
+    expect(
+      withSharedAccessHint("Needs Calendars.ReadWrite.Shared, or Calendars.Read.Shared."),
+    ).toContain("This call needs the Calendars.ReadWrite.Shared permission;");
+  });
+
+  it("ends the message cleanly before the hint, however it was punctuated", () => {
+    const hinted = withSharedAccessHint(`requires Mail.Read.Shared.. \t\n`);
+    expect(hinted.startsWith("requires Mail.Read.Shared. This call needs")).toBe(true);
+    const long = `requires Mail.Read.Shared${"\t".repeat(100_000)}`;
+    expect(withSharedAccessHint(long)).toBe(
+      "requires Mail.Read.Shared. This call needs the Mail.Read.Shared permission; reconnect if the connection was made before it was added.",
+    );
   });
 
   it("reports a call the provider marked failed even when its error text is empty", async () => {

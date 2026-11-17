@@ -15,8 +15,10 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
+  outsideRunToolRequiresApproval,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -26,7 +28,6 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
-  unattendedTriggerToolRequiresApproval,
   watchToolRefusal,
 } from "./action-approval.js";
 
@@ -222,51 +223,22 @@ describe("isOwnerStartedRun", () => {
   });
 });
 
-describe("unattendedTriggerToolRequiresApproval", () => {
-  it("forces approval for webhook-triggered local side effects", () => {
-    for (const name of ["shell", "write_file", "browser_act", "computer_act", "request_purchase"]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
-    }
-  });
+it("gates built-ins that change something only in runs outside text started", () => {
+  for (const name of ["shell", "write_file", "computer_act", "remember", "render_plot"]) {
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
+    expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
+  }
+  expect(outsideRunToolRequiresApproval("webhook", "save_shared_memory")).toBe(true);
+  expect(outsideRunToolRequiresApproval("webhook", "add_mcp_server")).toBe(true);
+  for (const name of ["read_file", "computer_observe", "message_user", "ask_user"]) {
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
+  }
+});
 
-  it("allows webhook-triggered reads to stay unattended", () => {
-    for (const name of [
-      "computer_observe",
-      "read_file",
-      "web_search",
-      "browser_snapshot",
-      "request_takeover",
-      "run_subagent",
-      "list_fleet",
-      "purchase_status",
-    ]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
-    }
-    expect(unattendedTriggerToolRequiresApproval("webhook", "github_get_issue", true)).toBe(false);
-  });
-
-  it("forces approval for webhook-triggered connector writes regardless of normal rules", () => {
-    expect(unattendedTriggerToolRequiresApproval("webhook", "github_create_issue", true)).toBe(
-      true,
-    );
-    expect(unattendedTriggerToolRequiresApproval("user", "shell", false)).toBe(false);
-  });
-
-  it("forces approval for webhook-triggered declared writes with read-looking names", () => {
-    for (const name of ["read_profile_card", "find_validator_record", "get_status"]) {
-      expect(unattendedTriggerToolRequiresApproval("webhook", name, true, false)).toBe(true);
-      expect(toolRequiresApproval(name, true, false)).toBe(true);
-    }
-    expect(unattendedTriggerToolRequiresApproval("webhook", "read_profile_card", true, true)).toBe(
-      false,
-    );
-    expect(unattendedTriggerToolRequiresApproval("webhook", "delete_record", true, true)).toBe(
-      true,
-    );
-    expect(unattendedTriggerToolRequiresApproval("user", "read_profile_card", true, false)).toBe(
-      false,
-    );
-  });
+it("treats a declared write with a read-looking name as a write", () => {
+  for (const name of ["read_profile_card", "find_validator_record", "get_status"]) {
+    expect(toolRequiresApproval(name, true, false)).toBe(true);
+  }
 });
 
 describe("isApprovalAskBlock", () => {
@@ -975,6 +947,31 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
+describe("memoryWriteNeedsApproval", () => {
+  const readOutside = async () => true;
+  const readNothing = async () => false;
+
+  it.each(["remember", "save_memory", "save_shared_memory"])(
+    "gates %s only once outside content entered the run",
+    async (name) => {
+      await expect(memoryWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
+      await expect(memoryWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+    },
+  );
+
+  it("leaves other tools alone and does not check the run for them", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const name of ["recall_memory", "forget_memory", "write_file", "send_email"]) {
+      await expect(memoryWriteNeedsApproval(name, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
 describe("toolResultTaintsRun", () => {
   it("treats outside content as taint, including connector tools and new tools", () => {
     for (const tool of [
@@ -1004,7 +1001,6 @@ it("classifies schedule_update like schedule_create", () => {
     expect(toolRequiresApproval(name, false)).toBe(false);
     expect(toolRequiresExplicitApproval(name)).toBe(false);
     expect(toolResultTaintsRun(name)).toBe(false);
-    expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
   }
 });
 

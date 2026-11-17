@@ -1,9 +1,11 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { getLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
@@ -17,10 +19,13 @@ const owner: Actor = {
 function setup(
   options: {
     actor?: Actor;
+    credentialProvider?: string;
+    allowPrivateEndpoint?: boolean;
+    codexCatalog?: RouterDeps["codexCatalog"];
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
     /** An openai-compatible connection with this stored list and own model. */
-    compatible?: { enabledModelIds: string[]; defaultModel: string };
+    compatible?: { enabledModelIds: string[]; defaultModel: string; baseUrl?: string };
     /** Spaces whose member keeps their own models instead of the account's. */
     overrides?: Array<{ userId: string; spaceId: string }>;
   } = {},
@@ -28,7 +33,8 @@ function setup(
   const credential = {
     id: "credential-one",
     userId: owner.userId,
-    provider: options.compatible ? "openai-compatible" : "openrouter",
+    provider:
+      options.credentialProvider ?? (options.compatible ? "openai-compatible" : "openrouter"),
     label: "fixture",
     secretId: "secret-one",
     createdAt: new Date(0),
@@ -108,12 +114,16 @@ function setup(
     spaceModelRoleChoice,
     spaceSettingOverride,
     userModelCredential: {
-      findMany: vi.fn(async ({ where }: { where: { userId: string; provider?: string } }) =>
-        !options.credits &&
-        where.userId === owner.userId &&
-        (!where.provider || where.provider === credential.provider)
-          ? [credential]
-          : [],
+      findMany: vi.fn(
+        async ({ where }: { where: { userId: string; provider?: string | { in: string[] } } }) =>
+          !options.credits &&
+          where.userId === owner.userId &&
+          (!where.provider ||
+            (typeof where.provider === "string"
+              ? where.provider === credential.provider
+              : where.provider.in.includes(credential.provider)))
+            ? [credential]
+            : [],
       ),
       findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
         !options.credits && where.userId === owner.userId && where.id === credential.id
@@ -149,6 +159,7 @@ function setup(
     userModelCredential: prisma.userModelCredential,
   });
   const deps = {
+    codexCatalog: options.codexCatalog,
     billing: options.credits ? { modelCreditsEnabled: true } : undefined,
     prisma,
     secrets: {
@@ -159,7 +170,7 @@ function setup(
           : options.compatible
             ? serializeModelSecret({
                 kind: "openai_compatible",
-                baseUrl: "http://127.0.0.1:11434/v1",
+                baseUrl: options.compatible.baseUrl ?? "http://127.0.0.1:11434/v1",
                 enabledModelIds: options.compatible.enabledModelIds,
               })
             : "fake-api-key-for-offline-tests",
@@ -172,6 +183,7 @@ function setup(
       webOrigin: "http://127.0.0.1:5173",
       screenProxySecret: "fixture-secret",
       sandboxProvider: "fake",
+      mcpAllowPrivateEndpoint: options.allowPrivateEndpoint ?? true,
     },
     dataDir: "C:/scratch/rakazo-model-backups",
   } as unknown as RouterDeps;
@@ -201,7 +213,7 @@ function setup(
         modelId,
         position: Number(position) - 1,
       }));
-  return { rows, roles, prisma, userModelRoleChoice, spaceModelRoleChoice, call };
+  return { rows, roles, prisma, deps, userModelRoleChoice, spaceModelRoleChoice, call };
 }
 
 const availableModel = listPiCatalog().find(
@@ -479,6 +491,263 @@ const textOnlyModel = listPiCatalog().find(
 )!;
 
 describe("role-based model settings API", () => {
+  describe("approval deployment default availability", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    function clearApprovalEnvironment() {
+      for (const key of [
+        "RAKAZO_AUTO_REVIEW_PROVIDER",
+        "RAKAZO_AUTO_REVIEW_MODEL",
+        "RAKAZO_LOCAL_MODELS",
+        "PI_DEFAULT_PROVIDER",
+        "PI_DEFAULT_MODEL",
+        "PI_DEFAULT_CREDENTIALS",
+        "OPENROUTER_API_KEY",
+      ])
+        vi.stubEnv(key, undefined);
+    }
+
+    it.each(["account", "space"])(
+      "omits an unconnected approval default in %s reads and saves",
+      async (scope) => {
+        clearApprovalEnvironment();
+        const { call, prisma } = setup();
+        vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
+        for (const procedure of ["models/role", "models/setRole"]) {
+          const { response } = await call(procedure, { role: "approval", scope });
+          expect(response.status).toBe(200);
+          expect((await response.json()).json).toMatchObject({
+            primary: null,
+            deploymentPrimary: null,
+          });
+        }
+        expect(prisma.userModelCredential.findMany).toHaveBeenCalledWith({
+          where: { userId: owner.userId, provider: "openrouter" },
+        });
+      },
+    );
+
+    it.each(["deployment", "connection", "local"])(
+      "keeps an approval default runnable through %s configuration",
+      async (configuration) => {
+        clearApprovalEnvironment();
+        const { call, prisma } = setup();
+        const credentials = await prisma.userModelCredential.findMany({
+          where: { userId: owner.userId },
+        });
+        vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
+        if (configuration === "deployment") vi.stubEnv("OPENROUTER_API_KEY", "fake-key");
+        if (configuration === "connection") {
+          vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue(credentials);
+        }
+        if (configuration === "local") vi.stubEnv("RAKAZO_LOCAL_MODELS", "local-judge");
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toMatchObject({
+          provider: configuration === "local" ? "local" : "openrouter",
+          ...(configuration === "local" ? { modelId: "local-judge" } : {}),
+        });
+      },
+    );
+
+    it("preserves a saved approval model when its connection is unavailable", async () => {
+      clearApprovalEnvironment();
+      const { call, prisma } = setup();
+      const primary = { provider: availableModel.provider, modelId: availableModel.id };
+      const saved = await call("models/setRole", { role: "approval", primary });
+      expect(saved.response.status).toBe(200);
+      vi.mocked(prisma.userModelCredential.findMany).mockResolvedValue([]);
+      const { response } = await call("models/role", { role: "approval" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).json).toMatchObject({ primary, deploymentPrimary: null });
+    });
+
+    it("keeps an approval default served by a connection stored under a provider alias", async () => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "azure");
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "gpt-4o");
+      const { call } = setup({ credentialProvider: "azure-openai-responses" });
+      const { response } = await call("models/role", { role: "approval" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).json.deploymentPrimary).toEqual({
+        provider: "azure",
+        modelId: "gpt-4o",
+      });
+    });
+
+    it.each(["retired", "missing", "unreadable"])(
+      "omits an approval default with %s authentication",
+      async (state) => {
+        clearApprovalEnvironment();
+        const { call, prisma, deps } = setup();
+        if (state === "retired") {
+          vi.mocked(deps.secrets.load).mockResolvedValue(
+            serializeModelSecret({ kind: "oauth", reconnectRequired: true }),
+          );
+        } else if (state === "missing") {
+          vi.mocked(prisma.secret.findFirst).mockResolvedValue(null);
+        } else {
+          vi.mocked(deps.secrets.load).mockRejectedValue(new Error("Unreadable fixture"));
+        }
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toBeNull();
+      },
+    );
+
+    it.each([true, false])(
+      "checks whether a compatible connection enables the approval model: %s",
+      async (enabled) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        const { call } = setup({
+          compatible: { enabledModelIds: enabled ? ["judge"] : ["other"], defaultModel: "other" },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          enabled ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([true, false])(
+      "checks the current private endpoint policy for an approval default: %s",
+      async (allowPrivateEndpoint) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        const { call } = setup({
+          allowPrivateEndpoint,
+          compatible: { enabledModelIds: ["judge"], defaultModel: "judge" },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          allowPrivateEndpoint ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([true, false])(
+      "checks the current public endpoint policy for an approval default: %s",
+      async (allowPublic) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+        vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", allowPublic ? "1" : "0");
+        const { call } = setup({
+          compatible: {
+            enabledModelIds: ["judge"],
+            defaultModel: "judge",
+            baseUrl: "https://models.example.test/v1",
+          },
+        });
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          allowPublic ? { provider: "openai-compatible", modelId: "judge" } : null,
+        );
+      },
+    );
+
+    it.each([
+      { name: "no authentication", apiKey: undefined, headers: undefined },
+      { name: "an API key", apiKey: "fake-model-key", headers: undefined },
+      { name: "custom headers", apiKey: undefined, headers: { "X-Auth": "fake-model-header" } },
+    ])("checks public transport security with $name", async ({ apiKey, headers }) => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+      vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+      for (const secure of [true, false]) {
+        const { call, deps } = setup({
+          compatible: { enabledModelIds: ["judge"], defaultModel: "judge" },
+        });
+        vi.mocked(deps.secrets.load).mockResolvedValue(
+          serializeModelSecret({
+            kind: "openai_compatible",
+            baseUrl: `${secure ? "https" : "http"}://models.example.test/v1`,
+            enabledModelIds: ["judge"],
+            apiKey,
+            headers,
+          }),
+        );
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          secure || (!apiKey && !headers)
+            ? { provider: "openai-compatible", modelId: "judge" }
+            : null,
+        );
+      }
+    });
+
+    it.each([true, false])(
+      "checks subscription access to an approval model against the live catalog: %s",
+      async (listed) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-codex");
+        vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "gpt-5.3-codex-spark");
+        const { call, deps } = setup({
+          credentialProvider: "openai-codex",
+          codexCatalog: {
+            read: vi.fn(async () =>
+              listed
+                ? [{ slug: "gpt-5.3-codex-spark", reasoningEfforts: [], supportsFastTier: false }]
+                : [],
+            ),
+          },
+        });
+        vi.mocked(deps.secrets.load).mockResolvedValue(
+          serializeModelSecret({
+            kind: "oauth",
+            credential: {
+              type: "oauth",
+              access: "fake-access",
+              refresh: "fake-refresh",
+              expires: Date.now() + 60_000,
+              accountId: "fixture-account",
+            },
+          }),
+        );
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          listed ? { provider: "openai-codex", modelId: "gpt-5.3-codex-spark" } : null,
+        );
+      },
+    );
+
+    it("keeps reads and committed saves successful during a secret-store outage", async () => {
+      clearApprovalEnvironment();
+      const warn = vi.spyOn(getLogger(), "warn");
+      const { call, deps, roles } = setup();
+      const primary = { provider: availableModel.provider, modelId: availableModel.id };
+      expect((await call("models/setRole", { role: "approval", primary })).response.status).toBe(
+        200,
+      );
+      vi.mocked(deps.secrets.load).mockRejectedValue(new SecretStoreUnavailableError());
+      for (const procedure of ["models/role", "models/setRole"]) {
+        const { response } = await call(procedure, {
+          role: "approval",
+          ...(procedure === "models/setRole" ? { primary: null, backups: [] } : {}),
+        });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toBeNull();
+      }
+      expect(roles().filter((row) => row.role === "approval")).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith("best effort failed: read approval model default", {
+        error: expect.any(SecretStoreUnavailableError),
+      });
+    });
+  });
+
   it("saves a computer-use model only when it can see images", async () => {
     const { call } = setup();
     const accepted = await call("models/setRole", {
@@ -649,11 +918,18 @@ describe("role-based model settings API", () => {
           modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
       );
     try {
-      const catalog = (await (await call("models/forRole", { role: "main" })).response.json())
-        .json as Array<{ id: string; credentialIds?: string[] }>;
-      expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
-        "credential-personal",
-      ]);
+      for (const [procedure, input] of [
+        ["models/forRole", { role: "main" }],
+        ["models/list", null],
+      ] as const) {
+        const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
+          id: string;
+          credentialIds?: string[];
+        }>;
+        expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
+          "credential-personal",
+        ]);
+      }
       const model = { provider: availableModel.provider, modelId: availableModel.id };
       const wrong = await call("models/setRole", {
         role: "main",

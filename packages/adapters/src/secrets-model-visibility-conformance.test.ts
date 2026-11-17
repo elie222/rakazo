@@ -192,7 +192,7 @@ describe("secrets model-visibility conformance", () => {
 
   describe("bot secret_request boundary", () => {
     it("never returns bot-secret plaintext in the tool result", async () => {
-      const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+      const scope = { userId: "user-1", spaceId: "space-1" };
       const destination: BotSecretDestination = {
         name: "example_api",
         origin: "https://api.example.test",

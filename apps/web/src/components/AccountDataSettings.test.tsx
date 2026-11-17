@@ -2,9 +2,8 @@
 
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 const accountToken = vi.hoisted(() => vi.fn());
 
@@ -35,10 +34,16 @@ vi.mock("./ConfirmIdentityDialog", async () => {
     },
   };
 });
-vi.mock("../lib/rpc", () => ({
-  rpc: { export: { accountToken } },
-  recheckSessionOnUnauthorized: () => undefined,
-}));
+vi.mock("../lib/rpc", () => {
+  const rpc = { export: { accountToken } };
+  return {
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+    selectedSpaceId: () => null,
+    recheckSessionOnUnauthorized: () => undefined,
+  };
+});
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -56,7 +61,7 @@ vi.mock("./ai/primitives", () => ({
 import { AccountDataSettings } from "./AccountDataSettings";
 
 let container: HTMLDivElement;
-let root: Root;
+let root: ReturnType<typeof createRoot>;
 const fetchMock = vi.fn();
 
 beforeEach(() => {

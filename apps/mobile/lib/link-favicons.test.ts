@@ -1,5 +1,7 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentApiBase, subscribeApiBase, subscribeSessionRejected } from "./api";
 import { resetApiBase, saveApiBase } from "./api-server";
@@ -28,13 +30,11 @@ describe("link favicons on mobile", () => {
 
   it("rejects a late answer after switching servers and notifies cache consumers", async () => {
     const previous = currentApiBase();
-    let resolveResponse!: (response: Response) => void;
-    const fetchMock = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveResponse = resolve;
-        }),
-    );
+    let resolveResponse!: Deferred<Response>;
+    const fetchMock = vi.fn(() => {
+      resolveResponse = deferred<Response>();
+      return resolveResponse.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
     const changed = vi.fn();
     const unsubscribe = subscribeApiBase(changed);
@@ -44,7 +44,7 @@ describe("link favicons on mobile", () => {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       expect((await saveApiBase("https://new-api.example.test")).ok).toBe(true);
       expect(changed).toHaveBeenCalledTimes(1);
-      resolveResponse(new Response(JSON.stringify({ json: { icon: null } })));
+      resolveResponse.resolve(new Response(JSON.stringify({ json: { icon: null } })));
       await rejected;
     } finally {
       unsubscribe();

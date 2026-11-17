@@ -62,7 +62,7 @@ if (
   );
 }
 
-console.log(`| Metric | ${before.label} | ${after.label} | Delta |`);
+console.log(`| Metric | ${tableLabel(before.label)} | ${tableLabel(after.label)} | Delta |`);
 console.log("| --- | ---: | ---: | ---: |");
 for (const item of rows) {
   console.log(`| ${item.metric} | ${item.before} | ${item.after} | ${item.delta} |`);
@@ -106,4 +106,11 @@ function warnAboutIntentionalRuntimeChanges(
   if (changes.length > 0) {
     console.warn(`Combined migration comparison (${changes.join(", ")}).`);
   }
+}
+
+function tableLabel(label: string) {
+  return label
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r\n|\r|\n/g, " ");
 }

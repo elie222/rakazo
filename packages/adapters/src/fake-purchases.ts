@@ -203,6 +203,10 @@ export function fakeJobs() {
     enqueue: async (job) => {
       enqueued.push(job);
     },
+    enqueueIn: async (_tx, job) => {
+      enqueued.push(job);
+    },
+    cancelIn: async () => {},
     cancel: async () => {},
     close: async () => {},
   };

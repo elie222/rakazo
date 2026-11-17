@@ -25,6 +25,6 @@ describe("run recovery blockers", () => {
       [run("next-turn", "user"), run("helper", "helper")],
       now,
     );
-    expect([...blockers]).toEqual([["next-turn", "chat-turn"]]);
+    expect([...blockers]).toEqual([]);
   });
 });

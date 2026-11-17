@@ -42,6 +42,17 @@ export type ComposioClient = {
       limit?: number;
     }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
   };
+  getClient(): {
+    tools: {
+      list(
+        query: { toolkit_slug: string; limit: number; cursor?: string },
+        options?: { signal?: AbortSignal },
+      ): Promise<{
+        items: unknown[];
+        next_cursor?: string | null;
+      }>;
+    };
+  };
   authConfigs: {
     list(query: { limit?: number; cursor?: string }): Promise<{
       items: Array<{ toolkit: { slug: string }; status: string }>;
@@ -124,8 +135,6 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
     ? (value as Record<string, unknown>)
     : undefined;
 }
-
-export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
 
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
@@ -210,7 +219,7 @@ export function expandComposioMultiExecute(
 }
 
 /** Composio tool slugs are prefixed with their toolkit slug, including multi-execute items. */
-function callUsesToolkit(call: ConnectorCall, toolkit: string): boolean {
+function callUsesToolkit(call: ConnectorCall, toolkit: string, toolkits: string[]): boolean {
   const prefix = `${composioSlugKey(toolkit)}_`;
   const tools = Array.isArray(call.args?.tools) ? call.args.tools : [];
   const slugs = [
@@ -219,7 +228,16 @@ function callUsesToolkit(call: ConnectorCall, toolkit: string): boolean {
       item && typeof item === "object" ? (item as { tool_slug?: unknown }).tool_slug : undefined,
     ),
   ];
-  return slugs.some((slug) => typeof slug === "string" && composioSlugKey(slug).startsWith(prefix));
+  return slugs.some((slug) => {
+    if (typeof slug !== "string") return false;
+    const key = composioSlugKey(slug);
+    if (!key.startsWith(prefix)) return false;
+    // A longer connected toolkit owns its tools (e.g. GITHUB_MCP, not GITHUB).
+    return !toolkits.some((candidate) => {
+      const candidatePrefix = `${composioSlugKey(candidate)}_`;
+      return candidatePrefix.length > prefix.length && key.startsWith(candidatePrefix);
+    });
+  });
 }
 
 function accountIsPinned(
@@ -588,6 +606,30 @@ export class ComposioConnector implements ComposioProvider {
     return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
   }
 
+  /** The app's own actions, not the session tools that only search and run them. */
+  async listAppTools(context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+    context.signal.throwIfAborted();
+    const [toolkit] = await this.canonicalizeToolkits([externalId]);
+    if (!toolkit) return [];
+    const composio = await this.sdk();
+    const tools: unknown[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      context.signal.throwIfAborted();
+      if (seen.size >= 200 || (cursor && seen.has(cursor))) {
+        throw new Error("App tool catalog pagination did not terminate");
+      }
+      if (cursor) seen.add(cursor);
+      const page = await composio
+        .getClient()
+        .tools.list({ toolkit_slug: toolkit, limit: 200, cursor }, { signal: context.signal });
+      tools.push(...page.items);
+      cursor = page.next_cursor ?? undefined;
+    } while (cursor);
+    return asConnectorTools(tools);
+  }
+
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
@@ -599,11 +641,13 @@ export class ComposioConnector implements ComposioProvider {
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     const executed = [];
     try {
+      const connections = connectedComposioConnections(context);
       const { session, reconnect, connectedAccounts } = await this.sessionForExecute(
         context.userId,
-        connectedComposioConnections(context),
+        connections,
       );
-      const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit));
+      const toolkits = connections.map((connection) => connection.externalId);
+      const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit, toolkits));
       if (stale) {
         getLogger().warn("composio connected accounts need reconnect", {
           "composio.toolkits": stale,
@@ -640,8 +684,10 @@ export class ComposioConnector implements ComposioProvider {
           const logIds = collectLogIds(executed);
           yield {
             type: "error",
-            message: sanitizeIntegrationError(
-              composioResultError(result.error || `${item.tool} failed`, result.data),
+            message: withSharedAccessHint(
+              sanitizeIntegrationError(
+                composioResultError(result.error || `${item.tool} failed`, result.data),
+              ),
             ),
             ...(logIds.length > 0 ? { logIds } : {}),
           };
@@ -667,7 +713,7 @@ export class ComposioConnector implements ComposioProvider {
       const logIds = collectLogIds(executed);
       yield {
         type: "error",
-        message: sanitizeIntegrationError(error),
+        message: withSharedAccessHint(sanitizeIntegrationError(error)),
         ...(logIds.length > 0 ? { logIds } : {}),
       };
     }
@@ -974,6 +1020,21 @@ export function composioResultError(summary: string, data: unknown): string {
   const shown = details.slice(0, 5);
   const more = details.length - shown.length;
   return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
+}
+
+const SHARED_ACCESS_SCOPE =
+  /\b(?:Mail|Calendars|Contacts|Tasks)\.(?:Read|ReadBasic|ReadWrite|Send)\.Shared(?![A-Za-z0-9_]|\.[A-Za-z0-9])/;
+
+/**
+ * A connection made without a delegated "shared" scope is refused for any mailbox or
+ * calendar but the user's own, and only a new connection carries the scope.
+ */
+export function withSharedAccessHint(message: string): string {
+  const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
+  if (!scope) return message;
+  let end = message.length;
+  while (end > 0 && (message[end - 1] === "." || message[end - 1]?.trim() === "")) end--;
+  return `${message.slice(0, end)}. This call needs the ${scope} permission; reconnect if the connection was made before it was added.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {

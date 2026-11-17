@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ThreadItem } from "@rakazo/core";
 import { reconcileThreadScrollState } from "@rakazo/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -71,8 +72,9 @@ export function useThreadListScroll({
   const publish = useCallback((next: ThreadScrollState) => {
     setState((previous) => reconcileThreadScrollState(previous, next));
   }, []);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A new object highlights for another 1.2 seconds, even when the row is the same.
+  const [highlight, setHighlight] = useState<{ messageId: string } | null>(null);
+  useTimeout(() => setHighlight(null), highlight ? 1200 : null, highlight);
 
   useLayoutEffect(() => {
     behavior.current.openThread(threadKey ?? "");
@@ -92,13 +94,6 @@ export function useThreadListScroll({
   useEffect(() => {
     publish(behavior.current.state());
   }, [threadKey, publish]);
-
-  useEffect(
-    () => () => {
-      if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    },
-    [],
-  );
 
   const pinnedTarget = pinnedAroundRef.current;
   const showPinnedPage = Boolean(
@@ -223,9 +218,7 @@ export function useThreadListScroll({
     const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, anchor);
     if (offset == null) return;
     scrollPinnedTo(offset);
-    setHighlightedMessageId(messageId);
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 1200);
+    setHighlight({ messageId });
     requestAnimationFrame(() => {
       const again = jumpAnchor.current.align(anchor);
       if (again != null) scrollPinnedTo(again);
@@ -303,7 +296,7 @@ export function useThreadListScroll({
     jumpTarget: jumpScrollTarget.current,
     pinnedTarget,
     pinnedNewerCursor,
-    highlightedMessageId,
+    highlightedMessageId: highlight?.messageId ?? null,
     performScroll,
     follow,
     pinnedNearEnd,

@@ -8,7 +8,6 @@ import {
   MAX_DESKTOP_DISPLAY,
   resetDesktopRuntimeCommand,
   screenPorts,
-  shellQuote,
   stopBrowserCommand,
   stopExtraScreenCommand,
   stopScreenTransportsCommand,
@@ -467,17 +466,6 @@ export function screenReleaseStopCommand(
     return stopBrowserCommand(options.screenId);
   }
   return "";
-}
-
-export function stopScreensCommand(screens: Array<{ screenId: string; index: number }>) {
-  return [
-    "set -eu",
-    "failed=0",
-    ...screens.map(
-      ({ screenId }) => `bash -eu -c ${shellQuote(stopBrowserCommand(screenId))} || failed=1`,
-    ),
-    '[ "$failed" -eq 0 ] || { echo "computer browser failed to stop" >&2; exit 1; }',
-  ].join("\n");
 }
 
 export function resetManagedScreensCommand() {

@@ -16,6 +16,17 @@ type Message = {
   blocks: readonly MessageBlock[];
 };
 
+/** Content shown in the read-only peer conversation, not tools or activity. */
+export function isPeerReplyBlock(block: MessageBlock) {
+  return (
+    block.kind === "text" ||
+    block.kind === "file" ||
+    block.kind === "image" ||
+    block.kind === "chart" ||
+    block.kind === "page"
+  );
+}
+
 function peerReceipt(blocks: readonly MessageBlock[]) {
   const block = blocks.find(
     (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
@@ -64,9 +75,7 @@ export function unreturnedPeerReplies<T extends Message>(
       marker.id,
       replies.filter((reply) => {
         if (reply.role !== "bot") return false;
-        const content = reply.blocks.filter(
-          (b) => b.kind === "text" || b.kind === "file" || b.kind === "image",
-        );
+        const content = reply.blocks.filter(isPeerReplyBlock);
         if (!content.length) return false;
         // Attachments are not represented by a text echo.
         if (content.some((b) => b.kind !== "text")) return true;

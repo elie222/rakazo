@@ -1,7 +1,6 @@
-import type { Bot, ModelApiProtocol, ModelCatalogEntry } from "@rakazo/contracts";
+import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  DEFAULT_MODEL_MAX_TOKENS,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
@@ -40,17 +39,6 @@ export function compatibleThinkingLevels(
 }
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
-
-/**
- * The max-tokens field for a connection. An OpenAI-compatible endpoint always sends a limit, so
- * an unsaved one shows the default it would get; catalog providers leave it blank to use theirs.
- */
-export function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
-  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
-  }
-  return stored !== undefined ? String(stored) : "";
-}
 
 /**
  * Map a staged effort onto the levels a model actually supports.
@@ -173,6 +161,7 @@ type CredentialModelRef = {
   label: string;
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
+  modelSettings?: Readonly<Record<string, ModelSettings>>;
   isDefault?: boolean;
   preferenceRank?: number;
 };
@@ -299,6 +288,26 @@ export function credentialForModel<C extends CredentialModelRef>(
 }
 
 /**
+ * The connection a model row runs on, in the order runs choose it: its pinned connection, else
+ * one whose saved model is this one, else the most preferred connection for its provider.
+ */
+export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
+  credentials: readonly C[],
+  choice: { provider: string; modelId: string; credentialId?: string | null },
+): C | undefined {
+  if (choice.credentialId) return credentials.find((entry) => entry.id === choice.credentialId);
+  const provider = credentials.filter(
+    (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
+  );
+  return (
+    provider.find((entry) => entry.modelId === choice.modelId) ??
+    [...provider].sort(
+      (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
+    )[0]
+  );
+}
+
+/**
  * Models a connected provider can run. Catalog entries submit their API ids.
  * A saved display label expands to those ids instead of becoming the only choice.
  * A custom id that is not a catalog label stays a single free-form option.
@@ -324,10 +333,17 @@ export function connectedModelChoices(
     const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
       enabled.length > 0
-        ? enabled.map((id) => ({
-            ...freeFormChoice(credential, id),
-            images: providerModels.find((entry) => entry.id === id)?.images,
-          }))
+        ? enabled.map((id) => {
+            const known = providerModels.find((entry) => entry.id === id)?.images;
+            const own = credential.modelSettings?.[id]?.images;
+            return {
+              ...freeFormChoice(credential, id),
+              images:
+                credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+                  ? (own ?? known)
+                  : (known ?? own),
+            };
+          })
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
           : catalogChoices(providerModels);

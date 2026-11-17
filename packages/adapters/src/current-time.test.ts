@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 
 describe("formatCurrentTimeInstruction", () => {
   it("anchors the present moment in UTC with the weekday and no sub-second noise", () => {

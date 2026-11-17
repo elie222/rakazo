@@ -76,6 +76,34 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/**
+ * One model's own settings on a connection. Omitted fields follow the model card. Image input
+ * and thinking apply only where the catalog cannot tell, since its answer is authoritative.
+ */
+export const ModelSettingsSchema = z
+  .object({
+    contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
+    maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
+    images: z.boolean().optional(),
+    maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
+    reasoning: z.boolean().optional(),
+  })
+  .refine((value) => modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow), {
+    message: "Maximum output tokens must leave room for input",
+    path: ["maxTokens"],
+  });
+export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
+
+/** How many models on one connection may keep their own settings. */
+export const MAX_MODEL_SETTINGS_PER_CONNECTION = 200;
+
+export const ModelSettingsSaveSchema = z.object({
+  credentialId: Id,
+  modelId: z.string().trim().min(1).max(512),
+  settings: ModelSettingsSchema,
+});
+export type ModelSettingsSave = z.infer<typeof ModelSettingsSaveSchema>;
+
 /** Wire protocol selected for one OpenAI-compatible connection. */
 export const ModelApiProtocolSchema = z.enum([
   "chat-completions",
@@ -100,6 +128,8 @@ export const ModelCredentialSchema = z.object({
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
+  projectId: z.string().optional(),
+  region: z.string().optional(),
   modelId: z.string().optional(),
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -111,6 +141,8 @@ export const ModelCredentialSchema = z.object({
   enabledModelIds: z.array(z.string()).optional(),
   /** The connection's enabled models that accept images, where it declares them per model. */
   visionModelIds: z.array(z.string()).optional(),
+  /** Settings saved for individual models on this connection. */
+  modelSettings: z.record(z.string(), ModelSettingsSchema).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
   /**
@@ -162,7 +194,7 @@ export const MAX_MODEL_CONNECTION_LABEL = 80;
 export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
 
 /** Ids a provider needs besides its key to route requests, like an account. */
-export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId", "projectId", "region"]);
 export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
 
 /** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
@@ -183,15 +215,63 @@ export function modelRoutingReady(
   return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
 }
 
+/** An existing key-only connection may keep its original route until a project is supplied. */
+function modelRoutingFieldsForSave(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): readonly ModelRoutingField[] | undefined {
+  if (
+    fields?.includes("projectId") &&
+    existing &&
+    !existing.projectId &&
+    !existing.region &&
+    !values.projectId?.trim() &&
+    (!values.region?.trim() || values.region.trim() === "global")
+  )
+    return fields.filter((field) => field !== "projectId" && field !== "region");
+  return fields;
+}
+
+/** Serialize the same routing fields that the form requires, including legacy edits. */
+export function modelRoutingInput(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): Partial<Record<ModelRoutingField, string>> {
+  return Object.fromEntries(
+    (modelRoutingFieldsForSave(fields, values, existing) ?? []).map((field) => [
+      field,
+      (values[field] ?? "").trim(),
+    ]),
+  );
+}
+
+export function modelRoutingDirty(
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Partial<Record<ModelRoutingField, string>>,
+): boolean {
+  return (
+    (["accountId", "gatewayId", "projectId"] as const).some(
+      (field) => (values[field]?.trim() ?? "") !== (existing?.[field] ?? ""),
+    ) ||
+    Boolean(
+      values.projectId?.trim() && (values.region?.trim() ?? "") !== (existing?.region ?? "global"),
+    )
+  );
+}
+
 /** What a connection form shows and requires for the routing ids a catalog entry names. */
 export function modelRoutingForm(
   fields: readonly ModelRoutingField[] | undefined,
   values: Partial<Record<ModelRoutingField, string>>,
-): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): { needsRouting: boolean; needsGateway: boolean; needsProject: boolean; routingReady: boolean } {
   return {
     needsRouting: Boolean(fields?.length),
     needsGateway: Boolean(fields?.includes("gatewayId")),
-    routingReady: modelRoutingReady(fields, values),
+    needsProject: Boolean(fields?.includes("projectId")),
+    routingReady: modelRoutingReady(modelRoutingFieldsForSave(fields, values, existing), values),
   };
 }
 
@@ -202,6 +282,8 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    projectId: z.string().optional(),
+    region: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),
@@ -266,8 +348,8 @@ export const ModelConnectInputSchema = z
         path: ["apiKey"],
       });
     }
-    // An existing connection can update its output limit without a new key.
-    if (!apiKey && value.maxTokens === undefined) {
+    // An existing connection saves its other settings without a new key.
+    if (!apiKey && value.maxTokens === undefined && !value.credentialId) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",
@@ -324,8 +406,19 @@ export const ModelCatalogEntrySchema = z.object({
   signIn: ModelOAuthSignInModeSchema.optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+  /** Uncustomized capabilities for forms on other connections of the same provider. */
+  defaultCapabilities: z
+    .object({
+      images: z.boolean().optional(),
+      reasoning: z.boolean().optional(),
+      thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+    })
+    .optional(),
   /** The model reads images. Left out where a connection setting decides it. */
   images: z.boolean().optional(),
+  /** The model card's context window and output ceiling, where the catalog has one. */
+  contextWindow: z.number().int().min(1).optional(),
+  maxTokens: z.number().int().min(1).optional(),
   /** Catalog stand-in so a provider appears before the user enters a real model id. */
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */

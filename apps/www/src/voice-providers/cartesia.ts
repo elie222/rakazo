@@ -1,29 +1,37 @@
-import type { VoiceProvider } from "./types";
 import {
+  CARTESIA_RANGE,
   CHARS_PER_HOUR,
   CHARS_PER_MINUTE,
-  PRICING_SOURCES,
-  RATES,
-  VOICE_DOC,
-  WORKLOAD,
-  WORKLOAD_CHARS,
-  WORKLOAD_DAILY_MINUTES,
   cartesiaInkPerHour,
-  CARTESIA_RANGE,
   cartesiaPerMillion,
   count,
   credits,
   homepage,
+  PRICING_SOURCES,
   perHourOfSpeech,
   priceVersus,
+  RATES,
   usd,
+  VOICE_DOC,
   voicePriceTable,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_CHARS,
+  WORKLOAD_DAILY_MINUTES,
   withPricingSources,
 } from "./shared";
+import type { VoiceProvider } from "./types";
 
 const WORKLOAD_SHOWN = ["cartesia", "elevenlabs", "openai", "fish", "macos"] as const;
-const COMPARED = ["cartesia", "elevenlabs", "openai", "fish", "deepgram", "inworld", "selfHosted"] as const;
+const COMPARED = [
+  "cartesia",
+  "elevenlabs",
+  "openai",
+  "fish",
+  "deepgram",
+  "inworld",
+  "selfHosted",
+] as const;
 
 const { pro, startup, scale } = RATES.cartesiaPlans;
 const FREE_CREDITS = RATES.cartesiaFreeCredits;
@@ -136,11 +144,7 @@ export const cartesia: VoiceProvider = {
       table: {
         caption: "Cartesia effective rates, as of November 2026",
         columns: ["Plan", "Speech per 1M characters", "About per hour of speech", "Ink per hour"],
-        rows: [
-          planRow("pro", "Pro"),
-          planRow("startup", "Startup"),
-          planRow("scale", "Scale"),
-        ],
+        rows: [planRow("pro", "Pro"), planRow("startup", "Startup"), planRow("scale", "Scale")],
         note: `Derived from [Cartesia's pricing page](https://cartesia.ai/pricing), checked November 2026, at about ${count(CHARS_PER_HOUR)} characters per hour of speech. Rakazo doesn't use Ink.`,
       },
     },
@@ -150,7 +154,10 @@ export const cartesia: VoiceProvider = {
         "Rakazo calls Cartesia with your key, so Cartesia bills you and Rakazo adds nothing. Because Rakazo uses Cartesia only to speak, transcription is free: your browser, the desktop app or your phone does the listening.",
         `${WORKLOAD} That is about ${count(WORKLOAD_CHARS)} credits, which fits inside the Startup plan's ${count(startup.credits)}: ${usd(startup.price)} a month. On Pro you'd pay ${usd(pro.price)} plus about $${Math.round(onPro(WORKLOAD_CHARS))} of overage, so Startup is the better fit at this volume. Someone who hears 10 minutes a day uses about ${count(LIGHT_CHARS)} credits, which is Pro plus about $${Math.round(onPro(LIGHT_CHARS))} of overage.`,
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
+      table: voiceWorkloadTable(
+        "One bot, 30 minutes of speech and 30 of transcription a day",
+        WORKLOAD_SHOWN,
+      ),
     },
     {
       heading: "Cartesia vs ElevenLabs",
@@ -168,7 +175,7 @@ export const cartesia: VoiceProvider = {
       bullets: [
         "Hear replies. Choose **Speak this reply** on any message, or turn on **Read replies aloud** in a bot's settings. Replies are spoken with `sonic-3`.",
         "Call a bot. Choose **Call** at the top of a chat to talk in real time. You can cut in while the bot is speaking, and the transcript stays in the chat.",
-        "Get called. Ask \"call me when the overnight list is ready\" and the bot rings you. A bot may also call if you've missed the same reminder several times.",
+        'Get called. Ask "call me when the overnight list is ready" and the bot rings you. A bot may also call if you\'ve missed the same reminder several times.',
         "Give each bot its own voice. The **Voice** next to **Read replies aloud** overrides your default for that bot.",
         "Use your own voices. The voice picker lists the voices your Cartesia account can use, including ones you cloned.",
         "Talk instead of typing, with your device's speech recognition. Holding the mic uses the browser's recognition in Chrome and the system's in the desktop app. On calls in the mobile app, the phone listens.",
@@ -216,8 +223,7 @@ export const cartesia: VoiceProvider = {
   faq: [
     {
       question: "How much does Cartesia cost?",
-      answer:
-        `As of November 2026, Cartesia has a Free plan with ${count(FREE_CREDITS)} credits a month, Pro at ${usd(pro.price)} for ${credits(pro.credits)}, Startup at ${usd(startup.price)} for ${credits(startup.credits)} and Scale at ${usd(scale.price)} for ${credits(scale.credits)}. Sonic uses one credit per character, so speech costs about ${usd(LOW)} to ${usd(HIGH)} per million characters, roughly ${perHourOfSpeech(LOW)} to ${perHourOfSpeech(HIGH)} per hour.`,
+      answer: `As of November 2026, Cartesia has a Free plan with ${count(FREE_CREDITS)} credits a month, Pro at ${usd(pro.price)} for ${credits(pro.credits)}, Startup at ${usd(startup.price)} for ${credits(startup.credits)} and Scale at ${usd(scale.price)} for ${credits(scale.credits)}. Sonic uses one credit per character, so speech costs about ${usd(LOW)} to ${usd(HIGH)} per million characters, roughly ${perHourOfSpeech(LOW)} to ${perHourOfSpeech(HIGH)} per hour.`,
     },
     {
       question: "Cartesia vs ElevenLabs: which is better for AI agents?",
@@ -247,17 +253,17 @@ export const cartesia: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    { label: "Cartesia", href: "https://cartesia.ai" },
-    PRICING_SOURCES.cartesia,
-    {
-      label: "Cartesia, Sonic models",
-      href: "https://docs.cartesia.ai/build-with-cartesia/tts-models/latest",
-    },
-    {
-      label: "eesel, Cartesia Sonic 3 vs ElevenLabs",
-      href: "https://www.eesel.ai/blog/cartesia-sonic-3-vs-elevenlabs",
-    },
-    VOICE_DOC,
+      { label: "Cartesia", href: "https://cartesia.ai" },
+      PRICING_SOURCES.cartesia,
+      {
+        label: "Cartesia, Sonic models",
+        href: "https://docs.cartesia.ai/build-with-cartesia/tts-models/latest",
+      },
+      {
+        label: "eesel, Cartesia Sonic 3 vs ElevenLabs",
+        href: "https://www.eesel.ai/blog/cartesia-sonic-3-vs-elevenlabs",
+      },
+      VOICE_DOC,
     ],
     { prices: COMPARED, workload: WORKLOAD_SHOWN },
   ),
