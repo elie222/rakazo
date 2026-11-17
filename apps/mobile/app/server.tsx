@@ -46,6 +46,7 @@ export default function ServerScreen() {
   const colorScheme = useResolvedAppearance();
   const active = useRef(true);
   const saving = useRef(false);
+  const removing = useRef(new Set<string>());
 
   useEffect(() => {
     return () => {
@@ -65,7 +66,8 @@ export default function ServerScreen() {
 
   // A saved server brings the headers it was set up with; typing an address uses the rows.
   async function save(target?: SavedServer) {
-    if (saving.current) return;
+    // A switch to a server whose removal is still running would list it again once it lands.
+    if (saving.current || (target && removing.current.has(target.apiBase))) return;
     // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
     try {
@@ -103,13 +105,19 @@ export default function ServerScreen() {
   async function forget(apiBase: string) {
     // A switch in progress records its server when it lands, which would bring this one back.
     if (saving.current) return;
-    if (!(await removeSavedServer(apiBase))) {
-      if (active.current) setError(t`Could not remove the server`);
-      return;
-    }
-    if (active.current) {
-      setError(null);
-      setSaved(savedServers());
+    if (removing.current.has(apiBase)) return;
+    removing.current.add(apiBase);
+    try {
+      if (!(await removeSavedServer(apiBase))) {
+        if (active.current) setError(t`Could not remove the server`);
+        return;
+      }
+      if (active.current) {
+        setError(null);
+        setSaved(savedServers());
+      }
+    } finally {
+      removing.current.delete(apiBase);
     }
   }
 

@@ -189,6 +189,20 @@ describe("saved servers", () => {
     expect(savedServers()[0]).toEqual({ apiBase: "https://new.example.test", headers: ACCESS });
   });
 
+  it("reports a failed read and a failed write instead of dropping them silently", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked read"));
+      await loadSavedServers();
+      expect(warn).toHaveBeenCalledWith("Saved servers could not be read", expect.any(Error));
+      vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked write"));
+      expect(await recordSavedServer(ONE, {})).toBe(false);
+      expect(warn).toHaveBeenCalledWith("Saved servers could not be written", expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("keeps applying changes after one write failed", async () => {
     vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
     expect(await recordSavedServer(ONE, {})).toBe(false);

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -361,6 +362,37 @@ it("clears the failure message once a retried removal works", async () => {
   });
   await pressButton("Remove two.example.test");
   expect(container?.textContent).not.toContain("Could not remove the server");
+});
+
+it("does not switch to a server whose removal is still running, so it is not listed again", async () => {
+  saved.list = [
+    { apiBase: "https://two.example.test", headers: {} },
+    { apiBase: "https://three.example.test", headers: {} },
+  ];
+  const removal = deferred<boolean>();
+  saved.remove.mockReturnValueOnce(removal.promise);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  await pressButton("two.example.test");
+  expect(api.probe).not.toHaveBeenCalled();
+  expect(api.save).not.toHaveBeenCalled();
+  // A switch to another saved server cannot bring the removed one back, so it still runs.
+  await pressButton("three.example.test");
+  expect(api.save).toHaveBeenCalledWith("https://three.example.test", {});
+  await act(async () => {
+    removal.resolve(true);
+    await flush();
+  });
+});
+
+it("lets a switch run after a removal that failed", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockResolvedValueOnce(false);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).toContain("Could not remove the server");
+  await pressButton("two.example.test");
+  expect(api.save).toHaveBeenCalledWith("https://two.example.test", {});
 });
 
 it("tells an http server from an https one on the same host", async () => {

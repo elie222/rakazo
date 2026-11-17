@@ -50,10 +50,11 @@ async function readSavedServers(): Promise<void> {
   try {
     stored = await SecureStore.getItemAsync(SAVED_SERVERS_KEY);
     readable = true;
-  } catch {
+  } catch (error) {
     // SecureStore is unavailable in some test / web hosts. Nothing is listed, and nothing is
     // written over what could not be read.
     readable = false;
+    console.warn("Saved servers could not be read", error);
   }
   saved = parseSavedServers(stored);
 }
@@ -63,7 +64,9 @@ async function persist(next: SavedServer[]): Promise<boolean> {
     if (next.length === 0) await SecureStore.deleteItemAsync(SAVED_SERVERS_KEY);
     else await SecureStore.setItemAsync(SAVED_SERVERS_KEY, JSON.stringify(next));
     return true;
-  } catch {
+  } catch (error) {
+    // The caller decides what a failed write means; this only reports it.
+    console.warn("Saved servers could not be written", error);
     return false;
   }
 }
