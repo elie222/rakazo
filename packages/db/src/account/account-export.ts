@@ -406,6 +406,7 @@ async function* spaceRecords(
       active: routine.active,
       notify: routine.notify,
       sendToChat: routine.sendToChat,
+      inChat: routine.inChat,
       messageProvider: routine.messageProvider,
       modelProvider: routine.modelProvider,
       modelId: routine.modelId,

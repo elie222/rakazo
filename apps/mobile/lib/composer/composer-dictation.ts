@@ -141,11 +141,14 @@ export function useComposerDictation({
   }
 
   async function start(mine: Session) {
-    const plan = await resolveVoiceCallPlan({
-      loadDeviceVoiceEnabled,
-      dictationAvailable: dictation.available,
-      loadVoiceStatus: () => rpc("voice/status"),
-    });
+    const plan = await resolveVoiceCallPlan(
+      {
+        loadDeviceVoiceEnabled,
+        dictationAvailable: dictation.available,
+        loadVoiceStatus: () => rpc("voice/status"),
+      },
+      "dictation",
+    );
     if (session.current !== mine) return;
     if (plan.kind === "settings") {
       end(mine);
@@ -168,8 +171,10 @@ export function useComposerDictation({
       const requestContext = await captureApiRequestContext();
       if (session.current !== mine) return;
       await ensureVoiceConsent(requestContext);
+      if (session.current !== mine) return;
       // Ask for the microphone first: on Android its prompt reads as leaving the app.
       const { AudioModule } = await import("expo-audio");
+      if (session.current !== mine) return;
       await AudioModule.requestRecordingPermissionsAsync();
       if (!(await goLive(mine))) return;
       const stopped = new AbortController();

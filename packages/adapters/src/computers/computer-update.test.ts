@@ -175,9 +175,9 @@ describe("background computer maintenance", () => {
   });
   it.each([
     ["a spent computer allowance", new SandboxAllowanceUsedError(), "warn"],
-    ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
+    ["a provider outage", new SandboxUnresponsiveError("provider down"), "error"],
     ["a provider rate limit", new SandboxRateLimitError(), "warn"],
-    ["a computer that did not start", new SandboxUnavailableError(), "warn"],
+    ["a computer that did not start", new SandboxUnavailableError(), "error"],
     ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
   ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
@@ -188,7 +188,69 @@ describe("background computer maintenance", () => {
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
+    expect(logged[0]).toMatchObject({
+      computerId: row.computerId,
+      "computer.id": row.computerId,
+      "bot.id": row.botId,
+      action: row.action,
+    });
   });
+  it.each(["update", "recover"])(
+    "reports a final %s wait failure once with correlation ids",
+    async (action) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const { row, deps } = fixture();
+      row.action = action;
+      replacement.mockRejectedValueOnce(new SandboxUnavailableError());
+      await performComputerUpdate(deps, row.id);
+      await performComputerUpdate(deps, row.id);
+      expect(row.status).toBe("failed");
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([
+        expect.objectContaining({
+          message: "computer update failed",
+          "computer.id": row.computerId,
+          "bot.id": row.botId,
+          action,
+        }),
+      ]);
+    },
+  );
+  it.each([
+    [
+      new SandboxUnavailableError({ cause: new Error("unrecognized private prose") }),
+      "provider_unavailable",
+    ],
+    [
+      new SandboxUnresponsiveError("unrecognized private prose", {
+        cause: new Error("nested private prose"),
+      }),
+      "provider_unresponsive",
+    ],
+  ])(
+    "reports a fixed provider failure without its text or cause chain (%s)",
+    async (error, reason) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const { row, deps } = fixture();
+      replacement.mockRejectedValueOnce(error);
+      await performComputerUpdate(deps, row.id);
+      const failures = sink.events.filter((event) => event.level === "error");
+      expect(failures).toEqual([
+        expect.objectContaining({
+          message: "computer update failed",
+          reason,
+          "computer.id": row.computerId,
+          "bot.id": row.botId,
+          "error.fingerprint": ["computer.update", "update", reason],
+          "error.details": JSON.stringify({ action: "update", reason }),
+        }),
+      ]);
+      expect(failures[0]).not.toHaveProperty("error");
+      expect(JSON.stringify(sink.events)).not.toContain("private prose");
+    },
+  );
+
   it("tells the bots of a computer left running because its files are too large to save", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
@@ -347,11 +409,22 @@ describe("background computer maintenance", () => {
 
   it("rejects a busy computer before publishing an operation", async () => {
     const { row, deps, computer, jobs } = fixture();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     computer.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(queueComputerUpdate(deps, row.computerId, row.botId)).rejects.toThrow(
       "Computer is busy",
     );
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.maintenance_refused",
+        "computer.id": row.computerId,
+        "bot.id": row.botId,
+        action: "update",
+        reason: "maintenance_claim_refused",
+      }),
+    );
   });
 
   it("claims maintenance and an idle takeover together, then revokes before publishing", async () => {
@@ -529,6 +602,8 @@ describe("background computer maintenance", () => {
 
   it("clears the lease when lease clear loses the reservation after revocation", async () => {
     const harness = takeoverQueue();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     harness.computer.updateMany
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 1 })
@@ -538,6 +613,13 @@ describe("background computer maintenance", () => {
       "Computer is busy",
     );
 
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.maintenance_refused",
+        reason: "control_lease_clear_refused",
+        updateId: "update-1",
+      }),
+    );
     expect(harness.setScreenControl).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
     expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
@@ -755,6 +837,35 @@ describe("background computer maintenance", () => {
       expect.objectContaining({
         data: expect.objectContaining({ controlHolder: "user" }),
       }),
+    );
+  });
+
+  it.each([
+    ["reserving", "revoking_claim_lost"],
+    ["revoking", "release_confirmation_lost"],
+    ["revoked", "queue_claim_lost"],
+  ])("records the refusal when the %s handback marker is lost", async (status, reason) => {
+    const harness = takeoverQueue();
+    const change = harness.computerUpdate.updateMany.getMockImplementation()!;
+    harness.computerUpdate.updateMany.mockImplementation(async (args) =>
+      args.where.status === status ? { count: 0 } : change(args),
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await expect(
+      queueComputerUpdate(harness.deps, "computer-1", "bot-1", "recover"),
+    ).rejects.toThrow("Computer is busy");
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(sink.events.filter((event) => event.message === "computer.maintenance_refused")).toEqual(
+      [
+        expect.objectContaining({
+          "computer.id": "computer-1",
+          "bot.id": "bot-1",
+          action: "recover",
+          updateId: "update-1",
+          reason,
+        }),
+      ],
     );
   });
 

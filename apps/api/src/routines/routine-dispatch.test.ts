@@ -18,6 +18,7 @@ describe("routine dispatch DTO", () => {
       notify: true,
       sendToChat: false,
       webhookEnabled: false,
+      inChat: false,
       githubEnabled: false,
       messageProvider: null,
       emailSenders: null,

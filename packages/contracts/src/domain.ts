@@ -619,6 +619,8 @@ export const RoutineSchema = z.object({
   notify: z.boolean(),
   /** Whether each finished run's reply also goes to the owner's linked chat. */
   sendToChat: z.boolean(),
+  /** Runs as a turn in its chat instead of alongside it. Absent on older servers. */
+  inChat: z.boolean().default(false),
   webhookEnabled: z.boolean(),
   githubEnabled: z.boolean(),
   messageProvider: z
@@ -655,6 +657,7 @@ export const CreateRoutineInput = z
     timezone: TimeZoneSchema.default("UTC"),
     notify: z.boolean().default(true),
     sendToChat: z.boolean().default(false),
+    inChat: z.boolean().default(false),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
     githubEnabled: z.boolean().default(false),

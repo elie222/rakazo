@@ -189,6 +189,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     notify: z.boolean(),
     /** Absent in exports from before routines could send to chat. */
     sendToChat: z.boolean().default(false),
+    /** Absent in exports from older servers. */
+    inChat: z.boolean().default(false),
     messageProvider: z.string().nullable(),
     modelProvider: z.string().nullable(),
     modelId: z.string().nullable(),

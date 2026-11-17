@@ -58,7 +58,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             args: request.args,
             userTask: truncateReviewText(
               request.userTask,
-              request.newSite || request.memoryWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
+              request.newSite || request.savedContextWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
             ),
             botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
@@ -67,7 +67,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
               matchValue: rule.matchValue,
             })),
             ...(request.newSite ? { newSite: true } : {}),
-            ...(request.memoryWrite ? { memoryWrite: true } : {}),
+            ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
           },
           questions: { decision: autoReviewDecisionQuestion(request) },
         },

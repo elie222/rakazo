@@ -17,9 +17,13 @@ const scheduleCreateProperties = {
   prompt: {
     type: "string",
     description:
-      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. This prompt is all a future run knows, and it runs in new circumstances: write the user\'s lasting request in full, keeping every standing item and preference, including their swap and skip rules. A decision that only fit this time, such as an item swapped or skipped because it was out of stock or anything the user said "this week" or "this time" about, becomes a condition, never a permanent change ("skip sourdough if it is out of stock", not "skip sourdough").',
+      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. Write the prompt so it makes sense without this chat. It runs in new circumstances: write the user\'s lasting request in full, keeping every standing item and preference, including their swap and skip rules. A decision that only fit this time, such as an item swapped or skipped because it was out of stock or anything the user said "this week" or "this time" about, becomes a condition, never a permanent change ("skip sourdough if it is out of stock", not "skip sourdough").',
   },
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
+  inChat: {
+    type: "boolean",
+    description: "Run as a turn in this chat.",
+  },
 };
 
 const scheduleTimingNames = [...SCHEDULE_TIMING_FIELDS, "watch"] as const;
@@ -99,7 +103,8 @@ export function scheduleCreateBranch(
   return {
     type: "object",
     properties,
-    required: ["name", "prompt", ...active],
+    // A watch never runs in its chat: what it read is not the user's words.
+    required: ["name", "prompt", ...(activeNames.has("watch") ? [] : ["inChat"]), ...active],
     additionalProperties: false,
   };
 }
@@ -297,7 +302,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today.',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. inChat true only when each run continues work this chat is doing, such as updating a draft or plan written here or fixing something started here; it then waits for work under way here. Otherwise false: it runs on time, seeing this chat\'s latest messages and its own earlier results.',
     inputSchema: scheduleCreateInputSchema,
   },
   {

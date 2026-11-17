@@ -260,6 +260,8 @@ export function routinesRoutes(ctx: RouterContext) {
               active: input.active,
               notify: input.notify,
               sendToChat: input.sendToChat,
+              // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+              inChat: watch ? false : input.inChat,
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,

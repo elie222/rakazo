@@ -1331,7 +1331,7 @@ model Run {
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
-  @@index([routineId])
+  @@index([routineId, createdAt])
   @@map("runs")
 }
 
@@ -1544,6 +1544,9 @@ model Routine {
   notify         Boolean   @default(true)
   /// Send each finished run's reply to the owner's linked chat app, not only the app.
   sendToChat     Boolean   @default(false)
+  /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
+  /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
+  inChat         Boolean   @default(false)
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
@@ -2867,4 +2870,45 @@ model CapabilityInstallSpace {
   @@id([installId, spaceId])
   @@index([spaceId, userId])
   @@map("capability_install_spaces")
+}
+
+/// Operator grants; never purchased model credits. Counter includes uncertain reservations.
+model SpeechAllowance {
+  userId String @id
+  limitMicros BigInt
+  usedMicros BigInt @default(0)
+  expiresAt DateTime
+  @@map("speech_allowances")
+}
+
+/// Financial evidence survives chat deletion; contains no audio, transcripts or credentials.
+model SpeechCost {
+  id String @id
+  userId String
+  spaceId String
+  callId String?
+  provider String
+  operation String
+  model String
+  unit String
+  units Float?
+  billableUnits Json?
+  observedModel String?
+  observedUnit String?
+  accountedMicros BigInt
+  confirmationSource String?
+  confirmationReference String? @unique
+  reservedMicros BigInt
+  costMicros BigInt?
+  microsPerUnit Float
+  pricingSource String
+  pricingVersion String
+  providerRequestId String?
+  state String @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  @@index([userId, createdAt], map: "speech_costs_account")
+  @@index([spaceId, createdAt], map: "speech_costs_space")
+  @@index([state, createdAt], map: "speech_costs_reconcile")
+  @@map("speech_costs")
 }

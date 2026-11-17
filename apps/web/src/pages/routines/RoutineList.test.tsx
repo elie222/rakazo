@@ -28,6 +28,7 @@ function routine(index: number): Routine {
     active: true,
     notify: true,
     sendToChat: false,
+    inChat: false,
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,

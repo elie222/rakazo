@@ -59,6 +59,10 @@ export const ATTACHMENT_ARCHIVE_MIME_TYPES = [
 export const ATTACHMENT_FILE_MIME_TYPES = [
   ...ATTACHMENT_AUDIO_MIME_TYPES,
   "video/mp4",
+  "video/quicktime",
+  "video/3gpp",
+  "image/heic",
+  "image/heif",
   "application/pdf",
   "text/plain",
   "text/markdown",
@@ -77,7 +81,7 @@ export const ATTACHMENT_ALLOWED_MIME_TYPES = [
 
 export type AttachmentMimeType = (typeof ATTACHMENT_ALLOWED_MIME_TYPES)[number];
 
-export function isAttachmentImageMimeType(mimeType: string): boolean {
+export function isAttachmentImageMimeType(mimeType: string): mimeType is AttachmentImageMimeType {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 

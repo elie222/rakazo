@@ -1,6 +1,6 @@
 import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { handQueuedRunToWorkingRun } from "@rakazo/db";
+import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
@@ -20,20 +20,26 @@ interface RoutineRun {
   startedAt: Date | null;
   wakeAt: Date | null;
   createdAt: Date;
-  routine: { name: string } | null;
+  routine: { name: string; inChat: boolean } | null;
 }
 
 /**
- * A scheduled run never starts beside another run in its chat, so their messages never mix: its
- * claim waits for that run to end. Holds until then; after a while it hands its task to that run
- * instead, so a run that goes on for hours does not hold it back.
+ * A routine that runs in its chat never starts beside another run there, so their messages never
+ * mix: its claim waits for that run to end. Holds until then; after a while it hands its task to
+ * that run instead, so a run that goes on for hours does not hold it back. A routine that runs
+ * alongside its chat starts on time. A check-in belongs to no routine and runs in the chat.
  */
 export function routineClaimWaitsForConversation(
   run: Pick<RoutineRun, "id" | "botId" | "trigger" | "startedAt" | "createdAt">,
   now: Date,
 ): Prisma.RunWhereInput {
   if (run.trigger !== "routine" || run.startedAt) return {};
-  return { thread: { runs: { none: busyRunWhere(run, now) } } };
+  return {
+    OR: [
+      { routine: { is: { inChat: false } } },
+      { thread: { runs: { none: busyRunWhere(run, now) } } },
+    ],
+  };
 }
 
 /** Another run in the chat is under way, or queued ahead of this one and due. */
@@ -45,6 +51,7 @@ function busyRunWhere(
     id: { not: run.id },
     botId: run.botId,
     status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+    ...HOLDS_CHAT,
     OR: [
       { startedAt: { not: null } },
       { status: { not: "queued" } },
@@ -65,6 +72,13 @@ export async function holdRoutineRunForConversation(
   run: RoutineRun,
 ): Promise<void> {
   if (run.trigger !== "routine" || run.status !== "queued" || run.startedAt) return;
+  // Read again: the claim saw the routine as it is now, which an edit may have changed since the
+  // run was loaded.
+  const current = await deps.prisma.run.findUnique({
+    where: { id: run.id },
+    select: { routine: { select: { inChat: true } } },
+  });
+  if (current?.routine && !current.routine.inChat) return;
   const now = new Date();
   // Not due yet: its wake comes back here.
   if (run.wakeAt && run.wakeAt > now) return;
@@ -124,6 +138,7 @@ export async function startRoutineRunsWaitingOn(
       trigger: "routine",
       status: "queued",
       startedAt: null,
+      OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
       // A retry, or a run backing off after a failed attempt, keeps its own delay.
       retryOfRunId: null,
       attempts: { none: {} },

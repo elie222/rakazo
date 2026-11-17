@@ -41,6 +41,7 @@ import {
   summarize,
   validateControls,
 } from "../evals/report.js";
+import { ROUTINE_MODE_SUITE } from "../evals/routine-mode.js";
 import type { CasePlan } from "../evals/run-store.js";
 import { judgeIdentity, RunStore } from "../evals/run-store.js";
 import {
@@ -200,6 +201,7 @@ async function main() {
       fixtureVersion: INITIATIVE_FIXTURE_VERSION,
       judge: { version: INITIATIVE_JUDGE_VERSION, calibration: INITIATIVE_JUDGE_CALIBRATION },
     },
+    "routine-mode": ROUTINE_MODE_SUITE,
     memory: {
       cases: MEMORY_EVAL_CASES,
       fixtureVersion: MEMORY_FIXTURE_VERSION,
@@ -237,9 +239,7 @@ async function main() {
     },
   };
   if (!Object.hasOwn(suites, values.suite!))
-    throw new Error(
-      "Unknown suite; use product, subagents, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
-    );
+    throw new Error(`Unknown suite; use ${[...Object.keys(suites), "approval"].join(", ")}`);
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
   const extraCases = values["cases-file"]

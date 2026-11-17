@@ -495,6 +495,7 @@ export async function createScheduleFromTool(
     target?: { botId: string; threadId: string };
     name: string;
     prompt: string;
+    inChat?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
   },
@@ -541,6 +542,7 @@ export async function createScheduleFromTool(
         crons: [resolved.cron],
         timezone,
         notify: true,
+        inChat: input.inChat ?? false,
         active: true,
         nextRunAt: resolved.nextRunAt,
       },
@@ -599,6 +601,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
   return {
     name: String(args.name ?? ""),
     prompt: String(args.prompt ?? ""),
+    inChat: args.inChat === true,
     timezone: args.timezone ? String(args.timezone) : undefined,
     schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
   };
@@ -771,6 +774,7 @@ export async function listSchedulesFromTool(
       name: row.name,
       prompt: row.prompt,
       crons: row.crons,
+      inChat: row.inChat,
       active: row.active,
       nextRunAt: row.nextRunAt?.toISOString() ?? null,
       oneShot: isOneShotRoutineCrons(row.crons),
@@ -827,7 +831,8 @@ const WATCH_RETIME_ERROR =
   "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
 
 /**
- * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
+ * Edit one of this bot's routines in place: name, prompt, whether it runs in its chat, timing
+ * (with startAt), or active.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
 export async function updateScheduleFromTool(
@@ -843,6 +848,7 @@ export async function updateScheduleFromTool(
     routineId: string;
     name?: string;
     prompt?: string;
+    inChat?: boolean;
     active?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
@@ -887,11 +893,21 @@ export async function updateScheduleFromTool(
   );
   const retime =
     hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
-  if (!retime && name === undefined && prompt === undefined && input.active === undefined) {
+  const inChat = input.inChat === existing.inChat ? undefined : input.inChat;
+  if (
+    !retime &&
+    name === undefined &&
+    prompt === undefined &&
+    inChat === undefined &&
+    input.active === undefined
+  ) {
     return { error: "Nothing to update." };
   }
   if (retime && existing.watch != null) {
     return { error: WATCH_RETIME_ERROR };
+  }
+  if (inChat && existing.watch != null) {
+    return { error: "A schedule that watches for changes runs alongside its chat." };
   }
 
   const active = input.active ?? existing.active;
@@ -946,6 +962,8 @@ export async function updateScheduleFromTool(
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
+      // A watch added since the read keeps its routine alongside the chat.
+      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
     },
     data: {
       // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
@@ -955,6 +973,7 @@ export async function updateScheduleFromTool(
         : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
+      ...(inChat === undefined ? {} : { inChat }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     },
   });
@@ -1006,10 +1025,17 @@ export async function updateScheduleFromTool(
       {
         name: existing.name,
         prompt: existing.prompt,
+        inChat: existing.inChat,
         active: existing.active,
         ...describeRoutineTiming(existing),
       },
-      { name: name ?? existing.name, prompt: prompt ?? existing.prompt, active, ...timing },
+      {
+        name: name ?? existing.name,
+        prompt: prompt ?? existing.prompt,
+        inChat: inChat ?? existing.inChat,
+        active,
+        ...timing,
+      },
     ),
   };
 }
@@ -1017,6 +1043,7 @@ export async function updateScheduleFromTool(
 type RoutineView = {
   name: string;
   prompt: string;
+  inChat: boolean;
   active: boolean;
   timezone: string;
   schedule?: string;
@@ -1026,7 +1053,15 @@ type RoutineView = {
 /** Before and after for each field an update changed; a field that kept its value is left out. */
 function routineChanges(before: RoutineView, after: RoutineView) {
   const changes: Record<string, { before: unknown; after: unknown }> = {};
-  for (const key of ["name", "prompt", "active", "timezone", "schedule", "nextRun"] as const) {
+  for (const key of [
+    "name",
+    "prompt",
+    "inChat",
+    "active",
+    "timezone",
+    "schedule",
+    "nextRun",
+  ] as const) {
     if (before[key] !== after[key]) {
       changes[key] = { before: before[key] ?? null, after: after[key] ?? null };
     }

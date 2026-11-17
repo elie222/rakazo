@@ -254,6 +254,7 @@ function sourceRecords(): AccountExportRecord[] {
       active: true,
       notify: true,
       sendToChat: true,
+      inChat: false,
       messageProvider: null,
       modelProvider: null,
       modelId: null,

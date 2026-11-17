@@ -3,6 +3,8 @@ import {
   computerControlExpireJobKey,
   isSandboxProviderOutage,
   SandboxAllowanceUsedError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
@@ -62,16 +64,33 @@ export async function queueComputerUpdate(
   botId: string,
   action: "update" | "recover" = "update",
 ) {
+  const busy = (reason: string, details: Record<string, unknown> = {}) => {
+    getLogger().warn("computer.maintenance_refused", {
+      "computer.id": computerId,
+      "bot.id": botId,
+      action,
+      reason,
+      ...details,
+    });
+    return new ComputerBusyError();
+  };
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
+    const observed = {
+      "computer.observed_state": computer.state,
+      maintenanceReserved: Boolean(computer.maintenanceId),
+      controlHolder: computer.controlHolder,
+      controlLeasePresent: Boolean(computer.controlLeaseId),
+      controlLeaseExpiresAt: computer.controlLeaseExpiresAt,
+    };
     if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
     const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
-    if (computer.controlLeaseId && !idleTakeover) throw new ComputerBusyError();
+    if (computer.controlLeaseId && !idleTakeover) throw busy("screen_control", observed);
 
     let handback: IdleTakeoverHandback | null = null;
     if (idleTakeover) {
@@ -91,7 +110,7 @@ export async function queueComputerUpdate(
             },
       });
       // The waiting-run check is this CAS: a run that attached loses the claim with it.
-      if (cleared.count !== 1) throw new ComputerBusyError();
+      if (cleared.count !== 1) throw busy("handback_claim_lost", observed);
       handback = {
         leaseId: computer.controlLeaseId,
         expiresAt: computer.controlLeaseExpiresAt,
@@ -140,7 +159,7 @@ export async function queueComputerUpdate(
       },
       data: { maintenanceId: update.id },
     });
-    if (claimed.count !== 1) throw new ComputerBusyError();
+    if (claimed.count !== 1) throw busy("maintenance_claim_refused", observed);
     await tx.computerUpdate.updateMany({
       where: { computerId, status: "failed" },
       data: { status: "dismissed" },
@@ -171,7 +190,7 @@ export async function queueComputerUpdate(
       });
       if (marked.count !== 1) {
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
-        throw new ComputerBusyError();
+        throw busy("revoking_claim_lost", { updateId: prepared.row.id });
       }
       prepared.row.status = "revoking";
       const context: AdapterContext = {
@@ -190,9 +209,14 @@ export async function queueComputerUpdate(
           prepared.handback.leaseId,
         );
       } catch (error) {
-        getLogger().error("release own takeover before maintenance", error);
+        getLogger().error("release own takeover before maintenance", error, {
+          "computer.id": computerId,
+          "bot.id": botId,
+          updateId: prepared.row.id,
+          action,
+        });
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
-        throw new ComputerBusyError();
+        throw busy("screen_release_failed", { updateId: prepared.row.id });
       }
       const confirmed = await deps.prisma.computerUpdate.updateMany({
         where: { id: prepared.row.id, status: "revoking" },
@@ -221,7 +245,7 @@ export async function queueComputerUpdate(
             ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
           }
         }
-        throw new ComputerBusyError();
+        throw busy("release_confirmation_lost", { updateId: prepared.row.id });
       }
       prepared.row.status = "revoked";
     }
@@ -252,7 +276,7 @@ export async function queueComputerUpdate(
       } else {
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
       }
-      throw new ComputerBusyError();
+      throw busy("control_lease_clear_refused", { updateId: prepared.row.id });
     }
     if (deps.events) {
       await endTeachingWithLease(
@@ -267,7 +291,7 @@ export async function queueComputerUpdate(
     });
     if (queued.count !== 1) {
       await dropMaintenanceReservation(deps.prisma, computerId, prepared.row.id);
-      throw new ComputerBusyError();
+      throw busy("queue_claim_lost", { updateId: prepared.row.id });
     }
     prepared.row.status = "queued";
   }
@@ -581,10 +605,19 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)
           ? error
           : keptUnsaved;
-      if (expected) {
+      // Background operations retry, but this requested maintenance ends as failed below.
+      const failedProviderOperation =
+        error instanceof SandboxUnavailableError || error instanceof SandboxUnresponsiveError;
+      const failureContext = {
+        updateId,
+        computerId: update.computerId,
+        "computer.id": update.computerId,
+        "bot.id": update.botId,
+        action: update.action,
+      };
+      if (expected && !failedProviderOperation) {
         getLogger().warn("computer update failed", {
-          updateId,
-          computerId: update.computerId,
+          ...failureContext,
           reason: expected.message,
         });
         if (keptUnsaved)
@@ -592,11 +625,20 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
             "tell the computer's bots it is too large to save",
             announceUnsavedHome(deps, update.computer, keptUnsaved),
           );
-      } else {
-        getLogger().error("computer update failed", error, {
-          updateId,
-          computerId: update.computerId,
+      } else if (expected && failedProviderOperation) {
+        // Provider causes may contain arbitrary response text that redaction cannot recognize.
+        const reason =
+          error instanceof SandboxUnavailableError
+            ? "provider_unavailable"
+            : "provider_unresponsive";
+        getLogger().error("computer update failed", {
+          ...failureContext,
+          reason,
+          "error.details": JSON.stringify({ action: update.action, reason }),
+          "error.fingerprint": ["computer.update", update.action, reason],
         });
+      } else {
+        getLogger().error("computer update failed", error, failureContext);
       }
       // Provider errors may contain credentials or private URLs. Expose only the failed stage.
       await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
