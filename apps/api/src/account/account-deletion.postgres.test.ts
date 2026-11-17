@@ -31,7 +31,7 @@ import {
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryObjectStorage } from "../../../../packages/adapters/src/object-storage.test-support.js";
+import { MemoryObjectStorage } from "../../../../packages/adapters/src/storage/object-storage.test-support.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
 import { deleteAccountContent } from "./account-deletion.js";
 

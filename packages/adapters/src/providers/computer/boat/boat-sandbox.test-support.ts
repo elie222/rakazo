@@ -38,9 +38,12 @@ import type {
 import { ResponseError } from "@boatdev/sdk";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
-import { shouldSkipPortableWorkspaceFile } from "../../../computer-workspace.js";
-import { desktopCommandResponder, simpleCommand } from "../../../linux-desktop.test-support.js";
-import { workspaceArchive } from "../../../workspace-archive.test-support.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../computers/computer-workspace.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
+import { workspaceArchive } from "../../../storage/workspace-archive.test-support.js";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
 import {
   BOAT_COMPUTER_SNAPSHOT,

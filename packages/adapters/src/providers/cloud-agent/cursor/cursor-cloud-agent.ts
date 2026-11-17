@@ -10,7 +10,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { z } from "zod";
-import { readBodyCapped } from "../../../web-ssrf.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const agentSchema = z.object({
   id: z.string().min(1),

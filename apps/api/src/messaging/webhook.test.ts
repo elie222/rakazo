@@ -12,7 +12,7 @@ import { createLogger, createTestSink } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
-import { infisicalFake } from "../../../../packages/adapters/src/secret-store-fake.js";
+import { infisicalFake } from "../../../../packages/adapters/src/secrets/secret-store-fake.js";
 import { readBoundedBody } from "../http/http-body.js";
 import type { WebhookDeps } from "./webhook.js";
 import {

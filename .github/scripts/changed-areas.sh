@@ -61,9 +61,9 @@ while IFS= read -r file; do
       packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
-      packages/adapters/src/home* | packages/adapters/src/native-shell* | \
-      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path* | \
-      packages/adapters/src/workspace-save-*)
+      packages/adapters/src/storage/home* | packages/adapters/src/computers/host/native-shell* | \
+      packages/adapters/src/browser/page-browser* | packages/adapters/src/storage/file-handle-path* | \
+      packages/adapters/src/storage/workspace-save-*)
       native=true
       ;;
     infra/compose/*) compose=true ;;

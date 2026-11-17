@@ -2,7 +2,7 @@ import type { Sandbox as RailwaySandbox } from "railway";
 import { Sandbox, SandboxNotFoundError } from "railway";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
-import { simpleCommand } from "../../../linux-desktop.test-support.js";
+import { simpleCommand } from "../../../computers/screens/linux-desktop.test-support.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 /**
