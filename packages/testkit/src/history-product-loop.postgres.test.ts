@@ -178,6 +178,7 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
               modelCallObserver: {
                 beforeCall(call) {
                   inputEstimates.push(call.inputTokensEstimate);
+                  if (call.maxOutputTokens === null) throw new Error("Expected bounded inference");
                   expect(call.inputTokensEstimate + call.maxOutputTokens).toBeLessThanOrEqual(
                     1_000_000,
                   );

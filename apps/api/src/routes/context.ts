@@ -3,6 +3,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
+  availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
   codexLiveCatalogsForSpace,
@@ -151,11 +152,11 @@ export function createRouterContext(deps: RouterDeps) {
   });
   // The scripted fixture only exists to drive the scripted runtime; a real runtime
   // cannot execute it, so it stays out of the user-facing catalog otherwise.
-  const chatCatalog = async (actor: Actor) => {
-    const catalog = await catalogForSpace(actor);
+  const chatCatalog = async (actor: Actor, role: ModelRole = "main") => {
+    const catalog = await catalogForSpace(actor, role);
     return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
   };
-  const catalogForSpace = async (actor: Actor) => {
+  const catalogForSpace = async (actor: Actor, role: ModelRole = "main") => {
     const auth = await modelCredentialAuthKindsForSpace(
       deps.prisma,
       deps.secrets,
@@ -163,7 +164,7 @@ export function createRouterContext(deps: RouterDeps) {
       deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
     );
     const approved = deps.billing?.modelCreditsEnabled
-      ? (modelCreditOfferings()?.offerings ?? [])
+      ? await availableModelCreditOfferings(deps.prisma, deps.secrets)
       : [];
     const fundedProviders = new Set(
       (
@@ -207,10 +208,13 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = withLiveModelSettings(
-      auth,
-      applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
-    );
+    const merged: ModelCatalogEntry[] = [
+      ...withLiveModelSettings(
+        auth,
+        applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
+      ),
+      ...(role === "approval" ? decisionModelCatalog() : []),
+    ];
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -228,7 +232,13 @@ export function createRouterContext(deps: RouterDeps) {
     return offeredCatalog(merged, selected)
       .filter(
         (entry) =>
-          spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
+          (spaceCanRunCatalogModel(auth, entry) &&
+            (!modelCreditOfferings() ||
+              !runsOnHostedCredits(auth, entry) ||
+              approved.some(
+                (offering) => offering.provider === entry.provider && offering.modelId === entry.id,
+              ))) ||
+          selected?.has(`${entry.provider}:${entry.id}`),
       )
       .map((entry) => {
         const offering = approved.find(
@@ -240,7 +250,12 @@ export function createRouterContext(deps: RouterDeps) {
         return offering ? { ...entry, creditOfferingId: offering.id } : entry;
       })
       .map((entry) =>
-        entry.provider === auth.managedProvider || auth.managedProviders?.includes(entry.provider)
+        (
+          modelCreditOfferings()
+            ? Boolean(entry.creditOfferingId)
+            : entry.provider === auth.managedProvider ||
+              auth.managedProviders?.includes(entry.provider)
+        )
           ? {
               ...entry,
               managed: true,
@@ -338,17 +353,10 @@ export function createRouterContext(deps: RouterDeps) {
     }
   };
   const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
-    const catalog = await chatCatalog(actor);
-    const decisions = role === "approval" ? decisionModelCatalog() : [];
-    const managedProviders = new Set(
-      catalog.filter((entry) => "managed" in entry && entry.managed).map((entry) => entry.provider),
-    );
+    const catalog = await chatCatalog(actor, role);
     return withServingConnections(
       actor,
-      [
-        ...catalog,
-        ...decisions.map((entry) => ({ ...entry, managed: managedProviders.has(entry.provider) })),
-      ].filter((entry) => modelSupportsRole(entry, role)),
+      catalog.filter((entry) => modelSupportsRole(entry, role)),
     );
   };
   /**
@@ -418,6 +426,7 @@ export function createRouterContext(deps: RouterDeps) {
           !deps.billing?.modelCreditsEnabled ||
           !(await validateCreditOfferingChoice(
             deps.prisma,
+            deps.secrets,
             actor,
             choice.provider,
             choice.modelId,

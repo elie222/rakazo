@@ -719,6 +719,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
           choice.creditOfferingId
             ? validateCreditOfferingChoice(
                 deps.prisma,
+                deps.secrets,
                 actor,
                 choice.provider,
                 choice.modelId,

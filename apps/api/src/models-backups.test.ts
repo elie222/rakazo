@@ -1122,7 +1122,7 @@ it("lets a deployment-managed model lead the main model like any other purpose",
 });
 
 it("persists an explicit approved credit route alongside the personal route", async () => {
-  const { call, deps, roles } = setup();
+  const { call, deps, roles, prisma } = setup();
   deps.billing = { modelCreditsEnabled: true } as never;
   const offering = {
     id: "offering-example",
@@ -1131,6 +1131,13 @@ it("persists an explicit approved credit route alongside the personal route", as
     modelId: availableModel.id,
     price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 1 },
   };
+  const operatorConnection = vi.fn(async () => ({
+    id: offering.connectionId,
+    provider: offering.provider,
+    userId: "operator-example",
+    secretId: "operator-secret",
+  }));
+  Object.assign(prisma.userModelCredential, { findUnique: operatorConnection });
   vi.stubEnv(
     "MODEL_CREDIT_OFFERINGS",
     JSON.stringify({ defaultOfferingId: offering.id, offerings: [offering] }),
@@ -1174,6 +1181,19 @@ it("persists an explicit approved credit route alongside the personal route", as
     expect(await refused.response.json()).toMatchObject({
       json: { code: "MODEL_CREDIT_OFFERING_UNAVAILABLE" },
     });
+    operatorConnection.mockResolvedValue(null as never);
+    const unavailableCatalog = (
+      await (await call("models/forRole", { role: "main" })).response.json()
+    ).json;
+    expect(unavailableCatalog).toContainEqual(expect.objectContaining({ id: offering.modelId }));
+    expect(
+      unavailableCatalog.some(
+        (entry: { creditOfferingId?: string }) => entry.creditOfferingId === offering.id,
+      ),
+    ).toBe(false);
+    expect((await call("models/setRole", { role: "main", primary: credit })).response.status).toBe(
+      400,
+    );
     vi.stubEnv(
       "MODEL_CREDIT_OFFERINGS",
       JSON.stringify({ defaultOfferingId: null, offerings: [] }),
@@ -1181,6 +1201,51 @@ it("persists an explicit approved credit route alongside the personal route", as
     expect((await call("models/setRole", { role: "main", primary: credit })).response.status).toBe(
       400,
     );
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it("offers a ready decision credit route independently of the reasoning catalog", async () => {
+  const { call, deps, prisma } = setup();
+  deps.billing = { modelCreditsEnabled: true } as never;
+  const offering = {
+    id: "decision-example",
+    connectionId: "operator-example",
+    provider: "openrouter",
+    modelId: "typesafe/jev-1.14",
+    price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  Object.assign(prisma.userModelCredential, {
+    findUnique: vi.fn(async () => ({
+      id: offering.connectionId,
+      userId: "operator-example",
+      provider: offering.provider,
+      secretId: "operator-secret",
+    })),
+  });
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({ defaultOfferingId: offering.id, offerings: [offering] }),
+  );
+  try {
+    const response = await call("models/forRole", { role: "approval" });
+    expect(response.response.status).toBe(200);
+    expect((await response.response.json()).json).toContainEqual(
+      expect.objectContaining({ id: offering.modelId, creditOfferingId: offering.id }),
+    );
+    expect(
+      (
+        await call("models/setRole", {
+          role: "approval",
+          primary: {
+            provider: offering.provider,
+            modelId: offering.modelId,
+            creditOfferingId: offering.id,
+          },
+        })
+      ).response.status,
+    ).toBe(200);
   } finally {
     vi.unstubAllEnvs();
   }

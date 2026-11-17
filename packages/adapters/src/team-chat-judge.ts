@@ -236,6 +236,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       (!settings?.modelCreditsEnabled ||
         !(await validateCreditOfferingChoice(
           this.deps.prisma,
+          this.deps.secrets,
           scope,
           provider,
           modelId,

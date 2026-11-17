@@ -46,7 +46,9 @@ catalog. A system-scoped read loads only the connection named in the validated
 operator allowlist, after normal model resolution has selected deployment funding.
 The provider must have an existing adapter. One provider/model pair has at most
 one approved offering. The operator must verify the model ID is supported by that
-adapter and accessible on the selected connection.
+adapter and accessible on the selected connection. Only offerings with a readable API-key
+connection appear as credit choices. Role saves recheck the connection, and execution checks it
+again; personal choices remain available when an operator connection is withdrawn or removed.
 
 Set the same JSON on the API and workers. Enable the existing model credit billing
 setting and configure the existing checkout/payment integration separately. This

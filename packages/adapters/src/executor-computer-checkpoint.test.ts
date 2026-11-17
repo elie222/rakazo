@@ -69,7 +69,12 @@ vi.mock("./run-model.js", async (importOriginal) => ({
   ...(await importOriginal<typeof RunModelModule>()),
   resolveModelKey: vi.fn(async (_deps, _user, _space, _credential, _provider, id) => {
     if (fake.unavailable.has(id)) throw new Error(`Unavailable model ${id}`);
-    return { apiKey: "fixture-key", redact: [], acceptsImages: true };
+    return {
+      apiKey: "fixture-key",
+      connectionId: _credential?.id,
+      redact: [],
+      acceptsImages: true,
+    };
   }),
   resolveConnectedRunModel: vi.fn(
     async (_deps, _scope, provider, id, _register, _required, thinkingLevel, connectionId) => {

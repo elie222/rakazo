@@ -44,7 +44,6 @@ import {
   PINNED_PROVIDER_NOT_CONNECTED,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
-  validateCreditOfferingChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -181,7 +180,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     if (
       args[3] ||
       !billingEnabled ||
-      !(await validateCreditOfferingChoice(deps.prisma, scope, provider, args[5], creditOfferingId))
+      approvedModelCreditOffering(provider, args[5])?.id !== creditOfferingId ||
+      !(await hasHostedModelCredits(deps.prisma, scope, provider, true))
     )
       throw new UnavailableModelForAuthError("Selected credit offering is unavailable");
     args[7] = { ...args[7], requireStoredSecret: false };

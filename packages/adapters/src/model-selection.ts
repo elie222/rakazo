@@ -21,6 +21,7 @@ import { resolveDeploymentModel } from "./deployment-model.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
+import { availableModelCreditOfferings } from "./model-credit-routing.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -1167,6 +1168,7 @@ export async function hasHostedModelCredits(
 /** A saved credit route must still name the exact approved offering, even if BYOK exists. */
 export async function validateCreditOfferingChoice(
   prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
   scope: { userId: string; spaceId: string },
   provider: string,
   modelId: string,
@@ -1174,6 +1176,7 @@ export async function validateCreditOfferingChoice(
 ) {
   return (
     approvedModelCreditOffering(provider, modelId)?.id === offeringId &&
-    (await hasHostedModelCredits(prisma, scope, provider, true))
+    (await hasHostedModelCredits(prisma, scope, provider, true)) &&
+    (await availableModelCreditOfferings(prisma, secrets, offeringId)).length > 0
   );
 }
