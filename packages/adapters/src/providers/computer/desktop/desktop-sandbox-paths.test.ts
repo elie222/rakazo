@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { WorkspacePathError } from "../../../computer-support.js";
+import { WorkspacePathError } from "../../../computers/screens/computer-support.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 
 describe("desktop sandbox path rules", () => {

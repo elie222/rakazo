@@ -7,7 +7,10 @@ import {
 } from "@daytona/sdk";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
-import { desktopCommandResponder, simpleCommand } from "../../../linux-desktop.test-support.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
 import type { DaytonaSandbox, DaytonaSandboxSdk } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 

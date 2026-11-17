@@ -1,5 +1,5 @@
 {
-  "apps/api/src/messaging-receipts.test.ts": 1,
+  "apps/api/src/messaging/messaging-receipts.test.ts": 1,
   "apps/desktop/src/main/auth/user-device.test.ts": 1,
   "apps/mobile/lib/api/api-server.test.ts": 2,
   "apps/mobile/lib/inbox/inbox-archived.test.tsx": 1,

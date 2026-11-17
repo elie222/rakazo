@@ -11,7 +11,7 @@ it("keeps the Lark SDK dynamic in a production server bundle", async () => {
   // Mirror scripts/build-server.mjs: one ESM bundle, workspace sources bundled,
   // dependencies externalized to importer-relative paths with resolution kind preserved.
   const result = await build({
-    entryPoints: [path.join(root, "packages/adapters/src/messaging-platforms.ts")],
+    entryPoints: [path.join(root, "packages/adapters/src/messaging/messaging-platforms.ts")],
     outfile,
     bundle: true,
     platform: "node",

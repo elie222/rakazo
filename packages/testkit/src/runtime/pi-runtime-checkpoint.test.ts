@@ -4,12 +4,12 @@ import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../adapters/src/approval-ask.js";
-import { approvalPausedToolResult } from "../../../adapters/src/approval-effect.js";
-import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
-import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
-import type { TurnCheckpoint } from "../../../adapters/src/turn-checkpoint.js";
-import * as turnCheckpoints from "../../../adapters/src/turn-checkpoint.js";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../adapters/src/approvals/approval-ask.js";
+import { approvalPausedToolResult } from "../../../adapters/src/approvals/approval-effect.js";
+import type { TurnCheckpoint } from "../../../adapters/src/runs/turn/turn-checkpoint.js";
+import * as turnCheckpoints from "../../../adapters/src/runs/turn/turn-checkpoint.js";
+import { PiAgentRuntime } from "../../../adapters/src/runtime/pi/pi-runtime.js";
+import { builtinAgentTools } from "../../../adapters/src/tools/builtin.tool-definition.js";
 import type { ModelEmulatorRequest } from "../model-emulator.js";
 import { startModelEmulator } from "../model-emulator.js";
 
