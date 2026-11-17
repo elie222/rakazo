@@ -51,7 +51,7 @@ while IFS= read -r file; do
     *) all_packages=true ;;
   esac
   case "$file" in
-    .github/workflows/ci.yml | .github/workflows/playwright.yml | .depot/workflows/* | .github/actions/setup-workspace/* | .github/actions/start-postgres/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
+    .github/workflows/ci.yml | .github/workflows/test-suites.yml | .github/workflows/playwright.yml | .depot/workflows/* | .github/actions/setup-workspace/* | .github/actions/start-postgres/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
       native=true
       compose=true
       www=true
@@ -85,7 +85,7 @@ while IFS= read -r file; do
     scripts/checks/bundle-size*) web=true; continue ;;
     scripts/checks/*) continue ;;
     # Other workflows build or run nothing the product suites test; their own tests run above.
-    .github/workflows/ci.yml | .github/workflows/playwright.yml) ;;
+    .github/workflows/ci.yml | .github/workflows/test-suites.yml | .github/workflows/playwright.yml) ;;
     .github/workflows/*) continue ;;
     apps/www/* | docs/*) continue ;;
     apps/web/* | apps/desktop/* | packages/ui-web/* | packages/chat-ui/*)

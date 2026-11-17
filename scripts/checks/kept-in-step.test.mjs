@@ -49,7 +49,10 @@ test("the supervisor refuses a page browser request with the code adapters recog
 
 test("the updater's default project name is the one production Compose pins", () => {
   assert.equal(
-    capture("packages/core/src/compose-update.ts", /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/),
+    capture(
+      "packages/core/src/deployment/compose-update.ts",
+      /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/,
+    ),
     capture("infra/compose/docker-compose.prod.yml", /^name: (\S+)$/m),
   );
 });
@@ -78,5 +81,15 @@ test("table column widths are capped at the cell's own max-width", () => {
       "packages/chat-ui/src/markdown-table.css",
       /^\.rk-table-cell-text \{[^}]*max-width: (\S+);/m,
     ),
+  );
+});
+
+test("Depot's pull request test workflow is the one GitHub runs on main", () => {
+  const [depot, github] = [".depot", ".github"].map((folder) =>
+    readFileSync(path.join(root, folder, "workflows/test-suites.yml"), "utf8"),
+  );
+  assert.ok(
+    depot === github,
+    "copy .github/workflows/test-suites.yml to .depot/workflows/test-suites.yml",
   );
 });
