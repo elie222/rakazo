@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -12,23 +12,29 @@ import {
   purchaseCardRecordId,
   purchaseRequestRecordId,
   purchaseTokenRecordId,
-  recordSecretCleanup,
+  recordSecretCleanups,
   secretCleanupJob,
   secretIsHeld,
 } from "./secret-cleanup.js";
 
 type Candidate = { id: string; ciphertext: string };
-/** `recorded` holds the cleanups whose backup job this transaction wrote, by reference. */
+/**
+ * `recorded` holds the cleanups whose backup job this transaction wrote, by reference, and
+ * `queued` the references whose job is due as it commits, which no direct attempt follows.
+ */
 type Cleanup = {
   old: SecretCleanup[];
   written: Candidate[];
   recorded: Map<string, SecretCleanup>;
+  queued: Set<string>;
   client?: Prisma.TransactionClient;
 };
-type Jobs = SecretCleanupDeps["jobs"];
+type Jobs = SecretCleanupDeps["jobs"] & Pick<JobPublisher, "enqueueManyIn">;
 /** The queue that retries a failed delete, once the process has built it. */
 export type SecretCleanupJobs = () => Jobs | undefined;
 const cleanupJobs = new WeakMap<object, SecretCleanupJobs>();
+/** More remote references than this in one drop are left to the queue rather than the caller. */
+const DIRECT_CLEANUPS = 20;
 
 /** Whether a mutation can leave a row without the reference it holds: a delete, or a new one. */
 function dropsReference(operation: string, input: Mutation): boolean {
@@ -161,15 +167,25 @@ export function withSecretPersistence(
   }
   /** Rows about to stop holding their refs, each with its backup job in the same transaction. */
   async function dropping(state: Cleanup, dropped: SecretCleanup[]): Promise<void> {
-    state.old.push(...dropped);
     const queue = jobs?.();
-    if (!queue) return;
-    for (const cleanup of dropped) {
-      // One job stands for a reference however many of the rows share it.
-      if (state.recorded.has(cleanup.ref)) continue;
-      await recordSecretCleanup({ secrets: store, jobs: queue }, state.client!, cleanup);
-      state.recorded.set(cleanup.ref, cleanup);
+    if (!queue) {
+      state.old.push(...dropped);
+      return;
     }
+    // One job stands for a reference however many of the rows share it.
+    const fresh: SecretCleanup[] = [];
+    for (const cleanup of dropped) {
+      if (state.recorded.has(cleanup.ref)) continue;
+      state.recorded.set(cleanup.ref, cleanup);
+      fresh.push(cleanup);
+    }
+    const remote = fresh.filter((cleanup) => store.isRemote(cleanup.ref));
+    // A parent with a long history cascades to many entries: the worker deletes them once this
+    // commits, so the caller does not wait on a remote delete for each.
+    const due = remote.length > DIRECT_CLEANUPS;
+    await recordSecretCleanups({ secrets: store, jobs: queue }, state.client!, fresh, due);
+    if (due) for (const cleanup of remote) state.queued.add(cleanup.ref);
+    state.old.push(...dropped.filter((cleanup) => !state.queued.has(cleanup.ref)));
   }
   async function lockedRows<Row extends { id: string } = Candidate>(
     state: Cleanup,
@@ -188,10 +204,10 @@ export function withSecretPersistence(
       secretTables[model as keyof typeof secretTables] ??
       parentTables[model as keyof typeof parentTables] ??
       cascadedTables[model as keyof typeof cascadedTables];
-    // Static table and column allowlists; values remain bound parameters. Locks capture the
-    // actual replaced ref even if another writer committed between selection and the lock.
+    // Static table and column allowlists; the ids bind as one array, however many. Locks capture
+    // the actual replaced ref even if another writer committed between selection and the lock.
     return client.$queryRaw<Row[]>(
-      Prisma.sql`SELECT ${Prisma.raw(columns)} FROM ${Prisma.raw(`"${table}"`)} WHERE id IN (${Prisma.join(rows.map((row) => row.id))}) ORDER BY id FOR UPDATE`,
+      Prisma.sql`SELECT ${Prisma.raw(columns)} FROM ${Prisma.raw(`"${table}"`)} WHERE id = ANY(${rows.map((row) => row.id)}) ORDER BY id FOR UPDATE`,
     );
   }
   function trackWrites(state: Cleanup, model: string, input: Mutation): void {
@@ -332,7 +348,7 @@ export function withSecretPersistence(
             await prepare(active, model, operation, args as Mutation);
             return query(args);
           }
-          const state: Cleanup = { old: [], written: [], recorded: new Map() };
+          const state: Cleanup = { old: [], written: [], recorded: new Map(), queued: new Set() };
           try {
             // Standalone mutations also need a transaction, so capture and replacement
             // share the same connection and row locks. No extra pool slot inside a tx.
@@ -362,7 +378,7 @@ export function withSecretPersistence(
           typeof args[0] === "function"
             ? (args[0] as (tx: Prisma.TransactionClient) => Promise<unknown>)
             : undefined;
-        const state: Cleanup = { old: [], written: [], recorded: new Map() };
+        const state: Cleanup = { old: [], written: [], recorded: new Map(), queued: new Set() };
         if (callback)
           args[0] = (tx: Prisma.TransactionClient) => {
             state.client = tx;

@@ -54,6 +54,9 @@ function fixture(held: string | null = null, remote = true) {
   const jobs = {
     enqueue: vi.fn(queue),
     enqueueIn: vi.fn((_tx: unknown, job: BackgroundJob) => queue(job)),
+    enqueueManyIn: vi.fn(async (_tx: unknown, jobs: readonly BackgroundJob[]) => {
+      for (const job of jobs) await queue(job);
+    }),
     cancel: vi.fn(async (key: string) => {
       queued.delete(key);
     }),

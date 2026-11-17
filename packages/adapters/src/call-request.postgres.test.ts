@@ -69,6 +69,7 @@ postgres("call isolation and cooldown (PostgreSQL)", () => {
       const jobs = {
         enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
         enqueueIn: vi.fn(),
+        enqueueManyIn: vi.fn(),
         cancelIn: vi.fn(),
         cancel: vi.fn(),
         close: vi.fn(),

@@ -183,6 +183,23 @@ export async function recordSecretCleanup(
 }
 
 /**
+ * `recordSecretCleanup` for many references in one statement. `due` hands each to the queue
+ * now instead of backing up a direct attempt: once the transaction commits, the worker deletes
+ * them, so the caller never waits on one remote delete per reference.
+ */
+export async function recordSecretCleanups(
+  deps: Pick<SecretCleanupDeps, "secrets"> & { jobs: Pick<JobPublisher, "enqueueManyIn"> },
+  tx: JobTransaction,
+  cleanups: SecretCleanup[],
+  due = false,
+): Promise<void> {
+  const jobs = cleanups
+    .filter((cleanup) => deps.secrets.isRemote(cleanup.ref))
+    .map((cleanup) => (due ? secretCleanupJob(cleanup) : backupJob(cleanup)));
+  if (jobs.length) await deps.jobs.enqueueManyIn(tx, jobs);
+}
+
+/**
  * After that transaction commits: delete the entry now. Success deletes the backup; a failure is
  * logged and handed to it. Never rejects, so cleanup cannot change the caller's outcome.
  */
