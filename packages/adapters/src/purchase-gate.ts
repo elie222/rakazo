@@ -157,10 +157,6 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   // batch the page may have changed, so a later click cannot be placed; an `up` is checked where the pointer is and at its own spot.
   let disturbed = false;
   let unplaced = false;
-  // A focus that opens a URL brings up a page this check cannot see beforehand: a click or key after it
-  // asks whatever the page looks like now, even when no tab is showing yet.
-  let opened = false;
-  let unchecked = false;
   let pointer: { x: number; y: number } | undefined;
   for (const raw of actions) {
     const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -176,7 +172,6 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
       // A right-click opens a menu and presses nothing, but the page may change under later presses.
       disturbed = true;
     } else if (["click", "down", "up"].includes(kind)) {
-      if (opened) unchecked = true;
       // The main screen releases where the pointer is; an extra display moves to the up's own spot first.
       const spots = kind === "up" ? [pointer, ...(own ? [own] : [])] : [own];
       if (kind !== "up") pointer = own ?? pointer;
@@ -197,17 +192,15 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
         ];
         if (parts.some((part) => SUBMITTING_KEY.test(part.trim()))) {
           enter = true;
-          if (opened) unchecked = true;
         }
       } else if (kind === "type" && /[\r\n]|^\s+$/.test(String(step.text ?? ""))) {
         // A line break submits; text that is only spaces presses a focused button.
         enter = true;
-        if (opened) unchecked = true;
-      } else if (kind === "focus" && step.uri !== undefined) opened = true;
+      }
     }
   }
   return points.length || enter || unplaced
-    ? { desktop: true, enter, points, unplaced, unchecked }
+    ? { desktop: true, enter, points, unplaced }
     : undefined;
 }
 
@@ -225,9 +218,6 @@ export async function detectPurchase(
   const { browser } = ctx.providers;
   if (!probe || !browser.purchaseCheck || !ctx.computer.pageBrowserAllowed) return undefined;
   if (ctx.computer.heldForTakeover) return undefined;
-  const unchecked = { steps: [], site: "", label: "", amount: "", amountSource: "page" } as const;
-  // A press after the batch opens a URL lands on a page nobody could look at yet.
-  if ("unchecked" in probe && probe.unchecked) return { ...unchecked, steps: [] };
   let found: Awaited<ReturnType<NonNullable<typeof browser.purchaseCheck>>>["purchase"];
   let computer: Awaited<ReturnType<RunContext["computer"]["get"]>>;
   try {
@@ -245,10 +235,10 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
-    getLogger().warn("purchase check failed, asking", {
+    getLogger().warn("purchase check failed", {
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    found = { ...unchecked, steps: [] };
+    return undefined;
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even

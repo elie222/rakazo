@@ -500,8 +500,7 @@ describe("page browser safety", () => {
         purchase: null,
       });
     }
-    // Any other failure asks, naming no page and approving no click: a check that started and broke,
-    // or a 500, which only an unhandled error answers.
+    // A failed check alone does not establish a payment.
     for (const error of [
       "unknown command: purchase_check, and then some",
       "page browser failed: 500",
@@ -512,7 +511,7 @@ describe("page browser safety", () => {
     ]) {
       reply = { ok: false, error, fallback: "computer_act" };
       expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+        purchase: null,
       });
     }
     const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };

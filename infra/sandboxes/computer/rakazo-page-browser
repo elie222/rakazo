@@ -977,12 +977,15 @@ class PageBrowser:
 
     def click_purchase(self, ref: str, node: Node) -> tuple[str, dict[str, Any] | None]:
         """The top page's host, the site the user sees, and what a click on ref would buy, or None.
-        A page that cannot be read asks."""
+        A failed read uses only payment signals the page itself shows."""
+        if node.role in ("textbox", "searchbox"):
+            return "", None
+        purchases = None
         try:
             purchases = self.purchases()
             site = purchases.site()
         except Exception:  # noqa: BLE001
-            return "", dict(UNREADABLE_PURCHASE)
+            return "", purchases.signals_or_ask(False) if purchases else None
         if node.frame is not None:
             # A control inside a frame is not placed on the page: the click asks whenever the page or any of
             # its frames shows a payment.
@@ -1026,7 +1029,10 @@ class PageBrowser:
         actions = args.get("actions") or []
         if not isinstance(actions, list) or len(actions) > 24:
             raise RuntimeError("Expected up to 24 actions")
-        site = self.purchases().site()
+        try:
+            site = self.purchases().site()
+        except Exception:  # noqa: BLE001
+            site = ""
         steps: list[int] = []
         first: dict[str, Any] | None = None
         for index, step in enumerate(actions):
@@ -1047,7 +1053,11 @@ class PageBrowser:
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
                     **({"total": first["total"]} if first and first.get("total") else {}),
                     **({"items": first["items"]} if first and first.get("items") else {})} if first else None
-        return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
+        try:
+            where = self.purchases().where()
+        except Exception:  # noqa: BLE001
+            where = {}
+        return {"ok": True, "url": "", "title": "", **where, "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
 
@@ -2103,6 +2113,11 @@ PURCHASE_HELPERS = r"""
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
       ...(named && total && total !== named ? { total } : {}), ...(items.length ? { items } : {}) };
   }
+  const TEXT_FIELDS = "input:not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea";
+  function editableField(el) {
+    return Boolean(el.isContentEditable || el.closest?.(
+      `${TEXT_FIELDS}, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]`));
+  }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {
     const words = wordsOf(el);
@@ -2117,7 +2132,8 @@ PURCHASE_HELPERS = r"""
   }
   // The control a click at this spot of the page presses, unless it lands on a field, label or nothing.
   function pressedControl(hit) {
-    const field = "input:not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea, select, label, [contenteditable]";
+    if (editableField(hit)) return null;
+    const field = `${TEXT_FIELDS}, select, label, [contenteditable]`;
     for (let node = hit; node && node !== document.documentElement; node = node.parentElement || node.getRootNode().host) {
       // A click on a label presses its control: a submit button pays, a field or anything else does not.
       if (node instanceof HTMLLabelElement && node.control) {
@@ -2136,6 +2152,7 @@ PURCHASE_HELPERS = r"""
   // panel or docked tools: anything else moves the page, so a spot cannot be placed.
   const TOOLBAR_HEIGHT = 87;
   window.__rakazoPurchase = {
+    editableField,
     // Where a point of the screen (x, y) is in this page, or null when that cannot be told (a zoomed page,
     // a scaled screen, a window with more than the toolbar).
     pagePoint(x, y) {
@@ -2188,8 +2205,6 @@ PURCHASE_HELPERS = r"""
 
 # Zero-width, bidirectional and tag characters, which the card does not show.
 INVISIBLE = re.compile("[\U000E0000-\U000E007F​-‏⁠-⁤‪-‮⁦-⁩﻿]")
-# What the card shows when not even the page's own signals can be read: the check asks rather than allows.
-UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
 DESKTOP_DEADLINE_SECONDS = 8.0
 # Chromium's answer for a world whose document the tab has just replaced, and how long the check waits
 # for the new one.
@@ -2253,7 +2268,7 @@ class Purchases:
                 return host if isinstance(host, str) else ""
             except RuntimeError as error:
                 # The tab replaced its document between finding the world and reading it, as a login's
-                # redirect does: read the new one. A page that keeps doing it still fails, and asks.
+                # redirect does: read the new one. A page that keeps doing it still fails.
                 tries -= 1
                 if DOCUMENT_GONE not in str(error) or not tries:
                     raise
@@ -2316,11 +2331,11 @@ class Purchases:
         return None
 
     def signals_or_ask(self, enter: bool) -> dict[str, Any] | None:
-        """After a failed check: the payment the page itself shows, and a page that cannot be read asks."""
+        """After a failed check, ask only about payment signals the page itself shows."""
         try:
             return self.signals(enter, frames=False)
         except Exception:  # noqa: BLE001
-            return dict(UNREADABLE_PURCHASE)
+            return None
 
     def at_point(self, session: str, world: int | None, x: float, y: float, deadline: float,
                  depth: int = 0) -> tuple[str, dict[str, Any] | None]:
@@ -2357,9 +2372,11 @@ class Purchases:
                                                            "executionContextId": inner}, session_id=session)
                 value = page_secrets.page_value(client.call("Runtime.callFunctionOn", {
                     "objectId": resolved["object"]["objectId"], "returnByValue": True,
-                    "functionDeclaration": "function () { return window.__rakazoPurchase.purchaseOfNode(this, false); }",
+                    "functionDeclaration": "function () { const p = window.__rakazoPurchase; return p.editableField(this) ? false : p.purchaseOfNode(this, false); }",
                 }, session_id=session))
-                # Nothing paying in the frame itself: the page around it may still be the checkout.
+                # An editable field never pays; other unresolved controls still use the page signals.
+                if value is False:
+                    return "none", None
                 return ("buy", value) if isinstance(value, dict) else ("unknown", None)
             if not is_frame:
                 return "unknown", None
@@ -2402,7 +2419,7 @@ class Purchases:
         try:
             return self.signals(False, deadline)
         except Exception:  # noqa: BLE001
-            return dict(UNREADABLE_PURCHASE)
+            return self.signals_or_ask(False)
 
     def desktop(self, args: dict[str, Any]) -> dict[str, Any] | None:
         """The purchase a click or key on the screen would complete, or None.

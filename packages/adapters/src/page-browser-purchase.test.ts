@@ -11,6 +11,7 @@ type Purchase = {
   items?: Array<{ name: string; amount: string }>;
 } | null;
 type Helper = {
+  editableField: (node: Element) => boolean;
   paymentPage: (frame?: boolean, enter?: boolean) => { purchase: Purchase };
   pagePoint: (x: number, y: number) => { x: number; y: number; inside: boolean } | null;
   purchaseAt: (
@@ -569,6 +570,26 @@ describe("a click on the screen", () => {
     expect(helper.purchaseAt(5, 5).purchase).toBeNull();
     expect(helper.purchaseOfNode(win.document.getElementById("inner")!)).not.toBeNull();
     expect(helper.purchaseOfNode(win.document.getElementById("back")!)).toBeNull();
+  });
+
+  it("never treats text inputs, textareas or editable fields as purchase clicks", () => {
+    for (const field of [
+      '<input id="field" aria-label="Pay now">',
+      '<textarea id="field" aria-label="Pay now"></textarea>',
+      '<div contenteditable="true"><span id="field" role="button">Pay now</span></div>',
+      '<div contenteditable=""><span id="field" onclick="submit()">Pay now</span></div>',
+      '<div contenteditable="plaintext-only" id="field">Pay now</div>',
+    ]) {
+      const { helper, win } = screenPage(
+        `<form><input autocomplete="cc-number"><button>Pay now</button>${field}</form>`,
+        (w) => w.document.getElementById("field"),
+      );
+      const node = win.document.getElementById("field")!;
+      expect(helper.editableField(node), field).toBe(true);
+      expect(helper.purchaseOfNode(node, true), field).toBeNull();
+      expect(helper.purchaseAt(5, 5, true).purchase, field).toBeNull();
+      expect(helper.paymentPage().purchase, field).not.toBeNull();
+    }
   });
 
   it("follows a label to the control it presses", () => {
