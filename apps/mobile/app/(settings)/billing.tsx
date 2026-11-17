@@ -18,22 +18,26 @@ import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { selectedSpaceId } from "../../lib/api";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
 import {
   currentPlan,
   openBillingPage,
   ownKeySubscriptionCents,
   planEndsAt,
-} from "../../lib/billing";
-import { dateLocaleForUi } from "../../lib/i18n";
-import type { SaveSend } from "../../lib/query";
-import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
-import { rememberReferral } from "../../lib/referral";
-import { useScreenQuery } from "../../lib/screen-query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
+} from "../../lib/account/billing";
+import { selectedSpaceId } from "../../lib/api/api";
+import { dateLocaleForUi } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import type { SaveSend } from "../../lib/query/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
+import { rememberReferral } from "../../lib/spaces/referral";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
