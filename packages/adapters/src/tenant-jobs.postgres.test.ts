@@ -66,6 +66,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
         data: {
           spaceId: t.spaceId,
           userId: t.userId,
+          connectorId: "composio",
           provider: "test",
           displayName: t.name,
           status: "connected",
@@ -173,6 +174,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
     const background = {
       enqueue: vi.fn(),
       enqueueIn: vi.fn(),
+      enqueueManyIn: vi.fn(),
       cancelIn: vi.fn(),
       cancel: vi.fn(),
       close: vi.fn(),

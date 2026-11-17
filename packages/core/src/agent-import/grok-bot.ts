@@ -3,6 +3,7 @@
 // agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
 import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -403,10 +404,11 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
         : bot,
     );
     const current = merged.get(key)!;
+    // Skills, apps and routines each become a named item. Memories and facts about the user
+    // become one document each: their size is checked once all parts are joined.
     if (
-      [current.skills, current.apps, current.routines, current.memories, current.userFacts].some(
-        (items) => items.length > 100,
-      )
+      [current.skills, current.apps, current.routines].some((items) => items.length > 100) ||
+      [current.memories, current.userFacts].some((items) => items.length > MEMORY_ENTRY_LIMIT)
     )
       throw new GrokBotExportError("too_large");
   }
@@ -423,23 +425,34 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   );
   if (
     raw.length > 100 ||
-    raw.some((bot) =>
-      [
-        bot.skills,
-        bot.apps,
-        bot.plugins,
-        bot.integrations,
-        bot.routines,
-        bot.memories,
-        bot.user_facts,
-        bot.userFacts,
-      ].some((items) => Array.isArray(items) && items.length > 100),
+    raw.some(
+      (bot) =>
+        [bot.skills, bot.apps, bot.plugins, bot.integrations, bot.routines].some(
+          (items) => Array.isArray(items) && items.length > 100,
+        ) ||
+        [bot.memories, bot.user_facts, bot.userFacts].some(
+          (items) => Array.isArray(items) && items.length > MEMORY_ENTRY_LIMIT,
+        ),
     )
   )
     throw new GrokBotExportError("too_large");
   const parsed = raw.map(readBot).filter((bot) => bot.name);
-  const bots = mergeBots(parsed);
+  // Repeats are dropped here, so the chosen Bot's re-sent export carries each entry once.
+  const bots = mergeBots(parsed).map((bot) => ({
+    ...bot,
+    memories: distinct(bot.memories),
+    userFacts: distinct(bot.userFacts),
+  }));
   if (bots.length === 0) throw new GrokBotExportError("not_export");
+  // Bounded like any imported file, measured on the documents the preview will show.
+  if (
+    bots.some((bot) =>
+      [bot.memories, bot.userFacts].some(
+        (items) => bullets(items).length > AGENT_IMPORT_MAX_FILE_LENGTH,
+      ),
+    )
+  )
+    throw new GrokBotExportError("too_large");
   return bots;
 }
 
@@ -586,6 +599,23 @@ function bullets(lines: readonly string[]): string {
   return `${lines.map((line) => `- ${line.replace(/\r?\n/g, "\n  ")}`).join("\n")}\n`;
 }
 
+/**
+ * More distinct entries than this cannot fit one imported document, since the shortest bullet
+ * takes four characters. It bounds the work done before a document's size is checked.
+ */
+const MEMORY_ENTRY_LIMIT = AGENT_IMPORT_MAX_FILE_LENGTH / 4;
+
+/** Entries once, ignoring case and spacing, in their first order. */
+function distinct(lines: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = line.replace(/\s+/g, " ").trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Each routine with every setting the export gave, so it can be set up again by hand. */
 function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
   const blocks = routines.map((routine) => {
@@ -605,17 +635,8 @@ function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
 /** Imported text is data: nothing here follows it. Routines and apps are added by the server. */
 export function parseGrokBot(bot: GrokBot): AgentImportParse {
   // Each field on its own: a fact in both stays in both documents.
-  const fresh = (lines: readonly string[]) => {
-    const seen = new Set<string>();
-    return lines.filter((line) => {
-      const key = line.replace(/\s+/g, " ").trim().toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
-  const memories = fresh(bot.memories);
-  const userFacts = fresh(bot.userFacts);
+  const memories = distinct(bot.memories);
+  const userFacts = distinct(bot.userFacts);
   const toSetUp = bot.routines.filter(
     (routine) => routine.instruction && grokRoutineCron(routine) === null,
   );

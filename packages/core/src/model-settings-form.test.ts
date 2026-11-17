@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   catalogEntryFor,
   connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelSettingsDefaults,
+  modelSettingsEditable,
   modelSettingsFields,
   modelSettingsRequest,
   modelThinkingLevels,
+  newestModelsFirst,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";
@@ -193,13 +196,28 @@ describe("connectionModels", () => {
     { provider: "elsewhere", id: "d", label: "D" },
   ];
 
-  it("lists the catalog models this connection serves, customized ones first", () => {
+  it("lists only the provider's models the catalog cannot describe, and customized ones", () => {
     expect(
-      connectionModels(credential({ modelSettings: { c: { images: true }, a: {} } }), catalog),
+      connectionModels(credential({ modelSettings: { c: { images: true }, a: {} } }), [
+        ...catalog,
+        { provider: "zai", id: "listed", label: "Listed", live: true as const },
+      ]),
     ).toEqual([
       { id: "c", label: "C", settings: { images: true } },
-      { id: "a", label: "A" },
+      { id: "listed", label: "Listed" },
     ]);
+  });
+
+  it("lists every catalog model while older connection-wide limits apply", () => {
+    expect(
+      connectionModels(credential({ maxTokens: 4096 }), catalog).map((model) => model.id),
+    ).toEqual(["a", "c"]);
+  });
+
+  it("still serves a catalog model once it has no settings to show", () => {
+    expect(connectionModels(credential(), catalog)).toEqual([]);
+    expect(connectionServesModel(credential(), catalog, "a")).toBe(true);
+    expect(connectionServesModel(credential(), catalog, "b")).toBe(false);
   });
 
   it("lists an OpenAI-compatible connection's enabled models", () => {
@@ -253,5 +271,49 @@ describe("connection-specific live capabilities", () => {
     expect(
       modelThinkingLevels(customized, { ...entry, thinkingLevels: ["low", "high"] }, "live-model"),
     ).toEqual(["low", "high"]);
+  });
+});
+
+describe("newestModelsFirst", () => {
+  it("orders by the version in each id, keeping the catalog's order on ties", () => {
+    const ids = [
+      "gpt-5.6-luna",
+      "gpt-5.6-sol",
+      "gpt-6-astra",
+      "gpt-6.1-sol",
+      "claude-sonnet-4-20250514",
+      "claude-opus-5-5",
+      "gpt-4o-2024-08-06",
+      "gpt-4.1",
+      "llama-3-8b",
+      "llama-3.1-8b",
+      "unversioned",
+    ].map((id) => ({ id }));
+    expect(newestModelsFirst(ids).map((model) => model.id)).toEqual([
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-5.6-luna",
+      "gpt-5.6-sol",
+      "claude-opus-5-5",
+      "gpt-4.1",
+      "claude-sonnet-4-20250514",
+      "gpt-4o-2024-08-06",
+      "llama-3.1-8b",
+      "llama-3-8b",
+      "unversioned",
+    ]);
+  });
+});
+
+describe("modelSettingsEditable", () => {
+  it("opens settings only where the catalog cannot describe the model or it has its own", () => {
+    expect(modelSettingsEditable(credential(), { live: undefined }, "a")).toBe(false);
+    expect(modelSettingsEditable(credential(), undefined, "a")).toBe(false);
+    expect(modelSettingsEditable(credential({ maxTokens: 4096 }), {}, "a")).toBe(true);
+    expect(modelSettingsEditable(credential(), { live: true }, "a")).toBe(true);
+    expect(modelSettingsEditable(credential({ provider: COMPATIBLE }), undefined, "a")).toBe(true);
+    expect(
+      modelSettingsEditable(credential({ modelSettings: { a: { maxTokens: 10 } } }), {}, "a"),
+    ).toBe(true);
   });
 });

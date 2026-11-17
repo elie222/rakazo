@@ -6,6 +6,7 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   settleRunSubagents,
+  showsAsLiveStep,
   stopsRunHelpers,
   subagentBlockFromPayload,
 } from "./events.js";
@@ -286,6 +287,7 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       activeRuns,
     };
   }
+  if (event.type === "agent.tool.called" && !showsAsLiveStep(payload.name)) return advanced();
   if (event.type === "thread.progress" || event.type === "agent.tool.called") {
     const liveId = progressMessageId(event);
     const { previous, remaining } = takeLiveMessage(prev.messages, liveId);

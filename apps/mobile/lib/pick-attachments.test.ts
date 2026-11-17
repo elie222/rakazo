@@ -77,6 +77,18 @@ describe("filterPickedAttachments", () => {
         contentBase64: "UEsDBA==",
       },
       {
+        name: "bundle.rar",
+        mimeType: inferAttachmentMimeType("bundle.rar", undefined),
+        size: 12,
+        contentBase64: "UmFyIQ==",
+      },
+      {
+        name: "bundle.7z",
+        mimeType: inferAttachmentMimeType("bundle.7z", "application/octet-stream"),
+        size: 12,
+        contentBase64: "N3q8rycc",
+      },
+      {
         name: "payload.exe",
         mimeType: null,
         size: 12,
@@ -89,10 +101,23 @@ describe("filterPickedAttachments", () => {
         contentBase64: "aGVsbG8=",
       },
     ]);
-    expect(result.attachments.map((item) => item.name)).toEqual(["notes.txt", "bundle.zip"]);
+    expect(result.attachments.map((item) => item.name)).toEqual([
+      "notes.txt",
+      "bundle.zip",
+      "bundle.rar",
+      "bundle.7z",
+    ]);
     expect(result.attachments[1]).toMatchObject({
       name: "bundle.zip",
       mimeType: "application/zip",
+    });
+    expect(result.attachments[2]).toMatchObject({
+      name: "bundle.rar",
+      mimeType: "application/vnd.rar",
+    });
+    expect(result.attachments[3]).toMatchObject({
+      name: "bundle.7z",
+      mimeType: "application/x-7z-compressed",
     });
     expect(result.skipped.map((item) => item.name)).toEqual(["payload.exe", "big.zip"]);
   });

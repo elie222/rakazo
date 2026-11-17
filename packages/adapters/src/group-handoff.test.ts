@@ -151,19 +151,53 @@ describe("group handoff ownership", () => {
     expect(deps.jobs.enqueue).not.toHaveBeenCalled();
   });
 
-  it("refuses to bounce a handed-off stage straight back to its sender", async () => {
-    const { deps, runCreate } = harness([
-      { kind: "handoff", fromBotId: "bot-b", toBotId: "bot-a", text: "Investigate", hop: 1 },
+  it("returns a completed stage to the bot that handed it over as the next hop", async () => {
+    const { deps, messageCreate, runCreate } = harness([
+      { kind: "handoff", fromBotId: "bot-b", toBotId: "bot-a", text: "Write the script", hop: 1 },
     ]);
 
     await expect(
       handoffToGroupBot(deps as never, run, "group-1", {
         bot_id: "bot-b",
-        message: "You investigate it",
+        message: "Script done: three scenes, 90 seconds",
+      }),
+    ).resolves.toMatchObject({ ok: true, botId: "bot-b", runId: "run-b" });
+
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({
+              kind: "handoff",
+              fromBotId: "bot-a",
+              toBotId: "bot-b",
+              hop: 2,
+            }),
+          ],
+        }),
+      }),
+    );
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ botId: "bot-b", trigger: "follow_up" }),
+      }),
+    );
+    expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("caps a coordinator and worker handing a stage back and forth", async () => {
+    const { deps, runCreate } = harness([
+      { kind: "handoff", fromBotId: "bot-b", toBotId: "bot-a", text: "Revise again", hop: 6 },
+    ]);
+
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", {
+        bot_id: "bot-b",
+        message: "Revised",
       }),
     ).resolves.toEqual({
       error:
-        "do not hand this stage back to its sender; post the result in the shared thread instead",
+        "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
     });
     expect(runCreate).not.toHaveBeenCalled();
   });

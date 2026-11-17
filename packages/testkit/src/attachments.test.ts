@@ -135,6 +135,34 @@ describeAttachments("chat attachments", () => {
     });
     expect(Buffer.from(fetchedZip.contentBase64, "base64")).toEqual(zipBytes);
 
+    for (const [name, reportedTypes, expectedType] of [
+      [
+        "bundle.RAR",
+        ["application/vnd.rar", "application/x-rar-compressed", "application/octet-stream"],
+        "application/vnd.rar",
+      ],
+      [
+        "bundle.7Z",
+        ["application/x-7z-compressed", "application/x-7z", "application/octet-stream"],
+        "application/x-7z-compressed",
+      ],
+    ] as const) {
+      for (const mimeType of reportedTypes) {
+        const archive = await rpc<{ id: string; mimeType: string }>(
+          app,
+          cookie,
+          "artifacts/create",
+          {
+            botId: bot.id,
+            name,
+            mimeType,
+            contentBase64: Buffer.from("archive").toString("base64"),
+          },
+        );
+        expect(archive.mimeType).toBe(expectedType);
+      }
+    }
+
     const badMime = await raw(app, cookie, "artifacts/create", {
       botId: bot.id,
       name: "payload.exe",

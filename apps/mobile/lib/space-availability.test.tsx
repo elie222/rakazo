@@ -12,9 +12,6 @@ import { SpaceAvailabilityPicker } from "../components/space-availability";
 import { queryClient } from "./query";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",

@@ -5,7 +5,7 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import type { ComputerProviderDescriptor, ComputerProviderField } from "@rakazo/contracts";
-import type { KubernetesSandboxOptions } from "./kubernetes-sandbox.js";
+import type { KubernetesSandboxOptions } from "./providers/computer/kubernetes/kubernetes-sandbox.js";
 
 export interface SandboxProviderOptions {
   hostComputerUrl?: string;

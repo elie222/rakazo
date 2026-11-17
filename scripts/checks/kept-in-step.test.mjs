@@ -54,16 +54,20 @@ test("the updater's default project name is the one production Compose pins", ()
   );
 });
 
-test("Kubernetes computers default to the Compose stack's computer image", () => {
-  const [image, tag] = capture(
+test("Kubernetes computers use the published Compose image repository", () => {
+  const [image] = capture(
     "infra/compose/docker-compose.images.yml",
     /^ {4}image: (\$\{RAKAZO_COMPUTER_IMAGE:-[^}]+\}:\$\{RAKAZO_COMPUTER_IMAGE_TAG:-[^}]+\})$/m,
   )
     .match(/:-([^}]+)\}:\$\{RAKAZO_COMPUTER_IMAGE_TAG:-([^}]+)\}/)
     .slice(1);
   assert.equal(
-    capture("packages/adapters/src/kubernetes-sandbox.ts", /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/),
-    `${image}:${tag}`,
+    // Source/main deployments retain their development channel; published installs use stable.
+    capture(
+      "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts",
+      /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/,
+    ).split(":")[0],
+    image,
   );
 });
 
