@@ -40,7 +40,7 @@ test("every cipher column is either checked by the secret backup or never remote
     columns,
     listed,
     "A column holding a sealed value must be listed in packages/adapters/src/secret-holder-columns.json: " +
-      'under "checked" once anyRecordHolds in secret-cleanup.ts checks it before deleting a remote ' +
-      'entry, or under "neverRemote" if it never holds a remote store entry.',
+      'under "checked" if it can hold a remote store entry (secret cleanup looks it up before ' +
+      'deleting one), or under "neverRemote" if it never does.',
   );
 });

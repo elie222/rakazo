@@ -142,7 +142,6 @@ function database() {
       return [{ locked: 1 }];
     }
     if (!query.sql) return [];
-    const table = query.sql.match(/FROM "([^"]+)"/)?.[1];
     const names: Record<string, string> = {
       secrets: "secret",
       bot_secrets: "botSecret",
@@ -153,6 +152,17 @@ function database() {
       bots: "bot",
       organization: "organization",
     };
+    // The secret backup's check whether any holder column has the reference.
+    if (query.sql.endsWith(" AS held")) {
+      const holders = [...query.sql.matchAll(/FROM "(\w+)" WHERE "(\w+)"/g)];
+      const held = holders.some(([, table, column]) =>
+        tables
+          .get(names[table!] ?? "")
+          ?.some((row) => row[column as keyof Row] === query.values[0]),
+      );
+      return [{ held }];
+    }
+    const table = query.sql.match(/FROM "([^"]+)"/)?.[1];
     return (
       tables
         .get(names[table ?? ""] ?? "")

@@ -1,5 +1,6 @@
 import type { BackgroundJob } from "@rakazo/adapter-kit";
 import { SecretNotFoundError } from "@rakazo/adapter-kit";
+import type { Prisma } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
@@ -13,6 +14,7 @@ import {
   secretCleanupJob,
   secretCleanupJobKey,
 } from "./secret-cleanup.js";
+import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 
 const REF = "remote:entry-1";
 const cleanup: SecretCleanup = { kind: "secret_row", recordId: "secret-a", ref: REF };
@@ -39,10 +41,12 @@ function fixture(held: string | null = null, remote = true) {
     botSecret: { count: count() },
     vaultCredential: { count: count() },
     integrationProviderConfig: { count: count() },
-    messagingInstallation: { findUnique: row("ciphertext"), count: count() },
-    deploymentSettings: { findUnique: row("computerProviderCipher"), count: count() },
-    purchase: { findUnique: purchase, count: count() },
-    paymentWallet: { findUnique: row("ciphertext"), count: count() },
+    messagingInstallation: { findUnique: row("ciphertext") },
+    deploymentSettings: { findUnique: row("computerProviderCipher") },
+    purchase: { findUnique: purchase },
+    paymentWallet: { findUnique: row("ciphertext") },
+    /** Whether any holder column has the reference, as a written entry's backup asks. */
+    $queryRaw: vi.fn(async (_query: Prisma.Sql) => [{ held: false }]),
   };
   const queued = new Map<string, BackgroundJob>();
   const queue = async (job: BackgroundJob) => {
@@ -278,30 +282,24 @@ describe("secret cleanup", () => {
   });
 
   const written: SecretCleanup = { kind: "store_write", recordId: "store-record", ref: REF };
-  const HOLDERS = [
-    ...SECRET_TABLES,
-    "messagingInstallation",
-    "deploymentSettings",
-    "purchase",
-    "paymentWallet",
-  ] as const;
 
-  it.each(HOLDERS)("keeps a written entry a %s row holds when its backup runs", async (table) => {
+  it("keeps a written entry a holder column has when its backup runs", async () => {
     const f = fixture();
-    f.prisma[table].count.mockResolvedValue(1);
+    f.prisma.$queryRaw.mockResolvedValue([{ held: true }]);
     await retrySecretCleanup(f.deps, written);
     expect(f.secrets.delete).not.toHaveBeenCalled();
   });
 
-  it("deletes a written entry no row of any kind holds, under the record that wrote it", async () => {
+  it("deletes a written entry only after one lookup of every checked column", async () => {
     const f = fixture();
     await retrySecretCleanup(f.deps, written);
-    for (const table of HOLDERS) expect(f.prisma[table].count).toHaveBeenCalledOnce();
-    expect(f.prisma.purchase.count).toHaveBeenCalledWith({
-      where: {
-        OR: [{ requestCiphertext: REF }, { cardCiphertext: REF }, { tokenCiphertext: REF }],
-      },
-    });
+    expect(f.prisma.$queryRaw).toHaveBeenCalledOnce();
+    const query = f.prisma.$queryRaw.mock.calls[0]![0];
+    const looked = [...query.sql.matchAll(/FROM "(\w+)" WHERE "(\w+)" = \?/g)].map(
+      ([, table, column]) => `${table}.${column}`,
+    );
+    expect(looked).toEqual(holderColumns.checked);
+    expect(query.values).toEqual(holderColumns.checked.map(() => REF));
     expect(f.secrets.delete).toHaveBeenCalledWith(
       REF,
       expect.objectContaining({ recordId: "store-record" }),

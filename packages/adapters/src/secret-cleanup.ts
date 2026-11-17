@@ -12,9 +12,10 @@ import type {
 import { SecretNotFoundError } from "@rakazo/adapter-kit";
 import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { Prisma, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
+import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 
 export type SecretCleanup = BackgroundJobPayloads["secret.cleanup"];
 
@@ -29,6 +30,7 @@ export interface SecretCleanupDeps {
     | "deploymentSettings"
     | "purchase"
     | "paymentWallet"
+    | "$queryRaw"
   >;
   secrets: Pick<SecretStore, "delete" | "isRemote">;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel" | "cancelIn">;
@@ -83,22 +85,23 @@ async function secretTablesHold(prisma: Holders, ref: string): Promise<boolean> 
   );
 }
 
-/**
- * Whether any column a reference can be saved in holds it: the `checked` ones in
- * secret-holder-columns.json.
- */
+/** One lookup per `checked` column in secret-holder-columns.json, quoted from that fixed list. */
+const HOLDER_COLUMNS = holderColumns.checked.map((name) => {
+  const [table, column, extra] = name.split(".");
+  if (!table || !column || extra !== undefined || !/^\w+$/.test(table) || !/^\w+$/.test(column))
+    throw new Error(`secret-holder-columns.json lists an invalid column: ${name}`);
+  return { table: Prisma.raw(`"${table}"`), column: Prisma.raw(`"${column}"`) };
+});
+
+/** Whether any column a reference can be saved in holds it, in one query. */
 async function anyRecordHolds(prisma: Holders, ref: string): Promise<boolean> {
-  return Boolean(
-    (await secretTablesHold(prisma, ref)) ||
-      (await prisma.messagingInstallation.count({ where: { ciphertext: ref } })) ||
-      (await prisma.deploymentSettings.count({ where: { computerProviderCipher: ref } })) ||
-      (await prisma.purchase.count({
-        where: {
-          OR: [{ requestCiphertext: ref }, { cardCiphertext: ref }, { tokenCiphertext: ref }],
-        },
-      })) ||
-      (await prisma.paymentWallet.count({ where: { ciphertext: ref } })),
+  const lookups = HOLDER_COLUMNS.map(
+    ({ table, column }) => Prisma.sql`EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ${ref})`,
   );
+  const [row] = await prisma.$queryRaw<Array<{ held: boolean }>>(
+    Prisma.sql`SELECT ${Prisma.join(lookups, " OR ")} AS held`,
+  );
+  return row?.held === true;
 }
 
 /** The reference each kind of record holds now, which a cleanup must never delete. */
