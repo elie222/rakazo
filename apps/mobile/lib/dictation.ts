@@ -2,6 +2,7 @@
  * On-device dictation for calls and the composer, mirroring the web store's endpoint mode: the recognizer
  * reports words, and only a quiet gap measured here ends a turn. The recognizer's own
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
+ * Its end of speech together with its final words is stronger, so that shortens the gap.
  */
 
 import { supportedSpeechTag } from "@rakazo/core";
@@ -10,6 +11,12 @@ import { reportMobileError } from "./monitoring";
 
 /** Quiet gap that ends an utterance. A natural breath is well under it, a finished turn well over. */
 export const ENDPOINT_SILENCE_MS = 1_200;
+/**
+ * Quiet gap once the recognizer has reported the end of speech and finalised the words. It
+ * reports that only after a pause of its own, so the caller has been quiet for longer than
+ * this. Android reports both; iOS never reports the end of speech and keeps the full gap.
+ */
+export const END_OF_SPEECH_GRACE_MS = 500;
 const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
@@ -30,7 +37,13 @@ export type DictationGiveUp = "idle" | "failed";
 
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
-type DictationEventMap = { result: ResultEvent; end: null; error: ErrorEvent };
+type DictationEventMap = {
+  result: ResultEvent;
+  end: null;
+  error: ErrorEvent;
+  speechstart: null;
+  speechend: null;
+};
 type AudioSession = { category: string; categoryOptions: string[]; mode: string };
 
 /** The slice of `expo-speech-recognition` this module needs, so tests can drive the events. */
@@ -71,7 +84,13 @@ type Session = {
   carried: string;
   /** Text of the recognizer session running now. */
   heard: string;
+  /** The recognizer reported the end of speech, and has not heard the caller start again. */
+  speechEnded: boolean;
+  /** The recognizer finalised its words, and has not heard new ones since. */
+  finalized: boolean;
   silence?: ReturnType<typeof setTimeout>;
+  /** The shorter gap that runs once the recognizer reports both of the above. */
+  grace?: ReturnType<typeof setTimeout>;
   restart?: ReturnType<typeof setTimeout>;
   quiet?: ReturnType<typeof setTimeout>;
   backoff: number;
@@ -130,6 +149,7 @@ export function stop(): void {
   token += 1;
   if (!session) return;
   clearTimeout(session.silence);
+  clearTimeout(session.grace);
   clearTimeout(session.restart);
   clearTimeout(session.quiet);
   for (const sub of session.subs) sub.remove();
@@ -182,6 +202,8 @@ export async function listen(opts: {
     subs: [],
     carried: "",
     heard: "",
+    speechEnded: false,
+    finalized: false,
     backoff: RESTART_MIN_MS,
     deadRestarts: 0,
     transientError: false,
@@ -198,6 +220,14 @@ export async function listen(opts: {
     recognizer.addListener("result", (event) => onResult(session, event)),
     recognizer.addListener("end", () => onEnd(session)),
     recognizer.addListener("error", (event) => onError(session, event)),
+    recognizer.addListener("speechstart", () => {
+      if (active === session) cancelGrace(session);
+    }),
+    recognizer.addListener("speechend", () => {
+      if (active !== session) return;
+      session.speechEnded = true;
+      armGrace(session);
+    }),
   ];
   try {
     start(session);
@@ -212,6 +242,25 @@ export async function listen(opts: {
 function armSilence(session: Session): void {
   clearTimeout(session.silence);
   session.silence = setTimeout(() => finish(session, "idle"), session.endpointMs);
+}
+
+/**
+ * Ends the turn after the shorter gap once the recognizer has reported both the end of speech
+ * and its final words. The full gap keeps running underneath, so cancelling this falls back
+ * to it. A caller's own pause limit is never shortened.
+ */
+function armGrace(session: Session): void {
+  if (session.ownEndpoint || !session.speechEnded || !session.finalized) return;
+  if (!join(session.carried, session.heard)) return;
+  clearTimeout(session.grace);
+  session.grace = setTimeout(() => finish(session, "idle"), END_OF_SPEECH_GRACE_MS);
+}
+
+/** The caller may still be talking, so only the full gap can end the turn. */
+function cancelGrace(session: Session): void {
+  session.speechEnded = false;
+  session.finalized = false;
+  clearTimeout(session.grace);
 }
 
 function start(session: Session): void {
@@ -248,9 +297,13 @@ function onResult(session: Session, event: ResultEvent): void {
   if (heard.trim()) watchQuiet(session);
   // Android reports a phrase once and starts over, iOS grows one transcript: folding a
   // final into the carried text and clearing the live one covers both.
+  // Words after a final open a new phrase: the caller kept talking. Words between the end
+  // of speech and the final are the recognizer catching up on the same phrase.
+  if (heard.trim() && session.finalized) cancelGrace(session);
   if (event.isFinal) {
     session.carried = join(session.carried, heard);
     session.heard = "";
+    session.finalized = true;
   } else {
     session.heard = heard;
   }
@@ -263,11 +316,14 @@ function onResult(session: Session, event: ResultEvent): void {
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
   armSilence(session);
+  armGrace(session);
 }
 
 function onEnd(session: Session): void {
   if (active !== session) return;
   clearTimeout(session.quiet);
+  // Until the restart the recognizer cannot hear the caller start again.
+  cancelGrace(session);
   // iOS ends a session on its own — on a pause, an interruption, or its own cap — and that
   // says nothing about whether the caller finished. Pick the microphone straight back up.
   session.carried = join(session.carried, session.heard);

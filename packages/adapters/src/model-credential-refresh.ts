@@ -127,7 +127,12 @@ export function retireToReconnectMarker(
       return retired;
     } finally {
       const unused = replaced ? previous : replacement.ciphertext;
-      if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+      if (unused)
+        await secretStore.delete(unused, credential.secretId).catch((error: unknown) => {
+          getLogger().error("unused model credential copy was not deleted", error, {
+            "secret.kind": "secret_row",
+          });
+        });
     }
   };
   return async (

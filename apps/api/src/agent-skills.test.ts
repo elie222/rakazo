@@ -153,3 +153,51 @@ Write the notes.
     expect(parsed.frontmatter.notes).toBe("First step\nSecond step\n\n");
   });
 });
+
+describe("skill fields the caller wrote", () => {
+  it("refuses an overlong name as the caller's to fix, with the same message", () => {
+    expect(() =>
+      resolveSkillContent({ name: "N".repeat(81), description: "Review recipe", body: "Steps" }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: "Skill name must be at most 80 characters.",
+      }),
+    );
+  });
+
+  it("lets a fault while building the skill through instead of answering it as a bad request", () => {
+    const fault = new Error("internal detail");
+    const body = {
+      replace: () => {
+        throw fault;
+      },
+    } as unknown as string;
+    let thrown: unknown;
+    try {
+      resolveSkillContent({ name: "Review", description: "Review recipe", body });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(fault);
+  });
+
+  it.each(["create", "update"] as const)(
+    "answers a name taken during %s as a conflict",
+    async (method) => {
+      const { service, agentSkill } = setup([savedSkill("Existing")]);
+      const taken = Object.assign(new Error("unique"), { code: "P2002" });
+      Object.assign(agentSkill, { create: vi.fn().mockRejectedValue(taken) });
+      agentSkill.updateMany.mockRejectedValue(taken);
+      const input = { name: "Fresh", description: "Review recipe", body: "Steps" };
+      await expect(
+        method === "create"
+          ? service.create(actor, input)
+          : service.update(actor, { skillId: "saved-1", ...input }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "A skill with that name already exists.",
+      });
+    },
+  );
+});

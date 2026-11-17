@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isPipedreamEnabled,
@@ -931,5 +932,34 @@ describe("PipedreamConnector", () => {
 
     await connector.revoke("linear", context);
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(false);
+  });
+});
+
+describe("oversized Pipedream answers", () => {
+  const begin = (response: Response) =>
+    new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch: vi.fn().mockResolvedValue(response) },
+    ).begin({ provider: "gmail", redirectUrl: "https://rakazo.example.test/app" }, context);
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = begin(new Response(new Uint8Array(MAX_PIPEDREAM_RESPONSE_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Pipedream response is too large.");
+  });
+
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Response is too large")),
+    });
+    const failure = begin(new Response(body));
+    await expect(failure).rejects.toThrow("Response is too large");
+    await expect(failure).rejects.not.toBeInstanceOf(ResponseTooLargeError);
   });
 });

@@ -7,6 +7,7 @@ import { githubStarsLabel } from "../github";
 import Button from "../components/Button.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { CREDITS_PLAN, PRICING_PLANS } from "../pricing";
+import { pricingStructuredData } from "../structured-data";
 
 const starsLabel = await githubStarsLabel();
 ---
@@ -14,6 +15,7 @@ const starsLabel = await githubStarsLabel();
 <BaseLayout
   title="Pricing · Rakazo"
   markdownAlternate="/pricing.md"
+  structuredData={pricingStructuredData()}
   description="Self-host Rakazo for free, or let us host it with your own model or Rakazo credits."
 >
   <div class="container">

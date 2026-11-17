@@ -6,11 +6,14 @@ import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { runAsSystem as RunAsSystem } from "@rakazo/db";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
+import { pinLocalSecretStore } from "../pin-secret-store.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
+
+if (!process.env.VERIFY_PROVIDERS) pinLocalSecretStore();
 
 const integration = process.argv.includes("--integration");
 const e2e = process.argv.includes("--e2e");

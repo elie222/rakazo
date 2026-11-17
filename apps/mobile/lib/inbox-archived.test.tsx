@@ -2,6 +2,9 @@
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode } from "react";
 import { act, useEffect, useMemo } from "react";
 import type { Root } from "react-dom/client";
@@ -90,13 +93,17 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
 }));
+// The real server client reads React Native's __DEV__ global, which tests do not define.
 vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
+  currentApiBase: () => "https://example.test",
   selectedSpaceId: () => "space-a",
   rpc: mocks.rpc,
-  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-a") => ({
+    apiBase: "https://example.test",
+    sessionGeneration: 0,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
@@ -136,6 +143,8 @@ vi.mock("../components/native-action-button", () => ({
 let container: HTMLDivElement;
 let root: Root;
 const flush = () => act(async () => undefined);
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -289,21 +298,21 @@ describe("archived count", () => {
     load.mockResolvedValueOnce(lists(2, 1));
     await show("space-a");
     expect(container.textContent).toBe("3");
-    let finish!: (value: ReturnType<typeof lists>) => void;
-    load.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const finish = deferred<ReturnType<typeof lists>>();
+    load.mockReturnValueOnce(finish.promise);
     await show("space-b");
     expect(container.textContent).toBe("0");
-    await act(async () => finish(lists(1, 0)));
+    await act(async () => finish.resolve(lists(1, 0)));
     expect(container.textContent).toBe("1");
   });
 
   it("shows only the newest count when loads overlap", async () => {
-    let finishOld!: (value: ReturnType<typeof lists>) => void;
-    load.mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)));
+    const finishOld = deferred<ReturnType<typeof lists>>();
+    load.mockReturnValueOnce(finishOld.promise);
     await show("space-a");
     load.mockResolvedValueOnce(lists(1, 0));
     await act(async () => notifyArchivedChatsChanged());
-    await act(async () => finishOld(lists(5, 5)));
+    await act(async () => finishOld.resolve(lists(5, 5)));
     expect(container.textContent).toBe("1");
   });
 });
@@ -326,13 +335,13 @@ describe("bot profile menu archive notifications", () => {
   it("notifies only after archive succeeds, including while the inbox stays mounted", async () => {
     const { listener, stop } = listenForArchiveChanges();
     const action = renderActions();
-    let finish!: () => void;
-    mocks.rpc.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
+    const finish = deferred();
+    mocks.rpc.mockReturnValueOnce(finish.promise);
     action("Archive").onPress();
     expect(mocks.rpc).toHaveBeenCalledWith("bots/archive", { botId: "bot-b" });
     expect(listener).not.toHaveBeenCalled();
     expect(mocks.removeFromSearchInbox).not.toHaveBeenCalled();
-    await act(async () => finish());
+    await act(async () => finish.resolve());
     expect(mocks.removeFromSearchInbox).toHaveBeenCalledWith("bot-b");
     expect(listener).toHaveBeenCalledOnce();
     expect(left()).toBe(true);
@@ -366,18 +375,16 @@ describe("bot profile menu archive notifications", () => {
 
   it("ignores repeated profile delete taps through preview and confirmation", async () => {
     const action = renderActions();
-    let finish!: (groups: unknown[]) => void;
-    mocks.rpc.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let finish!: Deferred<unknown[]>;
+    mocks.rpc.mockImplementationOnce(() => {
+      finish = deferred<unknown[]>();
+      return finish.promise;
+    });
     action("Delete…").onPress();
     action("Delete…").onPress();
     await flush();
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    finish([]);
+    finish.resolve([]);
     await flush();
     action("Delete…").onPress();
     expect(mocks.alert).toHaveBeenCalledTimes(1);
@@ -482,20 +489,25 @@ describe("group deletion archive notifications", () => {
         (button) => button.textContent === "Delete group",
       )!;
 
-    act(() => deleteGroup().click());
-    alertButton(0, "Delete").onPress!();
-    expect(listener).not.toHaveBeenCalled();
-    await flush();
-    expect(mocks.rpc).toHaveBeenCalledWith("groups/remove", { groupId: "group-b" });
-    expect(listener).toHaveBeenCalledOnce();
-    expect(mocks.router.replace).toHaveBeenCalledWith("/");
-
     removeFails = true;
     act(() => deleteGroup().click());
-    alertButton(1, "Delete").onPress!();
+    alertButton(0, "Delete").onPress!();
     await flush();
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).not.toHaveBeenCalled();
     expect(mocks.alert).toHaveBeenLastCalledWith("Could not delete group", "failure");
+
+    removeFails = false;
+    act(() => deleteGroup().click());
+    alertButton(2, "Delete").onPress!();
+    expect(listener).not.toHaveBeenCalled();
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "groups/remove",
+      { groupId: "group-b" },
+      expect.anything(),
+    );
+    expect(listener).toHaveBeenCalledOnce();
+    expect(mocks.router.replace).toHaveBeenCalledWith("/");
     stop();
   });
 });

@@ -15,6 +15,7 @@ const provisionComputer = vi.hoisted(() => vi.fn());
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));
@@ -623,7 +624,7 @@ describe("run computer provisioning", () => {
     );
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "error", message: "run setup failed" }),
+      expect.objectContaining({ level: "error", message: "run.setup_failed" }),
     );
   });
 
@@ -637,7 +638,7 @@ describe("run computer provisioning", () => {
       "Run setup failed; retrying",
     );
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
@@ -664,7 +665,7 @@ describe("run computer provisioning", () => {
     }
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
-      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+      expect.objectContaining({ level: "warn", message: "run.setup_failed" }),
     );
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });

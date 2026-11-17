@@ -14,7 +14,7 @@ import {
   ROUNDUP_TIMELINE,
   ROUNDUP_TITLE,
   ROUNDUP_TLDR,
-  roundupStructuredData,
+  roundupItemList,
 } from "../roundup";
 import Button from "./Button.astro";
 import SiteFrame from "./SiteFrame.astro";
@@ -25,7 +25,9 @@ const columns = ROUNDUP_COLUMNS;
 <SiteFrame
   title={ROUNDUP_TITLE}
   description={ROUNDUP_DESCRIPTION}
-  structuredData={roundupStructuredData()}
+  faq={ROUNDUP_FAQ}
+  article={{ headline: ROUNDUP_H1, crumb: "Alternatives" }}
+  nodes={[roundupItemList()]}
   ogImage={ogPublicPath("alternatives")}
 >
   <h1>{ROUNDUP_H1}</h1>

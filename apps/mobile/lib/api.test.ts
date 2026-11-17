@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { getArtifactById } from "./artifacts";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
@@ -10,10 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
 import {
   captureApiRequestContext,
+  fetchAuthenticatedAccountJson,
+  fetchMobileJson,
   isServerReachable,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
   rpc,
   selectedSpaceId,
+  setCachedApiBase,
+  subscribeAiConsentGranted,
   subscribeServerReachable,
   subscribeSessionRejected,
 } from "./api.js";
@@ -22,9 +28,11 @@ import { subscribeThread } from "./api-live.js";
 import { loadApiBase, selectSpace } from "./api-server.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import type { MobileModelCredential } from "./mobile-types.js";
+import { saveServerHeaders } from "./server-headers";
 import { restoreSessionToken, saveSessionToken } from "./session.js";
 import type { UnsentDisk } from "./thread-feedback.js";
 import { configureUnsentSends } from "./thread-feedback.js";
+import { listUserDevices, removeUserDevice } from "./user-devices";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -53,6 +61,124 @@ describe("mobile API requests", () => {
     vi.mocked(resumeLiveNotifications).mockClear();
     await restoreSessionToken("");
   });
+
+  it("rejects an expired account session without sending the selected Space", async () => {
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "expired-token"],
+      ["rakazo.space_id", "space-a"],
+    ]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const fetchMock = vi.fn(
+      async (_input: unknown, _init?: RequestInit) => new Response(null, { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      expect(result.response.status).toBe(401);
+      expect(result.body).toEqual({});
+      expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-space-id");
+      expect(rejected).toHaveBeenCalledOnce();
+      expect(store.has("rakazo.session_token")).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(["session", "server"])("ignores an account 401 after the %s changes", async (change) => {
+    const store = new Map<string, string>([["rakazo.session_token", "old-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const originalBase = (await captureApiRequestContext(null)).apiBase;
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const { fetchMock, fetchStarted, resolveFetch } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const pending = fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      await fetchStarted;
+      if (change === "session") await saveSessionToken("new-token");
+      else setCachedApiBase("https://other.example.test");
+      resolveFetch(new Response(null, { status: 401 }));
+      await pending;
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe(
+        change === "session" ? "new-token" : "old-token",
+      );
+    } finally {
+      setCachedApiBase(originalBase);
+      unsubscribe();
+    }
+  });
+
+  it("uses a pinned server's access headers after the selected server changes", async () => {
+    const apiBase = "https://captured.example.test";
+    const originalBase = (await captureApiRequestContext(null)).apiBase;
+    expect(await saveServerHeaders(apiBase, { "x-access-key": "fake-access-key" })).toBe(true);
+    setCachedApiBase("https://replacement.example.test");
+    const fetchMock = vi.fn(async (_input: unknown, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchMobileJson(`${apiBase}/api/devices`, {}, {}, apiBase);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBase}/api/devices`);
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-access-key")).toBe(
+        "fake-access-key",
+      );
+      expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("error");
+    } finally {
+      await saveServerHeaders(apiBase, {});
+      setCachedApiBase(originalBase);
+    }
+  });
+
+  it.each(["list", "remove"])(
+    "ignores oversized missing-route bodies for device %s",
+    async (operation) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("x".repeat(1024 * 1024), { status: 404 })),
+      );
+      if (operation === "list") await expect(listUserDevices()).resolves.toEqual([]);
+      else await expect(removeUserDevice("fixture-device")).resolves.toBeUndefined();
+    },
+  );
+
+  it("still bounds successful device lists", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("x".repeat(1024 * 1024))),
+    );
+    await expect(listUserDevices()).rejects.toThrow();
+  });
+
+  it.each(["malformed", "oversized"])(
+    "rejects the session even with a %s account 401 body",
+    async (body) => {
+      const store = new Map<string, string>([["rakazo.session_token", "expired-token"]]);
+      mockSecureStore(store);
+      await loadApiBase();
+      const rejected = vi.fn();
+      const unsubscribe = subscribeSessionRejected(rejected);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(body === "malformed" ? "not json" : "x".repeat(1024 * 1024), {
+              status: 401,
+            }),
+        ),
+      );
+      try {
+        await expect(listUserDevices()).rejects.toThrow("Could not load");
+        expect(rejected).toHaveBeenCalledOnce();
+        expect(store.has("rakazo.session_token")).toBe(false);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 
   it("does not send a captured old bearer after the session changes", async () => {
     await saveSessionToken("fake-session-a");
@@ -493,8 +619,16 @@ describe("mobile API requests", () => {
         });
       }),
     );
+    const granted = vi.fn(() => calls.push("told"));
+    const unsubscribe = subscribeAiConsentGranted(granted);
     await rpc("threads/send", { botId: "bot-1", text: "authorized content" });
-    expect(calls).toEqual(["/rpc/aiConsent/status", "/rpc/aiConsent/allow", "/rpc/threads/send"]);
+    unsubscribe();
+    expect(calls).toEqual([
+      "/rpc/aiConsent/status",
+      "/rpc/aiConsent/allow",
+      "told",
+      "/rpc/threads/send",
+    ]);
     expect(promptAiConsent).toHaveBeenLastCalledWith(recipient, "https://example.com/privacy");
   });
 
@@ -564,11 +698,15 @@ describe("mobile API requests", () => {
       }),
     );
 
+    const granted = vi.fn();
+    const unsubscribe = subscribeAiConsentGranted(granted);
     const results = await Promise.allSettled([
       rpc("threads/send", { botId: "bot-1", text: "keep this draft" }),
       rpc("threads/send", { botId: "bot-1", text: "keep this draft" }),
     ]);
+    unsubscribe();
 
+    expect(granted).not.toHaveBeenCalled();
     expect(results.every((result) => result.status === "rejected")).toBe(true);
     expect(promptAiConsent).toHaveBeenCalledTimes(1);
     expect(calls.filter((path) => path.endsWith("/aiConsent/allow"))).toHaveLength(0);
@@ -631,22 +769,20 @@ describe("mobile API requests", () => {
     });
     await loadApiBase();
 
-    let resolveRetry!: (value: Response) => void;
+    let resolveRetry!: Deferred<Response>;
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            resolveRetry = resolve;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        resolveRetry = deferred<Response>();
+        return resolveRetry.promise;
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = rpc("spaces/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await expect(selectSpace("space-new")).resolves.toBe(true);
-    resolveRetry(jsonResponse({ json: { spaces: [] } }));
+    resolveRetry.resolve(jsonResponse({ json: { spaces: [] } }));
 
     await expect(pending).resolves.toEqual({ spaces: [] });
     expect(selectedSpaceId()).toBe("space-new");
@@ -664,22 +800,20 @@ describe("mobile API requests", () => {
     });
     await loadApiBase();
 
-    let resolveRetry!: (value: Response) => void;
+    let resolveRetry!: Deferred<Response>;
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            resolveRetry = resolve;
-          }),
-      );
+      .mockImplementationOnce(() => {
+        resolveRetry = deferred<Response>();
+        return resolveRetry.promise;
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = rpc("spaces/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await expect(selectSpace("space-new")).resolves.toBe(true);
-    resolveRetry(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveRetry.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     await expect(pending).rejects.toThrow("Unauthorized");
     expect(selectedSpaceId()).toBe("space-new");
@@ -698,20 +832,18 @@ describe("mobile API requests", () => {
     await loadApiBase();
     expect(selectedSpaceId()).toBe("space-a");
 
-    let resolveStale!: (value: Response) => void;
-    const fetchMock = vi.fn().mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveStale = resolve;
-        }),
-    );
+    let resolveStale!: Deferred<Response>;
+    const fetchMock = vi.fn().mockImplementationOnce(() => {
+      resolveStale = deferred<Response>();
+      return resolveStale.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const stale = rpc("bots/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
-    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveStale.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // The stale request fails without probing or touching the new selection;
     // Space B's own requests run recovery if B is itself inaccessible.
@@ -733,13 +865,11 @@ describe("mobile API requests", () => {
     await loadApiBase();
     expect(selectedSpaceId()).toBe("space-a");
 
-    let resolveStale!: (value: Response) => void;
-    const fetchMock = vi.fn().mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveStale = resolve;
-        }),
-    );
+    let resolveStale!: Deferred<Response>;
+    const fetchMock = vi.fn().mockImplementationOnce(() => {
+      resolveStale = deferred<Response>();
+      return resolveStale.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const stale = rpc("bots/list");
@@ -747,7 +877,7 @@ describe("mobile API requests", () => {
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
     await expect(selectSpace("space-a")).resolves.toBe(true);
-    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    resolveStale.resolve(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // ID-only matching would treat this obsolete Space A response as current
     // after A → B → A; the selection epoch must keep recovery from clearing
@@ -887,12 +1017,11 @@ describe("mobile API requests", () => {
     await loadApiBase();
     const rejected = vi.fn();
     const unsubscribe = subscribeSessionRejected(rejected);
-    let resolveChange!: (response: Response) => void;
+    let resolveChange!: Deferred<Response>;
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/auth/change-password")) {
-        return new Promise<Response>((resolve) => {
-          resolveChange = resolve;
-        });
+        resolveChange = deferred<Response>();
+        return resolveChange.promise;
       }
       return rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized");
     });
@@ -903,7 +1032,9 @@ describe("mobile API requests", () => {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
       // The server already revoked the old token; a poll lands before the new one arrives.
       await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
-      resolveChange(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
+      const accountResult = await fetchAuthenticatedAccountJson("/api/devices", {}, {});
+      expect(accountResult.response.status).toBe(401);
+      resolveChange.resolve(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
       await pending;
 
       expect(rejected).not.toHaveBeenCalled();

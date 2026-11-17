@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
 import {
   BotSecretName,
@@ -119,20 +120,18 @@ export function VaultItemDetail({
   const [revealing, setRevealing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [usesOpen, setUsesOpen] = useState(false);
-  const hideTimer = useRef<number | undefined>(undefined);
   const attempt = useRef(0);
+  useTimeout(hide, revealed ? REVEAL_MS : null, revealed);
 
   useEffect(
     () => () => {
       attempt.current += 1;
-      window.clearTimeout(hideTimer.current);
     },
     [],
   );
 
   function hide() {
     attempt.current += 1;
-    window.clearTimeout(hideTimer.current);
     setRevealed(null);
     setRevealing(false);
   }
@@ -143,11 +142,8 @@ export function VaultItemDetail({
     try {
       const shown = await onReveal();
       if (current !== attempt.current) return null;
-      if (shown) {
-        setRevealed(shown);
-        window.clearTimeout(hideTimer.current);
-        hideTimer.current = window.setTimeout(hide, REVEAL_MS);
-      }
+      // A copy, so revealing again restarts the hide timer.
+      if (shown) setRevealed({ ...shown });
       return shown;
     } finally {
       if (current === attempt.current) setRevealing(false);

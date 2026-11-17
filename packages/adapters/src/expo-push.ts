@@ -8,7 +8,8 @@ import type {
   NotificationProvider,
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
-import { getLogger } from "@rakazo/logging";
+import { ResponseTooLargeError } from "@rakazo/core";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
@@ -207,7 +208,7 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   async hasPushRecipient(userId: string): Promise<boolean> {
-    return Boolean(await this.deliverableToken(userId));
+    return (await this.deliverableTokens(userId)).length > 0;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
@@ -264,9 +265,18 @@ export class ExpoPushProvider implements NotificationProvider {
     );
     // Old native builds registered only the account's Expo token.
     if (devices.length === 0 && !call.ended) {
-      const token = (await this.deliverableToken(userId))?.token;
-      if (token && (await this.sendCallPush(userId, token, call)) === "invalid")
-        await this.tokens.remove(userId, credentialDigest(token));
+      // One device failing must not hold back the call on the others.
+      await Promise.all(
+        (await this.deliverableTokens(userId)).map(({ token }) =>
+          bestEffort(
+            "incoming call push to a legacy device",
+            (async () => {
+              if ((await this.sendCallPush(userId, token, call)) === "invalid")
+                await this.tokens.remove(userId, credentialDigest(token));
+            })(),
+          ),
+        ),
+      );
     }
   }
 
@@ -302,13 +312,39 @@ export class ExpoPushProvider implements NotificationProvider {
   }
 
   /**
-   * Posts the push when a token is registered. `undeliverable` means this user
-   * has no token, or Expo said the device is gone and the token was dropped.
-   * Neither is an Expo acceptance, so callers must not record a reminder.
+   * Posts the push to every registered device. `undeliverable` means no device
+   * accepted it: none is registered, or Expo said each one is gone and its token
+   * was dropped. Neither is an Expo acceptance, so callers must not record a reminder.
+   * One device failing does not hold back the others; it is retried only when no
+   * device took the push, so a retry never repeats it on a device that already has it.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
-    const registration = await this.deliverableToken(context.userId);
-    if (!registration) return "undeliverable";
+    const registrations = await this.deliverableTokens(context.userId);
+    const results = await Promise.allSettled(
+      registrations.map((registration) => this.deliverTo(registration, message, context)),
+    );
+    const delivered = results.some(
+      (result) => result.status === "fulfilled" && result.value === "delivered",
+    );
+    const thrown = delivered ? -1 : results.findIndex((result) => result.status === "rejected");
+    // The caller reports the failure it is thrown; the rest are logged here, once each.
+    for (const [index, result] of results.entries())
+      if (result.status === "rejected" && index !== thrown)
+        getLogger().error("expo push device delivery failed", {
+          error: result.reason,
+          tokenDigest: credentialDigest(registrations[index]!.token),
+        });
+    if (delivered) return "delivered";
+    const failed = results[thrown];
+    if (failed?.status === "rejected") throw failed.reason;
+    return "undeliverable";
+  }
+
+  private async deliverTo(
+    registration: PushRecord,
+    message: NotificationMessage,
+    context: AdapterContext,
+  ): Promise<ExpoPushDelivery> {
     const token = registration.token;
     const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
     let bodyChars = MAX_PUSH_BODY_CHARS;
@@ -433,29 +469,34 @@ export class ExpoPushProvider implements NotificationProvider {
   /**
    * A token bound to a session is delivered only while that session is still
    * live. A missing row is left for session replacement to retarget; an expired
-   * row is removed. The token is read again after the lookup so a handover
-   * during that wait is not sent.
+   * row is removed. Tokens are read again after the lookups so a sign-out or
+   * handover during that wait is not sent.
    */
-  private async deliverableToken(userId: string): Promise<PushRecord | undefined> {
-    const saved = await this.tokens.load(userId);
-    if (!saved?.token) return undefined;
-    if (!saved.sessionId) return saved;
-    if (!this.sessionExpiresAt) return undefined;
-    let expiresAt: Date | null;
-    try {
-      expiresAt = await this.sessionExpiresAt(saved.sessionId);
-    } catch (error) {
-      getLogger().error("push session lookup failed", error);
-      return undefined;
-    }
-    if (!expiresAt) return undefined;
-    if (expiresAt.getTime() <= Date.now()) {
-      await this.tokens.endSession(userId, saved.sessionId);
-      return undefined;
-    }
-    const current = await this.tokens.load(userId);
-    if (current?.token !== saved.token || current.sessionId !== saved.sessionId) return undefined;
-    return current;
+  private async deliverableTokens(userId: string): Promise<PushRecord[]> {
+    const saved = await this.tokens.list(userId);
+    const live = await Promise.all(
+      saved.map(async ({ sessionId }) => {
+        if (!sessionId) return true;
+        if (!this.sessionExpiresAt) return false;
+        let expiresAt: Date | null;
+        try {
+          expiresAt = await this.sessionExpiresAt(sessionId);
+        } catch (error) {
+          getLogger().error("push session lookup failed", error);
+          return false;
+        }
+        if (!expiresAt) return false;
+        if (expiresAt.getTime() > Date.now()) return true;
+        await this.tokens.endSession(userId, sessionId);
+        return false;
+      }),
+    );
+    const current = await this.tokens.list(userId);
+    return current.filter((now) =>
+      saved.some(
+        (row, index) => live[index] && row.token === now.token && row.sessionId === now.sessionId,
+      ),
+    );
   }
 }
 
@@ -494,7 +535,7 @@ async function postToExpo(
     return { status: response.status, body: await readExpoPushBody(response, attempt) };
   } catch (error) {
     getLogger().warn("expo push request failed", { error });
-    if (signal?.aborted || errorMessage(error) === RESPONSE_TOO_LARGE) throw error;
+    if (signal?.aborted || error instanceof ResponseTooLargeError) throw error;
     return { status: 503, body: { errors: [{ message: errorMessage(error) }] } };
   }
 }
@@ -516,15 +557,15 @@ async function readExpoPushBody(response: Response, signal: AbortSignal): Promis
       cancel.catch(() => undefined),
       signal,
     ).catch(() => undefined);
-    throw new Error(RESPONSE_TOO_LARGE);
+    throw new ResponseTooLargeError(RESPONSE_TOO_LARGE);
   }
   try {
     const bytes = await readBodyCapped(response, MAX_EXPO_PUSH_RESPONSE_BYTES, signal);
     if (bytes.byteLength === 0) return undefined;
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch (error) {
-    if (error instanceof Error && error.message === "Response is too large") {
-      throw new Error(RESPONSE_TOO_LARGE);
+    if (error instanceof ResponseTooLargeError) {
+      throw new ResponseTooLargeError(RESPONSE_TOO_LARGE, { cause: error });
     }
     if (error instanceof SyntaxError) return undefined;
     throw error;

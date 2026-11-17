@@ -1,6 +1,5 @@
 import type { APIRoute } from "astro";
-import { roundupMarkdown } from "../roundup";
 import { markdownResponse } from "../agent-content";
+import { roundupMarkdown } from "../roundup";
 
-export const GET: APIRoute = ({ request }) =>
-  markdownResponse(roundupMarkdown(), request.method);
+export const GET: APIRoute = ({ request }) => markdownResponse(roundupMarkdown(), request.method);

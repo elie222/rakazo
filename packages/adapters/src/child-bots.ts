@@ -7,12 +7,7 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import {
-  isSandboxProviderOutage,
-  routineJobKey,
-  runContinueJob,
-  runJobKey,
-} from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage, routineJobKey, runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -20,7 +15,7 @@ import {
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, retry } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
   clearEndedRunState,
@@ -53,6 +48,7 @@ import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { wakeRun } from "./wake-run.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -143,9 +139,7 @@ export async function spawnBot(
       spawnKey: input.spawnKey,
       prompt,
     });
-    await deps.jobs
-      .enqueue(runContinueJob(run.id))
-      .catch((error) => getLogger().error("spawned bot enqueue", error));
+    await wakeRun(deps.jobs, run.id);
   }
 
   return {
@@ -222,6 +216,7 @@ type BotLifecycleDeps = {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   jobs: JobPublisher;
+  events?: Pick<ThreadEvents, "publishSpaceChange">;
   dataDir?: string;
   memoryProviders?: MemoryProviderResolver;
   artifacts?: ArtifactStore;
@@ -342,9 +337,7 @@ export async function archiveBot(
       select: { spaceId: true, controlLeaseId: true },
     });
     await tx.computer.updateMany({
-      where: {
-        OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
-      },
+      where: { controlBotId: bot.id },
       data: releasedComputerLease(),
     });
     for (const { spaceId, controlLeaseId } of held) {
@@ -362,6 +355,9 @@ export async function archiveBot(
     });
     return cancelled;
   });
+  // Activity leaves out archived bots' runs, and their routines are paused.
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "runs");
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "routines");
   await Promise.allSettled([
     ...cancelledRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
@@ -481,7 +477,7 @@ export async function destroyBot(
       await tx.computer.updateMany({
         where: {
           ...(dedicated ? { id: { not: dedicated.id } } : {}),
-          OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
+          controlBotId: bot.id,
         },
         data: releasedComputerLease(),
       });
@@ -719,14 +715,6 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   if (cancelledRuns.length) {
     const runIds = cancelledRuns.map((run) => run.id);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: runIds } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
   }
   if (affectedGroups.length) {
     await tx.chatGroupMember.deleteMany({ where: { botId } });
@@ -782,9 +770,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    executionRunId: null,
-    executionBotId: null,
-    executionLeaseExpiresAt: null,
   };
 }
 

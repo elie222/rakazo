@@ -247,7 +247,8 @@ export const GroupDetailSchema = GroupSchema.extend({
   messages: z.array(ThreadMessageSchema).optional(),
 });
 
-export const BotSectionName = z.string().trim().min(1).max(60);
+export const BOT_SECTION_NAME_MAX_LENGTH = 60;
+export const BotSectionName = z.string().trim().min(1).max(BOT_SECTION_NAME_MAX_LENGTH);
 
 export const BotSectionSchema = z.object({
   id: Id,
@@ -376,6 +377,8 @@ export const SpaceSchema = z.object({
   canDelete: z.boolean().optional(),
   /** True when more than one person belongs to the space. */
   shared: z.boolean().optional(),
+  /** True when someone from outside the Space's organization belongs to it. */
+  hasGuests: z.boolean().optional(),
   /** Every bot deleting the space removes, archived and other members' included. */
   botCount: z.number().int().nonnegative().optional(),
   bots: z.array(SpaceBotSchema),
@@ -387,12 +390,17 @@ export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceRoleSchema = z.enum(["owner", "member"]);
 
-export const SpaceMemberSchema = z.object({
+const PersonSchema = z.object({
   userId: Id,
   name: z.string(),
   email: z.string(),
   image: z.string().nullable(),
+});
+
+export const SpaceMemberSchema = PersonSchema.extend({
   role: SpaceRoleSchema,
+  /** From outside the Space's organization: they see only the Spaces they were added to. */
+  guest: z.boolean().optional(),
 });
 export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
 
@@ -403,12 +411,55 @@ export const SpaceMembersSchema = z.object({
   canManage: z.boolean(),
   /** For the owner: links created but not yet used or expired. */
   openInvites: z.number().int().nonnegative().optional(),
+  /** For the owner: people in the Space's organization who are not in it yet. */
+  addable: z.array(PersonSchema).optional(),
+  /** For the owner: the Space's organization, which anyone invited from outside does not join. */
+  organizationName: z.string().optional(),
 });
 export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+/** The organization's one owner, admins who manage its members with them, and everyone else. */
+export const OrganizationRoleSchema = z.enum(["owner", "admin", "member"]);
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>;
+
+export const OrganizationMemberSchema = PersonSchema.extend({
+  role: OrganizationRoleSchema,
+  /** Whether the viewer may remove them: never the owner or themselves. */
+  manageable: z.boolean(),
+  /** Whether the viewer may make them an admin or a member: not while their removal is unfinished. */
+  roleChangeable: z.boolean(),
+});
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
+
+export const OrganizationInvitationSchema = z.object({
+  id: Id,
+  email: z.string(),
+  /** The link to accept it, for sharing by hand when no email arrives. */
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>;
+
+export const OrganizationMembersSchema = z.object({
+  members: z.array(OrganizationMemberSchema),
+  /** Pending invitations; empty for someone who cannot manage members. */
+  invitations: z.array(OrganizationInvitationSchema),
+  /** True for the owner and admins: they invite, change roles and remove people. */
+  canManage: z.boolean(),
+});
+export type OrganizationMembers = z.infer<typeof OrganizationMembersSchema>;
+
+export const OrganizationInvitationPreviewSchema = z.object({
+  organizationName: z.string(),
+  inviterName: z.string(),
+});
+export type OrganizationInvitationPreview = z.infer<typeof OrganizationInvitationPreviewSchema>;
 
 export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),
   expiresAt: z.string(),
+  /** Whether the link was emailed to the address given; when not, the owner shares it by hand. */
+  emailed: z.boolean().optional(),
 });
 
 export const SpaceInvitePreviewSchema = z.object({
@@ -454,7 +505,8 @@ export const CreateBotInput = z.object({
   avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
-  computerMode: ComputerModeSchema.default("team"),
+  /** Unset follows the deployment's default computer. */
+  computerMode: ComputerModeSchema.optional(),
   /** Idempotency key within a space (unique with spaceId). */
   spawnKey: z.string().trim().min(1).max(120).optional(),
 });
@@ -1167,6 +1219,58 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+export const UsageDateRangeSchema = z.enum(["today", "7d", "30d", "all"]);
+export type UsageDateRange = z.infer<typeof UsageDateRangeSchema>;
+
+export const UsageBreakdownInputSchema = z.object({
+  /** Omit or null to include every bot. */
+  botId: Id.nullish(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  range: UsageDateRangeSchema.default("30d"),
+});
+export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
+
+export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
+  provider: z.string(),
+  model: z.string(),
+});
+export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
+
+export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
+  /** The bucket's first day in the member's timezone, YYYY-MM-DD. */
+  date: z.string(),
+});
+export type UsageBreakdownPoint = z.infer<typeof UsageBreakdownPointSchema>;
+
+export const UsageBreakdownBotSchema = z.object({
+  id: Id,
+  /** Null for a bot removed without a record of its name. */
+  name: z.string().nullable(),
+  deleted: z.boolean(),
+  runs: z.number(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable(),
+  costUsd: z.number().nullable(),
+  modelCalls: z.number(),
+});
+export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
+
+export const UsageBreakdownSchema = z.object({
+  range: UsageDateRangeSchema,
+  /** Each bot with usage in the range, for the bot selector. */
+  bots: z.array(UsageBreakdownBotSchema),
+  /** Every model used in the range, for the model selector. */
+  modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
+  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  models: z.array(UsageBreakdownModelSchema),
+  /** One point per day, or per month for an all-time history longer than two months. */
+  overTimeUnit: z.enum(["day", "month"]),
+  overTime: z.array(UsageBreakdownPointSchema),
+});
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
+
 /** One rolling allowance of a model subscription the member signed in with. */
 export const PlanLimitWindowSchema = z.object({
   period: z.enum(["session", "week", "month"]),
@@ -1305,6 +1409,8 @@ export const SpaceMemoryConfigSchema = z.object({
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
+  /** One line naming the connection, written by the provider. Absent from older servers. */
+  connectionLabel: z.string().optional(),
 });
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
@@ -1345,6 +1451,8 @@ export const VoiceCredentialSchema = z.object({
   transcribe: z.boolean(),
   /** Self-hosted server base URL and model ids (never the key). Empty for hosted providers. */
   endpoint: z.string().default(""),
+  /** A separate self-hosted transcription server; empty when `endpoint` transcribes. */
+  sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
 });
@@ -1553,6 +1661,8 @@ export const AppBootstrapSchema = z.object({
   spaces: z.array(SpaceSchema),
   /** Set when the requested bot is the caller's but lives in another of their Spaces. */
   botSpaceId: Id.optional(),
+  /** Set when the requested group is one the caller can open in another of their Spaces. */
+  groupSpaceId: Id.optional(),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 

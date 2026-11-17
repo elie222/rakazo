@@ -2016,6 +2016,69 @@ describe("OpenAPI connector import", () => {
     );
   });
 
+  it("answers what is wrong with a source the person is adding as a setup error", async () => {
+    const setupError = { name: "ConnectionSetupError" };
+    // Settings they entered.
+    await expect(
+      verifyMcpInstall({
+        source: "https://connectors.example.test/mcp",
+        config: { preset: "custom", auth: { type: "magic" } },
+      }),
+    ).rejects.toMatchObject(setupError);
+    // How their server answered the check, with the credential they gave redacted.
+    const fetch = vi.fn().mockRejectedValue(new Error("connection reset for fake-credential-1"));
+    const failed = prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "bearer" } },
+      credential: "fake-credential-1",
+      remote: { fetch },
+    });
+    await expect(failed).rejects.toMatchObject(setupError);
+    await expect(failed).rejects.not.toThrow("fake-credential-1");
+  });
+
+  it("lets a failure of our own propagate instead of blaming the source", async () => {
+    const fault = new Error("lookup store unavailable");
+    const failed = prepareApiInstall({
+      source: "https://connectors.example.test/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: { fetch: vi.fn(), resolveHostname: vi.fn().mockRejectedValue(fault) },
+    });
+    await expect(failed).rejects.toBe(fault);
+  });
+
+  it.each([
+    ["a host name that does not resolve", { code: "ENOTFOUND", syscall: "getaddrinfo" }],
+    ["a dropped connection", { code: "ECONNRESET" }],
+  ])("answers %s at the source as a setup error", async (_label, fields) => {
+    const failed = prepareApiInstall({
+      source: "https://connectors.example.test/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: {
+        fetch: vi.fn(),
+        resolveHostname: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error("lookup failed"), fields)),
+      },
+    });
+    await expect(failed).rejects.toMatchObject({ name: "ConnectionSetupError" });
+  });
+
+  it.each([
+    ["an expired certificate", "CERT_HAS_EXPIRED", "certificate has expired"],
+    ["a self-signed certificate", "DEPTH_ZERO_SELF_SIGNED_CERT", "self-signed certificate"],
+  ])("answers %s at the source as a setup error", async (_label, code, message) => {
+    const tlsFailure = Object.assign(new Error(message), { code });
+    const failed = prepareApiInstall({
+      source: "https://93.184.216.34/openapi.json",
+      config: { openApi: true, auth: { type: "none" } },
+      remote: {
+        fetch: vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause: tlsFailure })),
+      },
+    });
+    await expect(failed).rejects.toMatchObject({ name: "ConnectionSetupError" });
+  });
+
   it("refuses credentials embedded in a persisted MCP URL", async () => {
     await expect(
       verifyMcpInstall({

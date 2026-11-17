@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,7 +25,6 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("./activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("./live-notifications", () => ({}));
-vi.mock("./api-server", () => ({}));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ artifactId: state.id }),
   useRouter: () => ({ back: state.back }),
@@ -112,15 +112,6 @@ afterEach(() => {
 });
 async function render() {
   await act(async () => root.render(<ArtifactDetail />));
-}
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
 }
 async function startDelete() {
   const pending = deferred();

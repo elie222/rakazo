@@ -1,17 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ApiRequestContext } from "./api";
-import { rpc } from "./api";
 import {
   allowFocusPrompt,
   cancelFocusPrompt,
   FOCUS_PROMPT_DELAY_MS,
   scheduleFocusPrompt,
 } from "./focus-prompt";
-
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: vi.fn().mockResolvedValue({}) }));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -25,33 +18,15 @@ afterEach(() => {
 });
 
 it.each([true, false])(
-  "pins the focus card to the creation context (immediate: %s)",
+  "sends the focus card through the creation's save (immediate: %s)",
   async (immediate) => {
-    const requestContext: ApiRequestContext = {
-      apiBase: "https://api.example.test",
-      sessionGeneration: 1,
-      headers: { "x-rakazo-space-id": "space-work" },
-    };
+    const send = vi.fn().mockResolvedValue({});
     allowFocusPrompt("bot-new");
-    scheduleFocusPrompt("bot-new", immediate, requestContext);
+    scheduleFocusPrompt("bot-new", immediate, send);
     if (!immediate) {
-      expect(rpc).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(FOCUS_PROMPT_DELAY_MS);
     }
-    expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "onboarding/promptFocus",
-      { botId: "bot-new" },
-      { requestContext },
-    );
+    expect(send).toHaveBeenCalledExactlyOnceWith("onboarding/promptFocus", { botId: "bot-new" });
   },
 );
-
-it("keeps unpinned prompts on the selected space", () => {
-  allowFocusPrompt("bot-new");
-  scheduleFocusPrompt("bot-new", true);
-  expect(rpc).toHaveBeenCalledExactlyOnceWith(
-    "onboarding/promptFocus",
-    { botId: "bot-new" },
-    undefined,
-  );
-});

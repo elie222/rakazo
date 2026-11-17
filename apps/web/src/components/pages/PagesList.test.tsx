@@ -2,10 +2,18 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PagesList } from "./PagesList";
 
 const rename = vi.hoisted(() => vi.fn());
+const pageItems = vi.hoisted(() => ({
+  current: [] as { id: string; title: string; updatedAt: string }[],
+}));
+const page = (index: number) => ({
+  id: `page-${index}`,
+  title: `Plan ${index}`,
+  updatedAt: new Date().toISOString(),
+});
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: String.raw }),
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -20,11 +28,7 @@ vi.mock("../../lib/page-actions", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
   useMutation: () => ({ mutate: rename, reset: vi.fn() }),
-  useInfiniteQuery: () => ({
-    data: {
-      pages: [{ items: [{ id: "page-1", title: "Plan", updatedAt: new Date().toISOString() }] }],
-    },
-  }),
+  useInfiniteQuery: () => ({ data: { pages: [{ items: pageItems.current }] } }),
 }));
 vi.mock("@rakazo/ui-web", async (importActual) => ({
   ...(await importActual<object>()),
@@ -37,6 +41,9 @@ vi.mock("@rakazo/ui-web", async (importActual) => ({
     </button>
   ),
 }));
+beforeEach(() => {
+  pageItems.current = [{ id: "page-1", title: "Plan", updatedAt: new Date().toISOString() }];
+});
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -85,4 +92,38 @@ it.each([
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+async function renderPreview(onOpenAll = vi.fn()) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  await act(async () => root.render(<PagesList botId="bot-1" preview={{ onOpenAll }} />));
+  return { host, root, onOpenAll };
+}
+
+it("previews nothing at all while the bot has no pages", async () => {
+  pageItems.current = [];
+  const { host, root } = await renderPreview();
+  expect(host.childElementCount).toBe(0);
+  await act(async () => root.unmount());
+});
+
+it("previews the latest three pages and links the heading to the whole list", async () => {
+  pageItems.current = [1, 2, 3, 4].map(page);
+  const { host, root, onOpenAll } = await renderPreview();
+  expect(host.querySelectorAll("li")).toHaveLength(3);
+  await act(async () => {
+    [...host.querySelectorAll("button")].find((button) => button.textContent === "Pages")!.click();
+  });
+  expect(onOpenAll).toHaveBeenCalledOnce();
+  await act(async () => root.unmount());
+});
+
+it("keeps a plain heading when the preview shows every page", async () => {
+  pageItems.current = [1, 2].map(page);
+  const { host, root } = await renderPreview();
+  expect(host.querySelectorAll("li")).toHaveLength(2);
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Pages")).toBe(false);
+  await act(async () => root.unmount());
 });

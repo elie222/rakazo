@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -43,7 +44,7 @@ it("asks the server for the page runtime again each time a page opens", async ()
         </QueryClientProvider>,
       ),
     );
-    await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(flush);
     return root;
   };
   (await open()).unmount();

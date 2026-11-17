@@ -69,20 +69,21 @@ describePages("pages", () => {
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM pages WHERE id = ${pageId} FOR UPDATE`;
         const [held] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        const waitFor = async (count: number) => {
-          for (let tries = 0; tries < 800; tries++) {
-            const [row] = await db().$queryRaw<{ waiting: number }[]>`
-              WITH RECURSIVE queued(pid) AS (
-                SELECT pid FROM pg_stat_activity WHERE ${held!.pid}::int = ANY(pg_blocking_pids(pid))
-                UNION
-                SELECT a.pid FROM pg_stat_activity a JOIN queued q ON q.pid = ANY(pg_blocking_pids(a.pid))
-              )
-              SELECT count(*)::int AS waiting FROM queued`;
-            if ((row?.waiting ?? 0) >= count) return;
-            await new Promise((resolve) => setTimeout(resolve, 25));
-          }
-          throw new Error(`${count} writers never queued behind the held page row`);
-        };
+        const waitFor = (count: number) =>
+          vi.waitFor(
+            async () => {
+              const [row] = await db().$queryRaw<{ waiting: number }[]>`
+                WITH RECURSIVE queued(pid) AS (
+                  SELECT pid FROM pg_stat_activity WHERE ${held!.pid}::int = ANY(pg_blocking_pids(pid))
+                  UNION
+                  SELECT a.pid FROM pg_stat_activity a JOIN queued q ON q.pid = ANY(pg_blocking_pids(a.pid))
+                )
+                SELECT count(*)::int AS waiting FROM queued`;
+              if ((row?.waiting ?? 0) < count)
+                throw new Error(`${count} writers never queued behind the held page row`);
+            },
+            { timeout: 20_000, interval: 25 },
+          );
         return during(waitFor, tx);
       },
       { timeout: 30_000 },
@@ -330,20 +331,21 @@ describePages("pages", () => {
         name: "routine.wakeup",
         payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
       });
-      for (let tries = 0; tries < 200; tries++) {
-        const run = await db().run.findFirst({
-          where: { routineId: routine.id, status: { in: ["completed", "failed", "cancelled"] } },
-          orderBy: { createdAt: "desc" },
-          select: { id: true, status: true },
-        });
-        if (run && !fired.has(run.id)) {
-          fired.add(run.id);
-          expect(run.status).toBe("completed");
-          return db().message.findMany({ where: { runId: run.id }, select: { blocks: true } });
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      throw new Error("the routine never ran");
+      const run = await vi.waitFor(
+        async () => {
+          const run = await db().run.findFirst({
+            where: { routineId: routine.id, status: { in: ["completed", "failed", "cancelled"] } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, status: true },
+          });
+          if (!run || fired.has(run.id)) throw new Error("the routine never ran");
+          return run;
+        },
+        { interval: 100, timeout: 20_000 },
+      );
+      fired.add(run.id);
+      expect(run.status).toBe("completed");
+      return db().message.findMany({ where: { runId: run.id }, select: { blocks: true } });
     };
 
     // The first save is news: the page's card arrives in the chat.
@@ -669,14 +671,17 @@ describePages("pages", () => {
     await sendAndWait(app, cookie, asker.id, {
       text: `message the bot named Builder saying call save_page with ${JSON.stringify(args)}`,
     });
-    const start = Date.now();
-    let blocks: unknown[] = [];
-    while (Date.now() - start < 20_000) {
-      const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: builder.id });
-      blocks = snap.messages.flatMap((message) => message.blocks.filter((b) => b.kind === "page"));
-      if (blocks.length) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    const blocks = await vi.waitFor(
+      async () => {
+        const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: builder.id });
+        const blocks = snap.messages.flatMap((message) =>
+          message.blocks.filter((b) => b.kind === "page"),
+        );
+        if (!blocks.length) throw new Error("the builder's history shows no page");
+        return blocks;
+      },
+      { interval: 100, timeout: 20_000 },
+    );
     expect(blocks).toEqual([
       { kind: "page", pageId: expect.any(String), version: 1, title: "Peer report" },
     ]);
@@ -1131,11 +1136,12 @@ async function sendAndWait(
   spaceId?: string,
 ) {
   await rpc(app, cookie, "threads/send", { botId, ...input }, spaceId);
-  const start = Date.now();
-  while (Date.now() - start < 20_000) {
-    const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId }, spaceId);
-    if (!snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status)) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("timeout waiting for the run");
+  await vi.waitFor(
+    async () => {
+      const snap = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId }, spaceId);
+      if (snap.run && !["completed", "failed", "cancelled"].includes(snap.run.status))
+        throw new Error("timeout waiting for the run");
+    },
+    { timeout: 20_000, interval: 100 },
+  );
 }

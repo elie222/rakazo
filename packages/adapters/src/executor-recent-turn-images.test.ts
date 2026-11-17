@@ -1,5 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -11,6 +13,10 @@ const lifecycleMocks = vi.hoisted(() => ({
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async (
+    _prisma: unknown,
+    input: { computerId: string; botId: string; runId: string },
+  ) => ({ ...input, fence: 7 }),
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -27,7 +33,6 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 const TEXT_ONLY_MODEL = "deepseek/deepseek-v4-flash-0731";
 const VISION_MODEL = "openai/gpt-4o";
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 type Gate = { reached: Deferred<void>; release: Deferred<void> };
 type RunHooks = {
   computer?: { defaultModelId?: string; checkpoint?: string };
@@ -48,14 +53,6 @@ type RunHooks = {
   /** The newest user message points at this run, sends a picture and may wait for its own run. */
   pictureMessage?: { waiting: boolean };
 };
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 function historyMessages(pictureMessage?: { waiting: boolean }): Array<{
   id: string;

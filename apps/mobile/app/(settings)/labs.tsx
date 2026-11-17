@@ -1,15 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import type { LabFeature } from "@rakazo/contracts";
 import { withLab } from "@rakazo/contracts";
-import { useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
 import { Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsGroup, SettingsSwitch, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
-import type { MobileMe } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { createSettingsPageStyles } from "../../lib/settings-page-styles";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -18,45 +17,26 @@ export default function Labs() {
   const { t } = useLingui();
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
-  const [labs, setLabs] = useState<MobileMe["labs"] | null>(null);
-  const [available, setAvailable] = useState<MobileMe["labsAvailable"]>([]);
-  const saveRequest = useRef(0);
   const copy: Record<LabFeature, { title: string; detail: string }> = {
     board: { title: t`Board`, detail: t`A kanban board of tickets your bots can work on` },
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void rpc("me")
-        .then((me) => {
-          if (!active) return;
-          setLabs(me.labs);
-          setAvailable(me.labsAvailable ?? []);
-        })
-        .catch(() => undefined);
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
+  const meRead = accountRpcQuery("me");
+  const me = useScreenQuery(meRead).data;
+  const change = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (labs: LabFeature[], send) => {
+      // The answer is the account as saved, so the switch keeps it if the read after it fails.
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", { labs }));
+    },
+    stale: [meRead.queryKey],
+    onFailed: (cause) => Alert.alert(t`Labs`, errorText(cause, t`Could not save`)),
+  });
+  // The switch shows the change being saved until the read after it is back.
+  const labs = change.pending ? change.input : me?.labs;
+  const available = me?.labsAvailable ?? [];
 
   function toggle(feature: LabFeature, enabled: boolean) {
-    if (!labs) return;
-    const previous = labs;
-    const next = withLab(previous, feature, enabled);
-    // Only the latest tap's reply may land, so a slower earlier save can't undo it.
-    const request = ++saveRequest.current;
-    setLabs(next);
-    rpc("preferences/update", { labs: next })
-      .then((me) => {
-        if (request === saveRequest.current) setLabs(me.labs);
-      })
-      .catch((cause: unknown) => {
-        if (request !== saveRequest.current) return;
-        setLabs(previous);
-        Alert.alert(t`Labs`, errorText(cause, t`Could not save`));
-      });
+    if (labs) change.run(withLab(labs, feature, enabled));
   }
 
   return (
@@ -74,6 +54,7 @@ export default function Labs() {
                 label={copy[feature].title}
                 detail={copy[feature].detail}
                 value={labs.includes(feature)}
+                disabled={change.pending}
                 onChange={(enabled) => toggle(feature, enabled)}
               />
             ))}

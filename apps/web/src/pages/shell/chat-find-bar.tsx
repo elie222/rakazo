@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { Button, Input } from "@rakazo/ui-web";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import type { RefObject } from "react";
@@ -64,20 +65,13 @@ export function ChatFindBar({
   const [found, setFound] = useState<{ ranges: Range[]; index: number }>({ ranges: [], index: 0 });
   const { ranges } = found;
 
-  // Streaming replies and older history change the transcript while the bar is open. A new
-  // query jumps to its first match; a refresh keeps the selected match where it is.
-  useEffect(() => {
-    const transcript = scope.current;
-    if (!transcript) {
-      setFound({ ranges: [], index: 0 });
-      return;
-    }
-    const first = findTextRanges(transcript, query);
-    setFound({ ranges: first, index: 0 });
-    if (first[0]) reveal(first[0]);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      timer = undefined;
+  // A new object starts a rescan; changes while one is pending join it.
+  const [rescan, setRescan] = useState<object | null>(null);
+  useTimeout(
+    () => {
+      setRescan(null);
+      const transcript = scope.current;
+      if (!transcript) return;
       const next = findTextRanges(transcript, query);
       setFound((previous) => {
         const selected = previous.ranges[previous.index];
@@ -87,7 +81,23 @@ export function ChatFindBar({
           index: kept === -1 ? Math.min(previous.index, next.length - 1) : kept,
         };
       });
-    };
+    },
+    rescan ? REFRESH_MS : null,
+    rescan,
+  );
+
+  // Streaming replies and older history change the transcript while the bar is open. A new
+  // query jumps to its first match; a refresh keeps the selected match where it is.
+  useEffect(() => {
+    setRescan(null);
+    const transcript = scope.current;
+    if (!transcript) {
+      setFound({ ranges: [], index: 0 });
+      return;
+    }
+    const first = findTextRanges(transcript, query);
+    setFound({ ranges: first, index: 0 });
+    if (first[0]) reveal(first[0]);
     // A streaming reply changes the transcript many times a second; rescanning a few times a
     // second keeps the count current without searching on every token.
     // The bar sits in the column it watches; its own count changing is not a change to the chat.
@@ -97,7 +107,7 @@ export function ChatFindBar({
           record.target instanceof Element ? record.target : record.target.parentElement;
         return !target?.closest('[data-testid="chat-find"]');
       });
-      if (chatChanged) timer ??= setTimeout(refresh, REFRESH_MS);
+      if (chatChanged) setRescan((pending) => pending ?? {});
     });
     observer.observe(transcript, {
       childList: true,
@@ -106,10 +116,7 @@ export function ChatFindBar({
       // Opening or closing a disclosure (a tool step) changes which text is visible.
       attributeFilter: ["hidden", "open", "aria-expanded", "data-open", "data-closed"],
     });
-    return () => {
-      observer.disconnect();
-      clearTimeout(timer);
-    };
+    return () => observer.disconnect();
   }, [query, scope]);
 
   const current = ranges.length > 0 ? Math.max(0, Math.min(found.index, ranges.length - 1)) : -1;

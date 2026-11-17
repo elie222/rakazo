@@ -1,7 +1,6 @@
-import type { MessageBlock } from "@rakazo/contracts";
 import { botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { loadMessageAuthors } from "@rakazo/db";
+import { loadMessageAuthors, storedMessageBlocks } from "@rakazo/db";
 
 /** What the model reads for the person of a personal space: never their real name. */
 export const USER_SPEAKER = "User";
@@ -87,6 +86,7 @@ export interface ThreadSpeakers {
 }
 
 type SpeakerRow = {
+  id: string;
   role: string;
   botId?: string | null;
   authorUserId?: string | null;
@@ -143,8 +143,11 @@ function isChannelMessage(blocks: unknown): boolean {
   return Array.isArray(blocks) && blocks.some((block) => block?.kind === "channel_message");
 }
 
-function isRelay(blocks: unknown): boolean {
-  return Array.isArray(blocks) && Boolean(botMessageContext(blocks as MessageBlock[]));
+function isRelay(row: SpeakerRow): boolean {
+  return (
+    row.blocks !== undefined &&
+    Boolean(botMessageContext(storedMessageBlocks({ id: row.id, blocks: row.blocks })))
+  );
 }
 
 /**
@@ -159,7 +162,7 @@ export function historySpeaker(
 ): string | undefined {
   if (!speakers) return undefined;
   if (row.role === "user")
-    return isRelay(row.blocks) ? undefined : personLineSpeaker(speakers.people, row);
+    return isRelay(row) ? undefined : personLineSpeaker(speakers.people, row);
   if (row.role !== "bot" || !row.botId || row.botId === speakers.botId) return undefined;
   return speakers.names.get(row.botId) ?? UNKNOWN_BOT_SPEAKER;
 }

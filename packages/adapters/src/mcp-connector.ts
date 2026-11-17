@@ -48,6 +48,7 @@ import {
 } from "./lazy-tool-catalog.js";
 import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
+import { UNAVAILABLE_TOOL, unavailableTool } from "./mcp-connector.tool-definition.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -235,8 +236,6 @@ function recoveredSince(
   return server.healthStatus === "ok" && (server.healthCheckedAt?.getTime() ?? 0) > since;
 }
 
-/** Route name of the stand-in tool for an assigned server whose discovery failed. */
-const UNAVAILABLE_TOOL = "__rakazo_unavailable";
 /** Skip rewriting an unchanged health observation more often than this. */
 const HEALTH_REWRITE_MS = 60_000;
 
@@ -283,25 +282,6 @@ export function mcpStdioOptionsFromEnv(
     idleMs: positiveInteger(env.MCP_STDIO_IDLE_MS, true) ?? DEFAULT_MCP_STDIO_IDLE_MS,
     discoveryTimeoutMs:
       positiveInteger(env.MCP_DISCOVERY_TIMEOUT_MS, true) ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
-  };
-}
-
-/** Stand-in for an assigned server whose tools could not be listed, so the model can say
- * why instead of concluding the server is not assigned. Calling it returns the reason. */
-function unavailableTool(server: McpServer, reason: string): ConnectorTool {
-  const brief = reason.length > 400 ? `${reason.slice(0, 400)}...` : reason;
-  return {
-    name: `mcp__${server.slug}__unavailable`,
-    description: `The MCP server "${server.name}" is assigned to you but is unavailable right now, so none of its tools can be used. Reason: ${brief}. Tell the user it failed to start rather than saying it is not assigned. Calling this tool returns the same error.`,
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    readOnly: true,
-    route: {
-      connectorId: "mcp",
-      resourceId: server.id,
-      resourceRevision: server.revision,
-      toolName: UNAVAILABLE_TOOL,
-      catalogGroup: server.slug,
-    },
   };
 }
 
@@ -935,11 +915,37 @@ export class McpConnector implements ConnectorProvider {
       let session: McpSession;
       try {
         session = await this.sessionFor(server, context);
+        if (retriedRotation) {
+          // A further rotation may have happened before this connection registered its ref.
+          // Verify the adopted record once; a mismatch exhausts the existing retry budget.
+          const current = await this.prisma.mcpServer.findFirst({
+            where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+            select: { secretId: true },
+          });
+          if (
+            !current ||
+            (current.secretId ?? undefined) !== this.sessions.get(sessionKey)?.recordId
+          ) {
+            await this.evict(sessionKey);
+            throw new McpSecretChangedError();
+          }
+          server.secretId = current.secretId;
+        }
       } catch (error) {
         // No tool has run yet: reconnect once with the current credentials.
         context.signal.throwIfAborted();
         if (retriedRotation || !(error instanceof McpSecretChangedError)) throw error;
         retriedRotation = true;
+        // Cleanup may leave the old secret row readable after the server moved on.
+        // Retry from its current pointer, rather than reconnecting with that old row.
+        const current = await this.prisma.mcpServer.findFirst({
+          where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+          select: { secretId: true },
+        });
+        if (!current) throw error;
+        // Keep the caller's snapshot current too: execute reads the app resource
+        // with this same object after the tool call has recovered its session.
+        server.secretId = current.secretId;
         continue;
       }
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
@@ -1104,12 +1110,16 @@ export class McpConnector implements ConnectorProvider {
           where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
           select: { secretId: true },
         });
-        if (current?.secretId) {
+        // The server was edited, reconnected or removed from the space after this run read it.
+        // Re-adding it keeps its revision, so only wait briefly.
+        if (!current)
+          throw new McpConnectFailure("MCP server changed while connecting", "unreachable");
+        if (current.secretId) {
           secret = await this.prisma.secret.findFirst({
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new Error("MCP server secret is unavailable; retry");
+        if (!secret) throw new McpSecretChangedError();
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;

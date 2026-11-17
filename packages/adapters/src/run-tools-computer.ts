@@ -39,12 +39,12 @@ import {
   unchangedVisualLoopToolResult,
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
-} from "./desktop-command-guard.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+} from "./providers/computer/desktop/desktop-command-guard.js";
 import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
@@ -337,7 +337,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
               const resolved = await resolvePurchaseCardFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
                 step.field,
@@ -408,7 +413,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Pay tokens are unavailable here." };
               const resolved = await resolvePurchasePayTokenFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                {
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  jobs: deps.jobs,
+                  paymentWallet,
+                },
                 run,
                 step.purchase,
               );

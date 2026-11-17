@@ -10,6 +10,7 @@ import { McpConnector } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { createRunSecretWriter } from "./run-secret.js";
+import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
 import { infisicalFake } from "./secret-store-fake.js";
@@ -216,7 +217,7 @@ describe("secret persistence cleanup", () => {
         expect(remove).not.toHaveBeenCalled();
         expect(fake.values.size).toBe(2);
       });
-      expect(remove).toHaveBeenCalledWith(old.ref, "row");
+      expect(remove).toHaveBeenCalledWith(old.ref, expect.objectContaining({ recordId: "row" }));
       expect(fake.values.size).toBe(1);
       await prisma.secret.deleteMany({ where: { id: "row" } });
       expect(fake.values.size).toBe(0);
@@ -341,6 +342,203 @@ describe("secret persistence cleanup", () => {
     } finally {
       await store.close();
     }
+  });
+});
+
+describe("secret persistence cleanup with a queue", () => {
+  async function setup() {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    const db = database();
+    const queue = fakeCleanupJobs();
+    const prisma = withSecretPersistence(db.prisma, store, () => queue.jobs);
+    const worker = { prisma: db.prisma, secrets: store };
+    return { fake, store, db, queue, prisma, worker };
+  }
+  const dropped = (recordId: string, ref: string) => ({ kind: "secret_tables", recordId, ref });
+  const secretFields = { id: "row", userId: "user", kind: "agent-environment" };
+
+  it("records the backup in the transaction that drops a ref and retries a refused delete", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const old = await store.put("old", context, { recordId: "row" });
+    const next = await store.put("next", context, { recordId: "row" });
+    db.tables.get("secret")!.push({ id: "row", ciphertext: old.ref });
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.secret.update({ where: { id: "row" }, data: { ciphertext: next.ref } });
+        expect(queue.jobs.enqueueIn).toHaveBeenCalledWith(tx, expect.anything());
+        expect(queue.cleanups()).toEqual([{ ...dropped("row", old.ref), due: false }]);
+        fake.offline = true;
+      });
+      expect(fake.values.size).toBe(2);
+      expect(queue.cleanups()).toEqual([{ ...dropped("row", old.ref), due: true }]);
+
+      fake.offline = false;
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(1);
+      await expect(store.load(next.ref, "row")).resolves.toBe("next");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("removes the backup with the entry, and records none for a write a row holds", async () => {
+    const { fake, store, db, queue, prisma } = await setup();
+    const record = await store.put("fake", context, { recordId: "row" });
+    try {
+      await prisma.secret.create({ data: { ...secretFields, ciphertext: record.ref } });
+      expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      await prisma.secret.deleteMany({ where: { id: "row" } });
+      expect(fake.values.size).toBe(0);
+      expect(queue.queued.size).toBe(0);
+      expect(db.tables.get("secret")).toHaveLength(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records one backup for a reference that several dropped rows share", async () => {
+    const { fake, store, db, queue, prisma } = await setup();
+    const shared = await store.put("shared", context, { recordId: "row" });
+    db.tables
+      .get("secret")!
+      .push(
+        { id: "row", ciphertext: shared.ref, userId: "user" },
+        { id: "row-2", ciphertext: shared.ref, userId: "user" },
+      );
+    try {
+      await prisma.user.deleteMany({ where: { id: "user" } });
+      expect(queue.jobs.enqueueIn).toHaveBeenCalledOnce();
+      expect(fake.values.size).toBe(0);
+      expect(queue.queued.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records nothing for a change that leaves the reference in place", async () => {
+    const { fake, store, db, queue, prisma } = await setup();
+    const kept = await store.put("kept", context, { recordId: "row" });
+    db.tables.get("secret")!.push({ id: "row", ciphertext: kept.ref });
+    try {
+      await prisma.secret.update({ where: { id: "row" }, data: { kind: "one-time-code" } });
+      expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+      expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+      expect(fake.values.size).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("hands a write to the job when its rows cannot be read, cancelling no backup", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const written = await store.put("written", context, { recordId: "row" });
+    const count = vi.spyOn(db.prisma.secret, "count");
+    try {
+      count.mockRejectedValueOnce(new Error("database unavailable"));
+      await prisma.secret.create({ data: { ...secretFields, ciphertext: written.ref } });
+      expect(queue.jobs.cancel).not.toHaveBeenCalled();
+      expect(queue.cleanups()).toEqual([{ ...dropped("row", written.ref), due: true }]);
+
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(1);
+      await expect(store.load(written.ref, "row")).resolves.toBe("written");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("retries removing a write its transaction rolled back", async () => {
+    const { fake, store, queue, prisma, worker } = await setup();
+    const unsaved = await store.put("unsaved", context, { recordId: "row" });
+    try {
+      fake.offline = true;
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.secret.create({ data: { ...secretFields, ciphertext: unsaved.ref } });
+          throw new Error("fake DB failure");
+        }),
+      ).rejects.toThrow("fake DB failure");
+      expect(fake.values.size).toBe(1);
+      expect(queue.cleanups()).toEqual([{ ...dropped("row", unsaved.ref), due: true }]);
+
+      fake.offline = false;
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("retries removing a prepared write that was never saved", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const fail = () =>
+      prisma.$transaction(async () => {
+        throw new Error("pre-create failure");
+      });
+    try {
+      const unqueued = await store.put("unused", context, { recordId: "row" });
+      fake.offline = true;
+      // The plain client knows no queue: the same check, without the retry.
+      await expect(persistPreparedSecret(db.prisma, store, unqueued, fail)).rejects.toThrow();
+      expect(queue.queued.size).toBe(0);
+
+      await expect(persistPreparedSecret(prisma, store, unqueued, fail)).rejects.toThrow();
+      expect(queue.cleanups()).toEqual([{ ...dropped("row", unqueued.ref), due: true }]);
+      fake.offline = false;
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("leaves a ref another row holds to its backup, which spares it too", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const shared = await store.put("shared", context, { recordId: "row" });
+    db.tables.get("secret")!.push({ id: "row", ciphertext: shared.ref });
+    db.tables.get("vaultCredential")!.push({ id: "copy", ciphertext: shared.ref });
+    const remove = vi.spyOn(store, "delete");
+    try {
+      await prisma.vaultCredential.deleteMany({ where: { id: "copy" } });
+      expect(queue.cleanups()).toEqual([{ ...dropped("copy", shared.ref), due: false }]);
+      await queue.runQueued(worker);
+      expect(remove).not.toHaveBeenCalled();
+      expect(fake.values.size).toBe(1);
+
+      await prisma.secret.deleteMany({ where: { id: "row" } });
+      expect(fake.values.size).toBe(0);
+      expect(queue.queued.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("never copies an inline reference, which is the sealed value, into a job", async () => {
+    const store = new EncryptedSecretStore("fake-encryption-key");
+    const db = database();
+    const queue = fakeCleanupJobs();
+    const prisma = withSecretPersistence(db.prisma, store, () => queue.jobs);
+    const old = await store.put("old", context, { recordId: "row" });
+    const next = await store.put("next", context, { recordId: "row" });
+    db.tables.get("secret")!.push({ id: "row", ciphertext: old.ref });
+    const remove = vi.spyOn(store, "delete");
+    await prisma.secret.update({ where: { id: "row" }, data: { ciphertext: next.ref } });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(old.ref, expect.objectContaining({ recordId: "row" }));
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.secret.deleteMany({ where: { id: "row" } });
+        throw new Error("fake DB failure");
+      }),
+    ).rejects.toThrow("fake DB failure");
+    await prisma.secret.deleteMany({ where: { id: "row" } });
+    expect(remove).toHaveBeenLastCalledWith(next.ref, expect.objectContaining({ recordId: "row" }));
+    expect(queue.jobs.enqueue).not.toHaveBeenCalled();
+    expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
+    expect(queue.jobs.cancel).not.toHaveBeenCalled();
   });
 });
 

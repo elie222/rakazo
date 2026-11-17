@@ -14,10 +14,14 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { HeldLease, PrismaClient } from "@rakazo/db";
 import {
+  assertLeaseHeld,
+  assertSpaceDeletable,
   claimSpaceDeletionForMember,
   deleteClaimedSpaceForMember,
+  LeaseHeldError,
+  LeaseLostError,
   listClaimedSpaceBots,
   listClaimedSpaceComputers,
   recordComputerRunEnd,
@@ -25,13 +29,13 @@ import {
   renewSpaceDeletionClaim,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
+  withLease,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { rehomeItemsLeaving } from "./availability.js";
 
-/** Bound for one bot or sandbox teardown. Providers may ignore the abort signal,
- * so without a deadline a hung destroy would keep the deletion claim renewed
- * forever and block stale-claim recovery. */
+/** Bound for one bot or sandbox teardown. Providers may ignore the abort signal, so without a
+ * deadline a hung destroy would keep the lease renewed forever and block recovery. */
 const SPACE_TEARDOWN_TIMEOUT_MS = 120_000;
 
 function spaceTeardownTimeoutMs(): number {
@@ -52,20 +56,21 @@ export type SpaceDeletionDeps = {
   secrets?: Pick<SecretStore, "delete">;
 };
 
-/** The owner-only rules live in the db layer. A worker that dies mid-way leaves the Space
- * claimed; after the claim goes stale, deleting again resumes from what is left. */
+/**
+ * The owner-only rules live in the db layer. One attempt at a time holds the Space's lease, and
+ * renewing it keeps the Space's claim fresh, since account and organization deletion and the
+ * previous release judge a claim by its age. A worker that dies mid-way leaves the Space claimed;
+ * once the lease and claim lapse, deleting again resumes from what is left.
+ */
 export async function deleteSpaceWithContent(
   deps: SpaceDeletionDeps,
   actor: Pick<Actor, "spaceId" | "userId">,
   spaceId: string,
   signal?: AbortSignal,
 ): Promise<{ activeSpaceId: string }> {
-  let claimId: string | null = null;
-  let claimActive = false;
-  let claimHealthy = true;
-  let claimReleasable = false;
-  let claimRenewal: ReturnType<typeof setInterval> | null = null;
   const deleteInput = { currentSpaceId: actor.spaceId, userId: actor.userId, spaceId };
+  // A caller who may not delete it takes no lease on it, and never learns whether one is held.
+  await assertSpaceDeletable(deps.prisma, deleteInput);
   const context = (botId?: string): AdapterContext => ({
     operationId: `spaces.remove:${spaceId}`,
     traceId: `spaces.remove:${spaceId}`,
@@ -74,60 +79,48 @@ export async function deleteSpaceWithContent(
     ...(botId ? { botId } : {}),
     signal: new AbortController().signal,
   });
-  try {
-    // Claim before teardown. Bot and group creation take the same lifecycle lock
-    // and reject the Space until deletion finishes or this claim is released.
+  // A hung teardown stops the attempt here: renewal stops, and the claim and lease lapse unless
+  // the teardown settles first, since it may still reach the provider.
+  const timedOut = new AbortController();
+  let claimId: string | undefined;
+  // Until the first teardown, a fresh claim goes back on failure. A recovered one never does: the
+  // attempt before may have torn something down, so only a finished deletion unblocks the Space.
+  let releasable = false;
+  let leaseSignal: AbortSignal | undefined;
+  const keepClaim = async () => {
+    if (!claimId) return true;
+    if (await renewSpaceDeletionClaim(deps.prisma, { ...deleteInput, claimId })) return true;
+    // Gone means this attempt deleted it, and only its file cleanup remains.
+    return (await deps.prisma.space.count({ where: { id: spaceId } })) === 0;
+  };
+  const work = async (lease: HeldLease) => {
+    leaseSignal = lease.signal;
     const claim = await claimSpaceDeletionForMember(deps.prisma, deleteInput);
     claimId = claim.claimId;
-    claimActive = true;
-    // A recovered worker can safely finish deletion, but cannot know whether the
-    // previous worker still has teardown in flight. Keep the Space claimed on
-    // failure so content cannot reuse it.
-    claimReleasable = !claim.recovered;
-    const claimedInput = { ...deleteInput, claimId };
-    const assertClaim = async () => {
-      if (!claimHealthy) throw new SpaceDeletionInProgressError();
+    releasable = !claim.recovered;
+    // Cut off while the claim was being taken: nothing was torn down, so a fresh claim goes back
+    // now rather than holding off the next attempt until it lapses.
+    if (lease.signal.aborted) {
+      if (releasable) await releaseSpaceDeletionClaim(deps.prisma, { ...deleteInput, claimId });
+      lease.signal.throwIfAborted();
+    }
+    const claimedInput = { ...deleteInput, claimId: claim.claimId };
+    // Teardown may reach a remote service even when it fails, so from the first one only a
+    // finished deletion may unblock the Space, and work resumed after the lease is lost or the
+    // teardown timed out starts nothing new.
+    const teardown = async (destroy: () => Promise<unknown>, timeoutMessage: string) => {
+      lease.signal.throwIfAborted();
+      releasable = false;
+      const timer = setTimeout(
+        () => timedOut.abort(new Error(timeoutMessage)),
+        spaceTeardownTimeoutMs(),
+      );
       try {
-        const renewed = await renewSpaceDeletionClaim(deps.prisma, claimedInput);
-        if (!renewed) {
-          claimHealthy = false;
-          claimReleasable = false;
-          throw new SpaceDeletionInProgressError();
-        }
-      } catch (error) {
-        claimHealthy = false;
-        claimReleasable = false;
-        throw error;
-      }
-    };
-    claimRenewal = setInterval(() => {
-      void assertClaim().catch((renewalError) => {
-        if (claimActive) getLogger().error("space deletion claim renewal failed", renewalError);
-      });
-    }, SPACE_DELETION_CLAIM_TIMEOUT_MS / 5);
-    // Teardown may reach a remote service even when it fails. From the first one,
-    // only a finished deletion may unblock the Space; a stale recovery must finish it.
-    const teardown = async (work: () => Promise<unknown>, timeoutMessage: string) => {
-      await assertClaim();
-      claimReleasable = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          work(),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-              // Stop renewal so the claim goes stale and a later worker can
-              // recover; never release, since the hung work may still complete.
-              claimHealthy = false;
-              claimReleasable = false;
-              reject(new Error(timeoutMessage));
-            }, spaceTeardownTimeoutMs());
-          }),
-        ]);
+        await destroy();
       } finally {
-        if (timer !== undefined) clearTimeout(timer);
+        clearTimeout(timer);
       }
-      await assertClaim();
+      lease.signal.throwIfAborted();
     };
 
     for (const bot of await listClaimedSpaceBots(deps.prisma, claimedInput)) {
@@ -142,7 +135,7 @@ export async function deleteSpaceWithContent(
         );
       } catch (error) {
         // A takeover worker may have finished this bot first.
-        if (!claimHealthy) throw error;
+        if (lease.signal.aborted) throw error;
         const remaining = await deps.prisma.bot.findUnique({
           where: { id: bot.id },
           select: { id: true },
@@ -155,27 +148,27 @@ export async function deleteSpaceWithContent(
         () => deps.sandbox.destroy(toComputerRef(computer), context(computer.homeKey)),
         "Space sandbox teardown timed out",
       );
-      // Never clear a provider handle after this worker loses its claim.
-      await deps.prisma.computer.updateMany({
-        where: {
-          spaceId,
-          homeKey: computer.homeKey,
-          providerRef: computer.providerRef,
-          space: { deletionClaimId: claimId },
-        },
-        data: { state: "stopped", providerRef: null },
+      // Never clear a provider handle after this worker loses its lease or claim.
+      await deps.prisma.$transaction(async (tx) => {
+        await assertLeaseHeld(tx, lease);
+        await tx.computer.updateMany({
+          where: {
+            spaceId,
+            homeKey: computer.homeKey,
+            providerRef: computer.providerRef,
+            space: { deletionClaimId: claim.claimId },
+          },
+          data: { state: "stopped", providerRef: null },
+        });
       });
       await recordComputerRunEnd(deps.prisma, computer, "deleted");
     }
-    await assertClaim();
-    claimActive = false;
-    if (claimRenewal) {
-      clearInterval(claimRenewal);
-      claimRenewal = null;
-    }
+    lease.signal.throwIfAborted();
     await rehomeItemsLeaving(deps.prisma, spaceId);
-    const deleted = await deleteClaimedSpaceForMember(deps.prisma, claimedInput);
-    // Rows are gone; leftover stored files are unreachable, so cleanup failures only log.
+    const deleted = await deleteClaimedSpaceForMember(deps.prisma, { ...claimedInput, lease });
+    // Cleaned up here rather than after the lease, so a deletion that commits just as the attempt
+    // is cut off still removes what it left behind. The rows are gone and leftover stored files are
+    // unreachable, so cleanup failures only log.
     const cleanup = await Promise.allSettled([
       ...deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context())),
       ...deleted.homeKeys.map((homeKey) => removeAgentHome(deps.home, homeKey, deps.dataDir)),
@@ -184,19 +177,30 @@ export async function deleteSpaceWithContent(
       if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);
     }
     if (deps.secrets) await forgetPageShareSecrets(deps.secrets, deleted.pageShareSecrets);
-    return { activeSpaceId: deleted.id };
+    return deleted.id;
+  };
+
+  let activeSpaceId: string;
+  try {
+    activeSpaceId = await withLease(
+      deps.prisma,
+      `space-deletion:${spaceId}`,
+      { ttlMs: SPACE_DELETION_CLAIM_TIMEOUT_MS, signal: timedOut.signal, onRenew: keepClaim },
+      work,
+    );
   } catch (error) {
-    if (signal?.aborted) claimReleasable = false;
-    if (claimId && claimReleasable) {
+    // Work cut off by a timeout or a lost lease may still be running, so its claim is left to
+    // lapse. Otherwise the work has settled, so a fresh claim nothing was torn down under goes back.
+    if (claimId && releasable && !leaseSignal?.aborted && !signal?.aborted) {
       await releaseSpaceDeletionClaim(deps.prisma, { ...deleteInput, claimId }).catch(
         (releaseError) => {
           getLogger().error("space deletion claim release failed", releaseError);
         },
       );
     }
+    if (error instanceof LeaseHeldError || error instanceof LeaseLostError)
+      throw new SpaceDeletionInProgressError();
     throw error;
-  } finally {
-    claimActive = false;
-    if (claimRenewal) clearInterval(claimRenewal);
   }
+  return { activeSpaceId };
 }

@@ -13,6 +13,7 @@ import {
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
+  ClientError,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
   messageBlockForArtifact,
@@ -327,9 +328,9 @@ type ListSpaceRow = {
   versionCount: bigint | number;
 };
 
-export class ArtifactListCursorError extends Error {
+export class ArtifactListCursorError extends ClientError {
   constructor() {
-    super("Invalid artifact cursor");
+    super("BAD_REQUEST", "Invalid artifact cursor");
     this.name = "ArtifactListCursorError";
   }
 }

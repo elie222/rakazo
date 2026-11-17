@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./rpc", () => ({ onRpcResponse: () => () => {} }));
@@ -81,8 +83,6 @@ function setup(overrides: Partial<ClientUpdateDeps> = {}) {
       onResponse(new Response(null, { status, headers: build ? { "x-rakazo-build": build } : {} })),
   };
 }
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 afterEach(() => vi.restoreAllMocks());
 
 describe("client updates", () => {
@@ -242,19 +242,22 @@ describe("client updates", () => {
   });
 
   it("does not reload if the moment stopped being safe while it checked the server", async () => {
-    let resolve!: (build: string | null) => void;
-    const servedBuild = vi.fn(() => new Promise<string | null>((done) => (resolve = done)));
+    let build!: Deferred<string | null>;
+    const servedBuild = vi.fn(() => {
+      build = deferred();
+      return build.promise;
+    });
     const { deps, doc, updates } = setup({ servedBuild });
     updates.noteServerBuild(NEW);
     updates.navigated();
     doc.dialog = true;
-    resolve(NEW);
+    build.resolve(NEW);
     await flush();
     expect(deps.reload).not.toHaveBeenCalled();
   });
 
   it("keeps a refused build's retry when work appears during its last check", async () => {
-    let resolve!: (build: string | null) => void;
+    let build!: Deferred<string | null>;
     const servedBuild = vi.fn(async () => OLD as string | null);
     const holdsWorkInFlight = vi.fn(() => false);
     const { deps, reply, idleTick } = setup({ servedBuild, holdsWorkInFlight });
@@ -264,10 +267,13 @@ describe("client updates", () => {
       idleTick();
       await flush();
     }
-    servedBuild.mockImplementation(() => new Promise((done) => (resolve = done)));
+    servedBuild.mockImplementation(() => {
+      build = deferred();
+      return build.promise;
+    });
     idleTick();
     holdsWorkInFlight.mockReturnValue(true);
-    resolve(NEW);
+    build.resolve(NEW);
     await flush();
     holdsWorkInFlight.mockReturnValue(false);
     servedBuild.mockResolvedValue(NEW);

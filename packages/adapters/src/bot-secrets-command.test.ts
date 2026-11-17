@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { createStreamingRedactor, redactSecrets } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { redactAgentCommandResult } from "./agent-environment.js";
@@ -18,7 +19,7 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { accountVault, fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
 import { computerTools } from "./run-tools-computer.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { listVaultItemUses } from "./vault-activity.js";
@@ -291,7 +292,7 @@ describe("shell command environment", () => {
     // it; a read that doesn't check runs later and sees the replacement.
     const findMany = async (query: { where: unknown }) => {
       if (!JSON.stringify(query.where).includes('"policy"')) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await flush();
         return read(query);
       }
       const result = await read(query);
@@ -680,19 +681,16 @@ describe("a shell command's use of its variables", () => {
 
     // A sign-in prompt is handed back while the command is still running.
     const running = shell(db);
-    let exit = () => {};
-    const exited = new Promise<void>((resolve) => {
-      exit = resolve;
-    });
+    const exited = deferred();
     running.execute.mockImplementation(async function* () {
       yield { type: "stdout", data: "Open https://example.test/device and enter code ABCD-1234\n" };
-      await exited;
+      await exited.promise;
       yield { type: "exit", code: 0 };
     });
     expect(await running.run("sign-in")).toMatchObject({ running: true, code: null });
     expect(rows).toHaveLength(2);
     // Its end is no second use.
-    exit();
+    exited.resolve();
     await running.finished();
     expect(rows).toHaveLength(2);
   });

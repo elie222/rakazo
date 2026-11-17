@@ -4,9 +4,18 @@ import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 export const COMPUTER_SCREEN_UNAVAILABLE =
   "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.";
 
+/** No screen is free. The message is written for the person, so it never carries provider text. */
 export class ComputerScreenUnavailableError extends Error {
-  constructor(message = COMPUTER_SCREEN_UNAVAILABLE) {
-    super(message);
+  /**
+   * @param teamScreenLimit set when an operator's cap on a Team Computer's screens was reached,
+   * `null` when the cap's size is unknown
+   */
+  constructor(readonly teamScreenLimit?: number | null) {
+    super(
+      teamScreenLimit === undefined
+        ? COMPUTER_SCREEN_UNAVAILABLE
+        : `All ${teamScreenLimit ? `${teamScreenLimit} ` : ""}Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)`,
+    );
     this.name = "ComputerScreenUnavailableError";
   }
 }
@@ -71,29 +80,13 @@ export class SingleScreenClaimTracker {
   }
 }
 
-export function isComputerScreenUnavailable(error: unknown): error is Error {
-  return (
-    error instanceof ComputerScreenUnavailableError ||
-    (error instanceof Error && /cannot allocate another screen/i.test(error.message))
-  );
-}
-
-export function computerScreenUnavailableMessage(error: Error): string {
-  if (/cannot allocate another screen/i.test(error.message)) {
-    const limit = /\(limit (\d+)\)/i.exec(error.message)?.[1];
-    return `All ${limit ? `${limit} ` : ""}Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)`;
-  }
-  return COMPUTER_SCREEN_UNAVAILABLE;
-}
-
 export async function withComputerScreenAvailability<T>(
   work: () => Promise<T>,
 ): Promise<T | { error: string }> {
   try {
     return await work();
   } catch (error) {
-    if (isComputerScreenUnavailable(error))
-      return { error: computerScreenUnavailableMessage(error) };
+    if (error instanceof ComputerScreenUnavailableError) return { error: error.message };
     throw error;
   }
 }

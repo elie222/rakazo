@@ -41,26 +41,32 @@ const DAY = 24 * HOUR;
 
 export type ZonedInstant = { timeZone: string; at: Date };
 
+/** A zone and the instant of one of its clock changes. */
+export const clockChange: fc.Arbitrary<ZonedInstant> = fc
+  .constantFrom(...CLOCK_CHANGES)
+  .map(([timeZone, change]) => ({ timeZone, at: new Date(change) }));
+
+const aroundClockChange = (span: number) =>
+  fc
+    .tuple(clockChange, fc.integer({ min: -span, max: span }), fc.boolean())
+    .map(([{ timeZone, at }, offset, onTheMinute]) => ({
+      timeZone,
+      at: new Date(at.getTime() + (onTheMinute ? offset - (offset % 60_000) : offset)),
+    }));
+
 /**
- * A zone and an instant in it: within three days of a clock change, at the wall-clock time of
- * a clock change some days before it, or anywhere in twenty years.
+ * A zone and an instant in it. Half are within an hour of a clock change, so in or beside the
+ * span it skips or repeats; the rest are within three days of one, at the wall-clock time of
+ * one some days before it, or anywhere in twenty years.
  */
 export const zonedInstant: fc.Arbitrary<ZonedInstant> = fc.oneof(
+  { weight: 3, arbitrary: aroundClockChange(HOUR) },
+  aroundClockChange(3 * DAY),
   fc
-    .tuple(
-      fc.constantFrom(...CLOCK_CHANGES),
-      fc.integer({ min: -3 * DAY, max: 3 * DAY }),
-      fc.boolean(),
-    )
-    .map(([[timeZone, change], offset, onTheMinute]) => ({
+    .tuple(clockChange, fc.integer({ min: 1, max: 40 }), fc.nat(59))
+    .map(([{ timeZone, at }, days, minutes]) => ({
       timeZone,
-      at: new Date(Date.parse(change) + (onTheMinute ? offset - (offset % 60_000) : offset)),
-    })),
-  fc
-    .tuple(fc.constantFrom(...CLOCK_CHANGES), fc.integer({ min: 1, max: 40 }), fc.nat(59))
-    .map(([[timeZone, change], days, minutes]) => ({
-      timeZone,
-      at: new Date(Date.parse(change) - days * DAY + minutes * 60_000),
+      at: new Date(at.getTime() - days * DAY + minutes * 60_000),
     })),
   fc
     .tuple(
@@ -124,6 +130,11 @@ function utcOffset(at: Date, timeZone: string): number {
   return wall - Math.floor(at.getTime() / 60_000) * 60_000;
 }
 
+/** The zone's wall-clock reading of `at`, as the UTC timestamp that shows the same fields. */
+export function wallClock(at: Date, timeZone: string): number {
+  return at.getTime() + utcOffset(at, timeZone);
+}
+
 /** Whether the zone's clocks change within four hours either side of `at`. */
 export function nearClockChange(at: Date, timeZone: string): boolean {
   return (
@@ -137,4 +148,40 @@ export function inRepeatedSpan(at: Date, timeZone: string): boolean {
   const now = utcOffset(at, timeZone);
   const repeated = utcOffset(new Date(at.getTime() - 4 * HOUR), timeZone) - now;
   return repeated > 0 && utcOffset(new Date(at.getTime() - repeated), timeZone) !== now;
+}
+
+/**
+ * Whether `at` is when the zone's clock first reaches `wall`, a reading as wallClock returns it:
+ * the first pass of a reading that clocks going back repeat, and the end of the gap for one that
+ * clocks going forward skip.
+ */
+export function firstReads(at: Date, wall: number, timeZone: string): boolean {
+  return (
+    wallClock(at, timeZone) >= wall &&
+    wallClock(new Date(at.getTime() - 1), timeZone) < wall &&
+    !inRepeatedSpan(at, timeZone)
+  );
+}
+
+/** Whether the zone's clock has reached `wall` by `at`. */
+export function hasRead(at: Date, wall: number, timeZone: string): boolean {
+  if (wallClock(at, timeZone) >= wall) return true;
+  // The clock reads less than it already has only in the second pass of a repeated span, and
+  // the first pass ran on the offset from before the change.
+  const firstPass = new Date(wall - utcOffset(new Date(at.getTime() - 4 * HOUR), timeZone));
+  return firstPass <= at && wallClock(firstPass, timeZone) === wall;
+}
+
+/** The first instant of the local day `at` is in: midnight, or the end of a gap that skips it. */
+export function startOfLocalDay(at: Date, timeZone: string): Date {
+  const day = localTime(at, timeZone).dayNumber;
+  const minute = (count: number) => new Date(count * 60_000);
+  let start = Math.floor(at.getTime() / 60_000);
+  let before = start - 26 * 60;
+  while (start - before > 1) {
+    const middle = Math.floor((before + start) / 2);
+    if (localTime(minute(middle), timeZone).dayNumber < day) before = middle;
+    else start = middle;
+  }
+  return minute(start);
 }

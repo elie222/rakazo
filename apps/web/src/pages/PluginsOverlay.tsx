@@ -6,10 +6,11 @@ import type {
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { mcpServerConnection } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
+  customMcpServerInput,
   installedPluginParts,
   managedAppFor,
 } from "@rakazo/core";
@@ -28,7 +29,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronRight, LayoutTemplate, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type {
   ManagedAppLink,
@@ -37,8 +38,9 @@ import type {
 import { PluginDetail, pluginSelection } from "../components/integrations/plugin-marketplace";
 import { reachesOtherSpaces, useOwnSpaces } from "../components/integrations/space-availability";
 import type { connectedAppMarks } from "../lib/connected-apps";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { errorCode, errorText } from "../lib/user-error";
 import { AddMenu } from "./plugins/add-menu";
 import { ConnectorDetail } from "./plugins/connector-detail";
 import { DomainSearch, useDomainSearch } from "./plugins/domain-search";
@@ -73,6 +75,8 @@ export function PluginsOverlay({
   const [confirmingSource, setConfirmingSource] = useState<string | null>(null);
   const spaceCount = useOwnSpaces().length;
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const sourceAction = useRef(0);
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const [view, setView] = useState<OverlayView>("browse");
   const [publicCatalogQuery, setPublicCatalogQuery] = useState("");
   // Where a source form returns: the domain search that prefilled it, or browse.
@@ -238,6 +242,9 @@ export function PluginsOverlay({
     setView("source");
     sourceForm.start(kind, preset);
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
   }
 
   function beginCatalogSurface(
@@ -249,24 +256,57 @@ export function PluginsOverlay({
     setView("source");
     sourceForm.startFromCatalog(result, surface, surface.source);
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
   }
 
   async function installSource() {
     const { sourceKind, sourcePreset, sourceName, sourceUrl, credential, authType, authName } =
       sourceForm;
     if (!sourceKind) return;
+    const name =
+      sourceName.trim() ||
+      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector"));
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
     setPending("install-source");
+    const action = sourceAction.current;
+    let savedForOauth = false;
     try {
-      const auth = {
-        type: authType,
-        ...(authType === "header" ? { name: authName.trim() } : {}),
-      };
+      // OAuth is the MCP server itself signing in, so it is saved first and then authorized.
+      if (sourceKind === "mcp" && authType === "oauth") {
+        const server = await rpc.mcp.servers.create(customMcpServerInput(name, sourceUrl));
+        savedForOauth = true;
+        if (action !== sourceAction.current) {
+          await refresh().catch(() => undefined);
+          return;
+        }
+        setPending(null);
+        sourceForm.setCredential("");
+        sourceForm.setSourceKind(null);
+        setView("manage");
+        await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
+        const result = await connectMcpOauth(server.id);
+        await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
+        if (result === "cancelled") {
+          setOauthError(t`Sign-in cancelled. Retry in Manage MCP servers.`);
+          return;
+        }
+        if (result === "authorization_not_requested")
+          setOauthError(t`This server did not request browser authorization.`);
+        return;
+      }
+      const auth =
+        authType === "header"
+          ? { type: "header" as const, name: authName.trim() }
+          : { type: authType === "bearer" ? ("bearer" as const) : ("none" as const) };
       await rpc.capabilities.install({
         kind: sourceKind,
-        name:
-          sourceName.trim() ||
-          (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : "Custom connector")),
+        name,
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config: sourcePreset
@@ -282,9 +322,20 @@ export function PluginsOverlay({
       setView("manage");
       await refresh();
     } catch (err) {
-      setSourceError(errorText(err, t`Could not install connector`));
+      if (savedForOauth) {
+        await refresh().catch(() => undefined);
+        if (action !== sourceAction.current) return;
+        setOauthError(
+          errorCode(err) === MCP_OAUTH_CLIENT_REQUIRED
+            ? t`This server needs an OAuth client ID. Add one in Manage MCP servers.`
+            : errorText(err, t`Could not complete OAuth`),
+        );
+        return;
+      }
+      if (action === sourceAction.current)
+        setSourceError(errorText(err, t`Could not install connector`));
     } finally {
-      setPending(null);
+      if (!savedForOauth && action === sourceAction.current) setPending(null);
     }
   }
 
@@ -296,6 +347,8 @@ export function PluginsOverlay({
     setConfirmingSource(null);
     setPending(install.id);
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
     try {
       await rpc.capabilities.remove({ id: install.id });
       await updateIntegrations((current) => ({
@@ -313,12 +366,18 @@ export function PluginsOverlay({
     setPlugin(null);
     setDetailKey(null);
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
     setView(next);
   }
 
   function leaveSource() {
     sourceForm.close();
     setSourceError(null);
+    setOauthError(null);
+    sourceAction.current += 1;
+    if (pending === "install-source") setPending(null);
     setView(sourceBack);
   }
 
@@ -515,7 +574,7 @@ export function PluginsOverlay({
               connectorInstalls={connectorInstalls}
               standaloneServers={standaloneServers}
               appCount={appCount}
-              sourceError={sourceError}
+              sourceError={sourceError ?? oauthError}
               confirmingSource={confirmingSource}
               onRemoveSource={(install) => void removeSource(install)}
               onOpenMcp={onOpenMcp}

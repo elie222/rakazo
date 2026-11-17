@@ -40,6 +40,7 @@ test("an owner invites someone by link and both see the space's members", async 
   await expect(ownerSettings.getByRole("button", { name: "Leave space" })).toHaveCount(0);
 
   await ownerSettings.getByRole("button", { name: "Invite" }).click();
+  await ownerPage.getByRole("menuitem", { name: "Copy invite link" }).click();
   await expect(ownerPage.getByText("Invite link copied")).toBeVisible();
   const inviteUrl = await ownerPage.evaluate(() => navigator.clipboard.readText());
   expect(inviteUrl).toMatch(/\/invite\//);
@@ -66,6 +67,10 @@ test("an owner invites someone by link and both see the space's members", async 
   const inviteeSettings = inviteePage.getByTestId("user-settings");
   await expect(inviteeSettings.getByText("Ada Owner")).toBeVisible();
   await expect(inviteeSettings.getByText("Bob Invitee")).toBeVisible();
+  // Bob is from outside Ada's organization, so he joined this Space alone, as a guest.
+  await expect(
+    inviteeSettings.getByRole("listitem").filter({ hasText: "Bob Invitee" }),
+  ).toContainText("External");
   await expect(inviteeSettings.getByRole("button", { name: "Invite" })).toHaveCount(0);
   await expect(inviteeSettings.getByRole("button", { name: "Leave space" })).toBeVisible();
   await captureScreenshot(inviteePage, testInfo, "space-members-member");
@@ -112,6 +117,12 @@ test("an owner invites someone by link and both see the space's members", async 
   await captureScreenshot(inviteePage, testInfo, "shared-thread-invitee");
   await ownerPage.reload();
   await expect(ownerPage.getByText("Bob Invitee", { exact: true })).toBeVisible();
+  // The Space with someone from outside is marked in the sidebar, for screen readers too.
+  const homeHeading = ownerPage
+    .locator("aside")
+    .first()
+    .getByRole("button", { name: "Collapse Home, Shared with guests", exact: true });
+  await expect(homeHeading.locator("svg.lucide-globe")).toBeVisible();
   await captureScreenshot(ownerPage, testInfo, "shared-thread-owner");
 
   // A group in the shared space: each bot's reply is named and in its own color.

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { native, values, storage, feedback } = vi.hoisted(() => {
@@ -34,14 +35,6 @@ const { native, values, storage, feedback } = vi.hoisted(() => {
 vi.mock("react-native", () => native);
 vi.mock("expo-secure-store", () => storage);
 vi.mock("expo-haptics", () => feedback);
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 function expectNoFeedback(): void {
   expect(feedback.selectionAsync).not.toHaveBeenCalled();
@@ -300,12 +293,8 @@ describe("mobile haptics", () => {
   it.each([false, true])(
     "honors an explicit %s choice before a late read failure",
     async (value) => {
-      let failRead!: (error: Error) => void;
-      storage.getItemAsync.mockReturnValue(
-        new Promise<never>((_resolve, reject) => {
-          failRead = reject;
-        }),
-      );
+      const failRead = deferred<never>();
+      storage.getItemAsync.mockReturnValue(failRead.promise);
       const save = deferred<void>();
       storage.setItemAsync.mockReturnValue(save.promise);
       const haptics = await import("./haptics");
@@ -314,7 +303,7 @@ describe("mobile haptics", () => {
       haptics.hapticSelection();
       expect(feedback.selectionAsync).toHaveBeenCalledTimes(value ? 1 : 0);
       await Promise.resolve();
-      failRead(new Error("late read failure"));
+      failRead.reject(new Error("late read failure"));
       await loading;
       expect(haptics.getHapticsEnabled()).toBe(value);
       haptics.hapticSuccess();

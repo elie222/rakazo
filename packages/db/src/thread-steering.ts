@@ -1,6 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   blocksToAgentHistoryText,
+  HELPER_RESULT_TRIGGER,
   isConversationalRun,
   messagingChannelId,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -8,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
+import { mayBeChannelMessage, readMessageBlocks, storedMessageBlocks } from "./message-blocks.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export interface ClaimSteeringInput {
@@ -59,15 +62,55 @@ async function claimSteeringOnce(
         spaceId: true,
         userId: true,
         trigger: true,
-        sourceMessage: { select: { blocks: true } },
+        delegatedFromRunId: true,
+        sourceMessage: { select: { id: true, blocks: true } },
       },
     });
     if (!run || run.trigger === "created") return [];
-    const channelId =
-      run.trigger === "messaging"
-        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+    const delegatedResult = run.trigger === HELPER_RESULT_TRIGGER;
+    // Result turns answer in the originating conversation. Their own source is the helper's
+    // card, which says nothing about whether pending steering came from a private app chat.
+    let conversation: { trigger: string; sourceMessage: { id: string; blocks: unknown } | null } =
+      run;
+    if (delegatedResult) {
+      let originId = run.delegatedFromRunId;
+      let found = false;
+      for (let depth = 0; originId && depth < 2; depth++) {
+        const origin = await tx.run.findFirst({
+          where: { id: originId, botId: input.botId, spaceId: run.spaceId, userId: run.userId },
+          select: {
+            trigger: true,
+            threadId: true,
+            delegatedFromRunId: true,
+            sourceMessage: { select: { id: true, blocks: true } },
+          },
+        });
+        if (!origin) return [];
+        if (
+          origin.trigger !== BACKGROUND_HELPER_TRIGGER &&
+          origin.trigger !== HELPER_RESULT_TRIGGER
+        ) {
+          if (origin.threadId !== input.threadId) return [];
+          conversation = origin;
+          found = true;
+          break;
+        }
+        originId = origin.delegatedFromRunId;
+      }
+      if (!found) return [];
+    }
+    const messaging = conversation.trigger === "messaging";
+    if (delegatedResult && messaging && !conversation.sourceMessage) return [];
+    const source =
+      messaging && conversation.sourceMessage
+        ? readMessageBlocks(conversation.sourceMessage)
         : undefined;
-    const directMessage = run.trigger === "messaging" && !channelId;
+    if (delegatedResult && source?.intact === false) return [];
+    const channelId = messagingChannelId(source?.blocks);
+    // A source that lost entries may have lost its channel marker, so this run could be a group
+    // one: it takes only steering already addressed to it, never the owner's pending private rows.
+    const unknownChat = source?.intact === false && !channelId;
+    const directMessage = messaging && !channelId && !unknownChat;
     // Pending rows from another chat stay for their own continuation.
     const pendingWhere = directMessage
       ? { runId: null, originTrigger: "messaging" }
@@ -79,12 +122,14 @@ async function claimSteeringOnce(
         botId: input.botId,
         // Only the run's own person's messages; anyone else's wait for a run of their own.
         userId: run.userId,
+        ...(delegatedResult ? { originTrigger: messaging ? "messaging" : null } : {}),
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         // A routine or webhook turn only takes steering addressed to it; pending user messages
         // wait for the conversational continuation that starts once it finishes.
-        OR: isConversationalRun(run.trigger)
-          ? [pendingWhere, { runId: input.runId }]
-          : [{ runId: input.runId }],
+        OR:
+          isConversationalRun(run.trigger) && !unknownChat
+            ? [pendingWhere, { runId: input.runId }]
+            : [{ runId: input.runId }],
         message: {
           threadId: input.threadId,
           // Private follow-ups remain unclaimed for the existing private continuation.
@@ -95,7 +140,7 @@ async function claimSteeringOnce(
               : {}),
         },
       },
-      include: { message: { select: { blocks: true, seq: true } } },
+      include: { message: { select: { id: true, blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
     });
     if (steering.length === 0) return [];
@@ -115,12 +160,25 @@ async function claimSteeringOnce(
       botId: input.botId,
       runId: input.runId,
       type: "run.steering.claimed",
-      payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
+      payload: {
+        steeringIds: steering.map((item) => item.id),
+        nextMessageSeq,
+        ...(delegatedResult
+          ? {
+              externalSafe:
+                messaging &&
+                steering.every(
+                  (item) =>
+                    item.originTrigger === "messaging" && readMessageBlocks(item.message).intact,
+                ),
+            }
+          : {}),
+      },
     });
     // In a group chat the row's user is the bot's owner, not the sender, so the sender is
     // matched by the address it wrote from.
     const groupSenders = steering.flatMap((item) =>
-      (item.message.blocks as MessageBlock[]).filter((block) => block.kind === "channel_message"),
+      storedMessageBlocks(item.message).filter((block) => block.kind === "channel_message"),
     );
     const ownAddresses = new Set(
       groupSenders.length === 0
@@ -139,27 +197,29 @@ async function claimSteeringOnce(
           ).map((identity) => `${identity.provider}:${identity.address}`),
     );
     const sentByRunPerson = (item: (typeof steering)[number]) => {
-      const group = (item.message.blocks as MessageBlock[]).find(
-        (block) => block.kind === "channel_message",
-      );
-      return group
-        ? ownAddresses.has(`${group.provider}:${group.fromAddress}`)
-        : item.userId === run.userId;
+      const { blocks, intact } = readMessageBlocks(item.message);
+      const group = blocks.find((block) => block.kind === "channel_message");
+      if (group) return ownAddresses.has(`${group.provider}:${group.fromAddress}`);
+      // A row that lost entries may have lost its group sender: it is not taken as the owner's.
+      return intact && item.userId === run.userId;
     };
-    return steering.map((item) => ({
-      id: item.id,
-      messageId: item.messageId,
-      text: blocksToAgentHistoryText(item.message.blocks as MessageBlock[]),
-      blocks: item.message.blocks as MessageBlock[],
-      origin:
-        item.originTrigger === "webhook"
-          ? ("webhook" as const)
-          : sentByRunPerson(item)
-            ? ("user" as const)
-            : item.originTrigger === "messaging"
-              ? ("messaging" as const)
-              : ("member" as const),
-    }));
+    return steering.map((item) => {
+      const blocks = storedMessageBlocks(item.message);
+      return {
+        id: item.id,
+        messageId: item.messageId,
+        text: blocksToAgentHistoryText(blocks),
+        blocks,
+        origin:
+          item.originTrigger === "webhook"
+            ? ("webhook" as const)
+            : sentByRunPerson(item)
+              ? ("user" as const)
+              : item.originTrigger === "messaging"
+                ? ("messaging" as const)
+                : ("member" as const),
+      };
+    });
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
 
@@ -250,7 +310,7 @@ export async function createPendingSteeringRun(
       userId,
       prompt:
         origin === "webhook"
-          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
+          ? blocksToAgentHistoryText(storedMessageBlocks(source.message))
           : STEERING_CONTINUATION_PROMPT,
       status: "queued",
     },
@@ -271,7 +331,7 @@ export async function createPendingSteeringRun(
           ? "webhook"
           : origin === "private" &&
               batch.every(
-                (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
+                (item) => item.originTrigger === null && !mayBeChannelMessage(item.message),
               )
             ? "follow_up"
             : "messaging",
@@ -310,16 +370,19 @@ function continuationModelPin(
   };
 }
 
-export function hasChannelMessage(blocks: unknown): boolean {
-  return (blocks as MessageBlock[]).some((block) => block.kind === "channel_message");
+export function hasChannelMessage(blocks: readonly MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "channel_message");
 }
 
 function steeringOrigin(item: {
   originTrigger: string | null;
-  message: { blocks: unknown };
+  message: { id: string; blocks: unknown };
 }): string {
   if (item.originTrigger === "webhook") return "webhook";
   if (item.originTrigger !== "messaging") return "private";
-  const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
-  return channelId ? `channel:${channelId}` : "private";
+  const { blocks, intact } = readMessageBlocks(item.message);
+  const channelId = messagingChannelId(blocks);
+  if (channelId) return `channel:${channelId}`;
+  // Answered apart from the private conversation, by a run that starts as a group one.
+  return intact ? "private" : "channel:unknown";
 }

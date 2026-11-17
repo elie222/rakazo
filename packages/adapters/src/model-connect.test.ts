@@ -1,4 +1,8 @@
-import { MODEL_KEY_FORMAT_ERROR, ModelConnectInputSchema } from "@rakazo/contracts";
+import {
+  connectedBackupOptions,
+  MODEL_KEY_FORMAT_ERROR,
+  ModelConnectInputSchema,
+} from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +15,8 @@ import {
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { connectionModelSettings, withModelSettings } from "./model-settings.js";
+import { filterImageReturningComputerTools, modelAcceptsImageInput } from "./model-vision.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
@@ -385,6 +391,45 @@ describe("openai-codex API key guard", () => {
 });
 
 describe("modelCredentialDto", () => {
+  it.each([undefined, []])(
+    "aligns computer-use selection and screenshot tools with configured image support (%j)",
+    (visionModelIds) => {
+      const row = {
+        id: "cred-custom",
+        provider: "openai-compatible",
+        label: "Custom server",
+        isDefault: true,
+        defaultModel: "custom-model",
+      };
+      const secret = parseModelSecret(
+        serializeModelSecret({
+          kind: "openai_compatible",
+          baseUrl: "https://example.invalid/v1",
+          enabledModelIds: ["custom-model"],
+          visionModelIds,
+        }),
+      );
+      for (const images of [undefined, true, false]) {
+        const configured =
+          images === undefined ? secret : withModelSettings(secret, row.defaultModel, { images });
+        const dto = modelCredentialDto(row, serializeModelSecret(configured));
+        const options = connectedBackupOptions([], [dto], true);
+        const settings = connectionModelSettings(configured, row.provider, row.defaultModel, row);
+        const tools = filterImageReturningComputerTools(
+          [{ name: "computer_observe" }, { name: "shell" }],
+          modelAcceptsImageInput(row.provider, row.defaultModel, settings.images),
+        );
+        expect(options.map((option) => option.modelId)).toEqual(
+          images === true ? [row.defaultModel] : [],
+        );
+        expect(tools.map((tool) => tool.name)).toEqual(
+          images === true ? ["computer_observe", "shell"] : ["shell"],
+        );
+        expect(connectedBackupOptions([], [dto], false)).toHaveLength(1);
+      }
+    },
+  );
+
   it("returns stored baseUrl and modelId for openai-compatible credentials", () => {
     const plaintext = serializeModelSecret({
       kind: "openai_compatible",

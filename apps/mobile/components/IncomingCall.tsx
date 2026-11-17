@@ -49,7 +49,8 @@ export function IncomingCall() {
     return () => {
       disposed = true;
       subscription.remove();
-      player.remove();
+      // Not remove(): on Android that leaves the looping player running until garbage collection.
+      player.release();
       Vibration.cancel();
     };
   }, [id, active]);

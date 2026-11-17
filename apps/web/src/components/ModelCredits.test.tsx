@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -118,7 +119,7 @@ async function renderChoice(choice: object = status) {
   const root = createRoot(container);
   await act(async () => {
     root.render(<CreditChoice status={choice as never} client={{ billing } as never} />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   return { container, root };
 }
@@ -126,7 +127,7 @@ async function renderChoice(choice: object = status) {
 async function settle(action: () => void) {
   await act(async () => {
     action();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 

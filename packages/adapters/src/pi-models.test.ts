@@ -1,4 +1,5 @@
-import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
+import { ConnectionSetupError, MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SpaceCatalogAuth } from "./model-selection.js";
 import { defaultCatalogModelId, spaceCanRunCatalogModel } from "./model-selection.js";
@@ -57,6 +58,21 @@ describe("catalog provider authentication", () => {
       expect(fetchImpl).toHaveBeenCalledOnce();
     },
   );
+
+  it("raises a refused key and an untestable provider as setup errors", async () => {
+    await expect(
+      probeCatalogProviderModels(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async () => new Response("private upstream details", { status: 401 }),
+      ),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+    await expect(
+      probeCatalogProviderModels({ provider: "openai-compatible", apiKey: "fixture-key" }),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "openrouter", apiKey: "sk-fixture-ключ" }),
+    ).rejects.toBeInstanceOf(ConnectionSetupError);
+  });
 
   it.each([302, 429, 503])(
     "lets an upstream failure (%i) through as inconclusive",
@@ -124,10 +140,7 @@ describe("catalog provider authentication", () => {
 
   it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
     const controller = new AbortController();
-    let waitingForBody: (() => void) | undefined;
-    const bodyStarted = new Promise<void>((resolve) => {
-      waitingForBody = resolve;
-    });
+    const bodyStarted = deferred();
     const result = verifyCatalogProviderApiKey(
       { provider: "google", apiKey: "fixture-key" },
       async (_url, init) =>
@@ -140,7 +153,7 @@ describe("catalog provider authentication", () => {
                 () => body.error(new Error("private fixture-key details")),
                 { once: true },
               );
-              waitingForBody?.();
+              bodyStarted.resolve();
             },
           }),
           { status: 400 },
@@ -148,7 +161,7 @@ describe("catalog provider authentication", () => {
       controller.signal,
     );
     const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
-    await bodyStarted;
+    await bodyStarted.promise;
     controller.abort();
     await assertion;
   });
@@ -532,8 +545,16 @@ describe("catalogModelLabel", () => {
     ["claude-opus-5", "Claude Opus 5", "Claude Opus 5"],
     ["some-model", undefined, "some-model"],
     ["latest", "latest", "latest"],
+    ["foo-latest", "Foo ( - latest )", "Foo (auto-updates)"],
+    ["foo-latest", "latest Foo latest", "latest Foo (auto-updates)"],
   ])("labels %s / %s as %s", (id, name, expected) => {
     expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
+  });
+
+  it("stays fast on a long run of spacing", () => {
+    const started = performance.now();
+    catalogModelLabel("foo", `a${"\t".repeat(50_000)}latest)${"\t".repeat(50_000)}x`);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });
 
@@ -630,7 +651,8 @@ describe("models agents can run", () => {
   });
 
   it.each([
-    ["google", "gemini-3.8-flash"],
+    ["google", "gemini-4-hydrogen"],
+    ["google-vertex", "gemini-4-hydrogen"],
     ["groq", "openai/gpt-oss-120b"],
     ["minimax", "MiniMax-M3"],
   ])("connects %s to %s when no model is chosen", (provider, model) => {

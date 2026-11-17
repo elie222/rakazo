@@ -5,12 +5,14 @@ import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
   url: string | null;
+  /** The server's word that this URL signs in once; absent for a URL that can be loaded again. */
+  singleUseSignIn?: { screen: string };
   error: string | null;
 }
 
 /** Only the latest request for the visible computer may replace its screen or error. */
 export async function loadComputerScreen(options: {
-  load: () => Promise<{ url: string | null }>;
+  load: () => Promise<Pick<ComputerScreenResult, "url" | "singleUseSignIn">>;
   isCurrent: () => boolean;
   commit: (result: ComputerScreenResult) => void;
   fallbackError: string;
@@ -18,7 +20,7 @@ export async function loadComputerScreen(options: {
   let result: ComputerScreenResult;
   try {
     const screen = await options.load();
-    result = { url: screen.url, error: null };
+    result = { url: screen.url, singleUseSignIn: screen.singleUseSignIn, error: null };
   } catch (error) {
     result = {
       url: null,
@@ -53,26 +55,6 @@ export function embeddableScreenUrl(url: string | null): string | null {
     return parsed.toString();
   } catch {
     return url;
-  }
-}
-
-/**
- * An embedded screen URL carries a one-time login code, so every read of it differs. Reloading the
- * frame for a new code would open a second session that signs the first one out; the screen keeps
- * the URL it connected with until the desktop or the view changes.
- */
-export function sameEmbeddedComputerScreen(current: string | null, next: string | null): boolean {
-  if (!current || !next) return false;
-  try {
-    const a = new URL(current);
-    const b = new URL(next);
-    if (a.protocol === "http:" || a.protocol === "https:" || a.protocol !== b.protocol)
-      return false;
-    return ["desktop_id", "region_id", "view_only"].every(
-      (name) => a.searchParams.get(name) === b.searchParams.get(name),
-    );
-  } catch {
-    return false;
   }
 }
 

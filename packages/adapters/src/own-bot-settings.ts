@@ -8,7 +8,7 @@ import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { botModelLabel } from "./fleet-tools.js";
 import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
-import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
+import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
 import { createVoiceProvider } from "./voice-factory.js";
 import { resolveVoiceKey } from "./voice-model-connection.js";
 

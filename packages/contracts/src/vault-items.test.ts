@@ -10,6 +10,7 @@ import {
   parseCardExpiry,
   VaultPutInput,
 } from "./bot-secrets.js";
+import { expectLinearTime } from "./timing.test-support.js";
 import {
   otherSiteOrigin,
   otherSitesText,
@@ -52,6 +53,11 @@ describe("cards", () => {
     expect(parseCardExpiry("8 / 2029")).toEqual({ expMonth: 8, expYear: 2029 });
     expect(parseCardExpiry("0828")).toEqual({ expMonth: 8, expYear: 2028 });
     expect(parseCardExpiry("13/28")).toBeUndefined();
+    expect(parseCardExpiry(" 08-28 ")).toEqual({ expMonth: 8, expYear: 2028 });
+  });
+
+  it("rejects a long run of spaces quickly", () => {
+    expectLinearTime(() => expect(parseCardExpiry(`1${" ".repeat(200_000)}x`)).toBeUndefined());
   });
 });
 

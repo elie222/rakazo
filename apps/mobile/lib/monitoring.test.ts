@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sdk = vi.hoisted(() => ({
@@ -164,16 +166,14 @@ describe("mobile monitoring", () => {
     const native = installErrorUtils();
     const monitor = await import("./monitoring");
     monitor.installMobileEarlyErrorReporting(secureStorage, application);
-    let release!: (value: Response) => void;
+    const reply = deferred<Response>();
+    const anonymousFetch = vi.fn(() => reply.promise);
     const anonymous = monitor.configureMobileMonitoring(
       "https://app.example.com",
       {},
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
+      anonymousFetch,
     );
-    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(anonymousFetch).toHaveBeenCalled());
     const error = new Error("startup failed");
     native.handle(error, true);
     const authenticated = monitor.configureMobileMonitoring(
@@ -181,7 +181,7 @@ describe("mobile monitoring", () => {
       { authorization: "Bearer fake-session" },
       response({ dsn: "https://key@errors.example.com/8" }),
     );
-    release(new Response(JSON.stringify({ dsn: "https://key@errors.example.com/8" })));
+    reply.resolve(new Response(JSON.stringify({ dsn: "https://key@errors.example.com/8" })));
     await Promise.all([anonymous, authenticated]);
     expect(sdk.captureException).toHaveBeenCalledWith(
       error,
@@ -249,19 +249,15 @@ describe("mobile monitoring", () => {
     const monitor = await import("./monitoring");
     const config = { dsn: "https://key@errors.example.com/8" };
     await monitor.configureMobileMonitoring("https://first.example.com", {}, response(config));
-    let finishClose!: () => void;
-    sdk.close.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishClose = resolve;
-        }),
-    );
+    const closing = deferred();
+    const close = vi.fn(() => closing.promise);
+    sdk.close.mockImplementationOnce(close);
     const staleFetch = response(config);
     const stale = monitor.configureMobileMonitoring("https://stale.example.com", {}, staleFetch);
-    await vi.waitFor(() => expect(finishClose).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
     const latestFetch = response(config);
     const latest = monitor.configureMobileMonitoring("https://latest.example.com", {}, latestFetch);
-    finishClose();
+    closing.resolve();
     await Promise.all([stale, latest]);
     expect(staleFetch).not.toHaveBeenCalled();
     expect(latestFetch).toHaveBeenCalledOnce();
@@ -521,20 +517,16 @@ describe("mobile monitoring", () => {
 
   it("ignores stale config replies after a server change", async () => {
     const monitor = await import("./monitoring");
-    let release!: (response: Response) => void;
+    const reply = deferred<Response>();
+    const fetchConfig = vi.fn(() => reply.promise);
     const pending = monitor.configureMobileMonitoring(
       "https://old.example.com",
       {},
-      vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            release = resolve;
-          }),
-      ) as unknown as typeof fetch,
+      fetchConfig as unknown as typeof fetch,
     );
-    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(fetchConfig).toHaveBeenCalled());
     monitor.resetMobileMonitoring();
-    release(new Response(JSON.stringify({ dsn: "https://key@errors.example.com/8" })));
+    reply.resolve(new Response(JSON.stringify({ dsn: "https://key@errors.example.com/8" })));
     await pending;
     expect(sdk.init).not.toHaveBeenCalled();
   });
@@ -551,19 +543,17 @@ describe("mobile monitoring", () => {
 
   it("shares pending configuration and retries after it fails", async () => {
     const monitor = await import("./monitoring");
-    let release!: (value: Response) => void;
-    const fetchConfig = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
-    );
+    let release!: Deferred<Response>;
+    const fetchConfig = vi.fn(() => {
+      release = deferred<Response>();
+      return release.promise;
+    });
     const first = monitor.configureMobileMonitoring("https://app.example.com", {}, fetchConfig);
     await vi.waitFor(() => expect(fetchConfig).toHaveBeenCalledTimes(1));
     expect(monitor.configureMobileMonitoring("https://app.example.com", {}, fetchConfig)).toBe(
       first,
     );
-    release(new Response(null, { status: 503 }));
+    release.resolve(new Response(null, { status: 503 }));
     await first;
 
     const error = new Error("waiting for reporting");

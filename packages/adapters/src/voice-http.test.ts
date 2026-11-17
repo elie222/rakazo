@@ -1,10 +1,12 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VOICE_JSON_BYTES,
   readVoiceJson,
+  readVoiceText,
   speechUploadName,
   verifyVoiceHttpGet,
   voiceAccountIssue,
@@ -293,4 +295,25 @@ describe("voiceLanguageHint", () => {
     expect(voiceLanguageHint("english")).toBeUndefined();
     expect(voiceLanguageHint("es_ES")).toBeUndefined();
   });
+});
+
+describe("oversized voice answers", () => {
+  const failingBody = (message: string) =>
+    new Response(
+      new ReadableStream({ pull: (controller) => controller.error(new Error(message)) }),
+    );
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = readVoiceJson(new Response(new Uint8Array(MAX_VOICE_JSON_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Voice response is too large.");
+  });
+
+  it.each(["Response is too large", "Voice response is too large."])(
+    "treats a read failure saying %j as an unreadable answer",
+    async (message) => {
+      await expect(readVoiceJson(failingBody(message))).resolves.toBeNull();
+      await expect(readVoiceText(failingBody(message))).resolves.toBeNull();
+    },
+  );
 });

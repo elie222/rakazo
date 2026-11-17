@@ -25,9 +25,7 @@ export async function sandboxAllowance(
   if (plan === null) return null;
   const runs = await sandboxRunHours(deps.prisma, organizationId, plan.since, now);
   const usedMicros = runs.reduce(
-    (sum, run) =>
-      sum +
-      run.hours * sandboxHourlyCostMicros(deps.sandbox, { kind: run.kind as ComputerRef["kind"] }),
+    (sum, run) => sum + run.hours * sandboxHourlyCostMicros(deps.sandbox, { kind: run.kind }),
     0,
   );
   return {
@@ -49,8 +47,7 @@ export async function sandboxAllowanceUsedUp(
   deps: AllowanceDeps,
   computer: { spaceId: string; kind: string },
 ): Promise<boolean> {
-  if (sandboxHourlyCostMicros(deps.sandbox, { kind: computer.kind as ComputerRef["kind"] }) === 0)
-    return false;
+  if (sandboxHourlyCostMicros(deps.sandbox, { kind: computer.kind }) === 0) return false;
   const space = await deps.prisma.space.findUnique({
     where: { id: computer.spaceId },
     select: { organizationId: true },

@@ -19,7 +19,12 @@ import { chooseBotAvatar } from "./bot-avatar-choice.js";
 import { botThreadPreviews } from "./bot-previews.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
-import { ensureComputerRecord, parseComputerMode, teamComputerUserId } from "./computers.js";
+import {
+  ensureComputerRecord,
+  parseComputerMode,
+  resolveDefaultComputerMode,
+  teamComputerUserId,
+} from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { isUniqueViolation } from "./prisma-errors.js";
@@ -476,6 +481,7 @@ export function createRepos(
           disabledBuiltinTools = parent.disabledBuiltinTools;
         }
       }
+      const computerMode = input.computerMode ?? resolveDefaultComputerMode();
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
@@ -513,12 +519,23 @@ export function createRepos(
             input.color,
             { family: input.avatarFamily, avatarSet, id: input.id },
           );
-          const teamComputer = await ensureComputerRecord(tx, {
-            mode: "team",
-            spaceId: actor.spaceId,
-            userId: await teamComputerUserId(tx, actor),
-            kind,
-          });
+          const computer = await ensureComputerRecord(
+            tx,
+            computerMode === "dedicated"
+              ? {
+                  mode: computerMode,
+                  spaceId: actor.spaceId,
+                  userId: actor.userId,
+                  botId: avatar.id,
+                  kind,
+                }
+              : {
+                  mode: computerMode,
+                  spaceId: actor.spaceId,
+                  userId: await teamComputerUserId(tx, actor),
+                  kind,
+                },
+          );
           const created = await tx.bot.create({
             data: {
               id: avatar.id,
@@ -536,7 +553,7 @@ export function createRepos(
               avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
-              computerId: teamComputer.id,
+              computerId: computer.id,
               spawnKey,
               modelProvider,
               modelId,
@@ -557,16 +574,6 @@ export function createRepos(
               ...input.initialMessage,
               markUnread: false,
             });
-          }
-          if (input.computerMode === "dedicated") {
-            const dedicated = await ensureComputerRecord(tx, {
-              mode: "dedicated",
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              botId: created.id,
-              kind,
-            });
-            await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
           }
           await tx.browserProfile.create({
             data: {

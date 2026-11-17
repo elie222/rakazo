@@ -1,5 +1,4 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
@@ -17,11 +16,11 @@ import {
   runAsSystem,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { runLeaseFor } from "./run-messages.js";
+import { wakeRun } from "./wake-run.js";
 
 export interface AgentConnectionDeps {
   prisma: PrismaClient;
@@ -488,9 +487,7 @@ async function deliverToConnectedAgent(
 
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch(() => undefined);
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch(() => undefined);
-  await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    getLogger().error("agent connection message enqueue", error);
-  });
+  await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true,
     botId: target.id,

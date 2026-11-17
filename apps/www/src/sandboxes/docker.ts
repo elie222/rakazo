@@ -2,18 +2,18 @@ import { GITHUB_URL } from "../site";
 import {
   BOAT,
   DOCKER_MEMORY,
+  dockerComputersFit,
+  euro,
+  homepage,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RATES,
   RUNTIME_DOC,
   SERVERS,
-  WORKDAY_HOURS,
-  dockerComputersFit,
-  euro,
-  homepage,
-  monthly,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -68,15 +68,31 @@ export const docker: Sandbox = {
         caption: "Servers for a self-hosted Rakazo with Docker computers",
         columns: ["Server", "vCPU / memory", "Per month", "Computers that fit in memory"],
         rows: [
-          { topic: "A spare Mac, PC or Linux box", cells: ["Whatever it has", "Electricity only", "Depends on its memory"] },
-          { topic: "Hetzner CX33", cells: ["4 / 8 GB", euro(SERVERS.hetznerCx33), String(dockerComputersFit(8))] },
+          {
+            topic: "A spare Mac, PC or Linux box",
+            cells: ["Whatever it has", "Electricity only", "Depends on its memory"],
+          },
+          {
+            topic: "Hetzner CX33",
+            cells: ["4 / 8 GB", euro(SERVERS.hetznerCx33), String(dockerComputersFit(8))],
+          },
           { topic: "Hetzner CX43", cells: ["8 / 16 GB", euro(SERVERS.hetznerCx43), fits(16)] },
-          { topic: "DigitalOcean Basic Droplet", cells: ["8 / 16 GB", `$${SERVERS.digitalOcean16}`, fits(16)] },
+          {
+            topic: "DigitalOcean Basic Droplet",
+            cells: ["8 / 16 GB", `$${SERVERS.digitalOcean16}`, fits(16)],
+          },
           {
             topic: "Hetzner AX42 dedicated server",
-            cells: ["8 cores, 16 threads / 64 GB", `From €${SERVERS.hetznerAx42}, plus €49 setup`, `${fits(64)}, though fewer can work hard at once`],
+            cells: [
+              "8 cores, 16 threads / 64 GB",
+              `From €${SERVERS.hetznerAx42}, plus €49 setup`,
+              `${fits(64)}, though fewer can work hard at once`,
+            ],
           },
-          { topic: "AWS EC2 m7i.2xlarge", cells: ["8 / 32 GB", `About $${SERVERS.awsM7i2xlarge}`, fits(32)] },
+          {
+            topic: "AWS EC2 m7i.2xlarge",
+            cells: ["8 / 32 GB", `About $${SERVERS.awsM7i2xlarge}`, fits(32)],
+          },
         ],
         note: `${PRICES_NOTE} Hetzner prices exclude VAT, and its cloud plans have limited stock after two price rises in 2026. AWS price for us-east-1 on demand.`,
       },
@@ -133,7 +149,11 @@ export const docker: Sandbox = {
       ],
     },
   ],
-  image: homepage("docker", "Docker", "The Docker homepage, headed Trust Docker for the agents you don't."),
+  image: homepage(
+    "docker",
+    "Docker",
+    "The Docker homepage, headed Trust Docker for the agents you don't.",
+  ),
   faq: [
     {
       question: "Is Docker safe enough for AI agents?",
@@ -164,7 +184,10 @@ export const docker: Sandbox = {
     },
     { label: "Rakazo, self-hosting", href: `${GITHUB_URL}/blob/main/docs/self-host.md` },
     PRICING.hetzner,
-    { label: "Hetzner dedicated servers", href: "https://www.hetzner.com/dedicated-rootserver/matrix-ax/" },
+    {
+      label: "Hetzner dedicated servers",
+      href: "https://www.hetzner.com/dedicated-rootserver/matrix-ax/",
+    },
     PRICING.digitalocean,
     { label: "AWS EC2 on-demand pricing", href: "https://aws.amazon.com/ec2/pricing/on-demand/" },
     { label: "Docker pricing FAQ", href: "https://www.docker.com/pricing/faq/" },
