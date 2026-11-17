@@ -5,6 +5,7 @@ import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { notifyConversationCleared } from "./conversation-cleared";
+import type { SaveSend } from "./query";
 import { removeFromSearchInbox } from "./search-inbox";
 import { currentSessionGeneration } from "./session";
 import { errorText } from "./user-error";
@@ -86,33 +87,23 @@ export async function confirmDeleteBot(
   );
 }
 
-export function confirmDeleteGroup(
-  group: { id: string; name: string },
-  onDeleted: () => void,
-  requestContext?: ApiRequestContext,
-) {
+/** Asks before deleting a group; `onConfirm` deletes it, with `deleteGroup`. */
+export function confirmDeleteGroup(group: { name: string }, onConfirm: () => void) {
   Alert.alert(t`Delete ${ph({ name: group.name })}?`, t`Bots and their own chats stay.`, [
     { text: t`Cancel`, style: "cancel" },
-    {
-      text: t`Delete`,
-      style: "destructive",
-      onPress: () =>
-        void (
-          requestContext
-            ? rpc(
-                "groups/remove",
-                { groupId: group.id },
-                { requestContext, skipSpaceAuthRecovery: true },
-              )
-            : rpc("groups/remove", { groupId: group.id })
-        )
-          .then(() => {
-            removeFromSearchInbox(group.id);
-            onDeleted();
-          })
-          .catch((err) => Alert.alert(t`Could not delete group`, errorText(err, t`Try again.`))),
-    },
+    { text: t`Delete`, style: "destructive", onPress: onConfirm },
   ]);
+}
+
+/** Deletes a group through the caller's client, then takes it out of search. */
+export async function deleteGroup(groupId: string, send: SaveSend): Promise<void> {
+  await send("groups/remove", { groupId });
+  removeFromSearchInbox(groupId);
+}
+
+/** Says a group could not be deleted. */
+export function alertGroupNotDeleted(error: unknown) {
+  Alert.alert(t`Could not delete group`, errorText(error, t`Try again.`));
 }
 
 export async function restoreArchivedBot(botId: string): Promise<void> {

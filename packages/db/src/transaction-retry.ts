@@ -1,3 +1,5 @@
+import { ClientError } from "@rakazo/core";
+
 // Transactions that lock the thread row before writing run state share the body budget: the
 // lock is held up to 15s by snapshot reads, Prisma's 5s default counts that wait, and expiring
 // fails a user stop, clear, send, reaction or card answer, a run's steering claim or takeover
@@ -10,6 +12,17 @@ const MAX_TRANSACTION_ATTEMPTS = 3;
 const RETRYABLE_DATABASE_CODES = new Set(["40001", "40P01"]);
 
 /**
+ * A transaction found what it read changed under it. It is run again, and when that keeps
+ * happening the caller is told to retry.
+ */
+export class TransactionConflictError extends ClientError {
+  constructor(message: string) {
+    super("CONFLICT", message);
+    this.name = "TransactionConflictError";
+  }
+}
+
+/**
  * Prisma's P2028 also covers a transaction that expired after running statements; only one
  * that never started (no connection within maxWait) is safe to run again.
  */
@@ -17,6 +30,7 @@ const UNSTARTED_TRANSACTION = /Unable to start a transaction in the given time/;
 
 function isRetryableTransactionConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
+  if (error instanceof TransactionConflictError) return true;
   if (error instanceof Error && UNSTARTED_TRANSACTION.test(error.message)) return true;
   // A conflict at commit reaches the caller as the driver adapter's own error, unwrapped.
   const driverCode = (error as { cause?: { originalCode?: unknown } }).cause?.originalCode;

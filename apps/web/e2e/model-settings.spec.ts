@@ -5,6 +5,7 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
@@ -267,11 +268,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
     await page.getByRole("button", { name: "Use a found model" }).click();
     const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
-    await discoveredModels.selectOption("");
+    await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
+    await chooseOption(discoveredModels, "Other model…");
     await expect(page.getByLabel("Model id")).toBeVisible();
     await page.getByRole("button", { name: "Find models" }).click();
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
+    await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
     await expect(page.getByText("Found 2 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
@@ -366,7 +367,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
+    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
@@ -414,6 +415,13 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
+  // The connection's page offers sign-in only because it expired; rename and disconnect end it.
+  await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
+  const connection = page.getByTestId("model-provider-page");
+  await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "model-connection-page");
 });
 
 test("a refused private model server names the setting that allows it", async ({

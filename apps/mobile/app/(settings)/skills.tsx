@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall } from "@rakazo/contracts";
+import { pluginSite } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
@@ -23,7 +24,6 @@ import type { PluginParams } from "../../lib/plugin-marketplace";
 import {
   gitImportParams,
   pluginParams,
-  pluginSite,
   pluginSkillCount,
   skillPacks,
 } from "../../lib/plugin-marketplace";

@@ -323,6 +323,18 @@ describe("browser monitoring", () => {
     expect(
       beforeSend({}, { originalException: Object.assign(new Error("Conflict"), { status: 409 }) }),
     ).toEqual({ user: { ip_address: null } });
+    const windowError = (mechanism: string) => ({
+      exception: {
+        values: [{ value: "ResizeObserver loop limit exceeded", mechanism: { type: mechanism } }],
+      },
+    });
+    expect(beforeSend(windowError("auto.browser.global_handlers.onerror"), {})).toBeNull();
+    expect(
+      beforeSend(windowError("auto.browser.global_handlers.onerror"), {
+        originalException: new Error("boom"),
+      }),
+    ).not.toBeNull();
+    expect(beforeSend(windowError("generic"), {})).not.toBeNull();
     expect(beforeSend({ message: "plain" }, { originalException: "plain" })).toEqual({
       message: "plain",
       user: { ip_address: null },

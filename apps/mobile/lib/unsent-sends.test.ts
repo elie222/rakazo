@@ -1,5 +1,5 @@
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,9 +21,6 @@ vi.mock("react-native", () => ({
   AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   isServerReachable: vi.fn(),
@@ -192,17 +189,13 @@ describe("unsentSendsRestored", () => {
     session.generation = 28;
     vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
-    let readSession!: (value: { ok: true; value: string }) => void;
-    vi.mocked(snapshotSessionToken).mockReturnValueOnce(
-      new Promise((resolve) => {
-        readSession = resolve;
-      }),
-    );
+    const sessionRead = deferred<{ ok: true; value: string }>();
+    vi.mocked(snapshotSessionToken).mockReturnValueOnce(sessionRead.promise);
     const restored = unsentSendsRestored();
     await flush();
     // A reachability retry restores the queue while the session is still being read.
     await prepareUnsentSends();
-    readSession({ ok: true, value: "fake-token" });
+    sessionRead.resolve({ ok: true, value: "fake-token" });
     await expect(restored).resolves.toBe(true);
   });
 
@@ -236,8 +229,14 @@ describe("unsentSendsRestored", () => {
 
   it("follows a restore that replaces the awaited one", async () => {
     session.generation = 23;
-    const scopeA = deferred();
-    const scopeB = deferred();
+    const scope = {
+      apiBase: "https://api.example.test",
+      userId: "user-a",
+      spaceId: "space-a",
+      selectionId: "space-a",
+    };
+    const scopeA = deferred<typeof scope>();
+    const scopeB = deferred<typeof scope>();
     vi.mocked(loadVerifiedIntegrationsScope)
       .mockImplementationOnce(() => scopeA.promise)
       .mockImplementationOnce(() => scopeB.promise);
@@ -250,32 +249,13 @@ describe("unsentSendsRestored", () => {
     // A newer session supersedes the first attempt, which then fails its generation check.
     session.generation = 24;
     void prepareUnsentSends();
-    scopeA.resolve();
+    scopeA.resolve(scope);
     await first;
     await flush();
     expect(settled).toBe(false);
 
-    scopeB.resolve();
+    scopeB.resolve(scope);
     await expect(restored).resolves.toBe(true);
     expect(restoreUnsentSends).toHaveBeenCalledOnce();
   });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<{
-    apiBase: string;
-    userId: string;
-    spaceId: string;
-    selectionId: string;
-  }>((done) => {
-    resolve = () =>
-      done({
-        apiBase: "https://api.example.test",
-        userId: "user-a",
-        spaceId: "space-a",
-        selectionId: "space-a",
-      });
-  });
-  return { promise, resolve };
-}

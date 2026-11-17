@@ -26,7 +26,7 @@ export const exclude = [
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
-  "{apps/desktop/src,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
+  "{apps/desktop/src/main,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
 ];
 
@@ -35,16 +35,16 @@ export const exclude = [
 // English, and Docker is the runtime self-hosting itself is built on.
 const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "local-vm"]);
 
-// Every computer provider declares its capabilities under its id, so a new one is checked
-// from the pull request that adds it.
+// Every computer provider registers its descriptor under its id, so a new one is checked from
+// the pull request that adds it.
 function computerProviderIds() {
   const source = readFileSync(
-    new URL("../../../packages/adapters/src/sandbox-kind-capabilities.ts", import.meta.url),
+    new URL("../../../packages/adapters/src/computer-providers.ts", import.meta.url),
     "utf8",
   );
-  const ids = topLevelKeys(source, /sandboxCapabilitiesByKind[^=]*=\s*\{/);
-  // The map and its declaration files change together; a short read means the map changed shape.
-  const declared = [...source.matchAll(/from "\.\/[\w-]+-capabilities\.js"/g)].length;
+  const ids = topLevelKeys(source, /computerProviders[^=]*=\s*\{/);
+  // The map and its descriptor files change together; a short read means the map changed shape.
+  const declared = [...source.matchAll(/from "\.\/[\w-]+-computer\.js"/g)].length;
   if (ids.length === 0 || ids.length < declared) {
     throw new Error(
       `Read ${ids.length} computer provider ids from packages/adapters but ${declared} are declared; update computerProviderIds in this rule`,

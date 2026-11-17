@@ -9,7 +9,7 @@ import {
   recordMcpServerHealth,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
-import { mcpOAuthEnvReferences } from "@rakazo/contracts";
+import { ConnectionSetupError, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
 import { itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -129,10 +129,11 @@ export async function assertMcpRemoteEndpoint(
     await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
       allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
     });
-    assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
-    throw new ORPCError("BAD_REQUEST", { message: endpointRefusal(error) });
+    if (!isHostNotFound(error)) throw error;
+    throw new ConnectionSetupError("Connector URL host could not be found", { cause: error });
   }
+  assertNoMcpEndpointCredential(endpoint);
 }
 
 /** A stdio server gets its OAuth grant through `{{oauth.*}}` references in env
@@ -371,8 +372,7 @@ export function createMcpServers(
   };
 }
 
-function endpointRefusal(error: unknown): string {
+function isHostNotFound(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
-  if (code === "ENOTFOUND" || code === "ENODATA") return "Connector URL host could not be found";
-  return error instanceof Error ? error.message : "MCP endpoint is invalid";
+  return code === "ENOTFOUND" || code === "ENODATA";
 }

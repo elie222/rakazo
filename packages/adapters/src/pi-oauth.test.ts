@@ -1343,12 +1343,13 @@ describe("refreshExpiredModelCredential", () => {
     let locked = Promise.resolve();
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-        let release = () => {};
+        let release: Deferred | undefined;
         const tx = {
           $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
             if (!sql.join("").includes("pg_advisory_xact_lock")) return 0;
             const previous = locked;
-            locked = new Promise<void>((resolve) => (release = resolve));
+            release = deferred();
+            locked = release.promise;
             await previous;
             return 0;
           }),
@@ -1357,7 +1358,7 @@ describe("refreshExpiredModelCredential", () => {
         try {
           return await fn(tx);
         } finally {
-          release();
+          release?.resolve();
         }
       }),
       secret,
@@ -1743,7 +1744,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("saves the credential when the provider sign-in finishes", async () => {
-    let finish!: (credential: OAuthCredential) => void;
+    const signIn = deferred<Credential>();
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
@@ -1756,9 +1757,7 @@ describe("PiOAuthLogins", () => {
         verificationUri: "https://auth.openai.com/codex/device",
         expiresInSeconds: 60,
       });
-      return new Promise<Credential>((resolve) => {
-        finish = (credential) => resolve(credential);
-      });
+      return signIn.promise;
     });
     const saved: PiOAuthConnected[] = [];
     const actor = { userId: "u", spaceId: "w" };
@@ -1772,7 +1771,7 @@ describe("PiOAuthLogins", () => {
       },
     });
     expect(await logins.finish(started.loginId, actor)).toEqual({ status: "pending" });
-    finish(oauthCred({ access: "live-access" }));
+    signIn.resolve(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
     expect(saved).toEqual([
       expect.objectContaining({

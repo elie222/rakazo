@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, ComputerReleaseReason, Me, Run, ThreadSnapshot } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
@@ -94,27 +95,17 @@ export function useComputerControls({
     expectOwnControlEvent,
     forgetOwnControlEvent,
   } = state;
-  const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
-  const recoveryHoldTimer = useRef<number | undefined>(undefined);
-  const showComputerRecoveryHint = computersAreUnavailable(sandboxProvider) || keepComputerRecovery;
-  const releaseComputerRecovery = useCallback(() => {
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = undefined;
-    setKeepComputerRecovery(false);
-  }, []);
-  const holdComputerRecovery = useCallback(() => {
-    setKeepComputerRecovery(true);
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = window.setTimeout(() => {
-      recoveryHoldTimer.current = undefined;
-      setKeepComputerRecovery(false);
-    }, 4000);
-  }, []);
+  // A new object holds the hint for another four seconds; null lets it go.
+  const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
+  const showComputerRecoveryHint =
+    computersAreUnavailable(sandboxProvider) || recoveryHold !== null;
+  const releaseComputerRecovery = useCallback(() => setRecoveryHold(null), []);
+  const holdComputerRecovery = useCallback(() => setRecoveryHold({}), []);
+  useTimeout(releaseComputerRecovery, recoveryHold ? 4000 : null, recoveryHold);
   useEffect(() => {
     // The recovery hint shows in the bot panel; leaving it lets the hint go.
     if (panel !== "settings") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
-  useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   useEffect(() => {
@@ -277,17 +268,16 @@ export function useComputerControls({
   // names it, so a late one from an old page never ends newer control.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
   const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
+  const handBack = (botId: string, leaseId: string) =>
+    void rpc.computer
+      .release({ botId, leaseId }, { context: { keepalive: true } })
+      .catch(() => undefined);
+  useEventListener(heldBotId && heldLeaseId ? window : null, "pagehide", () => {
+    if (heldBotId && heldLeaseId) handBack(heldBotId, heldLeaseId);
+  });
   useEffect(() => {
     if (!heldBotId || !heldLeaseId) return;
-    const handBack = () =>
-      void rpc.computer
-        .release({ botId: heldBotId, leaseId: heldLeaseId }, { context: { keepalive: true } })
-        .catch(() => undefined);
-    window.addEventListener("pagehide", handBack);
-    return () => {
-      window.removeEventListener("pagehide", handBack);
-      handBack();
-    };
+    return () => handBack(heldBotId, heldLeaseId);
   }, [heldBotId, heldLeaseId]);
 
   // A control event says the screen is held but not by whom; the status read says, and gives the

@@ -1,35 +1,32 @@
 import type { CreateBotInput } from "@rakazo/contracts";
 import type { Href } from "expo-router";
-import { captureApiRequestContext, rpc, selectedSpaceId, spaceSelectionSeq } from "./api";
+import { captureApiRequestContext, selectedSpaceId, spaceSelectionSeq } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
 import { hapticSuccess } from "./haptics";
 import { notifyInboxChanged } from "./inbox-changes";
 import { askToAddModel } from "./model-settings";
+import type { SaveSend } from "./query";
+import { sendWith } from "./query";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "./search-inbox";
-
-type RequestOptions = { requestContext: Awaited<ReturnType<typeof captureApiRequestContext>> };
-
-async function requestOptions(spaceId?: string): Promise<RequestOptions | undefined> {
-  return spaceId ? { requestContext: await captureApiRequestContext(spaceId) } : undefined;
-}
 
 /**
  * Whether this would be the account's first bot, and whether that bot must wait for a model,
  * as in web onboarding, so it can greet the user. `modelSpaceId` is the space whose model
  * settings to open, when it overrides the account's.
  */
-async function firstBotModelGate(spaceId: string | undefined, options?: RequestOptions) {
+async function firstBotModelGate(spaceId: string | undefined, send: SaveSend) {
   // Authoritative roster so a slow home fetch does not treat later bots as first.
   // A failed list is unknown — use the delayed path rather than assuming first.
-  const existing = await rpc("bots/list", undefined, options).catch(() => null);
+  const existing = await send("bots/list", undefined).catch(() => null);
   const isFirstBot = existing !== null && existing.length === 0;
   const needsModel = Boolean(
-    isFirstBot && (await rpc("me", undefined, options).catch(() => null))?.needsModel,
+    isFirstBot && (await send("me", undefined).catch(() => null))?.needsModel,
   );
   const modelSpaceId =
     needsModel &&
     spaceId &&
-    (await rpc("spaceSettings/overrides", undefined, options)).includes("models")
+    // Unknown overrides open the account's model settings rather than failing the create.
+    (await send("spaceSettings/overrides", undefined).catch(() => null))?.includes("models")
       ? spaceId
       : undefined;
   return { isFirstBot, needsModel, modelSpaceId };
@@ -58,7 +55,8 @@ export async function askForModelBeforeFirstBot(
   open: () => boolean,
 ): Promise<boolean> {
   const asked = askedHere();
-  const gate = await firstBotModelGate(spaceId, await requestOptions(spaceId)).catch(() => null);
+  const send = sendWith(spaceId ? await captureApiRequestContext(spaceId) : undefined);
+  const gate = await firstBotModelGate(spaceId, send).catch(() => null);
   if (!gate?.needsModel || !asked.unchanged() || !open()) return false;
   askToAddModel(gate.modelSpaceId);
   return true;
@@ -69,31 +67,33 @@ export type InboxBotOutcome = "created" | "needsModel" | "stale";
 
 /**
  * Creates the bot named on the New bot screen, adds it to the search roster, and opens its chat.
- * With a spaceId its requests are pinned to that space, whichever is selected.
+ * Every request goes through `send`, the caller's save, which pins it to the bot's server,
+ * session and Space; a spaceId names that Space when it is not the selected one.
  * The first bot waits for a model, as in web onboarding, so it can greet the user.
  * Throws when the bot could not be created.
  */
 export async function createInboxBot({
   input,
   openChat,
+  send,
   spaceId,
 }: {
   input: Pick<CreateBotInput, "name" | "color" | "id" | "avatarFamily">;
   openChat: (href: Href) => void;
+  send: SaveSend;
   spaceId?: string;
 }): Promise<InboxBotOutcome> {
   // Taken before the requests, so a bot that lands after a session switch is dropped.
   const asked = askedHere();
   const askedIn = asked.session;
-  const options = await requestOptions(spaceId);
-  const { isFirstBot, needsModel, modelSpaceId } = await firstBotModelGate(spaceId, options);
+  const { isFirstBot, needsModel, modelSpaceId } = await firstBotModelGate(spaceId, send);
   // Create was asked for here; after any account, server or Space switch, even back, it does nothing.
   if (!asked.unchanged()) return "stale";
   if (needsModel) {
     askToAddModel(modelSpaceId);
     return "needsModel";
   }
-  const bot = await rpc("bots/create", { ...input, notifyOnFinish: true }, options);
+  const bot = await send("bots/create", { ...input, notifyOnFinish: true });
   if (!isSearchInboxSession(askedIn)) return "stale";
   hapticSuccess();
   notifyInboxChanged();
@@ -104,11 +104,11 @@ export async function createInboxBot({
     params: { botId: bot.id, name: bot.name, ...(spaceId ? { spaceId } : {}) },
   });
   void (async () => {
-    const started = await rpc("onboarding/start", { botId: bot.id }, options)
+    const started = await send("onboarding/start", { botId: bot.id })
       .then(() => true)
       .catch(() => false);
     if (!started) return;
-    scheduleFocusPrompt(bot.id, isFirstBot, options?.requestContext);
+    scheduleFocusPrompt(bot.id, isFirstBot, send);
   })();
   return "created";
 }

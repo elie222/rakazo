@@ -1,5 +1,5 @@
 import type { Alternative, FaqItem } from "./alternatives";
-import { ALTERNATIVES, ALTERNATIVES_HUB, ROUNDUP_UPDATED, alternativePath } from "./alternatives";
+import { ALTERNATIVES, ALTERNATIVES_HUB, alternativePath, ROUNDUP_UPDATED } from "./alternatives";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
 import { OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";

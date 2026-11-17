@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 test("a self-hosted voice connection offers a separate transcription server", async ({
   page,
@@ -10,7 +16,7 @@ test("a self-hosted voice connection offers a separate transcription server", as
   await completeOnboarding(page);
   await openUserSettings(page, "voice");
   const voice = page.getByTestId("voice-settings");
-  await voice.getByRole("combobox", { name: "Provider" }).selectOption("openai-compatible");
+  await chooseOption(voice.getByRole("combobox", { name: "Provider" }), "Self-hosted");
   await voice.getByLabel("Server URL", { exact: true }).fill("http://127.0.0.1:8880/v1");
   await expect(voice.getByLabel("Transcription API key")).toHaveCount(0);
   await voice.getByLabel("Transcription server URL").fill("http://127.0.0.1:8881/v1");

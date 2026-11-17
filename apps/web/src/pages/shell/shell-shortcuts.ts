@@ -1,7 +1,8 @@
 import type { DesktopMenuCommand } from "@rakazo/contracts";
 import { isDesktopMenuCommand } from "@rakazo/contracts";
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { desktopBridge } from "../../lib/desktop";
+import { useEventListener } from "../../lib/use-event-listener";
 
 export type ShellShortcut =
   | { type: DesktopMenuCommand }
@@ -164,27 +165,22 @@ export function useShellShortcuts({
   run: (shortcut: ShellShortcut) => boolean;
   onTyping: () => void;
 }) {
-  const handlers = useRef({ run, onTyping });
-  handlers.current = { run, onTyping };
-  useEffect(() => {
-    const desktop = desktopBridge();
-    const host: ShortcutHost = { desktop: Boolean(desktop), apple: isApplePlatform() };
-    function onKey(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
-      const shortcut = shellShortcut(event, host);
-      if (shortcut) {
-        if (handlers.current.run(shortcut)) event.preventDefault();
-      } else if (startsTyping(event)) {
-        handlers.current.onTyping();
-      }
+  const runLatest = useEffectEvent(run);
+  useEventListener(window, "keydown", (event) => {
+    if (event.defaultPrevented) return;
+    const host: ShortcutHost = { desktop: Boolean(desktopBridge()), apple: isApplePlatform() };
+    const shortcut = shellShortcut(event, host);
+    if (shortcut) {
+      if (run(shortcut)) event.preventDefault();
+    } else if (startsTyping(event)) {
+      onTyping();
     }
-    window.addEventListener("keydown", onKey);
-    const stopMenu = desktop?.menu?.onCommand((command) => {
-      if (isDesktopMenuCommand(command)) handlers.current.run({ type: command });
-    });
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      stopMenu?.();
-    };
-  }, []);
+  });
+  useEffect(
+    () =>
+      desktopBridge()?.menu?.onCommand((command) => {
+        if (isDesktopMenuCommand(command)) runLatest({ type: command });
+      }),
+    [],
+  );
 }

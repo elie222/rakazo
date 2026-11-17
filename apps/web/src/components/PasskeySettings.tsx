@@ -9,6 +9,7 @@ import {
   usePasskeysSupported,
   usePasskeysVersion,
 } from "../lib/passkeys";
+import { useSave } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SettingsRow } from "./SettingsRows";
@@ -33,8 +34,6 @@ export function PasskeySettings() {
 function PasskeyList({ onRetry }: { onRetry: () => void }) {
   const { t } = useLingui();
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([]);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<PasskeyRow | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -56,39 +55,34 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
     };
   }, []);
 
-  async function run(action: () => Promise<{ error?: unknown }>): Promise<boolean> {
-    setPending(true);
-    setError(null);
-    try {
-      const result = await action();
-      if (result.error) {
-        setError(passkeyErrorText(result.error, t`Could not continue`));
-        return false;
-      }
-      // Remounts this list with fresh data and closes the offer if it is open.
+  // Passkeys belong to the sign-in, not a space, so the change never needs the API client.
+  const change = useSave({
+    save: async (action: () => Promise<{ error?: unknown }>) => {
+      const result = await action().catch(() => {
+        throw new Error(t`Could not reach the server`);
+      });
+      // A cancelled prompt fails without a message, so nothing is shown.
+      if (result.error)
+        throw new Error(passkeyErrorText(result.error, t`Could not continue`) ?? "");
+      // Sent even after this list is gone: it remounts the list fresh and closes an open offer.
       passkeysChanged();
-      return true;
-    } catch {
-      setError(t`Could not reach the server`);
-      return false;
-    } finally {
-      setPending(false);
-    }
-  }
+    },
+  });
+  const pending = change.pending;
+  const error = change.error?.message || null;
 
-  async function rename() {
+  function rename() {
     if (!renaming) return;
     const name = renaming.name.trim();
     if (!name) return;
-    if (await run(() => authClient.passkey.updatePasskey({ id: renaming.id, name }))) {
-      setRenaming(null);
-    }
+    const { id } = renaming;
+    change.run(() => authClient.passkey.updatePasskey({ id, name }));
   }
 
-  async function remove() {
+  function remove() {
     if (!deleting) return;
     const { id } = deleting;
-    if (await run(() => authClient.passkey.deletePasskey({ id }))) setDeleting(null);
+    change.run(() => authClient.passkey.deletePasskey({ id }));
   }
 
   return (
@@ -100,7 +94,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
             variant="secondary"
             size="sm"
             disabled={pending}
-            onClick={() => void run(() => authClient.passkey.addPasskey())}
+            onClick={() => change.run(() => authClient.passkey.addPasskey())}
           >
             <Trans>Add passkey</Trans>
           </Button>
@@ -129,7 +123,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                   className="flex flex-1 items-center gap-2"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void rename();
+                    rename();
                   }}
                 >
                   <Input
@@ -191,13 +185,13 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
         <ConfirmDialog
           onCancel={() => {
             setDeleting(null);
-            setError(null);
+            change.reset();
           }}
           title={t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}
           description={<Trans>This can't be undone.</Trans>}
           error={error}
           busy={pending}
-          onConfirm={() => void remove()}
+          onConfirm={remove}
           confirmLabel={pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
         />
       ) : null}

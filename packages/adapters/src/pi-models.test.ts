@@ -545,8 +545,16 @@ describe("catalogModelLabel", () => {
     ["claude-opus-5", "Claude Opus 5", "Claude Opus 5"],
     ["some-model", undefined, "some-model"],
     ["latest", "latest", "latest"],
+    ["foo-latest", "Foo ( - latest )", "Foo (auto-updates)"],
+    ["foo-latest", "latest Foo latest", "latest Foo (auto-updates)"],
   ])("labels %s / %s as %s", (id, name, expected) => {
     expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
+  });
+
+  it("stays fast on a long run of spacing", () => {
+    const started = performance.now();
+    catalogModelLabel("foo", `a${"\t".repeat(50_000)}latest)${"\t".repeat(50_000)}x`);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });
 

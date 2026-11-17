@@ -13,6 +13,7 @@ import { AppMark } from "../../components/app-mark";
 import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
+import { OrganizationRowMenu } from "../../components/organization-menu";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
 import { rpc, selectedSpaceId } from "../../lib/api";
@@ -367,15 +368,23 @@ export default function Account() {
 
         <SettingsGroup>
           {organizations ? (
-            <SettingsRow
+            <OrganizationRowMenu
               key="organization"
-              accessibilityRole="button"
-              chevron="right"
-              leading={icon({ ios: "building.2", android: "business-outline" })}
-              onPress={() => router.push("/organization")}
-              title={t`Organization`}
-              value={activeOrganization(organizations)?.name}
-            />
+              list={organizations}
+              onCreate={() => openFromSettingsSheet(router, "/new-organization")}
+              onSettings={() => router.push("/organization")}
+            >
+              <SettingsRow
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t`Organization`}
+                accessibilityValue={{ text: activeOrganization(organizations)?.name }}
+                chevron="down"
+                leading={icon({ ios: "building.2", android: "business-outline" })}
+                title={t`Organization`}
+                value={activeOrganization(organizations)?.name}
+              />
+            </OrganizationRowMenu>
           ) : null}
           {me
             ? settingsLink({

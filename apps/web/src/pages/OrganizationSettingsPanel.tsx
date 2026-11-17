@@ -1,10 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { canDeleteOrganization } from "@rakazo/core";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
 import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
-import { Plus } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
+import { OrganizationMembersSettings } from "../components/OrganizationMembersSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import type { Organization } from "../lib/organizations";
 import { organizationsQuery, useOrganizations } from "../lib/organizations";
@@ -51,7 +51,7 @@ function OrganizationSettings({
   });
   const pending = rename.pending;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [showingMembers, setShowingMembers] = useState(false);
   useEffect(() => {
     onBusyChange?.(pending);
   }, [pending, onBusyChange]);
@@ -67,6 +67,16 @@ function OrganizationSettings({
     rename.run(trimmed);
   }
 
+  if (showingMembers)
+    return (
+      <OrganizationMembersSettings
+        organization={organization}
+        onBack={() => setShowingMembers(false)}
+      />
+    );
+
+  // Alone in it, its owner is offered to invite someone instead of a count of one.
+  const inviteFirst = organization.memberCount === 1 && canManageOrganizationMembers(organization);
   return (
     <div className="space-y-8" data-testid="organization-settings">
       <SettingsGroup>
@@ -114,23 +124,29 @@ function OrganizationSettings({
             </p>
           ) : null}
         </SettingsRow>
+        <button
+          type="button"
+          className="flex min-h-15 w-full items-center justify-between gap-4 rounded-b-xl px-4 py-3 text-start hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          onClick={() => setShowingMembers(true)}
+        >
+          <span className="text-body text-foreground">
+            <Trans>Members</Trans>
+          </span>
+          <span className="flex items-center gap-1 text-body text-muted-foreground">
+            {inviteFirst ? <Trans>Invite people</Trans> : organization.memberCount}
+            <ChevronRight aria-hidden="true" className="size-4 rtl:rotate-180" />
+          </span>
+        </button>
       </SettingsGroup>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="rounded-full" onClick={() => setCreating(true)}>
-          <Plus aria-hidden="true" />
-          <Trans>Create organization</Trans>
+      {canDelete ? (
+        <Button
+          variant="destructive"
+          className="rounded-full"
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trans>Delete organization</Trans>
         </Button>
-        {canDelete ? (
-          <Button
-            variant="destructive"
-            className="rounded-full"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trans>Delete organization</Trans>
-          </Button>
-        ) : null}
-      </div>
-      <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
+      ) : null}
       {confirmingDelete ? (
         <DeleteOrganizationDialog
           organization={organization}

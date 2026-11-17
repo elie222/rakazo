@@ -58,6 +58,7 @@ function fixture({
   | "afterDeleteSession"
   | "afterReplaceSession"
   | "beforeDeleteUser"
+  | "afterDeleteUser"
   | "analytics"
   | "partnerProgram"
 > = {}) {
@@ -702,16 +703,34 @@ describe("session credentials", () => {
   });
 
   it("answers a deletion already under way with a conflict and keeps the account", async () => {
+    const afterDeleteUser = vi.fn(async (_userId: string) => undefined);
     const f = fixture({
       delivery: false,
       beforeDeleteUser: async () => {
         throw new SpaceDeletionInProgressError();
       },
+      afterDeleteUser,
     });
     const { token } = (await (await f.signup()).json()) as { token: string };
     const response = await f.request("/delete-user", { password: "offline-password12" }, token);
     expect(response.status).toBe(409);
     expect(f.data.user).toHaveLength(1);
+    expect(afterDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it("runs the after-deletion hook once the account is gone", async () => {
+    const remaining: number[] = [];
+    const f = fixture({
+      delivery: false,
+      afterDeleteUser: async () => {
+        remaining.push(f.data.user!.length);
+      },
+    });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect(
+      (await f.request("/delete-user", { password: "offline-password12" }, token)).status,
+    ).toBe(200);
+    expect(remaining).toEqual([0]);
   });
 });
 

@@ -264,7 +264,7 @@ describe("MCP connector session cache", () => {
       const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "secret-1" } };
       const connector = new McpConnector(
         {
-          mcpServer: NO_SHARED_SERVERS,
+          mcpServer: { ...NO_SHARED_SERVERS, findFirst: async () => ({ secretId: "secret-1" }) },
           botMcpServer: { findMany: async () => [assignment], findFirst: async () => assignment },
           secret: { findFirst: async () => ({ id: "secret-1", ciphertext: "secret-ref" }) },
         } as never,
@@ -1128,6 +1128,36 @@ describe("MCP connector session cache", () => {
         expect(writes).toHaveBeenCalledWith(
           expect.objectContaining({ where: { id: SERVER.id, revision: 1 } }),
         );
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the server changed after the run read it", async () => {
+      const server = { ...SERVER, secretId: "old" };
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+          // A reconnect replaced the secret and bumped the revision this run still holds.
+          mcpServer: {
+            ...NO_SHARED_SERVERS,
+            findFirst: vi.fn(async () => null),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+          secret: { findFirst: vi.fn(async () => null) },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: "MCP server changed while connecting",
+        });
       } finally {
         vi.restoreAllMocks();
         await connector.close();
@@ -2258,6 +2288,89 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it.each([false, true])(
+    "reloads the current secret while the old row exists (rotates again: %s)",
+    async (rotatesAgain) => {
+      const state = {
+        failNext: false,
+        initializations: 0,
+        headers: [] as Record<string, string>[],
+      };
+      const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+      let current = "old";
+      let changed: ((ref: string) => void) | undefined;
+      const fetch = mcpFetch(state);
+      vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (
+          request.method === "POST" &&
+          request.headers.get("authorization") === "Bearer old-token"
+        ) {
+          current = "new";
+          changed?.("old");
+        }
+        return fetch(input, init);
+      });
+      const prisma = {
+        botMcpServer: { findMany: vi.fn().mockResolvedValue([assignment]) },
+        mcpServer: {
+          ...NO_SHARED_SERVERS,
+          findFirst: vi.fn(async () => {
+            const secretId = current;
+            if (rotatesAgain && current === "new") current = "latest";
+            return { secretId };
+          }),
+        },
+        // Cleanup of the superseded row is asynchronous; both rows can still be read.
+        secret: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            ciphertext: where.id,
+          })),
+        },
+      };
+      const connector = new McpConnector(
+        prisma as never,
+        {
+          onChange: (listener: (ref: string) => void) => {
+            changed = listener;
+            return () => {};
+          },
+          load: async (ref: string) =>
+            JSON.stringify({ headers: { Authorization: `Bearer ${ref}-token` } }),
+        } as never,
+        { network: TEST_NETWORK },
+      );
+      try {
+        const tools = await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        } as never);
+        if (rotatesAgain) {
+          expect(tools).toEqual(unavailableOnly());
+          expect(state.initializations).toBe(2);
+          return;
+        }
+        expect(tools.map((tool) => tool.name)).toContain("mcp__demo__echo");
+        expect(state.initializations).toBe(2);
+        expect(state.headers.at(-1)?.authorization).toBe("Bearer new-token");
+        // A follow-up operation sharing the assignment must retain the recovered session.
+        const again = await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        } as never);
+        expect(again.map((tool) => tool.name)).toContain("mcp__demo__echo");
+        expect(state.initializations).toBe(2);
+      } finally {
+        await connector.close();
+      }
+    },
+  );
+
   it("reconnects with the rotated secret when a session expires during refresh", async () => {
     const state = {
       failNext: false,
@@ -2363,7 +2476,11 @@ describe("MCP connector session cache", () => {
               ) => Promise<unknown>;
             }
           ).connectSession(assignment.server, context, () => undefined),
-        ).rejects.toThrow("MCP server secret is unavailable");
+        ).rejects.toThrow(
+          scenario === "changed configuration"
+            ? "MCP server changed while connecting"
+            : "Secret changed during MCP connection; retry",
+        );
         expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({ where: expect.objectContaining({ revision: 1 }) }),
         );

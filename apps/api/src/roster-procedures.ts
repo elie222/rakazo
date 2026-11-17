@@ -54,6 +54,14 @@ export const ROSTER_PROCEDURES: Record<string, RosterScope> = {
   "spaces.rename": namedSpace,
   "spaces.remove": namedSpace,
   "spaces.members.leave": namedSpace,
+  "spaces.members.add": (actor, input) => ({
+    spaceIds: ids(field(input, "spaceId")),
+    userIds: ids(actor.userId, field(input, "userId")),
+  }),
+  "organizations.members.remove": (actor, input) => ({
+    userIds: ids(actor.userId, field(input, "userId")),
+  }),
+  "organizations.invitations.accept": actorOnly,
   "spaces.members.remove": (actor, input) => ({
     spaceIds: ids(field(input, "spaceId")),
     userIds: ids(actor.userId, field(input, "userId")),

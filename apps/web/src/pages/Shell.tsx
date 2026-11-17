@@ -50,6 +50,7 @@ import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
 import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
@@ -59,6 +60,7 @@ import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routine-draft";
+import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
@@ -73,6 +75,7 @@ import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import { Composer } from "./shell/composer";
+import { ComposerModelPicker } from "./shell/composer-model-picker";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
 import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
@@ -197,6 +200,7 @@ function SpaceShell() {
   const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
   const enterToSend = composerEnterToSendPreference.use();
+  const showComposerModel = composerModelPickerPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
@@ -913,9 +917,9 @@ function SpaceShell() {
     setPanel(null);
   }
 
-  async function createBot(input: CreateBotDialogInput) {
+  async function createBot(input: CreateBotDialogInput, client: RpcClient) {
     const isFirstBot = botsRef.current.length === 0;
-    const bot = await rpc.bots.create({ ...input, notifyOnFinish: true });
+    const bot = await client.bots.create({ ...input, notifyOnFinish: true });
     openCreatedBot(bot);
     dialogs.setCreateBotOpen(false);
     await composer.startFocusPrompt(bot.id, isFirstBot);
@@ -1184,6 +1188,19 @@ function SpaceShell() {
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
               sendColors={userBubble}
+              modelPicker={
+                showComposerModel && active && !inGroup ? (
+                  <ComposerModelPicker
+                    bot={active}
+                    disabled={Boolean(recordingSkill)}
+                    onSaved={(updated) =>
+                      setBots((current) =>
+                        current.map((bot) => (bot.id === updated.id ? updated : bot)),
+                      )
+                    }
+                  />
+                ) : undefined
+              }
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               running={composerRunning}
               disabled={Boolean(recordingSkill)}

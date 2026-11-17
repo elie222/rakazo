@@ -65,10 +65,20 @@ vi.mock("react-native", async () => {
   };
 });
 
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+
+/** Sent through the save, pinned to the server, session and Space of the tap. */
+const pinned = { requestContext: expect.objectContaining({ apiBase: "http://api.test" }) };
 
 vi.mock("../components/glass-icon-button", async () => {
   const { Pressable } = await import("react-native");
@@ -169,7 +179,11 @@ describe("ChoiceCard", () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith("onboarding/choose", { botId: "bot-1", optionId: "inbox" });
+    expect(rpc).toHaveBeenCalledWith(
+      "onboarding/choose",
+      { botId: "bot-1", optionId: "inbox" },
+      pinned,
+    );
     expect(view.textContent).toContain("Inbox & email");
     expect(view.textContent).not.toContain("Day-to-day work");
     expect(button(view, "Inbox & email").disabled).toBe(true);
@@ -187,7 +201,7 @@ describe("ChoiceCard", () => {
       await Promise.resolve();
     });
 
-    expect(rpc).toHaveBeenCalledWith("onboarding/dismissFocus", { botId: "bot-1" });
+    expect(rpc).toHaveBeenCalledWith("onboarding/dismissFocus", { botId: "bot-1" }, pinned);
     expect(onDismissed).toHaveBeenCalledTimes(1);
     expect(view.querySelector("[data-testid='choice-card']")).toBeNull();
   });
@@ -206,10 +220,11 @@ describe("ChoiceCard", () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith("onboarding/choose", {
-      botId: "bot-1",
-      optionId: "day",
-    });
+    expect(rpc).toHaveBeenCalledWith(
+      "onboarding/choose",
+      { botId: "bot-1", optionId: "day" },
+      pinned,
+    );
     expect(button(view, "Day-to-day work").disabled).toBe(true);
     expect(button(view, "Inbox & email").disabled).toBe(true);
     expect(button(view, "Dismiss").disabled).toBe(true);
@@ -247,10 +262,11 @@ describe("ChoiceCard", () => {
       await Promise.resolve();
     });
 
-    expect(rpc).toHaveBeenLastCalledWith("onboarding/choose", {
-      botId: "bot-1",
-      optionId: "inbox",
-    });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "onboarding/choose",
+      { botId: "bot-1", optionId: "inbox" },
+      pinned,
+    );
     expect(view.textContent).not.toContain("Day-to-day work");
   });
 

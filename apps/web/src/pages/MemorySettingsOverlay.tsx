@@ -8,8 +8,7 @@ import {
   DialogTitle,
   Field,
   FieldLabel,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Spinner,
   Toggle,
@@ -270,19 +269,16 @@ export function MemorySettingsOverlay({
               </SectionHeading>
               {providers.length > 1 ? (
                 <div className="mt-3">
-                  <NativeSelect
+                  <OptionSelect
                     aria-labelledby={providerSelectId}
-                    className="w-full"
                     value={descriptor.id}
                     disabled={busy}
-                    onChange={(event) => setSelectedProvider(event.target.value)}
-                  >
-                    {providers.map((entry) => (
-                      <NativeSelectOption key={entry.id} value={entry.id}>
-                        {entry.displayName}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    options={providers.map((entry) => ({
+                      value: entry.id,
+                      label: entry.displayName,
+                    }))}
+                    onValueChange={setSelectedProvider}
+                  />
                 </div>
               ) : (
                 <p className="mt-3 text-body text-foreground">{descriptor.displayName}</p>

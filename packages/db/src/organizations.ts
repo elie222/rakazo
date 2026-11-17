@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Actor, OrganizationList } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { GUEST_ROLE, LIVE_ORGANIZATION as LIVE } from "./billing.js";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION as LIVE } from "./billing.js";
 import { createOrganizationWithDefaultSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { organizationRole } from "./organization-members.js";
 import { IsolationError } from "./scope.js";
 import {
   claimSpaceForDeletion,
@@ -96,29 +97,43 @@ export async function listMemberOrganizations(
     prisma.spaceMember.findMany({
       where: { userId: actor.userId, space: { deletingAt: null } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { spaceId: true, organizationId: true, member: { select: { role: true } } },
+      select: {
+        spaceId: true,
+        organizationId: true,
+        role: true,
+        member: { select: { role: true } },
+      },
     }),
   ]);
   return {
     activeOrganizationId,
-    organizations: organizations.map((organization) => ({
-      id: organization.id,
-      name: organization.name,
-      defaultSpaceId: organization.spaces[0]!.id,
-      // Phase one manages only organizations their owner has to themselves.
-      canManage:
-        organization._count.members === 1 &&
-        organization.members.some((member) => member.role.includes("owner")),
-      // Spaces shared with them as a guest show beside the active organization's, as in the
-      // sidebar.
-      spaceIds: memberships
-        .filter((membership) =>
-          membership.member.role === GUEST_ROLE
-            ? organization.id === activeOrganizationId
-            : membership.organizationId === organization.id,
-        )
-        .map((membership) => membership.spaceId),
-    })),
+    organizations: organizations.map((organization) => {
+      const defaultSpaceId = organization.spaces[0]!.id;
+      const own = memberships.filter((membership) => membership.organizationId === organization.id);
+      const role = organizationRole(organization.members[0]?.role ?? "member");
+      return {
+        id: organization.id,
+        name: organization.name,
+        // Another member's default Space is not theirs: they land in their own.
+        defaultSpaceId:
+          own.find((membership) => membership.spaceId === defaultSpaceId)?.spaceId ??
+          own.find((membership) => isOwnerRole(membership.role))?.spaceId ??
+          own[0]?.spaceId ??
+          defaultSpaceId,
+        canManage: role === "owner",
+        role,
+        memberCount: organization._count.members,
+        // Spaces shared with them as a guest show beside the active organization's, as in the
+        // sidebar.
+        spaceIds: memberships
+          .filter((membership) =>
+            membership.member.role === GUEST_ROLE
+              ? organization.id === activeOrganizationId
+              : membership.organizationId === organization.id,
+          )
+          .map((membership) => membership.spaceId),
+      };
+    }),
   };
 }
 
@@ -130,10 +145,7 @@ export async function renameOrganization(
   const { count } = await prisma.organization.updateMany({
     where: {
       id: input.organizationId,
-      members: {
-        some: { userId: input.userId, role: OWNER },
-        every: { OR: [{ userId: input.userId }, { role: GUEST_ROLE }] },
-      },
+      members: { some: { userId: input.userId, role: OWNER } },
       ...LIVE,
     },
     data: { name },

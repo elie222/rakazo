@@ -15,10 +15,11 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { trimEndChars } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
-import { getLarkTextParts } from "./lark/text-parts.js";
+import { getLarkTextParts } from "./providers/messaging/lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -620,7 +621,7 @@ function plainTextWithLinks(message: Message, lark: boolean): string {
       // Markdown drops spaces at a fragment boundary; preserve them when the
       // next structured item is on the same row.
       if (last?.type === "paragraph" && !trailing && parts[index + 1]?.literal)
-        trailing = value.match(/[ \t]+$/)?.[0] ?? "";
+        trailing = value.slice(trimEndChars(value, " \t").length);
       // A heading followed by a code row has the same paragraph separation as
       // a heading followed by ordinary text in the SDK's plain-text renderer.
       const headingBreak =

@@ -6,9 +6,9 @@ import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -31,8 +31,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -70,9 +68,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   ),
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
-  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
-    <div data-testid={testId} />
-  ),
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
@@ -172,9 +168,9 @@ it.each([undefined, null, "device", "different"])(
           />,
         ),
       );
-      expect(
-        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
-      ).toBe(timezone ?? deviceTimezone);
+      expect(container.querySelector('[data-testid="timezone-select"]')?.textContent).toBe(
+        (timezone ?? deviceTimezone).replaceAll("_", " "),
+      );
       expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
         saved === "different",
       );
@@ -397,6 +393,7 @@ async function renderNameEditor(name = "Alex Rivera") {
           .querySelector("form")!
           .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       }),
+    unmount: () => act(async () => root.unmount()),
     cleanup: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -416,6 +413,24 @@ it("saves a trimmed name and refreshes the account data", async () => {
     expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
     expect(editor.onNameSaved).toHaveBeenCalledOnce();
     expect(editor.card.querySelector("input")).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it("refreshes the account data when the name saves after settings closed", async () => {
+  let updated!: Deferred<{ data: { status: boolean }; error: null }>;
+  vi.mocked(authClient.updateUser).mockImplementation(() => {
+    updated = deferred();
+    return updated.promise as never;
+  });
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("Sam Rivera");
+    await editor.submit();
+    await editor.unmount();
+    await act(async () => updated.resolve({ data: { status: true }, error: null }));
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
   } finally {
     await editor.cleanup();
   }

@@ -6,15 +6,7 @@ import {
   BUILTIN_TOOL_NAMES,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import {
-  Button,
-  NativeSelect,
-  NativeSelectOption,
-  SectionHeading,
-  Switch,
-  Textarea,
-  Toggle,
-} from "@rakazo/ui-web";
+import { Button, OptionSelect, SectionHeading, Switch, Textarea, Toggle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
@@ -140,21 +132,19 @@ export function ModelRow({
           className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
         >
           <Trans>Thinking</Trans>
-          <NativeSelect
+          <OptionSelect
             id={`${ids}-thinking`}
-            className="max-w-2/3"
+            className="w-fit max-w-2/3"
             value={thinkingLevel}
-            onChange={(event) => onThinkingLevelChange(event.target.value)}
-          >
-            <NativeSelectOption value="">
-              {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-            </NativeSelectOption>
-            {thinkingOptions.map((level) => (
-              <NativeSelectOption key={level} value={level}>
-                {thinkingLevelLabel(level)}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            onValueChange={onThinkingLevelChange}
+            options={[
+              { value: "", label: t`Default (${thinkingLevelLabel(defaultThinkingLevel)})` },
+              ...thinkingOptions.map((level) => ({
+                value: level,
+                label: thinkingLevelLabel(level),
+              })),
+            ]}
+          />
         </label>
       ) : null}
     </>
@@ -180,19 +170,16 @@ export function VoiceRow({
       className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
     >
       <Trans>Voice</Trans>
-      <NativeSelect
+      <OptionSelect
         id={`${ids}-voice`}
-        className="max-w-2/3"
+        className="w-fit max-w-2/3"
         value={voiceId}
-        onChange={(event) => onVoiceIdChange(event.target.value)}
-      >
-        <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
-        {voices.map((voice) => (
-          <NativeSelectOption key={voice.id} value={voice.id}>
-            {voice.label}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        onValueChange={onVoiceIdChange}
+        options={[
+          { value: "", label: t`Account default` },
+          ...voices.map((voice) => ({ value: voice.id, label: voice.label })),
+        ]}
+      />
     </label>
   );
 }
@@ -244,22 +231,20 @@ export function ToolsGroup({
       <section data-testid="bot-settings-tools">
         <div className="space-y-2 [&>*]:mt-0">
           <div>
-            <NativeSelect
+            <OptionSelect
               id={`${ids}-disabled-tools`}
               aria-label={t`Disable a tool`}
               value=""
-              onChange={(event) => onDisable(event.target.value)}
-              className="w-full"
-            >
-              <NativeSelectOption value="">{t`Disable a tool`}</NativeSelectOption>
-              {BUILTIN_TOOL_NAMES.filter((name) => !disabledBuiltinTools.includes(name)).map(
-                (name) => (
-                  <NativeSelectOption key={name} value={name}>
-                    {humanizeTool(name)}
-                  </NativeSelectOption>
+              onValueChange={(name) => {
+                if (name) onDisable(name);
+              }}
+              options={[
+                { value: "", label: t`Disable a tool` },
+                ...BUILTIN_TOOL_NAMES.filter((name) => !disabledBuiltinTools.includes(name)).map(
+                  (name) => ({ value: name, label: humanizeTool(name) }),
                 ),
-              )}
-            </NativeSelect>
+              ]}
+            />
           </div>
           {disabledBuiltinTools.map((toolName) => (
             <div

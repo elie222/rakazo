@@ -9,8 +9,9 @@ import {
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
   hasActiveComputerControl,
+  importedLoginValue,
   isSecretAlreadySaved,
-  LOGIN_ALREADY_SAVED,
+  LoginAlreadySavedError,
   listVaultItems,
   listVaultItemUses,
   newVaultItemName,
@@ -18,14 +19,13 @@ import {
   pageUrlOrigin,
   relabelVaultItem,
   revealBotSecret,
-  SAVED_LOGIN_UNREADABLE,
-  SPACE_VAULT_NOT_IN_USE,
+  SpaceVaultNotInUseError,
   stopCancelledGroupRuns,
   storeBotSecret,
   toComputerRef,
-  UNKNOWN_BOTS,
-  UNSUPPORTED_ACCESS,
-  VAULT_CHANGED,
+  VaultFullError,
+  VaultItemRefusedError,
+  VaultRetryError,
   validateBotModelChange,
   wakeRun,
 } from "@rakazo/adapters";
@@ -40,13 +40,9 @@ import type {
   VaultPutInput,
 } from "@rakazo/contracts";
 import {
-  AUTHENTICATOR_KEY_UNREADABLE,
-  BLOCKED_ITEM_ANSWER,
   BotSecretAuth,
-  encodeLoginSecret,
   noneSkipped,
   resolveBotAvatarSet,
-  UNCHOSEN_ITEM_ANSWER,
   VaultPolicy,
   vaultImportLogin,
   vaultImportOrigin,
@@ -82,58 +78,6 @@ import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
-const BOT_SECRET_INPUT_ERRORS = [
-  "Invalid credential destination",
-  "Invalid credential length",
-  "Credential cannot be used with this authentication method",
-  "Remove the existing credential before changing its destination",
-  "Credential limit reached",
-  "Invalid card",
-  "Invalid contact",
-  SPACE_VAULT_NOT_IN_USE,
-  BLOCKED_ITEM_ANSWER,
-  UNCHOSEN_ITEM_ANSWER,
-];
-
-/** A credential the user typed that cannot be stored, as a bad request, or a retry. Never echoes it. */
-export function mapBotSecretInputError(error: unknown): unknown {
-  // Read again on a retry, so it is a conflict to retry, not a mistake in the request.
-  if (
-    error instanceof Error &&
-    (error.message === SAVED_LOGIN_UNREADABLE || error.message === VAULT_CHANGED)
-  )
-    return new ORPCError("CONFLICT", { message: error.message });
-  if (
-    error instanceof Error &&
-    BOT_SECRET_INPUT_ERRORS.some((prefix) => error.message.startsWith(prefix))
-  ) {
-    return new ORPCError("BAD_REQUEST", { message: error.message });
-  }
-  return error;
-}
-
-/** Map credential validation failures to a bad request without echoing the submitted value. */
-function mapBotSecretStoreError(error: unknown): unknown {
-  if (error instanceof ORPCError) return error;
-  if (
-    error instanceof Error &&
-    (error.message === UNSUPPORTED_ACCESS || error.message === UNKNOWN_BOTS)
-  )
-    return new ORPCError("BAD_REQUEST", { message: error.message });
-  const mapped = mapBotSecretInputError(error);
-  if (mapped !== error) return mapped;
-  // Login decoding failures: a JSON parse message can quote the submitted value, so never forward it.
-  if (error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
-    const issues = (error as { issues?: { path?: unknown[] }[] }).issues ?? [];
-    if (issues.some((issue) => issue.path?.[0] === "otp"))
-      return new ORPCError("BAD_REQUEST", { message: AUTHENTICATOR_KEY_UNREADABLE });
-    return new ORPCError("BAD_REQUEST", {
-      message: "A website login needs a label and a value for every field",
-    });
-  }
-  return error;
-}
-
 function vaultScope(actor: Actor, vault?: SettingsScope) {
   return { userId: actor.userId, spaceId: actor.spaceId, vault };
 }
@@ -154,19 +98,15 @@ async function saveVaultCredential(
   const bots = { allBots: input.allBots, botIds: input.botIds };
   if (input.value === undefined) {
     if (!name) throw new ORPCError("BAD_REQUEST", { message: "A new item needs its value" });
-    try {
-      const labels = {
-        title: input.title,
-        note: input.note,
-        policy: input.policy,
-        bots,
-        alsoOn: input.alsoOn,
-      };
-      if (!(await relabelVaultItem(deps.prisma, scope, name, labels))) {
-        throw new ORPCError("NOT_FOUND", { message: "Credential not found" });
-      }
-    } catch (error) {
-      throw mapBotSecretStoreError(error);
+    const labels = {
+      title: input.title,
+      note: input.note,
+      policy: input.policy,
+      bots,
+      alsoOn: input.alsoOn,
+    };
+    if (!(await relabelVaultItem(deps.prisma, scope, name, labels))) {
+      throw new ORPCError("NOT_FOUND", { message: "Credential not found" });
     }
     return vaultItemDto(deps, scope, name);
   }
@@ -188,19 +128,15 @@ async function saveVaultCredential(
       alsoOn: input.alsoOn,
       createOnly,
     });
-  try {
-    if (name) {
-      await store(name, false);
-      return vaultItemDto(deps, scope, name);
-    }
-    const base = input.title || defaultVaultItemTitle(input.destination, value);
-    const fresh = await createVaultItem(deps, scope, base, input.destination.auth.type, (item) =>
-      store(item, true),
-    );
-    return vaultItemDto(deps, scope, fresh);
-  } catch (error) {
-    throw mapBotSecretStoreError(error);
+  if (name) {
+    await store(name, false);
+    return vaultItemDto(deps, scope, name);
   }
+  const base = input.title || defaultVaultItemTitle(input.destination, value);
+  const fresh = await createVaultItem(deps, scope, base, input.destination.auth.type, (item) =>
+    store(item, true),
+  );
+  return vaultItemDto(deps, scope, fresh);
 }
 
 /**
@@ -253,7 +189,7 @@ async function importVaultLogins(
     else {
       const destination = { origin, auth: { type: "login" as const } };
       try {
-        const plaintext = encodeLoginSecret(vaultImportLogin(row));
+        const plaintext = importedLoginValue(vaultImportLogin(row));
         const base = row.title || defaultVaultItemTitle(destination, plaintext);
         await createVaultItem(deps, scope, base, "login", (item) =>
           storeBotSecret({
@@ -276,20 +212,16 @@ async function importVaultLogins(
           metadata: { procedure: "vault.import", kind: "vault_credential", scope: vault },
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message === LOGIN_ALREADY_SAVED) skip(index, "duplicate");
-        else if (message === "Credential limit reached") {
+        if (error instanceof LoginAlreadySavedError) skip(index, "duplicate");
+        else if (error instanceof VaultFullError) {
           full = true;
           skip(index, "limit");
         }
-        // A saved login that can't be read for now may be this one: stop, as a retry is safe.
-        else if (
-          message === SPACE_VAULT_NOT_IN_USE ||
-          message === SAVED_LOGIN_UNREADABLE ||
-          message === VAULT_CHANGED
-        )
-          throw mapBotSecretStoreError(error);
-        else if (mapBotSecretStoreError(error) instanceof ORPCError) skip(index, "invalid");
+        // No login can be saved here, or a saved one may be this one and can't be read for now:
+        // stop, as a retry is safe.
+        else if (error instanceof SpaceVaultNotInUseError || error instanceof VaultRetryError)
+          throw error;
+        else if (error instanceof VaultItemRefusedError) skip(index, "invalid");
         else throw error;
       }
     }
@@ -642,9 +574,6 @@ export function botsRoutes(ctx: RouterContext) {
                 controlUserId: null,
                 controlLeaseExpiresAt: null,
                 controlBotId: null,
-                executionRunId: null,
-                executionBotId: null,
-                executionLeaseExpiresAt: null,
               },
             });
             await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");

@@ -3,8 +3,7 @@ import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "./subscription-faq";
 
 export const GROK_ALTERNATIVE_PATH = "/grok-bot-alternative/";
 
-export const GROK_ALTERNATIVE_TITLE =
-  "Grok Bot alternatives (open source and hosted) – Rakazo";
+export const GROK_ALTERNATIVE_TITLE = "Grok Bot alternatives (open source and hosted) – Rakazo";
 
 export const GROK_ALTERNATIVE_DESCRIPTION =
   "Open source and hosted Grok Bot alternatives: Rakazo, OpenClaw, Hermes Agent, Meta Muse, OpenAI Dots, Instinct, Hark Pro, and Claude Duet.";
@@ -264,9 +263,7 @@ export function grokAlternativeMarkdown(): string {
     const caption = item.caption ? `\n\n${item.caption}` : "";
     return `### ${item.label}\n\n${image}${caption}\n\n${absoluteMarkdown(item.note)}`;
   }).join("\n\n");
-  const sources = GROK_SOURCES.map((source) => `- [${source.label}](${source.href})`).join(
-    "\n",
-  );
+  const sources = GROK_SOURCES.map((source) => `- [${source.label}](${source.href})`).join("\n");
   const faq = GROK_ALTERNATIVE_FAQ.map(
     (item) => `### ${item.question}\n\n${absoluteMarkdown(item.answer)}`,
   ).join("\n\n");

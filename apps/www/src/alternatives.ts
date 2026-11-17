@@ -1,5 +1,5 @@
-import { OPENCLAW_H1 } from "./guide";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
+import { OPENCLAW_H1 } from "./guide";
 import { GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
 
 export const ROUNDUP_UPDATED = "October 24, 2026";
@@ -353,7 +353,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
   {
     slug: "instinct-alternative",
     name: "Instinct",
-    summary: "A hosted personal assistant you text or call, and what is different when you host Rakazo yourself.",
+    summary:
+      "A hosted personal assistant you text or call, and what is different when you host Rakazo yourself.",
     title: "Open Source Instinct AI Alternative – Rakazo",
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Instinct, the personal assistant you text or call.",
@@ -381,7 +382,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Source",
         rakazo: "Apache-2.0 source on GitHub.",
-        other: "Hosted service. The terms say the company owns the service and the technology that produces its actions.",
+        other:
+          "Hosted service. The terms say the company owns the service and the technology that produces its actions.",
       },
       {
         topic: "Model",
@@ -578,7 +580,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
   {
     slug: "claude-duet-alternative",
     name: "Claude Duet",
-    summary: "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
+    summary:
+      "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
     title: "Open Source Claude Duet Alternative – Rakazo",
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Claude Duet, Anthropic's personal agent.",
@@ -795,7 +798,8 @@ const OPENCLAW_HUB_CARD: HubCard = {
   href: OPENCLAW_ALTERNATIVE_PATH,
   name: "OpenClaw",
   h1: OPENCLAW_H1,
-  summary: "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
+  summary:
+    "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
 };
 
 export const HUB_CARDS: readonly HubCard[] = [
@@ -854,4 +858,3 @@ export function alternativeMarkdown(alternative: Alternative): string {
   ];
   return lines.join("\n");
 }
-

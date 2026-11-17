@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration } from "./session";
@@ -114,6 +114,12 @@ export function formRead<T>(read: {
 /** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
 export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
 
+/** Writes with this request context, or with the current one when there is none. */
+export function sendWith(requestContext: ApiRequestContext | undefined): SaveSend {
+  return (proc, body) =>
+    rpc(proc, ...([body, requestContext && { requestContext }] as RpcArgs<typeof proc>));
+}
+
 /**
  * One save and the reads it makes out of date. Only the save can fail it: once it succeeds those
  * reads are marked stale and read again, and a read that fails reports itself, never the save.
@@ -162,6 +168,14 @@ export function useSave<Input = void, Saved = unknown>(options: {
     };
   }, []);
   const current = saves[scopeKey()];
+  /** Forgets a finished save's error for the scope shown; the same function on every render. */
+  const reset = useCallback(() => {
+    const scope = shownScope.current();
+    setSaves((now) => {
+      const { [scope]: shown, ...rest } = now;
+      return shown && !shown.pending ? rest : now;
+    });
+  }, []);
   return {
     run(input: Input) {
       const scope = scopeKey();
@@ -186,7 +200,7 @@ export function useSave<Input = void, Saved = unknown>(options: {
         const sent = requestScope(requestContext, account);
         if (sent !== scope || sent !== scopeKey())
           throw new Error(t`Something went wrong. Try again.`);
-        return rpc(proc, ...([body, { requestContext }] as RpcArgs<typeof proc>));
+        return sendWith(requestContext)(proc, body);
       };
       void (async () => {
         const saved = await save(input, send);
@@ -207,13 +221,7 @@ export function useSave<Input = void, Saved = unknown>(options: {
     /** What the pending or failed save was sent with. */
     input: current?.input,
     error: current?.error ?? null,
-    reset: () => {
-      const scope = scopeKey();
-      setSaves((now) => {
-        const { [scope]: shown, ...rest } = now;
-        return shown && !shown.pending ? rest : now;
-      });
-    },
+    reset,
   };
 }
 

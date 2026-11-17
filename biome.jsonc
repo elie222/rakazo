@@ -21,7 +21,9 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/apps/www/.astro",
+      "!**/apps/www/.vercel",
+      "!**/apps/www/**/*.{css,json,mjs}"
     ]
   },
   "plugins": [
@@ -179,7 +181,7 @@
     {
       "includes": [
         "packages/adapters/**",
-        "apps/desktop/src/monitoring.ts",
+        "apps/desktop/src/main/monitoring.ts",
         "apps/web/src/lib/monitoring.ts",
         "apps/mobile/lib/monitoring.ts",
         "packages/logging/src/sentry.ts",

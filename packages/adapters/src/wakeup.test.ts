@@ -23,6 +23,7 @@ function handlers(): BackgroundJobHandlers {
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "run.forget-secrets": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
@@ -504,6 +505,8 @@ describe("createDeadJobPruner", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const query = vi
       .fn()
+      // Each pass first looks for abandoned last attempts; none here.
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [
           { identifier: "computer.sleep", removed: 600 },
@@ -522,8 +525,9 @@ describe("createDeadJobPruner", () => {
     await prune();
     await prune();
 
-    expect(query).toHaveBeenCalledTimes(2);
-    const [sql, params] = query.mock.calls[0]!;
+    // The second pass, within the hour, only looks for abandoned last attempts.
+    expect(query).toHaveBeenCalledTimes(4);
+    const [sql, params] = query.mock.calls[1]!;
     expect(params).toEqual([DEAD_JOB_RETENTION_DAYS, 1_000]);
     // Only exhausted, unlocked rows, rechecked by the delete itself, and never retry notices.
     expect(sql).toContain("dead.attempts >= dead.max_attempts and dead.locked_at is null");
@@ -539,8 +543,21 @@ describe("createDeadJobPruner", () => {
 
     now += 60 * 60 * 1000;
     await prune();
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(6);
     expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
+  });
+});
+
+describe("createDeadJobPruner when the abandoned-attempt scan fails", () => {
+  it("still prunes old exhausted jobs", async () => {
+    installLogger(createLogger({ service: "test", sinks: [createTestSink()] }));
+    const query = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockResolvedValue({ rows: [] });
+    await createDeadJobPruner({ query } as never)();
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(String(query.mock.calls[1]![0])).toContain("delete from graphile_worker._private_jobs");
   });
 });
 

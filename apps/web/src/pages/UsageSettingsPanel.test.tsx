@@ -21,8 +21,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FieldLabel: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   Tooltip: (await importOriginal<typeof UiWeb>()).Tooltip,
   TooltipTrigger: (await importOriginal<typeof UiWeb>()).TooltipTrigger,
   TooltipContent: (await importOriginal<typeof UiWeb>()).TooltipContent,
@@ -98,20 +97,32 @@ async function renderPanel() {
     ),
   );
   await settle();
-  const select = (label: string) =>
-    container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+  const trigger = (label: string) =>
+    container.querySelector<HTMLElement>(`[role="combobox"][aria-label="${label}"]`)!;
+  const open = async (label: string) => {
+    await act(async () => trigger(label).click());
+    const list = document.getElementById(trigger(label).getAttribute("aria-controls") ?? "");
+    return [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
+  };
   const button = (text: string) =>
     [...container.querySelectorAll("button")].find((node) => node.textContent === text)!;
   return {
     container,
-    select,
+    chosen: (label: string) => trigger(label).textContent,
     totals: () => [...container.querySelectorAll("dd")].map((node) => node.textContent),
-    options: (label: string) => [...select(label).options].map((option) => option.textContent),
-    choose: async (label: string, value: string) => {
-      await act(async () => {
-        select(label).value = value;
-        select(label).dispatchEvent(new Event("change", { bubbles: true }));
-      });
+    options: async (label: string) => {
+      const texts = (await open(label)).map((option) => option.textContent);
+      await act(async () =>
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        ),
+      );
+      return texts;
+    },
+    choose: async (label: string, text: string) => {
+      const option = (await open(label)).find((entry) => entry.textContent === text);
+      if (!option) throw new Error(`no ${text} option`);
+      await act(async () => option.click());
       await settle();
     },
     pick: async (text: string) => {
@@ -135,26 +146,26 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
   try {
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d" });
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
-    expect(panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
+    expect(await panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
     expect(
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
     ).toEqual([["m1p:1", "3", "399", "1", "$0.04"]]);
 
-    await panel.choose("Bot", "bot-a");
+    await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
     expect(panel.totals()).toEqual(["2", "400", "$0.04"]);
 
     // The model list keeps every model, and a provider id with a colon survives the round trip.
-    await panel.choose("Model", panel.select("Model").options[1]!.value);
+    await panel.choose("Model", "m1");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
       range: "30d",
       botId: "bot-a",
       provider: "p:1",
       model: "m1",
     });
-    expect(panel.options("Model")).toEqual(["All models", "m1", "m2"]);
+    expect(await panel.options("Model")).toEqual(["All models", "m1", "m2"]);
 
     await panel.pick("7 days");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
@@ -171,14 +182,14 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
 it("goes back to all bots when the chosen bot has no usage in the new range", async () => {
   const panel = await renderPanel();
   try {
-    await panel.choose("Bot", "bot-b");
-    expect(panel.select("Bot").value).toBe("bot-b");
+    await panel.choose("Bot", "Old bot (deleted)");
+    expect(panel.chosen("Bot")).toBe("Old bot (deleted)");
     breakdown.fetch.mockImplementation(async (input: Input) => ({
       ...usageFor(input),
       bots: [{ id: "bot-a", name: "Alpha", deleted: false, runs: 2, ...point(3, 400, 0.04) }],
     }));
     await panel.pick("Today");
-    expect(panel.select("Bot").value).toBe("all");
+    expect(panel.chosen("Bot")).toBe("All bots");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "today" });
   } finally {
     await panel.unmount();
@@ -195,7 +206,7 @@ it("does not show the previous selection's numbers while the next one loads", as
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Loading usage…");
     // The filters stay usable from the last result.
-    expect(panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
+    expect(await panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
     await act(async () => pending.resolve(usageFor({ range: "today" })));
     await settle();
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
@@ -207,14 +218,12 @@ it("does not show the previous selection's numbers while the next one loads", as
 it("says the request failed instead of showing zero spend", async () => {
   const panel = await renderPanel();
   try {
-    await panel.choose("Bot", "bot-a");
-    await panel.choose("Model", JSON.stringify(["p:1", "m1"]));
+    await panel.choose("Bot", "Alpha");
+    await panel.choose("Model", "m1");
     breakdown.fetch.mockRejectedValue(new Error("offline"));
     await panel.pick("Today");
-    expect(panel.select("Bot").value).toBe("bot-a");
-    expect(panel.select("Bot").selectedOptions[0]?.textContent).toBe("Alpha");
-    expect(panel.select("Model").value).toBe(JSON.stringify(["p:1", "m1"]));
-    expect(panel.select("Model").selectedOptions[0]?.textContent).toBe("m1");
+    expect(panel.chosen("Bot")).toBe("Alpha");
+    expect(panel.chosen("Model")).toBe("m1");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Could not load usage.");
     expect(panel.container.textContent).not.toContain("No usage for this selection.");
@@ -235,7 +244,7 @@ it("tells apart a model name that two providers share", async () => {
       ],
     }));
     await panel.pick("7 days");
-    expect(panel.options("Model")).toEqual([
+    expect(await panel.options("Model")).toEqual([
       "All models",
       "shared (alpha)",
       "shared (beta)",

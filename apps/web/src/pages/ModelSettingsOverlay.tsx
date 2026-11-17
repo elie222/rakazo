@@ -6,7 +6,12 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { catalogEntryFor, connectionModels, popularModelProvidersFirst } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  connectionModels,
+  connectionServesModel,
+  popularModelProvidersFirst,
+} from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -30,7 +35,7 @@ import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
 import { ModelSettingsPanel } from "./model-settings/model-settings-panel";
-import { ProviderModelCount, ProviderPage } from "./model-settings/provider-page";
+import { ProviderPage } from "./model-settings/provider-page";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
 import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
@@ -206,25 +211,29 @@ export function ModelSettingsOverlay({
   const catalogEntry = (provider: string, modelId: string) =>
     catalogEntryFor(catalog, provider, modelId);
 
-  const disconnectButton = connected ? (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="mt-6 -ml-2.5 text-muted-foreground"
-      disabled={busy}
-      onClick={() => setConfirmDisconnect(true)}
-    >
-      {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
-    </Button>
-  ) : null;
+  // Always the last thing on a connection's page.
+  const connectionFooter =
+    connected && credential ? (
+      <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        <ConnectionNameField key={credential.id} credential={credential} disabled={busy} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          disabled={busy}
+          onClick={() => setConfirmDisconnect(true)}
+        >
+          {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
+        </Button>
+      </div>
+    ) : null;
 
   const connection = selected ? (
     isOpenAiCompatible ? (
       <>
         <CompatibleModelFields {...model} />
         <CompatibleKeyControls {...model} />
-        {disconnectButton}
       </>
     ) : credential ? (
       <>
@@ -241,7 +250,6 @@ export function ModelSettingsOverlay({
             {pending === "settings" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
         ) : null}
-        {disconnectButton}
       </>
     ) : (
       <>
@@ -310,7 +318,12 @@ export function ModelSettingsOverlay({
         </span>
       ),
       onClose: closeConnection,
-      children: connectionPanel,
+      children: (
+        <>
+          {connectionPanel}
+          {connectionFooter}
+        </>
+      ),
     });
 
   const connectionPanel = (
@@ -327,9 +340,6 @@ export function ModelSettingsOverlay({
       ) : null}
       {/* Edits made while a save is in flight would be replaced by what it saved. */}
       <fieldset className="contents" disabled={pending === "connect" || pending === "settings"}>
-        {connected && credential ? (
-          <ConnectionNameField key={credential.id} credential={credential} />
-        ) : null}
         {connection}
       </fieldset>
     </>
@@ -428,7 +438,6 @@ export function ModelSettingsOverlay({
               disabled={busy}
               onAdd={(next) => openConnection(next, null, null, "providers:add")}
               onOpen={(entry) => openProvider(entry.id)}
-              detail={(entry) => <ProviderModelCount models={providerModels(entry)} />}
               panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
@@ -473,7 +482,7 @@ export function ModelSettingsOverlay({
     page?.kind === "model" &&
     pageCredential &&
     !loading &&
-    !providerModels(pageCredential).some((entry) => entry.id === page.modelId);
+    !connectionServesModel(pageCredential, catalog, page.modelId);
   useEffect(() => {
     if (modelRemoved && page) setPage({ kind: "provider", credentialId: page.credentialId });
   }, [modelRemoved, page]);
@@ -484,6 +493,7 @@ export function ModelSettingsOverlay({
           <ProviderPage
             title={connected ? selectedConnectionName : connectionName(pageCredential)}
             connection={connectionPanel}
+            footer={connectionFooter}
             models={providerModels(pageCredential)}
             onBack={() => setPage(null)}
             onOpenModel={(modelId) => openModel(pageCredential.id, modelId, page)}
@@ -506,7 +516,6 @@ export function ModelSettingsOverlay({
               credential={pageCredential}
               modelId={page.modelId}
               entry={catalogEntry(pageCredential.provider, page.modelId)}
-              onSaved={() => refresh({ keepForm: true })}
             />
           </div>
         )}

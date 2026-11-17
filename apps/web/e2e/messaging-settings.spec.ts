@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { deferred } from "@rakazo/core/test-async";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, chooseOption, completeOnboarding, signup } from "./helpers";
 
 test.afterEach(async ({ page }) => {
   // Polling can leave a route.fetch response in use when the assertions finish.
@@ -208,7 +208,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
     await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
     await issuing;
     const botPicker = messagingSettings.getByLabel("Bot", { exact: true });
-    await botPicker.selectOption("bot-2");
+    await chooseOption(botPicker, "Lead");
   } finally {
     // Always release the route before afterEach waits for pending handlers.
     codeReady.resolve();

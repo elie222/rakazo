@@ -12,6 +12,7 @@ import type {
   VaultPreview,
 } from "@rakazo/contracts";
 import {
+  AUTHENTICATOR_KEY_UNREADABLE,
   authenticatorKey,
   BLOCKED_ITEM_ANSWER,
   BotSecretAuth,
@@ -45,7 +46,7 @@ import {
   VAULT_ITEM_LIMIT,
   vaultLoginKey,
 } from "@rakazo/contracts";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { ClientError, resolveEncryptionKey } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   ContentDecryptionError,
@@ -56,6 +57,7 @@ import {
   runCodeSpentKind,
   runLoginKind,
   settingsTarget,
+  TransactionConflictError,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -102,6 +104,54 @@ async function lockVault(tx: Pick<Prisma.TransactionClient, "$queryRaw">, scope:
 export const SPACE_VAULT_NOT_IN_USE = "This Space uses the account vault";
 export const VAULT_CHANGED = "Vault changed while saving; retry";
 
+/** A vault item refused for what was given, so the person can change it. Never quotes the value. */
+export class VaultItemRefusedError extends ClientError {
+  constructor(message: string) {
+    super("BAD_REQUEST", message);
+    this.name = "VaultItemRefusedError";
+  }
+}
+
+/** The vault already holds as many items as it may. */
+export class VaultFullError extends VaultItemRefusedError {
+  constructor() {
+    super("Credential limit reached");
+    this.name = "VaultFullError";
+  }
+}
+
+/** A login for the same site and username is already saved. */
+export class LoginAlreadySavedError extends VaultItemRefusedError {
+  constructor() {
+    super(LOGIN_ALREADY_SAVED);
+    this.name = "LoginAlreadySavedError";
+  }
+}
+
+/** The Space no longer keeps its own vault, so a write aimed at it is refused. */
+export class SpaceVaultNotInUseError extends VaultItemRefusedError {
+  constructor() {
+    super(SPACE_VAULT_NOT_IN_USE);
+    this.name = "SpaceVaultNotInUseError";
+  }
+}
+
+/** The vault changed under a save, or what the save depends on can't be read for now: retry. */
+export class VaultRetryError extends ClientError {
+  constructor(message: string) {
+    super("CONFLICT", message);
+    this.name = "VaultRetryError";
+  }
+}
+
+/** A create-only save found the name taken, by an earlier save or a concurrent one. */
+class SecretAlreadySavedError extends Error {
+  constructor() {
+    super("A credential with this name is already saved");
+    this.name = "SecretAlreadySavedError";
+  }
+}
+
 /**
  * A write aimed at a Space's own vault is refused once the Space stops customizing credentials,
  * since nothing would read it and it would only wait to be deleted.
@@ -109,7 +159,7 @@ export const VAULT_CHANGED = "Vault changed while saving; retry";
 async function assertVaultInUse(client: VaultClient, scope: BotSecretScope) {
   if (scope.vault !== "space") return;
   if ((await settingsTarget(client, scope, "credentials")) !== "space") {
-    throw new Error(SPACE_VAULT_NOT_IN_USE);
+    throw new SpaceVaultNotInUseError();
   }
 }
 
@@ -189,7 +239,8 @@ async function saveItemBots(
   if (botIds.length) {
     const [here, item] = await Promise.all([vaultFields(tx, owner), vaultFields(tx, scope)]);
     const found = await tx.bot.count({ where: { spaceId: scope.spaceId, id: { in: botIds } } });
-    if (here.spaceId !== item.spaceId || found !== botIds.length) throw new Error(UNKNOWN_BOTS);
+    if (here.spaceId !== item.spaceId || found !== botIds.length)
+      throw new VaultItemRefusedError(UNKNOWN_BOTS);
   }
   await tx.vaultCredentialBot.deleteMany({
     where: { ...owner, credentialId, botId: { notIn: botIds } },
@@ -224,11 +275,8 @@ const labels = { title: true, note: true } as const;
 // What reading an item's value needs: the vault it is in is part of its encryption.
 const vaultRow = { id: true, userId: true, spaceId: true, ciphertext: true } as const;
 
-const SECRET_ALREADY_SAVED = "A credential with this name is already saved";
-
-/** A create-only save found the name taken, by an earlier save or a concurrent one. */
 export function isSecretAlreadySaved(error: unknown): boolean {
-  return error instanceof Error && error.message === SECRET_ALREADY_SAVED;
+  return error instanceof SecretAlreadySavedError;
 }
 const UNUSABLE_CREDENTIAL = "Credential cannot be used with this authentication method";
 
@@ -256,7 +304,7 @@ function credentialHeader(destination: BotSecretDestination, plaintext: string) 
     destination.auth.type !== "header" &&
     destination.auth.type !== "basic"
   ) {
-    throw new Error("Credential cannot be used with this authentication method");
+    throw new VaultItemRefusedError(UNUSABLE_CREDENTIAL);
   }
   const name = destination.auth.type === "header" ? destination.auth.name : "Authorization";
   const value =
@@ -269,7 +317,7 @@ function credentialHeader(destination: BotSecretDestination, plaintext: string) 
     const headers = new Headers({ [name]: value });
     if (headers.get(name) !== value) throw new Error("Header value was normalized");
   } catch {
-    throw new Error("Credential cannot be used with this authentication method");
+    throw new VaultItemRefusedError(UNUSABLE_CREDENTIAL);
   }
   return { name, value };
 }
@@ -290,7 +338,7 @@ export function normalizeSecretDestination(value: unknown): BotSecretDestination
     const detail = parsed.error.issues
       .map((issue) => `${issue.path.join(".") || "credential"}: ${issue.message}`)
       .join("; ");
-    throw new Error(`Invalid credential destination — ${detail}`);
+    throw new VaultItemRefusedError(`Invalid credential destination — ${detail}`);
   }
   if (isSitelessAuth(parsed.data.auth.type)) return parsed.data;
   return { ...parsed.data, origin: new URL(parsed.data.origin).origin };
@@ -495,7 +543,7 @@ export function resolveRequestSecretDestination(
     } catch (error) {
       return {
         error:
-          error instanceof Error && error.message.startsWith("Invalid credential destination")
+          error instanceof VaultItemRefusedError
             ? error.message
             : "Specify a credential name, HTTPS origin, and auth method.",
       };
@@ -742,22 +790,54 @@ export async function findSiteLogin(prisma: PrismaClient, scope: BotSecretScope,
 }
 
 /**
+ * Reads a value the person gave. One that isn't of its kind is theirs to fix, named without
+ * quoting it: a parse error can repeat the value.
+ */
+function readGivenValue<T>(read: () => T, refusal: (issues: z.ZodError["issues"]) => string): T {
+  try {
+    return read();
+  } catch (error) {
+    if (!(error instanceof SyntaxError || error instanceof z.ZodError)) throw error;
+    throw new VaultItemRefusedError(refusal(error instanceof z.ZodError ? error.issues : []));
+  }
+}
+
+/** Reads a login the person gave, refusing one without a label and value for every field. */
+function readLoginValue<T>(read: () => T): T {
+  return readGivenValue(read, (issues) =>
+    issues.some((issue) => issue.path[0] === "otp")
+      ? AUTHENTICATOR_KEY_UNREADABLE
+      : "A website login needs a label and a value for every field",
+  );
+}
+
+/** A login read from an export, as it is saved. */
+export function importedLoginValue(login: Parameters<typeof encodeLoginSecret>[0]): string {
+  return readLoginValue(() => encodeLoginSecret(login));
+}
+
+/**
  * The value as it is saved: a login, card or contact in its current shape, so every reader gets
  * one form. Throws when the value is not one of its kind.
  */
 export function canonicalSecretValue(destination: BotSecretDestination, plaintext: string): string {
+  const { type } = destination.auth;
   // Saved in its current shape, also when an older app sends a username and password.
-  if (destination.auth.type === "login") {
-    const { fields, otp } = decodeLoginSecret(plaintext);
-    return encodeLoginSecret(otp ? { fields, otp } : { fields });
-  }
-  try {
-    if (destination.auth.type === "card") return encodeCardSecret(JSON.parse(plaintext));
-    if (destination.auth.type === "contact") return encodeContactSecret(JSON.parse(plaintext));
-  } catch {
-    // The parse error may quote the value, so only the kind is named.
-    throw new Error(`Invalid ${destination.auth.type}`);
-  }
+  if (type === "login")
+    return readLoginValue(() => {
+      const { fields, otp } = decodeLoginSecret(plaintext);
+      return encodeLoginSecret(otp ? { fields, otp } : { fields });
+    });
+  if (type === "card")
+    return readGivenValue(
+      () => encodeCardSecret(JSON.parse(plaintext)),
+      () => "Invalid card",
+    );
+  if (type === "contact")
+    return readGivenValue(
+      () => encodeContactSecret(JSON.parse(plaintext)),
+      () => "Invalid contact",
+    );
   return plaintext;
 }
 
@@ -790,11 +870,12 @@ export async function prepareBotSecret(input: {
 }) {
   const { prisma, secretStore, scope } = input;
   let { plaintext } = input;
-  if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
+  if (!plaintext || plaintext.length > 16_384)
+    throw new VaultItemRefusedError("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
   const policy = policyField(destination.auth, input.policy);
   // A bot never widens where a login goes.
-  if (scope.botId && input.alsoOn) throw new Error(UNSUPPORTED_ACCESS);
+  if (scope.botId && input.alsoOn) throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
   const sites = alsoOnField(destination.auth, destination.origin, input.alsoOn);
   if (
     destination.auth.type === "login" ||
@@ -806,7 +887,7 @@ export async function prepareBotSecret(input: {
     // NUL cannot be an environment value. An unpaired surrogate cannot be percent-encoded
     // later, and that throw would abort every subsequent shell command for this bot.
     if (plaintext.includes("\0") || percentEncoded(plaintext) === undefined) {
-      throw new Error(UNUSABLE_CREDENTIAL);
+      throw new VaultItemRefusedError(UNUSABLE_CREDENTIAL);
     }
   } else credentialHeader(destination, plaintext);
   await assertVaultInUse(prisma, scope);
@@ -829,24 +910,26 @@ export async function prepareBotSecret(input: {
   if (destination.auth.type === "login" && botMoves(existing))
     plaintext = encodeLoginSecret({ fields: decodeLoginSecret(plaintext).fields });
   function validate(row: typeof existing, count: number) {
-    if (row && input.createOnly) throw new Error(SECRET_ALREADY_SAVED);
+    if (row && input.createOnly) throw new SecretAlreadySavedError();
     const saved = row && normalizeSecretDestination(row);
     if (
       saved &&
       !sameSecretDestination(saved, destination) &&
       !(row?.id === input.replaces && canReplaceLoginSite(saved, destination))
     )
-      throw new Error("Remove the existing credential before changing its destination");
-    if (!row && count >= VAULT_ITEM_LIMIT) throw new Error("Credential limit reached");
+      throw new VaultItemRefusedError(
+        "Remove the existing credential before changing its destination",
+      );
+    if (!row && count >= VAULT_ITEM_LIMIT) throw new VaultFullError();
   }
   // Before the destination checks, so the person answering is told the item is blocked.
   if (existing && (await hiddenFromBot(prisma, scope, destination.name)))
-    throw new Error(hiddenAnswer(existing.policy));
+    throw new VaultItemRefusedError(hiddenAnswer(existing.policy));
   // An import's login already saved is that, also in a full vault.
   const usernames = input.newLoginOnly;
   const repeats = (tx: Pick<Prisma.TransactionClient, "vaultCredential">) =>
     usernames && loginSaved(prisma, tx, secretStore, vault, destination, plaintext, usernames);
-  if (await repeats(prisma)) throw new Error(LOGIN_ALREADY_SAVED);
+  if (await repeats(prisma)) throw new LoginAlreadySavedError();
   validate(existing, await prisma.vaultCredential.count({ where: vault }));
   if (keepsKey) {
     const otp = await savedLoginKey(prisma, secretStore, existing);
@@ -869,7 +952,7 @@ export async function prepareBotSecret(input: {
         input.expectedDefaultVault !== undefined &&
         (await settingsTarget(tx, scope, "credentials")) !== input.expectedDefaultVault
       )
-        throw new Error(VAULT_CHANGED);
+        throw new VaultRetryError(VAULT_CHANGED);
       if (existing)
         await tx.$queryRaw`SELECT id FROM vault_credentials WHERE id = ${existing.id} FOR UPDATE`;
       await assertVaultInUse(tx, scope);
@@ -878,15 +961,15 @@ export async function prepareBotSecret(input: {
         where: { ...vault, name: destination.name },
       });
       if (await hiddenFromBot(tx, scope, destination.name))
-        throw new Error(hiddenAnswer(current?.policy));
+        throw new VaultItemRefusedError(hiddenAnswer(current?.policy));
       if (JSON.stringify(await vaultFields(tx, scope)) !== JSON.stringify(vault)) {
-        throw Object.assign(new Error("Vault changed while saving; retry"), { code: "P2034" });
+        throw new TransactionConflictError(VAULT_CHANGED);
       }
-      if (await repeats(tx)) throw new Error(LOGIN_ALREADY_SAVED);
+      if (await repeats(tx)) throw new LoginAlreadySavedError();
       validate(current, await tx.vaultCredential.count({ where: vault }));
       const conflict = await findCommandVariableConflict(tx, scope, destination);
       if (conflict) {
-        throw new Error(
+        throw new VaultItemRefusedError(
           `Invalid credential destination — name: ${conflict} is already exported as $${commandVariableName(destination.name)}`,
         );
       }
@@ -896,7 +979,7 @@ export async function prepareBotSecret(input: {
         (keepsKey && current?.ciphertext !== existing?.ciphertext) ||
         (current && ciphertextKeyId(current.ciphertext) !== ciphertextKeyId(existing!.ciphertext))
       )
-        throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
+        throw new TransactionConflictError("Credential changed while saving; retry");
       const labelled = {
         // Its owner's own save may carry a fixed key, so its codes are typed again. A save a bot
         // started, such as a login card answered in chat, shows no key and keeps the saved one:
@@ -949,7 +1032,7 @@ async function loadSavedValue(
       error instanceof ContentDecryptionError ||
       error instanceof SecretNotFoundError ||
       (!(error instanceof SecretStoreUnavailableError) && isPermanentDecryptFailure(error));
-    if (!unreadable) throw new Error(SAVED_LOGIN_UNREADABLE);
+    if (!unreadable) throw new VaultRetryError(SAVED_LOGIN_UNREADABLE);
     return undefined;
   }
 }
@@ -1353,7 +1436,7 @@ function policyField(auth: unknown, policy: VaultPolicy | undefined) {
   if (!policy) return {};
   const type = BotSecretAuth.safeParse(auth).data?.type;
   if (type === "contact" || (policy === "ask" && type !== "login"))
-    throw new Error(UNSUPPORTED_ACCESS);
+    throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
   return { policy };
 }
 
@@ -1363,11 +1446,11 @@ export const UNSUPPORTED_ACCESS = "This item can't be used that way";
 function alsoOnField(auth: unknown, origin: string, alsoOn: readonly string[] | undefined) {
   if (alsoOn === undefined) return {};
   if (alsoOn.length && BotSecretAuth.safeParse(auth).data?.type !== "login")
-    throw new Error(UNSUPPORTED_ACCESS);
+    throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
   // The editors' own check, so a site they let through is never refused here.
   const sites = alsoOn.map((site) => otherSiteOrigin(site.trim()));
   if (sites.some((site) => !site))
-    throw new Error(
+    throw new VaultItemRefusedError(
       "Invalid credential destination — every other site must be an HTTPS address a login " +
         "can be saved for",
     );
@@ -2426,7 +2509,8 @@ export function loginCodeClaim(input: {
       try {
         return await take();
       } catch (error) {
-        // The same code's row, written by a previous release's claim that takes no lock.
+        // The same code's row, written by a previous release's claim that takes no lock. Rows it
+        // left stay in the database, so this goes only with a migration that settles them.
         if ((error as { code?: unknown } | null)?.code === "P2002") return CODE_ALREADY_TYPED;
         throw error;
       }

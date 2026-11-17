@@ -1,5 +1,5 @@
-import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
+import type { APIRoute } from "astro";
 import { markdownResponse } from "../agent-content";
 import { blogIndexMarkdown } from "../blog/markdown";
 

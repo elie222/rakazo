@@ -170,18 +170,23 @@ function field(label: string, within: HTMLElement | null = editor()) {
     (item) => item.textContent === label,
   );
   if (!labelled) throw new Error(`Missing field: ${label}`);
-  return document.getElementById(labelled.htmlFor) as HTMLInputElement | HTMLSelectElement;
+  return document.getElementById(labelled.htmlFor) as HTMLInputElement;
 }
 
-async function type(target: HTMLInputElement | HTMLSelectElement, value: string) {
-  const prototype =
-    target instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+async function type(target: HTMLInputElement, value: string) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(target, value);
-    target.dispatchEvent(
-      new Event(target instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }),
-    );
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(target, value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
   });
+}
+
+async function choose(trigger: HTMLElement, label: string) {
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === label,
+  );
+  if (!option) throw new Error(`Missing option: ${label}`);
+  await act(async () => option.click());
 }
 
 function buttonIn(within: HTMLElement | null, name: string) {
@@ -1089,7 +1094,7 @@ describe("VaultSettings new items", () => {
     expect(byTestId("vault-card-brand").textContent).toBe("Visa");
     await type(field("Expiry"), "08/30");
     await type(field("Security code"), "123");
-    await type(field("Billing address"), "home");
+    await choose(field("Billing address"), "Home");
     await click(buttonIn(editor(), "Save")!);
     expect(vault.put).toHaveBeenCalledWith({
       scope: "account",
@@ -1200,7 +1205,7 @@ describe("VaultSettings new items", () => {
     await render();
     await startNew("api_key");
     await type(field("Site"), "https://api.example.com");
-    await type(field("Type"), "header");
+    await choose(field("Type"), "Custom header");
     await type(field("Header name"), "X-Api-Key");
     await type(field("Value"), FAKE_VALUE);
     await click(buttonIn(editor(), "Save")!);

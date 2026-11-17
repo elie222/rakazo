@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { asSystem } from "./row-security.js";
-import { deleteRunSecretsInTransaction, runLoginKind, runSecretKind } from "./run-secrets.js";
+import {
+  deleteRunSecretsInTransaction,
+  runCodeKind,
+  runHoldsOwnSecrets,
+  runLoginKind,
+  runSecretKind,
+} from "./run-secrets.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -76,5 +82,22 @@ describePostgres("run secret cleanup (PostgreSQL)", () => {
       { userId: otherId, kind: runSecretKind("run-1") },
       { userId: ownerId, kind: runSecretKind("run-2") },
     ]);
+  });
+
+  it("tells which runs still hold a login or code they took for themselves", async () => {
+    const owner = { userId: ownerId, spaceId };
+    await prisma.secret.createMany({
+      data: [
+        { ...owner, kind: runLoginKind("run-login-holder", "example-login") },
+        { ...owner, kind: runCodeKind("run-code-holder") },
+        { userId: otherId, spaceId, kind: runCodeKind("run-other-user") },
+      ].map((row) => ({ ...row, ciphertext: "fake-ciphertext" })),
+    });
+
+    const holds = (id: string) => runHoldsOwnSecrets(prisma, { id, ...owner });
+    await expect(holds("run-login-holder")).resolves.toBe(true);
+    await expect(holds("run-code-holder")).resolves.toBe(true);
+    await expect(holds("run-other-user")).resolves.toBe(false);
+    await expect(holds("run-login")).resolves.toBe(false);
   });
 });

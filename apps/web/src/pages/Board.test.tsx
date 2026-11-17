@@ -40,17 +40,17 @@ vi.mock("@rakazo/chat-ui/web", () => ({
   ),
 }));
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const actual = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Button: (props: ComponentProps<"button">) => <button {...props} />,
-    buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
+    buttonVariants: actual.buttonVariants,
     Dialog: Container,
     DialogContent: Container,
     DialogHeader: Container,
     DialogTitle: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect: actual.OptionSelect,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
   };
 });
@@ -174,8 +174,8 @@ it("renders status columns and opens a ticket with comments", async () => {
       "5m ago",
     ]);
     expect(
-      Array.from(page.container.querySelectorAll("select")).every(
-        (node) => node.className === "w-full",
+      Array.from(page.container.querySelectorAll('[role="combobox"]')).every((node) =>
+        node.classList.contains("w-full"),
       ),
     ).toBe(true);
     const submitButtons = page.container.querySelectorAll('button[type="submit"]');

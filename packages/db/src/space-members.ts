@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { ClientError } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole } from "./billing.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
@@ -8,11 +8,20 @@ import { computerScopeKey, userControlHeldBy } from "./computers.js";
 import { appendEventInTransaction } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
+import {
+  invitationEmailAllowance,
+  normalizeEmail,
+  OrganizationAdminRequiredError,
+  organizationRole,
+  recordInvitationEmail,
+} from "./organization-members.js";
 import { runAsSystem } from "./row-security.js";
 import {
   lockSpaceDeletion,
+  MAX_SPACES_PER_MEMBER,
   personalOrganizationIds,
   rehomeSharedItems,
+  SpaceLimitError,
   SpaceNotFoundError,
 } from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
@@ -118,17 +127,24 @@ export async function listSpaceMembers(
     email: string;
     image: string | null;
     role: "owner" | "member";
+    guest: boolean;
   }>;
   canManage: boolean;
   openInvites: number;
+  addable?: Array<{ userId: string; name: string; email: string; image: string | null }>;
+  organizationName?: string;
 }> {
   const rows = await prisma.spaceMember.findMany({
     where: { spaceId: input.spaceId },
     select: {
       userId: true,
       role: true,
-      space: { select: { name: true } },
-      member: { select: { user: { select: { name: true, email: true, image: true } } } },
+      space: {
+        select: { name: true, organizationId: true, organization: { select: { name: true } } },
+      },
+      member: {
+        select: { role: true, user: { select: { name: true, email: true, image: true } } },
+      },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -141,39 +157,146 @@ export async function listSpaceMembers(
       email: row.member.user.email,
       image: row.member.user.image,
       role: isOwnerRole(row.role) ? ("owner" as const) : ("member" as const),
+      guest: row.member.role === GUEST_ROLE,
     }))
     .sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   const canManage = isOwnerRole(self.role);
-  const openInvites = canManage
-    ? await prisma.spaceInvite.count({
-        where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
-      })
-    : 0;
-  return { spaceName: self.space.name, members, canManage, openInvites };
+  if (!canManage) return { spaceName: self.space.name, members, canManage, openInvites: 0 };
+  // Only a full member of the organization sees who else is in it: an owner whose removal is
+  // still finishing is a guest already.
+  const inOrganization = self.member.role !== GUEST_ROLE;
+  const [openInvites, others] = await Promise.all([
+    prisma.spaceInvite.count({
+      where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
+    }),
+    inOrganization
+      ? prisma.member.findMany({
+          where: {
+            organizationId: self.space.organizationId,
+            role: { not: GUEST_ROLE },
+            spaceMemberships: { none: { spaceId: input.spaceId } },
+          },
+          select: { userId: true, user: { select: { name: true, email: true, image: true } } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [],
+  ]);
+  const addable = others.map(({ userId, user }) => ({ userId, ...user }));
+  return {
+    spaceName: self.space.name,
+    members,
+    canManage,
+    openInvites,
+    addable,
+    organizationName: self.space.organization.name,
+  };
 }
 
-/** A new single-use link. Only its SHA-256 is stored; the token is returned once. */
+/**
+ * Owner only: adds someone who is already a full member of the Space's organization, so nobody
+ * outside it joins without an invite link. False when they already belonged to it.
+ */
+export async function addSpaceMember(
+  prisma: PrismaClient,
+  input: SpaceRef & { memberUserId: string },
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    // Under the lock a deletion and a handover take, so the owner and the Space are current.
+    await lockSpaceDeletion(tx, input.spaceId);
+    await requireSpaceOwner(tx, input);
+    const space = await tx.space.findUnique({
+      where: { id: input.spaceId },
+      select: { organizationId: true, deletingAt: true },
+    });
+    if (!space || space.deletingAt) throw new SpaceNotFoundError();
+    // Locked, so a removal from the organization either finishes first or waits for this. Both
+    // people must still be full members: an owner whose removal is finishing adds nobody.
+    const rows = await tx.$queryRaw<Array<{ userId: string; role: string }>>`
+      SELECT "userId", role FROM "member"
+      WHERE "organizationId" = ${space.organizationId}
+        AND "userId" IN (${input.memberUserId}, ${input.userId})
+      ORDER BY "userId"
+      FOR UPDATE
+    `;
+    const full = (userId: string) =>
+      rows.some((row) => row.userId === userId && row.role !== GUEST_ROLE);
+    if (!full(input.userId)) throw new SpaceOwnerRequiredError();
+    if (!full(input.memberUserId)) throw new SpaceMemberNotFoundError();
+    const already = await tx.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
+      select: { id: true },
+    });
+    if (already) return false;
+    const count = await tx.spaceMember.count({
+      where: { organizationId: space.organizationId, userId: input.memberUserId },
+    });
+    if (count >= MAX_SPACES_PER_MEMBER) throw new SpaceLimitError();
+    await tx.spaceMember.upsert({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.memberUserId } },
+      create: {
+        id: randomUUID(),
+        spaceId: input.spaceId,
+        organizationId: space.organizationId,
+        userId: input.memberUserId,
+        role: "member",
+        createdAt: new Date(),
+      },
+      update: {},
+    });
+    return true;
+  });
+}
+
+/**
+ * A new single-use link. Only its SHA-256 is stored; the token is returned once. With an address,
+ * the link is also for emailing there, under the daily limits organization invitations count
+ * with: `email` comes back only when it may go out now, and otherwise the owner shares the link
+ * by hand. Whoever opens it from outside the organization joins as a guest in this Space alone.
+ */
 export async function createSpaceInvite(
   prisma: PrismaClient,
-  input: SpaceRef,
-): Promise<{ token: string; expiresAt: Date }> {
+  input: SpaceRef & {
+    email?: {
+      address: string;
+      sendsEmail: boolean;
+      /** Names the address in the security log: a hash keyed with a server secret. */
+      recipientKey: (email: string) => string;
+    };
+  },
+): Promise<{
+  token: string;
+  expiresAt: Date;
+  email?: { to: string; spaceName: string; inviterName: string };
+}> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
-  await prisma.$transaction(async (tx) => {
+  const to = input.email && normalizeEmail(input.email.address);
+  const mail =
+    input.email && to ? { ...input.email, to, recipient: input.email.recipientKey(to) } : null;
+  const email = await prisma.$transaction(async (tx) => {
     // Serializes concurrent links for one Space, so the cap holds, and checks the owner under
     // the same lock a handover takes.
     await lockSpaceDeletion(tx, input.spaceId);
     await requireSpaceOwner(tx, input);
+    // An owner being removed from the organization is a guest already, and invites nobody.
+    const owner = await tx.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: input.spaceId, userId: input.userId } },
+      select: { member: { select: { role: true } } },
+    });
+    if (owner?.member.role === GUEST_ROLE) throw new SpaceOwnerRequiredError();
     // A Space being deleted would refuse the link the moment it is opened.
     const space = await tx.space.findUnique({
       where: { id: input.spaceId },
-      select: { deletingAt: true },
+      select: { deletingAt: true, name: true },
     });
     if (!space || space.deletingAt) throw new SpaceNotFoundError();
     const open = await tx.spaceInvite.count({
       where: { spaceId: input.spaceId, acceptedAt: null, expiresAt: { gt: new Date() } },
     });
     if (open >= MAX_OPEN_SPACE_INVITES) throw new SpaceInviteLimitError();
+    const { send } = mail
+      ? await invitationEmailAllowance(tx, { userId: input.userId, ...mail })
+      : { send: false };
     await tx.spaceInvite.create({
       data: {
         spaceId: input.spaceId,
@@ -182,8 +305,18 @@ export async function createSpaceInvite(
         expiresAt,
       },
     });
+    if (!mail || !send) return undefined;
+    await recordInvitationEmail(tx, {
+      userId: input.userId,
+      metadata: { spaceId: input.spaceId, recipient: mail.recipient },
+    });
+    const inviter = await tx.user.findUniqueOrThrow({
+      where: { id: input.userId },
+      select: { name: true },
+    });
+    return { to: mail.to, spaceName: space.name, inviterName: inviter.name };
   });
-  return { token, expiresAt };
+  return { token, expiresAt, ...(email ? { email } : {}) };
 }
 
 /** Every link not yet used stops working. */
@@ -410,11 +543,17 @@ export async function leaveInvitedSpaces(
  */
 async function handOwnership(
   tx: Prisma.TransactionClient,
-  input: SpaceRef,
+  input: SpaceRef & { organizationId: string; fallbackOwnerId?: string },
 ): Promise<string | null> {
-  const { spaceId, userId } = input;
+  const { spaceId, userId, fallbackOwnerId } = input;
   const coOwner = await tx.spaceMember.findFirst({
-    where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
+    where: {
+      spaceId,
+      userId: { not: userId },
+      role: { contains: "owner" },
+      // Taking over for a removal, only a co-owner who stays in the organization keeps it.
+      ...(fallbackOwnerId ? { member: { role: { not: GUEST_ROLE } } } : {}),
+    },
     select: { id: true },
   });
   if (coOwner) return null;
@@ -423,9 +562,73 @@ async function handOwnership(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, userId: true },
   });
-  if (!successor) return null;
-  await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
-  return successor.userId;
+  if (successor) {
+    await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
+    return successor.userId;
+  }
+  if (!fallbackOwnerId) return null;
+  // Only while they still manage the organization. Their row is locked, so a role change either
+  // waits for this handover or is seen by it.
+  const [remover] = await tx.$queryRaw<Array<{ role: string }>>`
+    SELECT role FROM "member"
+    WHERE "organizationId" = ${input.organizationId} AND "userId" = ${fallbackOwnerId}
+    FOR SHARE
+  `;
+  if (!remover || organizationRole(remover.role) === "member")
+    throw new OrganizationAdminRequiredError();
+  // Nobody else full belongs to it: whoever removed its owner from the organization keeps it,
+  // named after them so it stands apart from the new owner's own Spaces.
+  const departing = await tx.user.findUnique({ where: { id: userId }, select: { name: true } });
+  const name = departing ? displayName(departing.name, "").slice(0, 60).trim() : "";
+  if (name) await tx.space.update({ where: { id: spaceId }, data: { name } });
+  await tx.spaceMember.upsert({
+    where: { spaceId_userId: { spaceId, userId: fallbackOwnerId } },
+    create: {
+      id: randomUUID(),
+      spaceId,
+      organizationId: input.organizationId,
+      userId: fallbackOwnerId,
+      role: "owner",
+      createdAt: new Date(),
+    },
+    update: { role: "owner" },
+  });
+  return fallbackOwnerId;
+}
+
+/**
+ * Takes someone being removed from an organization out of each of its Spaces, as a removal from
+ * each Space would. A Space they own passes to its longest-standing full member, else to
+ * `removedBy` while they still manage the organization, so their work stays with it. Each
+ * departure's follow-up runs once it commits, so a later failure loses no earlier one.
+ */
+export async function leaveOrganizationSpaces(
+  prisma: PrismaClient,
+  input: { organizationId: string; userId: string; removedBy: string },
+  onDeparture: (departure: SpaceDeparture & { spaceId: string }) => Promise<void>,
+): Promise<Array<SpaceDeparture & { spaceId: string }>> {
+  const memberships = await prisma.spaceMember.findMany({
+    where: { organizationId: input.organizationId, userId: input.userId },
+    select: { spaceId: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const departures: Array<SpaceDeparture & { spaceId: string }> = [];
+  for (const { spaceId } of memberships) {
+    const departure = await departSpace(prisma, {
+      spaceId,
+      userId: input.userId,
+      handOver: true,
+      fallbackOwnerId: input.removedBy,
+    }).catch((error: unknown) => {
+      // Already gone from it, by leaving or another removal.
+      if (error instanceof SpaceMemberNotFoundError) return null;
+      throw error;
+    });
+    if (!departure) continue;
+    departures.push({ spaceId, ...departure });
+    await onDeparture({ spaceId, ...departure });
+  }
+  return departures;
 }
 
 /**
@@ -445,9 +648,11 @@ async function departSpace(
     /** A departing owner first hands the Space over, in the same transaction, so a failed
      * departure never leaves it handed over without having left. */
     handOver?: boolean;
+    /** Who takes it over when no other full member can; a co-owner keeps it as it is. */
+    fallbackOwnerId?: string;
   },
 ): Promise<SpaceDeparture> {
-  const { spaceId, userId, removedBy, leaving, deactivated, handOver } = input;
+  const { spaceId, userId, removedBy, leaving, deactivated, handOver, fallbackOwnerId } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
@@ -464,12 +669,21 @@ async function departSpace(
           }
           const departing = await tx.spaceMember.findUnique({
             where: { spaceId_userId: { spaceId, userId } },
-            select: { id: true, organizationId: true, role: true },
+            select: {
+              id: true,
+              organizationId: true,
+              role: true,
+              member: { select: { role: true } },
+            },
           });
           if (!departing) throw new SpaceMemberNotFoundError();
+          // A removal from the organization stops for someone who has joined it again meanwhile:
+          // they are a full member once more, and keep their Spaces.
+          if (fallbackOwnerId && departing.member.role !== GUEST_ROLE)
+            throw new SpaceMemberNotFoundError();
           const others = await tx.spaceMember.findMany({
             where: { spaceId, userId: { not: userId } },
-            select: { userId: true, role: true },
+            select: { userId: true, role: true, member: { select: { role: true } } },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           });
           // A removal checks the remover again under the lock: ownership may have moved since.
@@ -481,8 +695,20 @@ async function departSpace(
           // Someone made owner since they asked to leave stays: the Space is theirs now.
           if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
           let ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
-          if (handOver && isOwnerRole(departing.role)) {
-            ownerId = (await handOwnership(tx, { spaceId, userId })) ?? undefined;
+          // Removing someone from the organization hands their Space only to someone staying in
+          // it: a co-owner whose own removal is still finishing is a guest already.
+          const stayingOwner = others.find(
+            (member) => isOwnerRole(member.role) && member.member.role !== GUEST_ROLE,
+          )?.userId;
+          if (fallbackOwnerId && stayingOwner) ownerId = stayingOwner;
+          else if (handOver && isOwnerRole(departing.role)) {
+            ownerId =
+              (await handOwnership(tx, {
+                spaceId,
+                userId,
+                organizationId: departing.organizationId,
+                fallbackOwnerId,
+              })) ?? undefined;
             if (!ownerId) throw new SpaceOwnerCannotLeaveError();
           }
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();
@@ -621,6 +847,10 @@ async function departSpace(
           await tx.actionAutoReviewPreference.deleteMany({ where: own });
           await tx.notificationPreference.deleteMany({ where: own });
           await tx.secret.deleteMany({ where: own });
+          // Links they made stop working, so nobody, them included, joins on their word now.
+          await tx.spaceInvite.deleteMany({
+            where: { spaceId, createdByUserId: userId, acceptedAt: null },
+          });
           // Model, voice and role preferences, setting overrides, AI consents and their read state
           // in each chat cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });

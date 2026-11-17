@@ -3,6 +3,7 @@
 import type { Bot } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -33,7 +34,8 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
     <h3 data-variant={variant} {...props} />
   ),
@@ -44,8 +46,6 @@ vi.mock("@rakazo/ui-web", () => ({
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
   Input: (props: ComponentProps<"input">) => <input {...props} />,
   Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
     checked,
     onCheckedChange,
@@ -149,11 +149,14 @@ function setField(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-async function submitToolName(input: HTMLSelectElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(input, value);
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+async function toolOptions(picker: HTMLElement) {
+  await act(async () => picker.click());
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+}
+
+async function submitToolName(picker: HTMLElement, label: string) {
+  const option = (await toolOptions(picker)).find((entry) => entry.textContent === label);
+  await act(async () => option?.click());
   await act(flush);
 }
 
@@ -254,8 +257,8 @@ describe("BotSettings disabled tools", () => {
     await renderSettings(onSave);
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["web_fetch"] });
     expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     expect(onSave.mock.calls[0]?.[0].disabledBuiltinTools).toEqual(["web_fetch", "web_search"]);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[id$="-disabled-web_fetch"]')!.click();
@@ -276,8 +279,8 @@ describe("BotSettings disabled tools", () => {
         })
         .mockResolvedValue(undefined);
       await renderSettings(onSave);
-      const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-      await submitToolName(input, "web_search");
+      const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+      await submitToolName(input, "Web search");
       await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["web_fetch"] });
       await act(async () => {
         release?.resolve();
@@ -287,7 +290,7 @@ describe("BotSettings disabled tools", () => {
       expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
       if (reject) {
         expect(container.querySelector('[id$="-disabled-web_search"]')).toBeNull();
-        await submitToolName(input, "web_search");
+        await submitToolName(input, "Web search");
       }
       expect(onSave.mock.calls[1]?.[0].disabledBuiltinTools).toEqual(["web_fetch", "web_search"]);
       expect(container.querySelector('[id$="-disabled-web_search"]')).not.toBeNull();
@@ -307,8 +310,8 @@ describe("BotSettings disabled tools", () => {
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[id$="-disabled-remember"]')!.click();
     });
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["remember", "web_fetch"] });
     await act(async () => {
       release?.resolve();
@@ -333,8 +336,8 @@ describe("BotSettings disabled tools", () => {
     expect(container.querySelector('[id$="-disabled-remember"]')).toBeNull();
     await renderSettings(onSave, { ...bot, disabledBuiltinTools: ["remember"] });
     expect(container.querySelector('[id$="-disabled-remember"]')).not.toBeNull();
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    await submitToolName(input, "web_search");
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    await submitToolName(input, "Web search");
     expect(onSave.mock.calls[1]?.[0].disabledBuiltinTools).toEqual(["remember", "web_search"]);
   });
 
@@ -345,16 +348,16 @@ describe("BotSettings disabled tools", () => {
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
+    await submitToolName(input, "Web search");
 
     expect(container.textContent).toContain("Network failed");
     expect(container.textContent).toContain("Remember");
     expect(container.querySelector('[id$="-disabled-web_search"]')).toBeNull();
 
     fail = false;
-    await submitToolName(input, "web_search");
+    await submitToolName(input, "Web search");
 
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave.mock.calls[1]?.[0]).toEqual(
@@ -383,29 +386,28 @@ describe("BotSettings disabled tools", () => {
   });
 
   it("keeps a newer disable when an earlier save fails", async () => {
-    let releaseFirst: (() => void) | undefined;
+    let releaseFirst: Deferred | undefined;
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async (patch) => {
       const tools = patch.disabledBuiltinTools ?? [];
       if (tools.includes("web_search") && !tools.includes("web_fetch")) {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        releaseFirst = deferred();
+        await releaseFirst.promise;
         throw new Error("Network failed");
       }
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
-    expect(releaseFirst).toBeTypeOf("function");
-    await submitToolName(input, "web_fetch");
+    await submitToolName(input, "Web search");
+    expect(releaseFirst).toBeDefined();
+    await submitToolName(input, "Web fetch");
 
     expect(container.querySelector('[id$="-disabled-web_search"]')).not.toBeNull();
     expect(container.querySelector('[id$="-disabled-web_fetch"]')).not.toBeNull();
 
     await act(async () => {
-      releaseFirst?.();
+      releaseFirst?.resolve();
     });
     await act(flush);
     await act(flush);
@@ -433,10 +435,10 @@ describe("BotSettings disabled tools", () => {
     });
     await renderSettings(onSave);
 
-    const input = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]');
+    const input = container.querySelector<HTMLElement>('[id$="-disabled-tools"]');
     if (!input) throw new Error("Missing tool field");
-    await submitToolName(input, "web_search");
-    await submitToolName(input, "web_fetch");
+    await submitToolName(input, "Web search");
+    await submitToolName(input, "Web fetch");
     await act(async () => {
       releaseFirst?.resolve();
     });
@@ -451,14 +453,16 @@ describe("BotSettings disabled tools", () => {
 
   it("offers only known tools and excludes tools already disabled", async () => {
     await renderSettings(vi.fn(async () => undefined));
-    const picker = container.querySelector<HTMLSelectElement>('[id$="-disabled-tools"]')!;
-    expect([...picker.options].map((option) => option.value)).toContain("web_search");
-    expect([...picker.options].find((option) => option.value === "web_search")?.textContent).toBe(
-      "Web search",
-    );
-    expect([...picker.options].map((option) => option.value)).not.toContain("remember");
-    await submitToolName(picker, "web_search");
-    expect([...picker.options].map((option) => option.value)).not.toContain("web_search");
+    const picker = container.querySelector<HTMLElement>('[id$="-disabled-tools"]')!;
+    const labels = async () => (await toolOptions(picker)).map((option) => option.textContent);
+    const offered = await labels();
+    expect(offered).toContain("Web search");
+    expect(offered).not.toContain("Remember");
+    await act(async () => picker.click());
+    await submitToolName(picker, "Web search");
+    const remaining = await labels();
+    expect(remaining).toContain("Web fetch");
+    expect(remaining).not.toContain("Web search");
   });
 });
 

@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
 import type { RefObject } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComputerScreenResult } from "../../lib/computer-screen";
 import {
   createScreenRefocus,
@@ -144,14 +145,13 @@ export function useComputerState({
     setShownScreen({ botId: frameBotId, url: screenUrl });
   }
   useEffect(() => {
-    if (!heldScreen) return;
-    if (screenLoadError) {
-      setHeldScreen(null);
-      return;
-    }
-    const timer = setTimeout(() => setHeldScreen(null), SCREEN_FRAME_LOAD_TIMEOUT_MS);
-    return () => clearTimeout(timer);
+    if (heldScreen && screenLoadError) setHeldScreen(null);
   }, [heldScreen, screenLoadError]);
+  useTimeout(
+    () => setHeldScreen(null),
+    heldScreen && !screenLoadError ? SCREEN_FRAME_LOAD_TIMEOUT_MS : null,
+    heldScreen,
+  );
   useEffect(() => {
     setHeldScreen(null);
   }, [computerOpen, panel]);
@@ -174,18 +174,25 @@ export function useComputerState({
     const url = embeddableScreenUrl(screenUrl);
     if (!isProxiedScreenUrl(url)) return;
     let cancelled = false;
-    const fallback = t`Could not connect to the computer screen`;
-    void probeScreen(url, fallback).then((error) => {
+    void probeScreen(url, t`Could not connect to the computer screen`).then((error) => {
       if (!cancelled && error && !screenFrameReported.current) setScreenLoadError(error);
     });
-    const timer = setTimeout(() => {
-      if (!cancelled && !screenFrameReported.current) setScreenLoadError(fallback);
-    }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [screenFrame, screenUrl]);
+  // A new frame or screen URL starts the wait again.
+  const screenLoad = useMemo(() => ({}), [screenFrame, screenUrl]);
+  useTimeout(
+    () => {
+      if (!screenFrameReported.current)
+        setScreenLoadError(t`Could not connect to the computer screen`);
+    },
+    screenFrame && isProxiedScreenUrl(embeddableScreenUrl(screenUrl))
+      ? SCREEN_FRAME_LOAD_TIMEOUT_MS
+      : null,
+    screenLoad,
+  );
   useEffect(() => {
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;

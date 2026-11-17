@@ -180,6 +180,8 @@ describePostgres("organizations (PostgreSQL)", () => {
           defaultSpaceId: ada.spaceId,
           spaceIds: [ada.spaceId],
           canManage: true,
+          role: "owner",
+          memberCount: 1,
         },
         {
           id: work.id,
@@ -187,6 +189,8 @@ describePostgres("organizations (PostgreSQL)", () => {
           defaultSpaceId: work.id,
           spaceIds: [work.id],
           canManage: true,
+          role: "owner",
+          memberCount: 1,
         },
       ],
     });
@@ -295,7 +299,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     });
   });
 
-  it("lists a team organization the user is only a member of, without managing it", async () => {
+  it("lists a team organization the user is only a member of, which its owner still manages", async () => {
     const ada = await signup();
     const grace = await signup();
     const team = await client(grace).organizations.create({ name: "Team" });
@@ -310,20 +314,31 @@ describePostgres("organizations (PostgreSQL)", () => {
     });
 
     const { organizations } = await client(ada).organizations.list();
-    expect(organizations.map(({ name, canManage }) => ({ name, canManage }))).toEqual([
-      { name: "Personal", canManage: true },
-      { name: "Team", canManage: false },
+    expect(
+      organizations.map(({ name, canManage, role, memberCount }) => ({
+        name,
+        canManage,
+        role,
+        memberCount,
+      })),
+    ).toEqual([
+      { name: "Personal", canManage: true, role: "owner", memberCount: 1 },
+      { name: "Team", canManage: false, role: "member", memberCount: 2 },
     ]);
     expect(organizations[1]?.spaceIds).toEqual([team.defaultSpaceId]);
     await expect(
       client(ada).organizations.rename({ organizationId: team.id, name: "Mine" }),
     ).rejects.toBeInstanceOf(Error);
 
+    // Its owner renames it, but cannot delete it while others belong to it.
     const owner = await client(grace).organizations.list();
-    expect(owner.organizations.find((org) => org.id === team.id)?.canManage).toBe(false);
+    expect(owner.organizations.find((org) => org.id === team.id)?.canManage).toBe(true);
     await expect(
       client(grace).organizations.rename({ organizationId: team.id, name: "Ours" }),
-    ).rejects.toBeInstanceOf(Error);
+    ).resolves.toEqual({ id: team.id, name: "Ours" });
+    await expect(
+      client(grace).organizations.remove({ organizationId: team.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("lets only the owner rename or delete an organization, and never their last one", async () => {

@@ -67,8 +67,6 @@ vi.mock("@rakazo/ui-web", () => {
     }) => (
       <input aria-label={label} value={query} onChange={(event) => setQuery(event.target.value)} />
     ),
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
     OptionSelect: ({
       options,
       value,

@@ -41,6 +41,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
+import { REASONING_THINKING_LEVELS } from "./pi-local-provider.js";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
   MODEL_STREAM_AGENT_TIMEOUTS,
@@ -116,9 +117,7 @@ export function openAiCompatibleModel(
             supportsReasoningEffort: reasoning,
             thinkingFormat: "openai",
           },
-          thinkingLevelMap: reasoning
-            ? { off: "none", xhigh: "xhigh", max: "max" }
-            : { off: "none" },
+          thinkingLevelMap: reasoning ? { ...REASONING_THINKING_LEVELS } : { off: "none" },
         }),
     input: inputModalities(acceptsImages),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

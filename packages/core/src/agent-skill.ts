@@ -35,7 +35,7 @@ export type SkillRecord = SkillCatalogEntry & {
   content: string;
 };
 
-const FORCE_SKILL_PREFIX = /^(?:\/|use\s+skill:\s*)(.+?)(?:\n|$)/i;
+const FORCE_SKILL_PREFIX = /^(?:\/|use\s+skill:\s*)([^\n]*)/i;
 const ROUTINE_SKILL_STOP = new Set([
   "then",
   "and",

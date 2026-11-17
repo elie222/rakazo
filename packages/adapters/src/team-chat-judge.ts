@@ -11,6 +11,7 @@ import {
   retireToReconnectMarker,
 } from "./model-credential-refresh.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
+import { outermostJsonObject } from "./model-json.js";
 import { deploymentModelRole, resolveMemberMainModel } from "./model-roles.js";
 import { secretValuesToRedact } from "./model-secret.js";
 import { hasHostedModelCredits } from "./model-selection.js";
@@ -61,7 +62,7 @@ export function parseTeamChatEngagementDecision(
   raw: string | undefined,
 ): TeamChatEngagementDecision {
   if (!raw) return { act: false };
-  const object = raw.match(/\{[\s\S]*\}/)?.[0];
+  const object = outermostJsonObject(raw);
   if (!object) return { act: false };
   try {
     const parsed = JSON.parse(object) as {

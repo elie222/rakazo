@@ -8,12 +8,9 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
-  chatModelChoices,
-  connectedModelChoices,
   credentialForModel,
   modelOptionKey,
   modelThinkingLevels,
-  parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
 import {
@@ -23,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
@@ -32,6 +30,7 @@ import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
+import { botModelChoices } from "../../lib/bot-model-choices";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { lazyComponent } from "../../lib/preload-recovery";
 import { useSpaceQueries } from "../../lib/query";
@@ -282,27 +281,11 @@ export function BotSettings({
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
-  const connectedOptions = connectedModelChoices(credentials, catalog);
-  const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
-  const selectedModel = storedModel
-    ? {
-        provider: storedModel.provider,
-        modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
-      }
-    : null;
-  const selectedModelKey = selectedModel
-    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
-    : "";
-
-  const defaultEntry = me?.defaultModel
-    ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
-    : undefined;
-  const modelChoices = chatModelChoices(
-    connectedOptions,
+  const {
+    selectedModel,
     selectedModelKey,
-    t`Space default`,
-    defaultEntry?.images,
-  );
+    choices: modelChoices,
+  } = botModelChoices({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
 
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
@@ -683,21 +666,23 @@ export function BotSettings({
           </Suspense>
         </ErrorBoundary>
         <div className="mt-6" data-testid="bot-settings-advanced">
-          <button
-            type="button"
-            aria-expanded={settingsOpen}
-            aria-controls={`${ids}-settings`}
-            onClick={() => setSettingsOpen((open) => !open)}
-            className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 text-start text-body text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Trans>Settings</Trans>
-            <ChevronDown
-              aria-hidden="true"
-              className={`size-4 text-muted-foreground transition-transform ${settingsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+          <SectionHeading variant="label" className="flex min-h-6 items-center">
+            <button
+              type="button"
+              aria-expanded={settingsOpen}
+              aria-controls={`${ids}-settings`}
+              onClick={() => setSettingsOpen((open) => !open)}
+              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Trans>Settings</Trans>
+              <ChevronDown
+                aria-hidden="true"
+                className={`size-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </SectionHeading>
           {/* Stays mounted so an instructions or description draft survives folding it away. */}
-          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-3">
+          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-2">
             <SettingsCard>
               <ModelRow
                 ids={ids}
@@ -819,15 +804,6 @@ const NO_CATALOG: ModelCatalogEntry[] = [];
 
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
-}
-
-function catalogEntry(
-  catalog: ModelCatalogEntry[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
 }
 
 function InlineProfileField({

@@ -687,6 +687,60 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(await h.state(id)).toMatchObject({ status: "cancelled", cancelRequested: false });
   });
 
+  /** The previous release's claim on the agent, which knows nothing of the lease. */
+  const previousReleaseClaim = async (prisma: PrismaClient, agentId: string) => {
+    const stored = await prisma.cloudAgent.findUniqueOrThrow({ where: { id: agentId } });
+    const claimed = await prisma.cloudAgent.updateMany({
+      where: {
+        id: agentId,
+        version: stored.version,
+        OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
+      },
+      data: { leaseToken: "previous", leaseExpiresAt: new Date(Date.now() + 90_000) },
+    });
+    return claimed.count;
+  };
+
+  it("leaves an agent the previous release is polling to it", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    expect(await previousReleaseClaim(prisma, id)).toBe(1);
+    await h.poll(id);
+    expect(h.wire.agents.size).toBe(0);
+    expect(await h.state(id)).toMatchObject({ leaseToken: "previous", launchDispatched: false });
+
+    await prisma.cloudAgent.update({
+      where: { id },
+      data: { leaseToken: null, leaseExpiresAt: null },
+    });
+    await h.poll(id);
+    expect(h.wire.agents.size).toBe(1);
+  });
+
+  it("keeps the previous release out while it polls", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    const entered = deferred();
+    const release = deferred();
+    const original = h.connection.provider.launch.bind(h.connection.provider);
+    vi.spyOn(h.connection.provider, "launch").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return original(...args);
+    });
+    const polling = h.poll(id);
+    await entered.promise;
+    expect(await previousReleaseClaim(prisma, id)).toBe(0);
+    release.resolve();
+    await polling;
+    expect(h.wire.agents.size).toBe(1);
+    expect(await h.state(id)).toMatchObject({
+      remoteId: expect.any(String),
+      leaseToken: null,
+      leaseExpiresAt: null,
+    });
+  });
+
   it("rejects overlapping follow-ups and preserves remote failure as a terminal result", async () => {
     const h = await setup();
     const id = await h.launch();

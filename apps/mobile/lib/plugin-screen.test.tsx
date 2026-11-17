@@ -16,9 +16,6 @@ const state = vi.hoisted(() => ({
   focused: true,
   header: undefined as undefined | (() => ReactElement<{ label: string; onPress: () => void }>),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",

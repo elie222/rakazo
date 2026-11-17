@@ -21,6 +21,7 @@ import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dropLeftoverAuthorization } from "./connection-cleanup.js";
 import {
+  ABANDONED_LAST_ATTEMPT_ERROR,
   createDeadJobPruner,
   createReservedGraphileJobWorkerHost,
   GraphileJobPublisher,
@@ -49,6 +50,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "run.forget-secrets": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
@@ -943,6 +945,68 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await publisher.cancel(key).catch(() => undefined);
       await publisher.close();
       installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+    }
+  });
+
+  it("fails and reports a last attempt whose worker died, leaving earlier attempts and live locks", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const publisher = new GraphileJobPublisher(testPool());
+    const prefix = `contract:abandoned:${Date.now()}`;
+    const names = ["lastDead", "earlierDead", "lastLive"] as const;
+    const keys = names.map((name) => `${prefix}:${name}`);
+    try {
+      for (const key of keys) {
+        await publisher.enqueue({
+          name: "computer.sleep",
+          payload: { computerId: key },
+          replaceKey: key,
+        } as BackgroundJob);
+      }
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = case when key = $2 then 1 else max_attempts end,
+             locked_by = 'contract-worker',
+             locked_at = case when key = $3 then now() - interval '3 hours' else now() - interval '3 hours 55 minutes' end
+         where key = any($1::text[])`,
+        [keys, `${prefix}:earlierDead`, `${prefix}:lastLive`],
+      );
+
+      await createDeadJobPruner(testPool())();
+      await createDeadJobPruner(testPool())();
+
+      const rows = await testPool().query<{
+        key: string;
+        locked_at: Date | null;
+        last_error: string | null;
+      }>(
+        "select key, locked_at, last_error from graphile_worker._private_jobs where key = any($1::text[])",
+        [keys],
+      );
+      const byName = Object.fromEntries(
+        rows.rows.map((row) => [row.key.slice(prefix.length + 1), row]),
+      );
+      expect(byName.lastDead).toMatchObject({
+        locked_at: null,
+        last_error: ABANDONED_LAST_ATTEMPT_ERROR,
+      });
+      expect(byName.earlierDead?.locked_at).not.toBeNull();
+      expect(byName.lastLive?.locked_at).not.toBeNull();
+      const reports = sink.events.filter((event) => event.message === "job.gave_up");
+      expect(reports).toEqual([
+        expect.objectContaining({
+          level: "error",
+          "job.type": "computer.sleep",
+          "job.queue_id": expect.any(String),
+          error: expect.objectContaining({ message: ABANDONED_LAST_ATTEMPT_ERROR }),
+        }),
+      ]);
+    } finally {
+      installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+      await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
+        keys,
+      ]);
+      await publisher.close();
     }
   });
 

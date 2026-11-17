@@ -43,6 +43,7 @@ import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
+import { expireRunSecrets } from "./run-secrets-expiry.js";
 import { retrySecretCleanup } from "./secret-cleanup.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 import type { TeamChat } from "./team-chat.js";
@@ -176,7 +177,8 @@ export function createBackgroundJobHandlers(deps: {
     "computer.machine-cleanup": async (machine, _execution, attempt) => {
       await retryMachineCleanup(deps, machine, attempt);
     },
-    // The previous release's jobs, drained once by this one.
+    // The previous release's jobs, drained by this one. Jobs under this name can stay queued
+    // across releases, so it goes only once none are left.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
       await retrySecretCleanup(cleanupDeps, {
         kind: "messaging_installation",
@@ -243,6 +245,9 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "skill.teaching-expire": asOwner(skill, async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
+    }),
+    "run.forget-secrets": asOwner(run, async ({ runId }) => {
+      await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });

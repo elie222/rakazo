@@ -12,6 +12,7 @@ import {
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
+import { CreateOrganizationDialog } from "../../components/CreateOrganizationDialog";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
 import { useUsageHint } from "../../components/PlanUsage";
@@ -362,6 +363,7 @@ function ShellSidebarFooter({
   const usage = useUsageHint();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [creatingOrganization, setCreatingOrganization] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
@@ -455,6 +457,15 @@ function ShellSidebarFooter({
           if (organization.id !== activeOrganizationId)
             void switchOrganization(userId, organization, openSpaceChat);
         }}
+        onCreateOrganization={() => {
+          setMenuOpen(false);
+          setCreatingOrganization(true);
+        }}
+      />
+      <CreateOrganizationDialog
+        open={creatingOrganization}
+        onOpenChange={setCreatingOrganization}
+        openSpaceChat={openSpaceChat}
       />
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />

@@ -23,8 +23,6 @@ vi.mock("./call-session", () => ({
   endCallBeforeSessionEnd: session.endCallBeforeSessionEnd,
 }));
 vi.mock("./api-auth", () => ({ changePassword: session.changePassword }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({
   native: { page: "white", fill: "gray", tertiaryLabel: "gray", label: "black" },

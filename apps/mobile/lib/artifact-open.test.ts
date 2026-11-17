@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,9 +63,6 @@ vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => state.apiBase,
@@ -232,18 +231,16 @@ describe("artifact preview caches", () => {
 
   it("rejects a late old-account download without writing it", async () => {
     const api = await load();
-    let finish!: (value: { contentBase64: string }) => void;
-    state.rpc.mockImplementation(async (proc: string) =>
-      proc === "me"
-        ? { userId: state.userId }
-        : new Promise((resolve) => {
-            finish = resolve;
-          }),
-    );
+    let download: Deferred<{ contentBase64: string }> | undefined;
+    state.rpc.mockImplementation(async (proc: string) => {
+      if (proc === "me") return { userId: state.userId };
+      download = deferred();
+      return download.promise;
+    });
     const pending = api.imageArtifactUri(target, "art-1", "image/png");
-    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitFor(() => expect(download).toBeDefined());
     state.generation += 1;
-    finish({ contentBase64: "old-account" });
+    download!.resolve({ contentBase64: "old-account" });
     await expect(pending).rejects.toThrow("Artifact session changed");
     expect([...state.files.values()]).not.toContain("old-account");
   });

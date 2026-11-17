@@ -12,40 +12,23 @@ import { dispatchBackgroundJob, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
 import { databaseCapacityBackoffMs, databaseOutage, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
-import type { Job, JobHelpers, Runner, WorkerUtils } from "graphile-worker";
+import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
 import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordConnectionCleanupAttemptsExhausted } from "./connection-cleanup.js";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
+import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";
 import { RunExecutionHost } from "./run-execution.js";
 
-// Adapter-local task name: the shared job contract remains run.continue. Older
-// publishers can keep publishing it while a new worker drains the legacy queue.
-const INTERACTIVE_RUN_TASK = "run.interactive";
+export {
+  ABANDONED_LAST_ATTEMPT_ERROR,
+  ABANDONED_LAST_ATTEMPT_MS,
+  createDeadJobPruner,
+  DEAD_JOB_RETENTION_DAYS,
+} from "./job-give-up.js";
+
 type RunLookup = Pick<PrismaClient, "run">;
 type Workload = "interactive" | "background" | "maintenance";
-
-function jobType(taskIdentifier: string): string {
-  return taskIdentifier === INTERACTIVE_RUN_TASK ? "run.continue" : taskIdentifier;
-}
-
-/**
- * Graphile emits this once a job's last attempt has failed: it keeps the row and never runs it
- * again. The payload stays out, since it can hold identifiers and references to secrets.
- */
-function recordJobGaveUp(job: Job, error: unknown): void {
-  const type = jobType(job.task_identifier);
-  const { correlation } = unwrapJobPayload(job.payload);
-  getLogger().error("job.gave_up", error instanceof Error ? error : new Error(String(error)), {
-    "job.type": type,
-    ...(correlation ? { "job.id": correlation.jobId, "trace.id": correlation.traceId } : {}),
-    "job.attempts": job.attempts,
-    "job.max_attempts": job.max_attempts,
-    "job.queued_ms": Date.now() - job.created_at.getTime(),
-    // The attempt's own failure is already reported; giving up is a separate issue per job type.
-    "error.fingerprint": ["job.gave_up", type],
-  });
-}
 
 async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boolean> {
   const run = await prisma.run.findUnique({ where: { id: runId }, select: { trigger: true } });
@@ -667,79 +650,6 @@ export function createRoutineRetryNoticeReconciler(
     // Advance past failures too, so an unavailable destination cannot starve later notices.
     // Wrap after the final page; failed rows stay durable and will be revisited.
     cursor = rows.length === batchSize ? rows[rows.length - 1]!.id : "0";
-  };
-}
-
-/** Long enough to look into a job that gave up over a weekend or a holiday. */
-export const DEAD_JOB_RETENTION_DAYS = 7;
-const DEAD_JOB_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
-const DEAD_JOB_PRUNE_BATCH = 1_000;
-const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
-
-/**
- * Graphile keeps a job that exhausted its retries forever, and its own maintenance scans them.
- * Delete them once they are old enough that nobody is still diagnosing the failure. Exhausted
- * `routine.retry` rows are notice requests, which their reconciler deletes after delivery.
- *
- * A failed attempt moves `run_at` to that moment plus backoff and leaves `updated_at` at the last
- * enqueue, so the later of the two is when the row was last touched; a job due in the future
- * never matches.
- *
- * Graphile's `cleanup` task deletes every exhausted job regardless of age or task, and
- * `completeJobs` deletes by id without rechecking, so a keyed job replaced back to life between
- * a select and the delete would go with it. This deletes in one statement that rechecks.
- */
-export function createDeadJobPruner(
-  pool: Pick<Pool, "query">,
-  options: { retentionDays?: number; intervalMs?: number } = {},
-): () => Promise<void> {
-  const retentionDays = options.retentionDays ?? DEAD_JOB_RETENTION_DAYS;
-  const intervalMs = options.intervalMs ?? DEAD_JOB_PRUNE_INTERVAL_MS;
-  let lastRun: number | undefined;
-  return async () => {
-    const now = Date.now();
-    if (lastRun !== undefined && now - lastRun < intervalMs) return;
-    lastRun = now;
-    const removedByType = new Map<string, number>();
-    for (let batch = 0; batch < DEAD_JOB_PRUNE_MAX_BATCHES; batch += 1) {
-      const { rows } = await pool.query<{ identifier: string; removed: number }>(
-        `with removed as (
-           delete from graphile_worker._private_jobs as jobs
-           where jobs.id in (
-             select dead.id
-             from graphile_worker._private_jobs as dead
-             join graphile_worker._private_tasks as tasks on tasks.id = dead.task_id
-             where dead.attempts >= dead.max_attempts and dead.locked_at is null
-               and dead.updated_at < now() - make_interval(days => $1::int)
-               and dead.run_at < now() - make_interval(days => $1::int)
-               and tasks.identifier <> 'routine.retry'
-             order by dead.id
-             limit $2
-             for update of dead skip locked
-           )
-           and jobs.attempts >= jobs.max_attempts and jobs.locked_at is null
-           returning jobs.task_id
-         )
-         select tasks.identifier, count(*)::int as removed
-         from removed
-         join graphile_worker._private_tasks as tasks on tasks.id = removed.task_id
-         group by tasks.identifier`,
-        [retentionDays, DEAD_JOB_PRUNE_BATCH],
-      );
-      let removed = 0;
-      for (const row of rows) {
-        const type = jobType(row.identifier);
-        removedByType.set(type, (removedByType.get(type) ?? 0) + row.removed);
-        removed += row.removed;
-      }
-      if (removed < DEAD_JOB_PRUNE_BATCH) break;
-    }
-    if (removedByType.size === 0) return;
-    const byType = [...removedByType].sort(([a], [b]) => a.localeCompare(b));
-    getLogger().info("jobs.dead_pruned", {
-      "jobs.removed": byType.reduce((total, [, count]) => total + count, 0),
-      "jobs.removed_by_type": byType.map(([type, count]) => `${type}=${count}`).join(","),
-    });
   };
 }
 

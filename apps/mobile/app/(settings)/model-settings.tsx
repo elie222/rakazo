@@ -5,7 +5,7 @@ import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contract
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
   catalogEntryFor,
-  connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelHasOwnSettings,
@@ -58,7 +58,7 @@ function modelRead(
     ]);
     const credential = credentials.find((item) => item.id === credentialId);
     if (!credential) throw new Error(notFound);
-    if (!connectionModels(credential, catalog).some((entry) => entry.id === modelId)) return null;
+    if (!connectionServesModel(credential, catalog, modelId)) return null;
     return { credential, entry: catalogEntryFor(catalog, credential.provider, modelId) };
   };
   return {

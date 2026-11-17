@@ -1,7 +1,13 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus, PlanLimits, UsageBreakdownInput } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 const hours = (count: number) => new Date(Date.now() + count * 3_600_000).toISOString();
 
@@ -174,11 +180,11 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(cards.nth(1)).toContainText("work@example.com");
   await expect(settings.getByTestId("credit-balance")).toHaveCount(0);
   await expect(settings.getByRole("cell", { name: /example-large/ })).toBeVisible();
-  await expect(settings.getByRole("combobox", { name: "Bot" })).toHaveValue("all");
-  await expect(settings.getByRole("combobox", { name: "Bot" }).getByRole("option")).toHaveText([
-    "All bots",
-    "Assistant",
-  ]);
+  const botFilter = settings.getByRole("combobox", { name: "Bot" });
+  await expect(botFilter).toHaveText("All bots");
+  await botFilter.click();
+  await expect(page.getByRole("option")).toHaveText(["All bots", "Assistant"]);
+  await page.keyboard.press("Escape");
   await expect(settings.getByRole("button", { name: "30 days" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -190,7 +196,7 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   page.on("request", (request) => {
     if (request.url().includes("/rpc/usage/breakdown")) requests.push(request.postData() ?? "");
   });
-  await settings.getByRole("combobox", { name: "Bot" }).selectOption({ label: "Assistant" });
+  await chooseOption(botFilter, "Assistant");
   await settings.getByRole("button", { name: "7 days" }).click();
   await expect(settings.getByRole("button", { name: "7 days" })).toHaveAttribute(
     "aria-pressed",

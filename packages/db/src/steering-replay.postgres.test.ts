@@ -58,9 +58,12 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
   /** The executor finalizes and claims steering inside the run owner's tenant job. */
   const asOwner = <T>(fn: () => Promise<T>) => runAsTenant({ spaceId, userId }, fn);
 
-  async function runSteeredByMessage(status: "running" | "waiting_input") {
+  async function runSteeredByMessage(status: "running" | "waiting_input" | "waiting_takeover") {
     await system.run.updateMany({
-      where: { threadId, status: { in: ["queued", "running", "waiting_input"] } },
+      where: {
+        threadId,
+        status: { in: ["queued", "running", "waiting_input", "waiting_takeover"] },
+      },
       data: { status: "cancelled" },
     });
     const task = await system.task.create({
@@ -106,7 +109,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
         seenIds: [],
       }),
     );
-    if (status === "waiting_input") {
+    if (status !== "running") {
       await system.run.update({ where: { id: run.id }, data: { status, leaseOwner: null } });
     }
     return { task, run, attempt };
@@ -450,7 +453,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
   });
 
   it("does not answer a message again after an expired wait that already replied to it", async () => {
-    const fixture = await runSteeredByMessage("waiting_input");
+    const fixture = await runSteeredByMessage("waiting_takeover");
     await botReplies(fixture.run.id);
     const { updatedAt } = await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } });
 
@@ -459,7 +462,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       expireStuckRun(tx, {
         runId: fixture.run.id,
         threadId,
-        status: "waiting_input",
+        status: "waiting_takeover",
         updatedAt,
         now: new Date(),
       }),

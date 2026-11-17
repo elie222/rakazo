@@ -1,11 +1,14 @@
 import type { VoiceVerifyResult } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
-import { cancelResponseBody, deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
+import {
+  cancelResponseBody,
+  deadlineSignal,
+  MAX_VOICE_AUDIO_BYTES,
+  ResponseTooLargeError,
+} from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
-/** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
-export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
 export const MAX_SPEAK_CHARS = 2000;
 export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
 const VOICE_RESPONSE_TOO_LARGE = "Voice response is too large.";
@@ -16,7 +19,7 @@ export function isSpeechModelId(value: string): boolean {
 }
 
 export async function readVoiceAudio(res: Response, signal?: AbortSignal): Promise<Uint8Array> {
-  return readVoiceBytes(res, MAX_SYNTHESIZED_AUDIO_BYTES, signal);
+  return readVoiceBytes(res, MAX_VOICE_AUDIO_BYTES, signal);
 }
 
 async function readVoiceBytes(

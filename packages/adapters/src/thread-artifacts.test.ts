@@ -540,6 +540,71 @@ describe("recent thread files", () => {
     ]);
   });
 
+  it.each([
+    [2, ["upload.png"]],
+    [3, []],
+  ])(
+    "lists an old upload only within the last 3 user turns, after %s text-only turns",
+    async (textTurns, listed) => {
+      const upload: MessageBlock = {
+        kind: "image",
+        artifactId: "upload",
+        name: "upload.png",
+        mimeType: "image/png",
+      };
+      const textIds = Array.from({ length: textTurns }, (_, i) => `text-${i}`);
+      const history = ["upload", ...textIds.flatMap((id) => [id, `reply-${id}`]), "current"].map(
+        (id) => ({ id, role: id.startsWith("reply-") ? "assistant" : "user" }),
+      );
+      const messages = [
+        { id: "upload", blocks: [upload] },
+        ...textIds.map((id) => ({ id, blocks: [{ kind: "text" as const, text: id }] })),
+      ];
+      const files = await materializeRecentThreadFiles(
+        {
+          prisma: {
+            artifact: {
+              findMany: vi.fn().mockResolvedValue([
+                {
+                  id: "upload",
+                  name: "upload.png",
+                  mimeType: "image/png",
+                  size: 3,
+                  storageKey: "stored-upload",
+                },
+              ]),
+            },
+          } as unknown as PrismaClient,
+          artifacts: {
+            get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+          } as unknown as ArtifactStore,
+          sandbox: {
+            readFile: vi.fn().mockRejectedValue(new Error("missing")),
+            writeFile: vi.fn().mockResolvedValue(undefined),
+          } as unknown as SandboxProvider,
+        },
+        history,
+        messages,
+        {
+          context: {
+            operationId: "run",
+            traceId: "run",
+            spaceId: "space",
+            userId: "user",
+            botId: "bot",
+            signal: new AbortController().signal,
+          },
+          computer: async () =>
+            ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+          computerMode: "team",
+          maxTurns: 3,
+          skipMessageId: "current",
+        },
+      );
+      expect(files.map((file) => file.name)).toEqual(listed);
+    },
+  );
+
   it("copies attachments from earlier turns the run is answering, skipping unreadable ones", async () => {
     const findMany = vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in[0] === "image-1"

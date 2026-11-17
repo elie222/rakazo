@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerProviderSettings as Settings } from "@rakazo/contracts";
-import { Button, Field, FieldLabel, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input, OptionSelect } from "@rakazo/ui-web";
 import {
   Collapsible,
   CollapsibleContent,
@@ -127,24 +127,23 @@ export function ComputerProviderSettings({
             <FieldLabel htmlFor={selectId}>
               <Trans>New computers run on</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect
               id={selectId}
               value={draft.provider}
-              onChange={(event) =>
+              onValueChange={(provider) =>
                 set({
-                  provider: event.target.value,
-                  values: event.target.value === settings.provider ? settings.values : {},
+                  provider,
+                  values: provider === settings.provider ? settings.values : {},
                 })
               }
-              className="w-full"
-            >
-              <NativeSelectOption value="default">{t`Default`}</NativeSelectOption>
-              {settings.providers.map((provider) => (
-                <NativeSelectOption key={provider.id} value={provider.id}>
-                  {provider.displayName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                { value: "default", label: t`Default` },
+                ...settings.providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.displayName,
+                })),
+              ]}
+            />
           </Field>
           {descriptor?.fields.map((field) => {
             const saved =
@@ -160,19 +159,17 @@ export function ComputerProviderSettings({
             return field.kind === "select" ? (
               <Field key={field.key}>
                 <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
-                <NativeSelect
+                <OptionSelect
                   id={`${selectId}-${field.key}`}
-                  value={draft.values[field.key] ?? ""}
-                  onChange={(event) => change(event.target.value)}
+                  value={draft.values[field.key] || (field.required ? null : "")}
+                  onValueChange={change}
                   required={field.required}
-                >
-                  <NativeSelectOption value="" />
-                  {field.options?.map((option) => (
-                    <NativeSelectOption key={option.value} value={option.value}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  className="w-fit"
+                  options={[
+                    ...(field.required ? [] : [{ value: "", label: t`Default` }]),
+                    ...(field.options ?? []),
+                  ]}
+                />
               </Field>
             ) : (
               <TextField

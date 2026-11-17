@@ -1,3 +1,4 @@
+import { trimEndChars } from "@rakazo/contracts";
 import { parse } from "tldts";
 
 /**
@@ -59,7 +60,7 @@ const DOMAIN_IN_TEXT =
 export function sitesInText(text: string): Set<string> {
   const sites = new Set<string>();
   for (const [match] of text.matchAll(URL_IN_TEXT)) {
-    const site = urlSite(match.replace(/[.,;:!?)\]}*~]+$/, ""));
+    const site = urlSite(trimEndChars(match, ".,;:!?)]}*~"));
     if (site) sites.add(site);
   }
   // A link grants only its own host: a domain in its path or query is not one the person named.

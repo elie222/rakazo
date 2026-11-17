@@ -71,7 +71,14 @@ import {
   RECALL_JUDGE_VERSION,
 } from "../evals/recall.js";
 import type { TrialResult } from "../evals/report.js";
-import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
+import {
+  emptyTrial,
+  holdBackJudged,
+  redact,
+  stopRemaining,
+  summarize,
+  validateControls,
+} from "../evals/report.js";
 import type { CasePlan } from "../evals/run-store.js";
 import { judgeIdentity, RunStore } from "../evals/run-store.js";
 import {
@@ -87,7 +94,12 @@ import {
   SUBAGENT_JUDGE_VERSION,
 } from "../evals/subagents.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
-import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
+import {
+  loadToolChoiceCases,
+  TOOL_CHOICE_FIXTURE_VERSION,
+  TOOL_CHOICE_JUDGE_CALIBRATION,
+  TOOL_CHOICE_JUDGE_VERSION,
+} from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
@@ -165,7 +177,7 @@ async function main() {
   > = {
     product: {
       cases: EVAL_CASES,
-      fixtureVersion: "product-v2",
+      fixtureVersion: "product-v3",
       judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
     },
     subagents: {
@@ -212,7 +224,11 @@ async function main() {
       cases: GROUP_ROUTING_EVAL_CASES,
       fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
     },
-    "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
+    "tool-choice": {
+      cases: TOOL_CHOICE_CASES,
+      fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION,
+      judge: { version: TOOL_CHOICE_JUDGE_VERSION, calibration: TOOL_CHOICE_JUDGE_CALIBRATION },
+    },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
     apps: {
       cases: APPS_EVAL_CASES,
@@ -440,15 +456,25 @@ async function main() {
     maxOutputTokens: connection.maxTokens ?? null,
   };
   let judge: EvalJudge | undefined;
-  if (selected.some((c) => c.judge) && !values["cache-probe"]) {
-    if (!suiteJudge) return notRun("This suite has no judge rubric; no inference was scheduled");
-    if (!values["judge-connection"] || !values["judge-pricing"])
-      return notRun(
-        "Semantic cases require --judge-connection and --judge-pricing; no inference was scheduled",
-      );
+  let heldBack = new Set<string>();
+  const judged = new Set(selected.filter((c) => c.judge).map((c) => c.id));
+  const judgeConnectionFile = values["judge-connection"];
+  const judgePricingFile = values["judge-pricing"];
+  if (judged.size && !values["cache-probe"] && !suiteJudge)
+    return notRun("This suite has no judge rubric; no inference was scheduled");
+  if (judged.size && !values["cache-probe"] && (!judgeConnectionFile || !judgePricingFile)) {
+    const reason =
+      "Not run: graded by meaning, which needs --judge-connection and --judge-pricing; unqualified, not a pass";
+    if (judged.size === selected.length) return notRun(reason);
+    heldBack = holdBackJudged(trials, judged, reason);
+    console.log(
+      `Without a judge, ${heldBack.size} judged case(s) stay not-run and unqualified: ${[...heldBack].join(", ")}`,
+    );
+    save();
+  } else if (judged.size && !values["cache-probe"] && suiteJudge) {
     let rawJudgeConnection: unknown;
     try {
-      rawJudgeConnection = readConnection(values["judge-connection"]);
+      rawJudgeConnection = readConnection(judgeConnectionFile!);
     } catch {
       return notRun("A valid judge model connection file is required; no inference was scheduled");
     }
@@ -458,7 +484,7 @@ async function main() {
     const judgeConnection = parsedJudge.data;
     let judgePricing: EvalPricing;
     try {
-      judgePricing = validatePricing(JSON.parse(readFileSync(values["judge-pricing"], "utf8")));
+      judgePricing = validatePricing(JSON.parse(readFileSync(judgePricingFile!, "utf8")));
     } catch {
       return notRun(
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
@@ -703,10 +729,9 @@ async function main() {
       };
     };
     for (let i = 0; i < trials.length; i++) {
+      if (heldBack.has(trials[i]!.caseId)) continue;
       if (stopRequested) {
-        for (const remaining of trials.slice(i))
-          remaining.reason =
-            "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
+        stopRemaining(trials.slice(i), heldBack);
         Object.assign(report, { termination: "graceful-stop-after-workflow" });
         save();
         process.exitCode = 130;

@@ -51,7 +51,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   let db: AppHandles["prisma"];
   let pushTokens: PrismaPushTokenStore;
   const encryptionKey = "offline-authorization-encryption-key";
-  const loadPushToken = async (userId: string) => (await pushTokens.load(userId))?.token;
+  const loadPushToken = async (userId: string) => (await pushTokens.list(userId))[0]?.token;
   let app: App;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
@@ -266,6 +266,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/rename", { spaceId: "missing-space", name: "Nope" }],
       ["spaces/remove", { spaceId: "missing-space" }],
       ["spaces/members/list", { spaceId: "missing-space" }],
+      ["spaces/members/add", { spaceId: "missing-space", userId: "missing-user" }],
       ["spaces/members/remove", { spaceId: "missing-space", userId: "missing-user" }],
       ["spaces/members/leave", { spaceId: "missing-space" }],
       ["spaces/invites/create", { spaceId: "missing-space" }],
@@ -276,6 +277,25 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["organizations/create", { name: "Nope" }],
       ["organizations/rename", { organizationId: "missing-organization", name: "Nope" }],
       ["organizations/remove", { organizationId: "missing-organization" }],
+      ["organizations/members/list", { organizationId: "missing-organization" }],
+      [
+        "organizations/members/setRole",
+        { organizationId: "missing-organization", userId: "missing-user", role: "member" },
+      ],
+      [
+        "organizations/members/remove",
+        { organizationId: "missing-organization", userId: "missing-user" },
+      ],
+      [
+        "organizations/invitations/create",
+        { organizationId: "missing-organization", email: "nobody@example.test" },
+      ],
+      [
+        "organizations/invitations/cancel",
+        { organizationId: "missing-organization", invitationId: "missing-invitation" },
+      ],
+      ["organizations/invitations/preview", { invitationId: "missing-invitation" }],
+      ["organizations/invitations/accept", { invitationId: "missing-invitation" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],

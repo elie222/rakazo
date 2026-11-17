@@ -66,8 +66,6 @@ vi.mock("./live-notifications", () => ({
 }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   aiConsentCoalesceKey: vi.fn(() => "test-consent-context"),
   allowPromptedAiConsent: vi.fn(async () => undefined),
@@ -491,17 +489,16 @@ describe("hosted voice playback controls", () => {
   });
 
   it("shows Stop while the first clip is still preparing, and idle if Stop cancels it", async () => {
-    let releasePrepare: (() => void) | undefined;
+    let preparing: Deferred | undefined;
     vi.mocked(rpc).mockImplementation(async (proc) => {
       if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
-      await new Promise<void>((resolve) => {
-        releasePrepare = resolve;
-      });
+      preparing = deferred();
+      await preparing.promise;
       return { ready: true, utterances: ["Read this"] } as never;
     });
 
     const spoken = speakText("Read this", { botId: "bot-1", messageId: "msg-1" });
-    await waitFor(() => releasePrepare !== undefined);
+    await waitFor(() => preparing !== undefined);
     expect(getVoicePlaybackState()).toEqual({
       status: "playing",
       botId: "bot-1",
@@ -512,7 +509,7 @@ describe("hosted voice playback controls", () => {
 
     stopVoicePlayback();
     expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
-    releasePrepare?.();
+    preparing?.resolve();
     await expect(spoken).resolves.toBe(false);
     expect(ControllableAudio.instances).toHaveLength(0);
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
@@ -1052,24 +1049,24 @@ describe("call audio", () => {
   });
 
   it("applies audio mode changes one at a time, in order", async () => {
-    let releaseFirst!: () => void;
+    const first = deferred();
+    let firstStarted = false;
     const applied: unknown[] = [];
     vi.mocked(setAudioModeAsync)
       .mockImplementationOnce(async (mode) => {
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
+        firstStarted = true;
+        await first.promise;
         applied.push(mode);
       })
       .mockImplementation(async (mode) => {
         applied.push(mode);
       });
     const starting = setCallAudio(true);
-    await waitFor(() => typeof releaseFirst === "function");
+    await waitFor(() => firstStarted);
     const ending = setCallAudio(false);
     await Promise.resolve();
     expect(applied).toEqual([]);
-    releaseFirst();
+    first.resolve();
     await Promise.all([starting, ending]);
     expect(applied).toEqual([
       expect.objectContaining({ allowsRecording: true }),

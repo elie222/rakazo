@@ -1,13 +1,12 @@
+import { trimEndChars } from "@rakazo/contracts";
 import { newClientId } from "./client-id.js";
 export function deriveMcpSlug(name: string): string {
-  return (
-    name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "-")
-      .replace(/^[_-]+|-+$/g, "")
-      .slice(0, 64) || `mcp-${Date.now()}`
-  );
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[_-]+/, "");
+  return trimEndChars(slug, "-").slice(0, 64) || `mcp-${Date.now()}`;
 }
 
 export function customMcpServerInput(name: string, endpoint: string) {

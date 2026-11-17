@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { canDeleteOrganization } from "@rakazo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +17,7 @@ import {
   useOrganizations,
 } from "../../lib/organizations";
 import { useSave } from "../../lib/query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
+import { useLiveStream } from "../../lib/roster-signals";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -28,6 +28,8 @@ export default function OrganizationSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const organization = activeOrganization(query.data);
   const [draft, setDraft] = useState<string | null>(null);
   // The plan choice links here with the deletion confirmation already open.
@@ -114,11 +116,22 @@ export default function OrganizationSettings() {
         </SettingsGroup>
         <SettingsGroup>
           <SettingsRow
-            key="create"
+            key="members"
             accessibilityRole="button"
-            disabled={pending}
-            title={t`Create organization`}
-            onPress={() => openFromSettingsSheet(router, "/new-organization")}
+            title={t`Members`}
+            // Alone in it, its owner is offered to invite someone instead of a count of one.
+            value={
+              current.memberCount === 1 && canManageOrganizationMembers(current)
+                ? t`Invite people`
+                : String(current.memberCount)
+            }
+            chevron="right"
+            onPress={() =>
+              router.push({
+                pathname: "/organization-members",
+                params: { organizationId: current.id },
+              })
+            }
           />
         </SettingsGroup>
         {canDelete ? (

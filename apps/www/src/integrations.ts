@@ -165,7 +165,12 @@ const SOURCE_CATEGORIES: Record<PluginCategory, readonly string[]> = {
   ],
   code: ["developer tools", "model context protocol", "app builder", "internet of things"],
   data: ["analytics", "business intelligence", "dashboards", "databases"],
-  ops: ["server monitoring", "it operations", "security & identity tools", "ai safety compliance detection"],
+  ops: [
+    "server monitoring",
+    "it operations",
+    "security & identity tools",
+    "ai safety compliance detection",
+  ],
 };
 
 const CATEGORY_BY_SOURCE = new Map(
@@ -233,7 +238,9 @@ export function integrationClaimPath(slug: string): string {
 /** Round down so the headline count stays true as the catalog shifts. */
 export function integrationCountLabel(): string {
   const count = INTEGRATIONS.length;
-  return count >= 1000 ? `${(Math.floor(count / 100) * 100).toLocaleString("en-US")}+` : String(count);
+  return count >= 1000
+    ? `${(Math.floor(count / 100) * 100).toLocaleString("en-US")}+`
+    : String(count);
 }
 
 export function relatedIntegrations(integration: Integration, limit = 6): Integration[] {
@@ -244,7 +251,8 @@ export function relatedIntegrations(integration: Integration, limit = 6): Integr
   )
     .toSorted(
       (a, b) =>
-        Number(popular.has(b.slug)) - Number(popular.has(a.slug)) || b.actions.length - a.actions.length,
+        Number(popular.has(b.slug)) - Number(popular.has(a.slug)) ||
+        b.actions.length - a.actions.length,
     )
     .slice(0, limit);
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -17,7 +18,7 @@ vi.mock("@lingui/react/macro", () => {
     Trans: ({ children }: { children: ReactNode }) => children,
   };
 });
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Button: ({ size: _size, ...props }: ComponentProps<"button"> & { size?: string }) => (
     <button {...props} />
   ),
@@ -26,8 +27,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
 }));
 vi.mock("./ai/primitives", () => ({ SuccessPop: () => null }));
 const { deployment, account, me } = vi.hoisted(() => ({
@@ -101,7 +101,9 @@ it("saves an account's own desktop to the account, never the deployment", async 
   account.update.mockResolvedValue(saved);
   const onProviderChange = vi.fn();
   await act(async () => root.render(settings({ scope: "account", onProviderChange })));
-  expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("example-desktop");
+  expect(host.querySelector<HTMLInputElement>("input:not([aria-hidden])")?.value).toBe(
+    "example-desktop",
+  );
   // Loaded once, not again on every render.
   expect(account.get).toHaveBeenCalledOnce();
 
@@ -126,7 +128,7 @@ it("sends an account back to the deployment default", async () => {
   });
   const onProviderChange = vi.fn();
   await act(async () => root.render(settings({ scope: "account", onProviderChange })));
-  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector("input:not([aria-hidden])")).toBeNull();
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(account.update).toHaveBeenCalledWith({ provider: "default", values: {} });
   expect(onProviderChange).not.toHaveBeenCalled();
@@ -171,7 +173,7 @@ it("blocks the fields while a save is in flight", async () => {
   // The response replaces the draft, so an edit accepted meanwhile would be
   // silently lost while the form still claims "Saved".
   expect(host.querySelector("fieldset")?.disabled).toBe(true);
-  expect(host.querySelector<HTMLSelectElement>("select")?.matches(":disabled")).toBe(true);
+  expect(host.querySelector('[role="combobox"]')?.matches(":disabled")).toBe(true);
 
   finishSave();
   await act(async () => {});
@@ -227,4 +229,44 @@ it("reports the deployment's provider and reads the account again", async () => 
     values: saved.values,
   });
   expect(me).toHaveBeenCalledTimes(2);
+});
+
+it("lets an optional choice go back to the provider's default", async () => {
+  const withRegion = {
+    ...saved,
+    providers: [
+      {
+        ...saved.providers[0]!,
+        fields: [
+          ...saved.providers[0]!.fields,
+          {
+            key: "region",
+            label: "Region",
+            kind: "select",
+            required: false,
+            options: [{ value: "eu", label: "Europe" }],
+          },
+        ],
+      },
+    ],
+    values: { ...saved.values, region: "eu" },
+  };
+  account.get.mockResolvedValue(withRegion);
+  account.update.mockResolvedValue(withRegion);
+  await act(async () => root.render(settings({ scope: "account" })));
+  const id = [...host.querySelectorAll("label")].find(
+    (node) => node.textContent === "Region",
+  )?.htmlFor;
+  const trigger = document.getElementById(id ?? "");
+  expect(trigger?.textContent).toContain("Europe");
+  await act(async () => trigger?.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (node) => node.textContent === "Default",
+  );
+  await act(async () => option?.click());
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(account.update).toHaveBeenCalledWith({
+    provider: saved.provider,
+    values: { ...saved.values, region: "" },
+  });
 });

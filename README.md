@@ -276,7 +276,8 @@ builds pin the image tag to their own version; unpackaged builds pull `edge`. De
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
 instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
-**Stop Local Stack** in the application menu stops the managed stack without quitting.
+**Quit and Stop Bots** in the application menu stops the managed stack and quits; switching to
+another server also stops it.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show

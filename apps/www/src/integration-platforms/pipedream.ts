@@ -1,29 +1,29 @@
-import type { IntegrationPlatform } from "./types";
 import {
   ARCADE,
   ARCADE_PRICING,
   COMPOSIO,
   COMPOSIO_PRICING,
-  INTEGRATIONS_DOC,
-  LARGE_TEAM,
-  PIPEDREAM,
-  PIPEDREAM_PRICING,
-  PRICES_CHECKED,
-  PRICE_SUMMARY,
-  SMALL_TEAM,
-  WORKLOADS,
-  ZAPIER,
-  ZAPIER_PRICING,
   composioPro,
   count,
   homepage,
+  INTEGRATIONS_DOC,
+  LARGE_TEAM,
   monthlyCalls,
+  PIPEDREAM,
+  PIPEDREAM_PRICING,
+  PRICE_SUMMARY,
+  PRICES_CHECKED,
   pipedreamExtraCredits,
   pipedreamMonthly,
   roundUsd,
+  SMALL_TEAM,
   teamLabel,
   usd,
+  WORKLOADS,
+  ZAPIER,
+  ZAPIER_PRICING,
 } from "./shared";
+import type { IntegrationPlatform } from "./types";
 
 const SMALL = monthlyCalls(SMALL_TEAM);
 const LARGE = monthlyCalls(LARGE_TEAM);
@@ -85,7 +85,11 @@ export const pipedream: IntegrationPlatform = {
         rows: [
           {
             topic: "Price",
-            cells: ["$0", `${YEARLY}/mo billed yearly, or ${MONTHLY} monthly`, "Custom, yearly contract"],
+            cells: [
+              "$0",
+              `${YEARLY}/mo billed yearly, or ${MONTHLY} monthly`,
+              "Custom, yearly contract",
+            ],
           },
           {
             topic: "Production use",
@@ -114,7 +118,11 @@ export const pipedream: IntegrationPlatform = {
           { topic: "Your own OAuth clients", cells: ["Yes", "Yes", "Yes"] },
           {
             topic: "Compliance",
-            cells: ["SOC 2 Type 2, GDPR", "SOC 2 Type 2, GDPR", "Adds HIPAA, SSO, SCIM, static egress IPs"],
+            cells: [
+              "SOC 2 Type 2, GDPR",
+              "SOC 2 Type 2, GDPR",
+              "Adds HIPAA, SSO, SCIM, static egress IPs",
+            ],
           },
           { topic: "Support", cells: ["Community", "Email", "SLA and a shared Slack channel"] },
         ],
@@ -169,12 +177,21 @@ export const pipedream: IntegrationPlatform = {
         caption: "Pipedream Connect and Composio side by side",
         columns: ["Compared", "Pipedream Connect", "Composio"],
         rows: [
-          { topic: "Apps", cells: [`${PIPEDREAM.apps} APIs, ${PIPEDREAM.tools} tools`, `${COMPOSIO.toolkits} toolkits`] },
+          {
+            topic: "Apps",
+            cells: [
+              `${PIPEDREAM.apps} APIs, ${PIPEDREAM.tools} tools`,
+              `${COMPOSIO.toolkits} toolkits`,
+            ],
+          },
           {
             topic: "Free tier",
             cells: [PRICE_SUMMARY.pipedream.free, PRICE_SUMMARY.composio.free],
           },
-          { topic: "Paid from", cells: [`${YEARLY}/mo billed yearly`, PRICE_SUMMARY.composio.paid] },
+          {
+            topic: "Paid from",
+            cells: [`${YEARLY}/mo billed yearly`, PRICE_SUMMARY.composio.paid],
+          },
           {
             topic: "Billed by",
             cells: ["External user and 30 s of compute", "Tool call, priced by app tier"],
@@ -196,7 +213,10 @@ export const pipedream: IntegrationPlatform = {
           },
           {
             topic: "Compliance",
-            cells: ["SOC 2 Type 2 on every plan, HIPAA on Business", "SOC 2 Type II, ISO 27001; BAA as an add-on"],
+            cells: [
+              "SOC 2 Type 2 on every plan, HIPAA on Business",
+              "SOC 2 Type II, ISO 27001; BAA as an add-on",
+            ],
           },
           { topic: "Owner", cells: ["Workday", "Independent"] },
           {
@@ -205,7 +225,10 @@ export const pipedream: IntegrationPlatform = {
           },
           {
             topic: "How bots get tools",
-            cells: ["Pipedream's MCP server, one connection per account", "Search Composio's actions and run them in batches"],
+            cells: [
+              "Pipedream's MCP server, one connection per account",
+              "Search Composio's actions and run them in batches",
+            ],
           },
         ],
         note: `Prices from [Pipedream](${PIPEDREAM_PRICING}) and [Composio](${COMPOSIO_PRICING}), checked ${PRICES_CHECKED}.`,
@@ -273,13 +296,11 @@ export const pipedream: IntegrationPlatform = {
   faq: [
     {
       question: "How much does Pipedream Connect cost?",
-      answer:
-        `As of ${PRICES_CHECKED}, development is free. Production needs the Startup plan: ${YEARLY} a month billed yearly or ${MONTHLY} monthly, with ${PIPEDREAM.users} external users and ${count(PIPEDREAM.credits)} credits, then ${usd(PIPEDREAM.perUser)} per extra user and ${usd(PIPEDREAM.perCredit)} per extra credit. A credit is 30 seconds of compute. Business is custom. See [Pipedream's pricing page](${PIPEDREAM_PRICING}).`,
+      answer: `As of ${PRICES_CHECKED}, development is free. Production needs the Startup plan: ${YEARLY} a month billed yearly or ${MONTHLY} monthly, with ${PIPEDREAM.users} external users and ${count(PIPEDREAM.credits)} credits, then ${usd(PIPEDREAM.perUser)} per extra user and ${usd(PIPEDREAM.perCredit)} per extra credit. A credit is 30 seconds of compute. Business is custom. See [Pipedream's pricing page](${PIPEDREAM_PRICING}).`,
     },
     {
       question: "Is Pipedream free?",
-      answer:
-        `Only for development: up to ${PIPEDREAM.devUsers} test users, each connecting from a browser signed in to pipedream.com. Serving real users needs a paid plan.`,
+      answer: `Only for development: up to ${PIPEDREAM.devUsers} test users, each connecting from a browser signed in to pipedream.com. Serving real users needs a paid plan.`,
     },
     {
       question: "What is Pipedream MCP?",
@@ -298,8 +319,7 @@ export const pipedream: IntegrationPlatform = {
     },
     {
       question: "Pipedream vs Composio for AI agents?",
-      answer:
-        `Both host app logins and give agents thousands of actions. Pipedream has more apps and bills per user and per 30 seconds of compute, from ${YEARLY} a month. [Composio](/integration-platforms/composio/) bills per call and is free up to ${count(COMPOSIO.freeCalls)} calls. In Rakazo, Composio takes one API key and bots search its actions; Pipedream takes a project and OAuth client and serves each account's tools over its MCP server. You can turn on both.`,
+      answer: `Both host app logins and give agents thousands of actions. Pipedream has more apps and bills per user and per 30 seconds of compute, from ${YEARLY} a month. [Composio](/integration-platforms/composio/) bills per call and is free up to ${count(COMPOSIO.freeCalls)} calls. In Rakazo, Composio takes one API key and bots search its actions; Pipedream takes a project and OAuth client and serves each account's tools over its MCP server. You can turn on both.`,
     },
     {
       question: "What is a good Pipedream alternative?",

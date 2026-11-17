@@ -1,22 +1,30 @@
-import type { VoiceProvider } from "./types";
 import {
+  aboutTotal,
+  homepage,
   PRICING_SOURCES,
   RATES,
-  VOICE_DOC,
-  VOICE_MODELS_DOC,
-  WORKLOAD,
-  WORKLOAD_NAMES,
-  aboutTotal,
-  workloadExtremes,
-  homepage,
   speechHourCost,
   usd,
+  VOICE_DOC,
+  VOICE_MODELS_DOC,
   voicePriceTable,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_NAMES,
   withPricingSources,
+  workloadExtremes,
 } from "./shared";
+import type { VoiceProvider } from "./types";
 
-const WORKLOAD_SHOWN = ["selfHosted", "selfHostedCloud", "xai", "openai", "fish", "elevenlabs", "cartesia"] as const;
+const WORKLOAD_SHOWN = [
+  "selfHosted",
+  "selfHostedCloud",
+  "xai",
+  "openai",
+  "fish",
+  "elevenlabs",
+  "cartesia",
+] as const;
 const COMPARED = ["selfHosted", "hostedKokoro", "macos", "openai", "fish", "elevenlabs"] as const;
 
 /** RunPod RTX 4090 per hour, community and secure, as of November 2026. */
@@ -78,11 +86,22 @@ export const selfHosted: VoiceProvider = {
       ],
       table: {
         caption: "Open text to speech models, as of November 2026",
-        columns: ["Model", "License for the weights", "Size and hardware", "Cloning", "OpenAI-compatible server"],
+        columns: [
+          "Model",
+          "License for the weights",
+          "Size and hardware",
+          "Cloning",
+          "OpenAI-compatible server",
+        ],
         rows: [
           {
             topic: "[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)",
-            cells: ["Apache 2.0, commercial use", "82M, CPU is fine", "No", "Kokoro-FastAPI, Speaches, mlx-audio"],
+            cells: [
+              "Apache 2.0, commercial use",
+              "82M, CPU is fine",
+              "No",
+              "Kokoro-FastAPI, Speaches, mlx-audio",
+            ],
           },
           {
             topic: "[Piper](https://github.com/OHF-Voice/piper1-gpl)",
@@ -90,7 +109,12 @@ export const selfHosted: VoiceProvider = {
           },
           {
             topic: "[Chatterbox](https://github.com/resemble-ai/chatterbox)",
-            cells: ["MIT, every clip watermarked", "110M to 500M, GPU or Apple Silicon", "Yes, from about 10 seconds", "mlx-audio"],
+            cells: [
+              "MIT, every clip watermarked",
+              "110M to 500M, GPU or Apple Silicon",
+              "Yes, from about 10 seconds",
+              "mlx-audio",
+            ],
           },
           {
             topic: "[Orpheus](https://github.com/canopyai/Orpheus-TTS)",
@@ -102,7 +126,12 @@ export const selfHosted: VoiceProvider = {
           },
           {
             topic: "[Fish Audio S2-Pro, Drama 3](/voice-providers/fish-audio/)",
-            cells: ["Fish Audio license, non-commercial without a paid license", "4B; 35B with 3B active", "Yes", "mlx-audio"],
+            cells: [
+              "Fish Audio license, non-commercial without a paid license",
+              "4B; 35B with 3B active",
+              "Yes",
+              "mlx-audio",
+            ],
           },
           {
             topic: "[F5-TTS](https://github.com/SWivid/F5-TTS)",
@@ -110,7 +139,12 @@ export const selfHosted: VoiceProvider = {
           },
           {
             topic: "[XTTS-v2](https://huggingface.co/coqui/XTTS-v2)",
-            cells: ["Coqui Public Model License, non-commercial; no commercial license is sold", "GPU", "Yes, from 6 seconds", "No"],
+            cells: [
+              "Coqui Public Model License, non-commercial; no commercial license is sold",
+              "GPU",
+              "Yes, from 6 seconds",
+              "No",
+            ],
           },
         ],
         note: "From each project's README or model card, checked November 2026. Check the license file yourself before commercial use.",
@@ -132,7 +166,10 @@ export const selfHosted: VoiceProvider = {
         caption: "Hardware for a self-hosted speech server, as of November 2026",
         columns: ["Machine", "Cost", "Good for"],
         rows: [
-          { topic: "A computer you already own", cells: ["Electricity only", "Kokoro and a small Whisper for one household or team"] },
+          {
+            topic: "A computer you already own",
+            cells: ["Electricity only", "Kokoro and a small Whisper for one household or team"],
+          },
           {
             topic: "Small cloud CPU server, 4 vCPU and 8 GB",
             cells: [
@@ -140,7 +177,10 @@ export const selfHosted: VoiceProvider = {
               "Kokoro; Whisper is slow on long clips",
             ],
           },
-          { topic: "Mac mini", cells: ["From $899 (M6)", "Kokoro and Whisper or Parakeet on mlx-audio, quickly"] },
+          {
+            topic: "Mac mini",
+            cells: ["From $899 (M6)", "Kokoro and Whisper or Parakeet on mlx-audio, quickly"],
+          },
           {
             topic: "Rented RTX 4090",
             cells: [
@@ -148,7 +188,10 @@ export const selfHosted: VoiceProvider = {
               "Many users, larger models such as Chatterbox or Orpheus",
             ],
           },
-          { topic: "Rented NVIDIA L4", cells: ["$0.44 to $0.59 an hour", "Same, with less memory"] },
+          {
+            topic: "Rented NVIDIA L4",
+            cells: ["$0.44 to $0.59 an hour", "Same, with less memory"],
+          },
         ],
         note: "From the Hetzner, Apple and RunPod pricing pages, checked November 2026.",
       },
@@ -159,7 +202,10 @@ export const selfHosted: VoiceProvider = {
         `${WORKLOAD} Hosted, that ranges from ${aboutTotal(HOSTED.cheapest).toLowerCase()} on ${WORKLOAD_NAMES[HOSTED.cheapest]} to ${aboutTotal(HOSTED.dearest).toLowerCase()} on ${WORKLOAD_NAMES[HOSTED.dearest]} a month. Self-hosted on hardware you already have, it costs close to nothing, and on a small rented server about ${usd(RATES.cpuServerMonth)}. A GPU only pays off with many users: at ${usd(GPU_HOUR.low)} an hour, always on, it costs more than ElevenLabs until you generate about ${GPU_BREAK_EVEN_HOURS} hours of speech a month.`,
         "What you give up is polish. The best hosted voices still sound more natural than Kokoro, cloning is easier, and someone else keeps the server running.",
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
+      table: voiceWorkloadTable(
+        "One bot, 30 minutes of speech and 30 of transcription a day",
+        WORKLOAD_SHOWN,
+      ),
     },
     {
       heading: "Hosted servers that copy OpenAI's audio API",
@@ -246,8 +292,7 @@ export const selfHosted: VoiceProvider = {
     },
     {
       question: "Is self-hosting Whisper cheaper than the Whisper API?",
-      answer:
-        `For one person, on hardware you already have, yes: it costs only electricity, against ${usd(RATES.openaiWhisperHour)} an hour for OpenAI's Whisper or ${usd(RATES.openaiMiniTranscribeHour)} for \`gpt-4o-mini-transcribe\`. Renting a GPU just for transcription costs more than the API unless you transcribe many hours a day.`,
+      answer: `For one person, on hardware you already have, yes: it costs only electricity, against ${usd(RATES.openaiWhisperHour)} an hour for OpenAI's Whisper or ${usd(RATES.openaiMiniTranscribeHour)} for \`gpt-4o-mini-transcribe\`. Renting a GPU just for transcription costs more than the API unless you transcribe many hours a day.`,
     },
     {
       question: "Does self-hosted voice work offline?",
@@ -262,22 +307,25 @@ export const selfHosted: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    { label: "Kokoro-FastAPI", href: "https://github.com/remsky/Kokoro-FastAPI" },
-    { label: "Kokoro-82M model", href: "https://huggingface.co/hexgrad/Kokoro-82M" },
-    { label: "Speaches", href: "https://github.com/speaches-ai/speaches" },
-    { label: "mlx-audio", href: "https://github.com/Blaizzy/mlx-audio" },
-    { label: "faster-whisper", href: "https://github.com/SYSTRAN/faster-whisper" },
-    { label: "Whisper large-v3-turbo", href: "https://huggingface.co/openai/whisper-large-v3-turbo" },
-    { label: "Parakeet TDT 0.6B v3", href: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3" },
-    {
-      label: "Artificial Analysis, text to speech leaderboard",
-      href: "https://artificialanalysis.ai/text-to-speech/leaderboard",
-    },
-    { label: "RunPod, pricing", href: "https://www.runpod.io/pricing" },
-    PRICING_SOURCES.hetzner,
-    PRICING_SOURCES.groq,
-    VOICE_DOC,
-    VOICE_MODELS_DOC,
+      { label: "Kokoro-FastAPI", href: "https://github.com/remsky/Kokoro-FastAPI" },
+      { label: "Kokoro-82M model", href: "https://huggingface.co/hexgrad/Kokoro-82M" },
+      { label: "Speaches", href: "https://github.com/speaches-ai/speaches" },
+      { label: "mlx-audio", href: "https://github.com/Blaizzy/mlx-audio" },
+      { label: "faster-whisper", href: "https://github.com/SYSTRAN/faster-whisper" },
+      {
+        label: "Whisper large-v3-turbo",
+        href: "https://huggingface.co/openai/whisper-large-v3-turbo",
+      },
+      { label: "Parakeet TDT 0.6B v3", href: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3" },
+      {
+        label: "Artificial Analysis, text to speech leaderboard",
+        href: "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      },
+      { label: "RunPod, pricing", href: "https://www.runpod.io/pricing" },
+      PRICING_SOURCES.hetzner,
+      PRICING_SOURCES.groq,
+      VOICE_DOC,
+      VOICE_MODELS_DOC,
     ],
     { prices: COMPARED, workload: WORKLOAD_SHOWN },
   ),
