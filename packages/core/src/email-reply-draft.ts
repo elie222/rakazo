@@ -1,7 +1,7 @@
 /**
  * A saved email draft is the copy of record. The reply card opens that draft,
  * and every edit is written back to it. Send delivers the draft as it stands
- * then. Discard leaves it unsent.
+ * then, and only then is the draft sent. Discard leaves it unsent.
  */
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -10,19 +10,20 @@ const BODY_TOGGLE_LINES = 8;
 export type EmailReplyStatus = "ready" | "sent" | "discarded";
 export type EmailReplyApproval = "needs_approval" | "send_once";
 
+/** The draft as the card edits it. Address fields keep the exact text being typed. */
 export type EmailReplyDraft = {
   id: string;
   from: string;
   inReplyTo: string;
-  to: string[];
-  cc: string[];
+  toText: string;
+  ccText: string;
   subject: string;
   body: string;
   status: EmailReplyStatus;
   approval: EmailReplyApproval;
 };
 
-/** Field values as the card edits them. Address lists are comma-separated. */
+/** Field values as the card edits them. Address lists are the raw field text. */
 export type EmailReplyEdit = {
   inReplyTo?: string;
   to?: string;
@@ -34,7 +35,7 @@ export type EmailReplyEdit = {
 
 export type EmailReplyCardView = {
   draftId: string;
-  title: "Reply";
+  title: "Mail";
   status: EmailReplyStatus;
   statusLabel: string;
   editable: boolean;
@@ -56,6 +57,19 @@ export type SentEmail = {
   cc: string[];
   subject: string;
   body: string;
+};
+
+export type EmailReplyBlockSnapshot = {
+  kind: "email_reply";
+  draftId: string;
+  from: string;
+  inReplyTo?: string;
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  status: EmailReplyStatus;
+  approval?: EmailReplyApproval;
 };
 
 export class EmailReplyDraftError extends Error {
@@ -87,14 +101,14 @@ function statusLabel(status: EmailReplyStatus): string {
 export function emailReplyCard(draft: EmailReplyDraft): EmailReplyCardView {
   return {
     draftId: draft.id,
-    title: "Reply",
+    title: "Mail",
     status: draft.status,
     statusLabel: statusLabel(draft.status),
     editable: draft.status === "ready",
     from: draft.from,
     inReplyTo: draft.inReplyTo,
-    to: draft.to.join(", "),
-    cc: draft.cc.join(", "),
+    to: draft.toText,
+    cc: draft.ccText,
     subject: draft.subject,
     body: draft.body,
     approval: draft.approval,
@@ -105,6 +119,11 @@ export function emailReplyCard(draft: EmailReplyDraft): EmailReplyCardView {
 /** The thread-list line while the draft is waiting. */
 export function emailReplyPreview(draft: Pick<EmailReplyDraft, "status" | "subject">): string {
   return draft.status === "ready" ? "The reply draft is ready…" : draft.subject;
+}
+
+function addressText(value: string[] | string | undefined): string {
+  if (Array.isArray(value)) return value.join(", ");
+  return value ?? "";
 }
 
 export function createEmailReplyDraft(input: {
@@ -119,15 +138,15 @@ export function createEmailReplyDraft(input: {
 }): EmailReplyDraft {
   const from = input.from.trim();
   if (!from || !ADDRESS.test(from)) throw new EmailReplyDraftError("The From address is invalid");
-  const to = typeof input.to === "string" ? parseAddressList(input.to) : input.to.map((a) => a.trim());
-  const cc = typeof input.cc === "string" ? parseAddressList(input.cc) : (input.cc ?? []).map((a) => a.trim());
+  const to = parseAddressList(addressText(input.to));
+  const cc = parseAddressList(addressText(input.cc));
   assertAddresses([...to, ...cc]);
   return {
     id: input.id,
     from,
     inReplyTo: input.inReplyTo?.trim() ?? "",
-    to: to.filter(Boolean),
-    cc: cc.filter(Boolean),
+    toText: addressText(input.to),
+    ccText: addressText(input.cc),
     subject: input.subject,
     body: input.body,
     status: "ready",
@@ -139,60 +158,90 @@ export function applyEmailReplyEdit(draft: EmailReplyDraft, edit: EmailReplyEdit
   if (draft.status !== "ready") {
     throw new EmailReplyDraftError("This draft is no longer editable");
   }
-  const to = edit.to === undefined ? draft.to : parseAddressList(edit.to);
-  const cc = edit.cc === undefined ? draft.cc : parseAddressList(edit.cc);
-  assertAddresses([...to, ...cc]);
   return {
     ...draft,
     inReplyTo: edit.inReplyTo === undefined ? draft.inReplyTo : edit.inReplyTo,
-    to,
-    cc,
+    toText: edit.to === undefined ? draft.toText : edit.to,
+    ccText: edit.cc === undefined ? draft.ccText : edit.cc,
     subject: edit.subject === undefined ? draft.subject : edit.subject,
     body: edit.body === undefined ? draft.body : edit.body,
     approval: edit.approval ?? draft.approval,
   };
 }
 
-/** The message block a chat stores so the card can open this draft again. */
-export function emailReplyBlock(draft: EmailReplyDraft) {
+/** Fields a save stores. An unfinished address stays in the list so typing is not lost. */
+export function emailReplySaveFields(draft: EmailReplyDraft) {
   return {
-    kind: "email_reply" as const,
-    draftId: draft.id,
-    from: draft.from,
     inReplyTo: draft.inReplyTo,
-    to: draft.to,
-    cc: draft.cc,
+    to: parseAddressList(draft.toText),
+    cc: parseAddressList(draft.ccText),
     subject: draft.subject,
     body: draft.body,
-    status: draft.status,
     approval: draft.approval,
   };
 }
 
-export function emailReplyDraftFromBlock(block: {
-  draftId: string;
-  from: string;
-  inReplyTo?: string;
-  to: string[];
-  cc: string[];
-  subject: string;
-  body: string;
-  status: EmailReplyStatus;
-  approval?: EmailReplyApproval;
-}): EmailReplyDraft {
+/** The message block a chat stores so the card can open this draft again. */
+export function emailReplyBlock(draft: EmailReplyDraft): EmailReplyBlockSnapshot {
+  const fields = emailReplySaveFields(draft);
   return {
-    ...createEmailReplyDraft({
-      id: block.draftId,
-      from: block.from,
-      inReplyTo: block.inReplyTo,
-      to: block.to,
-      cc: block.cc,
-      subject: block.subject,
-      body: block.body,
-      approval: block.approval,
-    }),
-    status: block.status,
+    kind: "email_reply",
+    draftId: draft.id,
+    from: draft.from,
+    ...(fields.inReplyTo ? { inReplyTo: fields.inReplyTo } : {}),
+    to: fields.to,
+    cc: fields.cc,
+    subject: fields.subject,
+    body: fields.body,
+    status: draft.status,
+    approval: fields.approval,
   };
+}
+
+/**
+ * Opens a stored block. A block the schema accepts always opens, even when an
+ * address is not one this card would send.
+ */
+export function emailReplyDraftFromBlock(block: EmailReplyBlockSnapshot): EmailReplyDraft {
+  return {
+    id: block.draftId,
+    from: block.from,
+    inReplyTo: block.inReplyTo ?? "",
+    toText: block.to.join(", "),
+    ccText: block.cc.join(", "),
+    subject: block.subject,
+    body: block.body,
+    status: block.status,
+    approval: block.approval ?? "needs_approval",
+  };
+}
+
+/** The message Send would deliver. Does not change the draft. */
+export function emailReplyOutbound(draft: EmailReplyDraft): SentEmail {
+  if (draft.status === "sent") throw new EmailReplyDraftError("This draft was already sent");
+  if (draft.status === "discarded") throw new EmailReplyDraftError("This draft was discarded");
+  const to = parseAddressList(draft.toText);
+  const cc = parseAddressList(draft.ccText);
+  if (to.length === 0) throw new EmailReplyDraftError("Add a recipient");
+  assertAddresses([draft.from, ...to, ...cc]);
+  if (!draft.subject.trim()) throw new EmailReplyDraftError("Add a subject");
+  if (!draft.body.trim()) throw new EmailReplyDraftError("Write the message");
+  return {
+    draftId: draft.id,
+    from: draft.from,
+    inReplyTo: draft.inReplyTo,
+    to,
+    cc,
+    subject: draft.subject.trim(),
+    body: draft.body,
+  };
+}
+
+export function emailReplyWithStatus(
+  draft: EmailReplyDraft,
+  status: EmailReplyStatus,
+): EmailReplyDraft {
+  return { ...draft, status };
 }
 
 export class EmailReplyDraftStore {
@@ -207,7 +256,7 @@ export class EmailReplyDraftStore {
     return emailReplyCard(this.require(id));
   }
 
-  /** Writes the card edit onto the saved draft and returns the card. */
+  /** Writes the card edit onto the saved draft, including an unfinished address. */
   edit(id: string, edit: EmailReplyEdit): EmailReplyCardView {
     const next = applyEmailReplyEdit(this.require(id), edit);
     this.drafts.set(id, next);
@@ -218,33 +267,22 @@ export class EmailReplyDraftStore {
     return this.require(id);
   }
 
-  send(id: string): SentEmail {
-    const draft = this.require(id);
-    if (draft.status !== "ready") {
-      throw new EmailReplyDraftError(
-        draft.status === "sent" ? "This draft was already sent" : "This draft was discarded",
-      );
-    }
-    if (draft.to.length === 0) throw new EmailReplyDraftError("Add a recipient");
-    if (!draft.subject.trim()) throw new EmailReplyDraftError("Add a subject");
-    if (!draft.body.trim()) throw new EmailReplyDraftError("Write the message");
-    const sent = { ...draft, status: "sent" as const };
-    this.drafts.set(id, sent);
-    return {
-      draftId: sent.id,
-      from: sent.from,
-      inReplyTo: sent.inReplyTo,
-      to: sent.to,
-      cc: sent.cc,
-      subject: sent.subject,
-      body: sent.body,
-    };
+  /**
+   * Delivers the draft as it stands, then marks it sent. A delivery failure
+   * leaves the draft ready.
+   */
+  async send(id: string, deliver: (mail: SentEmail) => Promise<void>): Promise<SentEmail> {
+    const mail = emailReplyOutbound(this.require(id));
+    await deliver(mail);
+    const current = this.require(id);
+    this.drafts.set(id, emailReplyWithStatus(current, "sent"));
+    return mail;
   }
 
   discard(id: string): EmailReplyDraft {
     const draft = this.require(id);
     if (draft.status === "sent") throw new EmailReplyDraftError("This draft was already sent");
-    const discarded = { ...draft, status: "discarded" as const };
+    const discarded = emailReplyWithStatus(draft, "discarded");
     this.drafts.set(id, discarded);
     return discarded;
   }

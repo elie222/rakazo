@@ -491,4 +491,25 @@ describe("user-visible messages", () => {
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
     ).toEqual(["ask", "computer", "approval", "connect", "user"]);
   });
+
+  it("keeps a ready email draft visible in a background run", () => {
+    const messages = [
+      message("draft", "run-ticket", [
+        {
+          kind: "email_reply",
+          draftId: "draft-1",
+          from: "ops@mail.example.com",
+          to: ["clinic@example.com"],
+          cc: [],
+          subject: "Re: Training enquiry",
+          body: "Hi",
+          status: "ready",
+        },
+      ]),
+      message("note", "run-ticket", [{ kind: "text", text: "Sent it." }]),
+    ];
+    expect(
+      userVisibleMessages(messages, { backgroundRunIds: ["run-ticket"] }).map((row) => row.id),
+    ).toEqual(["draft"]);
+  });
 });

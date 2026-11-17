@@ -2,6 +2,7 @@ import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contract
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "./ask-kind.js";
 import { displayName } from "./display-name.js";
+import { emailReplyPreview } from "./email-reply-draft.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
 import { isDeliveryMessage } from "./message-visibility.js";
@@ -169,7 +170,7 @@ export function previewMessageText(
     .trim();
   if (text) return text;
   for (const block of message.blocks) {
-    if (block.kind === "email_reply" && block.status === "ready") return "The reply draft is ready…";
+    if (block.kind === "email_reply") return emailReplyPreview(block);
   }
   for (const block of message.blocks) {
     if (block.kind === "ask" && isQuestionAskBlock(block)) {

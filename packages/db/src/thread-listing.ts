@@ -2,6 +2,7 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
+  emailReplyPreview,
   isDeliveryMessage,
   plainTextFromMarkdown,
 } from "@rakazo/core";
@@ -103,6 +104,18 @@ export function previewFromBlocks(blocks: unknown): string {
       typeof (block as { text?: unknown }).text === "string"
     ) {
       return plainTextFromMarkdown((block as { text: string }).text);
+    }
+  }
+  for (const block of rows) {
+    if (!block || typeof block !== "object" || !("kind" in block)) continue;
+    if ((block as { kind?: unknown }).kind !== "email_reply") continue;
+    const status = (block as { status?: unknown }).status;
+    const subject = (block as { subject?: unknown }).subject;
+    if (status === "ready" || status === "sent" || status === "discarded") {
+      return emailReplyPreview({
+        status,
+        subject: typeof subject === "string" ? subject : "",
+      });
     }
   }
   return "";

@@ -16,10 +16,10 @@ import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
-import { EmailReplyCard } from "../../components/EmailReplyCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
 import { ComputerCard } from "../../components/ComputerCard";
+import { EmailReplyCard } from "../../components/EmailReplyCard";
 import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
@@ -478,7 +478,7 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "email_reply") {
             return (
               <div key={i} className="flex justify-start">
-                <EmailReplyCard block={block} />
+                <EmailReplyCard block={block} messageId={message.id} target={artifactTarget} />
               </div>
             );
           }

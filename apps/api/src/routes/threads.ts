@@ -27,6 +27,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { answerComputerRequest } from "../computer-control.js";
+import { commitEmailReply } from "../email-reply.js";
 import { HANG_UP_PROMPT } from "../hidden-turns.prompt.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
@@ -616,6 +617,15 @@ export function threadsRoutes(ctx: RouterContext) {
         }
         await wakeRun(deps.jobs, input.runId);
         return { ok: true as const };
+      }),
+      emailReply: authed.threads.emailReply.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        return commitEmailReply(deps, context.actor, {
+          threadId: target.threadId,
+          messageId: input.messageId,
+          draftId: input.draftId,
+          action: input.action,
+        });
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

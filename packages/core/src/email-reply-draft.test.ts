@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  createEmailReplyDraft,
   EmailReplyDraftError,
   EmailReplyDraftStore,
-  createEmailReplyDraft,
   emailReplyBlock,
   emailReplyDraftFromBlock,
+  emailReplyOutbound,
   emailReplyPreview,
 } from "./email-reply-draft.js";
 
@@ -19,10 +20,10 @@ const original = {
 };
 
 describe("email reply drafts", () => {
-  it("opens the saved draft", () => {
+  it("opens the saved draft as Mail", () => {
     const store = new EmailReplyDraftStore();
     const card = store.save(createEmailReplyDraft(original));
-    expect(card.title).toBe("Reply");
+    expect(card.title).toBe("Mail");
     expect(card.statusLabel).toBe("Ready to send");
     expect(card.from).toBe(original.from);
     expect(card.inReplyTo).toBe(original.inReplyTo);
@@ -33,7 +34,17 @@ describe("email reply drafts", () => {
     expect(emailReplyPreview(store.get(card.draftId))).toBe("The reply draft is ready…");
   });
 
-  it("writes edits back and sends the draft as it stands", () => {
+  it("keeps an unfinished address so the field can be typed", () => {
+    const store = new EmailReplyDraftStore();
+    store.save(createEmailReplyDraft(original));
+    const card = store.edit("draft-1", { to: "clinic@" });
+    expect(card.to).toBe("clinic@");
+    expect(store.get("draft-1").toText).toBe("clinic@");
+    expect(() => emailReplyOutbound(store.get("draft-1"))).toThrow(/addresses/);
+    expect(store.get("draft-1").status).toBe("ready");
+  });
+
+  it("sends the text the card shows, and only after delivery", async () => {
     const store = new EmailReplyDraftStore();
     store.save(createEmailReplyDraft(original));
     store.edit("draft-1", { subject: "Re: Training enquiry (revised)" });
@@ -43,11 +54,21 @@ describe("email reply drafts", () => {
     });
     const saved = store.get("draft-1");
     expect(saved.subject).toBe("Re: Training enquiry (revised)");
-    expect(saved.body).toBe("Hi,\n\nThe course is one day.\n");
-    expect(saved.to).toEqual(["clinic@example.com", "name@example.com"]);
+    expect(saved.toText).toBe("clinic@example.com, name@example.com");
     expect(saved.status).toBe("ready");
 
-    const sent = store.send("draft-1");
+    let delivered: string | undefined;
+    await expect(
+      store.send("draft-1", async () => {
+        throw new Error("mailbox refused");
+      }),
+    ).rejects.toThrow(/mailbox refused/);
+    expect(store.get("draft-1").status).toBe("ready");
+
+    const sent = await store.send("draft-1", async (mail) => {
+      delivered = mail.subject;
+    });
+    expect(delivered).toBe("Re: Training enquiry (revised)");
     expect(sent.subject).toBe("Re: Training enquiry (revised)");
     expect(sent.body).toBe("Hi,\n\nThe course is one day.\n");
     expect(sent.to).toEqual(["clinic@example.com", "name@example.com"]);
@@ -55,7 +76,6 @@ describe("email reply drafts", () => {
     expect(store.open("draft-1").statusLabel).toBe("Sent");
     expect(store.open("draft-1").editable).toBe(false);
     expect(() => store.edit("draft-1", { subject: "again" })).toThrow(EmailReplyDraftError);
-    expect(() => store.send("draft-1")).toThrow(/already sent/);
   });
 
   it("leaves a discarded draft unsent", () => {
@@ -65,25 +85,33 @@ describe("email reply drafts", () => {
     const discarded = store.discard("draft-1");
     expect(discarded.status).toBe("discarded");
     expect(discarded.subject).toBe("Do not send");
-    expect(() => store.send("draft-1")).toThrow(/discarded/);
+    expect(() => emailReplyOutbound(discarded)).toThrow(/discarded/);
   });
 
   it("refuses to send a draft with no recipient", () => {
     const store = new EmailReplyDraftStore();
     store.save(createEmailReplyDraft(original));
     store.edit("draft-1", { to: "" });
-    expect(() => store.send("draft-1")).toThrow(/recipient/);
+    expect(() => emailReplyOutbound(store.get("draft-1"))).toThrow(/recipient/);
     expect(store.get("draft-1").status).toBe("ready");
   });
 
-  it("reopens the same draft from its saved block", () => {
+  it("reopens a stored block, including one whose address would not send", () => {
     const store = new EmailReplyDraftStore();
     store.save(createEmailReplyDraft(original));
     store.edit("draft-1", { cc: "matt@example.com" });
     const block = emailReplyBlock(store.get("draft-1"));
-    const reopened = new EmailReplyDraftStore();
-    reopened.save(emailReplyDraftFromBlock(block));
-    expect(reopened.get("draft-1").cc).toEqual(["matt@example.com"]);
-    expect(reopened.send("draft-1").cc[0]).toBe("matt@example.com");
+    const reopened = emailReplyDraftFromBlock(block);
+    expect(reopened.ccText).toBe("matt@example.com");
+    expect(emailReplyOutbound(reopened).cc).toEqual(["matt@example.com"]);
+
+    const odd = emailReplyDraftFromBlock({
+      ...block,
+      from: "not an address",
+      to: ["clinic@"],
+    });
+    expect(odd.from).toBe("not an address");
+    expect(odd.toText).toBe("clinic@");
+    expect(() => emailReplyOutbound(odd)).toThrow(EmailReplyDraftError);
   });
 });

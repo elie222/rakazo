@@ -43,9 +43,9 @@ import { AskReceiptView } from "../ask-receipt";
 import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
-import { EmailReplyCard } from "../EmailReplyCard";
 import { ComputerCard } from "../ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../change-undo";
+import { EmailReplyCard } from "../EmailReplyCard";
 import { ImportSetupCard } from "../ImportSetupCard";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
@@ -773,7 +773,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         />
       ))}
       {emailReplyBlocks.map((block) => (
-        <EmailReplyCard key={block.draftId} block={block} />
+        <EmailReplyCard
+          key={block.draftId}
+          block={block}
+          messageId={message.id}
+          target={groupId ? { groupId } : { botId }}
+        />
       ))}
       {computerBlocks.map((block, index) => (
         <ComputerCard

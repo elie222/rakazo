@@ -52,7 +52,8 @@ export function isBackgroundInputBlock(block: unknown): boolean {
     (block.kind === "ask" ||
       block.kind === "computer" ||
       block.kind === "mcp_approval" ||
-      block.kind === "app_connect")
+      block.kind === "app_connect" ||
+      (block.kind === "email_reply" && "status" in block && block.status === "ready"))
   );
 }
 

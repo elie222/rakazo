@@ -29,6 +29,18 @@ describe("previewFromBlocks", () => {
     ).toBe("Created Projects-CoS as a Project");
   });
 
+  it("keeps a ready email draft in the thread preview", () => {
+    expect(
+      previewFromBlocks([
+        {
+          kind: "email_reply",
+          status: "ready",
+          subject: "Re: Training enquiry",
+        },
+      ]),
+    ).toBe("The reply draft is ready…");
+  });
+
   it("returns empty when there is no text block", () => {
     expect(previewFromBlocks([{ kind: "steps", steps: [] }])).toBe("");
     expect(previewFromBlocks(undefined)).toBe("");

@@ -870,6 +870,49 @@ export const appContract = {
           ),
       )
       .output(z.object({ ok: z.literal(true) })),
+    /** Saves the open draft, discards it, or sends it and records that on the message. */
+    emailReply: oc
+      .input(
+        threadTarget.safeExtend({
+          messageId: Id,
+          draftId: z.string().min(1).max(64),
+          action: z.discriminatedUnion("type", [
+            z.object({
+              type: z.literal("save"),
+              inReplyTo: z.string().max(500),
+              to: z.array(z.string().max(320)).max(10),
+              cc: z.array(z.string().max(320)).max(10),
+              subject: z.string().max(500),
+              body: z.string().max(20_000),
+              approval: z.enum(["needs_approval", "send_once"]),
+            }),
+            z.object({ type: z.literal("discard") }),
+            z.object({
+              type: z.literal("send"),
+              inReplyTo: z.string().max(500),
+              to: z.array(z.string().max(320)).max(10),
+              cc: z.array(z.string().max(320)).max(10),
+              subject: z.string().max(500),
+              body: z.string().max(20_000),
+              approval: z.enum(["needs_approval", "send_once"]),
+            }),
+          ]),
+        }),
+      )
+      .output(
+        z.object({
+          kind: z.literal("email_reply"),
+          draftId: z.string(),
+          from: z.string(),
+          inReplyTo: z.string().optional(),
+          to: z.array(z.string()),
+          cc: z.array(z.string()),
+          subject: z.string(),
+          body: z.string(),
+          status: z.enum(["ready", "sent", "discarded"]),
+          approval: z.enum(["needs_approval", "send_once"]).optional(),
+        }),
+      ),
     /** `unreadAfterSeq`: the seq read up to before this call, null when nothing was unread. */
     markRead: oc
       .input(threadTarget)
