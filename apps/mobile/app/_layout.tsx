@@ -58,13 +58,14 @@ import {
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance/appearance";
 import { capTextScaling } from "../lib/appearance/text-scale";
 import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import { useReferral } from "../lib/billing/referral";
 import { AvatarScreenFocus } from "../lib/bots/avatar-life";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useCallActive } from "../lib/calls/call-session";
 import { startIncomingCalls } from "../lib/calls/incoming-calls";
 import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
-import { clearLastBot } from "../lib/home/last-bot";
 import { bootstrapI18n } from "../lib/i18n/i18n";
+import { clearLastBot } from "../lib/inbox/last-bot";
 import { clearSavedChats } from "../lib/inbox/saved-chats";
 import { InboxBesideContext } from "../lib/layout/side-insets";
 import {
@@ -93,19 +94,18 @@ import {
   markMobileStartupMounted,
   trackMobileStartup,
 } from "../lib/platform/startup";
-import { clearQueries, resetRpcQueries } from "../lib/query/query";
 import {
   getCachedRemoteImagesEnabled,
   loadRemoteImagesPreference,
   subscribeRemoteImages,
-} from "../lib/settings/remote-images-preference";
-import { loadResponseStreamingPreference } from "../lib/settings/response-streaming";
+} from "../lib/preferences/remote-images-preference";
+import { loadResponseStreamingPreference } from "../lib/preferences/response-streaming";
+import { clearQueries, resetRpcQueries } from "../lib/query/query";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
   useTrustedLinkSites,
 } from "../lib/settings/trusted-link-sites";
-import { useReferral } from "../lib/spaces/referral";
 import { startUnsentSends } from "../lib/thread/send/unsent-sends";
 import { InboxPane } from "./index";
 

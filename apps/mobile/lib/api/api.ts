@@ -15,6 +15,7 @@ import {
 } from "@rakazo/core";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
+import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
 import { identityLabels } from "../bots/identity-display";
 import {
   newMobileAvatarSnapshotRequest,
@@ -24,7 +25,6 @@ import {
 import { resumeLiveNotifications } from "../notifications/live-notifications";
 import { reportMobileError } from "../platform/monitoring";
 import { promptAiConsent } from "../settings/ai-consent";
-import { followSelectedSpace, selectedSpaceChanged } from "../spaces/referral";
 import { clearUnsentSends } from "../thread/send/thread-feedback";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";

@@ -24,11 +24,11 @@ import {
 import { sendWith } from "../query/query";
 import { removeFromSearchInbox } from "../search/search-inbox";
 import { useLeaveDeletedChat } from "../thread/use-leave-deleted-chat";
-import { notifyArchivedChatsChanged } from "./archived-chats";
-import { confirmDeleteSection } from "./confirm-delete-section";
+import { notifyArchivedChatsChanged } from "./archived/archived-chats";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
-import { promptSectionName } from "./section-name-prompt";
+import { confirmDeleteSection } from "./sections/confirm-delete-section";
+import { promptSectionName } from "./sections/section-name-prompt";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
 async function chatRequestContext(

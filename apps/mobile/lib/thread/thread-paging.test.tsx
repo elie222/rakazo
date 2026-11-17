@@ -19,7 +19,7 @@ vi.mock("../api/mobile-types", () => ({
 vi.mock("../api/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
-vi.mock("../settings/response-streaming", () => ({
+vi.mock("../preferences/response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => false,
   subscribeResponseStreaming: () => () => {},
 }));

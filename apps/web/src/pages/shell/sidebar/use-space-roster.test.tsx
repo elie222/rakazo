@@ -10,8 +10,8 @@ import type { NavigateFunction } from "react-router-dom";
 import { BrowserRouter, Route, Routes, useMatch } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
-import { useSpaceEpoch } from "../../../lib/space-switch";
 import type { ThreadState } from "../chat/use-thread-state";
+import { useSpaceEpoch } from "../space-switch";
 import type { RosterSignals } from "../use-browser-notifications";
 import { useShellNavigation } from "../use-shell-navigation";
 import { useOpenSpaceChat } from "../use-space-switch";
@@ -36,7 +36,7 @@ vi.mock("../../../lib/calls/call-session", () => ({
   getSnapshot: () => null,
   isLeavingSession: () => false,
 }));
-vi.mock("../../../lib/auth/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../../../lib/spaces/organizations", () => ({ leaveOrganization: async () => {} }));
 vi.mock("../../../lib/query/query", () => ({
   queryClient: { getQueryData: () => undefined, setQueryData: () => {} },
   spaceSeedKey: () => [],

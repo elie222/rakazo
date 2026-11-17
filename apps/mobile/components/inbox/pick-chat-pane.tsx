@@ -5,14 +5,14 @@ import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useThemedStyles } from "../../lib/native/native";
-import { createHomeStyles } from "./home-styles";
+import { createInboxStyles } from "./inbox-styles";
 
 /** The index route on a split window, where the chat list sits beside this pane. */
 export function PickChatPane() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const contentBottomInset = useContentBottomInset();
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   useLayoutEffect(() => {
     // Home restores its native controls when the compact inbox mounts again.

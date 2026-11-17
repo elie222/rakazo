@@ -32,7 +32,7 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../search/search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
-vi.mock("../inbox/archived-chats", () => ({
+vi.mock("../inbox/archived/archived-chats", () => ({
   notifyArchivedChatsChanged: () => {
     for (const listener of archivedListeners) listener();
   },

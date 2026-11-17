@@ -7,7 +7,7 @@ import type { SetURLSearchParams } from "react-router-dom";
 import type { SpaceQueries } from "../../../lib/query/query";
 import { queryClient } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
-import type { Panel } from "../../../lib/right-panel-state";
+import type { Panel } from "../right-panel-state";
 import type { ThreadState } from "./use-thread-state";
 
 type JumpTarget = { botId?: string; groupId?: string; messageId: string };

@@ -9,7 +9,7 @@ import {
   confirmClearConversation,
   confirmDeleteBot,
 } from "../../lib/bots/bot-lifecycle";
-import { notifyArchivedChatsChanged } from "../../lib/inbox/archived-chats";
+import { notifyArchivedChatsChanged } from "../../lib/inbox/archived/archived-chats";
 import { useResolvedAppearance } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { useConfirmationGuard } from "../../lib/native/use-confirmation-guard";
