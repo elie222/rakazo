@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   BackgroundJobPayloads,
@@ -17,7 +16,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withLease,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { cloudAgentWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 import type { CloudAgentDeps } from "./cloud-agent-service.js";
@@ -38,54 +37,12 @@ export async function pollCloudAgent(
   if (!stored?.nextPollAt) return;
   const connection = await cloudAgentFor(deps, stored);
   if (!connection) return;
-  // The previous release claims the row's lease columns instead of taking the lease, so the
-  // claim is kept with it while a deploy overlaps.
-  const token = randomUUID();
-  const claimUntil = () => new Date(Date.now() + LEASE_MS);
-  // Only while this worker holds the claim; one taken over by the previous release is a lost lease.
-  let holdsClaim = false;
-  const renewClaim = async () => {
-    if (!holdsClaim) return true;
-    const renewed = await deps.prisma.cloudAgent.updateMany({
-      where: { id: stored.id, leaseToken: token },
-      data: { leaseExpiresAt: claimUntil() },
-    });
-    // A renewal racing the release below finds the claim already given back: not a loss.
-    return renewed.count > 0 || !holdsClaim;
-  };
-  await withLease(
-    deps.prisma,
-    `cloud-agent:${stored.id}`,
-    { ttlMs: LEASE_MS, onRenew: renewClaim },
-    async (lease) => {
-      const claimed = await deps.prisma.cloudAgent.updateMany({
-        where: {
-          id: stored.id,
-          version: stored.version,
-          OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
-        },
-        data: { leaseToken: token, leaseExpiresAt: claimUntil() },
-      });
-      if (!claimed.count) return;
-      holdsClaim = true;
-      try {
-        // Cut off while the claim was being taken: give it back rather than leave it to lapse.
-        lease.signal.throwIfAborted();
-        await reconcile(deps, { ...stored, leaseToken: token, lease }, connection.provider);
-      } finally {
-        holdsClaim = false;
-        // A concurrent user action can change version while remote I/O is in flight.
-        // Release only our claim, preserving that action's pending intent and due date.
-        await bestEffort(
-          "release cloud agent claim",
-          deps.prisma.cloudAgent.updateMany({
-            where: { id: stored.id, leaseToken: token },
-            data: { leaseToken: null, leaseExpiresAt: null },
-          }),
-        );
-      }
-    },
-  ).catch((error: unknown) => {
+  await withLease(deps.prisma, `cloud-agent:${stored.id}`, { ttlMs: LEASE_MS }, async (lease) => {
+    // Changed since the read: whatever changed it scheduled its own poll.
+    const current = await deps.prisma.cloudAgent.findUnique({ where: { id: stored.id } });
+    if (current?.version === stored.version)
+      await reconcile(deps, { ...current, lease }, connection.provider);
+  }).catch((error: unknown) => {
     // Another worker is reconciling it and schedules the next poll itself.
     if (!(error instanceof LeaseHeldError)) throw error;
   });
@@ -273,7 +230,7 @@ async function reconcile(deps: CloudAgentDeps, agent: Polled, provider: CloudAge
 }
 
 function fence(agent: CloudAgent) {
-  return { id: agent.id, version: agent.version, leaseToken: agent.leaseToken };
+  return { id: agent.id, version: agent.version };
 }
 
 /** Writes only while this worker still holds the agent's lease. */
@@ -318,8 +275,6 @@ async function retryPoll(
     ...data,
     nextPollAt,
     errorCount: { increment: 1 },
-    leaseToken: null,
-    leaseExpiresAt: null,
   });
   if (saved.count) await enqueueCloudAgent(deps, agent.id, nextPollAt);
 }
@@ -371,8 +326,6 @@ async function finishPoll(
         cancelRequested,
         nextPollAt,
         errorCount: 0,
-        leaseToken: null,
-        leaseExpiresAt: null,
         version: { increment: 1 },
       },
     });
