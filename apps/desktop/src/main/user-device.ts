@@ -15,6 +15,7 @@ import {
   USER_DEVICE_SESSION_PATH,
 } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
+import { bestEffort } from "@rakazo/logging";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export interface DeviceTokenCipher {
@@ -145,6 +146,8 @@ export function createUserDeviceAccess(deps: {
   device: () => Promise<UserDevicePairRequest>;
   /** The native consent prompt. Resolves true only when the person clicks Allow. */
   confirm: (host: string) => Promise<boolean>;
+  /** Optional screen setup follows the persisted consent, including consent asked by a bot. */
+  prepareAccess?: () => Promise<void>;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   connect: (
     origin: string,
@@ -256,7 +259,9 @@ export function createUserDeviceAccess(deps: {
     // Turned off, revoked, or already answered while the prompt was open.
     if (changes.get(origin) !== seen) return isAllowed(origin);
     await decide(origin, answer ? "allowed" : "declined").catch(() => undefined);
-    return answer;
+    if (answer && current === origin && isAllowed(origin) && deps.prepareAccess)
+      await bestEffort("prepare computer app control", deps.prepareAccess());
+    return answer && current === origin && isAllowed(origin);
   }
 
   function pair() {
@@ -437,6 +442,8 @@ export function createUserDeviceAccess(deps: {
       if (!paired.has(origin)) throw new Error("Could not pair this computer");
       if (changes.get(origin) !== seen) return;
       await decide(origin, "allowed");
+      if (current === origin && deps.prepareAccess)
+        await bestEffort("prepare computer app control", deps.prepareAccess());
     },
     close() {
       ++generation;

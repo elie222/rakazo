@@ -11,6 +11,7 @@ import type {
   DesktopSetup,
   RakazoDesktopDevice,
 } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging";
 import type { BrowserWindow, Session } from "electron";
 import {
   app,
@@ -43,6 +44,7 @@ import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { createClipboardHandler } from "./clipboard.js";
+import { createComputerPermissionSetup } from "./computer-permissions.js";
 import { appWindowTargets, desktop, permissionTarget } from "./desktop-state.js";
 import { launchDockerApp, resolveDockerBinary, runDocker } from "./docker-cli.js";
 import type { StackChoice } from "./docker-move.js";
@@ -57,6 +59,7 @@ import {
   writeStackChoice,
 } from "./docker-move.js";
 import { prepareHostComputer } from "./host-computer.js";
+import type { ScreenPermissionApi } from "./host-screen.js";
 import {
   createDesktopHostScreen,
   screenDriverInstaller,
@@ -568,6 +571,43 @@ app.whenReady().then(async () => {
       : undefined,
   );
   const screenDriver = screenDriverRelease(process.platform);
+  const screenPermissions: ScreenPermissionApi = {
+    isTrustedAccessibilityClient: (prompt) =>
+      systemPreferences.isTrustedAccessibilityClient(prompt),
+    getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
+    requestScreenCapture: () =>
+      desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
+  };
+  const prepareComputerAccess = createComputerPermissionSetup({
+    platform: process.platform,
+    permissions: screenPermissions,
+    showSetup: async () => {
+      const options: Electron.MessageBoxOptions = {
+        type: "info",
+        title: t("Mac app control"),
+        message: t("Set up Mac app control"),
+        detail: t(
+          "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.",
+        ),
+        buttons: [t("Open System Settings"), t("Restart Rakazo"), t("Not Now")],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      };
+      const win = desktop.mainWindow;
+      const { response } = await (win && !win.isDestroyed()
+        ? dialog.showMessageBox(win, options)
+        : dialog.showMessageBox(options));
+      return response === 0 ? "settings" : response === 1 ? "restart" : "later";
+    },
+    openSettings: () =>
+      shell.openExternal("x-apple.systempreferences:com.apple.preference.security"),
+    restart: () => {
+      desktop.quitting = true;
+      app.relaunch();
+      app.quit();
+    },
+  });
   hostScreen =
     screenDriver &&
     createDesktopHostScreen({
@@ -578,13 +618,7 @@ app.whenReady().then(async () => {
         release: screenDriver,
       }),
       home: path.join(userDataDir, "screen-driver", "home"),
-      permissions: {
-        isTrustedAccessibilityClient: (prompt) =>
-          systemPreferences.isTrustedAccessibilityClient(prompt),
-        getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
-        requestScreenCapture: () =>
-          desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
-      },
+      permissions: screenPermissions,
       locked: () => powerMonitor.getSystemIdleState(1) === "locked",
       fitImage: (png, maxDimension) => {
         const image = nativeImage.createFromBuffer(png);
@@ -610,6 +644,7 @@ app.whenReady().then(async () => {
         process.platform === "win32" || process.platform === "linux" ? process.platform : "darwin",
     }),
     confirm: (host) => confirmRemoteComputerAccess(host),
+    prepareAccess: prepareComputerAccess,
     // The app window's session carries the sign-in for that server; the token never reaches it.
     fetch: (url, init) =>
       (desktop.mainWindow && !desktop.mainWindow.isDestroyed()
@@ -831,7 +866,8 @@ app.whenReady().then(async () => {
         return false;
       if (desktop.hostComputer.isEnabled()) {
         await persistHostChoice("this-mac");
-        return true;
+        await bestEffort("prepare local computer app control", prepareComputerAccess());
+        return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
       }
       const allowed = await confirmComputerAccess(
         t(
@@ -848,7 +884,8 @@ app.whenReady().then(async () => {
         throw error;
       }
       installApplicationMenu();
-      return desktop.hostComputer.isEnabled();
+      await bestEffort("prepare local computer app control", prepareComputerAccess());
+      return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
     } finally {
       requestingComputerAccess = false;
     }

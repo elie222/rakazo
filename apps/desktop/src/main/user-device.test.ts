@@ -201,6 +201,35 @@ describe("remote computer access", () => {
     });
   });
 
+  it.each(["settings", "request"] as const)(
+    "saves consent before permission setup from %s, so a restart keeps it",
+    async (source) => {
+      const prepareAccess = vi.fn(async () => {
+        expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "allowed" });
+        expect(access.state(origin)?.allowed).toBe(true);
+      });
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      if (source === "settings") await access.setAllowed(origin, true);
+      else expect(await clients[0]!.authorize()).toBe(true);
+      expect(prepareAccess).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("refuses a pending request when access is revoked during permission setup", async () => {
+    const ready = deferred<void>();
+    const prepareAccess = vi.fn(() => ready.promise);
+    const { access, clients } = setup({ prepareAccess });
+    await access.select(origin);
+    await access.pair();
+    const request = clients[0]!.authorize();
+    await vi.waitFor(() => expect(prepareAccess).toHaveBeenCalledOnce());
+    await access.setAllowed(origin, false);
+    ready.resolve();
+    expect(await request).toBe(false);
+  });
+
   it("asks once on the first request, keeps the answer, and lets waiting requests share it", async () => {
     const answer = deferred<boolean>();
     const confirm = vi.fn(() => answer.promise);
