@@ -51,20 +51,25 @@ function fetchOver(route: TailnetRoute) {
 
 describe("createTailnetFetch", () => {
   it("reaches a tailnet host over HTTP through the bot's node", async () => {
+    // Capture Host and path out of band — never reflect request fields into the body.
+    const seen: Array<{ host: string | undefined; url: string | undefined }> = [];
     const port = await listen(
-      createServer((request, response) =>
-        response
-          .writeHead(200, { "content-type": "text/plain" })
-          .end(`${request.headers.host} ${request.url}`),
-      ),
+      createServer((request, response) => {
+        seen.push({ host: request.headers.host, url: request.url });
+        response.writeHead(200, { "content-type": "text/plain" }).end("ok");
+      }),
     );
     const { route, dials } = nodeTo(port);
     const tailnetFetch = fetchOver(route);
 
     const named = await tailnetFetch("http://nas.tail1234.ts.net:8080/mcp");
-    expect(await named.text()).toBe("nas.tail1234.ts.net:8080 /mcp");
+    expect(await named.text()).toBe("ok");
     const addressed = await tailnetFetch("http://100.101.102.103/mcp");
-    expect(await addressed.text()).toBe("100.101.102.103 /mcp");
+    expect(await addressed.text()).toBe("ok");
+    expect(seen).toEqual([
+      { host: "nas.tail1234.ts.net:8080", url: "/mcp" },
+      { host: "100.101.102.103", url: "/mcp" },
+    ]);
     expect(dials).toEqual([
       { host: "nas.tail1234.ts.net", port: 8080 },
       { host: "100.101.102.103", port: 80 },
@@ -87,9 +92,13 @@ describe("createTailnetFetch", () => {
       "Could not reach nas.tail1234.ts.net",
     );
     expect(dials).toEqual([{ host: "nas.tail1234.ts.net", port: 443 }]);
-    // A TLS handshake record whose ClientHello carries the name for SNI.
+    // A TLS handshake record whose ClientHello carries the name for SNI (uint16 length + bytes).
     expect(hello?.[0]).toBe(0x16);
-    expect(hello?.toString("latin1")).toContain("nas.tail1234.ts.net");
+    const sniHost = Buffer.from("nas.tail1234.ts.net");
+    const lengthPrefixed = Buffer.alloc(2 + sniHost.length);
+    lengthPrefixed.writeUInt16BE(sniHost.length, 0);
+    sniHost.copy(lengthPrefixed, 2);
+    expect(hello?.includes(lengthPrefixed)).toBe(true);
   });
 
   it("stops dialing once the request that wanted the connection is cancelled", async () => {

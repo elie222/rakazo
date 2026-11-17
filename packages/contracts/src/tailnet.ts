@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { normalizeHost } from "./network-host.js";
+import { trimEndChars, trimStartChars } from "./trim-chars.js";
 
 export { TAILNET_CONNECT_PATH } from "./tailnet-path.js";
 
@@ -63,14 +64,17 @@ export function parseNetworkDestination(
  * label. The suffix keeps two bots with the same name apart.
  */
 export function tailnetNodeHostname(bot: { name: string; id: string }): string {
-  const slug = bot.name
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    // Runs are single hyphens by now, so one at each end is all there can be.
-    .replace(/^-|-$/g, "")
-    .slice(0, 40)
-    .replace(/-$/, "");
+  // Collapse non-alphanumerics, then trim hyphens with the linear helpers (not /^-+|-+$/).
+  const slug = trimEndChars(
+    trimStartChars(
+      bot.name
+        .normalize("NFKD")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-"),
+      "-",
+    ).slice(0, 40),
+    "-",
+  );
   const suffix = bot.id
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")

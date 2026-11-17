@@ -105,8 +105,13 @@ class Tunnel:
         except OSError as error:
             raise TunnelError(f"Rakazo could not be reached: {error.strerror or error}") from None
         if secure:
-            context = ssl.create_default_context()
+            # Client context pinned to TLS 1.2+ (create_default_context still allows 1.0/1.1
+            # on older Pythons).
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_default_certs()
+            context.verify_mode = ssl.CERT_REQUIRED
+            context.check_hostname = True
             try:
                 sock = context.wrap_socket(sock, server_hostname=url.hostname)
             except OSError as error:

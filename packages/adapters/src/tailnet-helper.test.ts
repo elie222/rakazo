@@ -105,8 +105,13 @@ beforeAll(async () => {
     });
     socket.end("hi\n");
   });
+  // Fixed bodies for the paths these tests hit — never echo request.url into the response.
+  const pages: Record<string, string> = {
+    "/hi?x=1": "tailnet web /hi?x=1",
+    "/page": "tailnet web /page",
+  };
   web = createServer((request, response) =>
-    response.writeHead(200, { "content-type": "text/plain" }).end(`tailnet web ${request.url}`),
+    response.writeHead(200, { "content-type": "text/plain" }).end(pages[request.url ?? ""] ?? ""),
   );
   await Promise.all([
     new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve)),

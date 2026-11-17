@@ -7,6 +7,7 @@ import {
   tailnetNodeAttributes,
   tailnetNodeHostname,
 } from "./tailnet.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 describe("tailnet connection config", () => {
   it("defaults the tag and normalizes its case", () => {
@@ -46,5 +47,34 @@ describe("network destinations", () => {
     ["fd7a:115c:a1e0:ab12::1%eth0", 22],
   ] as const)("refuses %s:%s", (host, port) => {
     expect(parseNetworkDestination(host, port)).toBeUndefined();
+  });
+});
+
+describe("tailnetNodeHostname", () => {
+  it("slugs the bot name and keeps an id suffix", () => {
+    expect(tailnetNodeHostname({ name: "Helper Bot", id: "bot-abc123" })).toBe(
+      "rakazo-helper-bot-abc123",
+    );
+    expect(tailnetNodeHostname({ name: "---Wow!!!---", id: "x" })).toBe("rakazo-wow-x");
+    expect(tailnetNodeHostname({ name: `${"a".repeat(50)}-tail`, id: "id9999" })).toBe(
+      `rakazo-${"a".repeat(40)}-id9999`,
+    );
+  });
+
+  it("stays fast on a long name full of hyphens", () => {
+    expectLinearTime(() =>
+      expect(tailnetNodeHostname({ name: "-".repeat(200_000), id: "bot1" })).toBe("rakazo-bot1"),
+    );
+  });
+});
+
+describe("tailnet node attributes", () => {
+  it("sanitizes posture values", () => {
+    expect(tailnetAttributeValue("space/1!")).toBe("space_1_");
+    expect(tailnetNodeAttributes({ spaceId: "home", botId: "helper", userId: "alice" })).toEqual({
+      "custom:rakazoSpace": "home",
+      "custom:rakazoBot": "helper",
+      "custom:rakazoUser": "alice",
+    });
   });
 });
