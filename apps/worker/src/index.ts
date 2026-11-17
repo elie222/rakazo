@@ -233,13 +233,12 @@ async function main() {
   });
   // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
   // switched off since they were queued, those jobs are dropped.
-  const optionalEnv = (name: string) => process.env[name]?.trim() || undefined;
   const accountEmail = configuredEmailProvider({
-    provider: optionalEnv("EMAIL_PROVIDER"),
-    apiKey: optionalEnv("EMAIL_API_KEY"),
-    from: optionalEnv("EMAIL_FROM"),
-    replyTo: optionalEnv("EMAIL_REPLY_TO"),
-    smtpUrl: optionalEnv("SMTP_URL"),
+    provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
+    apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+    from: process.env.EMAIL_FROM?.trim() || undefined,
+    replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+    smtpUrl: process.env.SMTP_URL?.trim() || undefined,
   });
   const lifecycleEmail =
     accountEmail && process.env.WELCOME_EMAIL_ENABLED === "true"
