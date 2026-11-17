@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import type { KeptTimezone } from "@rakazo/core";
-import { deviceTimezoneStep, localTimezone, parseKeptTimezone, timeZonePlace } from "@rakazo/core";
+import { deviceTimezoneStep, parseKeptTimezone, timeZonePlace } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { Alert } from "react-native";
 import { rpc } from "./api";
+import { deviceTimeZone } from "./routine";
 import { errorText } from "./user-error";
 
 const keptKey = (userId: string) => `rakazo.timezone-kept.${userId}`;
@@ -46,7 +47,9 @@ export async function checkDeviceTimezone(
 ): Promise<void> {
   // A server that predates timezones leaves it out.
   if (accountZone === undefined || asking === userId) return;
-  const device = localTimezone();
+  // A runtime that names no zone is not a reading of UTC.
+  const device = deviceTimeZone();
+  if (!device) return;
   const step = deviceTimezoneStep(device, accountZone, await keptZone(userId));
   // The read above can outlive the session: a write now would land on the next account.
   if (step === null || asking === userId || !isActive()) return;

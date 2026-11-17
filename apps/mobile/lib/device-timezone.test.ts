@@ -4,11 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "./api";
 import { checkDeviceTimezone, resetDeviceTimezoneForTests } from "./device-timezone";
 
-const device = vi.hoisted(() => ({ zone: "Asia/Tokyo" }));
-vi.mock("@rakazo/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/core")>()),
-  localTimezone: () => device.zone,
-}));
+const device = vi.hoisted(() => ({ zone: "Asia/Tokyo" as string | undefined }));
+vi.mock("./routine", () => ({ deviceTimeZone: () => device.zone }));
 const stored = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(async (key: string) => stored.get(key) ?? null),
@@ -102,4 +99,12 @@ it("still checks another account while one account's question is open", async ()
   await checkDeviceTimezone("user-1", "Europe/London", active);
   await checkDeviceTimezone("user-2", null, active);
   expect(rpc).toHaveBeenCalledWith("preferences/adoptTimezone", { timezone: "Asia/Tokyo" });
+});
+
+it("leaves the account alone when the device names no zone", async () => {
+  device.zone = undefined;
+  await checkDeviceTimezone("user-1", null, active);
+  await checkDeviceTimezone("user-1", "Asia/Kolkata", active);
+  expect(rpc).not.toHaveBeenCalled();
+  expect(Alert.alert).not.toHaveBeenCalled();
 });
