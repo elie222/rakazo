@@ -1,6 +1,7 @@
-import type { MessageBlock, ToolQuestionAnswer, ToolQuestionValue } from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
 import { checkToolQuestionValues, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import { sealTo } from "@rakazo/core/node/sealed-box";
 import type { Prisma, PrismaClient } from "../database/client.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
@@ -23,14 +24,11 @@ function questionBlock(blocks: readonly MessageBlock[]): ToolQuestionBlock | und
   return parsed.success && parsed.data.kind === "tool_question" ? parsed.data : undefined;
 }
 
-/** Clients and the event log get the card without the person's values. */
-function withoutValues(blocks: MessageBlock[]): MessageBlock[] {
-  return blocks.map((block) => {
-    if (block.kind !== "tool_question" || block.values === undefined) return block;
-    const { values: _values, ...rest } = block;
-    return rest;
-  });
-}
+/** What the waiting call reads: the person's values still sealed to its own key. */
+export type TakenToolQuestionAnswer =
+  | { action: "accept"; sealedValues: string }
+  | { action: "decline" }
+  | { action: "cancel" };
 
 type QuestionRef = { spaceId: string; threadId: string; messageId: string };
 
@@ -64,15 +62,17 @@ async function writeQuestion(
     // The card closes whatever became of its run.
     allowCancelledRun: true,
     type: "thread.message.updated",
-    payload: { messageId: message.id, role: "bot", blocks: withoutValues(changed.blocks) },
+    payload: { messageId: message.id, role: "bot", blocks: changed.blocks },
   });
   return event.seq;
 }
 
 /**
  * The person's answer to a tool's question. Only the run's own user answers, only while the card
- * is pending, unexpired and its run is still running; the waiting call hears it through the
- * thread's event stream and takes the values from the row. Returns the event to notify.
+ * is pending, unexpired and its run is still running. The values are sealed to the waiting call's
+ * own key before they are written, so the row, its events and every reader of the chat hold only
+ * a box that call alone opens; it hears the answer through the thread's event stream. Returns
+ * the event to notify.
  */
 export async function answerToolQuestion(
   prisma: PrismaClient,
@@ -106,7 +106,11 @@ export async function answerToolQuestion(
     if (input.action === "accept") {
       const checked = checkToolQuestionValues(block.question.fields, input.values ?? {});
       if (!checked.ok) throw new ToolQuestionAnswerError(checked.reason, "BAD_REQUEST");
-      next = { ...block, status: "accepted", values: checked.values };
+      next = {
+        ...block,
+        status: "accepted",
+        sealedValues: sealTo(block.publicKey, JSON.stringify(checked.values)),
+      };
     } else {
       next = { ...block, status: "declined" };
     }
@@ -125,7 +129,7 @@ export async function takeToolQuestionAnswer(
   prisma: PrismaClient,
   ref: QuestionRef,
   options: { expire: boolean },
-): Promise<{ answer: ToolQuestionAnswer | undefined; seq?: number }> {
+): Promise<{ answer: TakenToolQuestionAnswer | undefined; seq?: number }> {
   await contentEncryptionOf(prisma)?.ring.all(ref.spaceId);
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const found = await lockedQuestion(tx, ref);
@@ -134,10 +138,10 @@ export async function takeToolQuestionAnswer(
     if (block.status === "declined") return { answer: { action: "decline" } as const };
     if (block.status === "expired") return { answer: { action: "cancel" } as const };
     if (block.status === "accepted") {
-      const values: Record<string, ToolQuestionValue> = block.values ?? {};
-      const { values: _taken, ...rest } = block;
+      if (!block.sealedValues) return { answer: { action: "cancel" } as const };
+      const { sealedValues, ...rest } = block;
       const seq = await writeQuestion(tx, ref, message, rest);
-      return { answer: { action: "accept", values } as const, seq };
+      return { answer: { action: "accept", sealedValues } as const, seq };
     }
     if (!options.expire) return { answer: undefined };
     const seq = await writeQuestion(tx, ref, message, { ...block, status: "expired" });

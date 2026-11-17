@@ -44,7 +44,7 @@ import {
   reduceComputerStatus,
 } from "../../../lib/query/thread-events";
 import { useEventListener } from "../../../lib/use-event-listener";
-import type { ComputerState } from "../computer/use-computer";
+import type { ComputerState } from "../computers/use-computer";
 import type { useBrowserNotifications } from "../use-browser-notifications";
 import type { ThreadState } from "./use-thread-state";
 

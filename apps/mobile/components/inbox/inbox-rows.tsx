@@ -30,7 +30,7 @@ import { GroupAvatar } from "../bots/group-avatar";
 import { NativeSymbol } from "../native/native-symbol";
 import { DragSafePressable } from "../ui/drag-safe-pressable";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
-import { createHomeStyles, INBOX_ROW } from "./home-styles";
+import { createInboxStyles, INBOX_ROW } from "./inbox-styles";
 import { InboxSwipeRow } from "./inbox-swipe-row";
 
 export const FALLBACK_COLOR = botColors[3];
@@ -72,7 +72,7 @@ export function ConversationRow({
   accessibilityLabel: string;
   accessibilityHint?: string;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { i18n } = useLingui();
   const compact = useContext(CompactRowsContext);
   const openChatId = useContext(SelectedChatContext);
@@ -127,7 +127,7 @@ export function ConversationRow({
 
 /** The way back to archived chats, at the very end of the list in the section heading style. */
 export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: () => void }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   if (count < 1) return null;
   return (
@@ -170,7 +170,7 @@ export function SectionToggle({
   collapsed: boolean;
   onPress: () => void;
 } & Pick<PressableProps, "onLongPress" | "accessibilityActions" | "onAccessibilityAction">) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   return (
     <DragSafePressable
@@ -234,7 +234,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
   const { i18n } = useLingui();
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const selectedId = useContext(SelectedChatContext);
   // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
   const [rowWidth, setRowWidth] = useState(0);
@@ -295,7 +295,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   );
 });
 function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const marked = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
   return (
     <Text style={[styles.pinnedName, marked && styles.pinnedUnread]} numberOfLines={1}>

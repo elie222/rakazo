@@ -221,6 +221,7 @@ const approvals: Scenario = {
         },
         status: "pending",
         expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
       },
     ]),
     bot([
@@ -229,6 +230,7 @@ const approvals: Scenario = {
         question: { source: "Tool gateway", message: "Delete the draft?", fields: [] },
         status: "declined",
         expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
       },
     ]),
     bot([

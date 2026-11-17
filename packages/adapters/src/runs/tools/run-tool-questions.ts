@@ -1,6 +1,8 @@
 import type { ToolAsk } from "@rakazo/adapter-kit";
 import type { ToolQuestion, ToolQuestionAnswer } from "@rakazo/contracts";
+import { checkToolQuestionValues } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
+import { createSealedBoxKey } from "@rakazo/core/node/sealed-box";
 import { takeToolQuestionAnswer } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RunContext } from "../assembly/run-context.js";
@@ -40,15 +42,21 @@ async function askInRun(
       })
     )?.seq ?? 0;
   const expiresAt = new Date(Date.now() + TOOL_QUESTION_WAIT_MS).toISOString();
+  // Only this call holds the private half: the answer is sealed to it on its way in, so no
+  // reader of the chat sees what the person sent, and a restart leaves nothing readable behind.
+  const key = createSealedBoxKey();
   const message = await publishMessage(deps, run, "bot", [
-    { kind: "tool_question", question, status: "pending", expiresAt },
+    { kind: "tool_question", question, status: "pending", expiresAt, publicKey: key.publicKey },
   ]);
   if (!message) return { action: "decline" };
   const ref = { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id };
-  const take = async (expire: boolean) => {
+  const take = async (expire: boolean): Promise<ToolQuestionAnswer | undefined> => {
     const { answer, seq } = await takeToolQuestionAnswer(deps.prisma, ref, { expire });
     if (seq !== undefined) await bestEffort("tool question", deps.events.notify(ref.threadId, seq));
-    return answer;
+    if (answer?.action !== "accept") return answer;
+    const opened = key.open(answer.sealedValues);
+    const checked = opened === undefined ? undefined : parsedValues(question, opened);
+    return checked ? { action: "accept", values: checked } : { action: "cancel" };
   };
   const wait = deadlineSignal(TOOL_QUESTION_WAIT_MS, AbortSignal.any([signal, ctx.context.signal]));
   try {
@@ -66,4 +74,16 @@ async function askInRun(
   // The wait ended, the server withdrew the question or the run stopped: the card closes as
   // expired unless an answer got in first.
   return (await take(true)) ?? { action: "cancel" };
+}
+
+/** The values the API checked, checked again here: a box that does not hold them is no answer. */
+function parsedValues(question: ToolQuestion, opened: string) {
+  try {
+    const values: unknown = JSON.parse(opened);
+    if (!values || typeof values !== "object" || Array.isArray(values)) return undefined;
+    const checked = checkToolQuestionValues(question.fields, values as Record<string, unknown>);
+    return checked.ok ? checked.values : undefined;
+  } catch {
+    return undefined;
+  }
 }

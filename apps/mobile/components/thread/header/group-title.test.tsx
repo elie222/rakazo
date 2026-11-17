@@ -25,7 +25,9 @@ vi.mock("./chat-header-title", () => ({ publishChatTitle: vi.fn(() => () => {}) 
 vi.mock("../../native/sheet-header", () => ({ trailingHeaderOptions: () => ({}) }));
 vi.mock("./thread-header-right", () => ({ threadHeaderRight: () => ({}) }));
 vi.mock("../../../lib/appearance/appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("../../../lib/inbox/archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
+vi.mock("../../../lib/inbox/archived/archived-chats", () => ({
+  notifyArchivedChatsChanged: vi.fn(),
+}));
 vi.mock("../../../lib/bots/bot-lifecycle", () => ({}));
 vi.mock("../../../lib/native/native", () => ({ useResolvedAppearance: () => "light" }));
 vi.mock("../../../lib/thread/scroll/thread-edges", () => ({ threadEdgeOptions: () => ({}) }));

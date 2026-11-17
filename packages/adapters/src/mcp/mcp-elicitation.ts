@@ -162,13 +162,21 @@ function choiceOptions(
 }
 
 /**
+ * How much answering time a call may spend beyond its own total, in all: two full questions
+ * (see TOOL_QUESTION_WAIT_MS). Past it the call ends however often the server asks again.
+ */
+export const MCP_ANSWER_ALLOWANCE_MS = 10 * 60_000;
+
+/**
  * How long a tool call may go without an answer, a progress report, and how long in all,
- * leaving out the time the person spends answering the server's questions. Fires `onTimeout`
- * once; the call aborts on it.
+ * leaving out the time the person spends answering the server's questions, and a wall-clock
+ * ceiling nothing pauses, so a server that keeps asking still ends. Fires `onTimeout` once; the
+ * call aborts on it.
  */
 export class McpCallClock {
   private idle?: ReturnType<typeof setTimeout>;
   private total?: ReturnType<typeof setTimeout>;
+  private readonly ceiling: ReturnType<typeof setTimeout>;
   private totalLeft: number;
   private totalStartedAt = 0;
   private asking = 0;
@@ -178,8 +186,10 @@ export class McpCallClock {
     private readonly idleMs: number,
     totalMs: number,
     private readonly onTimeout: () => void,
+    ceilingMs = totalMs + MCP_ANSWER_ALLOWANCE_MS,
   ) {
     this.totalLeft = totalMs;
+    this.ceiling = setTimeout(() => this.fire(), ceilingMs);
     this.run();
   }
 
@@ -205,6 +215,7 @@ export class McpCallClock {
 
   end(): void {
     this.done = true;
+    clearTimeout(this.ceiling);
     this.stop();
   }
 
@@ -251,6 +262,8 @@ type InFlightCall = { owner: string; source: string; ask?: ToolAsk; clock?: McpC
  */
 export class McpElicitationRouter {
   private readonly calls = new Set<InFlightCall>();
+  /** Owners with a question open: a second one while the first waits is declined. */
+  private readonly asking = new Set<string>();
 
   install(client: Client): void {
     client.setRequestHandler(ElicitRequestSchema, (request, extra) =>
@@ -273,7 +286,8 @@ export class McpElicitationRouter {
     if (owners.size !== 1 || !asker?.ask) return DECLINE;
     const ask = asker.ask;
     const question = toolQuestionFromElicitation(asker.source, params);
-    if (!question) return DECLINE;
+    if (!question || this.asking.has(asker.owner)) return DECLINE;
+    this.asking.add(asker.owner);
     const resumes = calls.map((call) => call.clock?.pause() ?? (() => undefined));
     try {
       // A failed ask is a question nobody answered: the server hears a cancel and decides
@@ -284,6 +298,7 @@ export class McpElicitationRouter {
       if (answer.action === "accept") return { action: "accept", content: answer.values };
       return { action: answer.action };
     } finally {
+      this.asking.delete(asker.owner);
       for (const resume of resumes) resume();
     }
   }

@@ -1,4 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import type { SealedBoxKey } from "@rakazo/core/node/sealed-box";
+import { createSealedBoxKey } from "@rakazo/core/node/sealed-box";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
@@ -35,6 +37,7 @@ describePostgres("tool questions (PostgreSQL)", () => {
   let threadId: string;
   let runId: string;
   let messageId: string;
+  let key: SealedBoxKey;
   const address = `+1555${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`;
 
   const asOwner = <T>(work: () => Promise<T>) => runAsTenant({ spaceId, userId }, work);
@@ -67,6 +70,7 @@ describePostgres("tool questions (PostgreSQL)", () => {
   });
 
   beforeEach(async () => {
+    key = createSealedBoxKey();
     const task = await system.task.create({
       data: { spaceId, botId, threadId, userId, prompt: "send the email", status: "running" },
     });
@@ -92,6 +96,7 @@ describePostgres("tool questions (PostgreSQL)", () => {
       question: QUESTION,
       status: "pending",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      publicKey: key.publicKey,
     };
     ({ id: messageId } = await system.message.create({
       data: { threadId, botId, runId, seq: nextMessageSeq - 1, role: "bot", blocks: [block] },
@@ -110,7 +115,7 @@ describePostgres("tool questions (PostgreSQL)", () => {
     }
   });
 
-  it("hands an accepted answer to the waiting call once, keeping it out of the event log", async () => {
+  it("hands an answer sealed to the waiting call's key to that call once", async () => {
     expect(await asOwner(() => takeToolQuestionAnswer(prisma, ref(), { expire: false }))).toEqual({
       answer: undefined,
     });
@@ -120,17 +125,19 @@ describePostgres("tool questions (PostgreSQL)", () => {
     });
     expect(committed?.threadId).toBe(threadId);
     const event = await system.event.findFirstOrThrow({ where: { threadId, seq: committed!.seq } });
+    // Every reader of the chat (another member of the space included) sees only the box.
     expect(JSON.stringify(event.payload)).not.toContain("quiet-hours");
-    expect((await card()).values).toEqual({ approve: true, note: "quiet-hours" });
+    const stored = await card();
+    expect(JSON.stringify(stored)).not.toContain("quiet-hours");
 
     const taken = await asOwner(() => takeToolQuestionAnswer(prisma, ref(), { expire: false }));
-    expect(taken.answer).toEqual({
-      action: "accept",
-      values: { approve: true, note: "quiet-hours" },
-    });
-    // The values leave the row as the call reads them; the card keeps only its outcome.
+    expect(taken.answer?.action).toBe("accept");
+    const sealed = (taken.answer as { sealedValues: string }).sealedValues;
+    expect(JSON.parse(key.open(sealed)!)).toEqual({ approve: true, note: "quiet-hours" });
+    expect(createSealedBoxKey().open(sealed)).toBeUndefined();
+    // The box leaves the row as the call reads it; the card keeps only its outcome.
     expect(await card()).toMatchObject({ status: "accepted" });
-    expect((await card()).values).toBeUndefined();
+    expect((await card()).sealedValues).toBeUndefined();
   });
 
   it("sends a decline", async () => {

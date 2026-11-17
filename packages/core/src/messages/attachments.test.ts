@@ -379,7 +379,8 @@ describe("tool question history", () => {
       },
       status: "accepted",
       expiresAt: "2026-11-18T00:00:00.000Z",
-      values: { approve: true },
+      publicKey: "card-key",
+      sealedValues: "sealed",
     };
     const text = blocksToAgentHistoryText([block]);
     expect(text).toBe("[Gateway asked the user a question during a tool call; the user answered]");

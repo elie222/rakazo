@@ -142,7 +142,7 @@ postgres("a tool's question in a running run (PostgreSQL)", () => {
     await otherInstance.notify(committed!.threadId, committed!.seq);
     expect(await answer).toEqual({ action: "accept", values: { approve: true } });
     expect(await card(posted.id)).toMatchObject({ status: "accepted" });
-    expect(await card(posted.id)).not.toHaveProperty("values");
+    expect(await card(posted.id)).not.toHaveProperty("sealedValues");
   });
 
   it("closes the card as expired when the call stops waiting", async () => {

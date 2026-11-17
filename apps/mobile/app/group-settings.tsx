@@ -12,7 +12,10 @@ import type { MobileBot, MobileGroup } from "../lib/api/mobile-types";
 import { errorText } from "../lib/api/user-error";
 import { alertGroupNotDeleted, confirmDeleteGroup, deleteGroup } from "../lib/bots/bot-lifecycle";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/inbox/archived-chats";
+import {
+  notifyArchivedChatsChanged,
+  onArchivedChatsChanged,
+} from "../lib/inbox/archived/archived-chats";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";

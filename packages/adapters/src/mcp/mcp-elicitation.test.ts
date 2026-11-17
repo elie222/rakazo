@@ -6,7 +6,11 @@ import type { ToolAsk } from "@rakazo/adapter-kit";
 import type { ToolQuestion } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { McpCallClock, toolQuestionFromElicitation } from "./mcp-elicitation.js";
+import {
+  McpCallClock,
+  McpElicitationRouter,
+  toolQuestionFromElicitation,
+} from "./mcp-elicitation.js";
 import { callRemoteMcpTool, RemoteMcpSessionCache } from "./remote-mcp.js";
 
 const ENDPOINT = "https://gateway.example.test/mcp";
@@ -164,6 +168,31 @@ describe("MCP elicitation", () => {
     );
   });
 
+  it("keeps one question open at a time, declining another while it waits", async () => {
+    const router = new McpElicitationRouter();
+    const handlers: Array<(request: unknown, extra: { signal: AbortSignal }) => Promise<unknown>> =
+      [];
+    router.install({
+      setRequestHandler: (_schema: unknown, handler: (typeof handlers)[number]) =>
+        handlers.push(handler),
+    } as never);
+    const answered = deferred<void>();
+    const ask = vi.fn<ToolAsk>(async () => {
+      await answered.promise;
+      return { action: "decline" };
+    });
+    const untrack = router.track({ owner: "run-1", source: "Gateway", ask });
+    const request = { params: APPROVAL };
+    const extra = { signal: new AbortController().signal };
+    const first = handlers[0]!(request, extra);
+    await vi.waitFor(() => expect(ask).toHaveBeenCalledOnce());
+    expect(await handlers[0]!(request, extra)).toEqual({ action: "decline" });
+    expect(ask).toHaveBeenCalledOnce();
+    answered.resolve();
+    await first;
+    untrack();
+  });
+
   it("asks through a run's reused session too", async () => {
     const server = open();
     const pool = new RemoteMcpSessionCache(0);
@@ -217,6 +246,17 @@ describe("McpCallClock", () => {
     expect(fired).not.toHaveBeenCalled();
     resume();
     vi.advanceTimersByTime(999);
+    expect(fired).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fired).toHaveBeenCalledOnce();
+  });
+
+  it("ends at its wall-clock ceiling even while a question is open", () => {
+    vi.useFakeTimers();
+    const fired = vi.fn();
+    const clock = new McpCallClock(1_000, 2_000, fired, 10_000);
+    clock.pause();
+    vi.advanceTimersByTime(9_999);
     expect(fired).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(fired).toHaveBeenCalledOnce();

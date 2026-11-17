@@ -246,6 +246,12 @@ export class PageBrowserSession {
     if (action.kind === "fill" || action.kind === "type") {
       const card = action.field === "card";
       if (action.origin || card) {
+        if (
+          ("disabled" in el && el.disabled === true) ||
+          ("readOnly" in el && el.readOnly === true)
+        ) {
+          throw new FillRefused("Element is read-only");
+        }
         const inputType = el instanceof win.HTMLInputElement ? el.type : "";
         if (card) {
           if (!CARD_INPUT_TYPES.has(inputType)) {
@@ -261,9 +267,13 @@ export class PageBrowserSession {
           // A password goes only into a password field, which never displays it.
           throw new FillRefused("A saved password can only be typed into a password field.");
         }
-        if (action.field === "username" && !USERNAME_INPUT_TYPES.has(inputType)) {
+        if (
+          action.field === "username" &&
+          !USERNAME_INPUT_TYPES.has(inputType) &&
+          !(el instanceof win.HTMLSelectElement)
+        ) {
           throw new FillRefused(
-            "A saved username can only be typed into a text, email, or telephone field.",
+            "A saved username can only be typed into a text, email, or telephone field, or chosen in a dropdown.",
           );
         }
       }
@@ -289,24 +299,34 @@ export class PageBrowserSession {
       }
       if (el instanceof win.HTMLSelectElement) {
         const norm = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
-        const options = [...el.options];
+        // A saved login matches and lists only options that can be chosen, so a refusal never
+        // repeats its value.
+        const options = [...el.options].filter((o) => !action.origin || !unavailable(win, o));
         const match =
           options.find((o) => o.value === text) ??
           options.find((o) => optionLabel(o) === text) ??
           options.find((o) => norm(optionLabel(o)) === norm(text) || norm(o.value) === norm(text));
+        if (!match && action.origin) {
+          throw new FillRefused(
+            `This dropdown has no option for this saved field. Its options: ${describeChoices(options)}.`,
+          );
+        }
+        const hideChoice = this.loginFilled.has(el);
         if (!match) {
           throw new SettledStep(
-            `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win))}.`,
+            `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win, hideChoice))}.`,
           );
         }
         if (unavailable(win, match)) {
           throw new SettledStep(
-            `The option "${optionLabel(match)}" is disabled. Its options: ${describeOptions(optionsOf(el, win))}.`,
+            `The option "${optionLabel(match)}" is disabled. Its options: ${describeOptions(optionsOf(el, win, hideChoice))}.`,
           );
         }
         // The old choice goes: a multiple select would keep it otherwise.
-        for (const option of options) option.selected = false;
+        for (const option of el.options) option.selected = false;
         match.selected = true;
+        // Snapshots never show which option a saved login chose, whatever the page later does.
+        if (action.origin) this.loginFilled.add(el);
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
         return;
@@ -338,7 +358,9 @@ export class PageBrowserSession {
       const tag = node.tagName.toLowerCase();
       const entry: BrowserSnapshotNode = { ref, role, name, tag };
       if (value !== undefined) entry.value = value;
-      if (node instanceof win.HTMLSelectElement) entry.options = optionsOf(node, win);
+      if (node instanceof win.HTMLSelectElement) {
+        entry.options = optionsOf(node, win, this.loginFilled.has(node));
+      }
       elements.push(entry);
       const valuePart = value !== undefined ? ` value=${JSON.stringify(value)}` : "";
       const optionsPart = entry.options ? ` options: ${describeOptions(entry.options)}` : "";
@@ -385,11 +407,15 @@ function unavailable(win: DomWindow, option: HTMLOptionElement): boolean {
   return option.disabled || (group instanceof win.HTMLOptGroupElement && group.disabled);
 }
 
-function optionsOf(select: { options: Iterable<HTMLOptionElement> }, win: DomWindow) {
+function optionsOf(
+  select: { options: Iterable<HTMLOptionElement> },
+  win: DomWindow,
+  hideChoice = false,
+) {
   return [...select.options].map((option) => ({
     label: optionLabel(option),
     value: option.value,
-    ...(option.selected ? { selected: true } : {}),
+    ...(option.selected && !hideChoice ? { selected: true } : {}),
     ...(unavailable(win, option) ? { disabled: true } : {}),
   }));
 }
@@ -404,6 +430,26 @@ function describeOptions(options: NonNullable<BrowserSnapshotNode["options"]>): 
         (option.disabled ? " (disabled)" : ""),
     )
     .join(", ");
+}
+
+/** The options a saved login could choose, as the live helper lists them: long labels keep their
+ * start and end, and the list stops at about 2 KB. */
+function describeChoices(options: HTMLOptionElement[]): string {
+  const shown: string[] = [];
+  let size = 0;
+  for (const option of options) {
+    const text = optionLabel(option);
+    const part = JSON.stringify(
+      text.length > 80 ? `${text.slice(0, 50)}…${text.slice(-29)}` : text,
+    );
+    if (size + part.length > 2000) {
+      shown.push(`and ${options.length - shown.length} more`);
+      break;
+    }
+    shown.push(part);
+    size += part.length + 2;
+  }
+  return shown.join(", ") || "none";
 }
 
 function roleFor(win: DomWindow, el: DomElement): string {
