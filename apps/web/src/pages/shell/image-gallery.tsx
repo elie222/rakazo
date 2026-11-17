@@ -56,10 +56,12 @@ function GalleryThumb({
   image,
   active,
   onSelect,
+  tabIndex,
 }: {
   image: GalleryImage;
   active: boolean;
   onSelect: () => void;
+  tabIndex?: number;
 }) {
   const { t } = useLingui();
   const src = useArtifactImage(image.target, image.artifactId);
@@ -68,6 +70,7 @@ function GalleryThumb({
       type="button"
       aria-label={t`Show ${image.name}`}
       aria-current={active || undefined}
+      tabIndex={tabIndex}
       onClick={onSelect}
       className="block h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-muted shadow-lg"
     >
@@ -138,7 +141,6 @@ function LightboxView({
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
           {src ? (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: Escape and the close button cover the keyboard.
             <img
               src={src}
               alt={current.name}
@@ -204,6 +206,8 @@ function LightboxView({
                       image={image}
                       active={distance === 0}
                       onSelect={() => setIndex(position)}
+                      // Clipped neighbours stay out of the tab order; the arrows reach every image.
+                      tabIndex={distance > 1 ? -1 : undefined}
                     />
                   </div>
                 );

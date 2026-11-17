@@ -127,3 +127,32 @@ it("closes when the empty surface beside the picture is clicked", async () => {
   });
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
+
+it("keeps clipped thumbnails out of the tab order", async () => {
+  const many: GalleryImage[] = Array.from({ length: 10 }, (_, index) => ({
+    artifactId: `shot-${index}`,
+    name: `shot-${index}`,
+    target: { botId: "bot" },
+  }));
+  await act(async () => {
+    root.render(
+      <ImageGalleryProvider images={many}>
+        {many.map((image) => (
+          <Opener key={image.name} image={image} />
+        ))}
+      </ImageGalleryProvider>,
+    );
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "open shot-5")
+      ?.click();
+  });
+  const thumb = (index: number) =>
+    document.querySelector<HTMLButtonElement>(`[aria-label="Show shot-${index}"]`);
+  expect(thumb(5)?.tabIndex).toBe(0);
+  expect(thumb(4)?.tabIndex).toBe(0);
+  expect(thumb(6)?.tabIndex).toBe(0);
+  expect(thumb(3)?.tabIndex).toBe(-1);
+  expect(thumb(7)?.tabIndex).toBe(-1);
+});
