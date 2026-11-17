@@ -37,6 +37,7 @@ jobs:
       - uses: ./.github/actions/setup-workspace
         with:
           playwright: "true"
+      - run: pnpm db:generate
       - name: Install Chromium
         timeout-minutes: 5
         run: pnpm --filter @rakazo/web exec playwright install chromium
