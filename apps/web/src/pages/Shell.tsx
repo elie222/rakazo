@@ -219,6 +219,10 @@ function SpaceShell() {
   }).data;
   const messagingSurfaceEnabled = messagingStatus?.enabled ?? false;
   const messagingProviders = messagingStatus?.providers ?? NO_PROVIDERS;
+  const chatLinkedBotIds = useMemo(
+    () => messagingStatus?.identities.map((identity) => identity.botId) ?? NO_PROVIDERS,
+    [messagingStatus],
+  );
   const memoryConfigQuery = useQuery(queries.memory.providerConfig.queryOptions());
   // Undefined while it first loads; null when the space has none or it could not be read.
   const memoryProviderConfig: SpaceMemoryConfig | null | undefined =
@@ -525,6 +529,7 @@ function SpaceShell() {
     refreshThread,
     setPanel,
     messageProviders: messagingProviders,
+    chatLinkedBotIds,
   });
   // Until this visit's read lands, a bot shows the routines and skills it had last time.
   const cachedRoutines =

@@ -25,6 +25,14 @@ bot's **Routines** list. Choose **Create Routine** (the **+**), or click a routi
 Under **Advanced** you can give a routine its own **Model** and **Thinking** level, for example a
 cheaper model for a simple daily check.
 
+If the bot is [linked to a chat app](./messaging-apps.md), **Advanced** also has **Send replies to my
+chat app**. Turn it on and the reply a run ends with is sent to you there, as well as appearing in
+the bot's chat. A run that fails or ends without a reply sends nothing; the app shows it. It goes
+only to your own linked chat with that bot, never to a group, and a "No changes" note from a change
+trigger stays in the app. Whoever edits a routine takes it over, so after someone else edits it
+the replies stay in the app. The switch is off by default, and a routine the bot creates in chat
+starts with it off.
+
 ## Triggers
 
 ### On a schedule
@@ -80,6 +88,7 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 
 The mobile app lists a bot's routines from its profile. Tap **+** to create one. Tapping a routine
 shows its instruction, schedule, next run and run history, with a switch to pause it and a button to
-test it; **Edit routine** changes its name, instruction and schedules, or deletes it. Webhook, Git event, Slack
+test it; **Edit routine** changes its name, instruction and schedules, turns **Send replies to my
+chat app** on or off, or deletes it. Webhook, Git event, Slack
 message and change triggers, and a routine's own model, are set up in chat or the web or desktop
 app; mobile shows them and keeps them as they are.

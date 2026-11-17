@@ -253,6 +253,7 @@ function sourceRecords(): AccountExportRecord[] {
       timezone: "UTC",
       active: true,
       notify: true,
+      sendToChat: true,
       messageProvider: null,
       modelProvider: null,
       modelId: null,
@@ -557,9 +558,15 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(
       await system.routine.findFirstOrThrow({
         where: { spaceId },
-        select: { active: true, nextRunAt: true, threadId: true, botId: true },
+        select: { active: true, nextRunAt: true, threadId: true, botId: true, sendToChat: true },
       }),
-    ).toEqual({ active: false, nextRunAt: null, threadId: thread.id, botId: child.id });
+    ).toEqual({
+      active: false,
+      nextRunAt: null,
+      threadId: thread.id,
+      botId: child.id,
+      sendToChat: true,
+    });
     expect(await system.agentSkill.findFirstOrThrow({ where: { spaceId } })).toMatchObject({
       name: "triage",
       source: "user",

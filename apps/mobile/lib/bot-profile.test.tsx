@@ -264,6 +264,7 @@ vi.mock("../components/native-segmented-control", () => ({
     ),
 }));
 vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("./screen-query", () => ({ useScreenQuery: () => ({ data: undefined }) }));
 vi.mock("../components/bot-email", () => ({
   useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
   useBotEmailRows: () => [],

@@ -16,6 +16,7 @@ describe("routine dispatch DTO", () => {
       timezone: "UTC",
       active: true,
       notify: true,
+      sendToChat: false,
       webhookEnabled: false,
       githubEnabled: false,
       messageProvider: null,

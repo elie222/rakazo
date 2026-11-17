@@ -198,6 +198,78 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await expect(updatedButton).toHaveCount(0);
 });
 
+test("a routine sends its replies to a linked chat app only when asked", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `routine-chat-${Date.now()}@rakazo.test`, "password12", "Routine chat");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  // The messaging surface is off in E2E, so the status is fulfilled with a chat linked to this bot.
+  let linked = false;
+  await page.route("**/rpc/messaging/status", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          enabled: true,
+          providers: ["sendblue"],
+          addresses: {},
+          openSignup: false,
+          identities: linked
+            ? [
+                {
+                  id: "mi-1",
+                  provider: "sendblue",
+                  address: "+15551230001",
+                  botId,
+                  botName: "Chief",
+                },
+              ]
+            : [],
+        },
+      }),
+    });
+  });
+  await page.reload();
+  await openBotPanel(page);
+
+  await page.getByTestId("routine-create-button").click();
+  await page.locator("label:has-text('Name') input").fill("Chat digest");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize my inbox");
+  await addScheduleTrigger(page, "Every day");
+
+  // With no chat linked there is nothing to send to, so the switch is not offered.
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Send replies to my chat app" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  linked = true;
+  await page.reload();
+  await openBotPanel(page);
+  await page.getByTestId("routine-create-button").click();
+  await page.locator("label:has-text('Name') input").fill("Chat digest");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize my inbox");
+  await addScheduleTrigger(page, "Every day");
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  const send = page.getByRole("switch", { name: "Send replies to my chat app" });
+  await expect(send).not.toBeChecked();
+  await send.click();
+  await expect(send).toBeChecked();
+  await captureScreenshot(page, testInfo, "routine-send-to-chat");
+  await page.keyboard.press("Escape");
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({ sendToChat: true });
+  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
+    (routine) => routine.name === "Chat digest",
+  );
+  expect(created?.sendToChat).toBe(true);
+
+  // An edit that leaves the switch alone does not send it.
+  await page.getByRole("button", { name: /Chat digest/ }).click();
+  await page.locator("label:has-text('Name') input").fill("Chat digest daily");
+  expect(await saveAndReturn(page, "routines/update")).not.toHaveProperty("sendToChat");
+});
+
 test("an email trigger claims the bot's address and saves who can start it", async ({
   page,
 }, testInfo) => {

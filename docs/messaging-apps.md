@@ -28,6 +28,10 @@ In direct messages, a voice note the chat app delivers as an audio file (Telegra
 is transcribed when a voice provider that supports transcription is connected in **Voice**
 settings; without one, the bot receives the audio file.
 
+A [routine](./routines.md#create-or-edit-one-yourself) can send each run's reply to this chat too:
+turn on **Send replies to my chat app** in the routine's settings. It is off by default, and it
+sends to your own chat with that bot only, not to groups.
+
 To stop, choose **Unlink**.
 
 ## Microsoft Teams

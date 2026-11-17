@@ -57,6 +57,8 @@ vi.mock("../components/settings-group", () => ({
 vi.mock("../components/menu-picker", () => ({ MenuPickerMenu: () => null }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("./query", () => ({ rpcQuery: () => ({}) }));
+vi.mock("./screen-query", () => ({ useScreenQuery: () => ({ data: undefined }) }));
 vi.mock("../components/bot-email", () => ({
   useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
   useBotEmailRows: () => [],

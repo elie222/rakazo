@@ -150,9 +150,12 @@ function createWorld() {
       status: string;
       sourceMessageId: string | null;
       messagingMirroredAt: Date | null;
+      routineId?: string | null;
       /** The previous release's marker for a delegated reply it posted itself. */
       teamChatMirroredAt?: Date | null;
     }>,
+    /** Routines by id, with whether each sends its runs to chat. */
+    routines: new Map<string, { sendToChat: boolean }>(),
     messages: [] as MessageRecord[],
     externalMessages: [] as Array<{
       id: string;
@@ -286,7 +289,9 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
           ...run,
           sourceMessage: copy(world.messages.find((message) => message.id === run.sourceMessageId)),
           bot: { name: world.bots.get(run.botId)!.name },
+          routine: (run.routineId && world.routines.get(run.routineId)) || null,
           thread: {
+            botId: world.threads.find((candidate) => candidate.id === run.threadId)?.botId ?? null,
             externalConversation: (() => {
               const thread = world.threads.find((candidate) => candidate.id === run.threadId);
               return thread?.conversationBotId ? { botId: thread.conversationBotId } : null;
@@ -622,6 +627,7 @@ function addRun(
     userId?: string;
     trigger?: string;
     status?: string;
+    routineId?: string;
     source?: unknown[];
     replyTo?: string;
     replies?: Reply[];
@@ -649,6 +655,7 @@ function addRun(
     status: input.status ?? "completed",
     sourceMessageId: `src-${id}`,
     messagingMirroredAt: null,
+    routineId: input.routineId ?? null,
   });
   for (const reply of input.replies ?? []) addReply(world, id, reply);
 }
@@ -1199,6 +1206,146 @@ describe("deliverRun to a 1:1 chat", () => {
 
     expect(t.sendToThread).not.toHaveBeenCalled();
     expect(t.world.outbound.map((row) => row.status)).toEqual(["failed", "failed"]);
+  });
+});
+
+describe("deliverRun for a routine", () => {
+  /** A routine run in bot-1's own thread, with its reply, for a routine that does or does not send. */
+  function routineRun(
+    t: Setup,
+    input: { sendToChat?: boolean; status?: string; threadId?: string; userId?: string } = {},
+  ) {
+    t.world.routines.set("routine-1", { sendToChat: input.sendToChat ?? true });
+    addRun(t.world, {
+      trigger: "routine",
+      routineId: "routine-1",
+      status: input.status,
+      threadId: input.threadId,
+      userId: input.userId,
+      replies: [text("m-1", "Your morning summary")],
+    });
+  }
+
+  it("sends a finished run's reply to its owner's chat, once however often it is delivered", async () => {
+    const t = setup();
+    routineRun(t);
+    t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+
+    await t.delivery.deliverRun("run-1");
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:dm-1", body: "Your morning summary", idempotencyKey: "msg:m-1" },
+    ]);
+    expect(t.world.outbound).toEqual([
+      expect.objectContaining({ kind: "dm", identityId: "mi-1", status: "sent" }),
+    ]);
+    // Not marked as mirrored: that marker belongs to runs the chat itself started.
+    expect(t.world.runs[0]!.messagingMirroredAt).toBeNull();
+    expect(t.jobs.scheduled.has(messagingReplyJobKey("run-1"))).toBe(false);
+  });
+
+  it("sends nothing for a routine that does not send to chat", async () => {
+    const t = setup();
+    routineRun(t, { sendToChat: false });
+    t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+    expect(t.world.outbound).toEqual([]);
+  });
+
+  it("reads the switch when the run is delivered, so turning it off stops the next one", async () => {
+    const t = setup();
+    routineRun(t);
+    t.world.routines.get("routine-1")!.sendToChat = false;
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it("sends nothing for a run whose routine was deleted", async () => {
+    const t = setup();
+    routineRun(t);
+    t.world.routines.clear();
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it.each(["queued", "running", "waiting"])("sends nothing while the run is %s", async (status) => {
+    const t = setup();
+    routineRun(t, { status });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it("sends nothing for interim progress", async () => {
+    const t = setup();
+    routineRun(t);
+
+    await t.delivery.deliverRun("run-1", { progress: true });
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it("sends nothing for a routine run in another thread than the bot's own", async () => {
+    const t = setup();
+    t.world.threads.push({
+      id: "thread-group",
+      botId: undefined as unknown as string,
+      userId: "user-1",
+      nextMessageSeq: 100,
+      nextEventSeq: 100,
+    });
+    routineRun(t, { threadId: "thread-group" });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it("sends nothing to a chat linked by someone other than the run's owner", async () => {
+    const t = setup();
+    routineRun(t, { userId: "user-2" });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
+  });
+
+  it.each(["failed", "cancelled"])(
+    "sends nothing for a %s run that left no reply, and still settles its backup job",
+    async (status) => {
+      const t = setup();
+      t.world.routines.set("routine-1", { sendToChat: true });
+      addRun(t.world, { trigger: "routine", routineId: "routine-1", status });
+      t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+
+      await t.delivery.deliverRun("run-1");
+
+      expect(requests(t)).toEqual([]);
+      expect(t.jobs.scheduled.has(messagingReplyJobKey("run-1"))).toBe(false);
+    },
+  );
+
+  it("sends nothing for a reply that says there is nothing to report", async () => {
+    const t = setup();
+    t.world.routines.set("routine-1", { sendToChat: true });
+    addRun(t.world, {
+      trigger: "routine",
+      routineId: "routine-1",
+      replies: [text("m-1", "   ")],
+    });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([]);
   });
 });
 

@@ -24,6 +24,7 @@ import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { rpcQuery } from "../lib/query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routine";
 import type { MobileRoutineDraft } from "../lib/routine-draft";
 import {
@@ -38,6 +39,7 @@ import {
   setRoutineActive,
   useBotRoutines,
 } from "../lib/routine-store";
+import { useScreenQuery } from "../lib/screen-query";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -316,6 +318,9 @@ function RoutineEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const busy = useRef(false);
   const email = useBotEmail(botId);
+  // Read on focus only, so a late answer never replaces the draft. Without one, no chat is offered.
+  const messaging = useScreenQuery(rpcQuery("messaging/status"), { onForeground: false }).data;
+  const chatLinked = Boolean(messaging?.identities.some((identity) => identity.botId === botId));
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
   // Triggers set up on web stay listed here so the person sees them and can remove them.
@@ -555,6 +560,16 @@ function RoutineEditor({
           )}
         </View>
       )}
+      {chatLinked || draft.sendToChat ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="sendToChat"
+            label={t`Send replies to my chat app`}
+            value={draft.sendToChat}
+            onChange={(sendToChat) => update({ sendToChat })}
+          />
+        </SettingsGroup>
+      ) : null}
       {draft.emailSenders ? (
         <RoutineEmailTrigger
           botId={botId}

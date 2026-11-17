@@ -338,6 +338,16 @@ describe("routines.update", () => {
     thinkingLevel: "high",
   };
 
+  it("writes the chat switch only when the update carries it", async () => {
+    const { call, update } = fixture(false);
+    expect((await call({ name: "Renamed" })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("sendToChat", expect.anything());
+    expect((await call({ sendToChat: true })).status).toBe(200);
+    expect(update.mock.calls[1]![0].data).toMatchObject({ sendToChat: true });
+    expect((await call({ sendToChat: false })).status).toBe(200);
+    expect(update.mock.calls[2]![0].data).toMatchObject({ sendToChat: false });
+  });
+
   it("leaves model columns out of unrelated updates", async () => {
     const { call, update } = fixture(false, false, ownModel);
     expect((await call({ name: "Renamed", active: undefined, runAt: undefined })).status).toBe(200);
