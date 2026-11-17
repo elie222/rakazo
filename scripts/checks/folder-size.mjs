@@ -30,7 +30,7 @@ export function folderCounts(files) {
 export function oversized(counts, baseline) {
   const over = [];
   for (const [folder, count] of counts) {
-    const allowed = Math.max(LIMIT, baseline[folder] ?? 0);
+    const allowed = Math.max(LIMIT, Object.hasOwn(baseline, folder) ? baseline[folder] : 0);
     if (count > allowed) over.push({ folder, count, allowed });
   }
   return over.sort((a, b) => b.count - a.count);
