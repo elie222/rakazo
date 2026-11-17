@@ -96,7 +96,7 @@ CHAT_HISTORY_RETENTION_DAYS=180
 
 大约每小时会有一个实例删除早于该天数的信息和聊天事件，从最旧的开始，使每个聊天保留连续的近期历史。正在运行机器人任务、等待回答的问题或接管的聊天会等其完成；排在某个运行后面的消息同样会等待。旧消息的已保存摘要会随之删除。未设置或留空表示永久保留。其他不是 `1` 到 `36500` 之间整数（包含 `0`）的值会让 worker 以及自跑任务的 API（`WAKEUP_DRIVER=memory`）拒绝启动，这样输入错误不会导致历史被悄悄保留。应用中已经打开的聊天会继续显示已删除消息，直到重新加载。
 
-该设置不会删除：运行记录（任务提示和错误）、机器人存储的文件和截图、机器人保存的记忆、回复引用的原消息摘录、复制到已连接聊天应用的消息，以及有独立保留策略的[审计日志](./self-host-audit-log.md#retention)。从应用中无法恢复已删除的历史；[备份](./self-host-backups.md)按自己的保留策略保存。
+该设置不会删除：运行记录（任务提示和错误）、机器人存储的文件和截图、机器人保存的记忆、回复引用的原消息摘录、复制到已连接聊天应用的消息，以及有独立保留策略的[审计日志](../self-host-audit-log.md#retention)。从应用中无法恢复已删除的历史；[备份](./self-host-backups.md)按自己的保留策略保存。
 
 ## 数据库角色
 
@@ -139,7 +139,7 @@ API 维护 4 个 Postgres 连接，worker 维护 8 个。`DB_POOL_MAX` 会同时
 
 ## 监听地址
 
-API 监听 `API_HOST`（默认 `127.0.0.1`）和 `API_PORT`（默认 `3100`）。除非容器或可信反向代理必须访问，否则保持回环地址；Compose 文件已为你设置。已发布镜像栈把网页应用发布到 `127.0.0.1:5173`，API 发布到 `127.0.0.1:3100`；如需其他宿主端口，设置 `RAKAZO_WEB_PORT` 或 `RAKAZO_API_PORT`。局域网访问请按[同一网络连接手机](./self-host-clients.md#connecting-a-phone-on-the-same-network)设置 `RAKAZO_WEB_BIND`。
+API 监听 `API_HOST`（默认 `127.0.0.1`）和 `API_PORT`（默认 `3100`）。除非容器或可信反向代理必须访问，否则保持回环地址；Compose 文件已为你设置。已发布镜像栈把网页应用发布到 `127.0.0.1:5173`，API 发布到 `127.0.0.1:3100`；如需其他宿主端口，设置 `RAKAZO_WEB_PORT` 或 `RAKAZO_API_PORT`。局域网访问请按[同一网络连接手机](../self-host-clients.md#connecting-a-phone-on-the-same-network)设置 `RAKAZO_WEB_BIND`。
 
 ## 出站代理
 

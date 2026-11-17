@@ -185,7 +185,7 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
 
 设置 `SCIM_BEARER_TOKEN` 后，该命令会把身份提供商管理的账号留给提供商：不会停用提供商仍启用的人，也不会启用提供商已停用或删除的人。令牌移除后，它可以更改任何账号。同一命令也可完成清理未完成的停用。账号一旦关闭，登录和运行立即被拒绝；如果结束会话、计算机或运行没有完成，API 会用账号 id 记录 `directory.account_change.unfinished`。
 
-停用和重新启用会记录为 `auth.account.deactivated` 和 `auth.account.reactivated` [安全事件](./self-host-observability.md#security-events)，并写入其每个组织的[审计日志](./self-host-audit-log.md)。目录永远不会删除账号或其内容。
+停用和重新启用会记录为 `auth.account.deactivated` 和 `auth.account.reactivated` [安全事件](../self-host-observability.md#security-events)，并写入其每个组织的[审计日志](../self-host-audit-log.md)。目录永远不会删除账号或其内容。
 
 ## 通行密钥
 

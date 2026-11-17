@@ -66,7 +66,7 @@ openssl rand -hex 32   # BETTER_AUTH_SECRET、ENCRYPTION_KEY、SCREEN_PROXY_SECR
 | `EXPO_ACCESS_TOKEN`                                            | Expo 项目启用增强推送安全时的移动端推送                                   |
 | 消息令牌（Slack、Telegram 等）                                 | 仅启用对应平台时                                                          |
 
-可选的 `APNS_VOIP_KEY_ID`、`APNS_VOIP_TEAM_ID` 和 `APNS_VOIP_PRIVATE_KEY` 用于 [iOS VoIP 来电](./self-host-clients.md#mobile-incoming-calls)。`.p8` 内容应保存在密钥管理器中。
+可选的 `APNS_VOIP_KEY_ID`、`APNS_VOIP_TEAM_ID` 和 `APNS_VOIP_PRIVATE_KEY` 用于 [iOS VoIP 来电](../self-host-clients.md#mobile-incoming-calls)。`.p8` 内容应保存在密钥管理器中。
 
 最小化已发布镜像启动时，可选密钥为空是正常的。Pipedream Connect 密钥只出现在源码/Compose 的 `.env.example`，不在镜像示例中。
 
