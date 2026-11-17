@@ -19,7 +19,7 @@ import {
   loadAccountComputerSettings as loadSavedAccountComputerSettings,
   recordSecretCleanup,
   refreshComputerProvider,
-  savedSecret,
+  savedSecretIn,
 } from "@rakazo/adapters";
 import type { Actor, ComputerProviderSettings, ComputerProviderUpdate } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -218,6 +218,7 @@ export async function updateComputerProviderSettings(
                 computerProviderCipher: stored.ciphertext,
               },
             });
+            await savedSecretIn(deps, tx, stored.ciphertext);
             const previous = current?.computerProviderCipher;
             if (!previous || previous === stored.ciphertext) return undefined;
             const cleanup = deploymentSecret(previous);
@@ -232,7 +233,6 @@ export async function updateComputerProviderSettings(
     await cleanUpUnsavedSecret(deps, deploymentSecret(stored.ciphertext));
     throw error;
   }
-  await savedSecret(deps, stored.ciphertext);
   if (replaced) await finishSecretCleanup(deps, replaced);
   await refreshComputerProvider(deps.sandbox);
   return view(input.provider, settings, deps.env.sandboxProvider);

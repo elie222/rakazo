@@ -31,7 +31,7 @@ export interface SecretCleanupDeps {
     | "paymentWallet"
   >;
   secrets: Pick<SecretStore, "delete" | "isRemote">;
-  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel">;
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel" | "cancelIn">;
 }
 
 const ATTEMPT_MS = 10_000;
@@ -307,9 +307,9 @@ export const secretWriteTransaction = new AsyncLocalStorage<{
 
 /**
  * Every remote write first records the job that deletes its entry unless a row holds it by then,
- * so a process that dies between the write and the save leaves nothing behind. The save removes
- * the job (`savedSecret`, or the secret tables' transaction). Without a queue, writes go ahead
- * unrecorded; a failure to record one refuses the write.
+ * so a process that dies between the write and the save leaves nothing behind. The save's own
+ * transaction removes the job (`savedSecretIn`, or the secret tables' `saved`). Without a queue,
+ * writes go ahead unrecorded; a failure to record one refuses the write.
  */
 export function withSecretWriteAhead<T extends SecretStore>(
   store: T,
@@ -346,14 +346,16 @@ export function withSecretWriteAhead<T extends SecretStore>(
   });
 }
 
-/** After the row holding a new entry commits: its write-ahead job has nothing left to do. */
-export async function savedSecret(
-  deps: { secrets: Pick<SecretStore, "isRemote">; jobs?: Pick<JobPublisher, "cancel"> },
+/**
+ * In the transaction that saves the row holding a new entry: its write-ahead job goes with that
+ * commit. Every cleanup job for a reference shares one key, so a cancel after the commit could
+ * delete a backup a concurrent replace recorded as it dropped the same reference.
+ */
+export async function savedSecretIn(
+  deps: { secrets: Pick<SecretStore, "isRemote">; jobs?: Pick<JobPublisher, "cancelIn"> },
+  tx: JobTransaction,
   ref: string,
 ): Promise<void> {
   if (deps.jobs && deps.secrets.isRemote(ref))
-    await bestEffort(
-      "delete a saved secret's write-ahead job",
-      deps.jobs.cancel(secretCleanupJobKey(ref)),
-    );
+    await deps.jobs.cancelIn(tx, secretCleanupJobKey(ref));
 }

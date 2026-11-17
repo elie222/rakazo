@@ -16,7 +16,7 @@ import {
   cleanUpUnsavedSecret,
   finishSecretCleanup,
   recordSecretCleanup,
-  savedSecret,
+  savedSecretIn,
 } from "./secret-cleanup.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
@@ -156,22 +156,26 @@ export class MessagingInstallations implements MessagingInstallationStore {
             });
             if (updated.count !== 1)
               throw new MessagingInstallRefusedError("Workspace connection changed; try again");
+            await savedSecretIn(this.cleanup, tx, sealed.ciphertext);
             if (replaced) await recordSecretCleanup(this.cleanup, tx, replaced);
           });
         } else {
           // The unique workspace key prevents concurrent installs claiming two tenants.
-          await this.prisma.messagingInstallation.create({
-            data: {
-              id,
-              provider: session.provider,
-              workspaceId: external.workspaceId,
-              workspaceName: external.workspaceName,
-              spaceId: session.spaceId,
-              userId: session.userId,
-              botId: session.botId,
-              ciphertext: sealed.ciphertext,
-              ownerAddress,
-            },
+          await this.prisma.$transaction(async (tx) => {
+            await tx.messagingInstallation.create({
+              data: {
+                id,
+                provider: session.provider,
+                workspaceId: external.workspaceId,
+                workspaceName: external.workspaceName,
+                spaceId: session.spaceId,
+                userId: session.userId,
+                botId: session.botId,
+                ciphertext: sealed.ciphertext,
+                ownerAddress,
+              },
+            });
+            await savedSecretIn(this.cleanup, tx, sealed.ciphertext);
           });
         }
       } catch (error) {
@@ -183,7 +187,6 @@ export class MessagingInstallations implements MessagingInstallationStore {
           throw new MessagingInstallRefusedError("Workspace is already connected");
         throw error;
       }
-      await savedSecret(this.cleanup, sealed.ciphertext);
       if (replaced) await finishSecretCleanup(this.cleanup, replaced);
     });
   }

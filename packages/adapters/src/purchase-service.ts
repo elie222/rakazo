@@ -28,7 +28,7 @@ import {
   PROVIDER_BEFORE_SAVE_MS,
   purchaseCardRecordId,
   purchaseTokenRecordId,
-  savedSecret,
+  savedSecretIn,
 } from "./secret-cleanup.js";
 import { releaseUnpaidPurchase, spendingRefusalError } from "./spending-gate.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
@@ -298,8 +298,9 @@ export async function createPurchase(
     where: { id: run.threadId },
     select: { historyCompactionGeneration: true },
   });
-  const purchase = ownedReplay(
-    await deps.prisma.purchase.upsert({
+  const cleanupDeps = { secrets: deps.secretStore, jobs: deps.jobs };
+  const saved = await deps.prisma.$transaction(async (tx) => {
+    const row = await tx.purchase.upsert({
       where: { operationKey: context.operationId },
       update: {},
       create: {
@@ -326,9 +327,12 @@ export async function createPurchase(
         // The bot learns this status from the result; only later changes wake it.
         wokenStatus: snapshot.status,
       },
-    }),
-    context,
-  );
+    });
+    if (request.requestCiphertext && row.requestCiphertext === request.requestCiphertext)
+      await savedSecretIn(cleanupDeps, tx, request.requestCiphertext);
+    return row;
+  });
+  const purchase = ownedReplay(saved, context);
   if (purchase.nextPollAt) await enqueuePurchasePoll(deps, purchase.id, purchase.nextPollAt);
   return purchaseView(purchase, snapshot.card);
 }
@@ -488,20 +492,23 @@ export async function sealOnce(
   const card = column === "cardCiphertext";
   const recordId = card ? purchaseCardRecordId(purchase.id) : purchaseTokenRecordId(purchase.id);
   const stored = await deps.secretStore.put(plaintext, context, { recordId });
-  const saved = await deps.prisma.purchase
-    .updateMany({
-      where: { id: purchase.id, [column]: null },
-      data: { [column]: stored.ciphertext },
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
+  const saved = await deps.prisma
+    .$transaction(async (tx) => {
+      const updated = await tx.purchase.updateMany({
+        where: { id: purchase.id, [column]: null },
+        data: { [column]: stored.ciphertext },
+      });
+      if (updated.count) await savedSecretIn(cleanupDeps, tx, stored.ciphertext);
+      return updated;
     })
     .catch(() => ({ count: 0 }));
-  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
   if (!saved.count)
     await cleanUpUnsavedSecret(cleanupDeps, {
       kind: card ? "purchase_card" : "purchase_token",
       recordId,
       ref: stored.ciphertext,
     });
-  else await savedSecret(cleanupDeps, stored.ciphertext);
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */

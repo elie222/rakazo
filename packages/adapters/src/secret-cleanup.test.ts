@@ -9,7 +9,7 @@ import {
   finishSecretCleanup,
   recordSecretCleanup,
   retrySecretCleanup,
-  savedSecret,
+  savedSecretIn,
   secretCleanupJob,
   secretCleanupJobKey,
 } from "./secret-cleanup.js";
@@ -56,6 +56,9 @@ function fixture(held: string | null = null, remote = true) {
     enqueue: vi.fn(queue),
     enqueueIn: vi.fn((_tx: unknown, job: BackgroundJob) => queue(job)),
     cancel: vi.fn(async (key: string) => {
+      queued.delete(key);
+    }),
+    cancelIn: vi.fn(async (_tx: unknown, key: string) => {
       queued.delete(key);
     }),
   };
@@ -305,12 +308,13 @@ describe("secret cleanup", () => {
     );
   });
 
-  it("removes a saved entry's write-ahead job, and none for an inline reference", async () => {
+  it("removes a saved entry's write-ahead job in the save's transaction, and none for an inline reference", async () => {
     const f = fixture();
-    await savedSecret(f.deps, REF);
-    expect(f.jobs.cancel).toHaveBeenCalledWith(secretCleanupJobKey(REF));
+    await savedSecretIn(f.deps, tx, REF);
+    expect(f.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(REF));
+    expect(f.jobs.cancel).not.toHaveBeenCalled();
     const inline = fixture(null, false);
-    await savedSecret(inline.deps, REF);
-    expect(inline.jobs.cancel).not.toHaveBeenCalled();
+    await savedSecretIn(inline.deps, tx, REF);
+    expect(inline.jobs.cancelIn).not.toHaveBeenCalled();
   });
 });

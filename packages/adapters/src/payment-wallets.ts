@@ -16,7 +16,7 @@ import {
   finishSecretCleanup,
   paymentWalletRecordId,
   recordSecretCleanup,
-  savedSecret,
+  savedSecretIn,
 } from "./secret-cleanup.js";
 import { holdSecretNotifications } from "./secret-store-factory.js";
 
@@ -255,7 +255,10 @@ export async function paymentWalletStatus(
           connectedAt,
         },
       });
-      if (updated.count) await recordSecretCleanup(cleanupDeps(deps), tx, signIn);
+      if (updated.count) {
+        await savedSecretIn(cleanupDeps(deps), tx, ciphertext);
+        await recordSecretCleanup(cleanupDeps(deps), tx, signIn);
+      }
       return updated;
     })
     .catch((error: unknown) => {
@@ -275,7 +278,6 @@ export async function paymentWalletStatus(
     return statusOf(await currentWallet(deps, actor.userId));
   }
   await finishSecretCleanup(cleanupDeps(deps), signIn);
-  await savedSecret(cleanupDeps(deps), ciphertext);
   await options.onConnected?.();
   return { status: "connected", connectedAt: connectedAt.toISOString() };
 }
@@ -316,18 +318,18 @@ export async function connectPaymentWallet(
     connectedAt: null,
   };
   try {
-    await replaceWallet(deps, actor, (tx) =>
-      tx.paymentWallet.upsert({
+    await replaceWallet(deps, actor, async (tx) => {
+      await tx.paymentWallet.upsert({
         where: { userId: actor.userId },
         create: { userId: actor.userId, ...fields },
         update: fields,
-      }),
-    );
+      });
+      await savedSecretIn(cleanupDeps(deps), tx, ciphertext);
+    });
   } catch (error) {
     await cleanUpUnsavedSecret(cleanupDeps(deps), walletSecret(actor.userId, ciphertext));
     throw error;
   }
-  await savedSecret(cleanupDeps(deps), ciphertext);
   return {
     status: "connecting",
     verificationUrl: start.verificationUrl,
@@ -396,6 +398,7 @@ async function refreshCredential(
           where: { id: row.id },
           data: { ciphertext: written, refreshAt: next.refreshAt },
         });
+        await savedSecretIn(cleanupDeps(deps), tx, written);
         await recordSecretCleanup(
           cleanupDeps(deps),
           tx,
@@ -415,7 +418,6 @@ async function refreshCredential(
   }
   if (result.replaced)
     await finishSecretCleanup(cleanupDeps(deps), walletSecret(actor.userId, result.replaced));
-  if (written) await savedSecret(cleanupDeps(deps), written);
   return result;
 }
 
