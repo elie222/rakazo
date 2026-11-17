@@ -152,7 +152,9 @@ export function resolveDefaultComputerMode(
   value = process.env.COMPUTER_DEFAULT_MODE,
 ): ComputerMode {
   const mode = ComputerModeSchema.safeParse(value?.trim() || "team");
-  if (!mode.success) throw new Error("COMPUTER_DEFAULT_MODE must be team or dedicated");
+  if (!mode.success) {
+    throw new Error(`COMPUTER_DEFAULT_MODE must be ${ComputerModeSchema.options.join(" or ")}`);
+  }
   return mode.data;
 }
 
