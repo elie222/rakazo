@@ -237,7 +237,7 @@ process has just added.
 
 Rotation is not finished when `rotate --reencrypt` exits. Each API and worker
 process keeps the key versions it has read in memory for up to ten minutes
-(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/content-keys.ts`).
+(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/encryption/content-keys.ts`).
 For that long after a rotation, it may still seal new content and new vault
 saves with the previous version. Those stay under that version until the next
 `reencrypt`. An interrupted run also leaves items under the previous version.
