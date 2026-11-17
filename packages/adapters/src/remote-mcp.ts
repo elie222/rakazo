@@ -27,6 +27,7 @@ import { Agent } from "undici";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
+import { withoutDuplicatedStructuredText } from "./mcp/structured-text.js";
 import {
   MCP_APP_CLIENT_CAPABILITIES,
   mcpToolAppResourceUri,
@@ -34,7 +35,6 @@ import {
 } from "./mcp-app.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
-import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
   createAddressCheckedLookup,
