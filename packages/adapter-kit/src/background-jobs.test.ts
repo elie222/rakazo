@@ -7,6 +7,7 @@ import {
   historyCompactJob,
   historyCompactJobKey,
   MACHINE_CLEANUP_MAX_ATTEMPTS,
+  MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   MESSAGING_SEND_MAX_ATTEMPTS,
   machineCleanupJob,
   machineCleanupJobKey,
@@ -124,12 +125,13 @@ describe("background job contracts", () => {
       text: "make a short of these",
       attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
     };
-    expect(messagingInboundSettleJob(payload, due)).toEqual({
+    expect(messagingInboundSettleJob(payload, due)).toStrictEqual({
       name: "messaging.inbound_settle",
       payload,
       availableAt: due,
       replaceKey: messagingInboundSettleJobKey("chat", "message:1"),
       queueName: "messaging.inbound:identity-1",
+      maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
     });
     // A handle may contain the separator; the key keeps provider and handle apart.
     expect(messagingInboundSettleJobKey("chat", "message:1")).not.toBe(

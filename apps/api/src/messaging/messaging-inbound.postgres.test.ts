@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
-import { MessagingDelivery, settleInboundMessage } from "@rakazo/adapters";
+import { MessagingDelivery, sealSettleText, settleInboundMessage } from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -473,7 +473,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
   };
 
   beforeAll(async () => {
-    db = createDb(databaseUrl!);
+    db = createDb(databaseUrl!, { encryptContent: true });
     system = asSystem(db.prisma);
     const address = `settle-${randomUUID()}`;
     const provisioned = await runAsSystem("settle fixture", () =>
@@ -508,11 +508,16 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       artifacts: { get: vi.fn() },
     });
     const handle = `in-${randomUUID()}`;
+    const job = { provider: "test", handle, identityId: identity.id };
+    const text = await runAsSystem("seal the settle text", () =>
+      sealSettleText(db.prisma, identity.spaceId, job, "make a short of these"),
+    );
+    // The job queue's table holds only the sealed text.
+    expect(text).toMatch(/^rkz1:/);
+    expect(text).not.toContain("make a short");
     const payload = {
-      provider: "test",
-      handle,
-      identityId: identity.id,
-      text: "make a short of these",
+      ...job,
+      text,
       attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
     };
     const settle = () =>

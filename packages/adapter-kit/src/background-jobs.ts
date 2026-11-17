@@ -296,6 +296,12 @@ export function messagingInboundSettleJobKey(provider: string, handle: string): 
 }
 
 /**
+ * Tries of one direct message's backup settle. Its work is a few keyed writes, so a handful rides
+ * out a brief outage, and a job that cannot settle is given up within minutes, not days.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS = 5;
+
+/**
  * Backup for settling one direct message whose files download after its webhook was answered.
  * One sender's jobs share a queue, so after a restart they still settle in the order they came.
  */
@@ -309,6 +315,7 @@ export function messagingInboundSettleJob(
     availableAt,
     replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
     queueName: `messaging.inbound:${payload.identityId}`,
+    maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   };
 }
 

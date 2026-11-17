@@ -1010,8 +1010,9 @@ export interface BackgroundJobPayloads {
   "messaging.send": { outboundId: string };
   /**
    * Backup for one direct message answered before its files were in: posts it with what was
-   * stored and the rest marked, and tells the sender. It carries what the person wrote and the
-   * file names, never a download link or token.
+   * stored and the rest marked, and tells the sender. It carries the file names and what the
+   * person wrote, sealed under their Space's key as message content is; never a link, a token or
+   * a provider's media id.
    */
   "messaging.inbound_settle": {
     provider: string;

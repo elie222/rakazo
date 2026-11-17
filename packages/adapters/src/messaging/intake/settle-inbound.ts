@@ -1,11 +1,20 @@
 import type { BackgroundJobPayloads, JobPublisher } from "@rakazo/adapter-kit";
+import { messagingInboundSettleJobKey } from "@rakazo/adapter-kit";
 import {
   messageBlockForArtifact,
   promptTextForAttachments,
   sanitizeMessagingLabel,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
+import type { ContentLocation, PrismaClient, ThreadEvents } from "@rakazo/db";
+import {
+  accountDeactivated,
+  ContentDecryptionError,
+  ciphertextKeyId,
+  contentEncryptionOf,
+  decryptText,
+  encryptText,
+  SpaceDeletionInProgressError,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { wakeRun } from "../../runs/wakeups/wake-run.js";
 import {
@@ -47,6 +56,51 @@ export function filesNotReceivedReply(
 
 type Payload = BackgroundJobPayloads["messaging.inbound_settle"];
 
+/** The settle job's text, bound to its job and sender so a copy anywhere else fails to open. */
+function settleTextLocation(
+  job: Pick<Payload, "provider" | "handle" | "identityId">,
+): ContentLocation {
+  return {
+    table: "graphile_worker.jobs",
+    column: "payload.text",
+    rowId: messagingInboundSettleJobKey(job.provider, job.handle),
+    owner: job.identityId,
+  };
+}
+
+/**
+ * What the person wrote, for their message's settle job: sealed under their Space's current key,
+ * since the job queue's table sits outside content encryption. It stays plaintext only where
+ * content encryption is off.
+ */
+export async function sealSettleText(
+  prisma: PrismaClient,
+  spaceId: string,
+  job: Pick<Payload, "provider" | "handle" | "identityId">,
+  text: string,
+): Promise<string> {
+  const encryption = contentEncryptionOf(prisma);
+  if (!encryption?.ring.encryptWrites) return text;
+  return encryptText(await encryption.ring.current(spaceId), settleTextLocation(job), text);
+}
+
+/** The settle job's text as the person wrote it; only a key of their Space opens it. */
+async function openSettleText(
+  prisma: PrismaClient,
+  spaceId: string,
+  payload: Payload,
+): Promise<string> {
+  const keyId = ciphertextKeyId(payload.text);
+  if (!keyId) return payload.text;
+  const encryption = contentEncryptionOf(prisma);
+  if (!encryption) throw new Error("Inbound message encryption is unavailable");
+  const key = await encryption.ring.byId(keyId);
+  if (key.spaceId !== spaceId) {
+    throw new ContentDecryptionError("Inbound message names another Space's key");
+  }
+  return decryptText(key, settleTextLocation(payload), payload.text);
+}
+
 /**
  * The backup for a direct message whose files were still downloading when its process stopped:
  * posts the message with the files that were stored, marks every other one as not received,
@@ -74,6 +128,7 @@ export async function settleInboundMessage(
     select: { id: true },
   });
   if (!thread) return;
+  const text = await openSettleText(deps.prisma, identity.spaceId, payload);
 
   const nonces = payload.attachments.map((_, index) =>
     messagingAttachmentClientNonce(provider, handle, index),
@@ -116,7 +171,7 @@ export async function settleInboundMessage(
     select: { id: true },
   });
   if (!routed) {
-    const body = [payload.text, ...missing].filter(Boolean).join("\n");
+    const body = [text, ...missing].filter(Boolean).join("\n");
     try {
       const sent = await deps.events.sendUserMessage({
         spaceId: identity.spaceId,

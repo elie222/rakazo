@@ -7,6 +7,7 @@ import {
   messagingAttachmentClientNonce,
   messagingMessageClientNonce,
   messagingWakeIdempotencyKey,
+  sealSettleText,
   wakeRun,
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
@@ -287,12 +288,15 @@ async function prepareDirectEvent(
     const identityId =
       existing?.id ??
       (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
+    const job = { provider: event.provider, handle: event.handle, identityId };
+    // The job keeps what the person wrote, sealed, and never the media link that rides along.
+    // Files past the cap never download, so the job has none of them to look for.
     const payload: SettlePayload = {
-      provider: event.provider,
-      handle: event.handle,
-      identityId,
-      text,
-      attachments: attachments.map(({ name, mimeType }) => ({ name, mimeType })),
+      ...job,
+      text: await sealSettleText(deps.prisma, ids.spaceId, job, event.content),
+      attachments: attachments
+        .slice(0, ATTACHMENT_MAX_COUNT)
+        .map(({ name, mimeType }) => ({ name, mimeType })),
     };
     await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, receivedAt));
     return {
@@ -300,7 +304,7 @@ async function prepareDirectEvent(
       run: () =>
         (intake.handedOff.has(sender)
           ? handOffToJob(deps, payload)
-          : settleDirectMessage(deps, intake, ids, event, sender, payload, deadline)
+          : settleDirectMessage(deps, intake, ids, event, sender, payload, text, deadline)
         ).finally(() => intake.settling.delete(message)),
     };
   } catch (error) {
@@ -322,10 +326,11 @@ async function settleDirectMessage(
   event: MessagingInboundMessage,
   sender: string,
   payload: SettlePayload,
+  text: string,
   deadline: number,
 ): Promise<void> {
   try {
-    const unavailable = await deliverDirectMessage(deps, ids, event, payload.text, deadline);
+    const unavailable = await deliverDirectMessage(deps, ids, event, text, deadline);
     const lane = { identityId: payload.identityId };
     await deps.prisma.$transaction(async (tx) => {
       if (unavailable.length > 0) {

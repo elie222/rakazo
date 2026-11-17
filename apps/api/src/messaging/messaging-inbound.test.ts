@@ -1,5 +1,9 @@
+import { randomBytes } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
-import { messagingInboundSettleJobKey } from "@rakazo/adapter-kit";
+import {
+  MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
+  messagingInboundSettleJobKey,
+} from "@rakazo/adapter-kit";
 import type { OutboundLane, OutboundRow } from "@rakazo/adapters";
 import {
   inboundDeliveryClientNonce,
@@ -8,7 +12,7 @@ import {
 } from "@rakazo/adapters";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
-import { SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
+import { decryptText, SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import {
@@ -969,6 +973,11 @@ describe("createMessagingInboundHandler DM routing", () => {
     });
     await settled(deps);
     expect(storeAttachment).toHaveBeenCalledTimes(ATTACHMENT_MAX_COUNT);
+    // Files past the cap never download, so the backup job does not look for them.
+    const [, job] = deps.enqueueIn.mock.calls[0]! as [unknown, BackgroundJob];
+    expect(
+      (job as BackgroundJob & { name: "messaging.inbound_settle" }).payload.attachments,
+    ).toHaveLength(ATTACHMENT_MAX_COUNT);
     const deadlines = storeAttachment.mock.calls.map(([input]) => input.downloadDeadline);
     expect(new Set(deadlines).size).toBe(1);
     expect(deadlines[0]).toBeGreaterThanOrEqual(before + DIRECT_MESSAGE_SETTLE_BUDGET_MS);
@@ -1151,6 +1160,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       availableAt: expect.any(Date),
       replaceKey: key,
       queueName: "messaging.inbound:mi-1",
+      maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
     });
     const due = (deps.enqueueIn.mock.calls[0]![1].availableAt as Date).getTime();
     expect(due).toBeGreaterThanOrEqual(before + DIRECT_MESSAGE_SETTLE_BUDGET_MS + 60_000);
@@ -1166,6 +1176,52 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect.objectContaining({ clientNonce: "messaging:sendblue:handle-2" }),
     );
     expect(deps.enqueueIn).toHaveBeenCalledOnce();
+  });
+
+  it("seals what the person wrote in the settle job and leaves the media link out", async () => {
+    const key = { id: "key-1", spaceId: "ws-1", version: 1, key: randomBytes(32) };
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { encryptWrites: true, current: async () => key } }),
+    });
+    await createMessagingInboundHandler(deps)({
+      ...photoEvent,
+      content: "make a short of these",
+      mediaUrl: "https://cdn.example.test/clip.mov",
+    });
+    await settled(deps);
+
+    const { payload } = deps.enqueueIn.mock.calls[0]![1] as BackgroundJob & {
+      name: "messaging.inbound_settle";
+    };
+    expect(payload.text).toMatch(/^rkz1:key-1:/);
+    expect(JSON.stringify(payload)).not.toContain("cdn.example.test");
+    expect(
+      decryptText(
+        key,
+        {
+          table: "graphile_worker.jobs",
+          column: "payload.text",
+          rowId: messagingInboundSettleJobKey("sendblue", "handle-1"),
+          owner: "mi-1",
+        },
+        payload.text,
+      ),
+    ).toBe("make a short of these");
+    // The bot still gets the message as it was sent, link included.
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: expect.arrayContaining([
+          { kind: "text", text: "make a short of these\nhttps://cdn.example.test/clip.mov" },
+        ]),
+      }),
+    );
   });
 
   it("redelivered webhook during a download creates one message", async () => {
