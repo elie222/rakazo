@@ -65,7 +65,7 @@ Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. Re
 locale in these places:
 
 - `AppLocaleSchema` in `packages/contracts/src/domain.ts` and `APP_LOCALE_LABELS` in
-  `packages/core/src/ui-locale.ts`. The web language list comes from the shared schema;
+  `packages/core/src/locale/ui-locale.ts`. The web language list comes from the shared schema;
   `apps/web/src/lib/ui-locale.ts` is not a separate registry.
 - `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
 - Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/ui-locale.ts` and catalog imports/map in

@@ -69,6 +69,8 @@ app.example.com {
 `RAKAZO_ALLOWED_HOSTS`。否则网页服务会拒绝其他 `Host` 请求头，计算机屏幕可能保持空白。
 如需 Compose 内置 Caddy 或完整的主机加固流程，使用[生产部署指南（英文）](../self-host-production.md#public-single-vm-deployment)。
 
+在应用前再加一层 Cookie 登录门（例如 Google / oauth2-proxy）时，必须把计算机屏幕路径 `/novnc/session/*` 单独转发到 Rakazo，由应用校验屏幕能力 URL，否则画面会一直被外层登录重定向挡住。见[登录门与计算机屏幕](./self-host-login-gate.md)。
+
 ### 受限网络
 
 安装脚本、Compose 文件或镜像无法下载时，见[受限网络与镜像下载](./self-host-restricted-network.md)。
