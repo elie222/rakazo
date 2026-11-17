@@ -27,6 +27,8 @@ export type ServiceCall = {
   tool: string;
   args: Record<string, unknown>;
   outcome: ServiceCallOutcome;
+  /** The bot whose run made the call, when a case has more than one. */
+  botId?: string;
 };
 
 const DIRECTORY = [
@@ -204,6 +206,7 @@ export class EvalServices extends ComposioConnector {
         tool: call.tool,
         args: structuredClone(call.args),
         outcome: "rejected",
+        botId: context.botId,
       };
       this.calls.push(entry);
       if (this.githubReadError)
@@ -222,6 +225,7 @@ export class EvalServices extends ComposioConnector {
       tool: call.tool,
       args: structuredClone(call.args),
       outcome: "rejected",
+      botId: context.botId,
     };
     this.calls.push(entry);
     if (call.tool === "CRM_READ_DIAGNOSTIC") {

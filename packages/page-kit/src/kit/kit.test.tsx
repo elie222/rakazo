@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
@@ -101,16 +102,14 @@ describe("page kit", () => {
 
   it("scans long unclosed markup in linear time", () => {
     for (const text of [
-      "*a".repeat(25_000),
-      "**".repeat(25_000),
-      `\`${"x".repeat(50_000)}`,
-      "`\n".repeat(25_000),
-      "http://a".repeat(6_000),
-      `${"_ ".repeat(25_000)}${"www.".repeat(12_500)}`,
+      "*a".repeat(100_000),
+      "**".repeat(100_000),
+      `\`${"x".repeat(200_000)}`,
+      "`\n".repeat(100_000),
+      "http://a".repeat(24_000),
+      `${"_ ".repeat(100_000)}${"www.".repeat(50_000)}`,
     ]) {
-      const start = performance.now();
-      inlineMarkup(text);
-      expect(performance.now() - start).toBeLessThan(200);
+      expectLinearTime(() => inlineMarkup(text));
     }
   });
 

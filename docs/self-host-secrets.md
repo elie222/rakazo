@@ -8,7 +8,7 @@ overwrite an existing `.env` without an explicit backup and operator consent.**
 ## Published images: what the installer fills
 
 `bash install-images.sh` (without a pre-existing `.env`) copies
-`.env.images.example` and fills empty required keys with `openssl`:
+`.env.images.example` and fills empty keys with `openssl`:
 
 | Key                        | Installer fill         | Role                                                                          |
 | -------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
@@ -18,6 +18,7 @@ overwrite an existing `.env` without an explicit backup and operator consent.**
 | `ENCRYPTION_KEY`           | `openssl rand -hex 32` | Encrypts stored credentials at rest                                           |
 | `SCREEN_PROXY_SECRET`      | `openssl rand -hex 32` | Signs short-lived `/novnc/*` screen capabilities                              |
 | `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | API ↔ sandbox supervisor auth                                                 |
+| `RAKAZO_UPDATER_TOKEN`     | `openssl rand -hex 32` | Dedicated updater credential; unused until the updater profile is enabled     |
 
 Re-runs **preserve** an existing `.env` (they do not rotate secrets); they only append
 `POSTGRES_APP_PASSWORD` when an older `.env` lacks it. Empty

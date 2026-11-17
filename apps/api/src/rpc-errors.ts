@@ -16,8 +16,8 @@ import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { voiceAccountErrorStatus } from "./calls/voice.js";
 import { clientErrorStatus } from "./client-error-status.js";
-import { voiceAccountErrorStatus } from "./voice.js";
 
 /** How long a client waits before asking again while the database fails over. */
 export const DATABASE_RETRY_AFTER_SECONDS = 5;

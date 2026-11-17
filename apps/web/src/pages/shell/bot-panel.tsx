@@ -7,15 +7,7 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
-import {
-  chatModelChoices,
-  connectedModelChoices,
-  credentialForModel,
-  modelOptionKey,
-  modelThinkingLevels,
-  parseModelOptionKey,
-  resolveSelectableModelId,
-} from "@rakazo/core";
+import { botModelState, modelOptionKey } from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -283,45 +275,13 @@ export function BotSettings({
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
-  const connectedOptions = connectedModelChoices(credentials, catalog);
-  const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
-  const selectedModel = storedModel
-    ? {
-        provider: storedModel.provider,
-        modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
-      }
-    : null;
-  const selectedModelKey = selectedModel
-    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
-    : "";
-
-  const defaultEntry = me?.defaultModel
-    ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
-    : undefined;
-  const modelChoices = chatModelChoices(
-    connectedOptions,
+  const {
+    selectedModel,
     selectedModelKey,
-    t`Space default`,
-    defaultEntry?.images,
-  );
-
-  const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
-  const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
-  const effectiveEntry =
-    effectiveProvider && effectiveModelId
-      ? catalog.find(
-          (entry) =>
-            entry.provider === effectiveProvider &&
-            resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
-        )
-      : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = modelThinkingLevels(
-    effectiveCredential,
-    effectiveEntry,
-    effectiveModelId,
-  ).filter((level) => level !== "off");
-  const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
+    choices: modelChoices,
+    thinkingLevels: thinkingOptions,
+    defaultThinkingLevel,
+  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
 
   async function executeSave(
     patchOverrides?: {
@@ -822,15 +782,6 @@ const NO_CATALOG: ModelCatalogEntry[] = [];
 
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
-}
-
-function catalogEntry(
-  catalog: ModelCatalogEntry[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
 }
 
 function InlineProfileField({

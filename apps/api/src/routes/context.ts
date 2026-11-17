@@ -1,4 +1,5 @@
 import { implement, ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
@@ -11,7 +12,9 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasReadyModelCredential,
   hiddenCatalogModel,
+  isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
@@ -42,17 +45,18 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
-import { createAgentImportServices } from "../agent-import-services.js";
-import { createAgentSkillsService } from "../agent-skills.js";
-import { createBotRemoval } from "../bot-removal.js";
-import { createMcpServers } from "../mcp-servers.js";
-import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
-import { rosterChangeFor } from "../roster-procedures.js";
+import { bestEffort } from "@rakazo/logging";
+import { procedureSecurityEvent } from "../auth/security-audit.js";
+import { createAgentImportServices } from "../bots/agent-import-services.js";
+import { createAgentSkillsService } from "../bots/agent-skills.js";
+import { createBotRemoval } from "../bots/bot-removal.js";
+import { rosterChangeFor } from "../bots/roster-procedures.js";
+import { createTaughtSkillsService } from "../bots/taught-skills.js";
+import { createMcpServers } from "../integrations/mcp-servers.js";
+import { createModelConnector, prepareAllowedThinkingLevels } from "../models/model-credentials.js";
 import type { RouterDeps } from "../router.js";
-import { createRoutineAnnouncer } from "../routines.js";
-import { procedureSecurityEvent } from "../security-audit.js";
-import { spaceChangesFor } from "../space-change-procedures.js";
-import { createTaughtSkillsService } from "../taught-skills.js";
+import { createRoutineAnnouncer } from "../routines/routines.js";
+import { spaceChangesFor } from "../spaces/space-change-procedures.js";
 import { meDto } from "./shared.js";
 
 /**
@@ -206,6 +210,7 @@ export function createRouterContext(deps: RouterDeps) {
 
   // Shown where a member chose no model, so the list names what actually runs.
   const withDeploymentDefault = async (
+    actor: Actor,
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
@@ -219,7 +224,26 @@ export function createRouterContext(deps: RouterDeps) {
               : null,
           }
         : { env: process.env };
-    return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
+    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+      try {
+        const ready = await hasReadyModelCredential(
+          deps.prisma,
+          deps.secrets,
+          actor,
+          deploymentPrimary.provider,
+          deploymentPrimary.modelId,
+          { codexCatalog, allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint },
+        );
+        if (!ready) deploymentPrimary = null;
+      } catch (error) {
+        if (!(error instanceof SecretStoreUnavailableError)) throw error;
+        await bestEffort("read approval model default", Promise.reject(error));
+        // This view is advisory; a temporary outage must not fail an already committed save.
+        deploymentPrimary = null;
+      }
+    }
+    return { ...settings, deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings

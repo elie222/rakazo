@@ -18,8 +18,8 @@ import {
   resolveBotAvatarSet,
   resolveLabs,
 } from "@rakazo/contracts";
-import { isAdmin } from "../admins.js";
-import { effectiveSandboxProvider } from "../computer-provider-config.js";
+import { isAdmin } from "../auth/admins.js";
+import { effectiveSandboxProvider } from "../computers/computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";

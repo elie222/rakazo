@@ -4,13 +4,13 @@ import type { Actor } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
   completeConnection,
   connectionContext,
   revokeConnection,
-} from "../connection-flows.js";
-import { connectionCreatedEvent } from "../security-audit.js";
+} from "../integrations/connection-flows.js";
 import type { RouterContext } from "./context.js";
 
 async function reconcileConnections(

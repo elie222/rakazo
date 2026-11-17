@@ -6,13 +6,6 @@ import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import {
-  APPS_EVAL_CASES,
-  APPS_FIXTURE_VERSION,
-  APPS_JUDGE_CALIBRATION,
-  APPS_JUDGE_VERSION,
-} from "../evals/apps.js";
-import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
 import {
   EVAL_CASES,
@@ -23,12 +16,6 @@ import {
   wakesRoutines,
 } from "../evals/cases.js";
 import {
-  DELIBERATION_EVAL_CASES,
-  DELIBERATION_FIXTURE_VERSION,
-  DELIBERATION_JUDGE_CALIBRATION,
-  DELIBERATION_JUDGE_VERSION,
-} from "../evals/deliberation.js";
-import {
   caseFingerprint,
   caseKey,
   codeRevision,
@@ -37,58 +24,83 @@ import {
   workingDiffHash,
 } from "../evals/fingerprint.js";
 import { regradeTrial } from "../evals/grading.js";
+import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
+import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history-fixtures.js";
+import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
+import { observeSyntheticHistory } from "../evals/history-observer.js";
+import type { EvalJudge, JudgeInput } from "../evals/judge.js";
+import { createEvalJudge } from "../evals/judge.js";
+import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
+import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
+import type { TrialResult } from "../evals/report.js";
+import {
+  emptyTrial,
+  holdBackJudged,
+  redact,
+  stopRemaining,
+  summarize,
+  validateControls,
+} from "../evals/report.js";
+import type { CasePlan } from "../evals/run-store.js";
+import { judgeIdentity, RunStore } from "../evals/run-store.js";
+import {
+  APPS_EVAL_CASES,
+  APPS_FIXTURE_VERSION,
+  APPS_JUDGE_CALIBRATION,
+  APPS_JUDGE_VERSION,
+} from "../evals/suites/apps.js";
+import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/suites/bot-files.js";
+import {
+  DELIBERATION_EVAL_CASES,
+  DELIBERATION_FIXTURE_VERSION,
+  DELIBERATION_JUDGE_CALIBRATION,
+  DELIBERATION_JUDGE_VERSION,
+} from "../evals/suites/deliberation.js";
 import {
   GROUP_EVAL_CASES,
   GROUP_FIXTURE_VERSION,
   GROUP_JUDGE_CALIBRATION,
   GROUP_JUDGE_VERSION,
-} from "../evals/group.js";
-import { GROUP_ROUTING_EVAL_CASES, GROUP_ROUTING_FIXTURE_VERSION } from "../evals/group-routing.js";
-import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history-fixtures.js";
-import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
-import { observeSyntheticHistory } from "../evals/history-observer.js";
+} from "../evals/suites/group.js";
 import {
   INITIATIVE_EVAL_CASES,
   INITIATIVE_FIXTURE_VERSION,
   INITIATIVE_JUDGE_CALIBRATION,
   INITIATIVE_JUDGE_VERSION,
-} from "../evals/initiative.js";
-import type { EvalJudge, JudgeInput } from "../evals/judge.js";
-import { createEvalJudge } from "../evals/judge.js";
-import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
-import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
+} from "../evals/suites/initiative.js";
 import {
   MEMORY_EVAL_CASES,
   MEMORY_FIXTURE_VERSION,
   MEMORY_JUDGE_CALIBRATION,
   MEMORY_JUDGE_VERSION,
-} from "../evals/memory.js";
+} from "../evals/suites/memory.js";
 import {
   loadRecallCases,
   RECALL_EVAL_CASES,
   RECALL_FIXTURE_VERSION,
   RECALL_JUDGE_CALIBRATION,
   RECALL_JUDGE_VERSION,
-} from "../evals/recall.js";
-import type { TrialResult } from "../evals/report.js";
-import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
-import type { CasePlan } from "../evals/run-store.js";
-import { judgeIdentity, RunStore } from "../evals/run-store.js";
+} from "../evals/suites/recall.js";
 import {
   SILENCE_EVAL_CASES,
   SILENCE_FIXTURE_VERSION,
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
-} from "../evals/silence.js";
+} from "../evals/suites/silence.js";
 import {
   SUBAGENT_EVAL_CASES,
   SUBAGENT_FIXTURE_VERSION,
   SUBAGENT_JUDGE_CALIBRATION,
   SUBAGENT_JUDGE_VERSION,
-} from "../evals/subagents.js";
+} from "../evals/suites/subagents.js";
+import {
+  loadToolChoiceCases,
+  TOOL_CHOICE_FIXTURE_VERSION,
+  TOOL_CHOICE_JUDGE_CALIBRATION,
+  TOOL_CHOICE_JUDGE_VERSION,
+} from "../evals/suites/tool-choice.js";
+import { TOOL_CHOICE_CASES } from "../evals/suites/tool-choice-cases.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
-import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
-import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
@@ -165,7 +177,7 @@ async function main() {
   > = {
     product: {
       cases: EVAL_CASES,
-      fixtureVersion: "product-v2",
+      fixtureVersion: "product-v3",
       judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
     },
     subagents: {
@@ -212,7 +224,11 @@ async function main() {
       cases: GROUP_ROUTING_EVAL_CASES,
       fixtureVersion: GROUP_ROUTING_FIXTURE_VERSION,
     },
-    "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
+    "tool-choice": {
+      cases: TOOL_CHOICE_CASES,
+      fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION,
+      judge: { version: TOOL_CHOICE_JUDGE_VERSION, calibration: TOOL_CHOICE_JUDGE_CALIBRATION },
+    },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
     apps: {
       cases: APPS_EVAL_CASES,
@@ -440,15 +456,25 @@ async function main() {
     maxOutputTokens: connection.maxTokens ?? null,
   };
   let judge: EvalJudge | undefined;
-  if (selected.some((c) => c.judge) && !values["cache-probe"]) {
-    if (!suiteJudge) return notRun("This suite has no judge rubric; no inference was scheduled");
-    if (!values["judge-connection"] || !values["judge-pricing"])
-      return notRun(
-        "Semantic cases require --judge-connection and --judge-pricing; no inference was scheduled",
-      );
+  let heldBack = new Set<string>();
+  const judged = new Set(selected.filter((c) => c.judge).map((c) => c.id));
+  const judgeConnectionFile = values["judge-connection"];
+  const judgePricingFile = values["judge-pricing"];
+  if (judged.size && !values["cache-probe"] && !suiteJudge)
+    return notRun("This suite has no judge rubric; no inference was scheduled");
+  if (judged.size && !values["cache-probe"] && (!judgeConnectionFile || !judgePricingFile)) {
+    const reason =
+      "Not run: graded by meaning, which needs --judge-connection and --judge-pricing; unqualified, not a pass";
+    if (judged.size === selected.length) return notRun(reason);
+    heldBack = holdBackJudged(trials, judged, reason);
+    console.log(
+      `Without a judge, ${heldBack.size} judged case(s) stay not-run and unqualified: ${[...heldBack].join(", ")}`,
+    );
+    save();
+  } else if (judged.size && !values["cache-probe"] && suiteJudge) {
     let rawJudgeConnection: unknown;
     try {
-      rawJudgeConnection = readConnection(values["judge-connection"]);
+      rawJudgeConnection = readConnection(judgeConnectionFile!);
     } catch {
       return notRun("A valid judge model connection file is required; no inference was scheduled");
     }
@@ -458,7 +484,7 @@ async function main() {
     const judgeConnection = parsedJudge.data;
     let judgePricing: EvalPricing;
     try {
-      judgePricing = validatePricing(JSON.parse(readFileSync(values["judge-pricing"], "utf8")));
+      judgePricing = validatePricing(JSON.parse(readFileSync(judgePricingFile!, "utf8")));
     } catch {
       return notRun(
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
@@ -473,7 +499,7 @@ async function main() {
       modelCalls: 0,
       costUsd: null,
     };
-    const { PiAgentRuntime } = await import("../../../adapters/src/pi-runtime.ts");
+    const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
     const runtime = new PiAgentRuntime({
       modelCallObserver: {
         beforeCall: (call) => {
@@ -539,7 +565,7 @@ async function main() {
   }
   save();
   if (values["cache-probe"]) {
-    const { PiAgentRuntime } = await import("../../../adapters/src/pi-runtime.ts");
+    const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
     const { runCachePrefixProbe } = await import("../evals/cache-probe.js");
     const decisions: CacheDecisionMeasurement[] = [];
     const runtime = new PiAgentRuntime({
@@ -703,10 +729,9 @@ async function main() {
       };
     };
     for (let i = 0; i < trials.length; i++) {
+      if (heldBack.has(trials[i]!.caseId)) continue;
       if (stopRequested) {
-        for (const remaining of trials.slice(i))
-          remaining.reason =
-            "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
+        stopRemaining(trials.slice(i), heldBack);
         Object.assign(report, { termination: "graceful-stop-after-workflow" });
         save();
         process.exitCode = 130;

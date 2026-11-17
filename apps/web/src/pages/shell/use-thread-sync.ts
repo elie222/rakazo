@@ -173,6 +173,57 @@ export function useThreadSync({
   // returning. Do not let that late receipt resurrect terminal work as queued.
   const terminalRunReceipts = useRef(new Set<string>());
 
+  // A chat's first read, started by the click that opens it so it overlaps the switch's render.
+  const earlyRead = useRef<{
+    key: string;
+    read: Promise<ThreadSnapshot>;
+    startedAt: number;
+    abort: AbortController;
+  } | null>(null);
+  const startChatRead = useCallback(
+    (target: { botId?: string; groupId?: string }) => {
+      const input = target.groupId
+        ? { groupId: target.groupId }
+        : target.botId
+          ? { botId: target.botId }
+          : null;
+      if (
+        !input ||
+        ("groupId" in input
+          ? input.groupId === activeGroupId.current
+          : input.botId === activeBotId.current && !activeGroupId.current)
+      )
+        return;
+      earlyRead.current?.abort.abort();
+      const abort = new AbortController();
+      const read = rpc.threads.get(input, { signal: threadSnapshotSignal(abort.signal) });
+      // The chat's own load awaits this read and handles its failure.
+      void read.catch(() => undefined);
+      earlyRead.current = {
+        key: JSON.stringify(input),
+        read,
+        startedAt: performance.now(),
+        abort,
+      };
+    },
+    [rpc, activeBotId, activeGroupId],
+  );
+  /** The early read for this chat, cancelled with `signal`; any other is cancelled now. */
+  function takeEarlyRead(input: { botId: string } | { groupId: string }, signal: AbortSignal) {
+    const early = earlyRead.current;
+    earlyRead.current = null;
+    if (!early) return undefined;
+    if (
+      early.key !== JSON.stringify(input) ||
+      performance.now() - early.startedAt >= THREAD_SNAPSHOT_TIMEOUT_MS
+    ) {
+      early.abort.abort();
+      return undefined;
+    }
+    signal.addEventListener("abort", () => early.abort.abort(), { once: true });
+    return early.read;
+  }
+
   /**
    * Each chat's last snapshot, so reopening it paints at once. The live load and
    * subscription still run and replace it, so it is only ever a first frame.
@@ -211,13 +262,18 @@ export function useThreadSync({
     pendingSnaps.current.add(frame);
   }
 
-  async function refreshGroupThread(id: string, signal?: AbortSignal) {
+  async function refreshGroupThread(
+    id: string,
+    signal?: AbortSignal,
+    started?: Promise<ThreadSnapshot>,
+  ) {
     const readerEpoch = readerScrollEpoch.current;
     const preRequestElement = messageScroll.current;
     const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
-    const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
+    const snap = await (started ??
+      rpc.threads.get({ groupId: id }, signal ? { signal } : undefined));
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id || request !== groupRefreshEpoch.current) return snap;
     const reconciled = reconcileRefreshedThread(
@@ -252,7 +308,10 @@ export function useThreadSync({
   async function refreshThread(
     id: string,
     signal?: AbortSignal,
-    { readScreen = true }: { readScreen?: boolean } = {},
+    {
+      readScreen = true,
+      started,
+    }: { readScreen?: boolean; started?: Promise<ThreadSnapshot> } = {},
   ) {
     const readerEpoch = readerScrollEpoch.current;
     const preRequestElement = messageScroll.current;
@@ -262,7 +321,7 @@ export function useThreadSync({
     const request = ++threadRefreshEpoch.current;
     // Apply threads.get as soon as it returns so stop/takeover status is not held behind
     // routines/skills/screen fetches (progress can advance the cursor meanwhile).
-    const snap = await rpc.threads.get({ botId: id }, signal ? { signal } : undefined);
+    const snap = await (started ?? rpc.threads.get({ botId: id }, signal ? { signal } : undefined));
     markOnce("rk:renderer:thread-response");
     if (
       activeBotId.current !== id ||
@@ -410,6 +469,7 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
+    const started = takeEarlyRead({ botId: active.id }, abort.signal);
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: async () => {
@@ -420,7 +480,7 @@ export function useThreadSync({
           ? primed
           : pendingJump
             ? rpc.threads.get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-            : refreshThread(active.id, threadSnapshotSignal(abort.signal));
+            : refreshThread(active.id, threadSnapshotSignal(abort.signal), { started });
       },
       loadHead: () =>
         rpc.threads.head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) }),
@@ -517,12 +577,13 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshGroupThread(groupId));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
+    const started = takeEarlyRead({ groupId }, abort.signal);
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: () =>
         pendingJump
           ? rpc.threads.get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-          : refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+          : refreshGroupThread(groupId, threadSnapshotSignal(abort.signal), started),
       loadHead: () => rpc.threads.head({ groupId }, { signal: threadSnapshotSignal(abort.signal) }),
       refresh: () => refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
       currentSnapshot: () => snapshotRef.current,
@@ -613,6 +674,7 @@ export function useThreadSync({
   }, []);
 
   return {
+    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,

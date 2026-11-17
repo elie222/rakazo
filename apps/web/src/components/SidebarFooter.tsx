@@ -129,7 +129,7 @@ export function SidebarFooter({
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-body font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
@@ -286,15 +286,22 @@ export function SidebarFooter({
       </Popover>
       {!mini ? (
         <Button
-          variant="outline"
+          variant="secondary"
           ref={pillRef}
           onClick={onIntegrations}
-          className="h-9 min-w-0 flex-1 justify-between bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          className="h-9 min-w-0 flex-1 justify-between"
         >
-          <span ref={labelRef} className="min-w-0 truncate">
-            <Trans>Connect apps</Trans>
+          <span ref={labelRef} className="flex min-w-0 items-center gap-2">
+            <Plug className="text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+            <span className="truncate">
+              <Trans>Connect apps</Trans>
+            </span>
           </span>
-          <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
+          <AppMarkStack
+            marks={logos.slice(0, markCount)}
+            // The secondary button's surface, at rest and on hover.
+            ringClassName="ring-secondary group-hover/button:ring-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
+          />
         </Button>
       ) : null}
       {update.available ? (

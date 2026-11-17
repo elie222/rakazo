@@ -5,8 +5,8 @@
 // values as for `pnpm build`. RAKAZO_DESKTOP_PUSH=production|development adds the push entitlement, also for both.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { desktopPushEnvironment } from "../src/desktop-push.js";
-import { passkeyEntitlements } from "../src/passkeys.js";
+import { passkeyEntitlements } from "../src/main/auth/passkeys.js";
+import { desktopPushEnvironment } from "../src/main/system/desktop-push.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {

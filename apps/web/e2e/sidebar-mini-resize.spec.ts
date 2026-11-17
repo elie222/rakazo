@@ -54,6 +54,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await page.mouse.move(700, 450);
   await row.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Research" });
+  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
   await expect(tooltip).toBeVisible();
   await expect
     .poll(async () => {
@@ -63,6 +64,19 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
     })
     .toBe(true);
   await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail");
+  const action = sidebar.getByRole("button", { name: "Create", exact: true });
+  await page.mouse.move(700, 450);
+  await expect(actionLabel).toBeHidden();
+  await action.hover();
+  await expect(actionLabel).toBeVisible();
+  await expect
+    .poll(async () => {
+      const label = await actionLabel.boundingBox();
+      const button = await action.boundingBox();
+      return label && button ? label.x >= button.x + button.width : false;
+    })
+    .toBe(true);
+  await captureScreenshot(page, testInfo, "sidebar-mini-action-rail");
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByTestId("account-menu-header")).toBeHidden();
@@ -123,6 +137,18 @@ test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo)
     })
     .toBe(true);
   await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail-rtl");
+  const action = sidebar.getByRole("button", { name: "Create", exact: true });
+  await page.mouse.move(650, 450);
+  await action.hover();
+  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
+  await expect(actionLabel).toBeVisible();
+  await expect
+    .poll(async () => {
+      const label = await actionLabel.boundingBox();
+      const button = await action.boundingBox();
+      return label && button ? label.x + label.width <= button.x : false;
+    })
+    .toBe(true);
   await handle.press("ArrowLeft");
   await expect(sidebar).toHaveCSS("width", "240px");
   const box = (await sidebar.boundingBox())!;

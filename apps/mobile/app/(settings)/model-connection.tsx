@@ -39,22 +39,22 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CompatibleEndpointForm } from "../../components/compatible-endpoint-form";
-import { ConnectionModelList } from "../../components/connection-model-list";
-import { DisclosureRow } from "../../components/model-connection-fields";
-import { createModelsStyles } from "../../components/model-connection-styles";
-import { NativeActionButton } from "../../components/native-action-button";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
+import { CompatibleEndpointForm } from "../../components/models/compatible-endpoint-form";
+import { ConnectionModelList } from "../../components/models/connection-model-list";
+import { DisclosureRow } from "../../components/models/model-connection-fields";
+import { createModelsStyles } from "../../components/models/model-connection-styles";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { useSubscriptionSignIn } from "../../lib/auth/use-subscription-sign-in";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
-} from "../../lib/model-connection-request";
-import { native, useThemedStyles } from "../../lib/native";
-import { useScreenHeader } from "../../lib/screen-header";
-import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
-import { useListSearch } from "../../lib/use-list-search";
-import { useSubscriptionSignIn } from "../../lib/use-subscription-sign-in";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/models/model-connection-request";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
+import { useListSearch } from "../../lib/search/use-list-search";
 
 type ModelSelection = {
   modelId?: string;
@@ -631,14 +631,14 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : (
+          ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
               fill
               label={
                 oauthPending
                   ? t`Starting…`
-                  : credential
+                  : credential?.authKind === "oauth"
                     ? t`Sign in again`
                     : (selected.oauthLabel ?? t`Sign in`)
               }
@@ -646,7 +646,7 @@ export default function ModelConnection() {
               prominence="secondary"
               style={{ marginTop: 12 }}
             />
-          )
+          ) : null
         ) : null}
         {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
@@ -742,11 +742,8 @@ export default function ModelConnection() {
       </>
     ) : null;
 
-  const connectedStatusRow = credential ? (
+  const disconnectButton = credential ? (
     <View style={styles.statusRow}>
-      <View style={styles.providerCopy}>
-        <Text style={styles.secondary}>{t`Connected`}</Text>
-      </View>
       <NativeActionButton
         disabled={busy}
         fill={false}
@@ -808,16 +805,16 @@ export default function ModelConnection() {
               {compatConfig}
               {compatKeySection}
               {feedbackAnchor === "probe" ? null : feedback}
-              {connectedStatusRow}
               {modelList}
+              {disconnectButton}
             </>
           ) : credential ? (
             <>
               {provider === me?.hostCredentialProvider ? serverCredentialsNote : null}
-              {connectedStatusRow}
               {catalogConnectionControls}
               {feedbackAnchor === "connection" ? feedback : null}
               {modelList}
+              {disconnectButton}
             </>
           ) : provider === me?.hostCredentialProvider ? (
             <>
