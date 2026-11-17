@@ -413,7 +413,7 @@ describe("schedule tool persistence", () => {
 
     expect(result).toEqual({
       error:
-        'An active routine named "Morning joke" already exists (routine-1). Update or cancel it instead.',
+        'An active routine named "Morning joke" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     });
     expect(findMany).toHaveBeenCalledWith({
       where: { spaceId: "ws-1", botId: "bot-1", active: true },
@@ -1036,7 +1036,7 @@ describe("scheduleCreateError", () => {
     await expect(check({ ...named, name: " ", watch })).resolves.toBe("name is required.");
     await expect(check({ ...named, prompt: "", watch })).resolves.toBe("prompt is required.");
     await expect(check({ ...named, name: "daily digest", watch })).resolves.toBe(
-      'An active routine named "Daily digest" already exists (routine-1). Update or cancel it instead.',
+      'An active routine named "Daily digest" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     );
     await expect(check({ ...named, timezone: "Mars/Base", watch })).resolves.toBe(
       "Unknown timezone",

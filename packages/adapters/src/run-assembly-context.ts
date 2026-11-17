@@ -15,6 +15,7 @@ import { loadBotGroupDirectory } from "./group-handoff.js";
 import { formatCompactedSummary } from "./history-compaction.prompt.js";
 import { loadReplyContext } from "./reply-context.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
+import { routineRunInstruction } from "./routine-run.prompt.js";
 import type {
   ComputerInstructions,
   PreparedRunComputer,
@@ -348,22 +349,26 @@ export async function buildTurnPrompt(
   } catch {
     // Timezone is optional context; a lookup failure must not prevent a run.
   }
+  let routineNote: string | undefined;
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
-  if (lateSince && run.routineId) {
+  if (run.trigger === "routine" && run.routineId) {
     try {
       const routine = await deps.prisma.routine.findUnique({
         where: { id: run.routineId },
-        select: { timezone: true },
+        select: { name: true, timezone: true },
       });
-      if (routine)
-        lateRoutineNote = lateRoutineRunInstruction(
-          lateSince,
-          executionStartedAt,
-          routine.timezone,
-        );
+      if (routine) {
+        routineNote = routineRunInstruction(routine.name);
+        if (lateSince)
+          lateRoutineNote = lateRoutineRunInstruction(
+            lateSince,
+            executionStartedAt,
+            routine.timezone,
+          );
+      }
     } catch {
-      // Lateness is optional context; a lookup failure must not prevent a run.
+      // Routine context is optional; a lookup failure must not prevent a run.
     }
   }
   const sharedSpaceNote = people
@@ -371,6 +376,7 @@ export async function buildTurnPrompt(
     : undefined;
   const prompt = [
     replyContext,
+    routineNote,
     run.trigger === "reaction" && replyContext ? undefined : basePrompt,
     takeoverResume?.promptNote,
     approvalContinuation,
