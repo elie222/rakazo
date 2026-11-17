@@ -2,6 +2,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type * as Undici from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { secureFetch } from "./mcp-transport.js";
+import { MCP_HTTP_TIMEOUTS } from "./remote-mcp.js";
 
 const agentOptions = vi.hoisted(() => [] as unknown[]);
 
@@ -15,9 +17,6 @@ vi.mock("undici", async (importOriginal) => {
   }
   return { ...undici, Agent: RecordedAgent };
 });
-
-const { secureFetch } = await import("./mcp-transport.js");
-const { MCP_HTTP_TIMEOUTS } = await import("./remote-mcp.js");
 
 const localPolicy = { allowHttpLocalhost: true, allowPrivateEndpoint: true };
 const withLongWaits = (options: unknown) =>
