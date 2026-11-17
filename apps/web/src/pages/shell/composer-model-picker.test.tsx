@@ -79,7 +79,7 @@ describe("ComposerModelPicker", () => {
     act(() =>
       root.render(
         <QueryClientProvider client={client}>
-          <ComposerModelPicker bot={bot} onSaved={onSaved} />
+          <ComposerModelPicker bot={bot} onSaved={onSaved} onConnect={vi.fn()} />
         </QueryClientProvider>,
       ),
     );
@@ -120,7 +120,7 @@ describe("ComposerModelPicker", () => {
     act(() =>
       root.render(
         <QueryClientProvider client={client}>
-          <ComposerModelPicker bot={bot} onSaved={onSaved} />
+          <ComposerModelPicker bot={bot} onSaved={onSaved} onConnect={vi.fn()} />
         </QueryClientProvider>,
       ),
     );
@@ -146,5 +146,33 @@ describe("ComposerModelPicker", () => {
 
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated, "high"));
     expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: "high" });
+  });
+
+  it("still shows with nothing connected, and offers to connect a model", async () => {
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([]);
+    const onConnect = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker bot={bot} onSaved={vi.fn()} onConnect={onConnect} />
+        </QueryClientProvider>,
+      ),
+    );
+    const trigger = await vi.waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Model"]');
+      if (!button) throw new Error("not rendered yet");
+      return button;
+    });
+    act(() => trigger.click());
+    const connect = await vi.waitFor(() => {
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (row) => row.textContent === "Connect a model",
+      );
+      if (!option) throw new Error("no connect row");
+      return option;
+    });
+    act(() => connect.click());
+    expect(onConnect).toHaveBeenCalledOnce();
   });
 });
