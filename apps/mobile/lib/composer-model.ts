@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import type { ModelMark } from "@rakazo/core";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
@@ -11,7 +12,13 @@ import { rpcQuery } from "./query";
 import { useScreenQuery } from "./screen-query";
 import { thinkingLevelLabel } from "./thinking-level";
 
-export type ComposerModel = { label: string; thinking?: string; onPress: () => void };
+export type ComposerModel = {
+  label: string;
+  /** The maker's mark; a generic chip shows without one. */
+  mark?: ModelMark;
+  thinking?: string;
+  onPress: () => void;
+};
 
 type BotModel = {
   modelProvider?: string | null;
@@ -48,7 +55,7 @@ export function composerModelChip(
   me: MobileMe,
   catalog: MobileModel[],
   credentials: MobileModelCredential[],
-): { label: string; thinking?: string } | null {
+): Omit<ComposerModel, "onPress"> | null {
   const modelKey =
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "";
   const state = botModelState({
@@ -63,6 +70,7 @@ export function composerModelChip(
   const level = (bot.thinkingLevel as typeof state.defaultThinkingLevel | null | undefined) ?? null;
   return {
     label: state.selectedName ?? t`Space default`,
+    mark: state.selectedMark,
     thinking: state.thinkingLevels.length
       ? thinkingLevelLabel(level ?? state.defaultThinkingLevel)
       : undefined,

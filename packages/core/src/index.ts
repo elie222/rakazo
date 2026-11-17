@@ -76,6 +76,7 @@ export * from "./messaging-link-guard.js";
 export * from "./messaging-providers.js";
 export * from "./model-connection-error.js";
 export * from "./model-connection-form.js";
+export * from "./model-marks.js";
 export * from "./model-oauth.js";
 export * from "./model-probe.js";
 export * from "./model-providers.js";

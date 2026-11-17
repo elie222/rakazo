@@ -433,7 +433,8 @@ export function ThreadComposer({
   // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
   // bottom margin would leave them high.
   const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
-  const pillInset = (lineHeight - composerPillStyle.height) / 2;
+  // Lines the controls up with a single line of text; under the text they center on each other.
+  const pillInset = stacked ? 0 : (lineHeight - composerPillStyle.height) / 2;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
   // Sending resets the box, which would drop a clip still recording or words still being transcribed.
@@ -815,10 +816,9 @@ export function ThreadComposer({
             {model ? (
               <ModelChip
                 model={model}
-                // Its name on an empty line, a mark while text shares the line, and the name with
-                // its thinking once the controls sit under the text.
-                show={stacked ? "full" : draft ? "mark" : "name"}
-                style={{ marginBottom: stacked ? 0 : pillInset }}
+                // A mark beside the text; its name and thinking once the controls sit under it.
+                full={stacked}
+                style={{ marginBottom: pillInset }}
               />
             ) : null}
             {onCall ? null : (

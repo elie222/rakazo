@@ -1,4 +1,5 @@
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import { modelMark } from "./model-marks.js";
 import type { ChatModelChoice } from "./model-providers.js";
 import {
   chatModelChoices,
@@ -50,22 +51,27 @@ export function botModelState({
     defaultEntry?.images,
   );
 
-  // The model's own name, without its connection; the Space default's when the bot follows it.
-  const named = (choice: ChatModelChoice | undefined) =>
-    shortModelName(choice?.modelLabel ?? choice?.label);
-  const selectedName = selectedModelKey
-    ? named(choices.find((choice) => choice.key === selectedModelKey))
-    : (named(
-        choices.find(
-          (choice) =>
-            choice.key !== "" &&
-            choice.provider === me?.defaultProvider &&
-            choice.modelId === me?.defaultModel,
-        ),
-      ) ??
-      shortModelName(defaultEntry?.label) ??
-      me?.defaultModel ??
-      undefined);
+  // The model in effect as its own row lists it: the bot's, or the Space default's when it follows it.
+  const shown = selectedModelKey
+    ? choices.find((choice) => choice.key === selectedModelKey)
+    : choices.find(
+        (choice) =>
+          choice.key !== "" &&
+          choice.provider === me?.defaultProvider &&
+          choice.modelId === me?.defaultModel,
+      );
+  // Its own name, without its connection, and its maker's mark.
+  const selectedName =
+    shortModelName(shown?.modelLabel ?? shown?.label) ??
+    (selectedModelKey ? undefined : (shortModelName(defaultEntry?.label) ?? me?.defaultModel)) ??
+    undefined;
+  const selectedMark = modelMark(
+    shown ?? {
+      provider: me?.defaultProvider,
+      modelId: me?.defaultModel,
+      modelLabel: defaultEntry?.label,
+    },
+  );
 
   const provider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const modelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
@@ -89,6 +95,7 @@ export function botModelState({
     defaultEntry,
     choices,
     selectedName,
+    selectedMark,
     thinkingLevels,
     defaultThinkingLevel,
   };

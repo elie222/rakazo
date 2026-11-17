@@ -209,6 +209,7 @@ vi.mock("../components/glass-surface", () => ({
     createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/model-mark", () => ({ ModelMarkIcon: () => null }));
 vi.mock("../components/bot-avatar", () => ({
   BotAvatar: ({ identity, size }: { identity?: string; size?: number }) =>
     createElement("span", { "data-avatar": identity, "data-size": size }),

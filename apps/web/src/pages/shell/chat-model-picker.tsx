@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
+import type { ChatModelChoice, ModelMark } from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -15,6 +15,7 @@ import {
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
+import { ModelMarkIcon } from "../../components/ModelMarkIcon";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
 import { useListSearch } from "../../lib/use-list-search";
 
@@ -29,6 +30,7 @@ export function ChatModelPicker({
   onChange,
   compact = false,
   selectedLabel,
+  mark,
   detail,
   aside,
   disabled,
@@ -40,6 +42,8 @@ export function ChatModelPicker({
   compact?: boolean;
   /** What the button calls the selected choice, when that differs from its row in the list. */
   selectedLabel?: string;
+  /** The selected model's maker, marked on the compact button. */
+  mark?: ModelMark;
   /** Shown after the model on the compact button, such as its thinking level. */
   detail?: string;
   /**
@@ -77,6 +81,7 @@ export function ChatModelPicker({
           aria-describedby={textOnly ? imagesHintId : undefined}
           className="flex h-8 min-w-0 max-w-64 items-center gap-1.5 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
         >
+          <ModelMarkIcon mark={mark} className="size-3.5 shrink-0 text-foreground" />
           <span className="min-w-0 truncate text-foreground">{model}</span>
           {detail ? <span className="shrink-0">{detail}</span> : null}
           {textOnly ? <TextOnlyMark /> : null}
@@ -130,7 +135,19 @@ export function ChatModelPicker({
                 <Trans>No matching models</Trans>
               </CommandEmpty>
               {sections.map((section) => (
-                <CommandGroup key={section.key} heading={section.heading}>
+                <CommandGroup
+                  key={section.key}
+                  heading={
+                    section.heading ? (
+                      <span className="flex items-center gap-1.5">
+                        {sectionMark(section.data) ? (
+                          <ModelMarkIcon mark={sectionMark(section.data)} className="size-3" />
+                        ) : null}
+                        {section.heading}
+                      </span>
+                    ) : undefined
+                  }
+                >
                   {section.data.map((choice) => (
                     <CommandItem
                       key={choice.key}
@@ -167,4 +184,10 @@ export function ChatModelPicker({
       ) : null}
     </Popover>
   );
+}
+
+/** A provider section's maker, when its models share one. */
+function sectionMark(models: readonly ChatModelChoice[]) {
+  const first = models[0] ? modelMark(models[0]) : undefined;
+  return first && models.every((model) => modelMark(model) === first) ? first : undefined;
 }

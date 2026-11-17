@@ -5,6 +5,7 @@ import type { ViewStyle } from "react-native";
 import { Pressable, Text, View } from "react-native";
 import type { ComposerModel } from "../lib/composer-model";
 import { useMobileTokens } from "../lib/native";
+import { ModelMarkIcon } from "./model-mark";
 import { NativeSymbol } from "./native-symbol";
 
 /** The model, dictation and send: inline beside the text, or a row under it once stacked. */
@@ -16,7 +17,7 @@ export function TrailingControls({ stacked, children }: { stacked: boolean; chil
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "flex-end",
-        gap: 8,
+        gap: 6,
         paddingBottom: 8,
       }}
     >
@@ -28,11 +29,11 @@ export function TrailingControls({ stacked, children }: { stacked: boolean; chil
 /** The chat's model in the message box; tapping it opens the model sheet. */
 export function ModelChip({
   model,
-  show,
+  full,
   style,
 }: {
   model: ComposerModel;
-  show: "mark" | "name" | "full";
+  full: boolean;
   style?: ViewStyle;
 }) {
   const { t } = useLingui();
@@ -49,27 +50,21 @@ export function ModelChip({
         {
           flexDirection: "row",
           alignItems: "center",
-          gap: 4,
+          gap: 3,
           height: 28,
           flexShrink: 1,
         },
         style,
       ]}
     >
-      {show === "mark" ? (
-        <NativeSymbol
-          ios="cpu"
-          android="hardware-chip-outline"
-          size={16}
-          color={tokens.mutedForeground}
-        />
-      ) : (
-        <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 15, flexShrink: 1 }}>
+      <ModelMarkIcon mark={model.mark} size={15} color={tokens.foreground} />
+      {full ? (
+        <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 14, flexShrink: 1 }}>
           {name}
         </Text>
-      )}
-      {show === "full" && model.thinking ? (
-        <Text numberOfLines={1} style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+      ) : null}
+      {full && model.thinking ? (
+        <Text numberOfLines={1} style={{ color: tokens.mutedForeground, fontSize: 14 }}>
           {model.thinking}
         </Text>
       ) : null}

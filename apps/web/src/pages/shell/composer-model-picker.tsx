@@ -46,14 +46,20 @@ export function ComposerModelPicker({
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "";
   const pendingModel = saveModel.pending ? saveModel.input : undefined;
   const modelPending = pendingModel !== undefined;
-  const { selectedModelKey, selectedName, choices, thinkingLevels, defaultThinkingLevel } =
-    botModelState({
-      credentials,
-      catalog,
-      me,
-      modelKey: pendingModel ?? savedKey,
-      spaceDefaultLabel: t`Space default`,
-    });
+  const {
+    selectedModelKey,
+    selectedName,
+    selectedMark,
+    choices,
+    thinkingLevels,
+    defaultThinkingLevel,
+  } = botModelState({
+    credentials,
+    catalog,
+    me,
+    modelKey: pendingModel ?? savedKey,
+    spaceDefaultLabel: t`Space default`,
+  });
   // Nothing to switch between.
   if (choices.length < 2) return null;
   // A new model starts on its default level, so the saved one shows only while the model stays.
@@ -74,6 +80,7 @@ export function ComposerModelPicker({
       // The button names the model alone (the one behind the Space default when the bot follows
       // it); the list keeps each row's full name.
       selectedLabel={selectedName}
+      mark={selectedMark}
       detail={shownThinking}
       disabled={disabled || saveModel.pending || saveThinking.pending}
       onChange={(key) => {

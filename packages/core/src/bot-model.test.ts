@@ -59,4 +59,29 @@ describe("botModelState", () => {
     });
     expect(botModelPick("")).toEqual({ modelProvider: null, modelId: null, thinkingLevel: null });
   });
+
+  it("marks the model with its maker's mark, through a router too", () => {
+    const routed = botModelState({
+      credentials: [{ provider: "router", label: "Router" }] as unknown as ModelCredential[],
+      catalog: [
+        { provider: "router", id: "anthropic/claude-x", label: "Anthropic: Claude X" },
+        { provider: "router", id: "unknown/model", label: "Model" },
+      ] as unknown as ModelCatalogEntry[],
+      me: { defaultProvider: "router", defaultModel: "anthropic/claude-x" },
+      modelKey: "",
+      spaceDefaultLabel: "Space default",
+    });
+    expect(routed.selectedMark).toBeDefined();
+    expect(routed.selectedName).toBe("Claude X");
+    const unknown = botModelState({
+      credentials: [{ provider: "router", label: "Router" }] as unknown as ModelCredential[],
+      catalog: [
+        { provider: "router", id: "unknown/model", label: "Model" },
+      ] as unknown as ModelCatalogEntry[],
+      me,
+      modelKey: "router::unknown/model",
+      spaceDefaultLabel: "Space default",
+    });
+    expect(unknown.selectedMark).toBeUndefined();
+  });
 });
