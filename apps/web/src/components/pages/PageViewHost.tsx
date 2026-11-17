@@ -55,10 +55,12 @@ function OpenPage({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId } }),
     enabled: pageId !== null,
   });
+  // Another member's page is read-only, and a reply would go to a bot that cannot reach it.
+  const owned = page.data?.mine !== false;
   const viewer = usePageDocument(
     page.data?.code,
     sheet ? "background" : "card",
-    true,
+    owned,
     DOCK_CLEARANCE,
   );
   const [shareOpen, setShareOpen] = useState(false);
@@ -102,8 +104,6 @@ function OpenPage({
     [session],
   );
   const data = page.data;
-  // Another member's page is read-only, and a reply would go to a bot that cannot reach it.
-  const owned = data?.mine !== false;
   const open = pageId !== null && (data !== undefined || failed || page.isPending);
   const dockPage = pageId !== null && data && owned ? { id: data.id, title: data.title } : null;
   useEffect(() => {

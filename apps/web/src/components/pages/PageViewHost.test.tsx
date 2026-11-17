@@ -7,10 +7,25 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import type * as PagesLib from "../../lib/pages";
 import { createPageSession, PagesProvider } from "../../lib/pages";
 import { PageNotice } from "./PageNotice";
 import { PageViewHost } from "./PageViewHost";
 
+const { replyFlags, state } = vi.hoisted(() => ({
+  replyFlags: [] as boolean[],
+  state: { mine: undefined as boolean | undefined },
+}));
+vi.mock("../../lib/pages", async (importActual) => {
+  const actual = await importActual<typeof PagesLib>();
+  return {
+    ...actual,
+    usePageDocument: (...args: Parameters<typeof actual.usePageDocument>) => {
+      replyFlags.push(args[2] as boolean);
+      return actual.usePageDocument(...args);
+    },
+  };
+});
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ i18n: { locale: "en" }, t: String.raw }),
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -28,6 +43,7 @@ vi.mock("../../lib/query", () => ({
             code: "",
             owner: { name: "" },
             visibility: "link",
+            ...(state.mine === undefined ? {} : { mine: state.mine }),
             shareUrl: input.link === true ? "https://rakazo.example/p/1" : null,
           }),
         }),
@@ -48,6 +64,8 @@ vi.mock("./PageView", () => ({
 }));
 
 afterEach(() => {
+  state.mine = undefined;
+  replyFlags.length = 0;
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
@@ -126,4 +144,38 @@ it("announces why a page is not showing", async () => {
     "This page couldn't load",
   );
   root.unmount();
+});
+
+it("turns reply buttons off in another member's page, and keeps them in the owner's", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response(""));
+  const open = async (mine: boolean | undefined) => {
+    state.mine = mine;
+    replyFlags.length = 0;
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <MemoryRouter initialEntries={["/app/bot-1?page=p1"]}>
+            <PagesProvider value={{ open: () => {}, session: createPageSession() }}>
+              <PageViewHost />
+            </PagesProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await act(flush);
+    const last = replyFlags.at(-1);
+    root.unmount();
+    return last;
+  };
+  expect(await open(false)).toBe(false);
+  expect(await open(true)).toBe(true);
+  // An older server sends no ownership: the page is the viewer's own, as before.
+  expect(await open(undefined)).toBe(true);
 });

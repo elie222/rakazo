@@ -15,7 +15,7 @@ export function SidebarShelf({
   children,
 }: {
   title: ReactNode;
-  count: number;
+  count: number | string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);

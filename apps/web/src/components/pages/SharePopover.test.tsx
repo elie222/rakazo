@@ -86,3 +86,29 @@ it("says under a choice only what its title does not", async () => {
   expect(choices()).toEqual(warned);
   await act(async () => root.unmount());
 });
+
+it("shows a page shared with the Space as shared, apart from a link", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const show = (visibility: "private" | "space" | "link") =>
+    act(async () =>
+      root.render(
+        <SharePopover
+          compact
+          title="Plan"
+          owner={{ name: "RJ", image: null }}
+          visibility={visibility}
+          shareUrl={null}
+          onVisibilityChange={() => {}}
+        />,
+      ),
+    );
+  const trigger = () => document.querySelector("[data-shared]");
+  await show("private");
+  expect(trigger()).toBeNull();
+  await show("space");
+  expect(trigger()?.getAttribute("aria-label")).toBe("Share, shared with your Space");
+  await show("link");
+  expect(trigger()?.getAttribute("aria-label")).toBe("Share, anyone with the link can view");
+  await act(async () => root.unmount());
+});

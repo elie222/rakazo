@@ -13,7 +13,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Globe, MoreHorizontal, Search } from "lucide-react";
+import { ChevronRight, Globe, MoreHorizontal, Search, Users } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { pageMutationOptions } from "../../lib/page-actions";
 import { useOpenPage } from "../../lib/pages";
@@ -181,9 +181,13 @@ function OwnerPages({
               {page.title}
             </span>
             <span className="flex items-center gap-1 text-label text-muted-foreground">
-              {page.visibility === "link" ? (
+              {page.visibility === "link" || page.visibility === "space" ? (
                 <>
-                  <Globe aria-hidden="true" className="size-3" strokeWidth={1.8} />
+                  {page.visibility === "link" ? (
+                    <Globe aria-hidden="true" className="size-3" strokeWidth={1.8} />
+                  ) : (
+                    <Users aria-hidden="true" className="size-3" strokeWidth={1.8} />
+                  )}
                   <Trans>Shared</Trans>
                   <span aria-hidden="true">·</span>
                 </>

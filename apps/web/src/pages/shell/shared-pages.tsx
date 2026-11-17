@@ -30,7 +30,10 @@ export function SharedPages({ showSpaceSearch }: { showSpaceSearch: boolean }) {
   const items = uniquePages((pages.data?.pages ?? []).flatMap((read) => read.items));
   if (items.length === 0 || showSpaceSearch) return null;
   return (
-    <SidebarShelf title={<Trans>Shared pages</Trans>} count={items.length}>
+    <SidebarShelf
+      title={<Trans>Shared pages</Trans>}
+      count={pages.hasNextPage ? `${items.length}+` : items.length}
+    >
       {items.map((page) => (
         <button
           key={page.id}

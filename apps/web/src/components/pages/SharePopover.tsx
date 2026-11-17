@@ -73,7 +73,8 @@ export function SharePopover({
   const { t } = useLingui();
   const shownOwner = accountDisplay(owner, t`You`);
   const [copied, copy, copyFailed] = useCopyText();
-  const shared = visibility === "link";
+  const byLink = visibility === "link";
+  const shared = byLink || visibility === "space";
   // The link may be live when visibility is link, or unknown after a lost answer.
   const linkMayBeLive = visibility === "link" || visibility === null;
   const options: { value: PageVisibility; title: string; detail?: string; icon: ReactNode }[] = [
@@ -101,7 +102,13 @@ export function SharePopover({
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
         aria-label={
-          shared ? t`Share, anyone with the link can view` : compact ? t`Share` : undefined
+          byLink
+            ? t`Share, anyone with the link can view`
+            : shared
+              ? t`Share, shared with your Space`
+              : compact
+                ? t`Share`
+                : undefined
         }
         data-shared={shared || undefined}
         className={
@@ -115,13 +122,18 @@ export function SharePopover({
             <Share className="size-5" strokeWidth={1.8} />
             {shared ? (
               <span className="absolute -top-0.5 -right-0.5 grid size-[18px] place-items-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
-                <Globe className="size-3" strokeWidth={2} />
+                {byLink ? (
+                  <Globe className="size-3" strokeWidth={2} />
+                ) : (
+                  <Users className="size-3" strokeWidth={2} />
+                )}
               </span>
             ) : null}
           </>
         ) : (
           <>
-            {shared ? <Globe className="size-4 text-primary" strokeWidth={1.6} /> : null}
+            {byLink ? <Globe className="size-4 text-primary" strokeWidth={1.6} /> : null}
+            {shared && !byLink ? <Users className="size-4 text-primary" strokeWidth={1.6} /> : null}
             <Trans>Share</Trans>
           </>
         )}

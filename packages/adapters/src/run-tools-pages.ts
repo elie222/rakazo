@@ -266,6 +266,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     call.nextApprovedTool !== "save_page" &&
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
+  // Whether other members of the Space can read the page, as read inside the save while its row is held.
+  let sharedAtSave = false;
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
@@ -308,6 +310,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       await tx.pageVersion.create({
         data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
       });
+      // Read last, while the update above still holds the page's row, so sharing cannot change
+      // before this commits. Nothing written depends on it.
+      const { visibility } = await tx.page.findUniqueOrThrow({
+        where: { id: page.id },
+        select: { visibility: true },
+      });
+      sharedAtSave = visibility === "space";
       return { pageId: page.id, version, title: nextTitle };
     });
   } catch (error) {
@@ -317,8 +326,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     throw error;
   }
   // Members the page is shared with see the new version, so their open page and list read again.
-  // Not gated on the visibility read before the save: sharing can change while the save commits.
-  if (page) {
+  // A page private or shared by link has no reader in the Space to tell; sharing it later signals itself.
+  if (page && sharedAtSave) {
     await deps.events?.publishSpaceChange?.(run.spaceId, "pages");
   }
   const block: MessageBlock = { kind: "page", ...saved };
