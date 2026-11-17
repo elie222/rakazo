@@ -915,6 +915,15 @@ describe("notes that can't be posted as messages", () => {
     ).toMatchObject({ sent: ["A.", "B.", "C."], statuses: ["A."], reply: "A." });
   });
 
+  it("keeps an update it couldn't post as the reply when the bot then repeats an earlier one", async () => {
+    expect(
+      await updateTurn(["A.", "B.", "C.", "D.", "C."], {
+        startedAt: new Date(Date.now() - 120_000),
+        final: "",
+      }),
+    ).toMatchObject({ sent: ["A.", "B.", "C."], statuses: ["D."], reply: "D." });
+  });
+
   it("still says when an update was cut off, whether it was posted or shown as the working line", async () => {
     const long = `Checking ${"every invoice ".repeat(60)}`.trim();
     const cutOff = { ok: true, truncated: true, note: expect.stringContaining("cut off") };

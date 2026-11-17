@@ -286,10 +286,12 @@ export const messagingTools: ToolHandlers = {
       await showNarrationStatus(ctx, text);
       return call.finish(result);
     }
-    if (repeat) reply.lastDiscardedMidTurnNarration = "";
-    else await publishInterimMessage(ctx, text, true);
+    if (!repeat) await publishInterimMessage(ctx, text, true);
     // The person already has this message; notes written before it are no longer a missing answer.
-    if (ctx.replyMode === "messages") reply.workingNotes.length = 0;
+    if (ctx.replyMode === "messages") {
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = "";
+    }
     return call.finish(result);
   },
   async message_bot(ctx, call) {
