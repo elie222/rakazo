@@ -39,6 +39,7 @@ export * from "./composer-slash.js";
 export * from "./computer-updates.js";
 export * from "./connection-catalog.js";
 export * from "./cron.js";
+export * from "./device-timezone.js";
 export * from "./display-name.js";
 export * from "./echo.js";
 export * from "./email-typo.js";
