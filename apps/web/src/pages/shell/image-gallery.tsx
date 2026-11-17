@@ -130,6 +130,9 @@ function LightboxView({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         showCloseButton={false}
+        onClick={(event) => {
+          if (!(event.target as Element).closest("button")) onClose();
+        }}
         className="flex h-[min(88vh,52rem)] w-[min(94vw,60rem)] max-w-none flex-col gap-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
@@ -139,7 +142,6 @@ function LightboxView({
             <img
               src={src}
               alt={current.name}
-              onClick={onClose}
               className="max-h-full max-w-[calc(100%-6rem)] cursor-zoom-out rounded-xl object-contain"
             />
           ) : (

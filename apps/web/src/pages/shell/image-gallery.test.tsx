@@ -108,3 +108,22 @@ it("opens a lone image without navigation", async () => {
   expect(document.querySelector('[aria-label="Next image"]')).toBeNull();
   expect(document.querySelector('[aria-label="Show one"]')).toBeNull();
 });
+
+it("closes when the empty surface beside the picture is clicked", async () => {
+  await act(async () => {
+    root.render(
+      <ImageGalleryProvider images={images}>
+        <Opener image={images[0]!} />
+      </ImageGalleryProvider>,
+    );
+  });
+  await act(async () => {
+    container.querySelector("button")?.click();
+  });
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog).not.toBeNull();
+  await act(async () => {
+    dialog?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
