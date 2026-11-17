@@ -12,7 +12,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { AuditLog } from "../components/AuditLog";
+import { AuditLog } from "../components/audit/AuditLog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OrganizationMembersSettings } from "../components/OrganizationMembersSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";

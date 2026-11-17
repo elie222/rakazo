@@ -3,11 +3,11 @@ import type { AuditEvent } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { downloadArtifactBytes } from "../lib/artifact-open";
-import { queryClient } from "../lib/query";
-import { rpc, withSpaceHeaders } from "../lib/rpc";
-import { errorCode, errorText } from "../lib/user-error";
-import { SettingsPageHeader } from "./SettingsPageHeader";
+import { downloadArtifactBytes } from "../../lib/artifact-open";
+import { queryClient } from "../../lib/query";
+import { rpc, withSpaceHeaders } from "../../lib/rpc";
+import { errorCode, errorText } from "../../lib/user-error";
+import { SettingsPageHeader } from "../SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 

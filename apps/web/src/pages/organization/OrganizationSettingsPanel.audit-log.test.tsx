@@ -22,7 +22,7 @@ vi.mock("@lingui/react/macro", () => ({
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../../lib/rpc", () => ({
   rpc: { audit: { events: api.events }, organizations: {} },
   selectedSpaceId: () => "space-1",
   withSpaceHeaders: (_init: unknown, spaceId: string | null = "space-1") =>
@@ -30,16 +30,16 @@ vi.mock("../lib/rpc", () => ({
   clearSpaceSelection: vi.fn(),
   selectSpace: vi.fn(),
 }));
-vi.mock("../lib/organizations", () => ({
+vi.mock("../../lib/organizations", () => ({
   organizationsQuery: () => ({ queryKey: ["organizations"] }),
   useOrganizations: () => ({ organizations: api.organizations, activeOrganizationId: "org-1" }),
 }));
-vi.mock("../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
+vi.mock("../../lib/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
 import { focusManager, QueryClientProvider } from "@tanstack/react-query";
-import { QueryUserProvider, queryClient } from "../lib/query";
-import type { OrganizationPage } from "./OrganizationSettingsPanel";
-import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
+import { QueryUserProvider, queryClient } from "../../lib/query";
+import type { OrganizationPage } from "../OrganizationSettingsPanel";
+import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "../OrganizationSettingsPanel";
 
 /** What the settings page does: the menu in its header, the panel below, one page at a time. */
 function Page() {
