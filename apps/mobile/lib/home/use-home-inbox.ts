@@ -22,6 +22,7 @@ import { saveInbox } from "../inbox/saved-chats";
 import { appBadgeGeneration } from "../notifications/app-badge";
 import { ensureOrganizations } from "../spaces/organizations";
 import { forgetReferrals, rememberReferral } from "../spaces/referral";
+import { checkDeviceTimezone } from "./device-timezone";
 
 /** The account this launch has saved its language to (see the inbox load). */
 let localeReportedFor: string | null = null;
@@ -110,6 +111,11 @@ export function useHomeInbox(
           ).catch(() => undefined);
         }
       }
+      void checkDeviceTimezone(
+        nextMe.userId,
+        nextMe.timezone,
+        () => generation === currentSessionGeneration() && apiBase === currentApiBase(),
+      ).catch(() => undefined);
       inboxLoaded.current = true;
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
