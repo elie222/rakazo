@@ -2880,6 +2880,45 @@ describe("routine event approval", () => {
     // No rule could skip the next one, so the card offers no Always allow.
     expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
+
+  it("shows every event it adds on the card, however the request is padded", async () => {
+    const f = fixture({ builtin: true, sourceRole: "user" });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        name: "schedule_create",
+        args: {
+          name: "Digest",
+          prompt: "Send the digest",
+          cron: "0 9 * * *",
+          inChat: false,
+          on: { chat: " ".repeat(79), webhook: true },
+        },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    expect(askDetail(f)).toContain('on: {"webhook":true}');
+  });
+
+  it("refuses a chat app name too long to be one, before any card", async () => {
+    const f = fixture({ builtin: true, sourceRole: "user" });
+    f.setCalls([
+      {
+        name: "schedule_create",
+        args: {
+          name: "Digest",
+          prompt: "Send the digest",
+          on: { chat: " ".repeat(4_000), email: "domain" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({ error: "on.chat is the name of a connected chat app." });
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
 });
 
 describe("command watch creation approval", () => {

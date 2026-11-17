@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  canonicalToolEvents,
   EMAIL_NOT_RECEIVED,
   resolveRoutineEvents,
   routineEventsView,
@@ -47,6 +48,21 @@ describe("toolEventsFromArg", () => {
     expect(toolEventsFromArg("not json")).toEqual({
       error: 'on must be an object like {"webhook":true}.',
     });
+  });
+});
+
+describe("canonicalToolEvents", () => {
+  it("keeps only the events it turns on, so padding can't hide one", () => {
+    expect(canonicalToolEvents({ chat: "   ", webhook: false, email: "domain" })).toEqual({
+      ok: true,
+      on: { email: "domain" },
+    });
+    expect(canonicalToolEvents({ chat: " Slack " })).toEqual({ ok: true, on: { chat: "Slack" } });
+  });
+
+  it("keeps an empty object, which removes events on an update, apart from no on at all", () => {
+    expect(canonicalToolEvents({})).toEqual({ ok: true, on: {} });
+    expect(canonicalToolEvents(undefined)).toEqual({ ok: true, on: undefined });
   });
 });
 

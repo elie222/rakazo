@@ -29,6 +29,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
 import {
@@ -412,6 +413,12 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+  }
+  // The card shows and the effect stores the events in their short form, so padding can't hide one.
+  if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {
+    const events = canonicalToolEvents(args.on);
+    if ("error" in events) return refusal("schedule_events_invalid", events.error);
+    if (events.on) args = { ...args, on: events.on };
   }
   // Before the gate, so a routine that cannot be saved shows no approval card. An approved
   // replay goes on to the handler, which checks again.

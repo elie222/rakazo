@@ -94,10 +94,14 @@ export function toolEventsFromArg(
   if (webhook === undefined || git === undefined) {
     return { error: "on.webhook and on.git are true or false." };
   }
-  const chat = typeof fields.chat === "string" && fields.chat.trim() ? fields.chat.trim() : null;
-  if (fields.chat !== undefined && fields.chat !== null && typeof fields.chat !== "string") {
+  if (
+    fields.chat !== undefined &&
+    fields.chat !== null &&
+    (typeof fields.chat !== "string" || fields.chat.length > MAX_CHAT_NAME_LENGTH)
+  ) {
     return { error: "on.chat is the name of a connected chat app." };
   }
+  const chat = typeof fields.chat === "string" && fields.chat.trim() ? fields.chat.trim() : null;
   let email: RoutineEmailSenders | null = null;
   if (fields.email !== undefined && fields.email !== null && fields.email !== "") {
     const parsed = RoutineEmailSendersSchema.safeParse(fields.email);
@@ -105,6 +109,31 @@ export function toolEventsFromArg(
     email = parsed.data;
   }
   return { ok: true, on: { webhook, git, chat, email } };
+}
+
+/** A chat app's name is a word or two; anything longer is not one. */
+const MAX_CHAT_NAME_LENGTH = 80;
+
+/**
+ * A tool's `on` as only the events it turns on, trimmed: `{}` when it turns none on (on an update,
+ * that removes them), undefined when it was left out. The approval
+ * card, the stored request and the handler all see this form, so padding in a field the
+ * handler ignores can't push an event past what the card shows.
+ */
+export function canonicalToolEvents(
+  value: unknown,
+): { ok: true; on: Record<string, unknown> | undefined } | { error: string } {
+  if (value === undefined || value === null || value === "") return { ok: true, on: undefined };
+  const parsed = toolEventsFromArg(value);
+  if ("error" in parsed) return parsed;
+  const { webhook, git, chat, email } = parsed.on;
+  const on = {
+    ...(webhook ? { webhook: true } : {}),
+    ...(git ? { git: true } : {}),
+    ...(chat ? { chat } : {}),
+    ...(email ? { email } : {}),
+  };
+  return { ok: true, on };
 }
 
 /** Whether a tool's `on` turns any event on; one it cannot read saves nothing, so asks none. */
