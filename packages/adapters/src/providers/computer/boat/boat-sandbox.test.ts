@@ -838,6 +838,18 @@ describe("BoatSandboxProvider", () => {
             expect.objectContaining({ level: "warn", provider: "boat", step: "resumed" }),
           ]);
           expect(JSON.stringify(steps)).not.toContain(computer.id);
+          expect(sink.events).toContainEqual(
+            expect.objectContaining({
+              message: "sandbox.wait",
+              operation: "start",
+              outcome: "force_stop",
+              "sandbox.id": computer.id,
+              state: "error",
+              level: "info",
+              snapshotCompletedAt: expect.any(String),
+              durationMs: expect.any(Number),
+            }),
+          );
         } finally {
           installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
         }
@@ -867,6 +879,18 @@ describe("BoatSandboxProvider", () => {
               reason: "checkpoint_newer",
             }),
           );
+          expect(sink.events).toContainEqual(
+            expect.objectContaining({
+              message: "sandbox.wait",
+              operation: "start",
+              outcome: "failed",
+              "sandbox.id": computer.id,
+              state: "error",
+              level: "warn",
+              snapshotCompletedAt: expect.any(String),
+              durationMs: expect.any(Number),
+            }),
+          );
         } finally {
           installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
         }
@@ -875,12 +899,26 @@ describe("BoatSandboxProvider", () => {
       it("reports it gone without stopping it when Boat has no snapshot of it", async () => {
         const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
         const { api, provider, computer } = await boat();
+        const sink = createTestSink();
+        installLogger(createLogger({ service: "test", sinks: [sink] }));
         api.fail(computer.id, recovery);
 
         const error = await provider
           .prepare(computer, context)
           .catch((failure: unknown) => failure);
         expect(isSandboxGoneError(error)).toBe(true);
+        expect(sink.events).toContainEqual(
+          expect.objectContaining({
+            message: "sandbox.wait",
+            operation: "start",
+            outcome: "failed",
+            "sandbox.id": computer.id,
+            state: "error",
+            level: "warn",
+            snapshotCompletedAt: null,
+            durationMs: expect.any(Number),
+          }),
+        );
 
         const ref = await reconnect(provider, computer);
         expect(ref.fresh).toBe(true);

@@ -910,7 +910,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         const snapshotAt = sandbox.snapshotCompletedAt;
         if (forced || !snapshotAt) {
           logRecovery("gone", forced ? "resume_failed" : "no_snapshot");
-          throw boatSandboxGone(id);
+          const error = boatSandboxGone(id);
+          logWait(sandbox, "failed", error);
+          throw error;
         }
         if (!reconnect) {
           logRecovery("deferred");
@@ -922,10 +924,13 @@ export class BoatSandboxProvider implements SandboxProvider {
         }
         if (reconnect.savedAt && reconnect.savedAt >= snapshotAt) {
           logRecovery("gone", "checkpoint_newer");
-          throw boatSandboxGone(id);
+          const error = boatSandboxGone(id);
+          logWait(sandbox, "failed", error);
+          throw error;
         }
         // Read just now and still not answering, so the stop cannot cut off live work.
         logRecovery("force_stop");
+        logWait(sandbox, "force_stop");
         await this.client.stop({ sandboxId: id, stopRequest: { force: true } }, { signal });
         forced = true;
         started = false;
@@ -1554,7 +1559,7 @@ function sandboxWaitLog(id: string, operation: "start" | "stop") {
   let previous: string | undefined;
   return (
     sandbox: BoatMachine,
-    outcome: "waiting" | "completed" | "failed" = "waiting",
+    outcome: "waiting" | "completed" | "failed" | "force_stop" = "waiting",
     error?: Error,
   ) => {
     if (outcome === "completed" && previous === undefined) return;

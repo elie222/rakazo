@@ -34,7 +34,8 @@ Computer usage is recorded at several boundaries:
 - `sandbox.wait`: provider readiness and stop waits, with the sandbox id, state, hydration, snapshot
   status and timestamps, stop status and timestamps, and elapsed time. Unchanged polls produce no
   extra lines; advancing snapshot or stop attempt timestamps count as changes. An immediate
-  success produces none. Wait failures are warnings because background jobs may retry.
+  success produces none. Giving up on a recovery or forcing a stop records the final observed
+  state and elapsed time. Wait failures are warnings because background jobs may retry.
   A requested recovery or update that fails because its provider is unavailable or unresponsive
   reports an error with computer and bot correlation ids to the optional error collector.
 - `computer.maintenance_refused`: a recovery or update refused as busy, with its guard reason and
