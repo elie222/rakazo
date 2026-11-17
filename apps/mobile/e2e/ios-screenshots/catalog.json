@@ -87,7 +87,7 @@
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",

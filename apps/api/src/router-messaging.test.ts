@@ -1,6 +1,7 @@
 import type { InferRouterInitialContext } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
@@ -322,6 +323,7 @@ async function call(
   actor: Actor,
   path: string,
   body: unknown = {},
+  signal?: AbortSignal,
 ) {
   const { response } = await handler.handle(
     new Request(`http://127.0.0.1/rpc/${path}`, {
@@ -329,7 +331,7 @@ async function call(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ json: body }),
     }),
-    { prefix: "/rpc", context: { actor } },
+    { prefix: "/rpc", context: { actor, signal } },
   );
   if (!response) throw new Error("no response");
   return response;
@@ -388,6 +390,37 @@ describe("messaging.link", () => {
         data: expect.objectContaining({ userId: "user-1", botId: "bot-2" }),
       }),
     );
+  });
+
+  it("does not replace a newer code when an old request is cancelled before issuance", async () => {
+    const { handler, actor, prisma } = messagingDeps({ identity: null });
+    const lookup = deferred<{ id: string; spaceId: string }>();
+    const findBot = vi.mocked(prisma.bot.findFirst);
+    findBot.mockReturnValueOnce(lookup.promise as ReturnType<typeof prisma.bot.findFirst>);
+    const controller = new AbortController();
+    const oldResponse = call(
+      handler,
+      actor,
+      "messaging/link/start",
+      { botId: "bot-1" },
+      controller.signal,
+    );
+    await vi.waitFor(() => expect(findBot).toHaveBeenCalledTimes(1));
+    try {
+      controller.abort();
+      const newer = await call(handler, actor, "messaging/link/start", { botId: "bot-2" });
+      expect(newer.status).toBe(200);
+      expect(prisma.messagingLinkCode.create).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.resolve({ id: "bot-1", spaceId: "ws-1" });
+    }
+    const cancelled = await oldResponse;
+    expect(cancelled.status).not.toBe(200);
+    expect(prisma.messagingLinkCode.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.messagingLinkCode.create).toHaveBeenCalledTimes(1);
+    expect(prisma.messagingLinkCode.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({ botId: "bot-2" }),
+    });
   });
 
   it("refuses to issue a code for an already-linked bot", async () => {

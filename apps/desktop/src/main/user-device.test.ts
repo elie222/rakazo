@@ -201,6 +201,109 @@ describe("remote computer access", () => {
     });
   });
 
+  it.each(["settings", "request"] as const)(
+    "saves consent before permission setup from %s, so a restart keeps it",
+    async (source) => {
+      const prepareAccess = vi.fn(async () => {
+        expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "allowed" });
+        expect(access.state(origin)?.allowed).toBe(true);
+      });
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      if (source === "settings") await access.setAllowed(origin, true);
+      else expect(await clients[0]!.authorize()).toBe(true);
+      expect(prepareAccess).toHaveBeenCalledOnce();
+      await prepareAccess.mock.results[0]!.value;
+    },
+  );
+
+  it.each(["settings", "request"] as const)(
+    "does not offer setup or authorize access when saving consent from %s fails",
+    async (source) => {
+      const prepareAccess = vi.fn(async () => undefined);
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      const failure = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+      vi.mocked(setupStore.writePrivateFile).mockRejectedValueOnce(failure);
+      const request =
+        source === "settings" ? access.setAllowed(origin, true) : clients[0]!.authorize();
+      await expect(request).rejects.toBe(failure);
+      expect(prepareAccess).not.toHaveBeenCalled();
+      expect(access.state(origin)?.allowed).toBe(false);
+      expect(await readDeviceConsent(userData, origin)).toBeNull();
+    },
+  );
+
+  it("refuses requests sharing an approval when its consent write fails", async () => {
+    const answer = deferred<boolean>();
+    const written = deferred<void>();
+    const confirm = vi.fn(() => answer.promise);
+    const prepareAccess = vi.fn(async () => undefined);
+    const { access, clients } = setup({ confirm, prepareAccess });
+    await access.select(origin);
+    await access.pair();
+    vi.mocked(setupStore.writePrivateFile)
+      .mockClear()
+      .mockImplementationOnce(() => written.promise);
+    const first = clients[0]!.authorize();
+    const second = clients[0]!.authorize();
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    answer.resolve(true);
+    await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+    const failure = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+    const refused = expect(first).rejects.toBe(failure);
+    written.reject(failure);
+    await refused;
+    expect(await second).toBe(false);
+    expect(prepareAccess).not.toHaveBeenCalled();
+    expect(access.state(origin)?.allowed).toBe(false);
+  });
+
+  it.each(["disable", "revoke"] as const)(
+    "does not start setup after %s while saving allowed consent",
+    async (action) => {
+      const saved = deferred<void>();
+      const prepareAccess = vi.fn(async () => undefined);
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      vi.mocked(setupStore.writePrivateFile)
+        .mockClear()
+        .mockImplementationOnce(() => saved.promise);
+      const turningOn = access.setAllowed(origin, true);
+      await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+      const turningOff =
+        action === "disable" ? access.setAllowed(origin, false) : clients[0]!.revoke();
+      saved.resolve();
+      await turningOn;
+      await turningOff;
+      expect(prepareAccess).not.toHaveBeenCalled();
+      expect(access.state(origin)?.allowed).toBe(false);
+      await vi.waitFor(async () =>
+        expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" }),
+      );
+    },
+  );
+
+  it("runs commands while setup is open, and invalidates setup when access is revoked", async () => {
+    const ready = deferred<void>();
+    const prepareAccess = vi.fn((_valid: () => boolean) => ready.promise);
+    const { access, clients } = setup({ prepareAccess });
+    await access.select(origin);
+    await access.pair();
+    expect(await clients[0]!.authorize()).toBe(true);
+    expect(prepareAccess).toHaveBeenCalledOnce();
+    const valid = prepareAccess.mock.calls[0]![0];
+    expect(valid()).toBe(true);
+    await access.setAllowed(origin, false);
+    expect(valid()).toBe(false);
+    ready.resolve();
+    await prepareAccess.mock.results[0]!.value;
+    expect(await clients[0]!.authorize()).toBe(false);
+  });
+
   it("asks once on the first request, keeps the answer, and lets waiting requests share it", async () => {
     const answer = deferred<boolean>();
     const confirm = vi.fn(() => answer.promise);
@@ -252,6 +355,22 @@ describe("remote computer access", () => {
     await access.setAllowed(origin, false);
     expect(clients).toMatchObject([{ closed: false, cancelled: 1 }]);
     expect(await clients[0]!.authorize()).toBe(false);
+  });
+
+  it("refuses new commands immediately while saving a disabled choice", async () => {
+    const { access, clients } = setup();
+    await access.select(origin);
+    await access.pair();
+    await access.setAllowed(origin, true);
+    const saved = deferred<void>();
+    vi.mocked(setupStore.writePrivateFile)
+      .mockClear()
+      .mockImplementationOnce(() => saved.promise);
+    const turningOff = access.setAllowed(origin, false);
+    await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+    expect(await clients[0]!.authorize()).toBe(false);
+    saved.resolve();
+    await turningOff;
   });
 
   it("stops work and stays off when saving the choice fails", async () => {

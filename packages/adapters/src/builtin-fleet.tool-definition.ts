@@ -381,30 +381,24 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "message_bot",
     description:
-      'Send a useful update, question, or result to another of the user\'s bots. You must call this tool to actually deliver it — writing the message in your own reply text (e.g. "[to Comms] ...") does not send anything and the recipient never sees it. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.',
+      'Send an update, question or result to another of the user\'s bots. Only this tool delivers it: a message written in your reply, such as "[to Comms] …", never reaches them. Delivery is async, so keep working; send no acknowledgements or repeats.',
     inputSchema: {
       type: "object",
       properties: {
         bot_id: { type: "string", description: "Target bot id from your teammate list." },
-        confirm_name: {
-          type: "string",
-          description: "Exact name of the target bot when bot_id is omitted.",
-        },
-        message: {
-          type: "string",
-          description: "What to send. Send code, logs or other long content as files instead.",
-        },
+        confirm_name: { type: "string", description: "Target's exact name, if no bot_id." },
+        message: { type: "string", description: "Send code, logs and long content as files." },
         files: {
           type: "array",
           items: { type: "string" },
           maxItems: ATTACHMENT_MAX_COUNT,
           description:
-            "Paths of files or folders on your computer to send with it. A bot on your computer reads them in place; one with its own computer gets copies, so zip a folder for it. Never paste file contents into message.",
+            "Paths on your computer to send, never their contents. A bot with its own computer gets copies, so zip folders for it.",
         },
         intent: {
           type: "string",
           enum: ["request", "result", "question", "status", "fyi"],
-          description: "What the recipient should do with this message. Defaults to request.",
+          description: "What the recipient should do with it. Defaults to request.",
         },
       },
       required: ["message"],
