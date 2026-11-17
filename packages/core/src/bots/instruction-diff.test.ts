@@ -4,6 +4,12 @@ import { instructionUpdateDiff } from "./instruction-diff.js";
 const numbered = (count: number) => Array.from({ length: count }, (_, i) => `line ${i + 1}`);
 
 describe("instructionUpdateDiff", () => {
+  it("shows a line holding a redacted value as changed, since the marker may hide a real value on one side", () => {
+    expect(
+      instructionUpdateDiff("Be brief\nKey is [redacted]", "Be brief\nKey is [redacted]"),
+    ).toBe(["  Be brief", "- Key is [redacted]", "+ Key is [redacted]"].join("\n"));
+  });
+
   it("returns the new text when there is nothing to compare", () => {
     expect(instructionUpdateDiff("  \n", "Be brief")).toBe("Be brief");
   });

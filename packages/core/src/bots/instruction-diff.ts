@@ -1,6 +1,18 @@
+import { redactSecrets } from "../messages/events.js";
+
+/** What redaction writes in place of a secret, taken from redaction itself so they cannot drift. */
+const REDACTED_MARKER = redactSecrets("a", ["a"]);
 const CONTEXT_LINES = 2;
 /** Past this many removed plus added lines, the changed middle is shown as fully replaced. */
 const MAX_CHANGED_LINES = 2_000;
+
+/**
+ * Lines match when they are equal, except one that holds the redaction marker: it may stand for a
+ * real secret on one side and the same text typed out on the other, so it is never unchanged.
+ */
+function sameLine(a: string, b: string): boolean {
+  return a === b && !a.includes(REDACTED_MARKER);
+}
 
 type DiffLine = { sign: " " | "-" | "+"; text: string };
 
@@ -23,7 +35,7 @@ function shortestEdit(before: string[], after: string[]): DiffLine[] | undefined
           ? furthest[offset + k + 1]!
           : furthest[offset + k - 1]! + 1;
       let y = x - k;
-      while (x < before.length && y < after.length && before[x] === after[y]) {
+      while (x < before.length && y < after.length && sameLine(before[x]!, after[y]!)) {
         x++;
         y++;
       }
@@ -93,10 +105,15 @@ function removalsFirst(lines: DiffLine[]): DiffLine[] {
 /** The lines both sides share are kept; everything else is a removal then an addition. */
 function diffLines(before: string[], after: string[]): DiffLine[] {
   let start = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  while (start < before.length && start < after.length && sameLine(before[start]!, after[start]!))
+    start++;
   let endBefore = before.length;
   let endAfter = after.length;
-  while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
+  while (
+    endBefore > start &&
+    endAfter > start &&
+    sameLine(before[endBefore - 1]!, after[endAfter - 1]!)
+  ) {
     endBefore--;
     endAfter--;
   }
