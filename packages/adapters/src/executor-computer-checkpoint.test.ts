@@ -99,6 +99,7 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   waitForRunComputerLease: async () => null,
+  holdComputerExecutionLeaseForTakeover: async () => true,
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -231,6 +232,7 @@ function fixture(runId = "run-1") {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
+    $executeRaw: vi.fn(async () => 0),
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
       createMany: vi.fn(async (_input: { data: Array<{ model: string }> }) => ({ count: 1 })),
@@ -331,6 +333,10 @@ function fixture(runId = "run-1") {
     run.status = "waiting_input";
     return true;
   });
+  const pauseRunForTakeover = vi.fn(async () => {
+    run.status = "waiting_takeover";
+    return true;
+  });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const runtime = new PiAgentRuntime();
   const runtimeRun = vi.fn(runtime.run.bind(runtime));
@@ -366,6 +372,7 @@ function fixture(runId = "run-1") {
       append: vi.fn(async () => undefined),
       notify: vi.fn(async () => undefined),
       pauseRunForInput,
+      pauseRunForTakeover,
       finalizeRun,
     },
     jobs: { enqueue: vi.fn(async () => undefined) },
@@ -379,6 +386,7 @@ function fixture(runId = "run-1") {
     browserPage,
     runtimeRun,
     finalizeRun,
+    pauseRunForTakeover,
     prisma,
     shutdown,
     async run() {
@@ -512,6 +520,49 @@ it("finishes the reply it had written before an approval, showing the approved s
               note: "Opening the settings page.",
               outcomes: { succeeded: 1 },
             }),
+          ],
+        },
+        { kind: "text", text: "Done" },
+      ],
+    }),
+  );
+});
+it("finishes the reply it had written before a takeover, showing the takeover step once", async () => {
+  const f = fixture();
+  const enter = {
+    type: "toolCall" as const,
+    id: "enter",
+    name: "enter_computer_mode",
+    arguments: { goal: "Sign in" },
+  };
+  const takeover = {
+    type: "toolCall" as const,
+    id: "takeover",
+    name: "request_takeover",
+    arguments: { reason: "Sign in" },
+  };
+  const steps: ToolCall[][] = [[enter], [click], [takeover]];
+  fake.stream.mockImplementation((target: Model<"openai-completions">) =>
+    respond(target, steps.shift()),
+  );
+  await f.run();
+  f.effects.find((entry) => entry.kind === "browser_act")!.status = "approved";
+  await f.run();
+  expect(f.pauseRunForTakeover).toHaveBeenCalledTimes(1);
+  const resumed: ToolCall[][] = [[leave]];
+  fake.stream.mockImplementation((target: Model<"openai-completions">) =>
+    respond(target, resumed.shift()),
+  );
+  await f.run();
+  expect(f.finalizeRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      outcome: "completed",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            expect.objectContaining({ label: "Browser act", count: 1 }),
+            expect.objectContaining({ label: "Request takeover", count: 1 }),
           ],
         },
         { kind: "text", text: "Done" },
