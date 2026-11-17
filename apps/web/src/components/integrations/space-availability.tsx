@@ -10,9 +10,7 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** The user's spaces; choosing where something is available only matters with two or more. */
@@ -65,22 +63,15 @@ export function AvailabilityControl({
 }) {
   const { t } = useLingui();
   const spaces = useOwnSpaces();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (spaces.length < 2 || !availability) return null;
-
-  async function save(next: SpaceAvailability) {
-    setSaving(true);
-    setError(null);
-    try {
+  const change = useSave({
+    save: async (next: SpaceAvailability, rpc) => {
       await rpc.availability.set({ kind, id, ...next });
       await onChanged();
-    } catch (err) {
-      setError(errorText(err, t`Could not change where this is available`));
-    } finally {
-      setSaving(false);
-    }
-  }
+    },
+  });
+  const saving = change.pending;
+  if (spaces.length < 2 || !availability) return null;
+  const save = change.run;
 
   const chosen = availability.allSpaces ? spaces.map((space) => space.id) : availability.spaceIds;
   const summary = availability.allSpaces ? (
@@ -96,7 +87,7 @@ export function AvailabilityControl({
       : [...chosen, spaceId];
     // At least one space keeps it; none would be removing it, which has its own action.
     if (!next.length) return;
-    void save({ allSpaces: false, spaceIds: next });
+    save({ allSpaces: false, spaceIds: next });
   };
 
   return (
@@ -122,7 +113,7 @@ export function AvailabilityControl({
           <DropdownMenuCheckboxItem
             checked={availability.allSpaces}
             onCheckedChange={(checked) =>
-              void save(
+              save(
                 checked
                   ? { allSpaces: true, spaceIds: availability.spaceIds }
                   : { allSpaces: false, spaceIds: availability.spaceIds },
@@ -143,9 +134,9 @@ export function AvailabilityControl({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {error ? (
+      {change.error ? (
         <span role="alert" className="text-body-sm text-destructive">
-          {error}
+          {errorText(change.error, t`Could not change where this is available`)}
         </span>
       ) : null}
     </div>

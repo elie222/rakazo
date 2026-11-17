@@ -1,6 +1,6 @@
-import { OPENCLAW_H1 } from "./guide";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
-import { DOCS_URL, GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH } from "./site";
+import { OPENCLAW_H1 } from "./guide";
+import { GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
 
 export const ROUNDUP_UPDATED = "October 24, 2026";
 
@@ -353,7 +353,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
   {
     slug: "instinct-alternative",
     name: "Instinct",
-    summary: "A hosted personal assistant you text or call, and what is different when you host Rakazo yourself.",
+    summary:
+      "A hosted personal assistant you text or call, and what is different when you host Rakazo yourself.",
     title: "Open Source Instinct AI Alternative – Rakazo",
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Instinct, the personal assistant you text or call.",
@@ -381,7 +382,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Source",
         rakazo: "Apache-2.0 source on GitHub.",
-        other: "Hosted service. The terms say the company owns the service and the technology that produces its actions.",
+        other:
+          "Hosted service. The terms say the company owns the service and the technology that produces its actions.",
       },
       {
         topic: "Model",
@@ -578,7 +580,8 @@ export const ALTERNATIVES: readonly Alternative[] = [
   {
     slug: "claude-duet-alternative",
     name: "Claude Duet",
-    summary: "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
+    summary:
+      "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
     title: "Open Source Claude Duet Alternative – Rakazo",
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Claude Duet, Anthropic's personal agent.",
@@ -587,7 +590,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     otherName: "Claude Duet",
     intro: [
       "Claude Duet is Anthropic's proactive personal agent, released as a research preview on October 21, 2026. You message it like a person. It sends a morning brief, checks your connected accounts, and works on a cloud computer Anthropic runs.",
-      "Rakazo is open source software for persistent AI teammates. You run it, you choose the model, and you can have more than one bot. Rakazo can also sign in with your Claude Pro or Max subscription.",
+      "Rakazo is open source software for persistent AI teammates. You run it, you choose the model, and you can have more than one bot. For Claude models, connect an Anthropic API key.",
     ],
     rows: [
       {
@@ -611,7 +614,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Model",
         rakazo:
-          "Bring your own model credentials, including Claude Pro/Max sign-in, other providers, and a local server. Each bot can use a different model.",
+          "Bring your own model credentials, including ChatGPT sign-in, API keys, and a local server. Each bot can use a different model.",
         other: "Claude Opus 5.5. The help center says you cannot choose a model.",
       },
       {
@@ -640,7 +643,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         question: "Can Rakazo use my Claude subscription?",
         answer:
-          "Yes. Sign in with Claude Pro or Max, or bring an Anthropic key. Claude is one model choice, and each bot can use a different one.",
+          "Yes, when you self-host Rakazo from a source checkout for yourself. It runs Claude through the official Claude Code CLI, signed in with your Pro or Max account. On a shared server or the hosted plan, use an Anthropic API key. See Model subscriptions in the docs for details.",
       },
       {
         question: "Is Claude Duet open source or self-hosted?",
@@ -795,7 +798,8 @@ const OPENCLAW_HUB_CARD: HubCard = {
   href: OPENCLAW_ALTERNATIVE_PATH,
   name: "OpenClaw",
   h1: OPENCLAW_H1,
-  summary: "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
+  summary:
+    "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
 };
 
 export const HUB_CARDS: readonly HubCard[] = [
@@ -808,29 +812,6 @@ export const HUB_CARDS: readonly HubCard[] = [
   })),
   OPENCLAW_HUB_CARD,
 ];
-
-/** FAQ answers can carry `code`, **bold** and [links](/path/); structured data wants plain text. */
-function plainText(value: string): string {
-  return value
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replaceAll("**", "")
-    .replaceAll("`", "");
-}
-
-export function faqPageSchema(faq: readonly FaqItem[]) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faq.map((item) => ({
-      "@type": "Question",
-      name: plainText(item.question),
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: plainText(item.answer),
-      },
-    })),
-  };
-}
 
 function cell(value: string): string {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
@@ -864,7 +845,7 @@ export function alternativeMarkdown(alternative: Alternative): string {
     "",
     GET_STARTED.copy,
     "",
-    `- [${GET_STARTED.docsLabel}](${DOCS_URL})`,
+    `- [${GET_STARTED.docsLabel}](${SITE_URL}${SELF_HOST_GUIDE_PATH})`,
     `- [${GET_STARTED.githubLabel}](${GITHUB_URL})`,
     "",
     "## FAQ",
@@ -877,4 +858,3 @@ export function alternativeMarkdown(alternative: Alternative): string {
   ];
   return lines.join("\n");
 }
-

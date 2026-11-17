@@ -10,12 +10,12 @@ import {
 } from "./session";
 import { continueWithSso } from "./sso";
 
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+
 vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
   WebBrowserResultType: { CANCEL: "cancel", DISMISS: "dismiss" },
 }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(async () => ({ authorization: "Bearer old-session" })),
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),
@@ -58,6 +58,9 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 it("uses the Expo proxy, validates the session, and saves the existing session store", async () => {
   await expect(continueWithSso()).resolves.toBe(true);
+  expect(vi.mocked(fetchMobileJson).mock.calls[0]?.[1]?.headers).toMatchObject({
+    "x-rakazo-signup-surface": "ios",
+  });
   const [url, callback] = vi.mocked(openAuthSessionAsync).mock.calls[0]!;
   expect(callback).toBe("rakazo://sign-in");
   expect(new URL(url).pathname).toBe("/api/auth/expo-authorization-proxy");

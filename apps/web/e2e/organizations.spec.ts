@@ -23,6 +23,21 @@ async function openAvatarMenu(page: Page) {
   return menu;
 }
 
+/** Closes the avatar menu and its submenu together; Escape would close only the submenu. */
+async function closeAvatarMenu(page: Page) {
+  await page.getByTestId("user-menu-trigger").click();
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+}
+
+/** Opens the avatar menu's organization submenu, which lists them and starts a new one. */
+async function openOrganizationMenu(page: Page) {
+  await openAvatarMenu(page);
+  await page.getByTestId("organization-menu-trigger").click();
+  const submenu = page.locator('[data-slot="popover-content"]').last();
+  await expect(submenu.getByRole("button", { name: "New organization" })).toBeVisible();
+  return submenu;
+}
+
 /** Resolves once a chat other than `leaving` is open, outside settings. */
 function chatOpened(page: Page, leaving: string) {
   return page.waitForURL(
@@ -35,7 +50,7 @@ function chatOpened(page: Page, leaving: string) {
 
 async function switchFromAvatarMenu(page: Page, name: string, spaceId: string) {
   const leaving = new URL(page.url()).pathname;
-  const menu = await openAvatarMenu(page);
+  const menu = await openOrganizationMenu(page);
   await menu.getByRole("button", { name, exact: true }).click();
   await chatOpened(page, leaving);
   expect(await selectedSpace(page)).toBe(spaceId);
@@ -46,21 +61,23 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await signup(page, `organizations-${stamp}@rakazo.test`, "password12", "Org Owner");
   await completeOnboarding(page);
 
-  // One organization: the menu lists none, and creating one lives in settings.
-  let menu = await openAvatarMenu(page);
-  await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "org-menu-single");
-  await page.keyboard.press("Escape");
-
+  // One organization: settings show only its name and its members, and the avatar menu names it
+  // and opens a submenu that lists it and starts a new one.
   let settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
-  await expect(
-    settings
-      .getByTestId("organization-settings")
-      .getByRole("button", { name: "Delete organization" }),
-  ).toHaveCount(0);
+  const single = settings.getByTestId("organization-settings");
+  await expect(single.getByLabel("Name")).toHaveValue("Personal");
+  await expect(single.getByRole("button")).toHaveText([/^Members/]);
   await captureScreenshot(page, testInfo, "org-settings-single");
-  await settings.getByRole("button", { name: "Create organization" }).click();
+  await page.keyboard.press("Escape");
+
+  let menu = await openOrganizationMenu(page);
+  await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "org-menu-single");
+  await menu.getByRole("button", { name: "New organization" }).click();
   const create = page.getByRole("dialog", { name: "Create organization" });
   await create.getByLabel("Name").fill("Work");
   await captureScreenshot(page, testInfo, "org-create-dialog");
@@ -112,7 +129,7 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   expect(await selectedSpace(page)).toBe(personal.defaultSpaceId);
 
   // Two organizations: both are listed, the active one checked.
-  menu = await openAvatarMenu(page);
+  menu = await openOrganizationMenu(page);
   await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveAttribute(
     "aria-current",
     "true",
@@ -122,7 +139,7 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     "true",
   );
   await captureScreenshot(page, testInfo, "org-menu-two-orgs");
-  await page.keyboard.press("Escape");
+  await closeAvatarMenu(page);
 
   // Work has no bot yet, so its first visit finishes onboarding there.
   await switchFromAvatarMenu(page, "Work", work.defaultSpaceId);
@@ -133,6 +150,28 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await page.goto(workChat);
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
   await expect(page).toHaveURL((url) => url.pathname === workChat);
+
+  // So does a link to a group chat there.
+  const inWork = async <T>(procedure: string, json: unknown) => {
+    const response = await page.request.post(`/rpc/${procedure}`, {
+      headers: { "x-rakazo-space-id": work.defaultSpaceId },
+      data: { json },
+    });
+    expect(response.ok()).toBe(true);
+    return ((await response.json()) as { json: T }).json;
+  };
+  const scout = await inWork<{ id: string }>("bots/create", {
+    name: "Scout",
+    computerMode: "team",
+  });
+  const standup = await inWork<{ id: string }>("groups/create", {
+    name: "Standup",
+    botIds: [workChat.split("/")[2], scout.id],
+  });
+  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
+  await page.goto(`/app/g/${standup.id}`);
+  await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
+  await expect(page).toHaveURL((url) => url.pathname === `/app/g/${standup.id}`);
 
   settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
@@ -164,7 +203,10 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await chatOpened(page, leaving);
   expect(await selectedSpace(page)).toBe(personal.defaultSpaceId);
 
-  menu = await openAvatarMenu(page);
+  menu = await openOrganizationMenu(page);
   await expect(menu.getByRole("button", { name: "Acme", exact: true })).toHaveCount(0);
-  await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("button", { name: "Personal", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
 });

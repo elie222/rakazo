@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
-import { ALTERNATIVES, alternativeMarkdown } from "../alternatives";
 import { markdownResponse } from "../agent-content";
+import { ALTERNATIVES, alternativeMarkdown } from "../alternatives";
 
 export function getStaticPaths() {
   return ALTERNATIVES.map((page) => ({

@@ -1,20 +1,20 @@
 import { HOSTED_SANDBOXES_TABLE } from "./compare";
 import {
+  count,
   DAYTONA_CREDIT,
   E2B_PRO_FEE,
+  homepage,
+  hourly,
   METHOD_NOTE,
   MONTH_HOURS,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RATES,
   RUNTIME_DOC,
-  WORKDAY_HOURS,
-  count,
-  hourly,
-  homepage,
-  monthly,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -31,8 +31,7 @@ export const daytona: Sandbox = {
   keeps: "Its disk",
   bestFor: "Teams already on Daytona",
   title: "Daytona sandbox pricing, limits and alternatives in 2026: Daytona vs E2B for AI agents",
-  description:
-    `Daytona sandbox pricing explained: per-second rates, the $${DAYTONA_CREDIT} credit, usage tiers and what an AI agent's desktop costs a month. Daytona vs E2B, Modal and Vercel, its closed-source move, and how Rakazo runs bots on Daytona.`,
+  description: `Daytona sandbox pricing explained: per-second rates, the $${DAYTONA_CREDIT} credit, usage tiers and what an AI agent's desktop costs a month. Daytona vs E2B, Modal and Vercel, its closed-source move, and how Rakazo runs bots on Daytona.`,
   h1: "Daytona sandboxes for AI agents: pricing, limits and alternatives",
   intro: [
     "[Daytona](https://www.daytona.io) is a hosted service for running AI-generated code in sandboxes. Each sandbox is an isolated Linux machine with its own disk, which can be stopped, archived and started again later.",
@@ -104,7 +103,10 @@ export const daytona: Sandbox = {
           },
           {
             topic: `Around the clock, ${MONTH_HOURS} hours`,
-            cells: [usd(monthly(RATES.daytona, MONTH_HOURS, DEFAULT_SIZE)), usd(monthly(RATES.daytona, MONTH_HOURS))],
+            cells: [
+              usd(monthly(RATES.daytona, MONTH_HOURS, DEFAULT_SIZE)),
+              usd(monthly(RATES.daytona, MONTH_HOURS)),
+            ],
           },
         ],
         note: `Computed from Daytona's rates, checked November 2026, before the $${DAYTONA_CREDIT} credit. Disk under 5 GiB is free; an 8 GiB disk adds about $0.24 a month. A stopped computer bills only for disk. Your model provider bills separately.`,

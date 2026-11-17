@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPUTER_IMAGE,
@@ -126,14 +127,8 @@ describe("computer loopback provision lifecycle", () => {
   it("rechecks stopped state after a concurrent stop owns the screen lock", async () => {
     const { supervisorApp } = await import("./index.js");
     let running = true;
-    let releaseStop!: () => void;
-    let stopStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      stopStarted = resolve;
-    });
-    const stopped = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
+    const started = deferred();
+    const stopped = deferred();
     const container = {
       inspect: vi.fn(async () => ({
         Config: {
@@ -146,8 +141,8 @@ describe("computer loopback provision lifecycle", () => {
         return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
       }),
       stop: vi.fn(async () => {
-        stopStarted();
-        await stopped;
+        started.resolve();
+        await stopped.promise;
         running = false;
       }),
     };
@@ -162,10 +157,10 @@ describe("computer loopback provision lifecycle", () => {
         },
       });
     const first = stop();
-    await started;
+    await started.promise;
     const second = stop();
     await vi.waitFor(() => expect(container.inspect).toHaveBeenCalledTimes(3));
-    releaseStop();
+    stopped.resolve();
     expect((await first).status).toBe(200);
     expect((await second).status).toBe(200);
     expect(container.stop).toHaveBeenCalledOnce();
@@ -241,14 +236,8 @@ describe("computer loopback provision lifecycle", () => {
       stop: vi.fn(async () => {}),
     };
     mocks.docker.getContainer.mockReturnValue(container);
-    let release = () => {};
-    const held = withComputerScreenLock(
-      "wedged",
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
+    const lockHeld = deferred();
+    const held = withComputerScreenLock("wedged", () => lockHeld.promise);
     try {
       const response = await supervisorApp.request("/computers/wedged/stop", {
         method: "POST",
@@ -262,7 +251,7 @@ describe("computer loopback provision lifecycle", () => {
       expect(response.status).toBe(200);
       expect(container.stop).toHaveBeenCalledOnce();
     } finally {
-      release();
+      lockHeld.resolve();
       await held;
     }
   });
@@ -1753,14 +1742,8 @@ describe("screen registry across run boundaries", () => {
     const { supervisorApp } = await import("./index.js");
     const commands: string[] = [];
     let block = false;
-    let signalBlocked!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      signalBlocked = resolve;
-    });
-    let unblock!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      unblock = resolve;
-    });
+    const blocked = deferred();
+    const gate = deferred();
     const info = {
       Image: "old-image",
       Config: {
@@ -1779,8 +1762,8 @@ describe("screen registry across run boundaries", () => {
         commands.push(Cmd.join(" "));
         if (block) {
           block = false;
-          signalBlocked();
-          await gate;
+          blocked.resolve();
+          await gate.promise;
         }
         return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
       }),
@@ -1807,7 +1790,7 @@ describe("screen registry across run boundaries", () => {
     expect((await view()).status).toBe(200);
     block = true;
     const claim = view();
-    await blocked;
+    await blocked.promise;
     const replacement = supervisorApp.request("/computers", {
       method: "POST",
       headers,
@@ -1819,7 +1802,7 @@ describe("screen registry across run boundaries", () => {
     });
     await vi.waitFor(() => expect(mocks.docker.createNetwork).toHaveBeenCalled());
     expect(existing.remove).not.toHaveBeenCalled();
-    unblock();
+    gate.resolve();
     expect((await claim).status).toBe(200);
     expect((await replacement).status).toBe(200);
     expect(existing.remove).toHaveBeenCalledWith({ force: true });
@@ -1846,22 +1829,13 @@ describe("screen registry across run boundaries", () => {
       const commands: string[] = [];
       let startedAt = "boot-1";
       let blockCommand = false;
-      let signalBlocked!: () => void;
-      const blocked = new Promise<void>((resolve) => {
-        signalBlocked = resolve;
-      });
-      let unblock!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        unblock = resolve;
-      });
-      let signalQueued!: () => void;
-      const queuedInspection = new Promise<void>((resolve) => {
-        signalQueued = resolve;
-      });
+      const blocked = deferred();
+      const gate = deferred();
+      const queuedInspection = deferred();
       let waitingForInspection = false;
       const container = {
         inspect: vi.fn(async () => {
-          if (waitingForInspection) signalQueued();
+          if (waitingForInspection) queuedInspection.resolve();
           return {
             Config: {
               Labels: {
@@ -1881,8 +1855,8 @@ describe("screen registry across run boundaries", () => {
           commands.push(Cmd.join(" "));
           if (blockCommand) {
             blockCommand = false;
-            signalBlocked();
-            await gate;
+            blocked.resolve();
+            await gate.promise;
           }
           return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
         }),
@@ -1908,7 +1882,7 @@ describe("screen registry across run boundaries", () => {
       expect((await view()).status).toBe(200);
       blockCommand = true;
       const holder = view();
-      await blocked;
+      await blocked.promise;
       waitingForInspection = true;
       const queued =
         method === "POST"
@@ -1917,9 +1891,9 @@ describe("screen registry across run boundaries", () => {
               method: "DELETE",
               headers: { ...headers, "x-rakazo-screen-lease-id": "run-1:1" },
             });
-      await queuedInspection;
+      await queuedInspection.promise;
       startedAt = "boot-2";
-      unblock();
+      gate.resolve();
       const held = await holder;
       expect(held.status).toBe(200);
       const response = await queued;
@@ -2381,12 +2355,9 @@ describe("computer network reclaim", () => {
       });
       mocks.docker.listContainers.mockResolvedValue([]);
       mocks.docker.createNetwork.mockResolvedValue(network);
-      let attach!: () => void;
-      const attached = new Promise<void>((resolve) => {
-        attach = resolve;
-      });
+      const attached = deferred();
       mocks.docker.createContainer.mockImplementation(async () => {
-        await attached;
+        await attached.promise;
         return { id: "replacement", start: vi.fn().mockResolvedValue(undefined) };
       });
       const provision = supervisorApp.request("/computers", {
@@ -2399,7 +2370,7 @@ describe("computer network reclaim", () => {
       const stopped = stop();
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(network.inspect).not.toHaveBeenCalled();
-      attach();
+      attached.resolve();
       expect((await provision).status).toBe(200);
       expect((await stopped).status).toBe(200);
       expect(network.inspect).toHaveBeenCalled();

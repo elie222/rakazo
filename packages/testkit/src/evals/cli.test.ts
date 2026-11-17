@@ -69,7 +69,31 @@ it("records explicit not-run reasons without live execution", async () => {
       "retrieval",
     ]);
     expect(report.spendCapUsd).toBe(5);
-    expect(report.caseFixtureVersions).toEqual({ "history-100-exact": "history-v1-seed-73" });
+    expect(report.caseFixtureVersions).toEqual({ "history-100-exact": "history-v2-seed-73" });
+    expect(report.limitations.join(" ")).toContain("graded by a calibrated LLM judge");
+
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          path.resolve(import.meta.dirname, "../cli/evals.ts"),
+          "--suite",
+          "bot-files",
+          "--case",
+          "send-folder-on-shared-computer",
+          "--trials",
+          "1",
+          "--output",
+          output,
+        ],
+        { encoding: "utf8", stdio: "pipe", timeout: 20000 },
+      ),
+    ).toThrow();
+    const unjudged = JSON.parse(readFileSync(output, "utf8"));
+    expect(unjudged.limitations.join(" ")).toContain("no LLM judge");
+    expect(unjudged.limitations.join(" ")).not.toContain("calibrated");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

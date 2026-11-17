@@ -1,6 +1,7 @@
 import { buildSkillMd, formatSkillsCatalogInstruction, parseSkillMd } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 import {
   listAgentSkillRecords,
   skillCreateFromTool,
@@ -94,6 +95,21 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
 const owner = { spaceId: "ws-1", userId: "user-1" };
 
 describe("skill tools", () => {
+  it("describes the skill tools without naming a vendor, runtime or how skills are stored", () => {
+    const skillTools = builtinAgentTools.filter((tool) => tool.name.startsWith("skill_"));
+    expect(skillTools.map((tool) => tool.name).sort()).toEqual([
+      "skill_create",
+      "skill_delete",
+      "skill_read",
+      "skill_update",
+    ]);
+    for (const tool of skillTools) {
+      expect(tool.description).not.toMatch(
+        /claude|anthropic|\bpi\b|runtime|SKILL\.md|persist|inject/i,
+      );
+    }
+  });
+
   let prisma: ReturnType<typeof makePrisma>;
 
   beforeEach(() => {

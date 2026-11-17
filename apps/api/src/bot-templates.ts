@@ -147,7 +147,6 @@ export async function createBotFromTemplate<PreparedKey>(
     digest: requestDigest({ templateId: template.id }),
     name: input.name ?? template.name,
     description: template.description,
-    computerMode: "team",
     selection: {
       instructions: ["instructions"],
       memory: [],

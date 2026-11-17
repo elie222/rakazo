@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import {
   isTaggedCacheDirectory,
@@ -190,7 +191,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       if (options?.maxBytes !== undefined) {
         const info = await handle.stat();
         if (info.size > options.maxBytes) {
-          throw new Error(`agent home file exceeds ${options.maxBytes} bytes`);
+          throw new SandboxFileTooLargeError(options.maxBytes);
         }
       }
       return await handle.readFile("utf8");

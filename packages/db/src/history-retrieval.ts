@@ -130,9 +130,9 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
   return response;
 }
 /**
- * Matches the expression of messages_history_search_steps_idx: conversational text, attachment
- * names, and tool step labels and notes. The parser keeps a name like "q3-report.pdf" as one
- * token, so its separators become spaces first, as searchTerms splits them.
+ * The live history search index's own expression, so Postgres can use it: conversational text,
+ * attachment names, and tool step labels and notes. The parser keeps a name like "q3-report.pdf"
+ * as one token, so its separators become spaces first, as searchTerms splits them.
  */
 const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
   '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text`;

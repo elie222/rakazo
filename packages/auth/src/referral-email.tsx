@@ -27,14 +27,6 @@ export function referralEmail(
         </Link>{" "}
         {say("and choose Invite friends for your link.")}
       </Text>
-      <Text>{say("Have any questions? Just reply to this email.")}</Text>
-      <Text>
-        {say("If you're enjoying Rakazo,")}{" "}
-        <Link href="https://github.com/elie222/rakazo" style={linkStyle}>
-          {say("give us a star on GitHub")}
-        </Link>
-        .
-      </Text>
       <Text>Elie</Text>
     </>,
     unsubscribeUrl,

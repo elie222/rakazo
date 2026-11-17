@@ -206,3 +206,13 @@ export async function waitForScreenPage(
     await sleep(SCREEN_RECONNECT_PROBE_MS);
   }
 }
+
+/** How often an open computer screen checks in, keeping the computer awake. */
+export const COMPUTER_HEARTBEAT_MS = 60_000;
+/** How often the page of a person holding control checks in, well inside its lease. */
+export const COMPUTER_CONTROL_HEARTBEAT_MS = 15_000;
+/**
+ * A person keeps control while their page checks in; one silent this long loses it. Installed
+ * mobile apps check in every 60 seconds, so this leaves them a margin.
+ */
+export const COMPUTER_CONTROL_LEASE_MS = 90_000;

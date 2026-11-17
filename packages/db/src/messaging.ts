@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { displayName } from "@rakazo/core";
-import type { SignupPolicyEnv } from "./bootstrap-user.js";
 import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -51,7 +50,6 @@ function messagingUserId(provider: string, address: string): string {
 export async function provisionMessagingIdentity(
   prisma: PrismaClient,
   request: MessagingIdentityRequest,
-  env: SignupPolicyEnv,
 ): Promise<ProvisionedMessagingIdentity> {
   const { provider, address } = request;
   if (!ADDRESS_PATTERN.test(address)) {
@@ -97,7 +95,7 @@ export async function provisionMessagingIdentity(
     where: { userId: user.id, space: { deletingAt: null } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
+  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;
   // messaging users only ever get bots here, so an existing bot is theirs.
@@ -143,7 +141,8 @@ export async function provisionMessagingIdentity(
         botId,
       },
     });
-  } catch {
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {

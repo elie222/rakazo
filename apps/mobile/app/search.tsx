@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { botColors, typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { TextInputInstance } from "react-native";
 import {
   Alert,
@@ -26,6 +27,8 @@ import { readableGutters } from "../lib/adaptive-layout";
 import { currentApiBase, selectedSpaceId, spaceSelectionSeq } from "../lib/api";
 import { selectSpace } from "../lib/api-server";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useUiLocale } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { getSearchInbox, subscribeSearchInbox } from "../lib/search-inbox";
@@ -51,6 +54,8 @@ export default function SearchSheet() {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const gutters = readableGutters(useWindowDimensions().width, insets);
   const field = useRef<TextInputInstance>(null);
   const opening = useRef(false);
@@ -87,15 +92,10 @@ export default function SearchSheet() {
     }, [navigation, cancelOpen]),
   );
 
-  useEffect(() => {
-    // Native formSheet may finish attaching after TextInput's autoFocus runs.
-    const timer = setTimeout(() => {
-      if (focused.current && !opening.current) field.current?.focus();
-    }, 350);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
+  // Native formSheet may finish attaching after TextInput's autoFocus runs.
+  useTimeout(() => {
+    if (focused.current && !opening.current) field.current?.focus();
+  }, 350);
 
   const open = async (row: SearchSheetRow) => {
     if (!focused.current || opening.current) return;
@@ -221,13 +221,13 @@ export default function SearchSheet() {
       <FlatList
         data={rows}
         keyExtractor={(row) => row.key}
-        automaticallyAdjustKeyboardInsets
+        automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingLeft: gutters.left,
           paddingRight: gutters.right,
-          paddingBottom: insets.bottom + 16,
+          paddingBottom: contentBottomInset + 16,
         }}
         ListEmptyComponent={
           error ? undefined : (

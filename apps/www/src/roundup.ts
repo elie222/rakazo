@@ -1,5 +1,5 @@
 import type { Alternative, FaqItem } from "./alternatives";
-import { ALTERNATIVES, ALTERNATIVES_HUB, ROUNDUP_UPDATED, alternativePath } from "./alternatives";
+import { ALTERNATIVES, ALTERNATIVES_HUB, alternativePath, ROUNDUP_UPDATED } from "./alternatives";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
 import { OPENCLAW_ALTERNATIVE_PATH, SELF_HOST_GUIDE_PATH, SITE_URL } from "./site";
@@ -139,7 +139,7 @@ export type RoundupCard = {
 
 const CARD_BODY: Record<string, readonly string[]> = {
   "claude-duet-alternative": [
-    "Anthropic released Claude Duet as a research preview on October 21, 2026. It is a standalone app you message like a person, with one ongoing thread. Each morning it reviews your email and calendar, then checks connected accounts at intervals and stays quiet until something needs you. It works on a cloud computer Anthropic runs, uses Claude Opus 5.5, and you cannot choose a model. It asks before it sends a message, pays, signs, or deletes, and it will not trade securities or move money between accounts. Duet is included with Claude Pro and Max in the US, from a waitlist, and uses the plan's limits. Rakazo can sign in with that same Claude subscription, on a computer you run, with as many bots as you set up.",
+    "Anthropic released Claude Duet as a research preview on October 21, 2026. It is a standalone app you message like a person, with one ongoing thread. Each morning it reviews your email and calendar, then checks connected accounts at intervals and stays quiet until something needs you. It works on a cloud computer Anthropic runs, uses Claude Opus 5.5, and you cannot choose a model. It asks before it sends a message, pays, signs, or deletes, and it will not trade securities or move money between accounts. Duet is included with Claude Pro and Max in the US, from a waitlist, and uses the plan's limits. Rakazo can use Claude models through an Anthropic API key, on a computer you run, with as many bots as you set up.",
   ],
   "muse-alternative": [
     "Meta introduced Muse on September 8, 2026. You talk to it in the Muse app or on WhatsApp, and Meta says it keeps working after you close the app. The computer is Muse Secure VM, a cloud machine Meta operates. The launch post names Muse Spark, so you do not bring a model key. Meta says it checks before sensitive actions such as sending email or paying, and that you can opt out of using interactions to train Meta's models. The posts used here do not list a price. Rakazo is the opposite on hosting: you run the stack, and you pick the model.",
@@ -304,31 +304,18 @@ export const ROUNDUP_FAQ: readonly FaqItem[] = [
   },
 ];
 
-export function roundupStructuredData() {
+export function roundupItemList() {
   return {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "ItemList",
-        name: ROUNDUP_TITLE,
-        itemListOrder: "https://schema.org/ItemListOrderAscending",
-        numberOfItems: ROUNDUP_CARDS.length,
-        itemListElement: ROUNDUP_CARDS.map((card, index) => ({
-          "@type": "ListItem",
-          position: index + 1,
-          name: card.name,
-          url: new URL(card.href, SITE_URL).toString(),
-        })),
-      },
-      {
-        "@type": "FAQPage",
-        mainEntity: ROUNDUP_FAQ.map((item) => ({
-          "@type": "Question",
-          name: item.question,
-          acceptedAnswer: { "@type": "Answer", text: item.answer },
-        })),
-      },
-    ],
+    "@type": "ItemList",
+    name: ROUNDUP_TITLE,
+    itemListOrder: "https://schema.org/ItemListOrderAscending",
+    numberOfItems: ROUNDUP_CARDS.length,
+    itemListElement: ROUNDUP_CARDS.map((card, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: card.name,
+      url: new URL(card.href, SITE_URL).toString(),
+    })),
   };
 }
 

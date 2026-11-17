@@ -3,16 +3,24 @@ import { DANA, SAM, studioFacts, studioMail } from "./fixtures/studio.js";
 import { mailThreadId } from "./mail.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
+/** The fields these tests read from a successful call. */
+type MailMessage = { headers: Record<string, string>; body: string };
+type MailData = {
+  id: string;
+  threads: Array<{ id: string; subject: string }>;
+  next_page_token: string | null;
+  messages: [MailMessage, MailMessage];
+};
 const ok = (result: ReturnType<ReturnType<typeof studioMail>["call"]>) => {
   if (!result.ok) throw new Error(result.error.message);
-  return result.data as Record<string, any>;
+  return result.data as MailData;
 };
 
 describe("mail emulator", () => {
   it("searches with operators and paginates newest first", () => {
     const mail = studioMail({ now });
     const suppliers = ok(mail.call("search_threads", { query: "label:Suppliers newer_than:7d" }));
-    expect(suppliers.threads.map((t: { subject: string }) => t.subject)).toEqual([
+    expect(suppliers.threads.map((t) => t.subject)).toEqual([
       "Delivery confirmation — PO-4465",
       "PO-4471 — revised dispatch date",
       "PO-4476 – colour confirmation needed",
@@ -21,7 +29,7 @@ describe("mail emulator", () => {
     expect(
       ok(mail.call("search_threads", { query: 'from:dana "budget meeting"' })).threads,
     ).toHaveLength(1);
-    expect(ok(mail.call("search_threads", { query: "has:attachment" })).threads[0].subject).toBe(
+    expect(ok(mail.call("search_threads", { query: "has:attachment" })).threads[0]?.subject).toBe(
       "Delivery confirmation — PO-4465",
     );
     expect(
@@ -54,14 +62,14 @@ describe("mail emulator", () => {
     );
     // "me" is the account, not any sender whose name contains "me" (e.g. Lumen).
     const fromMe = ok(mail.call("search_threads", { query: "from:me" })).threads;
-    expect(fromMe.every((t: { from?: string }) => !/lumen/i.test(JSON.stringify(t)))).toBe(true);
+    expect(fromMe.every((t) => !/lumen/i.test(JSON.stringify(t)))).toBe(true);
 
     const first = ok(mail.call("search_threads", { query: "", max_results: 5 }));
     expect(first.threads).toHaveLength(5);
     const second = ok(
       mail.call("search_threads", { query: "", max_results: 5, page_token: first.next_page_token }),
     );
-    expect(second.threads[0].id).not.toBe(first.threads[0].id);
+    expect(second.threads[0]?.id).not.toBe(first.threads[0]?.id);
     const stale = mail.call("search_threads", {
       query: "label:Clients",
       page_token: first.next_page_token,

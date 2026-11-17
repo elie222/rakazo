@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { activitySections, isRetryableError } from "@rakazo/core";
+import { activitySections } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -11,8 +11,7 @@ import {
   GroupAvatar,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
@@ -71,13 +70,9 @@ export function ActivityList({
 }: ActivityListProps) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  // Polls while open; a refused request (signed out, forbidden) stops polling.
-  const poll = {
-    refetchInterval: (query: { state: { error: unknown } }) =>
-      query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
-  } as const;
-  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...poll }));
-  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...poll }));
+  const live = { refetchOnWindowFocus: "always" } as const;
+  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...live }));
+  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...live }));
   const activeRuns = active.data?.runs ?? NO_RUNS;
   const recentRuns = recent.data?.runs ?? NO_RUNS;
   // "Try again" shows its progress in place of the error it answers.
@@ -271,25 +266,20 @@ function ActivityFilters({
               <Label htmlFor={statusId} className="text-body-sm text-muted-foreground/80">
                 <Trans>Status</Trans>
               </Label>
-              <NativeSelect
+              <OptionSelect<ActivityListFilters["status"]>
                 id={statusId}
                 data-testid="activity-status-filter"
                 value={filters.status}
-                onChange={(event) =>
-                  onChange({
-                    ...filters,
-                    status: event.target.value as ActivityListFilters["status"],
-                  })
-                }
-                className="mt-1 w-full"
-              >
-                <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
-                {STATUS_FILTERS.map((status) => (
-                  <NativeSelectOption key={status} value={status}>
-                    {statusLabel(status)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={(status) => onChange({ ...filters, status })}
+                className="mt-1"
+                options={[
+                  { value: "all", label: t`All statuses` },
+                  ...STATUS_FILTERS.map((status) => ({
+                    value: status,
+                    label: statusLabel(status),
+                  })),
+                ]}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0">

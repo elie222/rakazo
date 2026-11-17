@@ -539,6 +539,57 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
+  it("starts a screen's window manager so it keeps its settings and cannot open a wallpaper error dialog", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "desktop-wallpaper-test-"));
+    roots.push(root);
+    const bin = path.join(root, "bin");
+    const log = path.join(root, "log");
+    mkdirSync(bin);
+    const stub = (name: string, body: string) =>
+      writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    stub("Xvfb", "exit 0");
+    stub("websockify", "exit 0");
+    stub("xsetroot", `echo "xsetroot $*" >>"${log}"`);
+    // fluxbox replaces its -rc file with the system default when $HOME/.fluxbox is missing, and
+    // a stock image's style asks for its wallpaper like this.
+    stub(
+      "fluxbox",
+      [
+        `test -d "$HOME/.fluxbox" && echo "home settings folder" >>"${log}"`,
+        `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"`,
+        "fbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg",
+      ].join("\n"),
+    );
+    const script = ensureScreenCommand(0, "bot", "token", env)
+      .replaceAll("/etc/rakazo/", path.join(root, "image/"))
+      .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
+      .replaceAll("/tmp/.X", path.join(root, ".X"))
+      .replaceAll("/tmp/rakazo", root)
+      .replaceAll("/usr/share/novnc", root)
+      .replaceAll(env.homeDir, path.join(root, "home"));
+    const result = spawnSync(
+      "bash",
+      [
+        "-c",
+        // The display is down on the first check; stop once the window manager has started.
+        [
+          "checks=0",
+          'xdpyinfo() { checks=$((checks + 1)); if [ "$checks" -ge 4 ]; then wait; exit 0; fi; [ "$checks" -gt 1 ]; }',
+          script,
+        ].join("\n"),
+      ],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(log, "utf8")).toBe(
+      `home settings folder\nfbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
+    );
+  });
+
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
     async (failPublish) => {
@@ -1338,11 +1389,22 @@ describe("shared Linux desktop lifecycle", () => {
       if (!Number.isSafeInteger(parsed) || parsed <= 1) return false;
       try {
         process.kill(parsed, 0);
-        return true;
       } catch {
         return false;
       }
+      // A killed orphan stays a zombie until whichever process adopted it reaps it. Without a
+      // readable /proc entry the signal check stands, so a hidden procfs cannot fake an exit;
+      // one that just exited reads as alive here and the next poll sees it gone.
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${parsed}/stat`, "utf8");
+      } catch {
+        return true;
+      }
+      return !/^[ZX]/.test(stat.slice(stat.lastIndexOf(")") + 2));
     };
+    // Signals land asynchronously, so a stop that just sent one cannot promise the exit yet.
+    const exited = (pid: string) => expect.poll(() => alive(pid), { timeout: 5_000 }).toBe(false);
     const launch = (display: number, inherited: string | undefined, log: string) => {
       const env: NodeJS.ProcessEnv = {
         PATH: `${recordBin}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -1388,6 +1450,7 @@ describe("shared Linux desktop lifecycle", () => {
       relocate,
       busAddress,
       alive,
+      exited,
       launch,
       extraDisplay,
       bootDisplay,
@@ -1410,6 +1473,7 @@ describe("shared Linux desktop lifecycle", () => {
         relocate,
         busAddress,
         alive,
+        exited,
         launch,
         extraDisplay,
         bootDisplay,
@@ -1493,9 +1557,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(recordedPid(dbusPid))).toBe(false);
-        expect(alive(recordedPid(portalPid))).toBe(false);
-        expect(alive(recordedPid(gtkPid))).toBe(false);
+        await exited(recordedPid(dbusPid));
+        await exited(recordedPid(portalPid));
+        await exited(recordedPid(gtkPid));
         const bootHash = createHash("sha256").update("boot").digest("hex").slice(0, 32);
         const bootPid = readFileSync(path.join(runtime, `browser-pid-${bootHash}`), "utf8");
         expect(alive(bootPid)).toBe(true);
@@ -1519,9 +1583,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(recordedPid(restartedPortal))).toBe(false);
-        expect(alive(recordedPid(restartedGtk))).toBe(false);
-        expect(alive(recordedPid(restartedBus))).toBe(false);
+        await exited(recordedPid(restartedPortal));
+        await exited(recordedPid(restartedGtk));
+        await exited(recordedPid(restartedBus));
       } finally {
         cleanup();
       }
@@ -1584,6 +1648,7 @@ describe("shared Linux desktop lifecycle", () => {
         run,
         relocate,
         alive,
+        exited,
         extraDisplay,
         dbusLog,
         portalLog,
@@ -1593,12 +1658,6 @@ describe("shared Linux desktop lifecycle", () => {
       const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
       const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
       const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
-      const waitDead = async (pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       try {
         const first = run(command, true);
         expect(first.status, first.stderr).toBe(0);
@@ -1606,7 +1665,7 @@ describe("shared Linux desktop lifecycle", () => {
         const portal = readFileSync(portalPid, "utf8");
         const dbus = readFileSync(dbusPid, "utf8");
         process.kill(Number(recordedPid(gtk)), "SIGKILL");
-        await waitDead(recordedPid(gtk));
+        await exited(recordedPid(gtk));
         const second = run(command, true);
         expect(second.status, second.stderr).toBe(0);
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
@@ -1692,18 +1751,12 @@ describe("shared Linux desktop lifecycle", () => {
   it.skipIf(process.platform !== "linux")(
     "restarts a dead screen bus without killing an unrelated pid",
     async () => {
-      const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
+      const { runtime, screenEnv, run, relocate, alive, exited, extraDisplay, dbusLog, cleanup } =
         await portalScreenFixture();
       const command = relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv));
       const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
       const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
       const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
-      const waitDead = async (pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       try {
         const first = run(command, true);
         expect(first.status, first.stderr).toBe(0);
@@ -1711,7 +1764,7 @@ describe("shared Linux desktop lifecycle", () => {
         const portal = readFileSync(portalPid, "utf8");
         const gtk = readFileSync(gtkPid, "utf8");
         process.kill(Number(recordedPid(dbus)), "SIGKILL");
-        await waitDead(recordedPid(dbus));
+        await exited(recordedPid(dbus));
         const unrelated = String(process.pid);
         writeFileSync(dbusPid, unrelated);
         writeFileSync(portalPid, unrelated);
@@ -1719,7 +1772,7 @@ describe("shared Linux desktop lifecycle", () => {
         expect(second.status, second.stderr).toBe(0);
         expect(alive(unrelated)).toBe(true);
         expect(alive(recordedPid(portal))).toBe(true);
-        expect(alive(recordedPid(gtk))).toBe(false);
+        await exited(recordedPid(gtk));
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\nlaunch\n");
         const restartedBus = readFileSync(dbusPid, "utf8");
         const restartedPortal = readFileSync(portalPid, "utf8");
@@ -1837,12 +1890,6 @@ describe("shared Linux desktop lifecycle", () => {
         writeFileSync(file, original.replace(/^\d+/, outside));
         return outside;
       };
-      const waitDead = async (alive: (pid: string) => boolean, pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       const replaceBinary = (file: string, source: string) => {
         unlinkSync(file);
         copyFileSync(source, file);
@@ -1862,7 +1909,7 @@ describe("shared Linux desktop lifecycle", () => {
         const killRecorded = async (file: string) => {
           const pid = recordedPid(readFileSync(file, "utf8"));
           process.kill(Number(pid), "SIGKILL");
-          await waitDead(recycled.alive, pid);
+          await recycled.exited(pid);
         };
         const retarget = async () => {
           const started = recycled.run(command, true);
@@ -1964,7 +2011,7 @@ describe("shared Linux desktop lifecycle", () => {
           false,
         );
         expect(stopped.status, stopped.stderr).toBe(0);
-        expect(replaced.alive(gtkPid)).toBe(false);
+        await replaced.exited(gtkPid);
         expect(existsSync(gtkFile)).toBe(false);
 
         writeFileSync(replaced.dbusLog, "");
@@ -1987,7 +2034,7 @@ describe("shared Linux desktop lifecycle", () => {
           false,
         );
         expect(stoppedBus.status, stoppedBus.stderr).toBe(0);
-        expect(replaced.alive(dbusPid)).toBe(false);
+        await replaced.exited(dbusPid);
         expect(existsSync(dbusFile)).toBe(false);
       } finally {
         replaced.cleanup();

@@ -1,3 +1,4 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AvatarClock,
   AvatarLifeState,
@@ -224,18 +225,17 @@ export function usePoke(life: Pick<AvatarLife, "poke" | "pokeProgress">, enabled
 /** True for a moment after a bot goes back to rest, so its pose can spring home. */
 export function useSettling(state: AvatarLifeState): boolean {
   const [settling, setSettling] = useState(false);
+  // Counts returns to idle, so each one restarts the settle timer even if `settling` never dropped.
+  const [settles, setSettles] = useState(0);
   const previous = useRef(state);
   useEffect(() => {
     const wasActive = previous.current !== "idle";
     previous.current = state;
-    if (state !== "idle" || !wasActive) {
-      setSettling(false);
-      return;
-    }
-    setSettling(true);
-    const timer = setTimeout(() => setSettling(false), AVATAR_SETTLE_MS);
-    return () => clearTimeout(timer);
+    const settlesNow = state === "idle" && wasActive;
+    setSettling(settlesNow);
+    if (settlesNow) setSettles((count) => count + 1);
   }, [state]);
+  useTimeout(() => setSettling(false), settling ? AVATAR_SETTLE_MS : null, settles);
   // The render that sees the bot stop already counts, so motion never blinks off and on.
   return settling || (state === "idle" && previous.current !== "idle");
 }

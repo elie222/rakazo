@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { routineTimerNonce } from "./routine-coalescing.js";
-import { lateRoutineRunDueAt, lateRoutineRunInstruction } from "./routine-lateness.js";
+import { lateRoutineRunDueAt } from "./routine-lateness.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
 
 const daily = { crons: ["0 8 * * *"], timezone: "America/New_York" };
 const hourly = { crons: ["0 * * * *"], timezone: "America/New_York" };

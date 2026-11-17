@@ -4,6 +4,10 @@
 default; Private Computers are optional. See [computer runtime and isolation](./computer-runtime.md)
 for the sharing and persistence contract.
 
+Set `COMPUTER_DEFAULT_MODE=dedicated` on the API and worker to give each new bot a Private
+Computer when its request does not choose one. An explicit choice still wins, and existing bots
+keep their computer. Private Computers count toward `SANDBOX_MAX_COMPUTERS_PER_USER`.
+
 ## Quick pick
 
 | Goal                                                    | Set                                                                      | Also need                                                                                                                             |
@@ -13,6 +17,7 @@ for the sharing and persistence contract.
 | Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
 | One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
 | One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -130,6 +135,9 @@ Browser identity is only one input to bot-check challenges; the host's IP reputa
 matters more.
 
 ## `kubernetes`
+
+For a staged single-node installation with storage, scoped permissions and network policies,
+see [Kubernetes / k3s installation](./self-host-kubernetes.md) ([한국어](./ko-KR/self-host-kubernetes.md)).
 
 Each computer is one pod in a namespace you choose, created from the published computer image.
 The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
@@ -373,6 +381,33 @@ allowed by Incus before any ACL rule. The IP filtering options stop
 a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
 
+## `local-vm`
+
+Each computer is one lightweight Linux VM on the Mac running Rakazo, started from the published
+computer image by Apple's [`container`](https://github.com/apple/container) runtime
+(Virtualization.framework). It needs Apple silicon and macOS 26 or newer, with the `container`
+system service started; no Docker, supervisor or socket is involved.
+
+| Variable                  | Default                                | Notes                                        |
+| ------------------------- | -------------------------------------- | -------------------------------------------- |
+| `LOCAL_VM_CLI`            | `container`                            | Path to the `container` CLI                  |
+| `LOCAL_VM_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Must include `nft`; older images are refused |
+| `LOCAL_VM_CPUS`           | `2`                                    | CPUs of each VM                              |
+| `LOCAL_VM_MEMORY`         | `2g`                                   | Memory of each VM                            |
+
+Each start creates a VM and a network of its own, both named `rakazo-<uuid>`, labelled
+`rakazo.bot-id=<bot id>`; one carrying another bot's id is never reused or removed. The image's
+start command and every command run as uid 1000 with no capabilities and no privilege escalation.
+As with Incus, VMs are removed when they stop: the saved workspace is copied in when a computer
+starts and saved back when it stops. The API, worker and web reach the screen on the VM's address.
+
+Before a computer is used, Rakazo loads an nftables firewall into the VM as root and checks it is
+in place; if that fails, the VM is removed and the start fails. The firewall allows the public
+internet and DNS to the VM's gateway, and rejects everything else to the Mac, the LAN,
+link-local and cloud-metadata, CGNAT, multicast and other private addresses (the same list as the
+Incus ACL above). Incoming connections are dropped except from the Mac to the screen ports. The
+bot's uid 1000 cannot change it.
+
 ## `wuying`
 
 Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
@@ -514,7 +549,7 @@ rechecks each selected PID's marker descriptors before signaling it.
 E2B computers start from the `rakazo-computer` template: E2B's stock desktop at
 2 vCPU and 4 GB instead of its 8 vCPU and 8 GB. Build it once in the E2B team that
 owns `E2B_API_KEY`, and again whenever its definition in
-`packages/adapters/src/e2b-template.ts` changes:
+`packages/adapters/src/providers/computer/e2b/e2b-template.ts` changes:
 
 ```bash
 E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
@@ -560,7 +595,7 @@ or network error does not authorize replacing an existing computer.
 ### Boat computer snapshot
 
 Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
-desktop tools installed. The hash follows the setup in `packages/adapters/src/boat-sandbox.ts`,
+desktop tools installed. The hash follows the setup in `packages/adapters/src/providers/computer/boat/boat-sandbox.ts`,
 so changing it produces a new name and existing computers keep the one they started from.
 
 No setup is needed: when the snapshot for the current setup is missing, the API or worker
@@ -602,6 +637,11 @@ memory. instabox also pauses a computer after 30 idle minutes, later than the de
 limits on requests at once (API calls, and connections to screens and terminals), so a
 deployment with many active computers at the same time can see them slow down.
 
+New computers start at the computer size of the space's plan. Standard is instabox's default.
+Large and xlarge need an instabox plan that offers that size; otherwise the computer starts at
+the size it can have. A stopped computer moves to its plan's size when it next starts, which
+restarts it, so its running programs end. A running computer keeps its size.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
@@ -616,3 +656,22 @@ Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boa
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.
+
+## Browser proxy on Railway computers
+
+Set `RAKAZO_COMPUTER_PROXY` on the API and worker to send the browser on every Railway computer
+through an upstream proxy, for example `http://user:pass@proxy.example.com:8080` or
+`socks5://user:pass@proxy.example.com:1080`. Chrome cannot send proxy credentials from policy, so
+when a computer is prepared Rakazo installs `tinyproxy`, writes its config (credentials included)
+to a root-only file, starts it on `127.0.0.1:18080`, and adds a managed Chrome policy that points
+the browser there. Loopback stays direct so the bot's page tools still reach the browser.
+
+The credentials are not secret from the people using your bots. Bot commands run as root on the
+computer, so a user can ask a bot to read the config, and any program on the computer can send
+traffic through the loopback proxy. Set it only when you trust everyone who can use a bot on this
+deployment, and give Rakazo its own proxy login with a usage cap so a leak is limited and easy to
+revoke.
+
+The setting applies to every bot. It covers the browser only: terminal commands go direct. The
+username cannot contain spaces, control characters, `:`, `@`, `"` or `#`, and the password cannot
+contain spaces, control characters, `@`, `"` or `#`. Changing or clearing the variable takes effect the next time each computer starts.

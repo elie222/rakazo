@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
+import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
-import { isChatModelId, liveModelSibling } from "./pi-live-model.js";
+import { isChatModelId, liveModelSibling, withModelCapabilities } from "./pi-live-model.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import {
   catalogModelLabel,
@@ -62,11 +64,19 @@ export function trustedProviderModels(provider: string, ids: readonly string[]):
 
 const siblingModels = builtinModels();
 
-export function liveCatalogEntry(provider: string, id: string): PiCatalogEntry | undefined {
+export function liveCatalogEntry(
+  provider: string,
+  id: string,
+  settings: ModelSettings = {},
+): PiCatalogEntry | undefined {
   provider = canonicalPiProviderId(provider);
   const entry = listPiCatalog().find((entry) => entry.provider === provider);
-  const model = liveModelSibling(siblingModels, provider, id);
-  if (!entry || !model) return undefined;
+  const sibling = liveModelSibling(siblingModels, provider, id);
+  if (!entry || !sibling) return undefined;
+  const model = withModelCapabilities(sibling, {
+    acceptsImages: settings.images,
+    reasoning: settings.reasoning,
+  });
   return {
     ...entry,
     id,
@@ -74,8 +84,13 @@ export function liveCatalogEntry(provider: string, id: string): PiCatalogEntry |
     label: catalogModelLabel(id),
     live: true,
     reasoning: model.reasoning,
-    thinkingLevels: ["off"],
+    // Only a model set to think gets levels, borrowed from its closest listed sibling.
+    thinkingLevels: settings.reasoning
+      ? (getSupportedThinkingLevels(model) as ThinkingLevel[])
+      : ["off"],
     images: model.input.includes("image"),
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
   };
 }
 

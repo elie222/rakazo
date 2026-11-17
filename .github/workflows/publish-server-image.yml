@@ -12,6 +12,10 @@ on:
   push:
     tags: ["v*"]
   workflow_call:
+    secrets:
+      LEGACY_GHCR_TOKEN:
+        description: Writes the personal account's packages that installs made before the move pull.
+        required: false
   # Only what the image definitions consume directly. A source change that breaks the app's build
   # fails ci.yml's production builds first, and main still builds every image before it deploys.
   pull_request:
@@ -19,6 +23,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/publish-server-image.yml"
       - ".github/actions/publish-image/**"
+      - ".github/actions/setup-trivy/**"
       - "infra/compose/**"
       - "infra/sandboxes/**"
       - "infra/updater/**"
@@ -83,11 +88,13 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: type=sha,prefix=sha-
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
@@ -97,6 +104,26 @@ jobs:
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
+      - uses: ./.github/actions/setup-trivy
+      # Keep all findings, including unfixed distro advisories, for applicability review.
+      # Dependency security separately gates High/Critical workspace advisories.
+      - name: Scan the built image
+        env:
+          IMAGE_ID: ${{ steps.image.outputs.imageid }}
+        run: |
+          trivy image --scanners vuln --format json --output image-vulnerabilities.json "$IMAGE_ID"
+          trivy version --format json > scanner-version.json
+          trivy convert --format cyclonedx --output image-sbom.json image-vulnerabilities.json
+      - name: Retain image security reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-security-${{ matrix.name }}
+          path: |
+            image-vulnerabilities.json
+            scanner-version.json
+            image-sbom.json
+          if-no-files-found: warn
 
   build:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}
@@ -159,9 +186,10 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           # A fork can publish only to its own namespace; no credential can redirect this value.
+          # The app's zstd layers unpack with far less CPU on the server than gzip ones.
           # The app's filesystem is also written locally so the credential scan needs no registry pull.
           outputs: |
-            type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true${{ matrix.name == 'app' && ',oci-mediatypes=true,compression=zstd' || '' }}
             ${{ matrix.name == 'app' && 'type=tar,dest=/tmp/rootfs.tar' || '' }}
           # GET /health can report the exact source commit without a deployment-supplied override.
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
@@ -249,7 +277,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           labels: ${{ steps.meta.outputs.labels }}
           # A fork can publish only to its own namespace; no credential can redirect this value.
-          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+          # The app's zstd layers unpack with far less CPU on the server than gzip ones.
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true${{ matrix.name == 'app' && ',oci-mediatypes=true,compression=zstd' || '' }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
           provenance: mode=max
           sbom: true
@@ -287,6 +316,10 @@ jobs:
         with:
           image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           digests-directory: /tmp/digests
+          # Installs made before the repository moved still pull the personal account's packages.
+          # Only main and release tags publish there, so only they receive the token.
+          mirror-image: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/elie222/rakazo/{0}', matrix.name) || '' }}
+          mirror-token: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.LEGACY_GHCR_TOKEN || '' }}
 
   publish:
     name: Publish ${{ matrix.name }} image
@@ -330,3 +363,7 @@ jobs:
         with:
           image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           digests-directory: /tmp/digests
+          # Installs made before the repository moved still pull the personal account's packages.
+          # Only main and release tags publish there, so only they receive the token.
+          mirror-image: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/elie222/rakazo/{0}', matrix.name) || '' }}
+          mirror-token: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.LEGACY_GHCR_TOKEN || '' }}

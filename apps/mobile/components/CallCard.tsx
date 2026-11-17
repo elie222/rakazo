@@ -2,20 +2,22 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import { useQuery } from "@tanstack/react-query";
 import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
+import { accountRpcQuery, queryClient } from "../lib/query";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -26,8 +28,6 @@ const TRANSCRIPT_LINES = 4;
 const START_RETRY_MS = 3000;
 const START_ATTEMPTS = 20;
 
-let cachedInitial: string | null = null;
-
 /** Fallback until the native call service owns the call. */
 function KeepCallAwake() {
   useKeepAwake("rakazo-call");
@@ -36,15 +36,19 @@ function KeepCallAwake() {
 
 export function CallCard() {
   const call = useCallSession();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [initial, setInitial] = useState(cachedInitial ?? "");
+  // The card stays mounted across account switches; the next account reads its own initial.
+  useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
   const onCall = Boolean(call);
+  const me = useQuery({ ...accountRpcQuery("me"), enabled: onCall }, queryClient).data;
+  const initial = me ? (accountDisplay(me, t`You`).initial ?? "") : "";
   // A crash inside the call UI unmounts this card without ending the call, so the
   // service and its wake lock are released here rather than on the next call change.
   const mountedCall = useRef(false);
@@ -53,29 +57,6 @@ export function CallCard() {
     () => () => {
       if (mountedCall.current) void stopCallBackground();
     },
-    [],
-  );
-
-  useEffect(() => {
-    if (!onCall || cachedInitial !== null) return;
-    const generation = currentSessionGeneration();
-    void rpc("me")
-      .then((me) => {
-        // A sign-out while the request is in flight must not restore the old account's initial.
-        if (generation !== currentSessionGeneration()) return;
-        cachedInitial = accountDisplay(me, t`You`).initial ?? "";
-        setInitial(cachedInitial);
-      })
-      .catch(() => undefined);
-  }, [onCall]);
-
-  // The card stays mounted across account switches; the next account re-reads its own initial.
-  useEffect(
-    () =>
-      subscribeSessionGeneration(() => {
-        cachedInitial = null;
-        setInitial("");
-      }),
     [],
   );
 
@@ -125,10 +106,11 @@ export function CallCard() {
   }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
+  const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   return (
     <GlassSurface
       shape="roundedRectangle"
-      style={[styles.card, { top: insets.top + 52 }]}
+      style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
       fallbackStyle={[
         styles.cardFallback,
         {
@@ -202,23 +184,24 @@ export function CallCard() {
       </View>
       {call.transcriptOpen ? (
         <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
-          {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
-            <Text
-              key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
-              numberOfLines={1}
-              style={[
-                styles.line,
-                { color: exchange.role === "bot" ? tokens.foreground : tokens.mutedForeground },
-              ]}
-            >
-              {exchange.text}
-            </Text>
-          ))}
-          {call.caption || call.heard ? (
-            <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
-              {call.caption || call.heard}
-            </Text>
-          ) : null}
+          {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
+            const exchange = recentExchanges[index];
+            return (
+              <Text
+                key={`transcript-${index + 1}`}
+                numberOfLines={1}
+                style={[
+                  styles.line,
+                  { color: exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground },
+                ]}
+              >
+                {exchange?.text || " "}
+              </Text>
+            );
+          })}
+          <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
+            {call.caption || call.heard || " "}
+          </Text>
         </View>
       ) : null}
     </GlassSurface>
@@ -309,11 +292,11 @@ function Waveform({ phase }: { phase: CallPhase }) {
 
 const styles = StyleSheet.create({
   card: {
-    position: "absolute",
     alignSelf: "center",
     width: 320,
+    maxWidth: "100%",
+    marginTop: 8,
     padding: 12,
-    zIndex: 50,
   },
   cardFallback: {
     borderRadius: 18,

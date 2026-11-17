@@ -16,7 +16,7 @@ import type { MeasuredCall } from "./measurement.js";
 
 describe("approval cases", () => {
   it("are a versioned, reviewed set with unique ids and both outcomes", () => {
-    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v1");
+    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v2");
     const ids = APPROVAL_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(APPROVAL_CASES.length).toBeGreaterThanOrEqual(25);

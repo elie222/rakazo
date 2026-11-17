@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { expect, it, vi } from "vitest";
 import { createAccountNameEditor } from "./account-name-editor";
 
@@ -24,18 +25,14 @@ function nameEditor(os: "ios" | "android" = "android", currentName = "Old Name")
 
 it("saves the trimmed name, closes the dialog, and ignores a failed refresh", async () => {
   const editor = nameEditor();
-  let rejectRefresh!: (error: Error) => void;
-  editor.refresh.mockReturnValue(
-    new Promise((_resolve, reject) => {
-      rejectRefresh = reject;
-    }),
-  );
+  const rejectRefresh = deferred<never>();
+  editor.refresh.mockReturnValue(rejectRefresh.promise);
   await editor.saveName("  Sam Rivera  ");
   expect(editor.updateAccountName).toHaveBeenCalledWith("Sam Rivera");
   expect(editor.setNameDialogOpen).toHaveBeenCalledExactlyOnceWith(false);
   expect(editor.setNamePending).toHaveBeenLastCalledWith(false);
   expect(editor.refresh).toHaveBeenCalledWith();
-  rejectRefresh(new Error("offline"));
+  rejectRefresh.reject(new Error("offline"));
   await Promise.resolve();
   await Promise.resolve();
   expect(editor.setNameError).toHaveBeenCalledExactlyOnceWith(null);
@@ -53,18 +50,14 @@ it("updates the account data when refresh succeeds", async () => {
 
 it("ignores a refresh from an earlier save across editor renders", async () => {
   const editor = nameEditor();
-  let finishFirstRefresh!: (account: unknown) => void;
-  editor.refresh.mockReturnValueOnce(
-    new Promise((resolve) => {
-      finishFirstRefresh = resolve;
-    }),
-  );
+  const finishFirstRefresh = deferred<unknown>();
+  editor.refresh.mockReturnValueOnce(finishFirstRefresh.promise);
   await editor.saveName("First Name");
   const nextEditor = createAccountNameEditor({ ...editor, currentName: "First Name" });
   const latestAccount = { name: "Latest Name" };
   editor.refresh.mockResolvedValueOnce(latestAccount);
   await nextEditor.saveName("Latest Name");
-  finishFirstRefresh({ name: "First Name" });
+  finishFirstRefresh.resolve({ name: "First Name" });
   await Promise.resolve();
   expect(editor.onSaved.mock.calls).toEqual([["First Name"], ["Latest Name"]]);
   expect(editor.onRefreshed).toHaveBeenCalledExactlyOnceWith(latestAccount);
@@ -127,18 +120,14 @@ it.each(["   ", " Old Name "])("closes iOS without reopening for %j", async (dra
 
 it("ignores duplicate submissions and dismissal during a save", async () => {
   const editor = nameEditor();
-  let finish!: () => void;
-  editor.updateAccountName.mockReturnValue(
-    new Promise<void>((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred();
+  editor.updateAccountName.mockReturnValue(finish.promise);
   const saving = editor.saveName("New name");
   await editor.saveName("Another name");
   editor.closeNameDialog();
   expect(editor.updateAccountName).toHaveBeenCalledOnce();
   expect(editor.setNameDialogOpen).not.toHaveBeenCalled();
-  finish();
+  finish.resolve();
   await saving;
 });
 

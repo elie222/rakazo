@@ -1,18 +1,18 @@
 import { GITHUB_URL } from "../site";
 import {
+  aboutUsd,
   BOAT_RAKAZO,
+  boatMonthly,
   E2B_PRO_FEE,
   MAC_MINI,
   MONTH_HOURS,
+  macMiniMonthly,
+  monthly,
   PRICES_NOTE,
   PRICING,
   RATES,
-  WORKDAY_HOURS,
-  aboutUsd,
-  boatMonthly,
-  macMiniMonthly,
-  monthly,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -89,7 +89,10 @@ export const yourComputer: Sandbox = {
               `A${aboutUsd(macMiniMonthly(MONTH_HOURS)).slice(1)} at ${MAC_MINI.watts} W average and $${MAC_MINI.kwh.toFixed(2)} per kWh`,
             ],
           },
-          { topic: "[Docker](/sandboxes/docker/) on that same Mac", cells: ["Container", "Same electricity", "Same electricity"] },
+          {
+            topic: "[Docker](/sandboxes/docker/) on that same Mac",
+            cells: ["Container", "Same electricity", "Same electricity"],
+          },
           {
             topic: "[E2B](/sandboxes/e2b/), 2 vCPU / 4 GB",
             cells: [
@@ -100,7 +103,11 @@ export const yourComputer: Sandbox = {
           },
           {
             topic: `[Boat](/sandboxes/boat/), ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB`,
-            cells: ["VM", `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum`, usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))],
+            cells: [
+              "VM",
+              `${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} minimum`,
+              usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS)),
+            ],
           },
         ],
         note: `${PRICES_NOTE} Electricity is an estimate; your rate and load will differ.`,

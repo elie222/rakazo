@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { landingSpaceId, leaveOrganization, organizationsQuery } from "./organizations";
+import {
+  landingSpaceId,
+  leaveOrganization,
+  organizationMembersQuery,
+  organizationsChanged,
+  organizationsQuery,
+} from "./organizations";
 import { queryClient, spaceQueries } from "./query";
 import type * as RpcModule from "./rpc";
 import { clearSpaceSelection, rpc, selectSpace } from "./rpc";
@@ -16,6 +22,8 @@ const personal = {
   defaultSpaceId: "home",
   spaceIds: ["home", "side"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 const work = {
   id: "org-work",
@@ -23,6 +31,8 @@ const work = {
   defaultSpaceId: "work-home",
   spaceIds: ["work-home"],
   canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
 };
 
 let items: Map<string, string>;
@@ -118,5 +128,18 @@ describe("leaving an organization", () => {
       spaceId: "home",
     });
     expect(items.has("rakazo:org-spaces")).toBe(false);
+  });
+});
+
+describe("an organization signal", () => {
+  it("makes the organization list and members lists stale, and nothing else", async () => {
+    const list = organizationsQuery("user-1").queryKey;
+    const members = organizationMembersQuery("user-1", "org-work").queryKey;
+    const other = spaceQueries("user-1", "home").key();
+    for (const key of [list, members, other]) queryClient.setQueryData(key, {});
+    await organizationsChanged();
+    expect(queryClient.getQueryState(list)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(members)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(other)?.isInvalidated).toBe(false);
   });
 });

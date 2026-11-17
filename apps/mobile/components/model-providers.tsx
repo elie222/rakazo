@@ -80,10 +80,11 @@ export function ModelProviders({
       {rows.map(({ credential, name, detail }) => {
         const actions: MenuAction[] = [
           ...(Platform.OS === "ios" ? [{ id: "rename", title: t`Rename` }] : []),
-          {
-            id: "manage",
-            title: credential.authKind === "oauth" ? t`Sign in again` : t`Replace API key`,
-          },
+          ...(credential.authKind !== "oauth"
+            ? [{ id: "manage", title: t`Replace API key` }]
+            : credential.reconnectRequired
+              ? [{ id: "manage", title: t`Sign in again` }]
+              : []),
           { id: "disconnect", title: t`Disconnect`, attributes: { destructive: true } },
         ];
         return (

@@ -12,40 +12,40 @@ import { kubernetes } from "./kubernetes";
 import { novita } from "./novita";
 import { railway } from "./railway";
 import {
+  aboutUsd,
   BOAT,
   BOAT_RAKAZO,
+  boatMonthly,
   COMPUTER_PROVIDERS_DOCS_PATH,
   DAYTONA_CREDIT,
+  dockerComputersFit,
   E2B_CREDIT,
   E2B_PRO_FEE,
-  INSTABOX,
-  KUBERNETES_NODE_FITS,
-  MONTH_HOURS,
-  NOVITA_CREDIT,
-  PRICES_NOTE,
-  PRICING,
-  RATES,
-  SANDBOXES_PATH,
-  SANDBOXES_UPDATED,
-  SERVERS,
-  WORKDAY_HOURS,
-  WUYING,
-  aboutUsd,
-  boatMonthly,
-  dockerComputersFit,
   euro,
   hourly,
+  INSTABOX,
   instaboxCreditHours,
   instaboxHour,
   instaboxProMonthly,
   instaboxShape,
+  KUBERNETES_NODE_FITS,
+  MONTH_HOURS,
   macMiniMonthly,
   monthly,
+  NOVITA_CREDIT,
+  PRICES_NOTE,
+  PRICING,
+  RATES,
   railwayAppMonthly,
   railwayComputerMonthly,
   rateUsd,
+  SANDBOXES_PATH,
+  SANDBOXES_UPDATED,
+  SERVERS,
   sandboxPath,
   usd,
+  WORKDAY_HOURS,
+  WUYING,
   wuyingPayAsYouGo,
   wuyingUnlimited,
 } from "./shared";
@@ -93,7 +93,13 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     ],
     table: {
       caption: "What a bot computer costs on each option Rakazo supports",
-      columns: ["Option", "How you pay", "Free to start", `${WORKDAY_HOURS} hours a month`, "Around the clock"],
+      columns: [
+        "Option",
+        "How you pay",
+        "Free to start",
+        `${WORKDAY_HOURS} hours a month`,
+        "Around the clock",
+      ],
       rows: [
         {
           topic: "[Boat](/sandboxes/boat/)",
@@ -115,11 +121,19 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         },
         {
           topic: "[Daytona](/sandboxes/daytona/)",
-          cells: ["Per second, no plan fee", `$${DAYTONA_CREDIT} credit`, ...perSecondRow(RATES.daytona)],
+          cells: [
+            "Per second, no plan fee",
+            `$${DAYTONA_CREDIT} credit`,
+            ...perSecondRow(RATES.daytona),
+          ],
         },
         {
           topic: "[Novita](/sandboxes/novita/)",
-          cells: ["Per second, no plan fee", `$${NOVITA_CREDIT} credit after a survey`, ...perSecondRow(RATES.novita)],
+          cells: [
+            "Per second, no plan fee",
+            `$${NOVITA_CREDIT} credit after a survey`,
+            ...perSecondRow(RATES.novita),
+          ],
         },
         {
           topic: "[InstaBox](/sandboxes/instabox/)",
@@ -168,7 +182,12 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
         },
         {
           topic: "[Your computer](/sandboxes/your-computer/)",
-          cells: ["Nothing extra", "Free", "Electricity", `${About(macMiniMonthly(MONTH_HOURS))} for a Mac mini`],
+          cells: [
+            "Nothing extra",
+            "Free",
+            "Electricity",
+            `${About(macMiniMonthly(MONTH_HOURS))} for a Mac mini`,
+          ],
         },
       ],
       note: `${PRICES_NOTE} Usage before free credits. Rakazo can't run Boat at 2 vCPU / 4 GB: self-hosted installs use ${BOAT_RAKAZO.vcpus} vCPU / ${BOAT_RAKAZO.gb} GB machines, which cost ${usd(boatMonthly(BOAT_RAKAZO.hour, WORKDAY_HOURS))} and ${usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS))}, and larger Rakazo Cloud plans use [larger ones](/sandboxes/boat/). Each option's page shows the rates and assumptions behind its numbers.`,
@@ -261,12 +280,16 @@ const HUB_SOURCES: readonly SourceLink[] = [
   PRICING.blaxel,
   PRICING.hetzner,
   PRICING.digitalocean,
-  { label: "DigitalOcean Kubernetes pricing", href: "https://www.digitalocean.com/pricing/kubernetes" },
+  {
+    label: "DigitalOcean Kubernetes pricing",
+    href: "https://www.digitalocean.com/pricing/kubernetes",
+  },
   PRICING.rakazo,
 ];
 
 export const SANDBOXES_HUB = {
-  title: "Best AI agent sandboxes in 2026: pricing and comparison of Boat, E2B, Daytona, Modal, Vercel and more",
+  title:
+    "Best AI agent sandboxes in 2026: pricing and comparison of Boat, E2B, Daytona, Modal, Vercel and more",
   description:
     "Where should an AI agent's computer run? Prices, isolation, session limits and self-hosting compared for Boat, E2B, Daytona, Novita, InstaBox, Railway, Docker and Kubernetes, with Modal, Vercel Sandbox and Northflank for reference.",
   h1: "Best sandboxes for AI agents in 2026",
@@ -372,7 +395,12 @@ export const SANDBOXES_ARTICLE_HUB: ArticleHub = {
 };
 
 export function sandboxLink(sandbox: Sandbox): ArticleLink {
-  return { name: sandbox.name, href: sandboxPath(sandbox.slug), meta: sandbox.bestFor, image: sandbox.image };
+  return {
+    name: sandbox.name,
+    href: sandboxPath(sandbox.slug),
+    meta: sandbox.bestFor,
+    image: sandbox.image,
+  };
 }
 
 export function otherSandboxes(sandbox: Sandbox): ArticleLink[] {

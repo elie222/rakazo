@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => ({
@@ -110,16 +111,14 @@ describe("browser monitoring", () => {
     // A malformed id is never sent, and a sign-out that lands first wins over a slow sign-in.
     await fresh.identifyMonitoringUser(true, respond({ dsn: "x", userId: "raw-user" }));
     expect(beforeSend({})).toEqual({ user: { ip_address: null } });
-    let release!: () => void;
+    const release = deferred();
     const slow = vi.fn(async () => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await release.promise;
       return new Response(JSON.stringify({ userId: PSEUDONYM }));
     }) as unknown as typeof fetch;
     const signingIn = fresh.identifyMonitoringUser(true, slow);
     await fresh.identifyMonitoringUser(false);
-    release();
+    release.resolve();
     await signingIn;
     expect(beforeSend({})).toEqual({ user: { ip_address: null } });
   });
@@ -324,6 +323,18 @@ describe("browser monitoring", () => {
     expect(
       beforeSend({}, { originalException: Object.assign(new Error("Conflict"), { status: 409 }) }),
     ).toEqual({ user: { ip_address: null } });
+    const windowError = (mechanism: string) => ({
+      exception: {
+        values: [{ value: "ResizeObserver loop limit exceeded", mechanism: { type: mechanism } }],
+      },
+    });
+    expect(beforeSend(windowError("auto.browser.global_handlers.onerror"), {})).toBeNull();
+    expect(
+      beforeSend(windowError("auto.browser.global_handlers.onerror"), {
+        originalException: new Error("boom"),
+      }),
+    ).not.toBeNull();
+    expect(beforeSend(windowError("generic"), {})).not.toBeNull();
     expect(beforeSend({ message: "plain" }, { originalException: "plain" })).toEqual({
       message: "plain",
       user: { ip_address: null },

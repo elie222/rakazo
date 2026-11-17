@@ -2,7 +2,7 @@ import { setImmediate } from "node:timers/promises";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { redactShellStreams } from "./agent-environment.js";
-import { automated } from "./automated-messages.js";
+import { automated } from "./automated-messages.prompt.js";
 import { shortenPlainText } from "./context-selection.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 

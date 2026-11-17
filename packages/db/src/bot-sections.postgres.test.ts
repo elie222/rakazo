@@ -34,7 +34,6 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
     instructions: "",
     notifyOnFinish: true,
   });
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
@@ -45,10 +44,10 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
     };
     const system = asSystem(prisma);
     owner = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }),
     );
     stranger = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: strangerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: strangerAddress }),
     );
     await system.user.create({
       data: {

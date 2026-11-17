@@ -4,15 +4,16 @@ import type {
   ArtifactStore,
   BackgroundJobExecution,
   BackgroundJobHandlers,
+  BackgroundJobPayloads,
   JobPublisher,
   MediaGenerationProvider,
-  MessagingSurface,
   PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
-  messagingDeliverJob,
+  memoryRetainTurnJob,
+  memoryRetainTurnRecoveryJobKey,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -21,46 +22,65 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { settleCallRequest } from "./call-request.js";
-import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import { retryConnectionCleanup } from "./connection-cleanup.js";
+import type { ConnectorRegistry } from "./connector-registry.js";
+import {
+  abandonRetainedConversation,
+  retainRunConversation,
+  settleRetainedConversation,
+} from "./conversation-memory.js";
+import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
+import { retryMachineCleanup } from "./machine-cleanup.js";
 import { pollMediaVideo } from "./media-video-poll.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
-import {
-  deliverMessagingOutbound,
-  mirrorMessagingOutbound,
-  mirrorMessagingProgress,
-} from "./messaging-delivery.js";
+import type { MessagingDelivery } from "./messaging-delivery.js";
 import { pollPurchase } from "./purchase-poll.js";
+import { expireRunSecrets } from "./run-secrets-expiry.js";
+import { retrySecretCleanup } from "./secret-cleanup.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
+import type { TeamChat } from "./team-chat.js";
 
 type Tenant = { spaceId: string; userId: string };
 
 /**
  * A job that acts for one run, routine, computer, skill, thread, cloud agent or purchase runs
  * as that row's tenant, so row-level security keeps it, and every tool it runs, in
- * the owner's Space even where a query forgets to filter. The owner comes from one
- * narrow system read; when the row is gone there is nothing left to act on.
+ * the owner's Space even where a query forgets to filter. Normally the owner comes from one
+ * narrow system read. Server-created cleanup intent can capture that tenant before deletion.
  */
 function asOwner<Key, P extends Key>(
   owner: (payload: Key) => Promise<Tenant | null>,
-  handler: (payload: P, execution?: BackgroundJobExecution) => Promise<void>,
+  handler: (
+    payload: P,
+    execution: BackgroundJobExecution | undefined,
+    tenant: Tenant,
+  ) => Promise<void>,
 ): (payload: P, execution?: BackgroundJobExecution) => Promise<void> {
   return async (payload, execution) => {
     const tenant = await runAsSystem("find the tenant a background job acts for", () =>
       owner(payload),
     );
-    if (tenant) await runAsTenant(tenant, () => handler(payload, execution));
+    if (tenant) await runAsTenant(tenant, () => handler(payload, execution, tenant));
   };
 }
 
 const OWNER = { spaceId: true, userId: true } as const;
 const CONTROL_EXPIRE_RETRY_MS = 30_000;
+/**
+ * How long to wait before asking again whether the memory provider stored a turn: 5 s, doubling
+ * up to 10 min. 150 checks wait about 24 h in all, long enough for a backed-up provider.
+ */
+const RETAIN_TURN_FIRST_CHECK_MS = 5_000;
+const RETAIN_TURN_MAX_CHECK_MS = 10 * 60_000;
+const MAX_RETAIN_TURN_CHECKS = 150;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -76,39 +96,18 @@ export function createBackgroundJobHandlers(deps: {
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   deploymentModelConfigured?: boolean;
-  messaging?: MessagingSurface;
+  messagingDelivery?: MessagingDelivery;
+  teamChat?: TeamChat;
+  connectors?: Pick<ConnectorRegistry, "managed">;
   cloudAgent?: CloudAgentConnection | null;
+  userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
   notifications?: ExpoPushProvider;
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
 }): BackgroundJobHandlers {
-  const messagingDeps = deps.messaging
-    ? {
-        prisma: deps.prisma,
-        messaging: deps.messaging,
-        events: deps.events,
-        jobs: deps.jobs,
-        artifacts: deps.artifacts,
-      }
-    : undefined;
-  // The outbox holds every Space's pending sends, so draining it is cross-tenant.
-  const drainMessaging = async () => {
-    if (!messagingDeps) return;
-    await runAsSystem("drain the messaging outbox across Spaces", () =>
-      deliverMessagingOutbound(
-        messagingDeps,
-        {},
-        {
-          operationId: "messaging.deliver:drain",
-          traceId: "messaging.deliver:drain",
-          spaceId: "",
-          userId: "",
-          signal: new AbortController().signal,
-        },
-      ),
-    );
-  };
+  const delivery = deps.messagingDelivery;
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore };
   const run = ({ runId }: { runId: string }) =>
     deps.prisma.run.findUnique({ where: { id: runId }, select: OWNER });
   const routine = ({ routineId }: { routineId: string }) =>
@@ -139,49 +138,82 @@ export function createBackgroundJobHandlers(deps: {
     )?.computer ?? null;
 
   return {
-    "run.continue": asOwner(run, async (payload, execution) => {
-      if (execution)
-        await deps.executor.continueRun(payload.runId, deps.workerId, execution.onRunStarted);
-      else await deps.executor.continueRun(payload.runId, deps.workerId);
-      // Automatic messaging mirror: once the run's bot messages are durable,
-      // copy them into the outbox. Never let mirror failures fail the run.
-      if (messagingDeps) {
-        await mirrorMessagingOutbound(messagingDeps, payload.runId);
-        await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
-          getLogger().error("messaging.deliver enqueue error", error);
-          await drainMessaging();
-        });
+    "run.continue": asOwner(run, async (payload, execution, { spaceId }) => {
+      try {
+        if (execution)
+          await deps.executor.continueRun(payload.runId, deps.workerId, execution.onRunStarted);
+        else await deps.executor.continueRun(payload.runId, deps.workerId);
+      } finally {
+        // Whatever this turn did to its run (waited, paused, requeued, ended), apps read it again.
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
       }
+      // The process that ran the turn sends what it said straight away. An ended run's reply
+      // job, scheduled with its status, covers a failure here; it never fails the run.
+      await delivery?.deliverRun(payload.runId).catch((error) => {
+        delivery.reportFailure("messaging reply delivery error", error);
+      });
     }),
+    "messaging.send": async ({ outboundId }, _execution, attempt) => {
+      await delivery?.sendJob(outboundId, attempt);
+    },
+    "messaging.reply": async ({ runId }) => {
+      await delivery?.deliverRun(runId);
+    },
+    "secret.cleanup": async (cleanup) => {
+      await retrySecretCleanup(cleanupDeps, cleanup);
+    },
+    "connection.cleanup": asOwner(
+      async (payload: BackgroundJobPayloads["connection.cleanup"]) => payload,
+      async (payload) => {
+        // Fail rather than finish, so the queue keeps the job for a process that has connectors.
+        if (!deps.connectors) throw new Error("connection cleanup has no connector registry");
+        await retryConnectionCleanup(
+          { prisma: deps.prisma, connectors: deps.connectors, jobs: deps.jobs },
+          payload,
+        );
+      },
+    ),
+    // The machine belongs to no Space: nothing stores it.
+    "computer.machine-cleanup": async (machine, _execution, attempt) => {
+      await retryMachineCleanup(deps, machine, attempt);
+    },
+    // The previous release's jobs, drained by this one. Jobs under this name can stay queued
+    // across releases, so it goes only once none are left.
     "messaging.credential-cleanup": async ({ installationId, ref }) => {
-      await runAsSystem("clean up a retired messaging credential", async () => {
-        const installation = await deps.prisma.messagingInstallation.findUnique({
-          where: { id: installationId },
-          select: { ciphertext: true },
-        });
-        if (installation?.ciphertext === ref) return;
-        await deps.secretStore.delete(ref, {
-          recordId: installationId,
-          signal: AbortSignal.timeout(10_000),
-        });
+      await retrySecretCleanup(cleanupDeps, {
+        kind: "messaging_installation",
+        recordId: installationId,
+        ref,
       });
     },
     "messaging.deliver": async ({ runId }) => {
-      if (runId && messagingDeps) {
-        await asOwner(run, () => mirrorMessagingOutbound(messagingDeps, runId))({ runId });
-      }
-      await drainMessaging();
+      if (runId) await delivery?.deliverRun(runId);
+      await delivery?.drainAll();
     },
     "messaging.progress": async ({ runId }) => {
-      if (!messagingDeps) return;
-      await asOwner(run, () => mirrorMessagingProgress(messagingDeps, runId))({ runId });
-      await drainMessaging();
+      await delivery?.deliverRun(runId, { progress: true });
     },
-    "routine.wakeup": asOwner(routine, async (payload) => {
-      await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
+    "team_chat.engage": async ({ externalMessageId }) => {
+      await deps.teamChat?.engageJob(externalMessageId);
+    },
+    "team_chat.ambient": async ({ conversationId }) => {
+      await deps.teamChat?.ambientJob(conversationId);
+    },
+    "routine.wakeup": asOwner(routine, async (payload, _execution, { spaceId }) => {
+      try {
+        await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
+      } finally {
+        // A wake moves the routine's next run, or pauses it, and may queue or coalesce runs.
+        await deps.events.publishSpaceChange?.(spaceId, "routines");
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
     }),
-    "routine.retry": asOwner(run, async (payload) => {
-      await deps.executor.retryRoutineRun(payload.runId);
+    "routine.retry": asOwner(run, async (payload, _execution, { spaceId }) => {
+      try {
+        await deps.executor.retryRoutineRun(payload.runId);
+      } finally {
+        await deps.events.publishSpaceChange?.(spaceId, "runs");
+      }
     }),
     "computer.update": asOwner(updatedComputer, async ({ updateId }) => {
       await performComputerUpdate(deps, updateId);
@@ -214,12 +246,21 @@ export function createBackgroundJobHandlers(deps: {
     "skill.teaching-expire": asOwner(skill, async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
     }),
+    "run.forget-secrets": asOwner(run, async ({ runId }) => {
+      await expireRunSecrets({ ...deps, now: new Date() }, runId);
+    }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
     }),
     "cloud_agent.poll": asOwner(cloudAgent, async (payload) => {
       await pollCloudAgent(
-        { prisma: deps.prisma, jobs: deps.jobs, events: deps.events, cloudAgent: deps.cloudAgent },
+        {
+          prisma: deps.prisma,
+          jobs: deps.jobs,
+          events: deps.events,
+          cloudAgent: deps.cloudAgent,
+          userCloudAgents: deps.userCloudAgents,
+        },
         payload,
       );
     }),
@@ -259,5 +300,71 @@ export function createBackgroundJobHandlers(deps: {
         payload.userId,
       );
     }),
+    "memory.purge-history": asOwner(
+      async (payload: BackgroundJobPayloads["memory.purge-history"]) => payload,
+      async (payload) => retryConversationMemoryPurge(deps, payload),
+    ),
+    "memory.retain-turn": asOwner(
+      async (payload: BackgroundJobPayloads["memory.retain-turn"]) =>
+        // Source was captured from the run before submission; group deletion may remove that row.
+        payload.pending ? payload.pending.source : run(payload),
+      async (payload) => {
+        const memory = {
+          prisma: deps.prisma,
+          memoryProviders: deps.memoryProviders,
+          jobs: deps.jobs,
+        };
+        let next: NonNullable<BackgroundJobPayloads["memory.retain-turn"]["pending"]>;
+        if (!payload.pending) {
+          const { pending } = await retainRunConversation(
+            memory,
+            payload.runId,
+            payload.messageIds,
+          );
+          if (!pending) return;
+          next = { ...pending, checks: 0 };
+        } else {
+          // Never rebuild the turn: a clear may have deleted its messages meanwhile.
+          const { settled } = await settleRetainedConversation(
+            memory,
+            payload.runId,
+            payload.pending,
+          ).catch((error) => {
+            // A failed status check or post-clear purge uses the same bounded backoff.
+            getLogger().error("memory.retain-turn settlement failed", error);
+            return { settled: false };
+          });
+          if (settled) return;
+          next = { ...payload.pending, checks: payload.pending.checks + 1 };
+          if (next.checks >= MAX_RETAIN_TURN_CHECKS) {
+            getLogger().warn(
+              "memory.retain-turn gave up waiting for the provider to store the turn",
+              {
+                "run.id": payload.runId,
+              },
+            );
+            await abandonRetainedConversation(memory, payload.runId, next);
+            return;
+          }
+        }
+        // Not settled yet: check again later instead of holding a worker.
+        await deps.jobs.enqueue(
+          memoryRetainTurnJob(payload.runId, payload.messageIds, {
+            pending: next,
+            availableAt: new Date(
+              Date.now() +
+                Math.min(RETAIN_TURN_FIRST_CHECK_MS * 2 ** next.checks, RETAIN_TURN_MAX_CHECK_MS),
+            ),
+          }),
+        );
+        if (!payload.pending) {
+          // Cancel only after the confirmed handoff is durable. An already running recovery
+          // may requeue itself, but its separate key cannot erase the token and its budget ends.
+          await deps.jobs.cancel(memoryRetainTurnRecoveryJobKey(payload.runId)).catch((error) => {
+            getLogger().error("memory.retain-turn recovery cancellation failed", error);
+          });
+        }
+      },
+    ),
   };
 }

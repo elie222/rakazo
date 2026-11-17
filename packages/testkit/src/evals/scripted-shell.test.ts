@@ -75,6 +75,16 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(script, "echo; (df -h | head -3) 2>/dev/null")?.stdout).toBe("\n18G free");
   });
 
+  it("answers a whole pipeline a check names, when its output can't be derived", () => {
+    const counted = {
+      shell: [
+        { match: /tail\s+-n\s*\+2\s+\S+\s*\|\s*wc\s+-l/, output: "41", whole: true as const },
+      ],
+      screen: script.screen,
+    };
+    expect(scriptedShell(counted, "tail -n +2 data.csv | wc -l")?.stdout).toBe("41");
+  });
+
   it("covers no command list with an unscripted command in it", () => {
     expect(scriptedShell(script, "uptime")).toBeUndefined();
     expect(scriptedShell(script, "cat /etc/os-release; df -h")).toBeUndefined();

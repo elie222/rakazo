@@ -788,3 +788,94 @@ describe("lazy tool catalog", () => {
     ).toBe("gmail:\n  list, read, send\nhubspot:\n  get_deal, list_contacts");
   });
 });
+
+describe("catalog wrapper tool definitions", () => {
+  const route = (toolName: string) => ({ connectorId: "installed", toolName });
+  const id = { type: "string", maxLength: 500, description: "Exact tool ID returned by search" };
+
+  it("renders the three wrappers with a name index", () => {
+    expect(
+      lazyCatalogTools("installed", "installed", "API", catalogEntries(multiGroupTools())),
+    ).toEqual([
+      {
+        name: "installed_search_tools",
+        description:
+          "Search connected API tools. Empty query lists names by source. Pass group to expand one source.\ngmail:\n  list, read, send\nhubspot:\n  get_deal, list_contacts",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              maxLength: 200,
+              description: "Words describing the tool to find. Omit to list names by source.",
+            },
+            group: {
+              type: "string",
+              maxLength: 200,
+              description: "Source name to list or search within",
+            },
+            limit: { type: "integer", minimum: 1, maximum: 10 },
+          },
+        },
+        readOnly: true,
+        route: route("__catalog_search"),
+      },
+      {
+        name: "installed_load_tool",
+        description: "Load one API tool's parameters by id.",
+        inputSchema: { type: "object", properties: { id }, required: ["id"] },
+        readOnly: true,
+        route: route("__catalog_load"),
+      },
+      {
+        name: "installed_execute_tool",
+        description: "Run an API tool by id.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id,
+            arguments: { type: "object", description: "Arguments matching the loaded schema" },
+          },
+          required: ["id", "arguments"],
+        },
+        route: route("__catalog_execute"),
+      },
+    ]);
+  });
+
+  it("describes search without an index, and with sources when the names do not fit", () => {
+    expect(lazyCatalogTools("connectors", "mcp", "MCP")[0]?.description).toBe(
+      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.",
+    );
+    const big = (group: string): ConnectorTool[] =>
+      Array.from({ length: 120 }, (_, index) => ({
+        name: `mcp__${group}__${"t".repeat(40)}_${index}`,
+        description: "Tool",
+        inputSchema: { type: "object", properties: {} },
+        route: {
+          connectorId: "mcp",
+          resourceId: group,
+          toolName: `${"t".repeat(40)}_${index}`,
+          catalogGroup: group,
+        },
+      }));
+    const small: ConnectorTool = {
+      name: "mcp__notes__add",
+      description: "Tool",
+      inputSchema: { type: "object", properties: {} },
+      route: { connectorId: "mcp", resourceId: "notes", toolName: "add", catalogGroup: "notes" },
+    };
+    expect(
+      lazyCatalogTools("connectors", "mcp", "MCP", catalogEntries([...big("a"), ...big("b")]))[0]
+        ?.description,
+    ).toBe(
+      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), b (120)",
+    );
+    expect(
+      lazyCatalogTools("connectors", "mcp", "MCP", catalogEntries([...big("a"), small]))[0]
+        ?.description,
+    ).toBe(
+      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), notes (1)\nnotes:\n  add",
+    );
+  });
+});

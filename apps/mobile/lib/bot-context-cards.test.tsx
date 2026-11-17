@@ -1,25 +1,59 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BotContextCards } from "../components/bot-context-cards";
+import { queryClient, rpcQuery } from "./query";
 
-const { rpc, push } = vi.hoisted(() => ({ rpc: vi.fn(), push: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+const { rpc, push, focus } = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  push: vi.fn(),
+  focus: { effects: new Set<() => (() => void) | undefined>() },
+}));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
-  useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => (() => void) | undefined) => {
+    useEffect(() => {
+      focus.effects.add(effect);
+      const cleanup = effect();
+      return () => {
+        focus.effects.delete(effect);
+        cleanup?.();
+      };
+    }, [effect]);
+  },
 }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (error: Error) => error.message }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../components/profile-edit-dialog", () => ({ ProfileEditDialog: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ label, children }: { label: string; children?: ReactNode }) =>
+    createElement("section", null, label, children),
+  SettingsRow: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement("button", { type: "button", "aria-label": title, onClick: onPress }, title),
+}));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   const Pressable = ({
@@ -36,8 +70,32 @@ vi.mock("react-native", () => {
       { type: "button", "aria-label": accessibilityLabel, onClick: onPress },
       children,
     );
-  return { Pressable, Text: view, View: view };
+  return {
+    Pressable,
+    Text: view,
+    View: view,
+    Platform: { OS: "android" },
+    Alert: {},
+    Modal: view,
+    TextInput: ({
+      value,
+      onChangeText,
+      accessibilityLabel,
+    }: {
+      value: string;
+      onChangeText: (value: string) => void;
+      accessibilityLabel: string;
+    }) =>
+      createElement("input", {
+        value,
+        "aria-label": accessibilityLabel,
+        onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+      }),
+  };
 });
+
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
 
 let container: HTMLDivElement;
 let root: Root;
@@ -49,6 +107,7 @@ beforeEach(() => {
   root = createRoot(container);
   rpc.mockReset();
   push.mockReset();
+  queryClient.clear();
 });
 
 afterEach(() => {
@@ -59,66 +118,59 @@ afterEach(() => {
 const work = [{ id: "work-a", title: "Review draft", notes: "", status: "open" }];
 const memory = [{ id: "memory-a", path: "notes.md", content: "Saved context" }];
 
-async function render(botId = "bot-a") {
-  await act(async () => root.render(createElement(BotContextCards, { botId })));
+async function render(botId = "bot-a", section: "work" | "memory" = "work") {
+  await act(async () => root.render(createElement(BotContextCards, { botId, section })));
 }
 
 describe("bot context cards", () => {
   it.each([
-    ["scratchpad/list", "Memory", "notes.md", "Open work"],
-    ["memory/list", "Open work", "Review draft", "Memory"],
-  ])("renders the other section when %s fails", async (failed, heading, item, hidden) => {
-    rpc.mockImplementation(async (method: string) => {
-      if (method === failed) throw new Error("Request failed");
-      return method === "scratchpad/list" ? work : memory;
-    });
-    await render();
+    ["work", "scratchpad/list", "Open work", "Review draft", "Memory"],
+    ["memory", "memory/list", "Memory", "notes.md", "Open work"],
+  ] as const)("loads only the %s list", async (section, method, heading, item, other) => {
+    rpc.mockImplementation(async (called: string) =>
+      called === "scratchpad/list" ? work : memory,
+    );
+    await render("bot-a", section);
+    expect(rpc.mock.calls.map(([called]) => called)).toEqual([method]);
     expect(container.textContent).toContain(heading);
     expect(container.textContent).toContain(item);
-    expect(container.textContent).not.toContain(hidden);
-    expect(container.textContent).toContain("Request failed");
+    expect(container.textContent).not.toContain(other);
   });
 
-  it.each([
-    ["scratchpad/list", "Memory", "notes.md"],
-    ["memory/list", "Open work", "Review draft"],
-  ])("renders the other section while %s is still pending", async (pending, heading, item) => {
-    rpc.mockImplementation((method: string) => {
-      if (method === pending) return new Promise(() => {});
-      return Promise.resolve(method === "scratchpad/list" ? work : memory);
-    });
-    await render();
-    expect(container.textContent).toContain(heading);
-    expect(container.textContent).toContain(item);
+  it.each(["work", "memory"] as const)("shows a failed %s load", async (section) => {
+    rpc.mockRejectedValue(new Error("Request failed"));
+    await render("bot-a", section);
+    expect(container.textContent).toBe("Request failed");
   });
 
   it("hides empty work and placeholder-only memory", async () => {
     rpc.mockImplementation(async (method: string) =>
       method === "scratchpad/list" ? [] : [{ id: "memory-a", path: "MEMORY.md", content: "" }],
     );
-    await render();
+    await render("bot-a", "work");
+    expect(container.textContent).toBe("");
+    await render("bot-a", "memory");
     expect(container.textContent).toBe("");
   });
 
   it("ignores results from the previous bot", async () => {
-    let resolveWork!: (items: typeof work) => void;
+    let resolveWork!: Deferred<typeof work>;
     rpc.mockImplementation((method: string, { botId }: { botId: string }) => {
       if (botId === "bot-a" && method === "scratchpad/list") {
-        return new Promise((resolve) => {
-          resolveWork = resolve;
-        });
+        resolveWork = deferred<typeof work>();
+        return resolveWork.promise;
       }
       return Promise.resolve([]);
     });
     await render();
     await render("bot-b");
-    await act(async () => resolveWork(work));
+    await act(async () => resolveWork.resolve(work));
     expect(container.textContent).toBe("");
   });
 
   it("opens a remembered note in its editor", async () => {
     rpc.mockImplementation(async (method: string) => (method === "scratchpad/list" ? [] : memory));
-    await render();
+    await render("bot-a", "memory");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="notes.md"]')?.click(),
     );
@@ -126,6 +178,75 @@ describe("bot context cards", () => {
       pathname: "/memory-note",
       params: { id: "memory-a", botId: "bot-a" },
     });
+  });
+
+  it("completes an item once on a double tap and drops it, or shows why it could not", async () => {
+    const done = deferred<unknown>();
+    rpc.mockImplementation((method: string) =>
+      method === "scratchpad/update" ? done.promise : Promise.resolve(work),
+    );
+    await render();
+    const complete = () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click();
+    await act(async () => {
+      complete();
+      complete();
+    });
+    const updates = rpc.mock.calls.filter(([method]) => method === "scratchpad/update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]![1]).toEqual({ itemId: "work-a", status: "done" });
+    await act(async () => done.resolve({}));
+    expect(container.textContent).not.toContain("Review draft");
+
+    queryClient.clear();
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/update") throw new Error("Already done");
+      return work;
+    });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    await act(async () => complete());
+    expect(container.textContent).toContain("Already done");
+    expect(container.textContent).toContain("Review draft");
+  });
+
+  it("keeps a saved item when a read started before the save answers after it", async () => {
+    const staleRead = deferred<typeof work>();
+    let reads = 0;
+    rpc.mockImplementation((method: string) => {
+      if (method === "scratchpad/list")
+        return reads++ === 0 ? Promise.resolve(work) : staleRead.promise;
+      return Promise.resolve({});
+    });
+    await render();
+    await act(async () => {
+      void queryClient.refetchQueries({
+        queryKey: rpcQuery("scratchpad/list", { botId: "bot-a" }).queryKey,
+      });
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    await act(async () => staleRead.resolve(work));
+    expect(container.textContent).not.toContain("Review draft");
+  });
+
+  it("clears a failed complete when the screen is shown again", async () => {
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/update") throw new Error("Already done");
+      return work;
+    });
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Complete Review draft"]')!.click(),
+    );
+    expect(container.textContent).toContain("Already done");
+    await act(async () => {
+      for (const effect of focus.effects) effect();
+    });
+    expect(container.textContent).not.toContain("Already done");
+    expect(container.textContent).toContain("Review draft");
   });
 
   it("clears an earlier load error once the lists load", async () => {
@@ -140,3 +261,48 @@ describe("bot context cards", () => {
     expect(container.textContent).toContain("Review draft");
   });
 });
+
+it.each(["save", "cancel"])(
+  "preserves an Android draft when a focused refresh empties the list, then %s",
+  async (action) => {
+    let reads = 0;
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "scratchpad/list") return reads++ === 0 ? work : [];
+      if (method === "scratchpad/create") return { ...work[0], id: "new", title: "Retained draft" };
+      return [];
+    });
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
+    );
+    const input = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Retained draft",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      for (const effect of focus.effects) effect();
+    });
+    expect(container.querySelector<HTMLInputElement>("input")?.value).toBe("Retained draft");
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === (action === "save" ? "Save" : "Cancel"))!
+        .click(),
+    );
+    expect(container.querySelector("input")).toBeNull();
+    if (action === "save") {
+      expect(rpc).toHaveBeenCalledWith(
+        "scratchpad/create",
+        { botId: "bot-a", title: "Retained draft" },
+        expect.anything(),
+      );
+      expect(container.textContent).toContain("Retained draft");
+    } else {
+      expect(rpc.mock.calls.filter(([method]) => method === "scratchpad/create")).toHaveLength(0);
+      expect(container.textContent).not.toContain("Open work");
+    }
+  },
+);

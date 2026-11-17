@@ -2,7 +2,6 @@ import * as z from "zod";
 import { Id } from "./ids.js";
 
 export const SearchHitKindSchema = z.enum(["conversation", "message", "file", "link", "routine"]);
-export type SearchHitKind = z.infer<typeof SearchHitKindSchema>;
 
 export const SearchHitSchema = z
   .object({
@@ -35,4 +34,3 @@ export type SearchHit = z.infer<typeof SearchHitSchema>;
 export const SearchQueryOutputSchema = z.object({
   hits: z.array(SearchHitSchema).max(25),
 });
-export type SearchQueryOutput = z.infer<typeof SearchQueryOutputSchema>;
