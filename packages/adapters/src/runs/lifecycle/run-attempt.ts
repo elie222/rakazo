@@ -63,7 +63,7 @@ export async function findContinuableRun(
   if (deps.stoppingSignal?.aborted || deps.shutdownSignal?.aborted) return;
   const run = await deps.prisma.run.findUnique({
     where: { id: runId },
-    include: { routine: { select: { name: true } } },
+    include: { routine: { select: { name: true, inChat: true } } },
   });
   if (!run) return;
   // Logs and security events raised by this run's tools name its account and space.

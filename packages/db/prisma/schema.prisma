@@ -1331,7 +1331,7 @@ model Run {
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
-  @@index([routineId])
+  @@index([routineId, createdAt])
   @@map("runs")
 }
 
@@ -1542,6 +1542,9 @@ model Routine {
   timezone       String    @default("UTC")
   active         Boolean   @default(false)
   notify         Boolean   @default(true)
+  /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
+  /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
+  inChat         Boolean   @default(false)
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
