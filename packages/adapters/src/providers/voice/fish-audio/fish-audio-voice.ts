@@ -12,6 +12,7 @@ import type {
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import {
   isSpeechModelId,
   readVoiceAudio,
@@ -30,18 +31,15 @@ const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
 const DEFAULT_TTS_MODEL = "s2.1-pro";
 const UPSTREAM_DETAIL_LIMIT = 500;
-const SHOW_V2_REFERENCE_ID = "9c39bca0c6a24b8c865ff07972b838df";
-const SHOW_SOFT_CHAT = {
-  temperature: 0.66,
-  top_p: 0.7,
-  prosody: { speed: 0.98, volume: -1, normalize_loudness: true },
-} as const;
-const YIFEI_REFERENCE_ID = "cefd6b735801437ba1cda33b55958b98";
-const YIFEI_MANDARIN = {
-  temperature: 0.55,
-  top_p: 0.61,
-  prosody: { speed: 0.9, volume: -1, normalize_loudness: true },
-} as const;
+const FishAudioSettingsSchema = z
+  .object({
+    temperature: z.number().min(0).max(1).optional(),
+    topP: z.number().min(0).max(1).optional(),
+    speed: z.number().min(0.5).max(2).optional(),
+    volume: z.number().min(-20).max(20).optional(),
+    normalizeLoudness: z.boolean().optional(),
+  })
+  .strict();
 let invalidTtsModelWarned = false;
 /**
  * Fish's recommended, multilingual ASR model. Without the `model` header the endpoint
@@ -87,13 +85,11 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     try {
       const ownModels = await fetchModels(apiKey, listContext, true, language);
       const seen = new Set<string>();
-      return ownModels
-        .map(modelToVoice)
-        .filter((voice): voice is VoiceInfo => {
-          if (!voice || seen.has(voice.id)) return false;
-          seen.add(voice.id);
-          return true;
-        });
+      return ownModels.map(modelToVoice).filter((voice): voice is VoiceInfo => {
+        if (!voice || seen.has(voice.id)) return false;
+        seen.add(voice.id);
+        return true;
+      });
     } finally {
       // Stop sibling or speculative requests when the listing finishes or fails.
       controller.abort();
@@ -102,8 +98,8 @@ export class FishAudioVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = deadlineSignal(60_000, request.signal ?? context.signal);
-    const yifei = request.voiceId === YIFEI_REFERENCE_ID;
-    const model = yifei ? "s2-pro" : resolveFishSpeechModel(request.model);
+    const settings = fishAudioSettings(request.settings);
+    const model = resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
       headers: {
@@ -119,8 +115,17 @@ export class FishAudioVoiceProvider implements VoiceProvider {
         mp3_bitrate: 64,
         latency: "balanced",
         normalize: true,
-        ...(request.voiceId === SHOW_V2_REFERENCE_ID ? SHOW_SOFT_CHAT : {}),
-        ...(yifei ? YIFEI_MANDARIN : {}),
+        ...(settings
+          ? {
+              temperature: settings.temperature,
+              top_p: settings.topP,
+              prosody: {
+                speed: settings.speed,
+                volume: settings.volume,
+                normalize_loudness: settings.normalizeLoudness,
+              },
+            }
+          : {}),
       }),
       signal,
     });
@@ -156,6 +161,13 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
     return { text: stripFishAsrTags(String((body as { text?: unknown } | null)?.text ?? "")) };
   }
+}
+
+function fishAudioSettings(settings: VoiceSynthesizeRequest["settings"]) {
+  if (!settings) return undefined;
+  const parsed = FishAudioSettingsSchema.safeParse(settings);
+  if (!parsed.success) throw new Error(`Invalid voice settings: ${parsed.error.message}`);
+  return parsed.data;
 }
 
 async function fetchModels(

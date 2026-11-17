@@ -29,7 +29,7 @@ async function synthesizeRequest(model: string | undefined) {
   return { url: String(url), body: JSON.parse(String(init?.body)) };
 }
 
-async function synthesizeKim() {
+async function synthesizeManaged(settings: Readonly<Record<string, unknown>>) {
   const fetch = vi.fn(
     async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(new Uint8Array([7, 8]), { headers: { "content-type": "audio/mpeg" } }),
@@ -38,8 +38,10 @@ async function synthesizeKim() {
   await new ElevenLabsVoiceProvider().synthesize(
     {
       text: "I think that's where it breaks.",
-      voiceId: "XEETtD4VSdyjkKCeQImT",
+      voiceId: "managed-voice",
       apiKey: "test-key",
+      model: "eleven_multilingual_v2",
+      settings,
     },
     context,
   );
@@ -59,8 +61,16 @@ describe("ElevenLabs speech", () => {
     expect(body).toEqual({ text: "Cześć.", model_id: modelId });
   });
 
-  it("keeps Kim's accepted IVC model and delivery settings", async () => {
-    expect(await synthesizeKim()).toEqual({
+  it("translates managed delivery settings without recognizing a private voice id", async () => {
+    expect(
+      await synthesizeManaged({
+        stability: 0.4,
+        similarityBoost: 0.6,
+        style: 0.25,
+        useSpeakerBoost: true,
+        speed: 0.94,
+      }),
+    ).toEqual({
       text: "I think that's where it breaks.",
       model_id: "eleven_multilingual_v2",
       voice_settings: {
@@ -72,4 +82,15 @@ describe("ElevenLabs speech", () => {
       },
     });
   });
+
+  it.each([{ speed: 4 }, { unknown: true }])(
+    "rejects invalid managed settings before sending a request",
+    async (settings) => {
+      const fetch = vi.fn();
+      vi.stubGlobal("fetch", fetch);
+
+      await expect(synthesizeManaged(settings)).rejects.toThrow("voice settings");
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 });
