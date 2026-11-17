@@ -236,20 +236,43 @@ class SnapshotTest(unittest.TestCase):
 
     def test_never_shows_which_option_a_saved_login_chose(self):
         # The page reports the chosen option's value and label for a dropdown a saved login filled.
-        result, _ = self.snapshot(FakeAgentBrowser(state={"masked": ["fr", "France"]}))
+        tree = PAGE.replace('- checkbox "Agree"', '- textbox "Region" [ref=e20]: France\n- checkbox "Agree"')
+        with patch.object(secrets, "filled_choices", return_value={"fr", "France"}):
+            result, _ = self.snapshot(FakeAgentBrowser(tree=tree))
         self.assertIn('- combobox "Country" [expanded=false, ref=e4] options: "Choose", "France"\n', result["tree"])
         self.assertNotIn("(selected)", result["tree"])
         country = next(el for el in result["elements"] if el["ref"] == "e4")
         self.assertNotIn("value", country)
         self.assertEqual(country["options"], [{"label": "Choose", "value": "Choose"},
                                               {"label": "France", "value": "France"}])
+        # Only dropdowns: a text box holding the same text still shows it.
+        self.assertEqual(next(el for el in result["elements"] if el["ref"] == "e20")["value"], "France")
         # Past the options a snapshot lists, the chosen one is not added back.
         options = "".join(f'  - option "Year {n}" [{"selected, " if n == 432 else ""}ref=e{n + 10}]\n'
                           for n in range(1, 1501))
-        result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}',
-                                                   state={"masked": ["Year 432"]}))
+        with patch.object(secrets, "filled_choices", return_value={"Year 432"}):
+            result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}'))
         self.assertNotIn("Year 432", json.dumps(result))
         self.assertEqual(len(result["elements"][0]["options"]), 100)
+
+    def test_hides_every_dropdown_choice_when_the_saved_choices_cannot_be_read(self):
+        with patch.object(secrets, "filled_choices", side_effect=OSError("no CDP")):
+            result, _ = self.snapshot()
+        self.assertNotIn("(selected)", result["tree"])
+        self.assertNotIn("value", next(el for el in result["elements"] if el["ref"] == "e4"))
+
+    def test_reads_saved_choices_in_every_frame(self):
+        frames = [("top", "F1", None), ("top", "F2", "F1"), ("oopif", "F3", "F2")]
+        answers = {"top": [["fr", "France"], None], "oopif": [["+44", "UK (+44)", ""]]}
+        client = type("Client", (), {"close": lambda self: None})()
+        with patch.object(secrets, "connect", return_value=client), \
+                patch.object(secrets, "attach", return_value="top"), \
+                patch.object(secrets, "all_frames", return_value=frames), \
+                patch.object(secrets, "world_in", side_effect=[1, 2, 3]) as world_in, \
+                patch.object(secrets, "eval_json", side_effect=lambda c, session, expr, context_id: answers[session].pop(0)):
+            self.assertEqual(RealFilledChoices(9222, "tab-1"), {"fr", "France", "+44", "UK (+44)"})
+        self.assertEqual([call.args[1:] for call in world_in.call_args_list],
+                         [("top", "F1"), ("top", "F2"), ("oopif", "F3")])
 
     def test_leaves_payment_frames_out_and_points_to_fill_card(self):
         result, _ = self.snapshot()
@@ -536,12 +559,17 @@ class FakePurchases:
 RealPurchases = helper.Purchases
 
 
+RealFilledChoices = secrets.filled_choices
+
+
 def setUpModule():
     helper.Purchases = FakePurchases
+    secrets.filled_choices = lambda port, target: set()
 
 
 def tearDownModule():
     helper.Purchases = RealPurchases
+    secrets.filled_choices = RealFilledChoices
 
 
 PAY = {"reason": "final_step", "label": "Pay $5", "amount": "$5", "amountFrom": "button"}

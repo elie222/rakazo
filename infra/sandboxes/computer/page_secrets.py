@@ -501,6 +501,20 @@ EVAL_HELPERS = r"""
       }
       return true;
     },
+    // The options saved logins chose in this document's dropdowns, open shadow trees included.
+    filledChoices() {
+      const found = [];
+      const visit = (root) => {
+        for (const select of root.querySelectorAll(`select[${FILLED}]`)) {
+          for (const option of select.selectedOptions) {
+            found.push(option.value, (option.label || option.text).replace(/\s+/g, " ").trim());
+          }
+        }
+        for (const el of root.querySelectorAll("*")) if (el.shadowRoot) visit(el.shadowRoot);
+      };
+      visit(document);
+      return found;
+    },
     payTokenAccount() {
       const blocks = [...document.querySelectorAll(".AiAgentPaymentSteering")]
         .filter((block) => block.querySelector('input[name="link_pay_token"]'));
@@ -672,10 +686,10 @@ def pay_token_frames(client: CdpClient, frames: list[tuple[str, str, int]]) -> l
             if origin == PAY_TOKEN_FRAME_ORIGIN]
 
 
-def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
-    """The frame whose document holds focus, followed through the frame elements that hold it:
-    (session, frame, world). Frames in another process are found through their own sessions."""
-    children: dict[str, list[tuple[str, str]]] = {}
+def all_frames(client: CdpClient, session_id: str) -> list[tuple[str, str, str | None]]:
+    """Every frame of the tab: (session, frame, parent frame). Frames in another process are found
+    through their own sessions."""
+    frames: list[tuple[str, str, str | None]] = []
     sessions, seen = [session_id], set()
     while sessions and len(seen) < MAX_FRAME_SESSIONS:
         session = sessions.pop(0)
@@ -692,9 +706,18 @@ def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
         while stack:
             node = stack.pop()
             frame = node["frame"]
-            if frame.get("parentId"):
-                children.setdefault(frame["parentId"], []).append((session, frame["id"]))
+            frames.append((session, frame["id"], frame.get("parentId")))
             stack += node.get("childFrames") or []
+    return frames
+
+
+def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
+    """The frame whose document holds focus, followed through the frame elements that hold it:
+    (session, frame, world)."""
+    children: dict[str, list[tuple[str, str]]] = {}
+    for session, frame_id, parent in all_frames(client, session_id):
+        if parent:
+            children.setdefault(parent, []).append((session, frame_id))
     at = (session_id, main_frame(client, session_id)["id"], client.context_id)
     for _ in range(MAX_FRAME_DEPTH):
         session, frame_id, world = at
@@ -929,6 +952,22 @@ def frame_hints(client: CdpClient, session_id: str) -> tuple[bool, str | None]:
     accounts = [found for found in frame_eval(client, pay_token_frames(client, frames),
                                               "window.__rakazoPageBrowser.payTokenAccount()") if found]
     return card, accounts[0] if len(accounts) == 1 else None
+
+
+def filled_choices(port: int, target_id: str) -> set[str]:
+    """The values and labels of the options saved logins chose in dropdowns, in every frame of the
+    tab: a snapshot never marks them as chosen."""
+    client = connect(port)
+    try:
+        session_id = attach(client, target_id)
+        found: set[str] = set()
+        for session, frame_id, _ in all_frames(client, session_id):
+            world = world_in(client, session, frame_id)
+            found.update(str(text) for text in eval_json(client, session, "window.__rakazoPageBrowser.filledChoices()",
+                                                         context_id=world) or [] if text)
+        return found
+    finally:
+        client.close()
 
 
 def payment_frame_hints(port: int, target_id: str) -> tuple[bool, str | None]:

@@ -465,18 +465,12 @@ PAGE_LOAD = r"""({ href: location.href, ready: document.readyState, began: perfo
     .map((entry) => [entry.name, performance.timeOrigin + entry.responseEnd]) })"""
 
 # The page's address, title and text, the values a snapshot must not show (password fields, fields
-# holding a saved login or card, fields drawn as dots, and the option a saved login chose in a
-# dropdown), and the merchant account a pay token checkout names in the page itself.
+# holding a saved login or card, and fields drawn as dots), and the merchant account a pay token checkout names in the page itself.
 PAGE_STATE = r"""(() => {
   const masked = [...document.querySelectorAll("input, textarea")]
     .filter((el) => el.value && (el.type === "password" || el.hasAttribute("data-rakazo-filled")
       || getComputedStyle(el).webkitTextSecurity !== "none"))
     .map((el) => el.value);
-  for (const select of document.querySelectorAll("select[data-rakazo-filled]")) {
-    for (const option of select.selectedOptions) {
-      masked.push(option.value, (option.label || option.text).replace(/\s+/g, " ").trim());
-    }
-  }
   const blocks = [...document.querySelectorAll(".AiAgentPaymentSteering")]
     .filter((block) => block.querySelector('input[name="link_pay_token"]'));
   const holder = blocks.length !== 1 ? null : blocks[0].matches("[data-stripe-merchant-account]") ? blocks[0]
@@ -590,11 +584,14 @@ def chosen_option(node: Node) -> Node | None:
     return next((option for option in native_options(node) if "selected" in option.attrs.split(", ")), None)
 
 
-def hides_choice(node: Node, masked: set[str]) -> bool:
-    """Whether a dropdown holds an option a saved login chose, which the bot never sees."""
+def hides_choice(node: Node, choices: set[str] | None) -> bool:
+    """Whether a dropdown holds an option a saved login chose, which the bot never sees. With choices
+    unknown, no dropdown shows its choice."""
     chosen = chosen_option(node)
-    shown = {" ".join(text.split()) for text in (node.value, chosen and chosen.name) if text}
-    return bool(shown & masked)
+    if chosen is None:
+        return False
+    shown = {" ".join(text.split()) for text in (node.value, chosen.name) if text}
+    return choices is None or bool(shown & choices)
 
 
 def options_of(node: Node, hide_choice: bool = False) -> tuple[list[dict[str, Any]], int]:
@@ -847,7 +844,13 @@ class PageBrowser:
         sites = {id(node): frame_site(urljoin(str(state.get("url") or ""), str((found or {}).get("value") or "")))
                  for node, found in zip(frames, sources)}
         masked = {str(value) for value in state.get("masked") or [] if value}
-        masked |= {" ".join(value.split()) for value in masked}
+        choices: set[str] | None = set()
+        if any(chosen_option(node) for node in walk(roots)):
+            # Read in every frame, where agent-browser's tree cannot say which dropdown a saved login filled.
+            try:
+                choices = {" ".join(text.split()) for text in page_secrets.filled_choices(self.port, self.target)}
+            except Exception:  # noqa: BLE001
+                choices = None
         # Found in the page, not in agent-browser's tree: a session that attached after a frame loaded never sees inside it.
         payment = any(payment_frame_origin(frame_site(src)) for src in state.get("frames") or [])
         try:
@@ -881,7 +884,7 @@ class PageBrowser:
                     render(node.children, depth, inside)
                     continue
                 value = node.value
-                hide_choice = hides_choice(node, masked)
+                hide_choice = hides_choice(node, choices)
                 if value is not None and (hide_choice or value in masked or set(value) <= {"•"}):
                     value = None
                 entry: dict[str, Any] = {"ref": ref, "role": node.role, "name": node.name[:200]}

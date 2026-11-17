@@ -13,6 +13,7 @@ type Secrets = {
   cardTyped: (length: number) => boolean;
   payTokenAccount: () => string | null;
   setPayToken: (token: string) => boolean;
+  filledChoices: () => string[];
 };
 
 /** The saved-login, card and pay-token script page_secrets runs in a frame's isolated world. */
@@ -109,6 +110,18 @@ describe("saved logins and cards in the focused field", () => {
     // Marked like any saved field, so the page browser's snapshots never show the choice.
     expect(field("Branch").hasAttribute("data-rakazo-filled")).toBe(true);
     expect(win.document.body.innerHTML).not.toContain("fake-999");
+  });
+
+  it("reports the options saved logins chose, inside open shadow trees too", () => {
+    const { secrets, win } = installSecrets(`<div id="host"></div><select aria-label="Plain">
+      <option>A1</option><option selected>A2</option></select>`);
+    const root = win.document.getElementById("host")!.attachShadow({ mode: "open" });
+    root.innerHTML = `<select aria-label="Code"><option value="+1">US (+1)</option>
+      <option value="+44">UK (+44)</option></select>`;
+    expect(secrets.filledChoices()).toEqual([]);
+    (root.querySelector("select") as HTMLSelectElement).focus();
+    secrets.fill("+44", origin, "username");
+    expect(secrets.filledChoices()).toEqual(["+44", "UK (+44)"]);
   });
 
   it("cuts long option labels and keeps the refusal short", () => {
