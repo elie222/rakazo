@@ -92,37 +92,29 @@ export async function loadRunHistoryMessages(
   return withOwnToolHistory(prisma, run, messages);
 }
 
-/** How many of a routine's latest runs to look through for replies; a run may have posted none. */
-const EARLIER_RUNS_SCANNED = 10;
-
 /** The last reply of each of the routine's latest completed runs that posted one. */
 async function earlierRoutineResults(
   prisma: PrismaClient,
   run: { id: string; threadId: string; botId: string },
   earlier: { routineId: string; limit: number },
 ) {
-  const runs = await prisma.run.findMany({
-    where: {
-      routineId: earlier.routineId,
-      threadId: run.threadId,
-      id: { not: run.id },
-      status: "completed",
-    },
-    orderBy: { createdAt: "desc" },
-    take: EARLIER_RUNS_SCANNED,
-    select: { id: true },
-  });
-  if (!runs.length) return [];
-  const replies = await prisma.message.findMany({
-    where: { threadId: run.threadId, role: "bot", runId: { in: runs.map(({ id }) => id) } },
+  const latest = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM (
+      SELECT DISTINCT ON (m."runId") m.id, m.seq
+      FROM messages m JOIN runs r ON r.id = m."runId"
+      WHERE r."routineId" = ${earlier.routineId} AND r."threadId" = ${run.threadId}
+        AND r.id <> ${run.id} AND r.status = 'completed'
+        AND m."threadId" = ${run.threadId} AND m.role = 'bot'
+      ORDER BY m."runId", m.seq DESC
+    ) last_replies
+    ORDER BY seq DESC
+    LIMIT ${earlier.limit}`;
+  if (!latest.length) return [];
+  return prisma.message.findMany({
+    where: { id: { in: latest.map(({ id }) => id) } },
     orderBy: { seq: "desc" },
     select: HISTORY_MESSAGE_SELECT(run.botId),
   });
-  const lastReplies = new Map<string, (typeof replies)[number]>();
-  for (const reply of replies) {
-    if (reply.runId && !lastReplies.has(reply.runId)) lastReplies.set(reply.runId, reply);
-  }
-  return runs.flatMap(({ id }) => lastReplies.get(id) ?? []).slice(0, earlier.limit);
 }
 
 /**

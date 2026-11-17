@@ -176,6 +176,54 @@ postgres("history retrieval (PostgreSQL)", () => {
       })}\n`,
     );
   });
+  it("gives a routine only its owner's messages and its bot's replies", async () => {
+    await pool.query(
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS "authorUserId" text,
+        ADD COLUMN IF NOT EXISTS "botId" text`,
+    );
+    const add = (
+      id: string,
+      role: string,
+      blocks: unknown[],
+      author: string | null,
+      bot: string | null,
+    ) =>
+      pool.query(
+        `INSERT INTO messages (id, "threadId", seq, role, "createdAt", blocks, "authorUserId", "botId")
+        VALUES ($1, 'synthetic-thread', $2, $3, '2026-03-02T00:00:00Z', $4::jsonb, $5, $6)`,
+        [id, 20_000 + Number(id.length), role, JSON.stringify(blocks), author, bot],
+      );
+    const text = (body: string) => [{ kind: "text", text: body }];
+    await add("owner-ask", "user", text("ownerprobe from the owner"), "synthetic-user", null);
+    await add("member-ask", "user", text("ownerprobe from a member"), "synthetic-member", null);
+    await add(
+      "channel-in",
+      "user",
+      [{ kind: "channel_message", channelId: "c", text: "ownerprobe from a channel" }],
+      "synthetic-user",
+      null,
+    );
+    await add("own-reply", "bot", text("ownerprobe from this bot"), null, "synthetic-bot");
+    await add("peer-reply", "bot", text("ownerprobe from another bot"), null, "synthetic-peer");
+    try {
+      const everyone = await searchHistory(prisma, scope, { query: "ownerprobe" });
+      expect(everyone.messages).toHaveLength(5);
+      const owner = await searchHistory(
+        prisma,
+        { ...scope, ownerOnly: "synthetic-user" },
+        { query: "ownerprobe" },
+      );
+      expect(owner.messages.map((message) => message.messageId).sort()).toEqual([
+        "own-reply",
+        "owner-ask",
+      ]);
+    } finally {
+      await pool.query(
+        `DELETE FROM messages WHERE id IN ('owner-ask','member-ask','channel-in','own-reply','peer-reply')`,
+      );
+    }
+  });
+
   it("finds an earlier reply by its tool step note and returns the steps it ran", async () => {
     await pool.query(
       `INSERT INTO messages VALUES ('steps-reply', 'synthetic-thread', 10001, 'bot', NULL, NULL,

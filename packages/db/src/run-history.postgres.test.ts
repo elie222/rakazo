@@ -141,8 +141,8 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
     };
     const older = await routineRun("completed");
     const newer = await routineRun("completed");
-    // Handed to a working run: completed, and posted nothing.
-    await routineRun("completed");
+    // Handed to a working run, or quiet because nothing changed: completed, and posted nothing.
+    for (let quiet = 0; quiet < 12; quiet += 1) await routineRun("completed");
     const failed = await routineRun("failed");
     const current = await routineRun("running");
     const posted: string[] = [];

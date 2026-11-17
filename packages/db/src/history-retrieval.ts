@@ -32,6 +32,11 @@ export interface HistoryScope {
   searchAt?: Date;
   /** Server-captured history boundary. Search excludes the active request and later messages. */
   searchBeforeSeq?: number;
+  /**
+   * A routine's owner: the run acts with their accounts and nobody vouches for anyone else's
+   * words, so it reads only their messages and this bot's replies.
+   */
+  ownerOnly?: string;
 }
 interface HistoryRow {
   id: string;
@@ -186,6 +191,14 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
           AND r."botId" = ${scope.botId} AND source."threadId" = t.id
           AND source.blocks @> ${JSON.stringify([{ kind: "channel_message", channelId: channel }])}::jsonb
       )))`
+        : Prisma.empty
+    }
+    ${
+      scope.ownerOnly
+        ? Prisma.sql`AND (
+      (m.role = 'user' AND m."authorUserId" = ${scope.ownerOnly}
+        AND NOT m.blocks @> ${JSON.stringify([{ kind: "channel_message" }])}::jsonb)
+      OR (m.role = 'bot' AND m."botId" = ${scope.botId}))`
         : Prisma.empty
     }
   `;
