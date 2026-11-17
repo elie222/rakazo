@@ -2,6 +2,9 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 
+export const READ_FILE_MAX_BYTES = 250_000;
+export const READ_FILE_MAX_KB = READ_FILE_MAX_BYTES / 1000;
+
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -178,8 +181,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "read_file",
-    description:
-      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Large files come back in line ranges; follow nextOffset to read on.",
+    description: `Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Long files come back in line ranges; follow nextOffset. Over ${READ_FILE_MAX_KB} KB, use shell.`,
     inputSchema: {
       type: "object",
       properties: {

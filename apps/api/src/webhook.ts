@@ -1,5 +1,5 @@
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { hasValidBearerToken } from "@rakazo/core";
+import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
 import { readBoundedBody } from "./http-body.js";

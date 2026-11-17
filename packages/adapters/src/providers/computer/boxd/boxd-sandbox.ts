@@ -25,7 +25,8 @@ import {
   SandboxUnavailableError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, withAbort } from "@rakazo/core";
+import { withAbort } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,

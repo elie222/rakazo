@@ -238,7 +238,13 @@ export function matchesPluginQuery(
 }
 
 function brandKey(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const key = name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/ς/g, "σ")
+    .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+  // Marks alone (such as emoji variation selectors) do not name a brand.
+  return /[\p{L}\p{N}]/u.test(key) ? key : "";
 }
 
 /** The managed app a plugin is for, matched by name, so one brand is listed once. */
@@ -246,7 +252,7 @@ export function managedAppFor<T extends { name: string; slug: string }>(
   entry: Pick<PluginMarketplaceEntry, "name" | "displayName">,
   apps: readonly T[],
 ): T | undefined {
-  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)]);
+  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)].filter(Boolean));
   return apps.find((app) => keys.has(brandKey(app.name)) || keys.has(brandKey(app.slug)));
 }
 

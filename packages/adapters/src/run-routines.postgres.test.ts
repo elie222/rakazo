@@ -337,6 +337,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
           published.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

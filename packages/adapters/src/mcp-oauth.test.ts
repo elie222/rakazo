@@ -2050,6 +2050,11 @@ describe("MCP OAuth", () => {
     });
     expect(started.status).toBe("authorization_required");
     if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+    // Kept in local storage, so mcp_oauth_sessions never holds a remote entry.
+    expect(put).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
+      recordId: started.sessionId,
+      ephemeral: true,
+    });
 
     expect(registration).toMatchObject({ client_name: "Rakazo" });
     expect(registration).not.toHaveProperty("token_endpoint_auth_method");

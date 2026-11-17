@@ -225,4 +225,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Starting {app}…": "Запуск {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker установлен, но не запущен. Запустите службу Docker, чтобы продолжить.",
+  "Rakazo stopped unexpectedly.": "Rakazo неожиданно остановился.",
+  Reload: "Перезагрузить",
 };

@@ -2,9 +2,9 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import type { CloudAgentConnection } from "./cloud-agent-factory.js";
-import { cloudAgentForActor, executeCloudAgentTool } from "./cloud-agent-service.js";
-import type { McpOAuthBroker } from "./mcp-oauth.js";
+import type { CloudAgentConnection } from "../../../cloud-agent-factory.js";
+import { cloudAgentForActor, executeCloudAgentTool } from "../../../cloud-agent-service.js";
+import type { McpOAuthBroker } from "../../../mcp-oauth.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 
@@ -456,7 +456,14 @@ describe("T3 Code environments connected as MCP servers", () => {
     const result = await executeCloudAgentTool(
       {
         prisma,
-        jobs: { enqueue, enqueueIn: vi.fn(), cancelIn: vi.fn(), cancel: vi.fn(), close: vi.fn() },
+        jobs: {
+          enqueue,
+          enqueueIn: vi.fn(),
+          enqueueManyIn: vi.fn(),
+          cancelIn: vi.fn(),
+          cancel: vi.fn(),
+          close: vi.fn(),
+        },
         events: { notify: vi.fn() },
         cloudAgent: { key: "deployment", spaceId: actor.spaceId } as CloudAgentConnection,
         userCloudAgents: new T3CodeConnections(prisma, f.oauth, f.transport),

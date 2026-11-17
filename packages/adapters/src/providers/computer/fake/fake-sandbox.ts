@@ -14,7 +14,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core/node/screen-lease";
 import { ComputerScreenUnavailableError, screenSessionKey } from "../../../computer-screens.js";
 import {
   applyPlaceholderAction,
