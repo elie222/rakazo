@@ -11,7 +11,7 @@ import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contra
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import { combineSignals } from "../connectors/connector-safety.js";
-import { dispatcherFetch } from "../web/undici-fetch.js";
+import { dispatcherFetch, isNodeFetch } from "../web/undici-fetch.js";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import { createMcpClient } from "./mcp-output-schema.js";
@@ -205,12 +205,16 @@ export function secureFetch(
     undefined,
     responseTimeouts,
   );
-  // The permitted loopback server gets the same waits as remote ones.
+  // The permitted loopback server gets the same waits as remote ones. A fetch someone installed
+  // in place of Node's own is theirs to call as it is.
   const localAgent =
     responseTimeouts && !network.fetch ? new Agent({ ...responseTimeouts }) : undefined;
-  const localFetch: typeof globalThis.fetch = localAgent
-    ? (url, init) => dispatcherFetch(url, { ...init, dispatcher: localAgent } as RequestInit)
-    : (network.fetch ?? globalThis.fetch);
+  const localFetch: typeof globalThis.fetch = (url, init) => {
+    const base = network.fetch ?? globalThis.fetch;
+    return localAgent && isNodeFetch(base)
+      ? dispatcherFetch(url, { ...init, dispatcher: localAgent } as RequestInit)
+      : base(url, init);
+  };
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
