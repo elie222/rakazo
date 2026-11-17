@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { resolveRuntimeModel } from "./pi-runtime-models.js";
-import { userTurnInstructions } from "./run-instructions.prompt.js";
+import { RAKAZO_PLATFORM_INSTRUCTION, userTurnInstructions } from "./run-instructions.prompt.js";
 
 describe("Pi outgoing provider prefixes", () => {
   it.each(["png", "gif"] as const)(
@@ -333,11 +333,14 @@ describe("Pi outgoing provider prefixes", () => {
           function: expect.objectContaining({ name: "fixture_read" }),
         }),
       ]);
-      for (const request of requests)
-        expect(request.messages[0]).toMatchObject({
-          role: "system",
-          content: expect.stringMatching(/^Stable guidance\.\nStable constraints\./),
-        });
+      for (const request of requests) {
+        expect(request.messages[0]?.role).toBe("system");
+        expect(
+          String(request.messages[0]?.content).startsWith(
+            `${RAKAZO_PLATFORM_INSTRUCTION}\n\nStable guidance.\nStable constraints.`,
+          ),
+        ).toBe(true);
+      }
       const first = requests[0]!.messages[0]!.content;
       const second = requests[1]!.messages[0]!.content;
       const cursorRule =

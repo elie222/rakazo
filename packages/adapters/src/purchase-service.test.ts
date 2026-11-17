@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
 import { Challenge, Credential } from "mppx";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   FAKE_PAY_TOKEN,
   FAKE_SHARED_PAYMENT_TOKEN,
@@ -17,7 +17,7 @@ import {
   resolvePurchasePayTokenFill,
 } from "./purchase-service.js";
 import type { SecretCleanup } from "./secret-cleanup.js";
-import { retrySecretCleanup } from "./secret-cleanup.js";
+import { PROVIDER_BEFORE_SAVE_MS, retrySecretCleanup } from "./secret-cleanup.js";
 
 vi.mock("./payment-wallets.js", () => ({
   withPaymentWalletCredential: async (
@@ -661,6 +661,41 @@ describe("paid_request", () => {
     expect(JSON.stringify(retry)).not.toContain("days");
     await retrySecretCleanup(cleanup, retry.payload as SecretCleanup);
     expect(env.secrets.size).toBe(0);
+  });
+
+  it("stops before asking the wallet when the request copy can't be sealed", async () => {
+    const env = setup(paidApi().fetch);
+    const asked = vi.spyOn(env.wallet, "createPurchase");
+    env.secretStore.put = async () => {
+      throw new Error("secret store unavailable");
+    };
+    await expect(env.paid(paidArgs)).rejects.toThrow("secret store unavailable");
+    expect(asked).not.toHaveBeenCalled();
+    expect(env.spending.payments).toEqual([]);
+  });
+
+  it("gives up on a slow wallet before the sealed copy's cleanup could run", async () => {
+    const env = setup(paidApi().fetch);
+    const deadline = new AbortController();
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    const spy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms) => (ms === PROVIDER_BEFORE_SAVE_MS ? deadline.signal : timeout(ms)));
+    onTestFinished(() => spy.mockRestore());
+    const asked = vi.fn();
+    env.wallet.createPurchase = () => {
+      asked();
+      return new Promise(() => {});
+    };
+    const pending = env.paid(paidArgs);
+    await vi.waitFor(() => expect(asked).toHaveBeenCalled());
+    deadline.abort(new Error("wallet timed out"));
+    await expect(pending).rejects.toThrow("wallet timed out");
+    expect(env.secrets.size).toBe(0);
+    // The wallet may hold the purchase under its idempotency key, so it keeps counting for a retry.
+    expect(env.spending.payments).toEqual([
+      expect.objectContaining({ operationKey: "op-1", releasedAt: null }),
+    ]);
   });
 
   it("removes the sealed request when recording the purchase fails, unless the purchase holds it", async () => {

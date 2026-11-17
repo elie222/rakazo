@@ -125,6 +125,30 @@ export class GraphileJobPublisher implements JobPublisher {
     );
   }
 
+  async enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    for (const job of jobs) {
+      if (job.name === "run.continue") throw new Error("Runs are not started inside a transaction");
+      if (job.keepExisting) throw new Error("keepExisting is not supported inside a transaction");
+    }
+    // add_jobs rejects one key twice in a batch.
+    const unique = [...new Map(jobs.map((job, index) => [job.replaceKey ?? index, job])).values()];
+    if (!unique.length) return;
+    await tx.$executeRawUnsafe(
+      `select count(*) from graphile_worker.add_jobs(array(
+         select spec from json_populate_recordset(null::graphile_worker.job_spec, $1::json) spec))`,
+      JSON.stringify(
+        unique.map((job) => ({
+          identifier: job.name,
+          payload: wrapJobPayload(job.payload),
+          queue_name: job.queueName ?? null,
+          run_at: job.availableAt?.toISOString() ?? null,
+          max_attempts: job.maxAttempts ?? null,
+          job_key: job.replaceKey ?? null,
+        })),
+      ),
+    );
+  }
+
   async cancelIn(tx: JobTransaction, key: string): Promise<void> {
     await tx.$executeRawUnsafe("select graphile_worker.remove_job($1::text)", key);
   }
@@ -735,6 +759,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   /** Not transactional: a job whose transaction rolls back still runs, and finds nothing to do. */
   async enqueueIn(_tx: JobTransaction, job: BackgroundJob): Promise<void> {
     await this.enqueue(job);
+  }
+
+  async enqueueManyIn(_tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    for (const job of jobs) await this.enqueue(job);
   }
 
   /**

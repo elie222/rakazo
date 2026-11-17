@@ -216,4 +216,6 @@ export const HI_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} शुरू हो रहा है…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker इंस्टॉल है लेकिन चल नहीं रहा। जारी रखने के लिए Docker सेवा शुरू करें।",
+  "Rakazo stopped unexpectedly.": "Rakazo अप्रत्याशित रूप से रुक गया।",
+  Reload: "फिर से लोड करें",
 };

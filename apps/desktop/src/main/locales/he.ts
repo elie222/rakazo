@@ -217,4 +217,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} מופעל…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker מותקן אבל לא פועל. יש להפעיל את שירות Docker כדי להמשיך.",
+  "Rakazo stopped unexpectedly.": "Rakazo נעצר באופן בלתי צפוי.",
+  Reload: "טען מחדש",
 };

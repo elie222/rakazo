@@ -226,4 +226,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app}を起動しています…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
+  "Rakazo stopped unexpectedly.": "Rakazo が突然停止しました。",
+  Reload: "再読み込み",
 };

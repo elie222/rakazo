@@ -25,7 +25,7 @@ const turns = (request: ModelEmulatorRequest) =>
       text: (typeof message.content === "string"
         ? message.content
         : JSON.stringify(message.content)
-      ).replace(/\n\nCurrent date and time:.*$/s, ""),
+      ).replace(/\n\n<current_time>.*$/s, ""),
     }));
 
 describe.skipIf(!databaseAvailable)("group history keeps roles and speakers", () => {

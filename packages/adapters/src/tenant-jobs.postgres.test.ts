@@ -174,6 +174,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
     const background = {
       enqueue: vi.fn(),
       enqueueIn: vi.fn(),
+      enqueueManyIn: vi.fn(),
       cancelIn: vi.fn(),
       cancel: vi.fn(),
       close: vi.fn(),

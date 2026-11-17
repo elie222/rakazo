@@ -63,8 +63,10 @@ import {
   withHostComputerScreen,
   withRunWorker,
   withSecretPersistence,
+  withSecretWriteAhead,
 } from "@rakazo/adapters";
-import { abortableDelay, resolveSupervisorToken } from "@rakazo/core";
+import { abortableDelay } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -122,11 +124,15 @@ async function main() {
     }),
     (threadId) => workActivities?.threadChanged(threadId),
   );
-  const secrets = await createWorkerSecretStore(process.env, realtime);
+  // The queue is built from this client below; a secret written or dropped before then gets no
+  // backup.
+  let secretCleanupJobs: JobPublisher | undefined;
+  const secrets = withSecretWriteAhead(
+    await createWorkerSecretStore(process.env, realtime),
+    () => secretCleanupJobs,
+  );
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  // The queue is built from this client below; a secret dropped before then gets no retry.
-  let secretCleanupJobs: JobPublisher | undefined;
   prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);

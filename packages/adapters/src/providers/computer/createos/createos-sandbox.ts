@@ -18,16 +18,13 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import {
-  boundedSandboxCommandTimeoutMs,
-  cancelResponseBody,
-  ResponseTooLargeError,
-} from "@rakazo/core";
+import { cancelResponseBody, ResponseTooLargeError } from "@rakazo/core";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
   quiesceBrowserProfilesCommand,
 } from "@rakazo/core/node/desktop-runtime";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computer-idle.js";
 import { screenSessionKey } from "../../../computer-screens.js";
 import {
