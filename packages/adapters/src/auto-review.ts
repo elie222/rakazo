@@ -18,7 +18,7 @@ import {
   buildAutoReviewPrompt,
   truncateReviewText,
 } from "./auto-review.prompt.js";
-import { decisionModelCatalog } from "./decision-models.js";
+import { decisionModel, includedDecisionModel } from "./decision-models.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { parseModelJson } from "./model-json.js";
 import { secretValuesToRedact } from "./model-secret.js";
@@ -116,9 +116,9 @@ export function resolveAutoReviewChecker(
     return { provider: overrideProvider, model: overrideModel };
   }
 
-  if (included && !overrideProvider && !overrideModel && env.OPENROUTER_API_KEY?.trim()) {
-    const model = decisionModelCatalog()[0]!;
-    return { provider: model.provider, model: model.id };
+  if (included && !overrideProvider && !overrideModel) {
+    const model = includedDecisionModel(env);
+    if (model) return { provider: model.provider, model: model.id };
   }
 
   const localIds = localModelIds(env);
@@ -147,6 +147,8 @@ export function isAutoReviewCheckerConfigured(input: {
   if (checker.provider === SCRIPTED_AUTO_REVIEW_PROVIDER) return true;
   if (checker.provider === LOCAL_PROVIDER_ID) return localModelIds(env).length > 0;
 
+  const decision = decisionModel(checker.provider, checker.model);
+  if (decision?.deploymentApiKey(env)) return true;
   const deployment = resolveDeploymentModel(env);
   if (checker.provider === deployment.provider && deployment.configured) return true;
   if (env.OPENROUTER_API_KEY?.trim() && checker.provider === "openrouter") return true;

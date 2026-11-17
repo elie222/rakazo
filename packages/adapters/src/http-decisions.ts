@@ -11,7 +11,7 @@ import { DecisionProviderError } from "@rakazo/adapter-kit";
 import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
-import { decisionModel } from "./decision-models.js";
+import { decisionInputCost, decisionModel } from "./decision-models.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const answerSchema = z.object({
@@ -56,9 +56,7 @@ export class HttpDecisionProvider implements DecisionProvider {
       operationKind: "setup",
       inputTokensEstimate,
       maxOutputTokens: null,
-      maxCostUsd: pricing
-        ? (inputTokensEstimate * pricing.inputUsdPerMillion) / 1_000_000
-        : undefined,
+      maxCostUsd: pricing ? decisionInputCost(pricing, inputTokensEstimate) : undefined,
     });
     let result: Pick<DecisionResult, "model" | "answers">;
     let usage: AgentUsage | null = null;
@@ -73,6 +71,7 @@ export class HttpDecisionProvider implements DecisionProvider {
     };
     let sent = false;
     try {
+      context.signal.throwIfAborted();
       sent = true;
       const response = await (this.options.fetch ?? fetch)(
         this.provider === "openrouter"
@@ -89,11 +88,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           },
           body,
         },
-      ).catch((error: unknown) => {
-        // A connection failure the caller did not cause never reached the provider.
-        if (!context.signal.aborted) sent = false;
-        throw error;
-      });
+      );
       providerRequestId = response.headers.get("x-request-id");
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)

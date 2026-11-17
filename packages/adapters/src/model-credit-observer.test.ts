@@ -218,50 +218,59 @@ it("refuses a paid output tariff when the protocol cannot bound output", async (
   expect(reserveModelCredits).not.toHaveBeenCalled();
 });
 
-it("settles an unsent decision through its actual observer without charging credits", async () => {
-  vi.stubEnv(
-    "MODEL_CREDIT_OFFERINGS",
-    JSON.stringify({
-      defaultOfferingId: "decision",
-      offerings: [
+it.each([false, true])(
+  "retains uncertain decision holds and releases only pre-dispatch cancellation (unsent=%s)",
+  async (unsent) => {
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "decision",
+        offerings: [
+          {
+            id: "decision",
+            connectionId: "operator",
+            provider: "openrouter",
+            modelId: "typesafe/jev-1.14",
+            price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
+    const controller = new AbortController();
+    vi.mocked(reserveModelCredits).mockImplementation(async () => {
+      if (unsent) controller.abort();
+      return "hold";
+    });
+    const observer = await hostedModelCreditObserver({} as never, scope);
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError("response lost");
+    });
+    const provider = new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      callObserver: observer,
+      fetch: fetchMock,
+    });
+    await expect(
+      provider.decide(
+        { model: "typesafe/jev-1.14", state: {}, questions: {} },
         {
-          id: "decision",
-          connectionId: "operator",
-          provider: "openrouter",
-          modelId: "typesafe/jev-1.14",
-          price: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+          operationId: "decision",
+          traceId: "decision",
+          ...scope,
+          signal: controller.signal,
         },
-      ],
-    }),
-  );
-  vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
-  vi.mocked(reserveModelCredits).mockResolvedValue("hold");
-  const observer = await hostedModelCreditObserver({} as never, scope);
-  const provider = new HttpDecisionProvider("openrouter", {
-    apiKey: "fake-key",
-    callObserver: observer,
-    fetch: async () => {
-      throw new TypeError("connection failed");
-    },
-  });
-  await expect(
-    provider.decide(
-      { model: "typesafe/jev-1.14", state: {}, questions: {} },
-      {
-        operationId: "decision",
-        traceId: "decision",
-        ...scope,
-        signal: new AbortController().signal,
-      },
-    ),
-  ).rejects.toBeDefined();
-  expect(recordModelCreditReceipt).toHaveBeenCalledWith(
-    {},
-    "hold",
-    expect.objectContaining({
-      costUsd: 0,
-      usageSource: "not-started",
-      pricingVersion: "deployment-tariff:decision",
-    }),
-  );
-});
+      ),
+    ).rejects.toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(unsent ? 0 : 1);
+    expect(recordModelCreditReceipt).toHaveBeenCalledWith(
+      {},
+      "hold",
+      expect.objectContaining({
+        costUsd: unsent ? 0 : null,
+        usageSource: unsent ? "not-started" : "unavailable",
+        pricingVersion: "deployment-tariff:decision",
+      }),
+    );
+  },
+);

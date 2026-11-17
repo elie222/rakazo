@@ -1,6 +1,9 @@
 import type { DecisionModelDescriptor } from "../../../decisions/model-descriptor.js";
+import { HttpDecisionProvider } from "../../../http-decisions.js";
 
 export const typesafeDecisionModel: DecisionModelDescriptor = {
+  create: (options) => new HttpDecisionProvider("typesafe", options),
+  deploymentApiKey: (env) => env.TYPESAFE_API_KEY?.trim() || undefined,
   provider: "typesafe",
   id: "jev-1.14",
   aliases: ["jev-latest"],
