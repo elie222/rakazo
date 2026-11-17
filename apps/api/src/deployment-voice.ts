@@ -1,4 +1,4 @@
-import { isVoiceProviderId } from "@rakazo/adapters";
+import { isVoiceProviderId, voiceDeploymentModelSupported } from "@rakazo/adapters";
 import { z } from "zod";
 
 const price = z
@@ -18,7 +18,7 @@ const deploymentVoiceSchema = z
     provider: z.string().min(1),
     connection: z
       .object({
-        plaintext: z.string(),
+        plaintext: z.string().trim().min(1),
         baseUrl: z.string().optional(),
         sttBaseUrl: z.string().optional(),
         sttApiKey: z.string().optional(),
@@ -40,6 +40,7 @@ export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoi
     const config = deploymentVoiceSchema.parse(JSON.parse(value));
     if (
       !isVoiceProviderId(config.provider) ||
+      !voiceDeploymentModelSupported(config.provider, config.pricing.synthesize.model) ||
       (config.connection.ttsModel &&
         config.connection.ttsModel !== config.pricing.synthesize.model) ||
       (config.connection.sttModel && config.connection.sttModel !== config.pricing.transcribe.model)

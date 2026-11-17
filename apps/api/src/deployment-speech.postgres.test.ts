@@ -62,7 +62,7 @@ suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
         ).text,
       ).toBeTruthy();
       await expect(synthesizeVoice(deps, actor, { text: "Over allowance" })).rejects.toThrow(
-        "allowance unavailable",
+        "Add a voice provider key",
       );
     });
     const costs = await system.speechCost.findMany({ where: { userId: actor.userId } });

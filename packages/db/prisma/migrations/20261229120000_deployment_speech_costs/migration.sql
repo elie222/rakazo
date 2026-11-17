@@ -38,9 +38,9 @@ ALTER TABLE speech_allowances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE speech_costs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY speech_allowances_system ON speech_allowances USING ((SELECT app_rls_bypass()));
 CREATE POLICY speech_costs_system ON speech_costs USING ((SELECT app_rls_bypass()));
-CREATE POLICY speech_allowances_tenant ON speech_allowances
+CREATE POLICY speech_allowances_tenant ON speech_allowances FOR SELECT
  USING ("userId" = NULLIF(current_setting('app.user_id', true), ''));
-CREATE POLICY speech_costs_tenant ON speech_costs
+CREATE POLICY speech_costs_tenant ON speech_costs FOR SELECT
  USING ("userId" = NULLIF(current_setting('app.user_id', true), '') AND
  "spaceId" = NULLIF(current_setting('app.space_id', true), ''));
 GRANT SELECT, INSERT, UPDATE, DELETE ON speech_allowances, speech_costs TO rakazo_app;

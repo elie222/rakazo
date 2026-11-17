@@ -60,7 +60,7 @@ for a concrete existing-provider configuration and official research sources.
 All paid plans are proposed for inclusion, but quotas, renewal rules and cancellation grace are
 undecided. No entitlement or free speech is inferred from the presence of a server key. Until
 those decisions are made, an operator explicitly grants an account allowance with the database
-owner connection. Missing or expired grants refuse chargeable requests before dispatch:
+owner connection. Missing, expired or exhausted grants do not advertise the included voice, preserving device speech and personal setup. Admission also checks the grant atomically before dispatch:
 
 ```sql
 INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt")
@@ -91,13 +91,13 @@ observed overruns count in full. Missing/mismatched units remain unresolved and 
 Device speech makes no paid request and creates no operator cost row. Explicit member-owned
 connections are not charged to the operator ledger.
 
-Crashes, timeouts and interruptions leave pending rows. Never replay the audio or automatically
+If settlement storage fails after speech completes, return the completed result and log the failure; its durable pending row remains available for recovery. Crashes, timeouts and interruptions leave pending rows. Never replay the audio or automatically
 refund these: the provider may have billed it. Recover from the provider's usage/invoice export,
 using the provider request ID when present, request time and local operation ID. The internal
 `confirmSpeechCost` helper requires `runAsSystem` and accepts the operation ID plus
 `{ costMicros, source, reference }`. Supply a non-secret, unique evidence reference and provenance;
 zero requires evidence of no charge. It adjusts the allowance and confirms the row atomically.
-Repeated identical confirmation is idempotent; conflicting confirmation is rejected. Preserve
+Repeated identical confirmation is idempotent; a changed cost, source or reference is rejected. Tenant SQL cannot edit grants or delete cost evidence; scoped accounting operations use an explicit system context. Preserve
 source exports in the operator's private financial system. No invoice API/reconciliation worker
 is installed here: the operator must schedule or perform this evidence import. Alert on old
 pending/unresolved rows; they intentionally reduce available allowance until resolved.

@@ -162,6 +162,7 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
 }
 
 export const xaiVoice: VoiceProviderDefinition = {
+  synthesisModel: "tts",
   catalog: {
     name: "xAI",
     description: "Expressive Grok voices and transcription, with a key or a Grok sign-in.",

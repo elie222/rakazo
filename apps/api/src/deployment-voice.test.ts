@@ -1,8 +1,21 @@
 import type { Actor } from "@rakazo/contracts";
+import type * as Database from "@rakazo/db";
+import { settleSpeech } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { deploymentVoiceFromEnv } from "./deployment-voice.js";
 import type { VoiceDeps } from "./voice.js";
-import { effectiveVoiceStatus, loadDefaultVoiceCredential, loadVoiceCredential } from "./voice.js";
+import {
+  effectiveVoiceStatus,
+  loadDefaultVoiceCredential,
+  loadVoiceCredential,
+  synthesizeVoice,
+} from "./voice.js";
+
+vi.mock("@rakazo/db", async (original) => ({
+  ...(await original<typeof Database>()),
+  admitSpeech: vi.fn(async () => "speech-call"),
+  settleSpeech: vi.fn(async () => {}),
+}));
 
 const price = {
   model: "speech-model",
@@ -28,6 +41,9 @@ function deps(override = false, cred: unknown = null) {
       spaceVoicePreference: { findFirst: vi.fn().mockResolvedValue(null) },
       userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(null) },
       secret: { findFirst: vi.fn().mockResolvedValue(null) },
+      speechAllowance: {
+        findFirst: vi.fn().mockResolvedValue({ limitMicros: 1000000n, usedMicros: 0n }),
+      },
     },
     secrets: { load: vi.fn() },
   } as unknown as VoiceDeps;
@@ -43,6 +59,25 @@ describe("deployment speech default", () => {
     expect(() => deploymentVoiceFromEnv("secret-invalid-json")).toThrow(
       /^Invalid DEPLOYMENT_VOICE connection or pricing policy$/,
     );
+  });
+  it("rejects a missing dedicated key and inconsistent fixed-model pricing", () => {
+    expect(() =>
+      deploymentVoiceFromEnv(JSON.stringify({ ...config, connection: { plaintext: " " } })),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
+    expect(() => deploymentVoiceFromEnv(JSON.stringify({ ...config, provider: "xai" }))).toThrow(
+      "Invalid DEPLOYMENT_VOICE",
+    );
+  });
+  it("does not advertise or choose included speech without an available grant", async () => {
+    for (const allowance of [null, { limitMicros: 10n, usedMicros: 10n }]) {
+      const d = deps();
+      vi.mocked(d.prisma.speechAllowance.findFirst).mockResolvedValue(allowance as never);
+      expect(await effectiveVoiceStatus(d, actor)).toMatchObject({
+        ready: false,
+        configured: false,
+      });
+      expect(await loadDefaultVoiceCredential(d, actor)).toBeNull();
+    }
   });
   it("makes speech ready without storing user credentials", async () => {
     const d = deps();
@@ -69,4 +104,12 @@ describe("deployment speech default", () => {
     expect(await loadDefaultVoiceCredential(d, actor)).toBeNull();
     expect(d.secrets.load).not.toHaveBeenCalled();
   });
+});
+
+it("returns completed audio when settlement storage fails", async () => {
+  vi.mocked(settleSpeech).mockRejectedValueOnce(new Error("temporary database outage"));
+  const clip = await synthesizeVoice(deps(), actor, { text: "Synthetic speech sample" });
+  expect(clip.mimeType).toBe("audio/mpeg");
+  expect(clip.bytes.length).toBeGreaterThan(0);
+  expect(settleSpeech).toHaveBeenCalledWith(expect.anything(), "speech-call", undefined, undefined);
 });

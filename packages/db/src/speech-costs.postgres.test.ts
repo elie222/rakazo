@@ -39,6 +39,22 @@ suite("operator speech costs (PostgreSQL)", () => {
     >`SELECT "usedMicros" FROM speech_allowances`;
     return row!.usedMicros;
   }
+  it("refuses direct tenant writes to operator grants and cost evidence", async () => {
+    const id = await admit();
+    await runAsTenant(actor, async () => {
+      expect(
+        await db.prisma
+          .$executeRaw`UPDATE speech_allowances SET "limitMicros" = 999999 WHERE "userId" = ${actor.userId}`,
+      ).toBe(0);
+      expect(await db.prisma.$executeRaw`DELETE FROM speech_costs WHERE id = ${id}`).toBe(0);
+      await expect(
+        db.prisma
+          .$executeRaw`INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt") VALUES ('forged-account', 999999, now() + interval '1 day')`,
+      ).rejects.toThrow();
+    });
+    expect(await used()).toBe(100n);
+    expect(await system.speechCost.count()).toBe(1);
+  });
   it("admits only the available allowance under concurrent database requests", async () => {
     const results = await Promise.allSettled(Array.from({ length: 10 }, admit));
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
@@ -71,6 +87,11 @@ suite("operator speech costs (PostgreSQL)", () => {
     };
     await runAsSystem("test billing evidence", () => confirmSpeechCost(db.prisma, id, evidence));
     await runAsSystem("test billing evidence", () => confirmSpeechCost(db.prisma, id, evidence));
+    await expect(
+      runAsSystem("test conflicting evidence", () =>
+        confirmSpeechCost(db.prisma, id, { ...evidence, source: "different-source" }),
+      ),
+    ).rejects.toThrow("different evidence");
     expect(await used()).toBe(15n);
     expect((await system.speechCost.findUniqueOrThrow({ where: { id } })).state).toBe("confirmed");
     await expect(

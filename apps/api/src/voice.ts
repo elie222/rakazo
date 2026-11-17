@@ -47,7 +47,7 @@ import {
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { clientErrorStatus } from "./client-error-status.js";
@@ -261,12 +261,30 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
+/** A configured service is available only after the operator grants an unexpired allowance. */
+async function includedVoice(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
+  const deployment = deps.env?.deploymentVoice;
+  if (!deployment) return undefined;
+  const allowance = await deps.prisma.speechAllowance.findFirst({
+    where: { userId: actor.userId, expiresAt: { gt: new Date() } },
+  });
+  const required = BigInt(
+    Math.max(
+      deployment.pricing.synthesize.maxRequestMicros,
+      deployment.pricing.transcribe.maxRequestMicros,
+    ),
+  );
+  return allowance && allowance.limitMicros - allowance.usedMicros >= required
+    ? deployment
+    : undefined;
+}
+
 /** Status must not decrypt a user's saved connection just to advertise capabilities. */
 export async function effectiveVoiceStatus(deps: VoiceDeps, actor: Actor, scope?: SettingsScope) {
   const cred = await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (cred) return toVoiceStatus(cred);
   const target = await voicePreferenceTarget(deps.prisma, actor, scope);
-  const deployment = target.scope === "account" ? deps.env?.deploymentVoice : undefined;
+  const deployment = target.scope === "account" ? await includedVoice(deps, actor) : undefined;
   return toVoiceStatus(
     deployment ? { provider: deployment.provider, voiceId: deployment.voiceId } : null,
   );
@@ -324,7 +342,7 @@ export async function loadVoiceCredential(
     ? await findVoiceCredential(deps.prisma, actor, provider, scope)
     : await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (!cred) {
-    const deployment = deps.env?.deploymentVoice;
+    const deployment = await includedVoice(deps, actor);
     const target = await voicePreferenceTarget(deps.prisma, actor, scope);
     // An explicit Space copy can intentionally have no voice. Named connections never fall back.
     if (provider || !deployment || target.scope === "space") return null;
@@ -817,7 +835,11 @@ async function withSpeechCost<T extends { usage?: VoiceUsage; providerRequestId?
   // If the request fails or is interrupted, pending evidence and its reservation survive.
   // Retrying audio automatically could charge twice, so recovery requires provider evidence.
   const result = await work();
-  await settleSpeech(deps.prisma, id, result.usage, result.providerRequestId);
+  // Intent is already durable. Losing the result would invite another paid request.
+  await bestEffort(
+    "Settle completed operator speech",
+    settleSpeech(deps.prisma, id, result.usage, result.providerRequestId),
+  );
   return result;
 }
 

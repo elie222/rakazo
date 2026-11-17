@@ -48,3 +48,8 @@ export class NoVoiceConfigured extends Error {
 
 export { isSpeechModelId, MAX_SPEAK_CHARS } from "./voice-http.js";
 export const MAX_TRANSCRIBE_BYTES = 8 * 1024 * 1024;
+
+export function voiceDeploymentModelSupported(provider: string, model: string): boolean {
+  const definition = knownVoiceProvider(provider);
+  return !!definition && (!definition.synthesisModel || definition.synthesisModel === model);
+}
