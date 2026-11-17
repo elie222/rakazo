@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolHost } from "./pi-runtime-tools.js";
-import { describeToolActivity, stepStatusOf, toAgentTools } from "./pi-runtime-tools.js";
+import {
+  describeToolActivity,
+  rememberStepStatus,
+  stepStatusOf,
+  toAgentTools,
+} from "./pi-runtime-tools.js";
 import type { RunContext } from "./run-context.js";
 import { isOpeningAcknowledgement } from "./run-progress.js";
 import {
@@ -56,6 +61,17 @@ describe("step status field", () => {
       const parameters = tool!.parameters as unknown as { properties?: Record<string, unknown> };
       expect(parameters.properties ?? {}).not.toHaveProperty("live_status");
       expect(host.narratedTools?.has("crm_call") ?? false).toBe(false);
+    });
+
+    it("keeps no status for a call without an id, so concurrent ones never share it", () => {
+      const host = { narratedTools: narrated } as ToolHost;
+      expect(rememberStepStatus(host, "", "shell", { live_status: "Listing files" })).toBe(
+        "Listing files",
+      );
+      rememberStepStatus(host, "", "shell", { live_status: "Reading the ledger" });
+      expect(host.stepStatuses?.has("") ?? false).toBe(false);
+      rememberStepStatus(host, "call-1", "shell", { live_status: "Listing files" });
+      expect(host.stepStatuses?.get("call-1")).toBe("Listing files");
     });
 
     it("leaves a tool's own status argument alone", () => {

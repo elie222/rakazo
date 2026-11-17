@@ -455,6 +455,8 @@ export function rememberStepStatus(
   args: unknown,
 ) {
   const status = stepStatusOf(toolName, args, host.narratedTools);
+  // Calls without an id would share one key, and a concurrent one could take another's status.
+  if (!callId) return status;
   if (status) {
     host.stepStatuses ??= new Map();
     host.stepStatuses.set(callId, status);
