@@ -1,59 +1,58 @@
-# Computer screen proxy and the opaque sandbox origin
+# Computer screen proxy: CORS for the sandboxed noVNC embed
 
-The live computer screen is a noVNC page loaded inside a sandboxed iframe
-(`sandbox allow-scripts allow-pointer-lock`). A sandboxed page without
-`allow-same-origin` runs with the opaque origin `null`, and every asset that
-page imports resolves relative to the proxy route, so each module script is a
-cross-origin request that must pass the browser's CORS check before it runs.
+## Why this exists
 
-## Why the screen can stay blank
+The computer screen panel embeds the computer's `embed.html` (chrome-less noVNC) in an
+iframe with `sandbox="allow-scripts allow-pointer-lock"`. Because the sandbox does not
+grant `allow-same-origin`, the document runs with an opaque origin (`Origin: null`) and
+every ES-module request it makes is a cross-origin request that carries side-channel
+credentials. Under the fetch spec a credentialed cross-origin response can never be
+accepted with the wildcard value `Access-Control-Allow-Origin: *`; the browser refuses
+the module and noVNC never boots, which the panel reports as "Screen not connected".
 
-The screen embed imports its JavaScript modules (for example the keyboard and
-clipboard bridges and noVNC core) as ES modules. When the web server answered
-those module requests with `Access-Control-Allow-Origin: *`, the check failed,
-because the page sends requests with credentials and a wildcard origin cannot
-answer a credentialed request. Chromium reports this as
-`net::ERR_FAILED` on the module fetch and logs "Access to script at ... has
-been blocked by CORS policy". The module never runs, so the page never opens
-its WebSocket to websockify and the surrounding app shows
-"Could not connect to the computer screen" even though the desktop, the screen
-gateway, and the WebSocket transport are all healthy.
+Plain `curl` probes never hit this because they send no `Origin` header, which is why the
+failure only appeared in real browsers while synthetic checks stayed green.
 
-Requests without browser `Origin` headers (for example curl, mobile WebView
-probes, or synthetic WebSocket clients) used to bypass the bug entirely, which
-made the failure hard to reproduce with anything but a real browser.
+## Root cause and fix
 
-This can affect self-hosted deployments and any environment where the screen
-route runs behind an access proxy (zrok, Cloudflare Access, or similar), since
-those proxies forward the browser's `Origin` header to the web server.
+`safeScreenProxyResponseHeaders` (in `@rakazo/core`) used to append
+`Access-Control-Allow-Origin: *` to every screen-proxied response. It now receives the
+request's `Origin` header (threaded from the web preview/screen proxy middleware) and:
 
-## The fix
+- echoes an opaque origin (`Origin: null`) exactly and adds
+  `Access-Control-Allow-Credentials: true`, which satisfies credentialed module loads
+  from the sandboxed iframe;
+- otherwise keeps the wildcard value for non-browser clients;
+- always adds `Origin` to the upstream `Vary` header so shared caches never serve one
+  origin's CORS answer to another.
 
-`safeScreenProxyResponseHeaders` now takes the request's `Origin` header:
+The injected `content-security-policy` sandbox is unchanged: upstream
+`allow-same-origin` policies are still refused, so the iframe cannot break out of its
+opaque origin.
 
-- For a sandboxed screen document (`Origin: null`) the module scripts answer
-  with `Access-Control-Allow-Origin: null` and
-  `Access-Control-Allow-Credentials: true`.
-- Every other request keeps `Access-Control-Allow-Origin: *`.
-- All screen answers add `Vary: Origin` so caches never reuse the wildcard
-  answer for the sandboxed one, in front of any `Vary` the upstream sent.
+## Operator note: tunnel interstitials in front of the share
 
-The preview middleware passes the incoming request's `Origin` along. Requests
-that skip the browser entirely still take the wildcard path.
+If the stack is exposed through a tunnel fronted by an interstitial consent page (for
+example zrok), subresource requests fired from the opaque sandbox origin are classified
+as cross-site for cookie-sending purposes. A `SameSite=Lax` consent cookie is therefore
+not attached to them, so the interstitial can answer those requests directly (a
+header-less HTML 200) before they ever reach the screen proxy, and the module loads fail
+again. In that topology, have the user load the share's top-level page once (the
+interstitial sets its own cookie with `SameSite=None` on that navigation) and retry the
+panel; the cookie then applies to the iframe's subresources too. If this recurs for a
+deployment, prefer an embedding path that keeps the screen assets same-site with the
+panel rather than relaxing the interstitial.
 
 ## Verifying a deployment
 
-1. Open a computer screen in the app and open browser devtools on the
-   network tab while filtering for `novnc/session`.
-2. The document request should answer with `text/html`, and the module
-   requests with `text/javascript`.
-3. With the `Origin: null` request header, the module responses must carry
-   `Access-Control-Allow-Origin: null` (and before the fix they carried only
-   a wildcard or nothing usable).
-4. The websocket request under the same route must upgrade (`101`) and the
-   screen should paint.
+With a freshly sealed screen capability URL from the app (the `/novnc/session/view/...`
+embed link, do not share or commit it):
 
-A deployment still showing the error after a proxy restart is likely running
-an app image built before this fix; check the image build date before
-debugging further. Proxy-level details such as rotating share URLs are
-deployment-specific and out of scope for this page.
+1. Fetch the embed document: expect `200`, `content-type: text/html`, the sandbox CSP,
+   and `vary` including `Origin`.
+2. Fetch one module URL (`clipboard-bridge.js` next to the document path) with the header
+   `Origin: null`: expect `200`, `content-type: text/javascript`,
+   `access-control-allow-origin: null`, and
+   `access-control-allow-credentials: true`.
+3. Open the panel in a real browser: the iframe should show a canvas (noVNC booted) and
+   the log should show the websocket upgrade, rather than "Screen not connected".
