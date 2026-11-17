@@ -35,9 +35,7 @@ const KINDS =
  */
 function certificateBundle(value: string): string {
   // A PEM bundle inline, or a path to one; read and check here, at startup.
-  const certificate = (
-    value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")
-  ).trim();
+  const certificate = (value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")).trim();
   const begins = certificate.match(/^-----BEGIN [^-]+-----$/gm) ?? [];
   const ends = certificate.match(/^-----END [^-]+-----$/gm) ?? [];
   if (
@@ -105,6 +103,9 @@ export function entraAuthFromEnv(env: NodeJS.ProcessEnv): EntraAuthConfig | unde
         OBJECT_STORAGE_CLIENT_ID: clientId,
         OBJECT_STORAGE_FEDERATED_TOKEN_FILE: tokenFile,
       });
+      // The SDK reads the token on each request; prove the file is readable now, so a missing
+      // mount fails at startup instead of on the first home save.
+      readFileSync(tokenFile!);
       return {
         kind: "federated-identity",
         tenant: tenant!,

@@ -102,18 +102,32 @@ describe("entraAuthFromEnv", () => {
   });
 
   it("reads a federated workload identity", () => {
-    expect(
-      entraAuthFromEnv({
-        OBJECT_STORAGE_AUTH: "federated-identity",
-        ...principal,
-        OBJECT_STORAGE_FEDERATED_TOKEN_FILE: "/var/run/secrets/tokens/oidc-token",
-      }),
-    ).toEqual({
-      kind: "federated-identity",
-      tenant: "directory",
-      clientId: "principal",
-      tokenFile: "/var/run/secrets/tokens/oidc-token",
-    });
+    const directory = mkdtempSync(join(tmpdir(), "entra-"));
+    try {
+      const tokenFile = join(directory, "oidc-token");
+      writeFileSync(tokenFile, "projected service account token");
+      expect(
+        entraAuthFromEnv({
+          OBJECT_STORAGE_AUTH: "federated-identity",
+          ...principal,
+          OBJECT_STORAGE_FEDERATED_TOKEN_FILE: tokenFile,
+        }),
+      ).toEqual({
+        kind: "federated-identity",
+        tenant: "directory",
+        clientId: "principal",
+        tokenFile,
+      });
+      expect(() =>
+        entraAuthFromEnv({
+          OBJECT_STORAGE_AUTH: "federated-identity",
+          ...principal,
+          OBJECT_STORAGE_FEDERATED_TOKEN_FILE: join(directory, "not-mounted"),
+        }),
+      ).toThrow(/ENOENT|not-mounted/);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("reads a managed identity, with and without a client id", () => {
