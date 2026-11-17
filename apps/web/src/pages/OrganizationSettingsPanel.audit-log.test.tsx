@@ -363,6 +363,23 @@ it("names what a credential change touched when the event has no target label", 
   expect(rows[2]).toContain("audit_log.exported");
 });
 
+it("names the actor by id when the event has no label, and by type only when it has neither", async () => {
+  api.events.mockResolvedValue({
+    events: [
+      event("e3", { actorType: "user", actorLabel: null, actorId: "user-1" }),
+      event("e2", { actorType: "user", actorLabel: "", actorId: "user-2" }),
+      event("e1", { actorType: "system", actorLabel: null, actorId: null }),
+    ],
+    nextCursor: null,
+  });
+  await open();
+
+  const actors = [...container.querySelectorAll('[data-testid="audit-log"] li')].map(
+    (row) => row.querySelector("span.flex > span")?.textContent,
+  );
+  expect(actors).toEqual(["user-1", "user-2", "system"]);
+});
+
 it.each(["FORBIDDEN", "UNAUTHORIZED"])(
   "sends a reader answered %s back to the organization page without an error",
   async (code) => {

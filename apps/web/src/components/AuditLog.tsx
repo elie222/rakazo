@@ -126,7 +126,7 @@ export function AuditLog({
               </div>
               <div className="flex flex-wrap justify-between gap-x-4 text-body-sm text-muted-foreground">
                 <span className="flex min-w-0 flex-wrap gap-x-3 break-words">
-                  <span>{event.actorLabel ?? event.actorType}</span>
+                  <span>{[event.actorLabel, event.actorId, event.actorType].find(Boolean)}</span>
                   {detailLabels(event).map((label) => (
                     <span key={label}>{label}</span>
                   ))}
