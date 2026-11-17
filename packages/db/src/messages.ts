@@ -66,34 +66,45 @@ export async function loadRunHistoryMessages(
     take: limit,
     select: HISTORY_MESSAGE_SELECT(run.botId),
   });
-  const earlierRuns = earlierResults
-    ? await prisma.run.findMany({
-        where: {
-          routineId: earlierResults.routineId,
-          threadId: run.threadId,
-          id: { not: run.id },
-          status: "completed",
-        },
-        orderBy: { createdAt: "desc" },
-        take: earlierResults.limit,
-        select: { id: true },
-      })
-    : [];
-  const earlier = earlierRuns.length
-    ? await prisma.message.findMany({
-        where: {
-          threadId: run.threadId,
-          role: "bot",
-          runId: { in: earlierRuns.map((earlierRun) => earlierRun.id) },
-          id: { notIn: recent.map((message) => message.id) },
-        },
-        orderBy: { seq: "desc" },
-        take: earlierResults?.limit,
-        select: HISTORY_MESSAGE_SELECT(run.botId),
-      })
-    : [];
-  const messages = [...recent, ...earlier].sort((left, right) => right.seq - left.seq);
+  const earlier = earlierResults ? await earlierRoutineResults(prisma, run, earlierResults) : [];
+  const recentIds = new Set(recent.map((message) => message.id));
+  const messages = [...recent, ...earlier.filter((message) => !recentIds.has(message.id))].sort(
+    (left, right) => right.seq - left.seq,
+  );
   return withOwnToolHistory(prisma, run, messages);
+}
+
+/** How many of a routine's latest runs to look through for replies; a run may have posted none. */
+const EARLIER_RUNS_SCANNED = 10;
+
+/** The last reply of each of the routine's latest completed runs that posted one. */
+async function earlierRoutineResults(
+  prisma: PrismaClient,
+  run: { id: string; threadId: string; botId: string },
+  earlier: { routineId: string; limit: number },
+) {
+  const runs = await prisma.run.findMany({
+    where: {
+      routineId: earlier.routineId,
+      threadId: run.threadId,
+      id: { not: run.id },
+      status: "completed",
+    },
+    orderBy: { createdAt: "desc" },
+    take: EARLIER_RUNS_SCANNED,
+    select: { id: true },
+  });
+  if (!runs.length) return [];
+  const replies = await prisma.message.findMany({
+    where: { threadId: run.threadId, role: "bot", runId: { in: runs.map(({ id }) => id) } },
+    orderBy: { seq: "desc" },
+    select: HISTORY_MESSAGE_SELECT(run.botId),
+  });
+  const lastReplies = new Map<string, (typeof replies)[number]>();
+  for (const reply of replies) {
+    if (reply.runId && !lastReplies.has(reply.runId)) lastReplies.set(reply.runId, reply);
+  }
+  return runs.flatMap(({ id }) => lastReplies.get(id) ?? []).slice(0, earlier.limit);
 }
 
 /**

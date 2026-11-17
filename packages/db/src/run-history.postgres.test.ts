@@ -115,11 +115,13 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
     expect(await history({ channelId: "channel-a" })).toEqual([ids.channel, ids.ownReply].sort());
   });
 
-  it("adds a routine's earlier results, however far back, to its latest messages", async () => {
+  it("adds the last reply of each earlier routine run that posted one, however far back", async () => {
     const routine = await system.routine.create({
       data: { spaceId, botId, userId, threadId, name: "Digest", prompt: "Send it", crons: [] },
     });
+    let created = Date.now() - 60_000;
     const routineRun = async (status: string) => {
+      created += 1_000;
       const task = await system.task.create({
         data: { spaceId, botId, threadId, userId, prompt: "Send it", status },
       });
@@ -133,32 +135,33 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
           status,
           trigger: "routine",
           routineId: routine.id,
+          createdAt: new Date(created),
         },
       });
     };
-    const earlier = await routineRun("completed");
+    const older = await routineRun("completed");
+    const newer = await routineRun("completed");
+    // Handed to a working run: completed, and posted nothing.
+    await routineRun("completed");
     const failed = await routineRun("failed");
     const current = await routineRun("running");
-    const { id: earlierResult } = await createThreadMessage(system, {
-      threadId,
-      role: "bot",
-      blocks: [{ kind: "text", text: "Digest: three items" }],
-      botId,
-    });
-    await system.message.update({ where: { id: earlierResult }, data: { runId: earlier.id } });
-    const { id: failedResult } = await createThreadMessage(system, {
-      threadId,
-      role: "bot",
-      blocks: [{ kind: "text", text: "Could not finish" }],
-      botId,
-    });
-    await system.message.update({ where: { id: failedResult }, data: { runId: failed.id } });
-    const { id: latest } = await createThreadMessage(system, {
-      threadId,
-      role: "user",
-      blocks: [{ kind: "text", text: "Thanks" }],
-      botId,
-    });
+    const posted: string[] = [];
+    const reply = async (runId: string, text: string, role: "bot" | "user" = "bot") => {
+      const { id } = await createThreadMessage(system, {
+        threadId,
+        role,
+        blocks: [{ kind: "text", text }],
+        botId,
+      });
+      posted.push(id);
+      if (role === "bot") await system.message.update({ where: { id }, data: { runId } });
+      return id;
+    };
+    const olderResult = await reply(older.id, "Digest: three items");
+    await reply(newer.id, "Your helper found four items");
+    const newerResult = await reply(newer.id, "Digest: four items");
+    await reply(failed.id, "Could not finish");
+    const latest = await reply(current.id, "Thanks", "user");
     try {
       const read = await runAsTenant({ spaceId, userId }, () =>
         loadRunHistoryMessages(prisma, current, 1, undefined, {
@@ -166,11 +169,9 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
           limit: 2,
         }),
       );
-      expect(read.map((message) => message.id)).toEqual([latest, earlierResult]);
+      expect(read.map((message) => message.id)).toEqual([latest, newerResult, olderResult]);
     } finally {
-      await system.message.deleteMany({
-        where: { id: { in: [earlierResult, failedResult, latest] } },
-      });
+      await system.message.deleteMany({ where: { id: { in: posted } } });
       await system.run.deleteMany({ where: { routineId: routine.id } });
       await system.routine.delete({ where: { id: routine.id } });
     }
