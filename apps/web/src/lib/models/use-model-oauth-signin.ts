@@ -57,9 +57,12 @@ export function useModelOAuthSignIn(options: {
   onErrorRef.current = onError;
   onClearErrorRef.current = onClearError;
 
-  /** Tells the server a step only this app sees, once per sign-in. */
-  function reportSignInStep(step: AnalyticsModelSignInStep) {
-    const loginId = oauthLoginIdRef.current;
+  /** Tells the server a step only this app sees, once per sign-in. A caller that waits
+   *  before reporting names the sign-in it began with, so a newer one never inherits it. */
+  function reportSignInStep(
+    step: AnalyticsModelSignInStep,
+    loginId: string | null = oauthLoginIdRef.current,
+  ) {
     const key = `${loginId}:${step}`;
     if (!loginId || reportedStepsRef.current.has(key)) return;
     reportedStepsRef.current.add(key);
@@ -197,7 +200,7 @@ export function useModelOAuthSignIn(options: {
         };
         await browserAuth.open(started.verificationUri);
         if (controller.signal.aborted) return;
-        reportSignInStep("page_opened");
+        reportSignInStep("page_opened", started.loginId);
       } else {
         // noopener returns null even when the tab opens. Detach a blank tab
         // before navigating so the handle can distinguish a blocked popup.

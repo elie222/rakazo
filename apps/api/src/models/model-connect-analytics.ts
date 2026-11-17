@@ -93,11 +93,13 @@ export async function startModelConnect(
       select: { modelConnectStarts: true },
     }),
   );
-  const attempt = counted?.modelConnectStarts;
-  const tried = { ...(surface ? { surface } : {}), ...(attempt ? { attempt } : {}) };
+  // A try that could not be numbered is left out whole, so none starts without an outcome.
+  if (!counted) return { record: () => {} };
+  const attempt = counted.modelConnectStarts;
+  const tried = { ...(surface ? { surface } : {}), attempt };
   const record = recorder(analytics, actor.userId, method, tried);
   record(provider, { name: "model_connect_started" });
-  return { record, ...(attempt ? { measure: { ...tried, attempt } } : {}) };
+  return { record, measure: tried };
 }
 
 /**

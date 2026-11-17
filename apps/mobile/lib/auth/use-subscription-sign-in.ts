@@ -63,10 +63,10 @@ export function useSubscriptionSignIn({
 
   const reportedStepsRef = useRef(new Set<string>());
 
-  /** Tells the server a step only this app sees, once per sign-in. */
+  /** Tells the server a step only this app sees, once per sign-in. The caller names the
+   *  sign-in it began with, so a newer one never inherits a step that settles late. */
   const reportSignInStep = useCallback(
-    (step: AnalyticsModelSignInStep) => {
-      const loginId = oauthLoginIdRef.current;
+    (step: AnalyticsModelSignInStep, loginId: string | null) => {
       const key = `${loginId}:${step}`;
       if (!loginId || reportedStepsRef.current.has(key)) return;
       reportedStepsRef.current.add(key);
@@ -77,17 +77,19 @@ export function useSubscriptionSignIn({
 
   const openSignInPage = useCallback(
     async (url: string) => {
+      const loginId = oauthLoginIdRef.current;
       await Linking.openURL(url);
-      reportSignInStep("page_opened");
+      reportSignInStep("page_opened", loginId);
     },
     [reportSignInStep],
   );
 
   const copyOAuthCode = useCallback(
     (code: string) => {
+      const loginId = oauthLoginIdRef.current;
       void Clipboard.setStringAsync(code)
         .then(() => {
-          reportSignInStep("code_copied");
+          reportSignInStep("code_copied", loginId);
           setCodeCopied(true);
           if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
           codeCopiedTimerRef.current = setTimeout(() => setCodeCopied(false), 1600);

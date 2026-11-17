@@ -92,6 +92,18 @@ describe("model connect analytics", () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
+  it("leaves out a try it could not number, so none starts without an outcome", async () => {
+    const { deps, capture, update } = measuredDeps();
+    modelSetup.mockResolvedValue({ needsModel: true });
+    update.mockRejectedValueOnce(new Error("db unavailable"));
+
+    const started = await startModelConnect(deps, actor, "oauth", "openai-codex", "web");
+    started.record("openai-codex", { name: "model_connected" });
+
+    expect(started.measure).toBeUndefined();
+    expect(capture).not.toHaveBeenCalled();
+  });
+
   it("reduces a failed try to its kind and keeps the key out", async () => {
     const { deps, capture } = measuredDeps();
     modelSetup.mockResolvedValue({ needsModel: true });

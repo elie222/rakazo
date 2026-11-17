@@ -148,8 +148,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     },
   });
   const copyOAuthCode = (code: string) => {
+    const loginId = oauth?.loginId;
     void copyText(code).then((copied) => {
-      if (copied) reportSignInStep("code_copied");
+      if (copied) reportSignInStep("code_copied", loginId);
     });
   };
 

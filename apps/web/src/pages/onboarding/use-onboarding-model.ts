@@ -98,8 +98,9 @@ export function useOnboardingModel({
   });
   const { oauthPending, cancelOAuthAttempt, startSubscriptionSignIn } = signIn;
   const copyOAuthCode = (code: string) => {
+    const loginId = signIn.oauth?.loginId;
     void copyText(code).then((copied) => {
-      if (copied) signIn.reportSignInStep("code_copied");
+      if (copied) signIn.reportSignInStep("code_copied", loginId);
     });
   };
 
