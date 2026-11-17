@@ -231,6 +231,7 @@ export async function loadRunRecords(
         providerRef: true,
         displayName: true,
         status: true,
+        updatedAt: true,
       },
     }),
     pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
