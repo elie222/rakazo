@@ -963,6 +963,8 @@ export async function updateScheduleFromTool(
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
+      // A watch added since the read keeps its routine alongside the chat.
+      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
     },
     data: {
       // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch

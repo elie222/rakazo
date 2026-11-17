@@ -192,6 +192,83 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
     }
   });
 
+  it("fills a routine's window with what it may read, without others' replies or reply targets", async () => {
+    const posted: string[] = [];
+    const add = async (
+      role: "user" | "bot",
+      blocks: unknown[],
+      extra: { runId?: string; authorUserId?: string; replyToMessageId?: string } = {},
+    ) => {
+      const { id } = await createThreadMessage(system, {
+        threadId,
+        role,
+        blocks: [{ kind: "text", text: "placeholder" }],
+        botId,
+        ...(extra.authorUserId ? { authorUserId: extra.authorUserId } : {}),
+      });
+      await system.message.update({
+        where: { id },
+        data: {
+          blocks: blocks as never,
+          ...(extra.runId ? { runId: extra.runId } : {}),
+          ...(extra.replyToMessageId ? { replyToMessageId: extra.replyToMessageId } : {}),
+        },
+      });
+      posted.push(id);
+      return id;
+    };
+    const task = await system.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "fixture", status: "completed" },
+    });
+    const ownerTurn = await system.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId,
+        taskId: task.id,
+        userId,
+        status: "completed",
+        trigger: "user",
+      },
+    });
+    const routineRun = await system.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId,
+        taskId: task.id,
+        userId,
+        status: "running",
+        trigger: "routine",
+      },
+    });
+    const text = (body: string) => [{ kind: "text", text: body }];
+    const ask = await add("user", text("Plan the launch"), {
+      authorUserId: userId,
+      replyToMessageId: ids.channel,
+    });
+    const answer = await add("bot", text("Here is the plan"), { runId: ownerTurn.id });
+    // A message whose entries cannot all be read, then a dozen replies to a connected channel.
+    await add("user", [{ kind: "text", text: "Fine" }, { text: "no kind" }], {
+      authorUserId: userId,
+    });
+    for (let reply = 0; reply < 12; reply += 1)
+      await add("bot", text(`Channel reply ${reply}`), { runId });
+    try {
+      const read = await runAsTenant({ spaceId, userId }, () =>
+        loadRunHistoryMessages(prisma, routineRun, 2, undefined, {
+          routineId: "no-routine",
+          earlierResults: 0,
+        }),
+      );
+      expect(read.map((message) => message.id)).toEqual([answer, ask]);
+      expect(read[1]).toMatchObject({ replyToMessageId: null, replyTo: null, replyQuote: null });
+    } finally {
+      await system.message.deleteMany({ where: { id: { in: posted } } });
+      await system.run.deleteMany({ where: { id: { in: [ownerTurn.id, routineRun.id] } } });
+    }
+  });
+
   it("gives a run that does not know its channel only its waking message and own replies", async () => {
     expect(await history({ sourceMessageId: ids.lostMarker })).toEqual(
       [ids.lostMarker, ids.ownReply].sort(),

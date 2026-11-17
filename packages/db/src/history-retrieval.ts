@@ -17,7 +17,7 @@ import {
   historyReadText,
   historySearchText,
 } from "./history-text.js";
-import { OWNER_TURN_TRIGGERS } from "./messages.js";
+import { routineReadableSql } from "./messages.js";
 
 export { historyMessageText, historyReadText };
 
@@ -194,16 +194,7 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
       )))`
         : Prisma.empty
     }
-    ${
-      scope.ownerOnly
-        ? Prisma.sql`AND (
-      (m.role = 'user' AND m."authorUserId" = ${scope.ownerOnly}
-        AND NOT m.blocks @> ${JSON.stringify([{ kind: "channel_message" }])}::jsonb)
-      OR (m.role = 'bot' AND m."botId" = ${scope.botId} AND EXISTS (
-        SELECT 1 FROM runs owned WHERE owned.id = m."runId" AND owned."userId" = ${scope.ownerOnly}
-          AND owned.trigger IN (${Prisma.join([...OWNER_TURN_TRIGGERS])}))))`
-        : Prisma.empty
-    }
+    ${scope.ownerOnly ? Prisma.sql`AND ${routineReadableSql(scope.ownerOnly, scope.botId)}` : Prisma.empty}
   `;
 }
 /** Raw reads bypass the client extension, so decrypt here. */

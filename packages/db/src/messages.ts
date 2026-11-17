@@ -1,6 +1,7 @@
 import type { MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
 import { splitToolHistory } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { markThreadUnreadForMembers } from "./thread-reads.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
@@ -35,7 +36,22 @@ const HISTORY_MESSAGE_SELECT = (botId: string) =>
  * reply to anyone else, a connected channel or another bot can carry their words, so a routine
  * run leaves it out.
  */
-export const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine"] as const;
+const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine"];
+
+/**
+ * What a routine run may read of its chat (messages aliased `m`): its owner's own messages and this
+ * bot's replies in turns the owner started. A message from a connected channel, or whose blocks
+ * cannot all be read as entries with a kind, is left out.
+ */
+export function routineReadableSql(ownerId: string, botId: string): Prisma.Sql {
+  return Prisma.sql`(
+    (m.role = 'user' AND m."authorUserId" = ${ownerId}
+      AND jsonb_typeof(m.blocks) = 'array'
+      AND NOT jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "channel_message" || !(exists(@.kind)))'))
+    OR (m.role = 'bot' AND m."botId" = ${botId} AND EXISTS (
+      SELECT 1 FROM runs owned WHERE owned.id = m."runId" AND owned."userId" = ${ownerId}
+        AND owned.trigger IN (${Prisma.join(OWNER_TURN_TRIGGERS)}))))`;
+}
 
 /**
  * Group turns use channel inputs and their own outputs, never private thread history.
@@ -54,18 +70,19 @@ export async function loadRunHistoryMessages(
    */
   routine?: { routineId: string; earlierResults: number },
 ) {
+  const readableIds = routine
+    ? (
+        await prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT m.id FROM messages m
+          WHERE m."threadId" = ${run.threadId} AND ${routineReadableSql(run.userId, run.botId)}
+          ORDER BY m.seq DESC
+          LIMIT ${limit}`
+      ).map(({ id }) => id)
+    : undefined;
   const recent = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
-      ...(routine
-        ? {
-            OR: [
-              { role: "user", authorUserId: run.userId },
-              { role: "bot", botId: run.botId },
-            ],
-            NOT: { blocks: { array_contains: [{ kind: "channel_message" }] } },
-          }
-        : {}),
+      ...(readableIds ? { id: { in: readableIds } } : {}),
       ...(groupTurn
         ? {
             OR: [
@@ -86,40 +103,20 @@ export async function loadRunHistoryMessages(
     take: limit,
     select: HISTORY_MESSAGE_SELECT(run.botId),
   });
-  const ownerReplies = routine ? await ownerTurnRunIds(prisma, run.userId, recent) : undefined;
-  const readable = ownerReplies
-    ? recent.filter(
-        (message) => message.role === "user" || (message.runId && ownerReplies.has(message.runId)),
-      )
-    : recent;
   const earlier = routine?.earlierResults
     ? await earlierRoutineResults(prisma, run, {
         routineId: routine.routineId,
         limit: routine.earlierResults,
       })
     : [];
-  const recentIds = new Set(readable.map((message) => message.id));
-  const messages = [...readable, ...earlier.filter((message) => !recentIds.has(message.id))].sort(
-    (left, right) => right.seq - left.seq,
-  );
+  const recentIds = new Set(recent.map((message) => message.id));
+  const messages = [...recent, ...earlier.filter((message) => !recentIds.has(message.id))]
+    .sort((left, right) => right.seq - left.seq)
+    // What a message replied to may be anyone's, so a routine reads no reply targets.
+    .map((message) =>
+      routine ? { ...message, replyToMessageId: null, replyQuote: null, replyTo: null } : message,
+    );
   return withOwnToolHistory(prisma, run, messages);
-}
-
-/** Of the runs behind these replies, the ones their owner started themselves. */
-async function ownerTurnRunIds(
-  prisma: PrismaClient,
-  ownerId: string,
-  messages: Array<{ role: string; runId: string | null }>,
-): Promise<Set<string>> {
-  const runIds = [
-    ...new Set(messages.flatMap((m) => (m.role === "bot" && m.runId ? [m.runId] : []))),
-  ];
-  if (!runIds.length) return new Set();
-  const runs = await prisma.run.findMany({
-    where: { id: { in: runIds }, userId: ownerId, trigger: { in: [...OWNER_TURN_TRIGGERS] } },
-    select: { id: true },
-  });
-  return new Set(runs.map(({ id }) => id));
 }
 
 /**
