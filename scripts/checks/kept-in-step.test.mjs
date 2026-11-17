@@ -80,3 +80,13 @@ test("table column widths are capped at the cell's own max-width", () => {
     ),
   );
 });
+
+test("Depot's pull request test workflow is the one GitHub runs on main", () => {
+  const [depot, github] = [".depot", ".github"].map((folder) =>
+    readFileSync(path.join(root, folder, "workflows/test-suites.yml"), "utf8"),
+  );
+  assert.ok(
+    depot === github,
+    "copy .github/workflows/test-suites.yml to .depot/workflows/test-suites.yml",
+  );
+});
