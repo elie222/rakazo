@@ -99,7 +99,33 @@ suite("operator speech costs (PostgreSQL)", () => {
     expect((await system.speechCost.findUniqueOrThrow({ where: { id } })).state).toBe("confirmed");
     await expect(
       runAsTenant(actor, () => confirmSpeechCost(db.prisma, id, evidence)),
-    ).rejects.toThrow("system context");
+    ).rejects.toMatchObject({
+      kind: "FORBIDDEN",
+      message: "Speech reconciliation requires system context",
+    });
+  });
+  it("classifies cross-account and cross-Space speech access as forbidden", async () => {
+    const id = await admit();
+    for (const other of [
+      { ...actor, userId: "another-account" },
+      { ...actor, spaceId: "another-space" },
+    ]) {
+      await expect(
+        runAsTenant(other, () =>
+          admitSpeech(db.prisma, actor, "test-provider", "synthesize", price),
+        ),
+      ).rejects.toMatchObject({ kind: "FORBIDDEN" });
+      await expect(
+        runAsTenant(other, () =>
+          settleSpeech(db.prisma, id, { model: price.model, unit: price.unit, units: 1 }),
+        ),
+      ).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    }
+    expect(await used()).toBe(100n);
+    expect(await system.speechCost.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      state: "pending",
+      accountedMicros: 100n,
+    });
   });
   it("classifies invalid reconciliation evidence and missing cost rows", async () => {
     await expect(

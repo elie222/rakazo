@@ -22,12 +22,12 @@ export async function admitSpeech(
   price: SpeechPrice,
 ) {
   const context = currentDbContext();
+  if (!context) throw new Error("Speech admission requires the owning account context");
   if (
-    !context ||
-    (context.kind === "tenant" &&
-      (context.userId !== scope.userId || context.spaceId !== scope.spaceId))
+    context.kind === "tenant" &&
+    (context.userId !== scope.userId || context.spaceId !== scope.spaceId)
   )
-    throw new Error("Speech admission requires the owning account context");
+    throw new ClientError("FORBIDDEN", "Speech admission requires the owning account context");
   const id = randomUUID();
   await runAsSystem("Admit operator-funded speech for the authenticated account", () =>
     prisma.$transaction(async (tx) => {
@@ -77,7 +77,7 @@ export async function settleSpeech(
         context.kind === "tenant" &&
         (row.userId !== context.userId || row.spaceId !== context.spaceId)
       )
-        throw new Error("Speech settlement requires the owning account context");
+        throw new ClientError("FORBIDDEN", "Speech settlement requires the owning account context");
       const matches =
         usage &&
         usage.model === row.model &&
@@ -113,8 +113,10 @@ export async function confirmSpeechCost(
   id: string,
   evidence: { costMicros: bigint; source: string; reference: string },
 ) {
-  if (currentDbContext()?.kind !== "system")
-    throw new Error("Speech reconciliation requires system context");
+  const context = currentDbContext();
+  if (!context) throw new Error("Speech reconciliation requires system context");
+  if (context.kind !== "system")
+    throw new ClientError("FORBIDDEN", "Speech reconciliation requires system context");
   if (evidence.costMicros < 0n || !evidence.source || !evidence.reference)
     throw new ClientError("BAD_REQUEST", "Invalid speech cost evidence");
   await prisma.$transaction(async (tx) => {
