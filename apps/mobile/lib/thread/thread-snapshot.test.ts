@@ -108,11 +108,30 @@ describe("visible thread snapshot publication", () => {
       ],
     };
     const reordered = { ...messages, messages: [...messages.messages].reverse() };
-    expect(reconcileVisibleThreadSnapshot(messages, reordered)).toBe(reordered);
+    expect(reconcileVisibleThreadSnapshot(messages, reordered)).toEqual(reordered);
     const edited = structuredClone(messages);
     edited.messages[0]!.blocks = [{ kind: "text", text: "Edited" }];
-    expect(reconcileVisibleThreadSnapshot(messages, edited)).toBe(edited);
+    expect(reconcileVisibleThreadSnapshot(messages, edited)).toEqual(edited);
     expect(reconcileVisibleThreadSnapshot(null, previous)).toBe(previous);
     expect(reconcileVisibleThreadSnapshot(previous, null)).toBeNull();
+  });
+
+  it("keeps unchanged messages when the snapshot around them changes", () => {
+    const shown: MobileSnapshot = {
+      ...snapshot(),
+      messages: [
+        { id: "message-1", role: "user", blocks: [{ kind: "text", text: "Hi" }] },
+        { id: "message-2", role: "bot", blocks: [{ kind: "text", text: "Working" }] },
+      ],
+    };
+    const refreshed = structuredClone(shown);
+    refreshed.run = null;
+    refreshed.messages[1]!.blocks = [{ kind: "text", text: "Done" }];
+
+    const next = reconcileVisibleThreadSnapshot(shown, refreshed);
+
+    expect(next).toEqual(refreshed);
+    expect(next?.messages[0]).toBe(shown.messages[0]);
+    expect(next?.messages[1]).toBe(refreshed.messages[1]);
   });
 });

@@ -5,6 +5,7 @@ import { rpc } from "../api/api";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
 import { retainUnchangedBotRoster } from "../bots/bot-roster";
 import { loadSavedInbox } from "../inbox/saved-chats";
+import { queryClient, rpcQuery } from "../query/query";
 
 /** The bots and groups a chat can mention, refreshed on demand; also keeps the chat's title current. */
 export function useThreadBots({
@@ -35,7 +36,11 @@ export function useThreadBots({
   const mentionGroupsAppliedGeneration = useRef(0);
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
-  const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
+  // The roster the last chat in this Space loaded, so rows draw with their bot colours at once
+  // and the refresh only redraws them when the roster changed.
+  const [mentionBots, setMentionBots] = useState<MobileBot[]>(
+    () => queryClient.getQueryData(rpcQuery("bots/list").queryKey) ?? [],
+  );
   // The call outlives renders, so its switch check reads the newest bot list from here.
   const mentionBotsRef = useRef<MobileBot[]>([]);
   mentionBotsRef.current = mentionBots;
@@ -49,8 +54,10 @@ export function useThreadBots({
       mounted.current &&
       activeTarget.current.botId === botId &&
       activeTarget.current.groupId === groupId;
+    const read = rpcQuery("bots/list");
     try {
       const bots = await rpc("bots/list");
+      queryClient.setQueryData(read.queryKey, bots);
       // Apply any successful response that is still the newest applied so far.
       // A later failed refresh must not discard an earlier success.
       if (generation < mentionBotsAppliedGeneration.current) return;

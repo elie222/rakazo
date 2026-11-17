@@ -7,12 +7,17 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "../api/api";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
+import { queryClient } from "../query/query";
 import { useThreadBots } from "./thread-bots";
 
 const router = vi.hoisted(() => ({ setParams: vi.fn() }));
 vi.mock("expo-router", () => ({ useRouter: () => router }));
 vi.mock("../api/api", () => ({ rpc: vi.fn() }));
 vi.mock("../inbox/saved-chats", () => ({ loadSavedInbox: vi.fn(async () => null) }));
+vi.mock("../query/query", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  return { queryClient: new QueryClient(), rpcQuery: (proc: string) => ({ queryKey: [proc] }) };
+});
 
 const group = (id: string, name: string) => ({ id, name }) as MobileGroup;
 
@@ -30,6 +35,7 @@ describe("thread roster refresh", () => {
   }
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     root = createRoot(document.createElement("div"));
     vi.mocked(rpc).mockImplementation(async () => []);
@@ -54,6 +60,27 @@ describe("thread roster refresh", () => {
       ]);
     },
   );
+
+  it("starts from the roster the last chat loaded and keeps it when the refresh matches", async () => {
+    const bots = [{ id: "bot-1", name: "Bot" }] as MobileBot[];
+    vi.mocked(rpc).mockImplementation(async (method) =>
+      method === "bots/list" ? structuredClone(bots) : [],
+    );
+    await act(async () => root.render(createElement(Thread, { botId: "bot-1" })));
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    act(() => root.unmount());
+    root = createRoot(document.createElement("div"));
+
+    await act(async () => root.render(createElement(Thread, { botId: "bot-2" })));
+    const shown = state.mentionBots;
+    expect(shown).toEqual(bots);
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    expect(state.mentionBots).toBe(shown);
+  });
 
   it("refreshes the group title and mention roster when returning from settings", async () => {
     let groups = [group("group-1", "Old name")];
