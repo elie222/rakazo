@@ -904,7 +904,6 @@ export function ThreadComposer({
   );
 }
 
-/** Beside the text on one line; once it wraps, a row of its own under it. */
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   const tokens = useMobileTokens();
   if (mention.kind === "bot") {
