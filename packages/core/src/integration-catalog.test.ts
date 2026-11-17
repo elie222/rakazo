@@ -55,6 +55,8 @@ describe("signInMcpServers", () => {
             auth: { type: "header", headerName: "x-api-key", note: null },
           },
           { kind: "mcp", source: "http://code.example/mcp", auth: oauth },
+          { kind: "mcp", source: "https://user:secret@code.example/mcp", auth: oauth },
+          { kind: "mcp", source: "https://code.example/mcp#tools", auth: oauth },
           { kind: "openapi", source: "https://code.example/openapi.json", auth: oauth },
           { kind: "mcp", source: null, auth: oauth },
         ]),

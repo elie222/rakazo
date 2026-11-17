@@ -174,6 +174,7 @@ import {
 import { LabFeatureSchema } from "./labs.js";
 import {
   BotMcpServerSchema,
+  McpRemoteEndpointSchema,
   McpServerConfigInput,
   McpServerSchema,
   McpSourcePresetSchema,
@@ -1253,7 +1254,7 @@ export const appContract = {
         .input(
           z.object({
             name: z.string().trim().min(1).max(120),
-            endpoint: z.string().url().max(2048),
+            endpoint: McpRemoteEndpointSchema,
             botId: Id.optional(),
             redirectUri: z.string().url().optional(),
             client: McpOAuthClientKindSchema,

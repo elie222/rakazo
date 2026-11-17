@@ -208,6 +208,7 @@ export function mcpRoutes(ctx: RouterContext) {
                 await lockOwner(tx, actor.userId, "mcp-connect");
                 const rows = await tx.mcpServer.findMany({
                   where: { ...availableInSpace(actor), enabled: true, endpoint: { not: null } },
+                  include: { availableIn: AVAILABILITY_SELECT },
                   orderBy: { createdAt: "asc" },
                 });
                 const existing = rows.find((row) => new URL(row.endpoint!).href === endpoint);
@@ -664,12 +665,6 @@ export function mcpRoutes(ctx: RouterContext) {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
           });
-          // A bot removed since the sign-in began has nothing to get. Any other failure fails
-          // the sign-in: signing in again finds the server connected and gives it to the bot.
-          if (botId)
-            await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) => {
-              if (!(error instanceof IsolationError)) throw error;
-            });
           // A check from before the sign-in would otherwise still read as failing. Only this
           // sign-in's revision: an edit since then has its own health and its own check.
           await recordMcpServerHealth(
@@ -690,6 +685,12 @@ export function mcpRoutes(ctx: RouterContext) {
                 await mcpOAuth.summaryFor(server, context.actor),
               );
           })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
+          // A bot removed since the sign-in began has nothing to get. Any other failure fails
+          // the call: signing in again finds the server connected and gives it to the bot.
+          if (botId)
+            await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) => {
+              if (!(error instanceof IsolationError)) throw error;
+            });
           return { ok: true as const };
         }),
         disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
