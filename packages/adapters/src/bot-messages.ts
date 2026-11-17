@@ -3,7 +3,6 @@ import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
   botMessageContext,
-  botMessageHopExhausted,
   botMessageWaitingText,
   buildBotMessageWakePrompt,
   clampBotMessage,
@@ -114,21 +113,6 @@ export async function messageBot(
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
   const returnFrom = options?.returnFrom;
-  const returnsToSender =
-    returnFrom !== undefined &&
-    (intent === "result" || intent === "status") &&
-    (sourceContext?.intent === undefined ||
-      sourceContext.intent === "request" ||
-      sourceContext.intent === "question") &&
-    sourceContext?.fromBotId === target.id;
-  if (botMessageHopExhausted(hop) && !returnsToSender) {
-    return {
-      ok: false as const,
-      error:
-        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
-    };
-  }
-
   const targetThreadId = target.thread.id;
 
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
