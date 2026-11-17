@@ -25,6 +25,8 @@ interface MemoryConformanceFixture {
 
 const LAN_SERVER = "https://192.168.1.20";
 const PUBLIC_SERVER = "https://memory.example.com";
+/** A public-looking name whose DNS answer is a private address. */
+const REBOUND_SERVER = "https://rebound.example.com";
 /** Nothing listens on port 1, so a request is refused at once without leaving this machine. */
 const CLOSED_SERVER = "http://127.0.0.1:1";
 const OTHER_SERVER = "https://memory.example.org";
@@ -62,6 +64,13 @@ const fixtures: Record<MemoryProviderId, MemoryConformanceFixture> = {
     elsewhere: { mode: "cloud", baseUrl: OTHER_SERVER, recallBanks: "other-bank" },
   },
 };
+
+/** DNS answers for the suite: the rebound name is private, every other name public. */
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async (hostname: string) => [
+    { address: hostname.startsWith("rebound.") ? "10.0.0.5" : "203.0.113.10", family: 4 },
+  ]),
+}));
 
 /** Any request fails the test: the suite never needs a server. */
 function blockNetwork() {
@@ -110,13 +119,29 @@ describe.each(ids)("%s memory conformance", (id) => {
     expect(definition.requiresPrivateEndpoint(fixture.selfHosted(CLOSED_SERVER))).toBe(true);
   });
 
+  it("decides consent by the address a self-hosted server resolves to", async () => {
+    const fetch = blockNetwork();
+    const needsConsent = async (server: string) =>
+      definition.requiresPrivateEndpoint(
+        (await definition.classifySettings?.(fixture.selfHosted(server))) ??
+          fixture.selfHosted(server),
+      );
+    expect(await needsConsent(PUBLIC_SERVER)).toBe(false);
+    expect(await needsConsent(LAN_SERVER)).toBe(true);
+    expect(await needsConsent(CLOSED_SERVER)).toBe(true);
+    expect(await needsConsent(REBOUND_SERVER)).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("refuses a private server without consent before sending anything", async () => {
     const fetch = blockNetwork();
-    await expect(
-      definition.prepare(fixture.selfHosted(LAN_SERVER), fixture.credentials, {
-        allowPrivateEndpoint: false,
-      }),
-    ).rejects.toThrow();
+    for (const server of [LAN_SERVER, REBOUND_SERVER]) {
+      await expect(
+        definition.prepare(fixture.selfHosted(server), fixture.credentials, {
+          allowPrivateEndpoint: false,
+        }),
+      ).rejects.toThrow();
+    }
     expect(fetch).not.toHaveBeenCalled();
   });
 

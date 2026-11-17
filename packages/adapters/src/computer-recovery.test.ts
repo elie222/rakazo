@@ -13,12 +13,12 @@ import {
   provisionComputer,
   replaceComputer,
 } from "./computer-lifecycle.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import type { AgentHomeRecords, StoredHome } from "./home-object-store.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { InMemoryJobQueue } from "./wakeup.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.

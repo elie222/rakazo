@@ -38,8 +38,9 @@ const ReplySnapshotSchema = z.object({
 export type ReplySnapshot = z.infer<typeof ReplySnapshotSchema>;
 
 /**
- * What a turn handed back between steps has built of its reply, saved with its checkpoint. The
- * resumed attempt reruns none of those steps, so it finishes the reply from here.
+ * What a turn handed back between steps, or paused for an answer, approval or takeover, has built
+ * of its reply, saved with its checkpoint. The resumed attempt reruns none of those steps, so it
+ * finishes the reply from here.
  */
 export function snapshotReply(reply: ReplyState): ReplySnapshot {
   const shot = reply.latestScreenshot;
@@ -81,9 +82,9 @@ export function snapshotReply(reply: ReplyState): ReplySnapshot {
 }
 
 /**
- * Continues the reply a handed-back attempt saved. A checkpoint without one (a pause, or an
- * older release) starts the reply empty, as before. One this release cannot read is reported as
- * an error and also starts empty: its steps are lost, and nothing better is left to restore.
+ * Continues the reply a handed-back or paused attempt saved. A checkpoint without one (an older
+ * release) starts the reply empty, as before. One this release cannot read is reported as an
+ * error and also starts empty: its steps are lost, and nothing better is left to restore.
  */
 export function restoreReply(reply: ReplyState, saved: unknown, runId: string): void {
   if (saved === undefined) return;

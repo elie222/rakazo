@@ -36,8 +36,8 @@ import {
   waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { SandboxUnsafeStopError } from "./sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.

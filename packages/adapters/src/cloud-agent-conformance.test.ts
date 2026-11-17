@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import { CursorCloudAgentEmulator, EmulatorCloudAgentProvider } from "./cloud-agent-emulator.js";
 import { cloudAgentsEnabled, createCloudAgentConnection } from "./cloud-agent-factory.js";
 import { resolveCloudAgentProvider } from "./cloud-agent-provider-env.js";
-import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
-import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
-import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
+import { CursorCloudAgentProvider } from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
+import { T3CodeCloudAgentProvider } from "./providers/cloud-agent/t3code/t3code-cloud-agent.js";
+import {
+  T3_TOKEN,
+  T3McpEmulator,
+} from "./providers/cloud-agent/t3code/t3code-mcp-emulator.test-support.js";
 
 const ctx: AdapterContext = {
   operationId: "operation",

@@ -1,8 +1,8 @@
-import { hindsightMemory } from "./hindsight-memory.js";
-import { honchoMemory } from "./honcho-memory.js";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
-import { serenityMemory } from "./serenity-memory.js";
-import { supermemoryMemory } from "./supermemory-memory.js";
+import { hindsightMemory } from "./providers/memory/hindsight/hindsight-memory.js";
+import { honchoMemory } from "./providers/memory/honcho/honcho-memory.js";
+import { serenityMemory } from "./providers/memory/serenity/serenity-memory.js";
+import { supermemoryMemory } from "./providers/memory/supermemory/supermemory-memory.js";
 
 /**
  * Every memory provider this build has, by id. The factory, Settings and the conformance

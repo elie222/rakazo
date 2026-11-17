@@ -142,8 +142,6 @@ vi.mock("react-native-svg", () => ({
   default: () => null,
   Path: () => null,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => server.base,
   selectedSpaceId: () => null,

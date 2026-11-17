@@ -93,9 +93,8 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
 }));
+// The real server client reads React Native's __DEV__ global, which tests do not define.
 vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://example.test",
   selectedSpaceId: () => "space-a",

@@ -133,6 +133,7 @@ export async function loadTurnContext(
       id: message.id,
       role: message.role,
       runId: message.runId,
+      createdAt: message.createdAt,
       blocks: storedMessageBlocks(message),
     }));
   const currentTurnMessage = userTurnMessageForRun(

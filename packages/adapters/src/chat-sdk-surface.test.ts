@@ -10,7 +10,7 @@ import {
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
   providerOfThreadId,
 } from "./chat-sdk-surface.js";
-import { enrichSlackTeamRoom } from "./slack-messaging.js";
+import { enrichSlackTeamRoom } from "./providers/messaging/slack/slack-messaging.js";
 import { toTeamChatInbound } from "./team-chat-messaging.js";
 
 const context: AdapterContext = {

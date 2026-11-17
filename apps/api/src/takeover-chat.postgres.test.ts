@@ -221,6 +221,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const jobs: JobPublisher = {
       enqueue,
       enqueueIn: vi.fn(async () => undefined),
+      enqueueManyIn: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       close: async () => undefined,

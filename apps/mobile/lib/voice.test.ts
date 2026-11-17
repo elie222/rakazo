@@ -66,8 +66,6 @@ vi.mock("./live-notifications", () => ({
 }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   aiConsentCoalesceKey: vi.fn(() => "test-consent-context"),
   allowPromptedAiConsent: vi.fn(async () => undefined),

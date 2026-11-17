@@ -2,7 +2,10 @@ import type { BillingProvider, BillingSubscriptionStatus } from "@rakazo/adapter
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { BillingEmulator } from "./billing-emulator.js";
-import { StripeBillingProvider, signStripeWebhook } from "./stripe-billing.js";
+import {
+  StripeBillingProvider,
+  signStripeWebhook,
+} from "./providers/billing/stripe/stripe-billing.js";
 import { StripeEmulator } from "./testing/stripe-emulator.js";
 
 const NOW = Date.UTC(2026, 0, 1);

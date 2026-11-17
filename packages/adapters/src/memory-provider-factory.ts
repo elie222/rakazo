@@ -6,7 +6,7 @@ import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
 import { knownMemoryProvider, memoryProviders } from "./memory-providers.js";
 
-export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
+export { MemoryProviderPrivateEndpointRequiredError } from "./providers/memory/serenity/serenity-memory-provider.js";
 
 export interface MemoryProviderConnectionInput {
   provider: string;
