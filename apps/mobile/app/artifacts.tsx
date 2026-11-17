@@ -224,7 +224,10 @@ export default function ArtifactsScreen() {
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
   const mediaGallery = useMemo(() => mediaArtifactGallery(filtered ?? []), [filtered]);
-  const mediaGalleryParam = mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined;
+  const mediaGalleryParam = useMemo(
+    () => (mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined),
+    [mediaGallery],
+  );
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {

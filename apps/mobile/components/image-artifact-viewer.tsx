@@ -240,6 +240,13 @@ export function ImageArtifactViewer({
     ),
   }));
   const closed = useRef(false);
+  useEffect(
+    () => () => {
+      // A stack dismissal need not come through the close button.
+      closed.current = true;
+    },
+    [],
+  );
   const downloading = useRef(false);
   const close = () => {
     if (closed.current) return;
@@ -289,9 +296,10 @@ export function ImageArtifactViewer({
     try {
       const uri = await imageArtifactUri(requestTarget(), target.artifactId, target.mimeType);
       const result = await downloadArtifactToDevice(uri, target.mimeType, target.name);
-      if (result === "saved") Alert.alert(t`Saved to Photos`);
+      if (result === "saved" && !closed.current) Alert.alert(t`Saved to Photos`);
     } catch (error) {
-      Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
+      if (!closed.current)
+        Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
     } finally {
       downloading.current = false;
     }

@@ -68,6 +68,9 @@ export function ArtifactMediaPager({
   useEffect(() => {
     if (width <= 0) return;
     if (previousWidth.current > 0 && previousWidth.current !== width) {
+      // A swipe queued before the rotation has offsets from the old width; drop it so the
+      // settle timer cannot commit a page the list no longer shows.
+      pendingIndex.current = null;
       const index = Math.max(0, Math.min(gallery.length - 1, galleryIndex(gallery, activeId)));
       listRef.current?.scrollToOffset({ offset: width * index, animated: false });
     }

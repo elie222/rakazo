@@ -7,6 +7,7 @@ type ConfigPlugin = string | [string, Record<string, unknown>];
 type MobileAppConfig = {
   expo: {
     plugins: ConfigPlugin[];
+    locales: Record<string, string>;
   };
 };
 
@@ -39,5 +40,16 @@ describe("Android permission config", () => {
     expect(typeof mediaLibrary?.[1].savePhotosPermission).toBe("string");
     expect(mediaLibrary?.[1].savePhotosPermission).not.toBe("");
     expect(mediaLibrary?.[1].granularPermissions).toEqual([]);
+  });
+
+  it("translates the add-only photo library prompt", () => {
+    const { expo } = readMobileAppConfig();
+    for (const path of Object.values(expo.locales)) {
+      const locale = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", path), "utf8")) as {
+        ios?: Record<string, unknown>;
+      };
+      expect(typeof locale.ios?.NSPhotoLibraryAddUsageDescription).toBe("string");
+      expect(locale.ios?.NSPhotoLibraryAddUsageDescription).not.toBe("");
+    }
   });
 });
