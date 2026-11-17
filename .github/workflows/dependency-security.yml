@@ -1,13 +1,15 @@
 name: Dependency security
 
 on:
-  # The audit reads only the lockfile, so a pull request that leaves it alone cannot change the
-  # result; main and the nightly run catch newly published advisories.
+  # The audit reads only the lockfile and its config, so a pull request that leaves them alone
+  # cannot change the result; main and the nightly run catch newly published advisories.
   pull_request:
     paths:
       - ".github/workflows/dependency-security.yml"
       - "scripts/checks/dependency-audit.mjs"
       - "pnpm-lock.yaml"
+      # Its auditConfig lists the advisories the audit ignores.
+      - "pnpm-workspace.yaml"
       # Its packageManager field picks the pnpm that runs the audit.
       - "package.json"
   push:

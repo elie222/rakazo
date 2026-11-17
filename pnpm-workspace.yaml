@@ -66,6 +66,13 @@ overrides:
   node-forge@<1.4.3: 1.4.3
   nodemailer@<10.4.1: 10.4.1
 
+auditConfig:
+  ignoreGhsas:
+    # picomatch extglob ReDoS (every release through 4.0.7, no fixed version on any line yet).
+    # Only build, dev-server and test tooling matches globs here, against patterns from our own
+    # config, never user input. Review by 2026-12-18 and drop this once a fixed picomatch ships.
+    - GHSA-fc5q-39xc-vjpf
+
 patchedDependencies:
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
