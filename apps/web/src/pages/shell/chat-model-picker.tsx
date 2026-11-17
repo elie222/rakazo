@@ -12,7 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import { ModelMarkIcon } from "../../components/ModelMarkIcon";
@@ -34,6 +34,7 @@ export function ChatModelPicker({
   detail,
   aside,
   staysOpen,
+  onConnect,
   disabled,
 }: {
   id?: string;
@@ -51,6 +52,8 @@ export function ChatModelPicker({
   aside?: (close: () => void) => ReactNode;
   /** Whether picking this model leaves the panel open, so its other settings can be changed next. */
   staysOpen?: (key: string) => boolean;
+  /** Offered at the end of the list, to connect a provider's models. */
+  onConnect?: () => void;
   disabled?: boolean;
 }) {
   const { t } = useLingui();
@@ -173,6 +176,20 @@ export function ChatModelPicker({
                   ))}
                 </CommandGroup>
               ))}
+              {onConnect ? (
+                <CommandGroup>
+                  <CommandItem
+                    value="connect-a-model"
+                    onSelect={() => {
+                      openChange(false);
+                      onConnect();
+                    }}
+                  >
+                    <PlusIcon aria-hidden="true" className="size-4" />
+                    {t`Connect a model`}
+                  </CommandItem>
+                </CommandGroup>
+              ) : null}
             </CommandList>
           </Command>
           {sidePanel ? (

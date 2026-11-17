@@ -2,11 +2,11 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { MenuPicker } from "../components/menu-picker";
 import { ModelPickerList } from "../components/model-picker-list";
-import { SettingsGroup } from "../components/settings-group";
+import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { rpcQuery, useSave } from "../lib/query";
 import { useScreenQuery } from "../lib/screen-query";
@@ -16,6 +16,7 @@ import { errorText } from "../lib/user-error";
 /** A chat's model and thinking, opened from the composer; each change saves at once. */
 export default function ChatModelScreen() {
   const { t } = useLingui();
+  const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const botRead = rpcQuery("bots/get", { botId });
   const bot = useScreenQuery(botRead);
@@ -59,6 +60,8 @@ export default function ChatModelScreen() {
     ? (save.input?.thinkingLevel ?? "")
     : (bot.data?.thinkingLevel ?? "");
   const failure = bot.error ?? me.error ?? catalog.error ?? credentials.error;
+  // With nothing connected the list holds only the Space default, so the sheet offers a connection.
+  const connectable = Boolean(state && state.choices.length < 2);
 
   return (
     <ModelPickerList
@@ -71,29 +74,41 @@ export default function ChatModelScreen() {
         save.run({ modelKey: choice.key, thinkingLevel: null });
       }}
       header={
-        state?.thinkingLevels.length ? (
-          <View style={{ marginBottom: 20 }}>
-            <SettingsGroup label={t`Thinking`}>
-              <MenuPicker
-                label={t`Thinking`}
-                showLabel={false}
-                disabled={save.pending}
-                choices={[
-                  {
-                    key: "",
-                    label: t`Default (${ph({ level: thinkingLevelLabel(state.defaultThinkingLevel) })})`,
-                  },
-                  ...state.thinkingLevels.map((level) => ({
-                    key: level,
-                    label: thinkingLevelLabel(level),
-                  })),
-                ]}
-                value={thinking}
-                onChange={(level) =>
-                  save.run({ thinkingLevel: (level || null) as ThinkingLevel | null })
-                }
-              />
-            </SettingsGroup>
+        state?.thinkingLevels.length || connectable ? (
+          <View style={{ marginBottom: 20, gap: 20 }}>
+            {state?.thinkingLevels.length ? (
+              <SettingsGroup label={t`Thinking`}>
+                <MenuPicker
+                  label={t`Thinking`}
+                  showLabel={false}
+                  disabled={save.pending}
+                  choices={[
+                    {
+                      key: "",
+                      label: t`Default (${ph({ level: thinkingLevelLabel(state.defaultThinkingLevel) })})`,
+                    },
+                    ...state.thinkingLevels.map((level) => ({
+                      key: level,
+                      label: thinkingLevelLabel(level),
+                    })),
+                  ]}
+                  value={thinking}
+                  onChange={(level) =>
+                    save.run({ thinkingLevel: (level || null) as ThinkingLevel | null })
+                  }
+                />
+              </SettingsGroup>
+            ) : null}
+            {connectable ? (
+              <SettingsGroup>
+                <SettingsRow
+                  accessibilityRole="button"
+                  chevron="right"
+                  onPress={() => router.push("/models")}
+                  title={t`Connect a model`}
+                />
+              </SettingsGroup>
+            ) : null}
           </View>
         ) : undefined
       }

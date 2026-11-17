@@ -16,10 +16,13 @@ export function ComposerModelPicker({
   bot,
   disabled,
   onSaved,
+  onConnect,
 }: {
   bot: Bot;
   disabled?: boolean;
   onSaved: (bot: Bot) => void;
+  /** Opens the model connections, offered when no provider is connected yet. */
+  onConnect: () => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -60,8 +63,6 @@ export function ComposerModelPicker({
     modelKey: pendingModel ?? savedKey,
     spaceDefaultLabel: t`Space default`,
   });
-  // Nothing to switch between.
-  if (choices.length < 2) return null;
   // A new model starts on its default level, so the saved one shows only while the model stays.
   const thinking: ThinkingLevel | null = modelPending
     ? null
@@ -87,6 +88,8 @@ export function ComposerModelPicker({
         if (key !== selectedModelKey) saveModel.run(key);
       }}
       // A model with thinking levels keeps the panel open, so its level can be set next.
+      // With nothing connected the list holds only the Space default, so it offers a connection.
+      onConnect={choices.length < 2 ? onConnect : undefined}
       staysOpen={(key) =>
         botModelState({ credentials, catalog, me, modelKey: key, spaceDefaultLabel: "" })
           .thinkingLevels.length > 0

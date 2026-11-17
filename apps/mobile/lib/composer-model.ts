@@ -65,8 +65,6 @@ export function composerModelChip(
     modelKey,
     spaceDefaultLabel: t`Space default`,
   });
-  // Nothing to switch between.
-  if (state.choices.length < 2) return null;
   const level = (bot.thinkingLevel as typeof state.defaultThinkingLevel | null | undefined) ?? null;
   return {
     label: state.selectedName ?? t`Space default`,

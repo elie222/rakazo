@@ -38,7 +38,7 @@ describe("composerModelChip", () => {
     ).toEqual({ label: "Smart", thinking: "High" });
   });
 
-  it("hides when there is nothing to switch to", () => {
-    expect(composerModelChip({}, me, catalog, [])).toBeNull();
+  it("still names the Space default's model with nothing connected", () => {
+    expect(composerModelChip({}, me, catalog, [])).toEqual({ label: "Fast" });
   });
 });
