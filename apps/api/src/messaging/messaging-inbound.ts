@@ -411,7 +411,7 @@ export async function wakeMessageRoutines(
       },
       {
         prompt,
-        artifacts: options?.artifacts,
+        attachmentBlocks: options?.artifacts?.map(messageBlockForArtifact),
         routines,
         source: "messaging",
         idempotencyKey: messagingWakeIdempotencyKey(
