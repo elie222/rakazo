@@ -1,6 +1,6 @@
 import { parseNetworkDestination, tailnetDestinationKey, trimEndChars } from "@rakazo/contracts";
 import { parse } from "tldts";
-import { SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL } from "./action-approval.js";
+import { SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL } from "../runs/action-approval.js";
 
 /**
  * Who a request trusts, by site: the registrable domain, or the address itself for an IP literal.
