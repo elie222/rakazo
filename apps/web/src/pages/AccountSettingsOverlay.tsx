@@ -172,8 +172,9 @@ export function GeneralSettingsPanels({
       await onTimezoneChange?.(next, client);
       // A zone picked by hand answers the device's prompt too, so it does not ask right after,
       // even when Settings closed while it saved.
-      if (queryUserId && !sameTimeZone(next, deviceTimezone))
-        keepTimezone(queryUserId, { device: deviceTimezone, account: next });
+      const device = localTimezone();
+      if (queryUserId && !sameTimeZone(next, device))
+        keepTimezone(queryUserId, { device, account: next });
     },
     // Usage is grouped by day in the account's timezone.
     stale: [queries.usage.breakdown.key()],
