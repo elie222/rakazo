@@ -37,6 +37,7 @@ export function ThreadComposerDock({
   attachmentNotice,
   attachments,
   onRemoveAttachment,
+  selectionBar,
   children,
 }: {
   hidden: boolean;
@@ -53,6 +54,8 @@ export function ThreadComposerDock({
   attachmentNotice: string | null;
   attachments: readonly PendingAttachment[];
   onRemoveAttachment: (id: string) => void;
+  /** Takes the composer's place while messages are being chosen; the composer stays mounted. */
+  selectionBar?: ReactNode;
   children: ReactNode;
 }) {
   const tokens = mobileTokens();
@@ -95,11 +98,15 @@ export function ThreadComposerDock({
     height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]) + 22,
   }));
 
+  // A read-only chat has no composer, but its messages can still be chosen and copied.
+  const controlsShown = !hidden || Boolean(selectionBar);
   const noticeHeight = useRef(0);
   const controlsHeight = useRef(0);
   const report = () =>
-    onHeight(noticeHeight.current + (hidden ? 0 : controlsHeight.current + composerRestingPadding));
-  useEffect(report, [composerRestingPadding, hidden, onHeight]);
+    onHeight(
+      noticeHeight.current + (controlsShown ? controlsHeight.current + composerRestingPadding : 0),
+    );
+  useEffect(report, [composerRestingPadding, controlsShown, onHeight]);
 
   return (
     // Floats over the messages, which scroll underneath it; only its controls take touches.
@@ -110,7 +117,7 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
-      {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
+      {controlsShown ? <ThreadEdgeFade edge="bottom" style={fadeHeight} /> : null}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {
@@ -122,7 +129,10 @@ export function ThreadComposerDock({
       </View>
       <Animated.View
         pointerEvents="box-none"
-        style={[{ display: hidden ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+        style={[
+          { display: controlsShown ? "flex" : "none", flexShrink: 1 },
+          composerKeyboardPadding,
+        ]}
       >
         <View
           pointerEvents="box-none"
@@ -132,99 +142,105 @@ export function ThreadComposerDock({
             report();
           }}
         >
-          {replyTarget ? (
-            <GlassSurface
-              style={{
-                marginTop: 12,
-                borderRadius: 999,
-                paddingStart: 16,
-                paddingEnd: 10,
-                paddingVertical: 8,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-              }}
-              fallbackStyle={{
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: tokens.glassStroke,
-                backgroundColor: tokens.glassFill,
-                paddingStart: 12,
-                paddingEnd: 12,
-                paddingVertical: 10,
-              }}
-            >
-              <ComposerReplyPreview
-                author={replyAuthor}
-                quote={replyQuote}
-                text={previewMessageText(replyTarget)}
-                attachment={replyAttachment(replyTarget.blocks)}
-                threadTarget={threadTarget}
-              />
-              <ReplyDismissButton onPress={onDismissReply} />
-            </GlassSurface>
-          ) : null}
-          {attachmentNotice ? (
-            <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
-              {attachmentNotice}
-            </Text>
-          ) : null}
-          {attachments.length ? (
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 12,
-              }}
-            >
-              {attachments.map((attachment) => (
-                <View
-                  key={attachment.id}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 8,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: tokens.border,
-                    backgroundColor: tokens.card,
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                  }}
-                >
-                  {attachment.previewUri ? (
-                    <Image
-                      source={{ uri: attachment.previewUri }}
-                      style={{ width: 28, height: 28, borderRadius: 6 }}
-                    />
-                  ) : (
-                    <NativeSymbol
-                      ios="paperclip"
-                      android="attach"
-                      size={16}
-                      color={tokens.mutedForeground}
-                    />
-                  )}
-                  <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
-                    {attachment.name}
-                  </Text>
-                  <Pressable
-                    accessibilityLabel={t`Remove ${ph({ name: attachment.name })}`}
-                    onPress={() => onRemoveAttachment(attachment.id)}
+          {selectionBar}
+          <View
+            pointerEvents="box-none"
+            style={{ display: selectionBar || hidden ? "none" : "flex", flexShrink: 1 }}
+          >
+            {replyTarget ? (
+              <GlassSurface
+                style={{
+                  marginTop: 12,
+                  borderRadius: 999,
+                  paddingStart: 16,
+                  paddingEnd: 10,
+                  paddingVertical: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                fallbackStyle={{
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: tokens.glassStroke,
+                  backgroundColor: tokens.glassFill,
+                  paddingStart: 12,
+                  paddingEnd: 12,
+                  paddingVertical: 10,
+                }}
+              >
+                <ComposerReplyPreview
+                  author={replyAuthor}
+                  quote={replyQuote}
+                  text={previewMessageText(replyTarget)}
+                  attachment={replyAttachment(replyTarget.blocks)}
+                  threadTarget={threadTarget}
+                />
+                <ReplyDismissButton onPress={onDismissReply} />
+              </GlassSurface>
+            ) : null}
+            {attachmentNotice ? (
+              <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
+                {attachmentNotice}
+              </Text>
+            ) : null}
+            {attachments.length ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                {attachments.map((attachment) => (
+                  <View
+                    key={attachment.id}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: tokens.border,
+                      backgroundColor: tokens.card,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                    }}
                   >
-                    <NativeSymbol
-                      ios="xmark"
-                      android="close"
-                      size={14}
-                      color={tokens.mutedForeground}
-                    />
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          {children}
+                    {attachment.previewUri ? (
+                      <Image
+                        source={{ uri: attachment.previewUri }}
+                        style={{ width: 28, height: 28, borderRadius: 6 }}
+                      />
+                    ) : (
+                      <NativeSymbol
+                        ios="paperclip"
+                        android="attach"
+                        size={16}
+                        color={tokens.mutedForeground}
+                      />
+                    )}
+                    <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
+                      {attachment.name}
+                    </Text>
+                    <Pressable
+                      accessibilityLabel={t`Remove ${ph({ name: attachment.name })}`}
+                      onPress={() => onRemoveAttachment(attachment.id)}
+                    >
+                      <NativeSymbol
+                        ios="xmark"
+                        android="close"
+                        size={14}
+                        color={tokens.mutedForeground}
+                      />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {children}
+          </View>
         </View>
       </Animated.View>
     </View>
