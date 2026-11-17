@@ -171,19 +171,15 @@ export function ShellSidebar({
           createMenuOpen={createMenuOpen}
           setCreateMenuOpen={setCreateMenuOpen}
           activityMode={activityMode}
-          toggleActivityMode={() => {
-            if (mini) setCollapsedPref(false);
-            toggleActivityMode();
-          }}
-          searchOpen={searchOpen && !mini}
+          toggleActivityMode={toggleActivityMode}
+          searchOpen={searchOpen}
           onSearch={() => {
-            if (searchOpen && !mini) {
+            if (searchOpen) {
               if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
               else setQuery("");
               setSearchOpen(false);
               return;
             }
-            if (mini) setCollapsedPref(false);
             setSearchOpen(true);
             focusSidebarSearch();
           }}

@@ -70,7 +70,10 @@ export type Evidence = {
   notes: EvalServices["notes"];
   /** The case's connected services by kind, with every call and write they recorded. */
   apps?: Record<string, AppEmulator>;
+  /** Every service call in the trial, by any bot; `botId` says whose run made it. */
   calls: ServiceCall[];
+  /** The bot under test, to tell its calls from a peer's. */
+  subjectBotId?: string;
   routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;
