@@ -3,17 +3,36 @@ import { attachmentExtensionForMimeType } from "@rakazo/core";
 /** Received copies older than this are pruned. */
 export const RECEIVED_FILE_MAX_AGE_MS = 31 * 24 * 60 * 60_000;
 
-const MAX_SEGMENT_LENGTH = 80;
+const MAX_SENDER_CODE_POINTS = 32;
+const MAX_NAME_CODE_POINTS = 64;
+/** Common file-system limit for one file name, in UTF-8 bytes. */
+const MAX_FILE_NAME_BYTES = 255;
 
-/** One safe path segment: no separators, dot runs, control characters or leading dots. */
-function safeSegment(value: string): string {
-  return value
-    .replace(/\p{Cc}/gu, "")
+function withoutTrailingDots(value: string): string {
+  return value.replace(/[. ]+$/, "");
+}
+
+/** One safe path segment: no separators, dot runs, control or format characters, leading dots. */
+function safeSegment(value: string, maxCodePoints: number): string {
+  const cleaned = value
+    .normalize("NFC")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
     .replace(/[/\\]/g, "")
     .replace(/\.{2,}/g, "")
     .replace(/^\.+/, "")
-    .trim()
-    .slice(0, MAX_SEGMENT_LENGTH);
+    .trim();
+  return withoutTrailingDots(Array.from(cleaned).slice(0, maxCodePoints).join(""));
+}
+
+/** The file name, with the name part trimmed (never mid code point) to fit the byte limit. */
+function fitFileName(prefix: string, name: string, suffix: string): string {
+  const chars = Array.from(name);
+  while (chars.length > 1) {
+    const candidate = `${prefix}${chars.join("")}${suffix}`;
+    if (Buffer.byteLength(candidate) <= MAX_FILE_NAME_BYTES) break;
+    chars.pop();
+  }
+  return `${prefix}${withoutTrailingDots(chars.join("")) || chars.join("")}${suffix}`;
 }
 
 function mediaKind(mimeType: string): string {
@@ -53,19 +72,19 @@ export function receivedFilePath(input: {
 }): string {
   const { year, month, day, hour, minute } = localDateParts(input.at, input.timeZone);
   const extension = attachmentExtensionForMimeType(input.mimeType);
-  const sender = safeSegment(input.sender) || "unknown";
-  let name = safeSegment(input.name ?? "");
+  const sender = safeSegment(input.sender, MAX_SENDER_CODE_POINTS) || "unknown";
+  let name = safeSegment(input.name ?? "", MAX_NAME_CODE_POINTS);
   if (extension && name.toLowerCase().endsWith(extension)) {
-    name = name.slice(0, -extension.length);
+    name = withoutTrailingDots(name.slice(0, -extension.length));
   }
   name ||= mediaKind(input.mimeType);
 
   const root = input.computerMode === "team" ? "shared/received" : "received";
   const folder = `${root}/${year}/${month}`;
-  const stem = `${folder}/${year}-${month}-${day}_${hour}${minute}_${sender}_${name}`;
-  let path = `${stem}${extension}`;
+  const prefix = `${year}-${month}-${day}_${hour}${minute}_${sender}_`;
+  let path = `${folder}/${fitFileName(prefix, name, extension)}`;
   for (let counter = 2; input.taken(path); counter += 1) {
-    path = `${stem}-${counter}${extension}`;
+    path = `${folder}/${fitFileName(prefix, name, `-${counter}${extension}`)}`;
   }
   return path;
 }

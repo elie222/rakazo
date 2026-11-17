@@ -76,6 +76,43 @@ describe("receivedFilePath", () => {
     expect(path).not.toContain("..");
   });
 
+  it("never leaves a dot-dot when a trailing dot meets the extension", () => {
+    const pdf = { ...base, mimeType: "application/pdf" };
+    const expected = "shared/received/2026/11/2026-11-17_1912_972541234567_";
+    expect(receivedFilePath({ ...pdf, name: "report." })).toBe(`${expected}report.pdf`);
+    expect(receivedFilePath({ ...pdf, name: "a.pdf." })).toBe(`${expected}a.pdf`);
+    const cutOnDot = receivedFilePath({ ...pdf, name: `${"x".repeat(63)}.tail` });
+    expect(cutOnDot).toBe(`${expected}${"x".repeat(63)}.pdf`);
+  });
+
+  it("truncates by code points without splitting a surrogate pair", () => {
+    const path = receivedFilePath({ ...base, name: "😀".repeat(100) });
+    expect(Buffer.from(path).toString()).toBe(path);
+    expect(path).toMatch(/_(😀)+\.mov$/u);
+    expect(Buffer.byteLength(path.split("/").pop() ?? "")).toBeLessThanOrEqual(255);
+  });
+
+  it("keeps the whole file name within 255 UTF-8 bytes", () => {
+    for (const name of ["ש".repeat(300), "😀".repeat(300)]) {
+      const sender = "ש".repeat(50);
+      const first = receivedFilePath({ ...base, name, sender });
+      const second = receivedFilePath({ ...base, name, sender, taken: (path) => path === first });
+      for (const path of [first, second]) {
+        const fileName = path.split("/").pop() ?? "";
+        expect(Buffer.byteLength(fileName)).toBeLessThanOrEqual(255);
+        expect(Buffer.from(path).toString()).toBe(path);
+        expect(path.endsWith(".mov")).toBe(true);
+      }
+      expect(second).toContain("-2.mov");
+    }
+  });
+
+  it("removes bidi and invisible format characters and normalizes to NFC", () => {
+    const spoof = receivedFilePath({ ...base, name: "a‮b​c⁦d e" });
+    expect(spoof).toBe("shared/received/2026/11/2026-11-17_1912_972541234567_abcde.mov");
+    expect(receivedFilePath({ ...base, name: "é" })).toContain("_é.mov");
+  });
+
   it("prunes after 31 days", () => {
     expect(RECEIVED_FILE_MAX_AGE_MS).toBe(31 * 24 * 60 * 60_000);
   });
