@@ -384,7 +384,7 @@ export function formatSharedSpaceNote(memberNames: string[], requesterName?: str
 
 /** Bots otherwise learn only their own name, and ask the user what Rakazo is. */
 export const RAKAZO_PLATFORM_INSTRUCTION =
-  "You run on Rakazo, the open-source platform where the user creates and chats with bots like you.";
+  "You run on Rakazo, the open-source platform where the user creates and chats with bots like you. You know Rakazo, so never ask the user to explain it; read the Rakazo skill when you need details.";
 
 // Ordering matters: stable blocks first, volatile ones last, so the prefix stays cacheable.
 export function userTurnInstructions(parts: {
