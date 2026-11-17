@@ -8,7 +8,7 @@ import {
   SandboxUnresponsiveError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
-import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
+import { AgentImportError, ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { databaseOutage, IsolationError, ProviderTransactionBusyError } from "@rakazo/db";
@@ -76,6 +76,8 @@ export function handleRpcError(
     const answer = new ORPCError(error.code, {
       status: clientErrorStatus(error.kind),
       message: error.message,
+      // An import refusal says why, so clients show their own copy.
+      ...(error instanceof AgentImportError ? { data: error.data } : {}),
       cause: error,
     });
     // An outage the caller is told to wait out is still reported, unless its thrower logged it.

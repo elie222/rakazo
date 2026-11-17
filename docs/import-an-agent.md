@@ -53,6 +53,15 @@ you can set them up by hand. Connected apps with a remote MCP address become MCP
 sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
 Bot's computer and sign-ins stay in Grok Bot.
 
+### From a chat
+
+A bot that manages your bots can import a Grok Bot export for you. Paste the whole reply, or
+attach its file, in a chat with that bot and ask it to import the bots. It shows an approval card
+naming each bot, then creates all of them the same way as **Import an agent**. Skills, MCP servers and
+routines come over, and routines stay paused. Text that looks like it contains a key and
+untouched defaults are left out, and so are API keys. The bot then tells you what still needs
+you, such as routines to turn on and MCP servers to sign in to again.
+
 ## From another assistant
 
 For ChatGPT, Claude, Gemini or any other assistant:

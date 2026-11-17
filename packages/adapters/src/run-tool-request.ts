@@ -3,6 +3,7 @@ import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@
 import { redactSecrets } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
+import { readRunAgentExport } from "./agent-import-chat.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
 import {
@@ -455,7 +456,10 @@ export async function prepareToolRequest(
     // Resolve names, members, model and schedule now; an approved replay runs the stored
     // request above and never resolves them again.
     const prepared = await prepareFleetRequest(
-      await fleetPrepareDeps(deps, run),
+      {
+        ...(await fleetPrepareDeps(deps, run)),
+        agentExport: () => readRunAgentExport(deps, run, ctx.context),
+      },
       ctx.fleetRun,
       name,
       args,

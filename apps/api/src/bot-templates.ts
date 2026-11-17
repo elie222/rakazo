@@ -1,4 +1,6 @@
 import { ORPCError } from "@orpc/server";
+import type { AgentImportServices, Built } from "@rakazo/adapters";
+import { requestDigest, savedTimeZone, writeImportedBot } from "@rakazo/adapters";
 import type {
   Actor,
   AgentImportPlan,
@@ -23,8 +25,6 @@ import {
   renameSkillMd,
 } from "@rakazo/core";
 import { availableInSpace, Prisma } from "@rakazo/db";
-import type { AgentImportServices, Built } from "./agent-import.js";
-import { requestDigest, savedTimeZone, writeImportedBot } from "./agent-import.js";
 
 /** One bot per template: creating it again returns the bot it made, until that bot is archived or deleted. */
 function importKey(templateId: string): string {

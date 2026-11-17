@@ -362,6 +362,24 @@ export const fleetTools: ConnectorTool[] = [
     inputSchema: createChildRoutineInputSchema,
   },
   {
+    name: "import_agents",
+    description:
+      "Create bots from an agent export the user pasted or attached in this message, such as a Grok Bot export (grok-bot-export JSON). Each becomes a new bot with its instructions, memory, skills, MCP servers and routines, created paused. Do not rebuild them with spawn_bot or skill tools. Pass the names of the bots to import, exactly as the export names them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_names: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 100,
+          description: "Names of the bots in the export to import.",
+        },
+      },
+      required: ["bot_names"],
+    },
+  },
+  {
     name: "archive_bot",
     description:
       "Archive another bot in this space. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you.",

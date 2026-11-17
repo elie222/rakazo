@@ -401,6 +401,32 @@ export const IMPORTED_INSTRUCTION_HEADINGS = {
 } as const;
 
 /**
+ * What an import leaves unticked until the person picks it. `acts`: what runs or acts on its own
+ * (skills, MCP servers, routines). `review`: untouched defaults the source wrote and text that
+ * looks like it holds a key. `blocked`: what cannot work here at all.
+ */
+export function agentImportHeldBack(plan: AgentImportPlan): {
+  acts: string[];
+  review: string[];
+  blocked: string[];
+} {
+  const ids = (items: { id: string }[]) => items.map((item) => item.id);
+  return {
+    acts: ids([...plan.skills, ...plan.mcpServers, ...plan.routines]),
+    review: ids([
+      ...[...plan.instructions, ...plan.memory].filter((item) => item.stock),
+      ...[...plan.instructions, ...plan.memory, ...plan.skills].filter((item) => item.containsKey),
+    ]),
+    blocked: ids(
+      [...plan.skills, ...plan.mcpServers, ...plan.routines].filter(
+        (item) =>
+          item.status.kind === "unsupported" || item.warnings.includes("unsupported_command"),
+      ),
+    ),
+  };
+}
+
+/**
  * Persona first, then working instructions, each under a heading only when both exist. A
  * title naming the file (`# SOUL.md - Who You Are`) is dropped: the bot has no such file.
  */

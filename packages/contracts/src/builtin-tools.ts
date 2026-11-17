@@ -9,6 +9,7 @@ export const FLEET_TOOL_NAMES = [
   "set_child_instructions",
   "set_child_bot_model",
   "create_child_routine",
+  "import_agents",
 ] as const;
 
 export const FLEET_WRITE_TOOL_NAMES = FLEET_TOOL_NAMES.filter(

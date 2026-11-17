@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
+import type { AgentImportServices } from "@rakazo/adapters";
 import {
+  agentImportSetupState,
   archiveBot,
   checkpointAndStopComputer,
+  createImportedBot,
   defaultVaultItemTitle,
   endTeachingWithLease,
   forgetBotSecret,
@@ -17,6 +20,7 @@ import {
   newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
+  previewAgentImport,
   relabelVaultItem,
   revealBotSecret,
   SpaceVaultNotInUseError,
@@ -62,8 +66,6 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { AgentImportServices } from "../agent-import.js";
-import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
 import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
 import { loadBotForRemoval } from "../bot-removal.js";

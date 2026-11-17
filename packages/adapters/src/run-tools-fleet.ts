@@ -11,7 +11,8 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   writeBotInstructions,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { importAgentsFromChat } from "./agent-import-chat.js";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -251,6 +252,31 @@ export const fleetTools: ToolHandlers = {
     const { deps } = ctx;
     const { args } = call;
     return call.finish(await createChildRoutine(deps, ctx.fleetRun, args));
+  },
+  async import_agents(ctx, call) {
+    const { deps, run, context } = ctx;
+    const { name, args, effectKey } = call;
+    const imported = await importAgentsFromChat(deps, run, context, args, effectKey);
+    if ("error" in imported) return call.finish(imported);
+    if (!(await call.persistEffectResult(imported))) return uncertainEffectResult(name);
+    const created = imported.bots.flatMap((bot) => ("botId" in bot ? [bot] : []));
+    if (created.length) {
+      await bestEffort(
+        "imported bot cards",
+        publishMessage(
+          deps,
+          run,
+          "bot",
+          created.map((bot) => ({
+            kind: "child_bot" as const,
+            botId: bot.botId,
+            name: bot.name,
+            status: "created" as const,
+          })),
+        ),
+      );
+    }
+    return imported;
   },
   async update_bot(ctx, call) {
     const { deps, run, bot, thread, context } = ctx;

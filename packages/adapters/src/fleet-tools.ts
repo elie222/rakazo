@@ -27,6 +27,7 @@ import {
   storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { prepareAgentImportRequest } from "./agent-import-chat.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
@@ -80,6 +81,8 @@ export type FleetDeps = {
 export type FleetPrepareDeps = {
   prisma: PrismaClient;
   modelChange: Omit<BotModelChangeDeps, "prisma">;
+  /** The agent export the owner sent with this run, read only by import_agents. */
+  agentExport?: () => Promise<string>;
 };
 
 export type FleetPrepared =
@@ -135,7 +138,16 @@ function prepareByTool(
       return prepareChildModel(deps, run, args);
     case "create_child_routine":
       return prepareChildRoutine(deps, run, args, secrets);
+    case "import_agents":
+      return prepareImportAgents(deps, args);
   }
+}
+
+async function prepareImportAgents(
+  deps: FleetPrepareDeps,
+  args: Record<string, unknown>,
+): Promise<FleetPrepared> {
+  return prepareAgentImportRequest((await deps.agentExport?.()) ?? "", args);
 }
 
 async function prepareCreateGroup(

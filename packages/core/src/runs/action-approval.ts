@@ -96,6 +96,8 @@ const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "create_space",
   "set_child_instructions",
   "set_child_bot_model",
+  // Writes another assistant's text as new bots' instructions, skills and routines.
+  "import_agents",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;

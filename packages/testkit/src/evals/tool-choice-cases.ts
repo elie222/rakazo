@@ -444,6 +444,39 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     },
   },
   {
+    id: "fleet-import-export",
+    area: "fleet",
+    kind: "guard",
+    purpose: "Import a pasted agent export with the import tool, not by rebuilding each bot.",
+    prompt: `Move these bots over from Grok Bot, all of them.\n\n\`\`\`json\n${JSON.stringify({
+      format: "grok-bot-export",
+      version: 1,
+      bots: [
+        {
+          name: "Ledger",
+          instructions: "Reconcile the weekly expenses.",
+          skills: [{ name: "Receipts", instructions: "File each receipt by month." }],
+          routines: [
+            { name: "Friday close", instruction: "Close the week.", schedule_cron: "0 17 * * 5" },
+          ],
+        },
+        { name: "Scout", instructions: "Track competitor launches." },
+      ],
+    })}\n\`\`\``,
+    expect: {
+      calls: [{ tool: "import_agents", args: { bot_names: "*" } }],
+      notCalls: ["spawn_bot", "skill_create", "create_child_routine"],
+    },
+  },
+  {
+    id: "fleet-import-question",
+    area: "fleet",
+    kind: "control",
+    purpose: "Answer a question about moving bots over without importing anything.",
+    prompt: "If I move my Grok Bot setup here later, will its routines come over too?",
+    expect: { notCalls: ["import_agents", "spawn_bot"] },
+  },
+  {
     id: "secrets-request",
     area: "secrets",
     kind: "guard",

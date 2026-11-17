@@ -14,6 +14,7 @@ import {
   AGENT_IMPORT_ARCHIVE_LIMITS,
   AGENT_IMPORT_NOT_FOUND,
   AgentImportArchiveError,
+  agentImportHeldBack,
   agentImportSkillFiles,
   agentImportUpload,
   chooseAgentImportFiles,
@@ -99,17 +100,10 @@ export function useAgentImportSource() {
       if (read !== latestRead.current) return;
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Anything that runs or acts (skills, MCP servers, routines) starts unticked, as do
-      // untouched defaults the source wrote: the user ticks each one they want.
-      const flagged = [
-        ...found.skills,
-        ...found.mcpServers,
-        ...found.routines,
-        ...found.instructions.filter((item) => item.stock),
-        ...found.memory.filter((item) => item.stock),
-        // Key-looking text reaches a bot only when the user ticks it.
-        ...[...found.instructions, ...found.memory].filter((item) => item.containsKey),
-      ].map((item) => item.id);
+      // Anything that runs or acts starts unticked, as do untouched defaults and key-looking
+      // text: the user ticks each one they want.
+      const held = agentImportHeldBack(found);
+      const flagged = [...held.acts, ...held.review];
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
         const known = new Set(

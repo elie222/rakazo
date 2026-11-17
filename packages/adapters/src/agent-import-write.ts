@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { AgentImportSettings, ImportedMcpServer } from "@rakazo/adapters";
-import {
-  BUILTIN_AGENT_SKILLS,
-  isCatalogModelChoice,
-  readAgentImportSettings,
-  readGrokBotImportSettings,
-} from "@rakazo/adapters";
 import type {
   Actor,
   AgentImportCreateInput,
@@ -33,6 +25,7 @@ import {
 } from "@rakazo/contracts";
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
+  ClientError,
   combineImportedInstructions,
   messagingProviderName,
   parseAgentImport,
@@ -53,6 +46,29 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
+import type { AgentImportSettings, ImportedMcpServer } from "./agent-import-settings.js";
+import { readAgentImportSettings, readGrokBotImportSettings } from "./agent-import-settings.js";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
+import { isCatalogModelChoice } from "./model-selection.js";
+
+/**
+ * A refusal of an import request, with the reason clients show their own copy for. The API
+ * sends `data` along with the error.
+ */
+export class AgentImportError extends ClientError {
+  readonly data: { reason: AgentImportErrorReason; provider?: string };
+  constructor(
+    kind: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND" | "PRECONDITION_FAILED",
+    reason: AgentImportErrorReason,
+    message: string,
+    provider?: string,
+  ) {
+    // Precondition failures are answered as conflicts: the request no longer fits what exists.
+    super(kind === "PRECONDITION_FAILED" ? "CONFLICT" : kind, message, kind);
+    this.name = "AgentImportError";
+    this.data = provider === undefined ? { reason } : { reason, provider };
+  }
+}
 
 type Reader = Pick<Prisma.TransactionClient, "memoryDocument" | "agentSkill" | "mcpServer">;
 type Stored = Awaited<ReturnType<SecretStore["put"]>> | null;
@@ -152,7 +168,7 @@ function parsePlan(
   routineTriggers: RoutineTriggersAvailable,
 ): AgentImportPlan {
   const plan = parseAgentImport(files, skillFiles, routineTriggers);
-  if ("error" in plan) throw new ORPCError("BAD_REQUEST", { message: plan.error });
+  if ("error" in plan) throw new ClientError("BAD_REQUEST", plan.error);
   return plan;
 }
 
@@ -847,10 +863,12 @@ function keyCheckFailure(error: unknown, providerName: string) {
     : message.includes("could not verify")
       ? "key_unverified"
       : "key_check_failed";
-  return new ORPCError("BAD_REQUEST", {
-    message: `The ${providerName} API key could not be connected.`,
-    data: { reason, provider: providerName },
-  });
+  return new AgentImportError(
+    "BAD_REQUEST",
+    reason,
+    `The ${providerName} API key could not be connected.`,
+    providerName,
+  );
 }
 
 function signalAborted(error: unknown): boolean {
@@ -862,7 +880,7 @@ function refused(
   reason: AgentImportErrorReason,
   message: string,
 ) {
-  return new ORPCError(code, { message, data: { reason } });
+  return new AgentImportError(code, reason, message);
 }
 
 function conflict(message: string) {

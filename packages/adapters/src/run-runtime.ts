@@ -288,6 +288,7 @@ export function createRunRuntime(
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
     messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
+    messagingProviders: messaging?.platforms().map((platform) => platform.provider) ?? [],
     messagingDelivery,
     web: createWebProvider(),
   });

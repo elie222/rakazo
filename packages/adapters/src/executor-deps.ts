@@ -68,6 +68,8 @@ export interface ExecutorDeps {
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
   messaging?: { hasIdentity(botId: string): Promise<boolean> };
+  /** The chat apps this server runs, as the routine editor offers their message triggers. */
+  messagingProviders?: readonly string[];
   /** Sends what runs say to the chat apps their turns came from; absent without one. */
   messagingDelivery?: MessagingDelivery;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
