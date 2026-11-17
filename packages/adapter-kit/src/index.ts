@@ -4,6 +4,7 @@ export * from "./background-jobs.js";
 export * from "./billing-errors.js";
 export * from "./cloud-agents.js";
 export * from "./connector-errors.js";
+export * from "./credential-source.js";
 export * from "./decisions.js";
 export * from "./email-errors.js";
 export * from "./interfaces.js";
