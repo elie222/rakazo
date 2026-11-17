@@ -393,15 +393,8 @@ function steeringOrigin(item: {
   return intact ? "private" : "channel:unknown";
 }
 
-/** Runs that cannot take a handed-over turn: the creation intro, bot wakes, helpers, and work kept out of the chat. */
-const NO_HANDOVER_TRIGGERS = [
-  "created",
-  // Its reply goes back to the bot that woke it, not to the chat.
-  "bot_message",
-  BACKGROUND_HELPER_TRIGGER,
-  HELPER_RESULT_TRIGGER,
-  ...BACKGROUND_RUN_TRIGGERS,
-];
+/** Chat turns that cannot take a handed-over task: helper results and work kept out of the chat. */
+const NO_HANDOVER_TRIGGERS = new Set<string>([HELPER_RESULT_TRIGGER, ...BACKGROUND_RUN_TRIGGERS]);
 
 /**
  * Hands a queued run that never started to the run already working in its conversation: its
@@ -424,9 +417,12 @@ export async function handQueuedRunToWorkingRun(
           threadId: true,
           taskId: true,
           userId: true,
+          routine: { select: { watch: true } },
         },
       });
-      if (!queued) return null;
+      // Only a saved schedule's own instructions: a watch's note quotes what it read, and other
+      // routine-trigger turns, such as check-ins, run with tools of their own.
+      if (!queued?.routine || queued.routine.watch !== null) return null;
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${queued.threadId} FOR UPDATE`;
       const candidates = await tx.run.findMany({
         where: {
@@ -437,14 +433,18 @@ export async function handQueuedRunToWorkingRun(
           startedAt: { not: null },
           // A run paused for a takeover reads nothing until the person resumes it.
           status: { in: [...WORKING_RUN_STATUSES] },
-          trigger: { notIn: NO_HANDOVER_TRIGGERS },
         },
         orderBy: [{ startedAt: "desc" }, { id: "desc" }],
-        select: { id: true, sourceMessage: { select: { id: true, blocks: true } } },
+        select: {
+          id: true,
+          trigger: true,
+          sourceMessage: { select: { id: true, blocks: true } },
+        },
       });
       // A group chat's run reads only that channel's messages; a source that lost entries may
       // have lost its channel marker, so it is taken as one.
-      const working = candidates.find(({ sourceMessage }) => {
+      const working = candidates.find(({ trigger, sourceMessage }) => {
+        if (!isConversationalRun(trigger) || NO_HANDOVER_TRIGGERS.has(trigger)) return false;
         if (!sourceMessage) return true;
         const source = readMessageBlocks(sourceMessage);
         return source.intact && !hasChannelMessage(source.blocks);
