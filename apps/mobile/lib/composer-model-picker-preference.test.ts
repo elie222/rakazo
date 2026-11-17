@@ -1,3 +1,5 @@
+import { deferred } from "@rakazo/core/test-async";
+import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
@@ -40,5 +42,21 @@ describe("mobile composer model picker preference", () => {
     await expect(loadComposerModelPickerPreference()).resolves.toBe(true);
     expect(getCachedComposerModelPicker()).toBe(true);
     expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("stores the last choice when it is toggled faster than storage writes", async () => {
+    const { COMPOSER_MODEL_PICKER_STORAGE_KEY, setComposerModelPicker } = await import(
+      "./composer-model-picker-preference"
+    );
+    const slow = deferred();
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async (key, value) => {
+      await slow.promise;
+      store.set(key, value);
+    });
+    const on = setComposerModelPicker(true);
+    const off = setComposerModelPicker(false);
+    slow.resolve();
+    await Promise.all([on, off]);
+    expect(store.get(COMPOSER_MODEL_PICKER_STORAGE_KEY)).toBe("off");
   });
 });

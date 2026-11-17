@@ -25,15 +25,21 @@ export async function loadComposerModelPickerPreference(): Promise<boolean> {
   return enabled;
 }
 
+// Writes run one after another, so quick toggles store the last choice, not whichever lands last.
+let writes = Promise.resolve();
+
 export async function setComposerModelPicker(next: boolean): Promise<boolean> {
   enabled = next;
   // Paint the switch before SecureStore resolves.
   notify();
-  try {
-    await SecureStore.setItemAsync(COMPOSER_MODEL_PICKER_STORAGE_KEY, next ? "on" : "off");
-  } catch {
-    // Keep the in-memory choice when SecureStore is unavailable.
-  }
+  writes = writes.then(async () => {
+    try {
+      await SecureStore.setItemAsync(COMPOSER_MODEL_PICKER_STORAGE_KEY, next ? "on" : "off");
+    } catch {
+      // Keep the in-memory choice when SecureStore is unavailable.
+    }
+  });
+  await writes;
   return next;
 }
 
