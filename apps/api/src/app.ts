@@ -793,7 +793,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     integrationSettings,
     mcpOAuth,
     mcp,
-    composio: stack.composio,
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,

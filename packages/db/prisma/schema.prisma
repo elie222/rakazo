@@ -1731,7 +1731,7 @@ model Connection {
   spaceId     String
   space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   userId      String
-  connectorId String   @default("composio")
+  connectorId String
   provider    String
   displayName String
   status      String
