@@ -16,9 +16,11 @@ directory, so a copied database dump, backup or disk does not reveal it.
 | Vault items (logins, cards, contacts, API credentials and command variables) that `migrate` moved, and later saves to the same vault while encryption is on and `SECRET_STORE` is the default ([vault items](#how-it-works)) | `vault_credentials.ciphertext`                                                |
 | Other credentials, and vault items not yet moved (unchanged scheme)                                                                                                                                                          | `secrets`, `bot_secrets`, `integration_provider_configs`, `vault_credentials` |
 
-Not yet encrypted, planned next: external conversation messages, outbound
-messaging bodies, steering messages, ticket comments, agent skills, taught
-skill playbooks and recordings, and bot instruction history. Names and other
+Not yet encrypted, planned next: the quoted excerpts a reply keeps beside its
+message (`messages.replyQuote` and `messages.extraReplyQuotes`), external
+conversation messages, outbound messaging bodies, steering messages, ticket
+comments, agent skills, taught skill playbooks and recordings, and bot
+instruction history. Names and other
 metadata stay plaintext: bot, group, file and thread names, routine prompts,
 memory paths, timestamps, ids, block kinds and statuses.
 
